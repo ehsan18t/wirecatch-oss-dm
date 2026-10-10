@@ -332,7 +332,9 @@ fn view_of(entry: &Entry) -> Option<plan::DownloadView> {
     let activity = match &entry.run {
         Some(run) if run.stop.is_some() => plan::Activity::Stopping,
         Some(_) => plan::Activity::Running,
-        None if entry.row.status == DownloadStatus::Queued => plan::Activity::Waiting,
+        None if !entry.removing && entry.row.status == DownloadStatus::Queued => {
+            plan::Activity::Waiting
+        }
         None => return None,
     };
     Some(plan::DownloadView {

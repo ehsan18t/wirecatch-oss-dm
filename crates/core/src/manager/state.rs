@@ -104,6 +104,8 @@ pub(super) struct Entry {
     pub resume_first: bool,
     /// Set while its partial files are being deleted; a new run waits for it.
     pub cleanup: Option<CancellationToken>,
+    /// Being removed: hidden from the list and from every operation, and never started.
+    pub removing: bool,
 }
 
 /// An engine run in progress.
@@ -156,16 +158,25 @@ pub(super) struct Pending {
 }
 
 impl State {
+    /// A download that exists and is not being removed.
     pub fn entry(&self, id: DownloadId) -> Result<&Entry> {
         self.downloads
             .get(&id)
+            .filter(|e| !e.removing)
             .ok_or(CoreError::DownloadNotFound(id))
     }
 
+    /// A download that exists and is not being removed.
     pub fn entry_mut(&mut self, id: DownloadId) -> Result<&mut Entry> {
         self.downloads
             .get_mut(&id)
+            .filter(|e| !e.removing)
             .ok_or(CoreError::DownloadNotFound(id))
+    }
+
+    /// Every download that is not being removed.
+    pub fn visible(&self) -> impl Iterator<Item = &Entry> {
+        self.downloads.values().filter(|e| !e.removing)
     }
 
     pub fn slot(&self, id: QueueId) -> Result<&QueueSlot> {
@@ -335,6 +346,7 @@ mod tests {
             }),
             resume_first: false,
             cleanup: None,
+            removing: false,
         }
     }
 

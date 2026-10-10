@@ -92,7 +92,7 @@ impl Manager {
                     state.handovers.remove(handover_id);
                     return Ok(WithdrawOutcome::Withdrawn);
                 }
-                Target::Download(id) => match state.downloads.get(&id) {
+                Target::Download(id) => match state.entry(id).ok() {
                     None => return Ok(WithdrawOutcome::NotFound),
                     Some(entry) if entry.server_answered() => {
                         return Ok(WithdrawOutcome::AlreadyStarted);

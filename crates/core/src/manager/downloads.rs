@@ -55,7 +55,7 @@ impl Manager {
     /// Every download, in sidebar queue order and then in line order.
     pub fn list_downloads(&self) -> Vec<DownloadSummary> {
         let state = self.lock();
-        let mut entries: Vec<&Entry> = state.downloads.values().collect();
+        let mut entries: Vec<&Entry> = state.visible().collect();
         let queue_index = |id: QueueId| state.queues.iter().position(|s| s.queue.id == id);
         entries.sort_by_key(|e| (queue_index(e.row.queue), e.position));
         entries.into_iter().map(|e| e.row.clone()).collect()
@@ -140,21 +140,37 @@ impl Manager {
     /// always deleted; the downloaded file only when `delete_file` is set. Ids that
     /// no longer exist are ignored.
     pub async fn remove(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
-        let mut exits = Vec::new();
+        // From here on nothing can resume, move or start them, so once their runs
+        // have stopped they stay stopped.
         {
             let mut state = self.lock_open()?;
             for id in ids {
-                if let Some(entry) = state.downloads.get_mut(id)
-                    && let Some(run) = &entry.run
-                {
-                    exits.push(run.exited.clone());
-                    self.stop_run(entry, Stop::Remove);
+                if let Ok(entry) = state.entry_mut(*id) {
+                    entry.removing = true;
                 }
             }
         }
-        // The engine must close its files before they can be deleted.
-        for exited in exits {
-            exited.cancelled().await;
+        // The engine must close its files before they can be deleted. Each wait is
+        // bounded by the stop timeout.
+        loop {
+            let mut exits = Vec::new();
+            {
+                let mut state = self.lock_open()?;
+                for id in ids {
+                    if let Some(entry) = state.downloads.get_mut(id).filter(|e| e.removing)
+                        && let Some(run) = &entry.run
+                    {
+                        exits.push(run.exited.clone());
+                        self.stop_run(entry, Stop::Remove);
+                    }
+                }
+            }
+            if exits.is_empty() {
+                break;
+            }
+            for exited in exits {
+                exited.cancelled().await;
+            }
         }
 
         let mut files = Vec::new();
@@ -162,6 +178,9 @@ impl Manager {
         {
             let mut state = self.lock_open()?;
             for id in ids {
+                if !state.downloads.get(id).is_some_and(|e| e.removing) {
+                    continue;
+                }
                 let Some(entry) = state.downloads.remove(id) else {
                     continue;
                 };
@@ -270,7 +289,7 @@ impl Manager {
         let mut state = self.lock_open()?;
         let ids: Vec<DownloadId> = state.downloads.keys().copied().collect();
         for id in ids {
-            let Some(entry) = state.downloads.get_mut(&id) else {
+            let Ok(entry) = state.entry_mut(id) else {
                 continue;
             };
             if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
@@ -285,7 +304,7 @@ impl Manager {
     pub fn resume_all(&self) -> Result<()> {
         let mut state = self.lock_open()?;
         let mut paused = Vec::new();
-        for entry in state.downloads.values_mut() {
+        for entry in state.downloads.values_mut().filter(|e| !e.removing) {
             if entry.is_running() {
                 // Still stopping after a pause: it goes back in line once stopped.
                 entry.requeue_when_stopped(false);
@@ -401,6 +420,7 @@ impl Manager {
                     run: None,
                     resume_first: false,
                     cleanup: None,
+                    removing: false,
                 },
             );
             self.save(&mut state, id);

@@ -71,7 +71,7 @@ impl Manager {
 
         let changed: Vec<DownloadSummary> = std::mem::take(&mut state.dirty)
             .into_iter()
-            .filter_map(|id| state.downloads.get(&id).map(|e| e.row.clone()))
+            .filter_map(|id| state.entry(id).ok().map(|e| e.row.clone()))
             .collect();
         if !changed.is_empty() {
             self.emit(UiEvent::DownloadsChanged(changed));

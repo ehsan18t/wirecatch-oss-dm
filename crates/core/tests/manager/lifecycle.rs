@@ -103,6 +103,39 @@ async fn resume_and_retry_pressed_while_stopping_are_not_lost() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_being_removed_cannot_be_brought_back() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_stop_timeout(Duration::from_millis(500)).await;
+    let row = h.add(&silent.url("gone.bin")).await;
+    let manager = h.manager.clone();
+    let removal = tokio::spawn(async move { manager.remove(&[row.id], false).await });
+    wait_until("the removal to begin", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+
+    // The run is still stopping; nothing may revive the download meanwhile.
+    let gone =
+        |result: wirecatch_core::Result<()>| matches!(result, Err(CoreError::DownloadNotFound(_)));
+    assert!(gone(h.manager.resume(row.id)));
+    assert!(gone(h.manager.retry(row.id)));
+    assert!(gone(
+        h.manager.refresh_link(row.id, &silent.url("again.bin"))
+    ));
+    assert!(gone(h.manager.move_to_queue(&[row.id], DEFAULT_QUEUE_ID)));
+    h.manager.resume_all().unwrap();
+
+    removal.await.unwrap().unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        silent.accepted.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a removed download connected again"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_server_that_never_answers_cannot_hang_the_app() {
     let silent = SilentServer::start().await;
     let h = Harness::with_stop_timeout(Duration::from_millis(300)).await;
