@@ -173,7 +173,7 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     let message = error.to_string();
     assert!(
         message.starts_with(
-            "ffmpeg could not join the video: [mp4 @ 0x1] fake ffmpeg failed / Conversion failed!"
+            "ffmpeg could not join the video: as MP4: [mp4 @ 0x1] fake ffmpeg failed / Conversion failed!; as Matroska: [mp4 @ 0x1] fake ffmpeg failed"
         ),
         "{message}"
     );

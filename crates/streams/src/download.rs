@@ -319,7 +319,8 @@ async fn join(
             let inputs: Vec<(&Path, Role)> =
                 inputs.iter().map(|(p, r)| (p.as_path(), *r)).collect();
             let mut saved = None;
-            let mut last_error = None;
+            // What ffmpeg said for each container tried, in order.
+            let mut failures: Vec<(Container, String)> = Vec::new();
             for container in containers {
                 let extension = container.extension(audio_only);
                 let muxed = work.muxed_path(extension);
@@ -338,17 +339,17 @@ async fn join(
                     }
                     Ok(false) => return Ok(Outcome::Paused { segments_left: 0 }),
                     Err(e @ Error::FfmpegMissing(_)) => return Err(e),
-                    Err(e) => {
-                        warn!(error = %e, ?container, "ffmpeg failed");
+                    Err(Error::Ffmpeg(message)) => {
+                        warn!(%message, ?container, "ffmpeg failed");
                         let _ = fs::remove_file(&muxed);
-                        last_error = Some(e);
+                        failures.push((*container, message));
                     }
+                    Err(e) => return Err(e),
                 }
             }
-            match (saved, last_error) {
-                (Some(saved), _) => saved,
-                (None, Some(error)) => return Err(error),
-                (None, None) => return Err(Error::Ffmpeg("it produced no file".into())),
+            match saved {
+                Some(saved) => saved,
+                None => return Err(Error::Ffmpeg(failure_summary(&failures))),
             }
         }
         None => {
@@ -373,6 +374,20 @@ async fn join(
     };
     info!(path = %saved.display(), bytes, "stream saved");
     Ok(Outcome::Completed { path: saved, bytes })
+}
+
+/// ffmpeg's messages for every container tried: one alone as is, several
+/// each named, so the first (MP4) failure is never hidden by the fallback's.
+fn failure_summary(failures: &[(Container, String)]) -> String {
+    match failures {
+        [] => "it produced no file".into(),
+        [(_, message)] => message.clone(),
+        several => several
+            .iter()
+            .map(|(container, message)| format!("as {}: {message}", container.name()))
+            .collect::<Vec<_>>()
+            .join("; "),
+    }
 }
 
 /// `output` with `extension`. Never an unrelated file: when the extension
@@ -518,6 +533,22 @@ mod tests {
             container_for(&plan(&[Some("avc1.4d401f"), Some("opus")])),
             Container::Matroska
         );
+    }
+
+    #[test]
+    fn both_container_failures_are_reported() {
+        let both = failure_summary(&[
+            (
+                Container::Mp4,
+                "codec not currently supported in container".into(),
+            ),
+            (Container::Matroska, "something else".into()),
+        ]);
+        assert_eq!(
+            both,
+            "as MP4: codec not currently supported in container; as Matroska: something else"
+        );
+        assert_eq!(failure_summary(&[(Container::Matroska, "x".into())]), "x");
     }
 
     #[test]

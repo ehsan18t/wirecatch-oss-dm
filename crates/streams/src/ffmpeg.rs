@@ -37,6 +37,14 @@ impl Container {
         }
     }
 
+    /// The container's name, for messages.
+    pub fn name(self) -> &'static str {
+        match self {
+            Container::Mp4 => "MP4",
+            Container::Matroska => "Matroska",
+        }
+    }
+
     fn format(self) -> &'static str {
         match self {
             Container::Mp4 => "mp4",
