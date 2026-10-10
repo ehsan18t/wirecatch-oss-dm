@@ -47,6 +47,8 @@ pub enum DownloadStatus {
     Paused,
     Completed,
     Failed,
+    /// Stopped by the user; the partial file is gone. Retry starts over.
+    Cancelled,
 }
 
 /// An error worded for a person, with the fix offered as a button (D3, rule 4).

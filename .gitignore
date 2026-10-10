@@ -2,3 +2,13 @@
 *.wcpart
 *.wcstate
 *.wcstate.tmp
+node_modules/
+.output/
+.wxt/
+.svelte-kit/
+build/
+dist/
+coverage/
+*.log
+.claude/worktrees/
+.playwright-mcp/

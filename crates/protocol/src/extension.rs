@@ -9,6 +9,10 @@ use crate::{DownloadId, QueueId};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct NewDownload {
+    /// Chosen by the extension, unique per handover. The app treats a repeated
+    /// `add_download` with the same id as the same download (idempotent), and
+    /// [`Call::WithdrawDownload`](crate::wire::Call::WithdrawDownload) refers to it.
+    pub handover_id: String,
     pub url: String,
     pub referrer: Option<String>,
     /// The page the download started from.
@@ -57,11 +61,34 @@ pub struct AddedDownload {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum AddAction {
+    /// The server answered the app with the file (a 2xx response) and data is
+    /// flowing. Only now may the extension erase the browser's copy.
     Started,
-    /// Added to a queue that is not running right now.
+    /// Accepted into a queue that is not running right now; the link has not been
+    /// tried yet.
     Queued,
-    /// The app is showing the confirmation dialog.
+    /// The app is showing the confirmation dialog; the link has not been tried yet.
     AwaitingConfirmation,
+}
+
+/// Asks the app to forget a handover the extension gave up waiting for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WithdrawRequest {
+    pub handover_id: String,
+}
+
+/// The app's answer to a [`WithdrawRequest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WithdrawOutcome {
+    /// The app dropped it; the browser should keep its copy.
+    Withdrawn,
+    /// The app never received it; the browser should keep its copy.
+    NotFound,
+    /// The app already reached the server; the browser should drop its copy.
+    AlreadyStarted,
 }
 
 /// The subset of settings the extension popup shows. The app stores them; the
@@ -106,7 +133,13 @@ pub struct ExtensionSettingsPatch {
     pub capture_enabled: Option<bool>,
     pub ask_before_download: Option<bool>,
     pub show_media_button: Option<bool>,
+    /// Replaces the whole list. Prefer the add and remove fields, which do not
+    /// overwrite an edit made at the same time from another browser.
     pub ignored_sites: Option<Vec<String>>,
+    /// Hosts to add to `ignored_sites` (applied after `ignored_sites`).
+    pub add_ignored_sites: Option<Vec<String>>,
+    /// Hosts to remove from `ignored_sites` (applied last).
+    pub remove_ignored_sites: Option<Vec<String>>,
     pub capture_extensions: Option<Vec<String>>,
     #[ts(type = "number | null")]
     pub min_capture_size: Option<u64>,
@@ -114,12 +147,15 @@ pub struct ExtensionSettingsPatch {
 }
 
 impl ExtensionSettings {
+    /// Applies a partial update; see [`ExtensionSettingsPatch`] for the order.
     pub fn apply(&mut self, patch: ExtensionSettingsPatch) {
         let ExtensionSettingsPatch {
             capture_enabled,
             ask_before_download,
             show_media_button,
             ignored_sites,
+            add_ignored_sites,
+            remove_ignored_sites,
             capture_extensions,
             min_capture_size,
             default_queue,
@@ -135,6 +171,14 @@ impl ExtensionSettings {
         }
         if let Some(v) = ignored_sites {
             self.ignored_sites = v;
+        }
+        for host in add_ignored_sites.into_iter().flatten() {
+            if !self.ignored_sites.contains(&host) {
+                self.ignored_sites.push(host);
+            }
+        }
+        if let Some(remove) = remove_ignored_sites {
+            self.ignored_sites.retain(|h| !remove.contains(h));
         }
         if let Some(v) = capture_extensions {
             self.capture_extensions = v;
@@ -161,5 +205,19 @@ mod tests {
         });
         assert!(s.ask_before_download);
         assert!(s.capture_enabled);
+    }
+
+    #[test]
+    fn site_list_edits_merge_instead_of_overwriting() {
+        let mut s = ExtensionSettings {
+            ignored_sites: vec!["a.com".into(), "b.com".into()],
+            ..Default::default()
+        };
+        s.apply(ExtensionSettingsPatch {
+            add_ignored_sites: Some(vec!["c.com".into(), "a.com".into()]),
+            remove_ignored_sites: Some(vec!["b.com".into()]),
+            ..Default::default()
+        });
+        assert_eq!(s.ignored_sites, vec!["a.com", "c.com"]);
     }
 }
