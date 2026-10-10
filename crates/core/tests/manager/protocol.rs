@@ -748,6 +748,10 @@ async fn requests_beyond_the_limit_are_refused() {
     assert_eq!(err.code, ErrorCode::InvalidRequest);
     assert!(err.message.contains("at once"), "{}", err.message);
     // Withdrawing ends the waiting requests; the connection works afterwards.
+    crate::common::wait_until("the capture to connect", || {
+        (silent.accepted.load(std::sync::atomic::Ordering::SeqCst) > 0).then_some(())
+    })
+    .await;
     let outcome = h.manager.withdraw_capture(&slow.handover_id).await.unwrap();
     assert_eq!(outcome, WithdrawOutcome::Withdrawn);
     for id in ids {
