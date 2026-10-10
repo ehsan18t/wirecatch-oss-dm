@@ -116,8 +116,7 @@ impl Store {
         let path = dir.join(DATABASE_FILE);
         let mut conn = Connection::open(&path)?;
         restrict_to_owner(&path);
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        configure(&conn)?;
         migrate(&mut conn)?;
         let snapshot = load(&conn)?;
 
@@ -211,6 +210,15 @@ fn apply(
         }
     }
     tx.commit()
+}
+
+/// Connection settings. Deleted rows (which may have held cookies) are overwritten
+/// with zeros rather than left in free pages.
+fn configure(conn: &Connection) -> rusqlite::Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "secure_delete", "ON")?;
+    Ok(())
 }
 
 fn migrate(conn: &mut Connection) -> Result<()> {
@@ -514,6 +522,16 @@ mod tests {
         let err = Store::open(dir.path()).unwrap_err();
         assert!(matches!(err, CoreError::DatabaseTooNew { found: 99, .. }));
         assert!(err.to_string().contains("Update Wirecatch"));
+    }
+
+    #[test]
+    fn deleted_rows_are_overwritten() {
+        let conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        let on: i64 = conn
+            .pragma_query_value(None, "secure_delete", |r| r.get(0))
+            .unwrap();
+        assert_eq!(on, 1);
     }
 
     #[test]

@@ -18,6 +18,7 @@ use super::{Inner, Manager};
 use crate::headers;
 use crate::naming::partial_files;
 use crate::speed::SpeedMeter;
+use crate::store::Origin;
 use crate::user_error;
 
 /// How a run ended.
@@ -131,6 +132,8 @@ impl Manager {
                 entry.row.total = Some(bytes);
                 entry.row.done = bytes;
                 entry.row.completed_at = Some(now);
+                // Cookies and headers were only needed to download it.
+                entry.origin = Origin::default();
                 entry.row.error = None;
             }
             (_, Some(Stop::Pause | Stop::Remove))

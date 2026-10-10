@@ -313,6 +313,21 @@ async fn a_capture_starts_at_once_and_shows_a_toast() {
             .unwrap()
             .contains(&"session=abc".to_string())
     );
+
+    // Once finished, the cookies are no longer kept.
+    h.manager.shutdown().await;
+    let db = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    let db = rusqlite::Connection::open(db).unwrap();
+    let origin: String = db
+        .query_row("SELECT origin FROM downloads WHERE id = ?1", [id.0], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(!origin.contains("session=abc"), "{origin}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
