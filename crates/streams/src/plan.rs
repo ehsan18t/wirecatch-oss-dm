@@ -98,8 +98,11 @@ pub(crate) struct Plan {
 
 impl Plan {
     /// Identifies the plan across runs, to tell whether segments on disk
-    /// belong to it. Query strings and hosts are left out: they often carry
-    /// tokens or CDN choices that change when a link is refreshed.
+    /// belong to it. Paths and query strings count: services often tell
+    /// segments (or versions of a video) apart only by a query parameter, and
+    /// joining segments of two different versions would corrupt the video.
+    /// Hosts are left out, because one video is often served by whichever CDN
+    /// host is closest at the time.
     pub fn fingerprint(&self) -> u64 {
         let mut hash = Fnv::default();
         hash.write(&(self.tracks.len() as u64).to_le_bytes());
@@ -108,6 +111,8 @@ impl Plan {
             hash.write(&(track.pieces.len() as u64).to_le_bytes());
             for piece in &track.pieces {
                 hash.write(piece.url.path().as_bytes());
+                hash.write(&[0xFE]);
+                hash.write(piece.url.query().unwrap_or_default().as_bytes());
                 if let Some(range) = &piece.range {
                     hash.write(&range.start.to_le_bytes());
                     hash.write(&range.end.to_le_bytes());
@@ -719,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprints_ignore_tokens_but_not_segments() {
+    fn fingerprints_follow_paths_and_queries_but_not_hosts() {
         let piece = |u: &str| Piece::plain(Url::parse(u).unwrap(), None);
         let plan = |urls: &[&str]| Plan {
             tracks: vec![Track {
@@ -736,8 +741,23 @@ mod tests {
             "https://cdn2.example/s/1.ts?token=b",
             "https://cdn2.example/s/2.ts?token=b",
         ]);
+        let same_on_another_host = plan(&[
+            "https://cdn2.example/s/1.ts?token=a",
+            "https://cdn2.example/s/2.ts?token=a",
+        ]);
         let c = plan(&["https://cdn1.example/s/1.ts", "https://cdn1.example/s/3.ts"]);
-        assert_eq!(a.fingerprint(), b.fingerprint());
+        // Segments told apart only by their query.
+        let d = plan(&[
+            "https://cdn1.example/seg?n=1",
+            "https://cdn1.example/seg?n=2",
+        ]);
+        let e = plan(&[
+            "https://cdn1.example/seg?n=1",
+            "https://cdn1.example/seg?n=3",
+        ]);
+        assert_eq!(a.fingerprint(), same_on_another_host.fingerprint());
+        assert_ne!(a.fingerprint(), b.fingerprint());
         assert_ne!(a.fingerprint(), c.fingerprint());
+        assert_ne!(d.fingerprint(), e.fingerprint());
     }
 }
