@@ -57,7 +57,18 @@ axum.workspace = true
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
 futures-util.workspace = true
+# An HTTP/2 test server for the HTTP/3 tests and benchmark.
+hyper = { version = "1.4.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"] }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Process CPU time in the HTTP/3 benchmark.
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
+
+[[example]]
+name = "bench_http3"
+required-features = ["http3"]

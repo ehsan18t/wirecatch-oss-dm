@@ -85,7 +85,7 @@ impl Connection {
                     && shared.ranged
                     && let Some(body) = http3::open(h3, origin, shared, session, from, to).await?
                 {
-                    return Ok((Body::Http3(body), 0));
+                    return Ok((Body::Http3(Box::new(body)), 0));
                 }
                 let (response, skip) = http::fetch(
                     client,
@@ -138,7 +138,7 @@ pub(crate) enum Body {
     },
     Ftp(ftp::Transfer),
     #[cfg(feature = "http3")]
-    Http3(http3::Body),
+    Http3(Box<http3::Body>),
 }
 
 impl Body {
