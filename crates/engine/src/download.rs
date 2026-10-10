@@ -250,7 +250,7 @@ pub async fn download(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    progress.start(&file_name, total, resumed_from);
+    progress.start(&target.final_path, &file_name, total, resumed_from);
 
     let shared = Arc::new(Shared {
         url: final_url,

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use common::{Config, TestServer, test_data};
+use common::{Busy, Config, TestServer, test_data};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 
 const KIB: usize = 1024;
@@ -355,4 +355,102 @@ async fn exact_path_continues_after_the_link_changes() {
         "kept only {resumed_from} bytes"
     );
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+}
+
+/// A server whose first answer is `503` with `Retry-After: 1`, so there is a
+/// second during which the link has not been proven yet.
+async fn slow_to_answer(content_disposition: &str) -> TestServer {
+    TestServer::start(
+        test_data(256 * KIB),
+        Config {
+            ranges: true,
+            content_disposition: Some(content_disposition.to_string()),
+            busy: Some(Busy {
+                requests: 0..1,
+                status: 503,
+                retry_after: Some("1".into()),
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+/// Runs `req`, checks that no path is known while the server has not answered
+/// yet, and returns the outcome with the path progress reported afterwards.
+async fn run_watching_path(req: DownloadRequest) -> (Outcome, Option<PathBuf>) {
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        progress.path(),
+        None,
+        "path known before the server answered"
+    );
+    let outcome = task.await.unwrap().expect("download failed");
+    (outcome, progress.path())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_is_the_server_chosen_name_once_it_answers() {
+    let server = slow_to_answer("attachment; filename=\"report.pdf\"").await;
+    let dir = temp_dir("progress-path");
+    std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
+
+    let (outcome, path) = run_watching_path(request(&server, "download?id=7", &dir, 4)).await;
+
+    let Outcome::Completed { path: saved, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(saved, dir.join("report (1).pdf"));
+    assert_eq!(path, Some(saved));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_is_the_exact_path_once_the_server_answers() {
+    let server = slow_to_answer("attachment; filename=\"ignored.pdf\"").await;
+    let dir = temp_dir("progress-exact");
+    let target = dir.join("chosen").join("by-manager.bin");
+    let mut req = request(&server, "file", &dir, 4);
+    req.exact_path = Some(target.clone());
+
+    let (outcome, path) = run_watching_path(req).await;
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(path, Some(target));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_stays_unset_when_the_first_request_fails() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            busy: Some(Busy {
+                requests: 0..usize::MAX,
+                status: 404,
+                retry_after: None,
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("progress-404");
+    let progress = Arc::new(Progress::default());
+
+    let result = download(
+        request(&server, "missing.bin", &dir, 4),
+        progress.clone(),
+        CancellationToken::new(),
+    )
+    .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(wirecatch_engine::Error::HttpStatus { status: 404, .. })
+        ),
+        "{result:?}"
+    );
+    assert_eq!(progress.path(), None);
+    assert_eq!(progress.file_name(), None);
 }

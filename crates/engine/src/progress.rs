@@ -1,5 +1,6 @@
 //! Live counters for one download.
 
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
@@ -15,7 +16,14 @@ pub struct Progress {
     total: AtomicU64,
     done: AtomicU64,
     connections: AtomicUsize,
-    file_name: Mutex<Option<String>>,
+    /// Where the file goes, and its name, once the server has answered.
+    target: Mutex<Option<Target>>,
+}
+
+#[derive(Debug)]
+struct Target {
+    file_name: String,
+    path: PathBuf,
 }
 
 impl Default for Progress {
@@ -24,7 +32,7 @@ impl Default for Progress {
             total: AtomicU64::new(UNKNOWN),
             done: AtomicU64::new(0),
             connections: AtomicUsize::new(0),
-            file_name: Mutex::new(None),
+            target: Mutex::new(None),
         }
     }
 }
@@ -48,11 +56,37 @@ impl Progress {
 
     /// The name the file is saved under, once decided.
     pub fn file_name(&self) -> Option<String> {
-        self.file_name.lock().unwrap().clone()
+        self.target
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|t| t.file_name.clone())
     }
 
-    pub(crate) fn start(&self, file_name: &str, total: Option<u64>, already_done: u64) {
-        *self.file_name.lock().unwrap() = Some(file_name.to_string());
+    /// The final destination path of the download.
+    ///
+    /// Set once the server has answered with the file; until then the link has
+    /// not been proven to work. It is the path the file has once complete (the
+    /// data meanwhile goes to this path plus [`PART_EXT`](crate::PART_EXT)),
+    /// with the name the server suggested and any ` (1)` suffix already applied,
+    /// so it can be saved and passed as
+    /// [`DownloadRequest::exact_path`](crate::DownloadRequest::exact_path) on a
+    /// later run. It stays `None` if the first request fails.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.target.lock().unwrap().as_ref().map(|t| t.path.clone())
+    }
+
+    pub(crate) fn start(
+        &self,
+        path: &Path,
+        file_name: &str,
+        total: Option<u64>,
+        already_done: u64,
+    ) {
+        *self.target.lock().unwrap() = Some(Target {
+            file_name: file_name.to_string(),
+            path: path.to_path_buf(),
+        });
         self.total
             .store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
         self.done.store(already_done, Ordering::Relaxed);
