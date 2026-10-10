@@ -251,13 +251,6 @@ impl Manager {
         blocking(&self.inner.runtime, work).await
     }
 
-    /// Deletes files in the background, whichever thread this is called from.
-    fn delete_in_background(&self, files: Vec<PathBuf>) {
-        self.inner
-            .runtime
-            .spawn_blocking(move || run::delete_files(&files));
-    }
-
     fn from_weak(weak: &Weak<Inner>) -> Option<Self> {
         weak.upgrade().map(|inner| Manager { inner })
     }

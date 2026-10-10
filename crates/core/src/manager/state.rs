@@ -102,6 +102,8 @@ pub(super) struct Entry {
     pub run: Option<Run>,
     /// Was running when the app last stopped, so it gets the first free slot.
     pub resume_first: bool,
+    /// Set while its partial files are being deleted; a new run waits for it.
+    pub cleanup: Option<CancellationToken>,
 }
 
 /// An engine run in progress.
@@ -127,6 +129,9 @@ pub(super) enum Stop {
     Requeue,
     /// The user cancelled it; the partial file is deleted.
     Cancel,
+    /// The user cancelled it and then pressed Retry before it had stopped: the
+    /// partial file is deleted and it goes back in line to start over.
+    Restart,
     /// It is being removed from the list.
     Remove,
     /// The app is closing; it continues on the next start.
@@ -135,7 +140,10 @@ pub(super) enum Stop {
 
 impl Stop {
     fn is_users_choice(self) -> bool {
-        matches!(self, Stop::Pause | Stop::Cancel | Stop::Remove)
+        matches!(
+            self,
+            Stop::Pause | Stop::Cancel | Stop::Restart | Stop::Remove
+        )
     }
 }
 
@@ -269,6 +277,19 @@ impl Entry {
         }
     }
 
+    /// Resume or Retry pressed while the download is still stopping: once it has
+    /// stopped it goes back in line instead of staying paused (or, with
+    /// `restart_cancelled`, cancelled).
+    pub fn requeue_when_stopped(&mut self, restart_cancelled: bool) {
+        if let Some(run) = &mut self.run {
+            match run.stop {
+                Some(Stop::Pause) => run.stop = Some(Stop::Requeue),
+                Some(Stop::Cancel) if restart_cancelled => run.stop = Some(Stop::Restart),
+                _ => {}
+            }
+        }
+    }
+
     /// Clears what only makes sense while running.
     pub fn clear_live_fields(&mut self) {
         self.row.speed = 0;
@@ -313,6 +334,7 @@ mod tests {
                 task: idle_task(),
             }),
             resume_first: false,
+            cleanup: None,
         }
     }
 

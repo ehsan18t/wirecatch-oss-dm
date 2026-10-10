@@ -80,7 +80,11 @@ impl Manager {
             reported: false,
         };
         let work = engine(progress.clone(), cancel.clone());
+        let cleanup = entry.cleanup.take();
         let task = self.spawn(async move {
+            if let Some(deleted) = cleanup {
+                deleted.cancelled().await;
+            }
             let result = work.await;
             guard.report(RunEnd::Engine(result));
         });
@@ -121,7 +125,6 @@ impl Manager {
         }
         entry.clear_live_fields();
 
-        let mut discard_partial = false;
         match (end, run.stop) {
             (RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })), _) => {
                 entry.row.status = DownloadStatus::Completed;
@@ -139,7 +142,12 @@ impl Manager {
             (_, Some(Stop::Shutdown)) => {}
             (_, Some(Stop::Cancel)) => {
                 mark_cancelled(entry);
-                discard_partial = true;
+                self.discard_partial(entry);
+            }
+            (_, Some(Stop::Restart)) => {
+                mark_cancelled(entry);
+                self.discard_partial(entry);
+                entry.row.status = DownloadStatus::Queued;
             }
             (RunEnd::Engine(Err(error)), None) => {
                 warn!(id = id.0, %error, "download failed");
@@ -153,13 +161,21 @@ impl Manager {
                 entry.row.error = Some(user_error::stopped_unexpectedly());
             }
         }
-        let partial = discard_partial.then(|| partial_files(entry.path()));
         self.save(&mut state, id);
         self.reconcile(&mut state);
-        drop(state);
-        if let Some(files) = partial {
-            self.delete_in_background(files.to_vec());
-        }
+    }
+
+    /// Deletes a download's partial files in the background. A run started before
+    /// the deletion has finished waits for it, so it never writes into a file that
+    /// is being deleted.
+    pub(super) fn discard_partial(&self, entry: &mut Entry) {
+        let files = partial_files(entry.path());
+        let deleted = CancellationToken::new();
+        entry.cleanup = Some(deleted.clone());
+        self.inner.runtime.spawn_blocking(move || {
+            delete_files(&files);
+            deleted.cancel();
+        });
     }
 }
 

@@ -77,6 +77,32 @@ async fn cancel_discards_progress_and_retry_starts_over() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_and_retry_pressed_while_stopping_are_not_lost() {
+    let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
+    let h = Harness::new().await;
+    let resumed = h.add(&server.url("resumed.bin")).await.id;
+    let all = h.add(&server.url("all.bin")).await.id;
+    let retried = h.add(&server.url("retried.bin")).await.id;
+    for id in [resumed, all, retried] {
+        h.wait_for(id, "progress", |r| r.done > 0).await;
+    }
+    server.configure(|c| c.per_connection_bps = None);
+
+    // Each second call arrives while the first one's stop is still finishing.
+    h.manager.pause(resumed).unwrap();
+    h.manager.resume(resumed).unwrap();
+    h.manager.pause(all).unwrap();
+    h.manager.resume_all().unwrap();
+    h.manager.cancel(retried).unwrap();
+    h.manager.retry(retried).unwrap();
+
+    for id in [resumed, all, retried] {
+        let done = h.wait_status(id, DownloadStatus::Completed).await;
+        assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_server_that_never_answers_cannot_hang_the_app() {
     let silent = SilentServer::start().await;
     let h = Harness::with_stop_timeout(Duration::from_millis(300)).await;

@@ -127,12 +127,12 @@ impl Manager {
         if self.stop_run(entry, Stop::Cancel) {
             return Ok(());
         }
-        mark_cancelled(entry);
-        let files = partial_files(entry.path());
-        self.save(&mut state, id);
-        self.reconcile(&mut state);
-        drop(state);
-        self.delete_in_background(files.to_vec());
+        if entry.row.status != DownloadStatus::Cancelled {
+            mark_cancelled(entry);
+            self.discard_partial(entry);
+            self.save(&mut state, id);
+            self.reconcile(&mut state);
+        }
         Ok(())
     }
 
@@ -284,39 +284,52 @@ impl Manager {
     /// Puts every paused download back in line.
     pub fn resume_all(&self) -> Result<()> {
         let mut state = self.lock_open()?;
-        let ids: Vec<DownloadId> = state
-            .downloads
-            .values()
-            .filter(|e| e.row.status == DownloadStatus::Paused && !e.is_running())
-            .map(|e| e.row.id)
-            .collect();
-        for id in ids {
-            if let Some(entry) = state.downloads.get_mut(&id) {
+        let mut paused = Vec::new();
+        for entry in state.downloads.values_mut() {
+            if entry.is_running() {
+                // Still stopping after a pause: it goes back in line once stopped.
+                entry.requeue_when_stopped(false);
+            } else if entry.row.status == DownloadStatus::Paused {
                 entry.row.status = DownloadStatus::Queued;
+                paused.push(entry.row.id);
             }
+        }
+        for id in paused {
             self.save(&mut state, id);
         }
         self.reconcile(&mut state);
         Ok(())
     }
 
+    /// Puts a paused, failed or cancelled download back in line. One that is still
+    /// stopping goes back in line as soon as it has stopped. A cancelled download
+    /// starts over.
     fn requeue(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         let entry = state.entry_mut(id)?;
+        if entry.is_running() {
+            entry.requeue_when_stopped(true);
+            return Ok(());
+        }
         match entry.row.status {
             DownloadStatus::Completed => {
                 Err(CoreError::WrongState("This download has already finished."))
             }
-            DownloadStatus::Paused | DownloadStatus::Failed | DownloadStatus::Cancelled
-                if !entry.is_running() =>
-            {
+            DownloadStatus::Paused | DownloadStatus::Failed | DownloadStatus::Cancelled => {
+                // The partial files of a cancelled download were deleted when it was
+                // cancelled; delete again if that happened before a restart.
+                if entry.row.status == DownloadStatus::Cancelled && entry.cleanup.is_none() {
+                    self.discard_partial(entry);
+                }
                 entry.row.status = DownloadStatus::Queued;
                 entry.row.error = None;
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
                 Ok(())
             }
-            _ => Ok(()),
+            DownloadStatus::Queued | DownloadStatus::Connecting | DownloadStatus::Downloading => {
+                Ok(())
+            }
         }
     }
 
@@ -387,6 +400,7 @@ impl Manager {
                     origin: new.origin,
                     run: None,
                     resume_first: false,
+                    cleanup: None,
                 },
             );
             self.save(&mut state, id);
