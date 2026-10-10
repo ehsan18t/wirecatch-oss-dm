@@ -1,10 +1,10 @@
 //! End-to-end tests of the `wirecatch-bridge` executable: a real process with
 //! piped stdin and stdout, talking to a fake app on a private test endpoint.
 //!
-//! They rely on the debug-only overrides `WIRECATCH_BRIDGE_TEST_ENDPOINT` and
-//! `WIRECATCH_BRIDGE_TEST_LAUNCH` (see `src/app.rs`), which release builds do not
-//! have, so this file is empty in release builds.
-#![cfg(debug_assertions)]
+//! They rely on the overrides `WIRECATCH_BRIDGE_TEST_ENDPOINT` and
+//! `WIRECATCH_BRIDGE_TEST_LAUNCH` (see `src/app.rs`), which exist only with the
+//! `test-overrides` feature; Cargo.toml makes this test require it. Run with
+//! `cargo test -p wirecatch-bridge --features test-overrides`.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -31,8 +31,6 @@ const FIREFOX_ID: &str = "extension@wirecatch.app";
 /// Read by `fake_app_process`, which the bridge starts in place of the app.
 const FAKE_APP_ENDPOINT: &str = "WIRECATCH_TEST_FAKE_APP_ENDPOINT";
 const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
-/// How long the fake app keeps running after the bridge disconnects.
-const FAKE_APP_LINGER: Duration = Duration::from_secs(5);
 
 const PATIENCE: Duration = Duration::from_secs(10);
 
@@ -308,14 +306,20 @@ async fn callers_that_are_not_allowed_are_refused() {
 }
 
 /// The bridge starts this test binary in place of the app (through
-/// `WIRECATCH_BRIDGE_TEST_LAUNCH`). It does nothing in a normal test run.
+/// `WIRECATCH_BRIDGE_TEST_LAUNCH`). It does nothing in a normal test run, and it
+/// exits as soon as its job is done so it never holds the test executable open
+/// for long (a running copy blocks the next rebuild on Windows).
 #[test]
 #[ignore = "helper process started by the bridge in other tests"]
 fn fake_app_process() {
     let Some(endpoint) = std::env::var_os(FAKE_APP_ENDPOINT) else {
         return;
     };
-    let mode = std::env::var(FAKE_APP_MODE).unwrap_or_default();
+    // "never_listen": the app starts but never listens. Exiting at once is the
+    // same thing as far as the bridge can tell.
+    if std::env::var(FAKE_APP_MODE).as_deref() == Ok("never_listen") {
+        return;
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -323,10 +327,6 @@ fn fake_app_process() {
     runtime.block_on(async move {
         // A real app takes a moment to come up.
         sleep(Duration::from_millis(300)).await;
-        if mode == "never_listen" {
-            sleep(Duration::from_secs(8)).await;
-            return;
-        }
         let mut listener = Listener::bind(&Endpoint::from_raw(endpoint)).unwrap();
         let Ok(Ok(mut conn)) = timeout(PATIENCE, listener.accept()).await else {
             return;
@@ -345,8 +345,9 @@ fn fake_app_process() {
                 }
             }
         }
-        // Keep running (and listening) after the bridge leaves, like the real app.
-        sleep(FAKE_APP_LINGER).await;
+        // Like the real app, keep running after the bridge leaves, until the test
+        // has checked that (by connecting once more), then exit.
+        let _ = timeout(PATIENCE, listener.accept()).await;
     });
 }
 
@@ -366,6 +367,12 @@ fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) {
         .env(FAKE_APP_MODE, mode);
 }
 
+/// The bridge's own 5 second budget, plus room for process start-up on a slow
+/// or cold machine. The bridge measures its budget itself and gives up with
+/// `AppUnavailable` when it runs out, so a successful answer already proves the
+/// app was reached within 5 seconds; the wall clock bound only catches hangs.
+const BUDGET_WITH_STARTUP_MARGIN: Duration = Duration::from_secs(8);
+
 #[tokio::test]
 async fn the_app_is_started_when_it_is_not_running() {
     let test = TestEndpoint::new();
@@ -377,7 +384,7 @@ async fn the_app_is_started_when_it_is_not_running() {
     bridge.send(&hello(7)).await;
     let answer = read_frame(&mut bridge.stdout).await.unwrap();
     let waited = started.elapsed();
-    assert!(waited < Duration::from_secs(5), "took {waited:?}");
+    // A real answer, not AppUnavailable: the bridge connected within its budget.
     assert_eq!(
         decode(&answer),
         Message::Response {
@@ -388,6 +395,7 @@ async fn the_app_is_started_when_it_is_not_running() {
             })),
         }
     );
+    assert!(waited < BUDGET_WITH_STARTUP_MARGIN, "took {waited:?}");
     eprintln!("first answer through a freshly started app took {waited:?}");
 
     // When the browser closes the port, the browser side of the pipe closes even
@@ -396,6 +404,7 @@ async fn the_app_is_started_when_it_is_not_running() {
     bridge.close_and_wait().await;
     let eof = timeout(Duration::from_secs(2), read_frame(&mut bridge.stdout)).await;
     assert_eq!(eof, Ok(None), "stdout must close when the bridge exits");
+    // Still running: it accepts this connection, and then exits.
     assert!(
         wirecatch_ipc::connect(&test.endpoint).await.is_ok(),
         "the fake app should still be running"
@@ -413,8 +422,11 @@ async fn app_unavailable_when_the_app_cannot_be_started() {
     let second = read_frame(&mut bridge.stdout).await.unwrap();
     let message = assert_unavailable(&first, 1);
     assert_unavailable(&second, 2);
-    assert!(message.contains("Open Wirecatch"), "{message}");
+    assert!(message.contains("Reinstall Wirecatch"), "{message}");
     assert!(started.elapsed() < Duration::from_secs(2), "fails fast");
+    // No relaunch loop: the bridge stays up answering until the browser leaves.
+    bridge.send(&hello(3)).await;
+    assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 3);
     bridge.close_and_wait().await;
 }
 
@@ -428,27 +440,77 @@ async fn app_unavailable_when_the_app_never_starts_listening() {
     bridge.send(&hello(3)).await;
     let answer = read_frame(&mut bridge.stdout).await.unwrap();
     let waited = started.elapsed();
-    assert_unavailable(&answer, 3);
+    let message = assert_unavailable(&answer, 3);
+    assert!(message.contains("did not respond"), "{message}");
     assert!(
-        waited >= Duration::from_millis(4900) && waited < Duration::from_secs(7),
+        waited >= Duration::from_millis(4900) && waited < BUDGET_WITH_STARTUP_MARGIN,
         "answered after {waited:?}, expected about 5 seconds"
     );
     bridge.close_and_wait().await;
 }
 
 #[tokio::test]
-async fn requests_are_answered_when_the_app_goes_away() {
+async fn closing_the_connection_while_the_app_starts_exits_promptly() {
+    let test = TestEndpoint::new();
+    let mut command = bridge(&[CHROME_ORIGIN], &test.endpoint);
+    launch_fake_app("never_listen", &test.endpoint, &mut command);
+    let mut bridge = start(command);
+    bridge.send(&hello(1)).await;
+    // Give the bridge time to read the message and start waiting for the app.
+    sleep(Duration::from_millis(300)).await;
+    let closed = Instant::now();
+    bridge.close_and_wait().await;
+    let took = closed.elapsed();
+    assert!(
+        took < Duration::from_secs(2),
+        "took {took:?}; it must not sit out the 5 second start budget"
+    );
+}
+
+#[tokio::test]
+async fn the_bridge_exits_when_the_app_goes_away_so_the_extension_can_reconnect() {
     let test = TestEndpoint::new();
     let mut listener = Listener::bind(&test.endpoint).unwrap();
     let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
     bridge.send(&hello(1)).await;
     let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
     read_frame(&mut app).await.unwrap();
+    // The user quits Wirecatch with the request unanswered.
     drop(app);
     drop(listener);
     assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 1);
+    // Then the bridge exits by itself, with stdin still open, so the browser
+    // sees the port disconnect.
+    let status = timeout(PATIENCE, bridge.child.wait())
+        .await
+        .expect("the bridge must exit after the app goes away")
+        .unwrap();
+    assert!(status.success(), "{status}");
+    assert_eq!(read_frame(&mut bridge.stdout).await, None);
+}
+
+#[tokio::test]
+async fn an_oversized_message_is_skipped_and_the_session_goes_on() {
+    let test = TestEndpoint::new();
+    let mut listener = Listener::bind(&test.endpoint).unwrap();
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
+
+    let len = frame::MAX_FRAME_LEN + 1;
+    let mut oversized = (len as u32).to_le_bytes().to_vec();
+    oversized.resize(4 + len, b' ');
+    bridge.send(&oversized).await;
     bridge.send(&hello(2)).await;
-    assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 2);
+
+    // Only the message within the limit reaches the app, and it is answered.
+    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
+    assert_eq!(read_frame(&mut app).await, Some(hello(2)));
+    let answer = frame::encode(&Message::Response {
+        id: 2,
+        outcome: Outcome::Ok(Reply::Done),
+    })
+    .unwrap();
+    app.write_all(&answer).await.unwrap();
+    assert_eq!(read_frame(&mut bridge.stdout).await, Some(answer));
     bridge.close_and_wait().await;
 }
 

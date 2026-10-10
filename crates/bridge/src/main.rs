@@ -117,19 +117,26 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
         }
     };
 
-    runtime.block_on(relay::run(incoming, outgoing, || async {
+    let ended = runtime.block_on(relay::run(incoming, outgoing, || async {
         let endpoint = app::endpoint().map_err(|e| {
             log!("{e}");
-            app::Unavailable::REFUSED
+            app::Unavailable::from_ipc(&e)
         })?;
         let launcher = app::launcher().map_err(|e| {
             log!("{e:#}");
-            app::Unavailable::NOT_STARTED
+            app::Unavailable::cannot_start(&format!("{e:#}"))
         })?;
         app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET).await
     }));
+    if ended == relay::Ended::AppClosed {
+        // Exiting closes stdout, so the browser reports the port as disconnected
+        // and the extension reconnects with a fresh bridge, which starts the app
+        // again if needed.
+        log!("Wirecatch went away; closing so the extension can reconnect");
+    }
     // Dropping the runtime drops the app reader task and with it the last sender
-    // to the stdout thread, which then finishes what is queued and stops.
+    // to the stdout thread, which then finishes what is queued and stops. The
+    // stdin thread may still be blocked reading; returning from main ends it.
     drop(runtime);
     let _ = writer.join();
     ExitCode::SUCCESS
@@ -141,15 +148,22 @@ fn read_browser(to_relay: mpsc::Sender<RawFrame>) {
     let mut stdin = stdin.lock();
     loop {
         match raw_frame::read_blocking(&mut stdin) {
-            Ok(Some(frame)) => {
+            Ok(Some(raw_frame::Incoming::Frame(frame))) => {
                 if to_relay.blocking_send(frame).is_err() {
                     return;
                 }
             }
+            Ok(Some(raw_frame::Incoming::Oversized { len })) => {
+                // Its id is unknown (the body was not kept), so there is nobody to
+                // answer; the session goes on with the next message.
+                log!(
+                    "skipped a {len} byte message from the extension: messages are limited to {} bytes",
+                    wirecatch_protocol::frame::MAX_FRAME_LEN
+                );
+            }
             Ok(None) => return,
             Err(e) => {
-                // The stream cannot be resynchronized after a bad frame; treat it
-                // as the end of the session.
+                // A frame cut short or a broken pipe: nothing more can be read.
                 log!("stopped reading from the browser: {e}");
                 return;
             }

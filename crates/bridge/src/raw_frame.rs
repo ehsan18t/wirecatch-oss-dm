@@ -68,18 +68,45 @@ pub(crate) enum Envelope {
     Other,
 }
 
-/// Blocking read of one frame. `Ok(None)` means the stream ended cleanly before a
-/// new frame started. The length is checked before anything is allocated.
-pub(crate) fn read_blocking(reader: &mut impl Read) -> Result<Option<RawFrame>, FrameError> {
+/// One read from the browser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Incoming {
+    /// A frame within the size limit.
+    Frame(RawFrame),
+    /// A frame over the size limit, read and thrown away without being stored.
+    Oversized {
+        /// Its declared body length.
+        len: usize,
+    },
+}
+
+/// Blocking read of one frame from the browser. `Ok(None)` means the stream ended
+/// cleanly before a new frame started.
+///
+/// The length is checked before anything is allocated. An oversized frame is
+/// streamed into nothing (so memory stays bounded) and reported as
+/// [`Incoming::Oversized`], which keeps the stream in step so the session can go
+/// on.
+pub(crate) fn read_blocking(reader: &mut impl Read) -> Result<Option<Incoming>, FrameError> {
     let mut header = [0u8; 4];
     match reader.read_exact(&mut header) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(e.into()),
     }
-    let mut frame = RawFrame::with_header(header)?;
+    let mut frame = match RawFrame::with_header(header) {
+        Ok(frame) => frame,
+        Err(FrameError::TooLarge(len)) => {
+            let skipped = io::copy(&mut reader.by_ref().take(len as u64), &mut io::sink())?;
+            if skipped < len as u64 {
+                return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+            }
+            return Ok(Some(Incoming::Oversized { len }));
+        }
+        Err(e) => return Err(e),
+    };
     reader.read_exact(&mut frame.0[4..])?;
-    Ok(Some(frame))
+    Ok(Some(Incoming::Frame(frame)))
 }
 
 /// Async read of one frame, with the same rules as [`read_blocking`].
@@ -108,6 +135,13 @@ mod tests {
         out
     }
 
+    fn next_frame(cursor: &mut io::Cursor<Vec<u8>>) -> RawFrame {
+        match read_blocking(cursor).unwrap().unwrap() {
+            Incoming::Frame(frame) => frame,
+            other => panic!("expected a frame, got {other:?}"),
+        }
+    }
+
     #[test]
     fn frames_are_read_byte_for_byte() {
         let body =
@@ -115,20 +149,45 @@ mod tests {
         let mut stream = frame_of(body);
         stream.extend(frame_of(b"{}"));
         let mut cursor = io::Cursor::new(stream.clone());
-        let first = read_blocking(&mut cursor).unwrap().unwrap();
+        let first = next_frame(&mut cursor);
         assert_eq!(first.as_bytes(), &stream[..4 + body.len()]);
         assert_eq!(first.envelope(), Envelope::Request(Some(9)));
-        let second = read_blocking(&mut cursor).unwrap().unwrap();
+        let second = next_frame(&mut cursor);
         assert_eq!(second.envelope(), Envelope::Other);
         assert!(read_blocking(&mut cursor).unwrap().is_none());
     }
 
     #[test]
-    fn oversized_frames_are_refused_before_allocating() {
+    fn an_oversized_frame_is_skipped_and_the_stream_stays_in_step() {
+        let len = MAX_FRAME_LEN + 1;
+        let mut stream = (len as u32).to_le_bytes().to_vec();
+        stream.resize(4 + len, b'x');
+        stream.extend(frame_of(br#"{"kind":"request","id":3}"#));
+        let mut cursor = io::Cursor::new(stream);
+        assert_eq!(
+            read_blocking(&mut cursor).unwrap(),
+            Some(Incoming::Oversized { len })
+        );
+        assert_eq!(
+            next_frame(&mut cursor).envelope(),
+            Envelope::Request(Some(3))
+        );
+        assert!(read_blocking(&mut cursor).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_oversized_frame_cut_short_is_an_error() {
+        let mut stream = ((MAX_FRAME_LEN + 1) as u32).to_le_bytes().to_vec();
+        stream.extend_from_slice(b"only a little");
+        assert!(read_blocking(&mut io::Cursor::new(stream)).is_err());
+    }
+
+    #[tokio::test]
+    async fn the_app_side_still_refuses_oversized_frames() {
         let header = ((MAX_FRAME_LEN + 1) as u32).to_le_bytes();
-        let mut cursor = io::Cursor::new(header.to_vec());
+        let mut slice = &header[..];
         assert!(matches!(
-            read_blocking(&mut cursor),
+            read_async(&mut slice).await,
             Err(FrameError::TooLarge(_))
         ));
     }
@@ -154,7 +213,7 @@ mod tests {
         ];
         for (body, expected) in cases {
             let mut cursor = io::Cursor::new(frame_of(body));
-            let frame = read_blocking(&mut cursor).unwrap().unwrap();
+            let frame = next_frame(&mut cursor);
             assert_eq!(
                 frame.envelope(),
                 *expected,

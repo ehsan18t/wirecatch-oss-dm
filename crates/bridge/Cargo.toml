@@ -11,6 +11,19 @@ publish = false
 name = "wirecatch-bridge"
 path = "src/main.rs"
 
+# End-to-end tests of the executable. They point it at a fake app through
+# environment variables that exist only with the `test-overrides` feature, so run
+# them with `cargo test -p wirecatch-bridge --features test-overrides`.
+[[test]]
+name = "bridge"
+path = "tests/bridge.rs"
+required-features = ["test-overrides"]
+
+[features]
+## Test-only environment overrides for the app endpoint and the app launcher
+## (see `src/app.rs`). Never enable this in a build that ships.
+test-overrides = []
+
 [dependencies]
 wirecatch-ipc = { path = "../ipc", version = "0.1.0" }
 wirecatch-protocol.workspace = true
@@ -26,6 +39,9 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Registry",
     "Win32_System_Threading",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process"] }

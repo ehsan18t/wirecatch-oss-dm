@@ -29,18 +29,18 @@ pub(crate) const APP_FILE_NAME: &str = if cfg!(windows) {
 /// Argument that starts the app without opening its window.
 pub(crate) const BACKGROUND_ARG: &str = "--background";
 
-/// Debug builds only: overrides used by the integration tests, never present in
-/// release builds.
+/// Overrides used by the end-to-end tests, present only when the non-default
+/// `test-overrides` cargo feature is enabled (which `tests/bridge.rs` requires).
 ///
 /// - `WIRECATCH_BRIDGE_TEST_ENDPOINT`: connect to this pipe name or socket path
 ///   instead of the per-user endpoint.
 /// - `WIRECATCH_BRIDGE_TEST_LAUNCH`: a JSON array `[program, args...]` started
 ///   instead of the app.
 ///
-/// They are compiled out of release builds so a shipped bridge always talks to
-/// the real per-user endpoint and starts the real app. (The connector still checks
-/// that whatever it reaches belongs to the current user either way.)
-#[cfg(debug_assertions)]
+/// Shipped builds must not enable the feature, so they always talk to the real
+/// per-user endpoint and start the real app. (The connector still checks that
+/// whatever it reaches belongs to the current user either way.)
+#[cfg(feature = "test-overrides")]
 pub(crate) mod test_overrides {
     /// See the module documentation.
     pub(crate) const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -50,7 +50,7 @@ pub(crate) mod test_overrides {
 
 /// The endpoint to connect to.
 pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "test-overrides")]
     if let Some(raw) = std::env::var_os(test_overrides::ENDPOINT_VAR) {
         return Ok(Endpoint::from_raw(raw));
     }
@@ -59,7 +59,7 @@ pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
 
 /// The launcher for the app.
 pub(crate) fn launcher() -> anyhow::Result<ProcessLauncher> {
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "test-overrides")]
     if let Ok(raw) = std::env::var(test_overrides::LAUNCH_VAR) {
         let mut parts: Vec<String> = serde_json::from_str(&raw)?;
         if parts.is_empty() {
@@ -130,9 +130,9 @@ impl Launcher for ProcessLauncher {
 }
 
 /// Starts `program` so that it outlives the bridge and shares nothing with the
-/// browser: standard streams go to the null device, it runs in its own process
-/// group, and on Windows it leaves the browser's job object when allowed (Firefox
-/// kills the whole job when it closes the host).
+/// browser: standard streams go to the null device, it gets its own session (Linux)
+/// or process group (Windows), and on Windows it leaves the browser's job object
+/// when allowed (Firefox kills the whole job when it closes the host).
 fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
     let mut command = Command::new(program);
     command
@@ -155,8 +155,10 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
         command.creation_flags(base | CREATE_BREAKAWAY_FROM_JOB);
         match command.spawn() {
             Ok(_child) => return Ok(()),
-            // The job does not allow breaking away; start it inside the job.
             Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+                log!(
+                    "the browser does not let the programs it starts leave its job, so Wirecatch is being started inside it. The browser may close Wirecatch when it closes the extension's connection; if that happens, open Wirecatch yourself (or let it start with the computer) so it keeps running"
+                );
                 command.creation_flags(base);
             }
             Err(e) => return Err(e),
@@ -165,32 +167,86 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        // SAFETY: the closure runs in the child between fork and exec, and only
+        // calls setsid, which is async-signal-safe. A new session detaches the app
+        // from the browser's session and process group, so signals aimed at the
+        // browser's group (or a hang-up of its terminal) do not reach it.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
     // Dropping the handle does not stop the process.
     command.spawn().map(drop)
 }
 
-/// Why the app could not be reached, as told to the user.
+/// Why the app could not be reached, as told to the user through the extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Unavailable {
     /// Plain-language text for the extension to show.
-    pub(crate) message: &'static str,
+    pub(crate) message: String,
 }
 
 impl Unavailable {
-    /// The app is not running and could not be started.
-    pub(crate) const NOT_STARTED: Self = Self {
-        message: "Wirecatch is not running and could not be started. Open Wirecatch, then try again.",
-    };
-    /// The connection to the app ended.
-    pub(crate) const LOST: Self = Self {
-        message: "The connection to Wirecatch was lost. Open Wirecatch, then try again.",
-    };
-    /// The endpoint belongs to someone else, or could not be checked.
-    pub(crate) const REFUSED: Self = Self {
-        message: "Wirecatch could not be reached safely, so nothing was sent to it. Restart the computer, open Wirecatch, then try again.",
-    };
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The connection to the app ended during the session.
+    pub(crate) fn lost() -> Self {
+        Self::new(
+            "The connection to Wirecatch was closed. Try again; Wirecatch will be started if it is not running.",
+        )
+    }
+
+    /// Starting the app failed outright.
+    pub(crate) fn launch_failed(error: &io::Error) -> Self {
+        if error.kind() == io::ErrorKind::NotFound {
+            Self::new(
+                "Wirecatch is not running, and the browser bridge could not find it to start it. Reinstall Wirecatch, or open it yourself, then try again.",
+            )
+        } else {
+            Self::new(format!(
+                "Wirecatch is not running and could not be started ({error}). Open Wirecatch yourself, then try again."
+            ))
+        }
+    }
+
+    /// The bridge could not work out how to start the app.
+    pub(crate) fn cannot_start(reason: &str) -> Self {
+        Self::new(format!(
+            "Wirecatch is not running and the browser bridge cannot start it ({reason}). Open Wirecatch yourself, then try again."
+        ))
+    }
+
+    /// The app was started but did not start listening in time.
+    pub(crate) fn timed_out(budget: Duration) -> Self {
+        Self::new(format!(
+            "Wirecatch was started but did not respond within {} seconds. Wait a moment, then try again. If this keeps happening, open Wirecatch yourself.",
+            budget.as_secs()
+        ))
+    }
+
+    /// Connecting failed for a reason other than "not running".
+    pub(crate) fn from_ipc(error: &IpcError) -> Self {
+        match error {
+            IpcError::WrongOwner { .. } | IpcError::EndpointTaken { .. } => Self::new(
+                "Wirecatch's connection point belongs to another user account on this computer, so nothing was sent to it. Another signed-in user may be trying to intercept your downloads. Ask the other users to sign out (or restart the computer), then open Wirecatch again.",
+            ),
+            IpcError::UnsafeDirectory { .. } => Self::new(format!(
+                "Wirecatch could not be reached safely, so nothing was sent to it. {error}"
+            )),
+            other => Self::new(format!(
+                "Wirecatch could not be reached ({other}). Open Wirecatch, then try again."
+            )),
+        }
+    }
 }
 
 /// Connects to the app, starting it if nothing is listening, and gives up after
@@ -204,7 +260,7 @@ pub(crate) async fn connect_or_launch(
     budget: Duration,
 ) -> Result<Connection, Unavailable> {
     let deadline = Instant::now() + budget;
-    match attempt(endpoint, deadline).await {
+    match attempt(endpoint, deadline, budget).await {
         Attempt::Connected(conn) => return Ok(conn),
         Attempt::NotRunning => {}
         Attempt::Failed(unavailable) => return Err(unavailable),
@@ -212,7 +268,7 @@ pub(crate) async fn connect_or_launch(
 
     if let Err(e) = launcher.launch() {
         log!("could not start Wirecatch ({}): {e}", launcher.describe());
-        return Err(Unavailable::NOT_STARTED);
+        return Err(Unavailable::launch_failed(&e));
     }
 
     // Nothing signals "the app is now listening", so poll with backoff.
@@ -220,11 +276,11 @@ pub(crate) async fn connect_or_launch(
     loop {
         if Instant::now() >= deadline {
             log!("Wirecatch did not start listening within {budget:?}");
-            return Err(Unavailable::NOT_STARTED);
+            return Err(Unavailable::timed_out(budget));
         }
         sleep_until((Instant::now() + pause).min(deadline)).await;
         pause = (pause * 2).min(MAX_RETRY);
-        match attempt(endpoint, deadline).await {
+        match attempt(endpoint, deadline, budget).await {
             Attempt::Connected(conn) => return Ok(conn),
             Attempt::NotRunning => {}
             Attempt::Failed(unavailable) => return Err(unavailable),
@@ -238,19 +294,15 @@ enum Attempt {
     Failed(Unavailable),
 }
 
-async fn attempt(endpoint: &Endpoint, deadline: Instant) -> Attempt {
+async fn attempt(endpoint: &Endpoint, deadline: Instant, budget: Duration) -> Attempt {
     match timeout_at(deadline, wirecatch_ipc::connect(endpoint)).await {
         Ok(Ok(conn)) => Attempt::Connected(conn),
         Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotRunning,
-        Ok(Err(e @ IpcError::WrongOwner { .. })) => {
-            log!("{e}");
-            Attempt::Failed(Unavailable::REFUSED)
-        }
         Ok(Err(e)) => {
             log!("could not connect to Wirecatch: {e}");
-            Attempt::Failed(Unavailable::REFUSED)
+            Attempt::Failed(Unavailable::from_ipc(&e))
         }
-        Err(_) => Attempt::Failed(Unavailable::NOT_STARTED),
+        Err(_) => Attempt::Failed(Unavailable::timed_out(budget)),
     }
 }
 
@@ -395,8 +447,33 @@ mod tests {
         let err = connect_or_launch(&endpoint, &FailingLauncher, START_BUDGET)
             .await
             .unwrap_err();
-        assert_eq!(err, Unavailable::NOT_STARTED);
+        // FailingLauncher reports NotFound: the advice is to reinstall.
+        assert!(err.message.contains("could not find it"), "{err:?}");
+        assert!(err.message.contains("Reinstall Wirecatch"), "{err:?}");
         assert!(started.elapsed() < Duration::from_secs(1), "fails fast");
+    }
+
+    #[test]
+    fn messages_name_the_cause_and_the_fix() {
+        let denied = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert!(
+            Unavailable::launch_failed(&denied)
+                .message
+                .contains("Open Wirecatch yourself")
+        );
+        let squatted = IpcError::WrongOwner {
+            endpoint: "pipe".into(),
+            expected: "me".into(),
+            actual: "them".into(),
+        };
+        let message = Unavailable::from_ipc(&squatted).message;
+        assert!(message.contains("another user account"), "{message}");
+        assert!(!message.contains("Restart the computer, open"), "{message}");
+        assert!(
+            Unavailable::timed_out(START_BUDGET)
+                .message
+                .contains("within 5 seconds")
+        );
     }
 
     #[tokio::test]
@@ -412,7 +489,7 @@ mod tests {
         let err = connect_or_launch(&endpoint, &app, budget)
             .await
             .unwrap_err();
-        assert_eq!(err, Unavailable::NOT_STARTED);
+        assert_eq!(err, Unavailable::timed_out(budget));
         let waited = started.elapsed();
         assert!(
             waited >= budget && waited < budget + Duration::from_millis(500),
