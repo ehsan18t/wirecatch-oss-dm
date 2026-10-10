@@ -41,5 +41,6 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 axum = { workspace = true }
 bytes = { workspace = true }
+futures-util = { workspace = true }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
