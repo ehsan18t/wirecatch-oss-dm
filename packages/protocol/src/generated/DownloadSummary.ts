@@ -2,6 +2,7 @@
 import type { Category } from "./Category";
 import type { DownloadId } from "./DownloadId";
 import type { DownloadStatus } from "./DownloadStatus";
+import type { MediaSummary } from "./MediaSummary";
 import type { QueueId } from "./QueueId";
 import type { UserError } from "./UserError";
 import type { WaitReason } from "./WaitReason";
@@ -22,6 +23,10 @@ speed: number, connections: number, eta_secs: number | null, error: UserError | 
  * Why a `Queued` download is not running yet; `None` for every other status.
  */
 waiting: WaitReason | null, 
+/**
+ * Set for video and audio downloaded from a stream or a media page.
+ */
+media: MediaSummary | null, 
 /**
  * Unix time in milliseconds.
  */

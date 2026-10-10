@@ -71,6 +71,7 @@ export function defaultSettings(): AppSettings {
     start_with_system: true,
     close_to_tray: true,
     notify_on_complete: true,
+    auto_update_addons: true,
   };
 }
 

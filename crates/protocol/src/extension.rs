@@ -29,6 +29,34 @@ pub struct NewDownload {
     pub source: CaptureSource,
     /// Queue to add to; the default queue if absent.
     pub queue: Option<QueueId>,
+    /// Set when the extension knows this is media rather than a plain file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub media: Option<MediaHint>,
+}
+
+/// What the extension knows about captured media.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaHint {
+    pub kind: MediaKind,
+    /// The page or video title, used for the file name.
+    pub title: Option<String>,
+}
+
+/// How the media is delivered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MediaKind {
+    /// `url` is an HLS playlist (`.m3u8`).
+    Hls,
+    /// `url` is a DASH manifest (`.mpd`).
+    Dash,
+    /// `url` is a plain video or audio file.
+    Direct,
+    /// `url` is the page itself; finding the media needs the media add-on.
+    Page,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

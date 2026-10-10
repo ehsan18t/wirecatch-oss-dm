@@ -127,6 +127,7 @@ fn capture(url: String) -> NewDownload {
         extra_headers: vec![],
         source: CaptureSource::BrowserDownload,
         queue: None,
+        media: None,
     }
 }
 

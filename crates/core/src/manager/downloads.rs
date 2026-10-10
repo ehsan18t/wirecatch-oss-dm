@@ -355,9 +355,10 @@ impl Manager {
                 self.reconcile(&mut state);
                 Ok(())
             }
-            DownloadStatus::Queued | DownloadStatus::Connecting | DownloadStatus::Downloading => {
-                Ok(())
-            }
+            DownloadStatus::Queued
+            | DownloadStatus::Connecting
+            | DownloadStatus::Downloading
+            | DownloadStatus::Processing => Ok(()),
         }
     }
 
@@ -429,6 +430,7 @@ impl Manager {
                 added_at: self.inner.clock.unix_millis(),
                 completed_at: None,
                 waiting: None,
+                media: None,
             };
             // The path is a guess until the server answers with its own name.
             let naming = NameChoice {

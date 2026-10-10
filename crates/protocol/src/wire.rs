@@ -18,6 +18,9 @@ use crate::extension::{
 /// unreadable frame). Clients start their ids at 1.
 pub const UNKNOWN_REQUEST_ID: u64 = 0;
 
+// Messages are decoded, handled and dropped one at a time, so the size gap
+// between variants costs nothing worth an extra allocation per request.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]

@@ -204,6 +204,13 @@
             checked={s.notify_on_complete}
             onchange={(v) => save((d) => void (d.notify_on_complete = v))}
           />
+        {:else if def.id === 'auto_update_addons'}
+          <Toggle
+            label={def.label}
+            describedby={help}
+            checked={s.auto_update_addons}
+            onchange={(v) => save((d) => void (d.auto_update_addons = v))}
+          />
         {:else if def.id === 'default_folder'}
           <span class="path">{displayPath(s.default_folder)}</span>
           <button class="btn small" aria-describedby={help} onclick={pickDefaultFolder}

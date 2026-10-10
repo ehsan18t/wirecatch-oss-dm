@@ -29,6 +29,7 @@ export type SettingId =
   | 'start_with_system'
   | 'close_to_tray'
   | 'notify_on_complete'
+  | 'auto_update_addons'
   | 'default_folder'
   | 'categories'
   | 'capture_enabled'
@@ -81,6 +82,13 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Notify me when a download finishes',
     help: 'Shows a system notification for each finished file.',
     keywords: 'notification alert done complete sound',
+  },
+  {
+    id: 'auto_update_addons',
+    section: 'general',
+    label: 'Keep add-ons up to date',
+    help: 'Quietly installs new versions of ffmpeg and the media add-on when they come out.',
+    keywords: 'addon add-on update ffmpeg yt-dlp media automatic',
   },
   {
     id: 'default_folder',

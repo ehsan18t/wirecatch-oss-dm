@@ -100,6 +100,7 @@ pub fn default_settings() -> AppSettings {
         start_with_system: false,
         close_to_tray: true,
         notify_on_complete: true,
+        auto_update_addons: true,
     }
 }
 

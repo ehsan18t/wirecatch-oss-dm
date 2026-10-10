@@ -483,6 +483,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             added_at: row.get(10)?,
             completed_at: row.get(11)?,
             waiting: None,
+            media: None,
         },
         position: row.get(4)?,
         origin,
@@ -569,6 +570,7 @@ mod tests {
                 added_at: 1,
                 completed_at: None,
                 waiting: None,
+                media: None,
             },
             position: 3,
             origin: Origin {

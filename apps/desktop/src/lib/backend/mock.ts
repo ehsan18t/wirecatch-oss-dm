@@ -150,6 +150,7 @@ export class MockBackend implements Backend {
           eta_secs: null,
           error: s.error ?? null,
           waiting: null,
+          media: null,
           added_at: Math.round(now - s.age * 3_600_000),
           completed_at:
             s.status === 'completed' ? Math.round(now - (s.age - 0.2) * 3_600_000) : null,
@@ -180,6 +181,7 @@ export class MockBackend implements Backend {
           eta_secs: null,
           error: null,
           waiting: null,
+          media: null,
           added_at: now - i * 60_000,
           completed_at: status === 'completed' ? now - i * 60_000 + 30_000 : null,
         },
@@ -395,6 +397,7 @@ export class MockBackend implements Backend {
       eta_secs: null,
       error: null,
       waiting: null,
+      media: null,
       added_at: this.#now(),
       completed_at: null,
     };
