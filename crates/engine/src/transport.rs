@@ -231,6 +231,7 @@ async fn open_http(
         http3::Origin::advertised(
             &probe.final_url,
             probe.response.headers(),
+            probe.response.remote_addr(),
             clients.tls(),
             opts,
         )

@@ -43,7 +43,7 @@ quinn = { version = "0.11.9", default-features = false, features = ["runtime-tok
 [features]
 default = []
 # Experimental HTTP/3 support, see `DownloadOptions::http3`. Off by default to
-# keep the default build lean (QUIC adds about a dozen crates).
+# keep the default build lean (it adds 18 crates, quinn and h3 among them).
 http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn"]
 
 [target.'cfg(windows)'.dependencies]

@@ -60,7 +60,8 @@ pub struct DownloadOptions {
     /// A `User-Agent` in [`headers`](Self::headers) takes precedence.
     pub user_agent: String,
     /// Extra request headers, such as the cookies, referer and user agent a
-    /// browser hands over.
+    /// browser hands over. Only used for `http` and `https` links; FTP has no
+    /// headers (its login comes from the URL).
     ///
     /// They are sent in full only to the origin (scheme, host and port) of
     /// [`DownloadRequest::url`]. If that URL redirects to another origin, only
@@ -97,7 +98,9 @@ pub struct DownloadOptions {
     /// the other connections use HTTP/3, each over a QUIC connection of its
     /// own. Any QUIC failure (blocked UDP, a failed handshake, a broken
     /// stream) quietly switches the download back to HTTP/2 or HTTP/1.1 and
-    /// it carries on from where it was.
+    /// it carries on from where it was. Not used when a proxy is set in the
+    /// environment (`HTTPS_PROXY` or `ALL_PROXY`), since QUIC would go around
+    /// it.
     ///
     /// Off by default because on fast links several TCP connections are
     /// already as fast, and QUIC costs more processor time per byte.

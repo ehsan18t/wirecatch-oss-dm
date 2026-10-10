@@ -9,7 +9,7 @@
 //! was. Only a real answer from the server (`429` or `503`, which say "busy")
 //! is treated like the same answer over TCP.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -41,6 +41,9 @@ const CONNECTION_WINDOW: u32 = 16 * 1024 * 1024;
 pub(crate) struct Origin {
     /// The host name, for TLS and the address lookup.
     host: String,
+    /// The address the first (TCP) request reached, if known: QUIC goes to
+    /// the same machine instead of whichever address a new lookup gives first.
+    ip: Option<IpAddr>,
     port: u16,
     config: quinn::ClientConfig,
     handshake_timeout: Duration,
@@ -52,13 +55,21 @@ impl Origin {
     /// The HTTP/3 endpoint the first answer advertised, if any. Only an
     /// endpoint on the same host is used: the credentials of the download
     /// belong to that host.
+    ///
+    /// `peer` is the address the first request reached. Nothing is used when
+    /// a proxy is set in the environment: QUIC would go around it.
     pub fn advertised(
         url: &Url,
         headers: &HeaderMap,
+        peer: Option<SocketAddr>,
         tls: &rustls::ClientConfig,
         opts: &DownloadOptions,
     ) -> Option<Arc<Self>> {
         if url.scheme() != "https" {
+            return None;
+        }
+        if let Some(variable) = proxy_variable() {
+            debug!(variable, "a proxy is set, so HTTP/3 is not used");
             return None;
         }
         let host = url.host_str()?;
@@ -92,6 +103,7 @@ impl Origin {
         info!(%host, port, "the server offers HTTP/3; using it");
         Some(Arc::new(Self {
             host,
+            ip: peer.map(|p| p.ip()),
             port,
             config,
             handshake_timeout: opts.connect_timeout.min(HANDSHAKE_TIMEOUT),
@@ -111,11 +123,14 @@ impl Origin {
 
     /// A new QUIC connection with HTTP/3 set up on it.
     async fn connect(&self) -> std::result::Result<Connection, String> {
-        let addr = tokio::net::lookup_host((self.host.as_str(), self.port))
-            .await
-            .map_err(|e| format!("address lookup failed: {e}"))?
-            .next()
-            .ok_or("no address found")?;
+        let addr = match self.ip {
+            Some(ip) => SocketAddr::new(ip, self.port),
+            None => tokio::net::lookup_host((self.host.as_str(), self.port))
+                .await
+                .map_err(|e| format!("address lookup failed: {e}"))?
+                .next()
+                .ok_or("no address found")?,
+        };
         let local: SocketAddr = if addr.is_ipv6() {
             "[::]:0".parse().map_err(|e| format!("{e}"))?
         } else {
@@ -141,6 +156,13 @@ impl Origin {
             _endpoint: endpoint,
         })
     }
+}
+
+/// The proxy variable the HTTP client would use for `https`, if one is set.
+fn proxy_variable() -> Option<&'static str> {
+    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+        .into_iter()
+        .find(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
 }
 
 /// The port of an `h3` alternative on `host` in an `Alt-Svc` value such as

@@ -48,9 +48,19 @@ const MIB: usize = 1024 * 1024;
 
 /// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
 async fn fetch(cert: &Cert, tcp_port: u16, http3: bool, test: &str) -> (Vec<u8>, Duration) {
+    fetch_from(cert, "127.0.0.1", tcp_port, http3, test).await
+}
+
+async fn fetch_from(
+    cert: &Cert,
+    host: &str,
+    tcp_port: u16,
+    http3: bool,
+    test: &str,
+) -> (Vec<u8>, Duration) {
     let dir = std::env::temp_dir().join(format!("wirecatch-h3-{test}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let url = Url::parse(&format!("https://127.0.0.1:{tcp_port}/file.bin")).unwrap();
+    let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
     let mut request = DownloadRequest::new(url, &dir);
     request.options.connections = 4;
     request.options.http3 = http3;
@@ -90,6 +100,27 @@ async fn downloads_over_http3_when_the_server_advertises_it() {
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
     assert!(requests(&h3) >= 3, "the other connections used HTTP/3");
+}
+
+/// `localhost` may resolve to `::1` first while the servers only listen on
+/// 127.0.0.1: QUIC must go to the address the first request reached.
+#[tokio::test]
+async fn quic_goes_to_the_address_the_first_request_reached() {
+    let data = test_data(8 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost").await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
+    assert!(requests(&h3) >= 3, "the other connections used HTTP/3");
+    assert!(
+        took < Duration::from_secs(3),
+        "no handshake timeout: {took:?}"
+    );
 }
 
 #[tokio::test]

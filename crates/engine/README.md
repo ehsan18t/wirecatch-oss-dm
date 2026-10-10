@@ -1,6 +1,6 @@
 # wirecatch-engine
 
-Fast, resumable HTTP and HTTPS downloads over parallel connections. This is the download engine of Wirecatch, an open-source download manager for Windows and Linux, published as a library so other programs can use it too.
+Fast, resumable HTTP, HTTPS, FTP and FTPS downloads over parallel connections. This is the download engine of Wirecatch, an open-source download manager for Windows and Linux, published as a library so other programs can use it too.
 
 ## What it does
 
@@ -10,6 +10,8 @@ Fast, resumable HTTP and HTTPS downloads over parallel connections. This is the 
 - **Resume anywhere.** Data goes to `<name>.wcpart` next to a small `<name>.wcstate` resume file. Pausing, a dropped connection or a killed process all continue from where they stopped. If the file changed on the server (size, `ETag` or `Last-Modified`), the download starts over cleanly instead of producing a corrupt file.
 - **Polite with busy servers.** Network errors, timeouts (including a server that never answers) and the statuses `408`, `425`, `429`, `500`, `502`, `503` and `504` are retried with growing pauses; any other status ends the download. `Retry-After` is honored, up to five minutes. A server that refuses extra connections gets only as many as it allows, and the download still completes.
 - **Safe with credentials.** Cookies, `Authorization`, `user:password@` in the URL and other headers you pass are only sent to the origin you gave them for, never to another host a redirect leads to; other hosts get the `Referer` cut down to its origin. A redirect from `https` to `http` is refused unless you allow it. Proxy credentials go in the proxy URL (for example `HTTPS_PROXY=http://user:password@proxy:8080`), not in a header.
+- **FTP and FTPS too.** `ftp://`, `ftps://` and `ftpes://` links go through the same call, with the same parallel connections, resume and speed limits: passive mode (`EPSV`, then `PASV`), `REST` for each range, `SIZE` and `MDTM` to notice a changed file. `ftps://` is TLS from the start (port 990), or `AUTH TLS` on port 21; `ftpes://` is always `AUTH TLS`. An encrypted link never falls back to plain FTP, and data connections are encrypted too. The login comes from the URL (anonymous without one), is only sent to that server and is never logged. A server that limits sessions gets only as many as it allows.
+- **HTTP/3, experimental.** With the `http3` cargo feature and `DownloadOptions::http3` on, a server that advertises HTTP/3 (`Alt-Svc`) is downloaded from over QUIC, one QUIC connection per connection; any QUIC failure falls back to HTTP/2 or HTTP/1.1 without stopping the download. Off by default.
 - **Speed limits** shared across any number of downloads, changeable while they run.
 - **Safe file names** from `Content-Disposition` or the URL, valid on Windows and Linux; an existing file is never overwritten.
 
@@ -59,7 +61,11 @@ The [API documentation](https://docs.rs/wirecatch-engine) covers speed limits, r
 
 ## Status
 
-Pre-1.0: the API may still change between minor versions. HTTP and HTTPS are supported; FTP, HLS and DASH are planned.
+Pre-1.0: the API may still change between minor versions. HTTP, HTTPS, FTP and FTPS are supported, HTTP/3 is experimental; HLS and DASH are planned.
+
+## Cargo features
+
+- `http3` (off): experimental HTTP/3 through quinn and h3, used only when `DownloadOptions::http3` is also on. Without the feature that option is accepted and ignored, and none of the QUIC crates are built.
 
 ## License
 
