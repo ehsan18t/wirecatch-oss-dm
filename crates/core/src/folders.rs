@@ -21,6 +21,21 @@ pub enum PathError {
     /// A path that climbs out of its folder with `..`.
     #[error("\"{0}\" must not contain \"..\". Choose the folder again.")]
     ParentReference(String),
+    /// A part after the placeholder that is not a plain folder name (for example a
+    /// drive like `C:`, or `.`), which could point outside the named folder.
+    #[error(
+        "\"{0}\" contains a part that is not a plain folder name. Folder names cannot contain \":\". Choose the folder again."
+    )]
+    NotAFolderName(String),
+}
+
+/// Whether `segment` is one ordinary folder name, the same on every system: no
+/// drive, root, `.` or `..`, and no `:` (which Windows reads as a drive or stream).
+fn is_plain_name(segment: &str) -> bool {
+    let mut parts = Path::new(segment).components();
+    !segment.contains(':')
+        && matches!(parts.next(), Some(Component::Normal(_)))
+        && parts.next().is_none()
 }
 
 /// The user's standard folders on one machine.
@@ -94,7 +109,15 @@ impl KnownFolders {
             if segment == ".." {
                 return Err(PathError::ParentReference(raw.to_string()));
             }
+            if !is_plain_name(segment) {
+                return Err(PathError::NotAFolderName(raw.to_string()));
+            }
             out.push(segment);
+        }
+        // Belt and braces: whatever the segments were, the result must be a full
+        // path inside the folder the placeholder names.
+        if !out.is_absolute() || !out.starts_with(base) {
+            return Err(PathError::NotAFolderName(raw.to_string()));
         }
         Ok(out)
     }
@@ -196,6 +219,33 @@ mod tests {
             folders.resolve(&portable("{Downloads}/../../etc")),
             Err(PathError::ParentReference(_))
         ));
+    }
+
+    #[test]
+    fn placeholder_paths_cannot_escape_their_folder() {
+        let folders = KnownFolders::under_home(home());
+        for escape in [
+            "{Downloads}/C:Windows/System32",
+            "{Downloads}/C:/Windows",
+            "{Downloads}/file.txt:stream",
+            "{Downloads}/./x",
+        ] {
+            assert!(
+                matches!(
+                    folders.resolve(&portable(escape)),
+                    Err(PathError::NotAFolderName(_))
+                ),
+                "{escape} was accepted"
+            );
+        }
+        // Doubled separators are harmless and stay inside.
+        assert_eq!(
+            folders.resolve(&portable("{Downloads}//a\\\\b")),
+            Ok(home().join("Downloads").join("a").join("b"))
+        );
+        // A machine whose folders are not full paths resolves nothing.
+        let relative = KnownFolders::under_home("relative-home");
+        assert!(relative.resolve(&portable("{Downloads}/x")).is_err());
     }
 
     #[test]
