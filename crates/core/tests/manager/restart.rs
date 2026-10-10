@@ -8,6 +8,29 @@ use crate::common::{Harness, TestServer, is_running};
 const KIB: usize = 1024;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() {
+    let mut h = Harness::new().await;
+    let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
+    let finished = h.add_with("https://example.com/done.bin", paused).await;
+    let unfinished = h.add_with("https://example.com/half.bin", paused).await;
+    // The engine renamed the part file just before the app stopped.
+    for row in [&finished, &unfinished] {
+        let path = std::path::Path::new(&row.path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"12345").unwrap();
+    }
+    let part = format!("{}{}", unfinished.path, wirecatch_engine::PART_EXT);
+    std::fs::write(part, b"12345").unwrap();
+
+    h.restart().await;
+
+    let row = h.row(finished.id);
+    assert_eq!(row.status, DownloadStatus::Completed);
+    assert_eq!((row.done, row.total), (5, Some(5)));
+    assert_eq!(h.row(unfinished.id).status, DownloadStatus::Paused);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ids_are_never_reused_after_deleting_the_newest() {
     let mut h = Harness::new().await;
     let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;

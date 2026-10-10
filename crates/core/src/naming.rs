@@ -59,6 +59,18 @@ pub(crate) fn partial_files(path: &Path) -> [PathBuf; 2] {
     [part, state]
 }
 
+/// The size of the file at `path` if it is a finished download: the file is there
+/// and neither its part file nor its resume file is. Touches the file system.
+pub(crate) fn finished_size(path: &Path) -> Option<u64> {
+    if partial_files(path).iter().any(|p| p.exists()) {
+        return None;
+    }
+    std::fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+}
+
 fn is_free_on_disk(path: &Path) -> bool {
     !path.exists() && partial_files(path).iter().all(|p| !p.exists())
 }

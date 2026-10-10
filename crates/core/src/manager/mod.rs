@@ -30,6 +30,7 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
+use crate::naming;
 use crate::store::Store;
 use crate::user_error;
 use state::{Entry, State, Stop};
@@ -139,8 +140,18 @@ impl Manager {
             let _ = failures.send(UiEvent::StorageFailed(user_error::storage_failed(&reason)));
         });
         let dir = config.data_dir.clone();
-        let (store, snapshot) = blocking(&runtime, move || Store::open(&dir, on_failure)).await?;
-        let restored = restore::restore(snapshot, config.clock.local_now());
+        let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
+        // Restoring checks the disk for finished files, so it runs off async threads too.
+        let (store, restored) = blocking(&runtime, move || {
+            let (store, snapshot) = Store::open(&dir, on_failure)?;
+            let around = restore::Surroundings {
+                now,
+                now_millis,
+                finished_size: &naming::finished_size,
+            };
+            Ok((store, restore::restore(snapshot, around)))
+        })
+        .await?;
         store.save_settings(restored.state.settings.clone());
         store.save_queues(restored.state.queue_list());
         store.save_downloads(restored.changed);
