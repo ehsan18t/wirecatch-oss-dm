@@ -101,6 +101,9 @@ async fn number_templates_download_the_chosen_representation() {
     assert_eq!(info.audio.len(), 1);
     assert_eq!(info.audio[0].language.as_deref(), Some("en"));
     assert_eq!(info.subtitles.len(), 1);
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, true), "mp4");
+    assert_eq!(info.extension(&Choice::Skip, &Choice::Auto, true), "m4a");
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Skip, false), "mp4");
 
     let dir = temp_dir("dash-number");
     // Separate audio needs ffmpeg; video alone does not.

@@ -602,3 +602,79 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     );
     assert!(start.elapsed() < Duration::from_secs(10));
 }
+
+#[tokio::test]
+async fn the_extension_is_known_in_advance() {
+    let server = Server::start().await;
+    master(&server);
+    let info = inspect(
+        &server.url("master.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, false), "ts");
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, true), "mp4");
+
+    // fMP4 segments (with an init section) joined as they are make an MP4.
+    server.put("f/init.mp4", b"\0\0\0\x10ftypisom\0\0\0\0".to_vec());
+    server.put("f/a.m4s", segment(1, 100));
+    server.put_typed(
+        "f/index.m3u8",
+        "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:2,\na.m4s\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let info = inspect(
+        &server.url("f/index.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, false), "mp4");
+    let dir = temp_dir("hls-extension");
+    let (path, _) = completed(
+        run(request(&server, "f/index.m3u8", &dir.join("clip")))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        path,
+        dir.join("clip.mp4"),
+        "the forecast matches the result"
+    );
+}
+
+#[tokio::test]
+async fn a_changed_extension_never_replaces_another_file() {
+    let server = Server::start().await;
+    let segments = media_playlist(&server, "p", 2, 9);
+    let dir = temp_dir("hls-no-overwrite");
+    // The caller asked for .mp4; without ffmpeg the result is .ts, and a
+    // different file already has that name.
+    std::fs::write(dir.join("video.ts"), b"precious").unwrap();
+    std::fs::write(dir.join("video (1).ts"), b"also precious").unwrap();
+    let (path, _) = completed(
+        run(request(&server, "p/index.m3u8", &dir.join("video.mp4")))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(path, dir.join("video (2).ts"));
+    assert_eq!(std::fs::read(&path).unwrap(), segments.concat());
+    assert_eq!(std::fs::read(dir.join("video.ts")).unwrap(), b"precious");
+    assert_eq!(
+        std::fs::read(dir.join("video (1).ts")).unwrap(),
+        b"also precious"
+    );
+
+    // A file at exactly the requested path is the caller's to replace.
+    std::fs::write(dir.join("exact.ts"), b"old").unwrap();
+    let (path, _) = completed(
+        run(request(&server, "p/index.m3u8", &dir.join("exact.ts")))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(path, dir.join("exact.ts"));
+    assert_eq!(std::fs::read(&path).unwrap(), segments.concat());
+}

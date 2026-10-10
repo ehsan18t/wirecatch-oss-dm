@@ -178,6 +178,7 @@ impl Source {
                     .or_else(|| best_variant(master, |_| true))
                     .ok_or(Error::NothingChosen)?;
                 let media = media_playlist(fetcher, &master.variants[best].url).await?;
+                let format = hls_format(&media);
                 Ok(StreamInfo {
                     kind: StreamKind::Hls,
                     url: url.clone(),
@@ -195,9 +196,10 @@ impl Source {
                             bandwidth: v.bandwidth,
                             codecs: v.codecs.clone(),
                             frame_rate: v.frame_rate,
+                            format,
                         })
                         .collect(),
-                    audio: hls_audio(master),
+                    audio: hls_audio(master, format),
                     subtitles: master
                         .renditions
                         .iter()
@@ -223,6 +225,7 @@ impl Source {
                     bandwidth: None,
                     codecs: None,
                     frame_rate: None,
+                    format: hls_format(media),
                 }],
                 audio: Vec::new(),
                 subtitles: Vec::new(),
@@ -244,6 +247,7 @@ impl Source {
                         bandwidth: r.bandwidth,
                         codecs: r.codecs.clone(),
                         frame_rate: r.frame_rate,
+                        format: dash_format(r),
                     })
                     .collect(),
                 audio: mpd
@@ -259,6 +263,7 @@ impl Source {
                         codecs: r.codecs.clone(),
                         channels: r.channels.clone(),
                         default: r.main,
+                        format: dash_format(r),
                     })
                     .collect(),
                 subtitles: mpd
@@ -345,8 +350,27 @@ fn seconds(value: f64) -> Option<Duration> {
     (value.is_finite() && value > 0.0).then(|| Duration::from_secs_f64(value))
 }
 
+/// The extension of an HLS track joined as is: fragmented MP4 when it has
+/// init sections, MPEG-TS otherwise.
+fn hls_format(media: &Media) -> &'static str {
+    if media.pieces.iter().any(|p| p.init) {
+        "mp4"
+    } else {
+        "ts"
+    }
+}
+
+/// The extension of a DASH representation joined as is.
+fn dash_format(rep: &dash::Rep) -> &'static str {
+    if rep.mime.as_deref().is_some_and(|m| m.contains("webm")) {
+        "webm"
+    } else {
+        "mp4"
+    }
+}
+
 /// Audio renditions with their own playlist, then audio-only variants.
-fn hls_audio(master: &Master) -> Vec<AudioTrack> {
+fn hls_audio(master: &Master, format: &'static str) -> Vec<AudioTrack> {
     let renditions = master
         .renditions
         .iter()
@@ -360,6 +384,7 @@ fn hls_audio(master: &Master) -> Vec<AudioTrack> {
             codecs: None,
             channels: r.channels.clone(),
             default: r.default,
+            format,
         });
     let variants = master
         .variants
@@ -374,6 +399,7 @@ fn hls_audio(master: &Master) -> Vec<AudioTrack> {
             codecs: v.codecs.clone(),
             channels: None,
             default: false,
+            format,
         });
     renditions.chain(variants).collect()
 }

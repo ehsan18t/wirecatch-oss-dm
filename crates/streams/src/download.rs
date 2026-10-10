@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
-use wirecatch_engine::Fetcher;
+use wirecatch_engine::{Fetcher, naming};
 
 use crate::crypto;
 use crate::error::{Error, Result};
@@ -326,10 +326,13 @@ async fn join(
                 let args = ffmpeg::arguments(&inputs, &muxed, *container);
                 match ffmpeg::run(program, &args, cancel).await {
                     Ok(true) => {
-                        let target = with_extension(output, extension);
-                        let from = muxed.clone();
-                        let to = target.clone();
-                        blocking(move || fs::rename(from, to)).await?;
+                        let (from, output) = (muxed.clone(), output.to_path_buf());
+                        let target = blocking(move || {
+                            let target = free_target(&output, extension)?;
+                            fs::rename(from, &target)?;
+                            Ok(target)
+                        })
+                        .await?;
                         saved = Some(target);
                         break;
                     }
@@ -351,7 +354,7 @@ async fn join(
         None => {
             let (from, output) = (work.track_path(0), output.to_path_buf());
             blocking(move || {
-                let target = with_extension(&output, sniff(&from)?);
+                let target = free_target(&output, sniff(&from)?)?;
                 fs::rename(&from, &target)?;
                 Ok(target)
             })
@@ -370,6 +373,24 @@ async fn join(
     };
     info!(path = %saved.display(), bytes, "stream saved");
     Ok(Outcome::Completed { path: saved, bytes })
+}
+
+/// `output` with `extension`. Never an unrelated file: when the extension
+/// changed the name and a file by the new name exists, the first free name
+/// such as `video (1).mkv` instead. Blocks on the file system.
+fn free_target(output: &Path, extension: &str) -> io::Result<PathBuf> {
+    let target = with_extension(output, extension);
+    if target == output || !target.exists() {
+        return Ok(target);
+    }
+    let (Some(dir), Some(name)) = (target.parent(), target.file_name().and_then(|n| n.to_str()))
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("{} already exists", target.display()),
+        ));
+    };
+    Ok(naming::unique_path(dir, name))
 }
 
 /// MP4 when every codec the stream names fits it (or none is named), else

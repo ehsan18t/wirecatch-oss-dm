@@ -41,6 +41,59 @@ pub struct StreamInfo {
     pub subtitles: Vec<SubtitleTrack>,
 }
 
+impl StreamInfo {
+    /// The extension [`download`](crate::download) will most likely give the
+    /// saved file for these choices, with or without ffmpeg, so the caller can
+    /// name the output right from the start: `mp4` or `mkv` (`m4a` or `mka` for
+    /// audio only) with ffmpeg, or the stream's own format without it (such
+    /// as `ts`).
+    ///
+    /// It is a forecast from what the playlist says. The download decides from
+    /// what it actually receives, and never replaces another file when the two
+    /// differ (see [`StreamRequest::output`]).
+    pub fn extension(&self, video: &Choice, audio: &Choice, ffmpeg: bool) -> &'static str {
+        let video = match video {
+            Choice::Skip => None,
+            Choice::Track(id) => self.video.iter().find(|v| &v.id == id),
+            Choice::Auto => self.video.iter().max_by_key(|v| {
+                (
+                    v.bandwidth.unwrap_or(0),
+                    u64::from(v.width.unwrap_or(0)) * u64::from(v.height.unwrap_or(0)),
+                )
+            }),
+        };
+        let audio = match audio {
+            Choice::Skip => None,
+            Choice::Track(id) => self.audio.iter().find(|a| &a.id == id),
+            Choice::Auto => self
+                .audio
+                .iter()
+                .max_by_key(|a| (a.default, a.bandwidth.unwrap_or(0))),
+        };
+        let audio_only = video.is_none();
+        if !ffmpeg {
+            return video
+                .map(|v| v.format)
+                .or(audio.map(|a| a.format))
+                .unwrap_or("ts");
+        }
+        let fits = video
+            .and_then(|v| v.codecs.as_deref())
+            .into_iter()
+            .chain(audio.and_then(|a| a.codecs.as_deref()))
+            .flat_map(|c| c.split(','))
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .all(crate::plan::mp4_compatible);
+        match (fits, audio_only) {
+            (true, false) => "mp4",
+            (true, true) => "m4a",
+            (false, false) => "mkv",
+            (false, true) => "mka",
+        }
+    }
+}
+
 /// One video quality.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -58,6 +111,8 @@ pub struct VideoTrack {
     pub codecs: Option<String>,
     /// Frames per second, when the stream says.
     pub frame_rate: Option<f64>,
+    /// The extension of this track's segments joined as they are.
+    pub(crate) format: &'static str,
 }
 
 /// One audio track.
@@ -79,6 +134,8 @@ pub struct AudioTrack {
     pub channels: Option<String>,
     /// Whether the stream marks this track as the one to play by default.
     pub default: bool,
+    /// The extension of this track's segments joined as they are.
+    pub(crate) format: &'static str,
 }
 
 /// One subtitle track (listed, not downloaded).
@@ -117,10 +174,12 @@ pub struct StreamRequest {
     pub url: Url,
     /// Where to save the video. Its extension is set to the container actually
     /// written (`.mp4`, `.mkv`, `.m4a`, `.mka`, or for a direct join without
-    /// ffmpeg, whatever the stream carries, such as `.ts`). A known media
-    /// extension is replaced, any other is kept and the new one added. An
-    /// existing file there is replaced. Temporary files go in a folder next to
-    /// it.
+    /// ffmpeg, whatever the stream carries, such as `.ts`);
+    /// [`StreamInfo::extension`] tells it in advance. A known media extension
+    /// is replaced, any other is kept and the new one added. An existing file
+    /// at exactly this path is replaced, but when the extension changes and a
+    /// file with the new name exists, it is left alone and a free name such as
+    /// `video (1).mkv` is used. Temporary files go in a folder next to it.
     pub output: PathBuf,
     /// Which video to download (default [`Choice::Auto`]).
     pub video: Choice,

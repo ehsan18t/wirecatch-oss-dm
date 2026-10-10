@@ -45,6 +45,7 @@ pub(crate) struct Rep {
     pub height: Option<u32>,
     pub frame_rate: Option<f64>,
     pub codecs: Option<String>,
+    pub mime: Option<String>,
     pub language: Option<String>,
     pub label: Option<String>,
     pub channels: Option<String>,
@@ -373,6 +374,7 @@ pub(crate) fn parse(text: &str, base: &Url) -> Result<Mpd, String> {
                 height: get("height").and_then(|h| h.trim().parse().ok()),
                 frame_rate: get("frameRate").and_then(frame_rate),
                 codecs: get("codecs").map(str::to_string),
+                mime: get("mimeType").map(str::to_string),
                 language: set.attribute("lang").map(str::to_string),
                 label: label.clone(),
                 channels: child(rep, "AudioChannelConfiguration")
