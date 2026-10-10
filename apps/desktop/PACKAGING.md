@@ -13,11 +13,11 @@ Both first run `scripts/prepare-bridge.mjs`, which builds `wirecatch-bridge` and
 
 The external binary lives in a separate config file because Tauri's build script refuses to build when a listed external binary is missing, and plain `cargo build` and `cargo test` should not depend on building the bridge first.
 
-| Platform | Output | Notes |
-|---|---|---|
-| Windows | NSIS installer, per user (`installMode: currentUser`) | No administrator rights. Installs to `%LOCALAPPDATA%\Wirecatch`. |
-| Linux | `.deb`, `.rpm` | App and bridge in `/usr/bin`. |
-| Linux | AppImage | See "AppImage" below. |
+| Platform | Output                                                | Notes                                                            |
+| -------- | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| Windows  | NSIS installer, per user (`installMode: currentUser`) | No administrator rights. Installs to `%LOCALAPPDATA%\Wirecatch`. |
+| Linux    | `.deb`, `.rpm`                                        | App and bridge in `/usr/bin`.                                    |
+| Linux    | AppImage                                              | See "AppImage" below.                                            |
 
 ## Browser registration and uninstall
 
