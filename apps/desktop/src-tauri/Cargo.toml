@@ -1,0 +1,28 @@
+[package]
+name = "wirecatch-desktop"
+description = "Wirecatch desktop app: the Tauri shell that hosts the interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Tauri 2.12 needs a newer compiler than the rest of the workspace.
+rust-version = "1.90"
+publish = false
+
+[lib]
+name = "wirecatch_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# The bridge starts the app by this name (`wirecatch-app --background`), from its own folder.
+[[bin]]
+name = "wirecatch-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.3", features = [] }
+tauri-plugin-dialog = "2.8.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+wirecatch-protocol = { workspace = true }
