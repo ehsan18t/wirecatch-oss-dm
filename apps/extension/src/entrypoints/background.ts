@@ -216,6 +216,20 @@ export default defineBackground(() => {
     ['responseHeaders'],
   );
   browser.tabs.onRemoved.addListener((tabId) => watcher.onTabRemoved(tabId));
+  // Address changes without a new document (history API, back-forward cache).
+  const onUpdated = (tabId: number, change: { url?: string }): void => {
+    if (change.url !== undefined) watcher.onUrlChange(tabId, change.url).catch(() => undefined);
+  };
+  const isFirefox = typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function';
+  if (isFirefox) {
+    // Firefox can limit the event to address changes; Chromium has no such filter and refuses the argument.
+    (browser.tabs.onUpdated.addListener as (l: typeof onUpdated, f: { properties: string[] }) => void)(
+      onUpdated,
+      { properties: ['url'] },
+    );
+  } else {
+    browser.tabs.onUpdated.addListener(onUpdated);
+  }
 
   // The media button's questions. Answered through `sendResponse`, which both browsers support.
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {

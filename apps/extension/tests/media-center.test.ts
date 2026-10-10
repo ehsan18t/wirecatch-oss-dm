@@ -66,7 +66,9 @@ const context = (overrides: Partial<ButtonContext> = {}): ButtonContext => ({
 
 describe('chooseTarget (what the media button sends)', () => {
   it('prefers a stream manifest, then a direct file, then the page on a well-known video site', () => {
-    expect(chooseTarget(items(FILE, HLS, DASH), context())?.url).toBe(HLS.url);
+    // The newest stream: on a page that swaps videos, the one playing now.
+    expect(chooseTarget(items(FILE, HLS, DASH), context())?.url).toBe(DASH.url);
+    expect(chooseTarget(items(DASH, FILE, HLS), context())?.url).toBe(HLS.url);
     expect(chooseTarget(items(FILE, DASH), context())?.url).toBe(DASH.url);
     expect(chooseTarget(items(FILE), context())?.url).toBe(FILE.url);
     expect(

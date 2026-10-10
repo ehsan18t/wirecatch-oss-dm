@@ -220,11 +220,12 @@ describe('MediaRegistry', () => {
     expect(registry.items(1)).toHaveLength(3);
   });
 
-  it('keeps at most a fixed number of items per tab', () => {
+  it('keeps at most a fixed number of items per tab, dropping the oldest to make room for new media', () => {
     const registry = new MediaRegistry();
     for (let i = 0; i < MAX_ITEMS_PER_TAB + 5; i += 1) registry.add(1, file(`https://e.com/${i}.mp4`));
     expect(registry.items(1)).toHaveLength(MAX_ITEMS_PER_TAB);
-    expect(registry.items(1)[0]?.url).toBe('https://e.com/0.mp4');
+    expect(registry.items(1)[0]?.url).toBe('https://e.com/5.mp4');
+    expect(registry.items(1).at(-1)?.url).toBe(`https://e.com/${MAX_ITEMS_PER_TAB + 4}.mp4`);
   });
 
   it('tells listeners which tab changed, and survives a save and restore', () => {
@@ -282,6 +283,25 @@ describe('MediaWatcher', () => {
       response({ url: 'https://example.com/a.mp4', type: 'main_frame', contentType: 'video/mp4' }),
     );
     expect(registry.items(4).map((i) => i.url)).toEqual(['https://example.com/a.mp4']);
+  });
+
+  it('clears a tab whose address changes without a new page (history API, back-forward cache)', async () => {
+    const { registry, watcher } = setup();
+    await watcher.onResponse(
+      response({ url: 'https://example.com/watch?v=1', type: 'main_frame', contentType: 'text/html' }),
+    );
+    await watcher.onResponse(hlsResponse());
+    // The address the page loaded with, reported again: nothing changes.
+    await watcher.onUrlChange(4, 'https://example.com/watch?v=1');
+    // Only the fragment changes: still the same page.
+    await watcher.onUrlChange(4, 'https://example.com/watch?v=1#comments');
+    expect(registry.items(4)).toHaveLength(1);
+    // The page swaps to another video with the history API.
+    await watcher.onUrlChange(4, 'https://example.com/watch?v=2');
+    expect(registry.items(4)).toEqual([]);
+    await watcher.onResponse(hlsResponse({ url: 'https://cdn.example.com/v2/master.m3u8' }));
+    await watcher.onUrlChange(4, 'https://example.com/watch?v=2#t=10');
+    expect(registry.items(4).map((i) => i.url)).toEqual(['https://cdn.example.com/v2/master.m3u8']);
   });
 
   it('forgets a closed tab', async () => {

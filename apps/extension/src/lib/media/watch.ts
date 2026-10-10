@@ -1,6 +1,11 @@
 import { classifyResponse, isNavigation, type ObservedResponse } from './detect';
 import type { MediaRegistry } from './registry';
 
+function withoutFragment(url: string): string {
+  const hash = url.indexOf('#');
+  return hash < 0 ? url : url.slice(0, hash);
+}
+
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
   isPrivateTab(tabId: number): Promise<boolean>;
@@ -30,9 +35,9 @@ export interface WatchDeps {
  *   so the tab is asked once (`tabs.get`) and the answer kept until the tab closes.
  * - Pages loading in the background (Chromium prerendering) are skipped; they are
  *   not shown to anyone yet.
- * - Navigation: a new document in the tab clears its list. Pages that change their
- *   address with the history API (single-page sites) keep their list, so media from
- *   an earlier view may stay listed until the next full page load.
+ * - Navigation: a new document in the tab clears its list, and so does an address
+ *   change without one (history API, back-forward cache), seen through
+ *   `tabs.onUpdated`. Firefox lets the listener ask for address changes only.
  */
 export class MediaWatcher {
   readonly #registry: MediaRegistry;
@@ -41,6 +46,8 @@ export class MediaWatcher {
   readonly #private = new Map<number, boolean>();
   /** Bumped on every new page, so a detection that was waiting on the privacy check cannot land in the next page. */
   readonly #generation = new Map<number, number>();
+  /** Each tab's address as last seen, without the fragment. */
+  readonly #urls = new Map<number, string>();
   /** True once `deps.ready` settled; checked first so later responses do not wait a turn. */
   #restored = false;
 
@@ -54,8 +61,8 @@ export class MediaWatcher {
     if (tabId < 0) return;
     await this.#whenReady();
     if (isNavigation(response)) {
-      this.#generation.set(tabId, (this.#generation.get(tabId) ?? 0) + 1);
-      this.#registry.clearTab(tabId);
+      this.#newPage(tabId);
+      this.#urls.set(tabId, withoutFragment(response.url));
     }
     const detection = classifyResponse(response);
     if (detection === null) return;
@@ -69,6 +76,27 @@ export class MediaWatcher {
     this.#registry.add(tabId, detection);
   }
 
+  /**
+   * The tab's address changed (`tabs.onUpdated`). A full page load was already seen
+   * as a navigation response, so this matters for pages that change their address
+   * with the history API (single-page sites) and for pages restored from the
+   * back-forward cache: both show other media without loading a new document.
+   * A change of the fragment (`#...`) alone is not a new page.
+   */
+  async onUrlChange(tabId: number, url: string): Promise<void> {
+    if (tabId < 0) return;
+    await this.#whenReady();
+    const address = withoutFragment(url);
+    if (this.#urls.get(tabId) === address) return;
+    this.#urls.set(tabId, address);
+    this.#newPage(tabId);
+  }
+
+  #newPage(tabId: number): void {
+    this.#generation.set(tabId, (this.#generation.get(tabId) ?? 0) + 1);
+    this.#registry.clearTab(tabId);
+  }
+
   async #whenReady(): Promise<void> {
     if (this.#restored || this.#deps.ready === undefined) return;
     await this.#deps.ready.catch(() => undefined);
@@ -78,6 +106,7 @@ export class MediaWatcher {
   onTabRemoved(tabId: number): void {
     this.#private.delete(tabId);
     this.#generation.delete(tabId);
+    this.#urls.delete(tabId);
     this.#registry.clearTab(tabId);
   }
 

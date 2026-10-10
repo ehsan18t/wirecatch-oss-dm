@@ -14,7 +14,7 @@ export interface SavedMedia {
   tabs: Array<[number, MediaItem[]]>;
 }
 
-/** Most items kept per tab; later ones are ignored, since the first ones are the page's main media. */
+/** Most items kept per tab; the oldest is dropped to make room, since the newest is what plays now. */
 export const MAX_ITEMS_PER_TAB = 30;
 
 function parts(url: string): { origin: string; path: string } | null {
@@ -112,8 +112,8 @@ export class MediaRegistry {
     if (detection.kind === 'hls' && list.some((i) => i.kind === 'hls' && sameStream(i.url, detection.url))) {
       return false;
     }
-    if (list.length >= MAX_ITEMS_PER_TAB) return false;
-    this.#set(tabId, [...list, { ...detection, key, seenAt: this.#now() }]);
+    const kept = list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
+    this.#set(tabId, [...kept, { ...detection, key, seenAt: this.#now() }]);
     return true;
   }
 
@@ -145,7 +145,7 @@ export class MediaRegistry {
       const current = this.#tabs.get(tabId) ?? [];
       const merged = [...savedItems, ...current.filter((c) => !savedItems.some((s) => s.key === c.key))];
       if (merged.length === 0) continue;
-      this.#set(tabId, merged.slice(0, MAX_ITEMS_PER_TAB));
+      this.#set(tabId, merged.slice(-MAX_ITEMS_PER_TAB));
     }
   }
 

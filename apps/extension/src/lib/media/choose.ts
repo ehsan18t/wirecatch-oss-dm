@@ -59,8 +59,9 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
  *    its `<video src>` says, so an address the browser never loaded is not trusted:
  *    otherwise a page could make the button send any address on its site, with the
  *    person's cookies for it.
- * 2. Otherwise a stream manifest detected in the tab (HLS or DASH), the first one,
- *    which is normally the master playlist.
+ * 2. Otherwise a stream manifest detected in the tab (HLS or DASH), the newest one:
+ *    on a page that swaps videos it is the one playing now. Variant playlists of a
+ *    stream are not listed, so this is normally a master playlist.
  * 3. Otherwise a direct file detected in the tab.
  * 4. Otherwise the page, on a well-known video site (the app's media add-on reads it).
  *
@@ -72,7 +73,7 @@ export function chooseTarget(items: readonly MediaItem[], context: ButtonContext
     const loaded = items.find((i) => i.url === src);
     if (loaded !== undefined) return fromItem(loaded);
   }
-  const stream = items.find((i) => i.kind === 'hls' || i.kind === 'dash');
+  const stream = items.findLast((i) => i.kind === 'hls' || i.kind === 'dash');
   if (stream !== undefined) return fromItem(stream);
   const file = items.find((i) => i.kind === 'direct');
   if (file !== undefined) return fromItem(file);
