@@ -1,6 +1,8 @@
 //! Which request headers a client may hand over, and turning them into the engine's
-//! header map. Hop-by-hop and framing headers belong to the HTTP layer and `Range`
-//! to the engine; letting a client set them would break or confuse downloads.
+//! header map. Hop-by-hop and framing headers belong to the HTTP layer; `Range`,
+//! the conditional headers and `Accept-Encoding` to the engine, which must get the
+//! whole file, uncompressed, to split it into byte ranges. Letting a client set
+//! them would break or confuse downloads.
 
 use tracing::warn;
 use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
@@ -18,6 +20,13 @@ const FORBIDDEN: &[&str] = &[
     "keep-alive",
     "range",
     "if-range",
+    // Conditions could make the server answer 304 or 412 instead of the file.
+    "if-match",
+    "if-none-match",
+    "if-modified-since",
+    "if-unmodified-since",
+    // The engine asks for the file as is; a compressed body breaks byte ranges.
+    "accept-encoding",
     // The engine sets the user agent from its own option.
     "user-agent",
 ];
@@ -121,6 +130,30 @@ mod tests {
         }
         assert!(is_allowed("Accept-Language"));
         assert!(is_allowed("X-Requested-With"));
+    }
+
+    #[test]
+    fn encoding_and_conditional_headers_are_refused() {
+        // A browser's Accept-Encoding would turn off the engine's identity default
+        // (a compressed body breaks byte ranges), and conditions or a range would
+        // make the server answer something other than the whole file.
+        for name in [
+            "Accept-Encoding",
+            "If-None-Match",
+            "If-Modified-Since",
+            "If-Match",
+            "If-Unmodified-Since",
+            "If-Range",
+            "Range",
+        ] {
+            assert!(!is_allowed(name), "{name} was allowed");
+            let kept = for_capture(None, None, &[header(name, "x")]);
+            assert!(kept.is_empty(), "{name} was kept for a capture");
+            assert!(
+                to_map(&[header(name, "x")]).is_empty(),
+                "{name} reached the engine"
+            );
+        }
     }
 
     #[test]
