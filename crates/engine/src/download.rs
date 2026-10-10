@@ -12,12 +12,13 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::http::{self, Clients, Probe, Session};
+use crate::http::Clients;
 use crate::limiter::RateLimiter;
 use crate::progress::Progress;
 use crate::segment::SegmentTable;
 use crate::state::ResumeState;
-use crate::{naming, storage, worker};
+use crate::transport::{self, Opened, Remote};
+use crate::{ftp, naming, storage, worker};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -86,6 +87,21 @@ pub struct DownloadOptions {
     /// [`Error::InsecureRedirect`] instead, because anyone on the network could
     /// read or change the file).
     pub allow_insecure_redirects: bool,
+    /// Use HTTP/3 (QUIC) when the server offers it. **Experimental**, default
+    /// `false`.
+    ///
+    /// Has an effect only when this crate is built with its `http3` feature;
+    /// without it the option is accepted and ignored. When on, the first
+    /// request still goes over HTTP/2 or HTTP/1.1. If the server's answer
+    /// advertises HTTP/3 on the same host (an `Alt-Svc: h3=":port"` header),
+    /// the other connections use HTTP/3, each over a QUIC connection of its
+    /// own. Any QUIC failure (blocked UDP, a failed handshake, a broken
+    /// stream) quietly switches the download back to HTTP/2 or HTTP/1.1 and
+    /// it carries on from where it was.
+    ///
+    /// Off by default because on fast links several TCP connections are
+    /// already as fast, and QUIC costs more processor time per byte.
+    pub http3: bool,
 }
 
 impl Default for DownloadOptions {
@@ -102,6 +118,7 @@ impl Default for DownloadOptions {
             checkpoint_interval: Duration::from_secs(1),
             rate_limiters: Vec::new(),
             allow_insecure_redirects: false,
+            http3: false,
         }
     }
 }
@@ -117,7 +134,8 @@ pub struct RemoteFile {
     pub total: Option<u64>,
     /// The `Content-Type` the server sent, if any, for example `application/pdf`.
     pub content_type: Option<String>,
-    /// The address the file actually comes from, after redirects.
+    /// The address the file actually comes from, after redirects. Never
+    /// carries a password.
     pub final_url: Url,
     /// Whether the server accepts byte ranges, so the download can be paused
     /// and resumed.
@@ -137,7 +155,9 @@ pub type PathResolver = Arc<dyn Fn(&RemoteFile) -> Result<PathBuf, String> + Sen
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct DownloadRequest {
-    /// The address to download. Redirects are followed.
+    /// The address to download. Its scheme picks the protocol: `http` and
+    /// `https` (redirects are followed), or `ftp`, `ftps` and `ftpes` (see the
+    /// [crate documentation](crate#ftp-and-ftps) for how each is encrypted).
     pub url: Url,
     /// The folder to save into; created if missing. Ignored when
     /// [`exact_path`](Self::exact_path) or [`resolve_path`](Self::resolve_path)
@@ -229,9 +249,10 @@ pub enum Outcome {
 
 /// State every worker of one download shares.
 pub(crate) struct Shared {
+    /// Where requests go: the URL after redirects, without credentials.
     pub url: Url,
-    /// Which headers go where, redirect rules, timeouts and cancellation.
-    pub session: Session,
+    /// The protocol and what its connections share.
+    pub remote: Remote,
     pub ranged: bool,
     pub total: Option<u64>,
     pub table: Mutex<SegmentTable>,
@@ -268,50 +289,63 @@ pub async fn download(
     progress: Arc<Progress>,
     cancel: CancellationToken,
 ) -> Result<Outcome> {
-    let opts = request.options.clone();
     // The first download reads the system certificate store, which blocks, so
     // that one happens off the async threads.
     let clients = if Clients::shared_ready() {
-        Clients::new(&opts)
+        Clients::new(&request.options)
     } else {
-        let opts = opts.clone();
+        let opts = request.options.clone();
         tokio::task::spawn_blocking(move || Clients::new(&opts))
             .await
             .map_err(Error::task)?
     };
-    let (session, url) = Session::new(&request.url, &opts, cancel.clone());
-    let first_client = clients.build()?;
-    let probe = probe_with_retries(&first_client, &url, &session, &opts, &cancel).await?;
-    debug!(ranged = probe.ranged, total = ?probe.total, url = %probe.final_url, "probed");
+    download_with(request, progress, cancel, clients).await
+}
+
+/// [`download`] with the given clients (tests pass ones that trust a test
+/// certificate).
+pub(crate) async fn download_with(
+    request: DownloadRequest,
+    progress: Arc<Progress>,
+    cancel: CancellationToken,
+    clients: Clients,
+) -> Result<Outcome> {
+    let opts = request.options.clone();
+    let opened = transport::open(&request.url, &opts, &clients, &cancel).await?;
+    debug!(ranged = opened.ranged, total = ?opened.total, url = %opened.final_url, "probed");
+    // What the resume file records and compares: never a password.
+    let saved_url = ftp::without_password(&request.url).to_string();
 
     let target = match (&request.exact_path, &request.resolve_path) {
-        (Some(path), _) => plan_exact(path, &probe)?,
+        (Some(path), _) => plan_exact(path, &opened)?,
         (None, Some(resolve)) => {
             let remote = RemoteFile {
-                suggested_name: suggested_name(None, &probe, &url),
-                total: probe.total,
-                content_type: probe.content_type.clone(),
-                final_url: probe.final_url.clone(),
-                resumable: probe.ranged,
+                suggested_name: suggested_name(None, &opened, &request.url),
+                total: opened.total,
+                content_type: opened.content_type.clone(),
+                final_url: opened.final_url.clone(),
+                resumable: opened.ranged,
             };
             let path = resolve(&remote).map_err(Error::TargetRejected)?;
-            plan_exact(&path, &probe)?
+            plan_exact(&path, &opened)?
         }
         (None, None) => {
-            let name = suggested_name(request.file_name.clone(), &probe, &url);
+            let name = suggested_name(request.file_name.clone(), &opened, &request.url);
             std::fs::create_dir_all(&request.dest_dir)?;
-            plan_target(&request.dest_dir, &name, request.url.as_str(), &probe)
+            plan_target(&request.dest_dir, &name, &saved_url, &opened)
         }
     };
 
-    let Probe {
-        response,
+    let Opened {
+        body,
+        mut connection,
+        remote,
         final_url,
         ranged,
         total,
         validators,
         ..
-    } = probe;
+    } = opened;
 
     let (table, resumed_from) = match &target.resume {
         Some(saved) => {
@@ -342,7 +376,7 @@ pub async fn download(
 
     let shared = Arc::new(Shared {
         url: final_url,
-        session,
+        remote,
         ranged,
         total,
         table: Mutex::new(table),
@@ -361,7 +395,7 @@ pub async fn download(
     let save_state = {
         let shared = shared.clone();
         let closed = closed.clone();
-        let (url, path) = (request.url.to_string(), target.state_path.clone());
+        let (url, path) = (saved_url, target.state_path.clone());
         move || {
             let closed = closed.lock().unwrap();
             if *closed {
@@ -375,17 +409,21 @@ pub async fn download(
 
     // The probe response already streams from byte 0; hand it to worker 0 along with
     // the matching range before any other worker can split it.
-    let mut first = if target.resume.is_none() {
-        shared
-            .table
-            .lock()
-            .unwrap()
-            .acquire(0)
-            .map(|a| (a, response))
+    let acquired = if target.resume.is_none() {
+        shared.table.lock().unwrap().acquire(0)
     } else {
-        drop(response);
         None
     };
+    let mut first = match acquired {
+        Some(assignment) => Some((assignment, body)),
+        None => {
+            // Resuming (or nothing to download): the connection is kept, the
+            // transfer from byte 0 is not.
+            connection.finish(body, &shared.cancel).await;
+            None
+        }
+    };
+    let mut first_connection = Some(connection);
 
     let worker_count = if ranged {
         let remaining = shared.table.lock().unwrap().remaining_bytes();
@@ -399,15 +437,14 @@ pub async fn download(
     let mut workers = JoinSet::new();
     if !shared.table.lock().unwrap().is_complete() {
         for id in 0..worker_count {
-            let client = if id == 0 {
-                first_client.clone()
-            } else {
-                clients.build()?
+            let connection = match first_connection.take() {
+                Some(connection) => connection,
+                None => shared.remote.connection(&clients)?,
             };
             workers.spawn(worker::run(
                 id,
                 shared.clone(),
-                client,
+                connection,
                 if id == 0 { first.take() } else { None },
             ));
         }
@@ -475,39 +512,10 @@ pub async fn download(
     }))
 }
 
-/// The first request gets the same retry treatment as every later one: a server
-/// can drop a connection before sending any headers.
-///
-/// A 429 or 503 with `Retry-After` waits as long as the server asked (up to
-/// five minutes) instead of the usual backoff.
-async fn probe_with_retries(
-    client: &reqwest::Client,
-    url: &Url,
-    session: &Session,
-    opts: &DownloadOptions,
-    cancel: &CancellationToken,
-) -> Result<Probe> {
-    let mut failures = 0;
-    loop {
-        match http::probe(client, url, session).await {
-            Err(f) if f.error.is_retryable() && failures < opts.max_retries => {
-                failures += 1;
-                let delay = worker::retry_delay(failures, f.retry_after);
-                warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
-                tokio::select! {
-                    _ = cancel.cancelled() => return Err(Error::Cancelled),
-                    _ = tokio::time::sleep(delay) => {}
-                }
-            }
-            result => return result.map_err(|f| f.error),
-        }
-    }
-}
-
 /// The file name to use: the caller's, else the server's `Content-Disposition`,
 /// else the URL's last segment, made safe for the file system (`download` if
 /// nothing usable is left).
-fn suggested_name(chosen: Option<String>, probe: &Probe, url: &Url) -> String {
+fn suggested_name(chosen: Option<String>, probe: &Opened, url: &Url) -> String {
     naming::sanitize(
         &chosen
             .or_else(|| probe.file_name.clone())
@@ -519,7 +527,7 @@ fn suggested_name(chosen: Option<String>, probe: &Probe, url: &Url) -> String {
 
 /// Target for [`DownloadRequest::exact_path`]: the URL is not compared, only what
 /// the server says about the file.
-fn plan_exact(path: &Path, probe: &Probe) -> Result<Target> {
+fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
@@ -542,7 +550,7 @@ fn plan_exact(path: &Path, probe: &Probe) -> Result<Target> {
 }
 
 /// Decides where the file goes and whether an earlier run can be continued.
-fn plan_target(dir: &Path, name: &str, url: &str, probe: &Probe) -> Target {
+fn plan_target(dir: &Path, name: &str, url: &str, probe: &Opened) -> Target {
     let preferred = dir.join(name);
     let (part_path, state_path) = naming::part_paths(&preferred);
 

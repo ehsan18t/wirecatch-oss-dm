@@ -5,8 +5,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::StreamExt;
-use reqwest::{Client, Response};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -14,7 +12,8 @@ use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::segment::{Assignment, SegmentTable, UNKNOWN_END};
-use crate::{http, storage};
+use crate::storage;
+use crate::transport::{Body, Connection};
 
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
@@ -42,8 +41,8 @@ enum Ended {
 pub(crate) async fn run(
     id: usize,
     shared: Arc<Shared>,
-    client: Client,
-    mut first: Option<(Assignment, Response)>,
+    mut connection: Connection,
+    mut first: Option<(Assignment, Body)>,
 ) -> Result<()> {
     let file = Arc::new(storage::open_for_write(&shared.part_path)?);
     let mut writer = Writer::new(file, shared.opts.buffer_size);
@@ -63,8 +62,14 @@ pub(crate) async fn run(
             "assigned"
         );
 
-        let result =
-            run_assignment(&shared, &client, &mut writer, assignment.index, response).await;
+        let result = run_assignment(
+            &shared,
+            &mut connection,
+            &mut writer,
+            assignment.index,
+            response,
+        )
+        .await;
         match result {
             Ok(Ended::Done) => continue,
             Ok(Ended::SteppedBack) => return Ok(()),
@@ -89,10 +94,10 @@ pub(crate) async fn run(
 /// remaining connections finish the work.
 async fn run_assignment(
     shared: &Shared,
-    client: &Client,
+    connection: &mut Connection,
     writer: &mut Writer,
     index: usize,
-    mut response: Option<Response>,
+    mut response: Option<Body>,
 ) -> Result<Ended> {
     let mut failures = 0u32;
     let mut refusals = 0u32;
@@ -106,29 +111,26 @@ async fn run_assignment(
         }
 
         let attempt = async {
-            let (resp, skip) = match response.take() {
-                Some(resp) => (resp, 0),
-                None => {
-                    http::fetch(
-                        client,
-                        &shared.url,
-                        &shared.session,
-                        from,
-                        to,
-                        shared.ranged,
-                        shared.total,
-                    )
-                    .await?
-                }
+            let (mut body, skip) = match response.take() {
+                Some(body) => (body, 0),
+                None => connection.open(shared, from, to).await?,
             };
-            Ok::<_, Failure>(stream(shared, writer, index, from, resp, skip).await?)
+            let ended = stream(shared, writer, index, from, &mut body, skip).await;
+            connection.finish(body, &shared.cancel).await;
+            Ok::<_, Failure>(ended?)
         };
 
         match attempt.await {
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
             Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
-            Err(f) if f.error.is_retryable() && failures < shared.opts.max_retries => {
+            // A refusal is retried even when the error alone would not be: an
+            // FTP server turning away one more login already accepted the
+            // same login on another connection.
+            Err(f)
+                if (f.error.is_retryable() || is_refusal(&f.error))
+                    && failures < shared.opts.max_retries =>
+            {
                 let (now, _) = shared.table.lock().unwrap().position(index);
                 let progressed = now > from;
                 failures = if progressed { 0 } else { failures + 1 };
@@ -164,13 +166,12 @@ async fn stream(
     writer: &mut Writer,
     index: usize,
     from: u64,
-    response: Response,
+    body: &mut Body,
     mut skip: u64,
 ) -> Result<Ended> {
     let _connection = shared.progress.connection_opened();
     let _receiving = Receiving::new(&shared.receiving);
     writer.start(index, from);
-    let mut body = response.bytes_stream();
     let stall = shared.opts.stall_timeout;
 
     let outcome: Result<Ended> = loop {
@@ -179,14 +180,13 @@ async fn stream(
             _ = shared.cancel.cancelled() => break Ok(Ended::Cancelled),
             next = tokio::time::timeout(stall, body.next()) => next,
         };
-        let chunk = match next {
+        let mut data = match next {
             Err(_) => break Err(Error::Stalled(stall.as_secs())),
-            Ok(None) => break Ok(Ended::Eof),
-            Ok(Some(Err(e))) => break Err(Error::network(e)),
-            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Ok(None)) => break Ok(Ended::Eof),
+            Ok(Err(e)) => break Err(e),
+            Ok(Ok(Some(chunk))) => chunk,
         };
 
-        let mut data = &chunk[..];
         if skip > 0 {
             let n = skip.min(data.len() as u64);
             data = &data[n as usize..];
@@ -240,6 +240,10 @@ fn is_refusal(error: &Error) -> bool {
         // No answer in time is not a refusal either.
         Error::Stalled(_) => false,
         Error::PrematureEof { .. } => true,
+        // 421: too many connections. 530 on a later connection: this login
+        // worked on the first one, so the server limits sessions. 425: the
+        // server would not open another data connection.
+        Error::FtpReply { code, .. } => matches!(code, 421 | 425 | 530),
         _ => false,
     }
 }
