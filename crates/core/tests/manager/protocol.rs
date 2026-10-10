@@ -11,7 +11,8 @@ use wirecatch_core::{Manager, serve_connection};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, CaptureSource, ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
+    AddAction, CaptureSource, ExtensionSettingsPatch, Header, NewDownload, WithdrawOutcome,
+    WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -759,6 +760,69 @@ async fn requests_beyond_the_limit_are_refused() {
         assert_eq!(err.code, ErrorCode::NotStarted, "{}", err.message);
     }
     assert!(client.call(Call::ListQueues).await.is_ok());
+}
+
+/// Cookies and credentials belong to the site the browser got them from. A link
+/// refreshed to another site must not carry them there; one refreshed on the
+/// same site keeps them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() {
+    let first = TestServer::fast(1024).await;
+    let other = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    // Held in line, so nothing is requested before the links are refreshed.
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let with_credentials = |name: &str| {
+        let mut capture = capture(first.url(name));
+        capture.extra_headers = vec![
+            Header {
+                name: "Authorization".into(),
+                value: "Bearer secret".into(),
+            },
+            Header {
+                name: "Accept-Language".into(),
+                value: "en".into(),
+            },
+        ];
+        capture
+    };
+    let stays = h.manager.add_capture(with_credentials("stays.pdf")).await;
+    let moves = h.manager.add_capture(with_credentials("moves.pdf")).await;
+    let (stays, moves) = (stays.unwrap().id.unwrap(), moves.unwrap().id.unwrap());
+    h.manager
+        .refresh_link(stays, &first.url("fresh/stays.pdf"))
+        .unwrap();
+    h.manager
+        .refresh_link(moves, &other.url("moves.pdf"))
+        .unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    h.wait_status(stays, DownloadStatus::Completed).await;
+    h.wait_status(moves, DownloadStatus::Completed).await;
+
+    assert_eq!(*first.stats.cookies.lock().unwrap(), vec!["session=abc"]);
+    assert_eq!(
+        *first.stats.authorizations.lock().unwrap(),
+        vec!["Bearer secret"]
+    );
+    assert!(
+        other.stats.cookies.lock().unwrap().is_empty(),
+        "the other site got the first site's cookies"
+    );
+    assert!(
+        other.stats.authorizations.lock().unwrap().is_empty(),
+        "the other site got the first site's credentials"
+    );
+    assert!(
+        other
+            .stats
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    );
 }
 
 fn framed(body: &[u8]) -> Vec<u8> {

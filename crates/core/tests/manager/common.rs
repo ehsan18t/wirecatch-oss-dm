@@ -47,6 +47,8 @@ pub struct Stats {
     current: AtomicUsize,
     /// `Cookie` header of every request.
     pub cookies: Mutex<Vec<String>>,
+    /// `Authorization` header of every request.
+    pub authorizations: Mutex<Vec<String>>,
 }
 
 struct Inner {
@@ -166,6 +168,17 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
     inner.stats.requests.fetch_add(1, Ordering::SeqCst);
     if let Some(cookie) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
         inner.stats.cookies.lock().unwrap().push(cookie.to_string());
+    }
+    if let Some(auth) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        inner
+            .stats
+            .authorizations
+            .lock()
+            .unwrap()
+            .push(auth.to_string());
     }
     if let Some((_, status)) = config.refuse.iter().find(|(path, _)| uri.path() == path) {
         return Response::builder()

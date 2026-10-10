@@ -15,8 +15,8 @@ use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Expectation, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
-use crate::settings;
 use crate::store::{NameChoice, Origin};
+use crate::{headers, settings};
 
 /// Everything needed to add a download, whichever way it arrived.
 pub(super) struct NewEntry {
@@ -238,6 +238,9 @@ impl Manager {
 
     /// Gives a download a fresh link, for example after the old one expired. What
     /// was already downloaded is kept as long as the server still serves the same file.
+    /// A link to another site (scheme, host or port) does not get the browser's
+    /// cookies and credentials for the old one; the user agent and harmless
+    /// headers such as the preferred language are kept.
     pub fn refresh_link(&self, id: DownloadId, url: &str) -> Result<()> {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
@@ -246,6 +249,10 @@ impl Manager {
             return Err(CoreError::WrongState(
                 "This download has already finished, so its link cannot be changed.",
             ));
+        }
+        let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
+        if !same_site {
+            entry.origin.headers = headers::for_another_site(&entry.origin.headers);
         }
         entry.row.url = url.to_string();
         entry.row.error = None;

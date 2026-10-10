@@ -34,10 +34,25 @@ const FORBIDDEN: &[&str] = &[
 /// Headers that must appear at most once in a request.
 const SINGLE: &[&str] = &["cookie", "referer", "authorization"];
 
+/// Headers that say nothing about the user, so they may follow a download to
+/// another site. Everything else (cookies, credentials, tokens in custom headers,
+/// the referring page's address) stays with the site the browser sent it to.
+const SAFE_FOR_ANY_SITE: &[&str] = &["accept", "accept-language"];
+
 /// Whether a client may set a header with this name.
 pub(crate) fn is_allowed(name: &str) -> bool {
     let name = name.trim().to_ascii_lowercase();
     !name.is_empty() && !FORBIDDEN.contains(&name.as_str()) && !name.starts_with("proxy-")
+}
+
+/// The headers a download keeps when its link moves to another site (another
+/// scheme, host or port).
+pub(crate) fn for_another_site(headers: &[Header]) -> Vec<Header> {
+    headers
+        .iter()
+        .filter(|h| SAFE_FOR_ANY_SITE.contains(&h.name.trim().to_ascii_lowercase().as_str()))
+        .cloned()
+        .collect()
 }
 
 /// The headers to keep for a captured download: the referrer and cookies from
