@@ -168,6 +168,16 @@ impl SegmentTable {
         seg.owner = None;
     }
 
+    /// Whether some segment other than `index` has an owner and bytes still to
+    /// claim. Its worker will ask for more work when it finishes, so anything
+    /// handed back now is not left without a worker to take it.
+    pub fn others_active(&self, index: usize) -> bool {
+        self.segments
+            .iter()
+            .enumerate()
+            .any(|(i, s)| i != index && s.owner.is_some() && s.unclaimed() > 0)
+    }
+
     /// `(claimed, end)` of a segment.
     pub fn position(&self, index: usize) -> (u64, u64) {
         let seg = &self.segments[index];
@@ -213,6 +223,9 @@ fn align_down(at: u64, floor: u64) -> u64 {
     let aligned = at - at % ALIGN;
     if aligned > floor { aligned } else { at }
 }
+
+#[cfg(test)]
+mod proptests;
 
 #[cfg(test)]
 mod tests {
@@ -318,6 +331,21 @@ mod tests {
         t.mark_flushed(0, 500);
         t.close_unknown(0);
         assert!(t.is_complete());
+    }
+
+    #[test]
+    fn others_active_ignores_finished_and_unowned_segments() {
+        let mut t = SegmentTable::new(Some(8 * MIB), MIB);
+        t.acquire(0).unwrap();
+        assert!(!t.others_active(0));
+        let a1 = t.acquire(1).unwrap();
+        assert!(t.others_active(a1.index));
+        // Segment 0 fully claimed: its worker is about to ask for more, but it
+        // no longer counts as fetching.
+        t.claim(0, 4 * MIB);
+        assert!(!t.others_active(a1.index));
+        t.release(a1.index);
+        assert!(!t.others_active(0));
     }
 
     #[test]
