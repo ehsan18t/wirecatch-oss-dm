@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 
 use tokio::runtime::Handle;
 use tracing::{debug, warn};
-use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
+
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error as EngineError, Outcome, Progress, RateLimiter, Url,
 };
@@ -15,9 +15,9 @@ use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::state::{Entry, Run, State, Stop};
 use super::{Inner, Manager};
+use crate::headers;
 use crate::naming::partial_files;
 use crate::speed::SpeedMeter;
-use crate::store::Origin;
 use crate::user_error;
 
 /// How a run ended.
@@ -259,29 +259,11 @@ fn engine_request(
     let options = &mut request.options;
     options.connections = connections;
     options.rate_limiters = rate_limiters;
-    options.headers = header_map(&entry.origin);
+    options.headers = headers::to_map(&entry.origin.headers);
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent = agent.clone();
     }
     Ok(request)
-}
-
-/// Request headers from what the browser handed over. A header that is not valid
-/// HTTP is left out rather than failing the download.
-fn header_map(origin: &Origin) -> HeaderMap {
-    let mut map = HeaderMap::with_capacity(origin.headers.len());
-    for header in &origin.headers {
-        match (
-            HeaderName::from_bytes(header.name.trim().as_bytes()),
-            HeaderValue::from_str(header.value.trim()),
-        ) {
-            (Ok(name), Ok(value)) => {
-                map.append(name, value);
-            }
-            _ => warn!(name = %header.name, "skipping a header that is not valid HTTP"),
-        }
-    }
-    map
 }
 
 #[cfg(test)]
@@ -291,7 +273,6 @@ mod tests {
     use super::*;
     use crate::{KnownFolders, ManagerConfig};
     use wirecatch_protocol::app::AddRequest;
-    use wirecatch_protocol::extension::Header;
 
     async fn paused_download() -> (Manager, DownloadId, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
@@ -331,29 +312,5 @@ mod tests {
         assert!(entry.run.is_none(), "the slot is still taken");
         assert_eq!(entry.row.status, DownloadStatus::Failed);
         assert_eq!(entry.row.error, Some(user_error::stopped_unexpectedly()));
-    }
-
-    #[test]
-    fn invalid_headers_are_skipped() {
-        let origin = Origin {
-            user_agent: None,
-            headers: vec![
-                Header {
-                    name: "Cookie".into(),
-                    value: "a=b".into(),
-                },
-                Header {
-                    name: "Bad Name".into(),
-                    value: "x".into(),
-                },
-                Header {
-                    name: "X-Ok".into(),
-                    value: "line\nbreak".into(),
-                },
-            ],
-        };
-        let map = header_map(&origin);
-        assert_eq!(map.len(), 1);
-        assert_eq!(map["cookie"], "a=b");
     }
 }

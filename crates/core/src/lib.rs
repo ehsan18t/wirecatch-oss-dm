@@ -12,6 +12,7 @@
 mod clock;
 mod error;
 mod folders;
+mod headers;
 mod manager;
 mod naming;
 mod profile;

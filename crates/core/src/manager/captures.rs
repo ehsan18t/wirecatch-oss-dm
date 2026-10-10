@@ -13,18 +13,16 @@ use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadSummary, PendingCapture, PortablePath, UiEvent,
 };
-use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, Header, NewDownload, WithdrawOutcome,
-};
+use wirecatch_protocol::extension::{AddAction, AddedDownload, NewDownload, WithdrawOutcome};
 
 use super::Manager;
 use super::downloads::{Added, NewEntry, capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::state::Pending;
 use crate::error::{CoreError, Result};
-use crate::naming;
 use crate::settings;
 use crate::store::Origin;
+use crate::{headers, naming};
 
 /// Most captures that can wait for confirmation at once.
 const MAX_PENDING: usize = 100;
@@ -259,22 +257,12 @@ impl Manager {
 
 /// The headers that make a captured download work outside the browser.
 fn origin_of(capture: &NewDownload) -> Origin {
-    let named = |name: &str, value: &Option<String>| {
-        value.as_ref().map(|value| Header {
-            name: name.into(),
-            value: value.clone(),
-        })
-    };
-    let headers = [
-        named("Referer", &capture.referrer),
-        named("Cookie", &capture.cookies),
-    ]
-    .into_iter()
-    .flatten()
-    .chain(capture.extra_headers.iter().cloned())
-    .collect();
     Origin {
         user_agent: capture.user_agent.clone(),
-        headers,
+        headers: headers::for_capture(
+            capture.referrer.as_deref(),
+            capture.cookies.as_deref(),
+            &capture.extra_headers,
+        ),
     }
 }
