@@ -42,6 +42,7 @@ impl Manager {
             id: state.ids.queue(),
             ..queue
         };
+        self.inner.store.save_last_ids(state.ids.last());
         state.queues.push(QueueSlot::new(queue.clone()));
         self.queues_changed(&mut state);
         Ok(queue)

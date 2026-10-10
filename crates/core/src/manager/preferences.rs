@@ -102,6 +102,7 @@ impl Manager {
         let imported = profile::merge(incoming, &current, &self.inner.folders, || {
             state.ids.queue()
         })?;
+        self.inner.store.save_last_ids(state.ids.last());
         for queue in imported.queues {
             match state.slot_mut(queue.id) {
                 Ok(slot) => apply_to_slot(slot, queue),

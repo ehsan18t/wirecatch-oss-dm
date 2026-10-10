@@ -19,7 +19,7 @@ use crate::error::{CoreError, Result};
 use crate::naming::Claimed;
 use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
-use crate::store::{Origin, StoredDownload};
+use crate::store::{LastIds, Origin, StoredDownload};
 
 pub(super) struct State {
     pub settings: AppSettings,
@@ -71,6 +71,14 @@ impl Counters {
     pub fn position(&mut self) -> i64 {
         self.position += 1;
         self.position
+    }
+
+    /// The highest download and queue ids handed out so far.
+    pub fn last(&self) -> LastIds {
+        LastIds {
+            download: self.download,
+            queue: self.queue,
+        }
     }
 }
 

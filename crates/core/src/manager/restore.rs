@@ -30,7 +30,11 @@ pub(super) fn restore(snapshot: Snapshot, now: NaiveDateTime) -> Restored {
         .map_or(DEFAULT_QUEUE_ID, |s| s.queue.id);
 
     let mut ids = Counters {
-        queue: queues.iter().map(|s| s.queue.id.0).max().unwrap_or(0),
+        download: snapshot.last_ids.download,
+        queue: queues
+            .iter()
+            .map(|s| s.queue.id.0)
+            .fold(snapshot.last_ids.queue, i64::max),
         ..Counters::default()
     };
     let mut downloads = BTreeMap::new();
@@ -128,6 +132,7 @@ mod tests {
     fn running_downloads_go_first_and_orphans_join_the_default_queue() {
         let snapshot = Snapshot {
             settings: None,
+            last_ids: Default::default(),
             queues: vec![settings::default_queue()],
             downloads: vec![
                 stored(1, 1, DownloadStatus::Queued),

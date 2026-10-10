@@ -55,6 +55,15 @@ const MIGRATIONS: &[&str] = &[r#"
 "#];
 
 const SETTINGS_KEY: &str = "app";
+const LAST_IDS_KEY: &str = "last_ids";
+
+/// The highest download and queue ids ever handed out. Kept so an id is never
+/// reused, even after the newest download or queue was deleted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LastIds {
+    pub download: i64,
+    pub queue: i64,
+}
 
 /// What a download needs from the browser to keep working after a restart:
 /// cookies, referrer and other headers, and the user agent.
@@ -77,6 +86,7 @@ pub(crate) struct StoredDownload {
 #[derive(Debug, Default)]
 pub(crate) struct Snapshot {
     pub settings: Option<AppSettings>,
+    pub last_ids: LastIds,
     pub queues: Vec<Queue>,
     pub downloads: Vec<StoredDownload>,
 }
@@ -98,6 +108,7 @@ enum Op {
     DeleteDownloads(Vec<DownloadId>),
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
+    SaveLastIds(LastIds),
     Flush(oneshot::Sender<()>),
 }
 
@@ -114,6 +125,7 @@ impl std::fmt::Debug for Op {
             Op::DeleteDownloads(_) => "DeleteDownloads",
             Op::SaveQueues(_) => "SaveQueues",
             Op::SaveSettings(_) => "SaveSettings",
+            Op::SaveLastIds(_) => "SaveLastIds",
             Op::Flush(_) => "Flush",
         })
     }
@@ -173,6 +185,11 @@ impl Store {
     /// Replaces the stored settings.
     pub fn save_settings(&self, settings: AppSettings) {
         self.send(Op::SaveSettings(Box::new(settings)));
+    }
+
+    /// Records the highest ids handed out.
+    pub fn save_last_ids(&self, ids: LastIds) {
+        self.send(Op::SaveLastIds(ids));
     }
 
     /// Waits until every write sent so far is on disk.
@@ -240,12 +257,8 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
                 }
             }
             Op::SaveQueues(queues) => save_queues(&tx, queues)?,
-            Op::SaveSettings(settings) => {
-                tx.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-                    params![SETTINGS_KEY, to_json(&**settings)],
-                )?;
-            }
+            Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
+            Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
             Op::Flush(_) => {}
         }
     }
@@ -276,21 +289,29 @@ fn migrate(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
-fn load(conn: &Connection) -> Result<Snapshot> {
-    let settings = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [SETTINGS_KEY],
-            |row| row.get::<_, String>(0),
-        )
+/// A JSON value from the key-value table, or `None` if it is missing or unreadable.
+fn read_value<T: DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+    what: &str,
+) -> rusqlite::Result<Option<T>> {
+    Ok(conn
+        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get::<_, String>(0)
+        })
         .optional()?
-        .and_then(|json| {
-            serde_json::from_str(&json)
-                .inspect_err(
-                    |e| warn!(error = %e, "stored settings are unreadable; using defaults"),
-                )
-                .ok()
-        });
+        .and_then(|json| from_json(&json, what)))
+}
+
+fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusqlite::Result<()> {
+    tx.prepare_cached("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)")?
+        .execute(params![key, to_json(value)])?;
+    Ok(())
+}
+
+fn load(conn: &Connection) -> Result<Snapshot> {
+    let settings = read_value(conn, SETTINGS_KEY, "settings")?;
+    let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
 
     let mut stmt = conn.prepare(
         "SELECT id, name, max_concurrent, speed_limit, schedule, is_default
@@ -316,6 +337,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
     Ok(Snapshot {
         settings,
+        last_ids,
         queues,
         downloads,
     })

@@ -8,6 +8,29 @@ use crate::common::{Harness, TestServer, is_running};
 const KIB: usize = 1024;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ids_are_never_reused_after_deleting_the_newest() {
+    let mut h = Harness::new().await;
+    let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
+    h.add_with("https://example.com/a.bin", paused).await;
+    let newest = h.add_with("https://example.com/b.bin", paused).await;
+    h.manager.remove(&[newest.id], false).await.unwrap();
+    h.manager.create_queue("Kept").unwrap();
+    let newest_queue = h.manager.create_queue("Deleted").unwrap();
+    h.manager.delete_queue(newest_queue.id).unwrap();
+
+    h.restart().await;
+
+    let next = h.add_with("https://example.com/c.bin", paused).await;
+    assert!(next.id.0 > newest.id.0, "download id {} reused", next.id.0);
+    let queue = h.manager.create_queue("New").unwrap();
+    assert!(
+        queue.id.0 > newest_queue.id.0,
+        "queue id {} reused",
+        queue.id.0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn downloads_survive_a_restart_and_running_ones_continue() {
     let slow = TestServer::throttled(512 * KIB, 256 * KIB as u64).await;
     let fast = TestServer::fast(32 * KIB).await;
