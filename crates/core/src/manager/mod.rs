@@ -10,10 +10,10 @@ mod queues;
 mod relocate;
 mod restore;
 mod run;
+mod scheduling;
 mod state;
 mod ticker;
 
-use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -24,9 +24,9 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, RateLimiter};
-use wirecatch_protocol::app::{DownloadStatus, UiEvent};
+use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::app::UiEvent;
 use wirecatch_protocol::wire::Event;
-use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
@@ -297,45 +297,6 @@ impl Manager {
         Ok(state)
     }
 
-    /// Starts and stops downloads so every queue, schedule and limit is honoured.
-    fn reconcile(&self, state: &mut State) {
-        if state.closed {
-            return;
-        }
-        let plan = self.plan(state);
-        for id in plan.stop {
-            if let Some(entry) = state.downloads.get_mut(&id) {
-                self.stop_run(entry, Stop::Requeue);
-            }
-        }
-        for id in plan.start {
-            self.start_run(state, id);
-        }
-    }
-
-    fn plan(&self, state: &mut State) -> plan::Plan {
-        let now = self.inner.clock.local_now();
-        let since = std::mem::replace(&mut state.last_checked, now);
-        let downloads: Vec<plan::DownloadView> =
-            state.downloads.values().filter_map(view_of).collect();
-        let busy: HashSet<QueueId> = downloads.iter().map(|d| d.queue).collect();
-        let queues: Vec<plan::QueueView> = state
-            .queues
-            .iter_mut()
-            .map(|slot| plan::QueueView {
-                id: slot.queue.id,
-                max_concurrent: slot.queue.max_concurrent,
-                open: slot.gate.is_open(
-                    slot.queue.schedule.as_ref(),
-                    since,
-                    now,
-                    busy.contains(&slot.queue.id),
-                ),
-            })
-            .collect();
-        plan::plan(&queues, &downloads, state.settings.max_concurrent_downloads)
-    }
-
     /// Saves one download and queues its row for the next event.
     fn save(&self, state: &mut State, id: DownloadId) {
         if let Some(entry) = state.downloads.get(&id) {
@@ -353,28 +314,6 @@ impl Manager {
     fn emit_wire(&self, event: Event) {
         let _ = self.inner.wire_events.send(event);
     }
-}
-
-/// How the planner sees a download; `None` for ones that neither run nor wait.
-fn view_of(entry: &Entry) -> Option<plan::DownloadView> {
-    let activity = match &entry.run {
-        Some(run) if run.stop.is_some() => plan::Activity::Stopping,
-        Some(_) => plan::Activity::Running,
-        None if !entry.removing
-            && entry.moving.is_none()
-            && entry.row.status == DownloadStatus::Queued =>
-        {
-            plan::Activity::Waiting
-        }
-        None => return None,
-    };
-    Some(plan::DownloadView {
-        id: entry.row.id,
-        queue: entry.row.queue,
-        position: entry.position,
-        first: entry.resume_first,
-        activity,
-    })
 }
 
 /// Re-evaluates schedules whenever one can change: at each minute boundary while

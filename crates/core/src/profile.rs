@@ -128,6 +128,8 @@ pub(crate) fn merge(
                 *existing = Queue {
                     id: existing.id,
                     is_default: existing.is_default,
+                    paused: existing.paused,
+                    running_outside_schedule: existing.running_outside_schedule,
                     ..incoming.clone()
                 };
                 updated += 1;
@@ -139,6 +141,8 @@ pub(crate) fn merge(
                 queues.push(Queue {
                     id,
                     is_default: false,
+                    paused: false,
+                    running_outside_schedule: false,
                     ..incoming.clone()
                 });
                 id

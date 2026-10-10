@@ -23,7 +23,8 @@ pub const DATABASE_FILE: &str = "wirecatch.db";
 
 /// Schema changes, applied in order. Entry `n` moves the schema to version `n + 1`.
 /// Never edit a released entry; append a new one.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
     CREATE TABLE queues (
         id             INTEGER PRIMARY KEY,
         position       INTEGER NOT NULL,
@@ -52,7 +53,12 @@ const MIGRATIONS: &[&str] = &[r#"
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
-"#];
+"#,
+    r#"
+    ALTER TABLE queues ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE queues ADD COLUMN running_outside_schedule INTEGER NOT NULL DEFAULT 0;
+"#,
+];
 
 const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
@@ -314,7 +320,8 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
 
     let mut stmt = conn.prepare(
-        "SELECT id, name, max_concurrent, speed_limit, schedule, is_default
+        "SELECT id, name, max_concurrent, speed_limit, schedule, is_default, paused,
+                running_outside_schedule
          FROM queues ORDER BY position",
     )?;
     let queues = stmt
@@ -346,8 +353,9 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM queues", [])?;
     let mut stmt = tx.prepare_cached(
-        "INSERT INTO queues (id, position, name, max_concurrent, speed_limit, schedule, is_default)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO queues (id, position, name, max_concurrent, speed_limit, schedule, is_default,
+                             paused, running_outside_schedule)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
     for (position, q) in queues.iter().enumerate() {
         stmt.execute(params![
@@ -358,6 +366,8 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
             q.speed_limit.map(to_i64),
             q.schedule.as_ref().map(to_json),
             q.is_default,
+            q.paused,
+            q.running_outside_schedule,
         ])?;
     }
     Ok(())
@@ -373,8 +383,8 @@ fn read_queue(row: &Row<'_>) -> rusqlite::Result<Queue> {
             .get::<_, Option<String>>(4)?
             .and_then(|json| from_json(&json, "queue schedule")),
         is_default: row.get(5)?,
-        paused: false,
-        running_outside_schedule: false,
+        paused: row.get(6)?,
+        running_outside_schedule: row.get(7)?,
     })
 }
 
@@ -607,6 +617,26 @@ mod tests {
         let err = Store::open(dir.path(), ignore_failures()).unwrap_err();
         assert!(matches!(err, CoreError::DatabaseTooNew { found: 99, .. }));
         assert!(err.to_string().contains("Update Wirecatch"));
+    }
+
+    #[test]
+    fn a_database_from_the_first_version_is_upgraded_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO queues (id, position, name, max_concurrent, is_default)
+             VALUES (1, 0, 'Main', 3, 1)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let main = &snapshot.queues[0];
+        assert_eq!((main.name.as_str(), main.max_concurrent), ("Main", 3));
+        assert!(!main.paused && !main.running_outside_schedule);
     }
 
     #[test]

@@ -49,18 +49,42 @@ impl Manager {
     }
 
     /// Changes a queue's name, limits or schedule. New limits apply to running
-    /// downloads at once. Whether a queue is the default cannot be changed. The
-    /// stored queue arrives as `QueuesChanged`.
+    /// downloads at once. Whether a queue is the default, paused or started now is
+    /// not changed here (see [`set_queue_paused`](Self::set_queue_paused) and
+    /// [`start_queue_now`](Self::start_queue_now)). The stored queue arrives as
+    /// `QueuesChanged`.
     pub fn update_queue(&self, queue: Queue) -> Result<()> {
         let queue = settings::validate_queue(queue)?;
         let mut state = self.lock_open()?;
         ensure_name_free(&state, &queue.name, Some(queue.id))?;
-        let slot = state.slot_mut(queue.id)?;
-        let updated = Queue {
-            is_default: slot.queue.is_default,
-            ..queue
-        };
-        apply_to_slot(slot, updated);
+        apply_to_slot(state.slot_mut(queue.id)?, queue);
+        self.queues_changed(&mut state);
+        Ok(())
+    }
+
+    /// Pauses or resumes a queue. A paused queue starts nothing, including
+    /// downloads added later, and its running downloads stop and wait. Resuming it
+    /// lets those continue, but not downloads the user paused one by one. Pausing
+    /// also ends a "start now" run.
+    pub fn set_queue_paused(&self, id: QueueId, paused: bool) -> Result<()> {
+        let mut state = self.lock_open()?;
+        let queue = &mut state.slot_mut(id)?.queue;
+        queue.paused = paused;
+        if paused {
+            queue.running_outside_schedule = false;
+        }
+        self.queues_changed(&mut state);
+        Ok(())
+    }
+
+    /// Runs a queue now, ignoring its schedule, until it has nothing left to do or
+    /// is paused; then its schedule applies again. Starting a paused queue now also
+    /// resumes it.
+    pub fn start_queue_now(&self, id: QueueId) -> Result<()> {
+        let mut state = self.lock_open()?;
+        let queue = &mut state.slot_mut(id)?.queue;
+        queue.paused = false;
+        queue.running_outside_schedule = true;
         self.queues_changed(&mut state);
         Ok(())
     }
@@ -99,16 +123,22 @@ impl Manager {
 
     /// Saves the queues, tells everyone, and re-plans with the new limits.
     pub(super) fn queues_changed(&self, state: &mut State) {
-        self.inner.store.save_queues(state.queue_list());
-        self.emit(UiEvent::QueuesChanged(state.queue_list()));
-        self.emit_wire(Event::QueuesChanged(state.queue_summaries()));
+        self.publish_queues(state);
         self.inner.queues_changed.notify_one();
         self.reconcile(state);
     }
+
+    /// Saves the queues and tells the UI and every socket client.
+    pub(super) fn publish_queues(&self, state: &State) {
+        self.inner.store.save_queues(state.queue_list());
+        self.emit(UiEvent::QueuesChanged(state.queue_list()));
+        self.emit_wire(Event::QueuesChanged(state.queue_summaries()));
+    }
 }
 
-/// Replaces a slot's queue, applying a new speed limit live and restarting the
-/// schedule's bookkeeping if the schedule changed.
+/// Replaces a slot's settings (name, limits, schedule) with `queue`'s, applying a
+/// new speed limit live and restarting the schedule's bookkeeping if the schedule
+/// changed. Whether the queue is the default, paused or started now is kept.
 pub(super) fn apply_to_slot(slot: &mut QueueSlot, queue: Queue) {
     if slot.queue.schedule != queue.schedule {
         slot.gate.reset();
@@ -116,7 +146,13 @@ pub(super) fn apply_to_slot(slot: &mut QueueSlot, queue: Queue) {
     if slot.queue.speed_limit != queue.speed_limit {
         slot.limiter.set_limit(queue.speed_limit);
     }
-    slot.queue = queue;
+    slot.queue = Queue {
+        id: slot.queue.id,
+        is_default: slot.queue.is_default,
+        paused: slot.queue.paused,
+        running_outside_schedule: slot.queue.running_outside_schedule,
+        ..queue
+    };
 }
 
 fn ensure_name_free(state: &State, name: &str, except: Option<QueueId>) -> Result<()> {

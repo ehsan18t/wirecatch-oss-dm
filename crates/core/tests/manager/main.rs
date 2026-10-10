@@ -6,5 +6,6 @@ mod lifecycle;
 mod limits;
 mod profile;
 mod protocol;
+mod queues;
 mod restart;
 mod schedule;
