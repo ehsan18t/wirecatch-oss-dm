@@ -332,6 +332,7 @@ mod tests {
                 error: None,
                 added_at: 0,
                 completed_at: None,
+                waiting: None,
             },
             position: 1,
             origin: Origin::default(),

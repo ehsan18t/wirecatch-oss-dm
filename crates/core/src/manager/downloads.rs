@@ -410,6 +410,7 @@ impl Manager {
                 error: None,
                 added_at: self.inner.clock.unix_millis(),
                 completed_at: None,
+                waiting: None,
             };
             state.downloads.insert(
                 id,

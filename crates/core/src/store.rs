@@ -303,6 +303,8 @@ fn read_queue(row: &Row<'_>) -> rusqlite::Result<Queue> {
             .get::<_, Option<String>>(4)?
             .and_then(|json| from_json(&json, "queue schedule")),
         is_default: row.get(5)?,
+        paused: false,
+        running_outside_schedule: false,
     })
 }
 
@@ -367,6 +369,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
                 .and_then(|json| from_json(&json, "download error")),
             added_at: row.get(10)?,
             completed_at: row.get(11)?,
+            waiting: None,
         },
         position: row.get(4)?,
         origin,
@@ -452,6 +455,7 @@ mod tests {
                 }),
                 added_at: 1,
                 completed_at: None,
+                waiting: None,
             },
             position: 3,
             origin: Origin {
@@ -484,6 +488,8 @@ mod tests {
                 days: vec![],
             }),
             is_default: false,
+            paused: false,
+            running_outside_schedule: false,
         };
         let settings = crate::settings::default_settings();
         store.save_queues(vec![queue.clone()]);

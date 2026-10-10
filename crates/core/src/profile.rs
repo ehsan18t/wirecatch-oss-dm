@@ -154,6 +154,8 @@ mod tests {
             speed_limit: None,
             schedule: None,
             is_default: false,
+            paused: false,
+            running_outside_schedule: false,
         }
     }
 

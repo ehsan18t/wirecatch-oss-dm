@@ -109,6 +109,7 @@ mod tests {
                 error: None,
                 added_at: 0,
                 completed_at: None,
+                waiting: None,
             },
             position: id * 10,
             origin: Origin::default(),

@@ -112,6 +112,8 @@ pub(crate) fn default_queue() -> Queue {
         speed_limit: None,
         schedule: None,
         is_default: true,
+        paused: false,
+        running_outside_schedule: false,
     }
 }
 

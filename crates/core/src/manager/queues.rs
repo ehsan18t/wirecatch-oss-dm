@@ -34,6 +34,8 @@ impl Manager {
             speed_limit: None,
             schedule: None,
             is_default: false,
+            paused: false,
+            running_outside_schedule: false,
         })?;
         ensure_name_free(&state, &queue.name, None)?;
         let queue = Queue {
