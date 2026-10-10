@@ -42,6 +42,9 @@ const WIRE_EVENT_BUFFER: usize = 64;
 #[derive(Clone)]
 pub struct ManagerConfig {
     /// Folder for the database. The desktop app passes the per-user app data folder.
+    /// The manager makes the folder and the database readable only by the current
+    /// user (an owner-only access list on Windows, modes 0700 and 0600 on Linux),
+    /// because the database holds browser cookies.
     pub data_dir: PathBuf,
     /// The user's standard folders, for resolving `{Downloads}` and friends.
     pub folders: KnownFolders,

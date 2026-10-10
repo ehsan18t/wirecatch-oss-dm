@@ -15,6 +15,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::error::{CoreError, Result};
+use crate::owner_only;
 
 /// File name of the database inside the data folder.
 pub const DATABASE_FILE: &str = "wirecatch.db";
@@ -113,6 +114,8 @@ impl Store {
             path: dir.display().to_string(),
             source,
         })?;
+        // The folder first, so the database and its journal files inherit its access.
+        restrict_to_owner(dir);
         let path = dir.join(DATABASE_FILE);
         let mut conn = Connection::open(&path)?;
         restrict_to_owner(&path);
@@ -419,18 +422,13 @@ fn to_u64(value: i64) -> u64 {
     u64::try_from(value).unwrap_or(0)
 }
 
-/// The database holds cookies, so only its owner may read it (D17). On Windows the
-/// per-user data folder already restricts access to the user.
-#[cfg(unix)]
+/// The database holds cookies, so only its owner may read it (D17). A failure is
+/// logged rather than fatal: the app still works, with the folder's default access.
 fn restrict_to_owner(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
-        warn!(error = %e, "could not restrict access to the database");
+    if let Err(e) = owner_only::restrict(path) {
+        warn!(path = %path.display(), error = %e, "could not restrict access to the current user");
     }
 }
-
-#[cfg(not(unix))]
-fn restrict_to_owner(_path: &Path) {}
 
 #[cfg(test)]
 mod tests {
