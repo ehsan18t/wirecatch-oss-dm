@@ -165,9 +165,14 @@ export default defineBackground(() => {
     getTab: tabInfo,
     send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
     store: mediaStore(),
+    liveTabIds: async () =>
+      (await browser.tabs.query({})).flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
   });
+  // Started before any listener can fire, so every response waits for the restored lists.
+  const restored = media.start();
   const watcher = new MediaWatcher(registry, {
     isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
+    ready: restored,
   });
 
   const hub: Hub = new Hub({
@@ -228,6 +233,5 @@ export default defineBackground(() => {
     hub.addPopup(port);
   });
 
-  void media.start();
   void hub.start();
 });

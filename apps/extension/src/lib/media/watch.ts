@@ -4,6 +4,12 @@ import type { MediaRegistry } from './registry';
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
   isPrivateTab(tabId: number): Promise<boolean>;
+  /**
+   * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
+   * Responses wait for it, in order, so a navigation that woke the background clears
+   * the restored list instead of being undone by it.
+   */
+  ready?: Promise<unknown>;
 }
 
 /**
@@ -35,6 +41,8 @@ export class MediaWatcher {
   readonly #private = new Map<number, boolean>();
   /** Bumped on every new page, so a detection that was waiting on the privacy check cannot land in the next page. */
   readonly #generation = new Map<number, number>();
+  /** True once `deps.ready` settled; checked first so later responses do not wait a turn. */
+  #restored = false;
 
   constructor(registry: MediaRegistry, deps: WatchDeps) {
     this.#registry = registry;
@@ -44,6 +52,7 @@ export class MediaWatcher {
   async onResponse(response: ObservedResponse): Promise<void> {
     const { tabId } = response;
     if (tabId < 0) return;
+    await this.#whenReady();
     if (isNavigation(response)) {
       this.#generation.set(tabId, (this.#generation.get(tabId) ?? 0) + 1);
       this.#registry.clearTab(tabId);
@@ -58,6 +67,12 @@ export class MediaWatcher {
       if ((this.#generation.get(tabId) ?? 0) !== generation) return;
     }
     this.#registry.add(tabId, detection);
+  }
+
+  async #whenReady(): Promise<void> {
+    if (this.#restored || this.#deps.ready === undefined) return;
+    await this.#deps.ready.catch(() => undefined);
+    this.#restored = true;
   }
 
   onTabRemoved(tabId: number): void {

@@ -16,6 +16,7 @@ import { chooseTarget, describeTarget, type ButtonContext } from '../src/lib/med
 import type { Detection } from '../src/lib/media/detect';
 import { MEDIA_CHECK, MEDIA_DOWNLOAD } from '../src/lib/media/messages';
 import { MediaRegistry, type MediaItem, type SavedMedia } from '../src/lib/media/registry';
+import { MediaWatcher } from '../src/lib/media/watch';
 import { asPopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import { FakeApp, FakeDownloads, MemoryCache, flush } from './fakes';
@@ -534,5 +535,90 @@ describe('popup media commands', () => {
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: -1 } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: '3' } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3 } })).toBeNull();
+  });
+});
+
+describe('background restart', () => {
+  const pageA = {
+    kind: 'hls' as const,
+    url: 'https://a.example.com/v/master.m3u8',
+    mime: null,
+    size: null,
+    audio: false,
+  };
+
+  function savedWith(...tabs: Array<[number, Detection]>): SavedMedia {
+    const before = new MediaRegistry();
+    for (const [tab, d] of tabs) before.add(tab, d);
+    return JSON.parse(JSON.stringify(before.save())) as SavedMedia;
+  }
+
+  it('applies the response that woke the background on top of the restored lists', async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const registry = new MediaRegistry();
+    const center = new MediaCenter({
+      registry,
+      getTab: () => Promise.resolve(null),
+      send: () => Promise.resolve({ ok: true, message: '' }),
+      store: { load: () => new Promise((resolve) => (release = resolve)), save: () => Promise.resolve() },
+    });
+    const restored = center.start();
+    const watcher = new MediaWatcher(registry, {
+      isPrivateTab: () => Promise.resolve(false),
+      ready: restored,
+    });
+    // Tab 1 moves on to page B while the saved lists (page A) are still loading.
+    const navigation = watcher.onResponse({
+      url: 'https://b.example.com/',
+      tabId: 1,
+      type: 'main_frame',
+      statusCode: 200,
+      responseHeaders: [{ name: 'content-type', value: 'text/html' }],
+    });
+    const pageB = watcher.onResponse({
+      url: 'https://b.example.com/s/master.m3u8',
+      tabId: 1,
+      type: 'xmlhttprequest',
+      statusCode: 200,
+      responseHeaders: [{ name: 'content-type', value: 'application/vnd.apple.mpegurl' }],
+    });
+    release(savedWith([1, pageA]));
+    await Promise.all([restored, navigation, pageB]);
+    expect(registry.items(1).map((i) => i.url)).toEqual(['https://b.example.com/s/master.m3u8']);
+  });
+
+  it('answers the media button only after the lists are back', async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const registry = new MediaRegistry();
+    const center = new MediaCenter({
+      registry,
+      getTab: () => Promise.resolve(null),
+      send: () => Promise.resolve({ ok: true, message: '' }),
+      store: { load: () => new Promise((resolve) => (release = resolve)), save: () => Promise.resolve() },
+    });
+    void center.start();
+    const answer = center.handleContentMessage(
+      { type: MEDIA_CHECK, src: null, audio: false },
+      { tab: { id: 1, url: 'https://a.example.com/' } },
+    );
+    release(savedWith([1, pageA]));
+    expect(await answer).toEqual({ show: true });
+  });
+
+  it('drops the saved lists of tabs that were closed meanwhile', async () => {
+    const registry = new MediaRegistry();
+    const center = new MediaCenter({
+      registry,
+      getTab: () => Promise.resolve(null),
+      send: () => Promise.resolve({ ok: true, message: '' }),
+      store: {
+        load: () => Promise.resolve(savedWith([1, pageA], [9, pageA])),
+        save: () => Promise.resolve(),
+      },
+      liveTabIds: () => Promise.resolve([1, 2]),
+    });
+    await center.start();
+    expect(registry.items(1)).toHaveLength(1);
+    expect(registry.items(9)).toEqual([]);
   });
 });

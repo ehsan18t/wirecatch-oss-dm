@@ -130,15 +130,17 @@ export class MediaRegistry {
 
   /**
    * Puts back what a previous run of the background script saved. Tabs that already
-   * have media detected since the restart keep it, after the saved items.
+   * have media detected since the restart keep it, after the saved items. With
+   * `liveTabs`, tabs that no longer exist are dropped.
    */
-  restore(saved: unknown): void {
+  restore(saved: unknown, liveTabs?: ReadonlySet<number>): void {
     if (typeof saved !== 'object' || saved === null) return;
     const { v, tabs } = saved as { v?: unknown; tabs?: unknown };
     if (v !== 1 || !Array.isArray(tabs)) return;
     for (const entry of tabs as unknown[]) {
       if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1])) continue;
       const tabId = entry[0];
+      if (liveTabs !== undefined && !liveTabs.has(tabId)) continue;
       const savedItems = (entry[1] as unknown[]).filter(isItem);
       const current = this.#tabs.get(tabId) ?? [];
       const merged = [...savedItems, ...current.filter((c) => !savedItems.some((s) => s.key === c.key))];

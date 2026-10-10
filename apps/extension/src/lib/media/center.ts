@@ -76,6 +76,8 @@ export interface MediaCenterDeps {
   /** Hands media to the app (`Hub.sendMedia`). */
   send(request: MediaRequest): Promise<MediaSendResult>;
   store?: MediaStore;
+  /** Ids of the tabs open now, so saved lists of closed tabs are not restored. */
+  liveTabIds?(): Promise<number[]>;
   saveDelayMs?: number;
 }
 
@@ -101,6 +103,8 @@ export class MediaCenter {
   readonly #deps: MediaCenterDeps;
   readonly #watchers = new Map<number, Set<(view: MediaView) => void>>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Settles once the saved lists are back; questions about a tab wait for it. */
+  #ready: Promise<void> = Promise.resolve();
 
   constructor(deps: MediaCenterDeps) {
     this.#deps = deps;
@@ -114,10 +118,23 @@ export class MediaCenter {
     });
   }
 
-  /** Puts back the media a previous run of the background script saw. */
-  async start(): Promise<void> {
-    const saved = await this.#deps.store?.load().catch(() => null);
-    if (saved != null) this.#deps.registry.restore(saved);
+  /**
+   * Puts back the media a previous run of the background script saw. The returned
+   * promise is what the `MediaWatcher` waits for before handling any response, so the
+   * request that woke the background (often a new page) is applied on top of the
+   * restored lists instead of being overwritten by them.
+   */
+  start(): Promise<void> {
+    this.#ready = this.#restore();
+    return this.#ready;
+  }
+
+  async #restore(): Promise<void> {
+    const [saved, live] = await Promise.all([
+      this.#deps.store?.load().catch(() => null),
+      this.#deps.liveTabIds?.().catch(() => undefined),
+    ]);
+    if (saved != null) this.#deps.registry.restore(saved, live === undefined ? undefined : new Set(live));
   }
 
   /**
@@ -127,7 +144,9 @@ export class MediaCenter {
   handleContentMessage(raw: unknown, sender: ContentSender): Promise<CheckAnswer | DownloadAnswer> | null {
     const request = asContentRequest(raw);
     if (request === null) return null;
-    return request.type === MEDIA_CHECK ? this.#check(request, sender) : this.#download(request, sender);
+    return this.#ready.then((): Promise<CheckAnswer | DownloadAnswer> =>
+      request.type === MEDIA_CHECK ? this.#check(request, sender) : this.#download(request, sender),
+    );
   }
 
   #targetFor(request: ContentRequest, sender: ContentSender): MediaTarget | null {
@@ -163,6 +182,7 @@ export class MediaCenter {
 
   /** The popup's list for a tab. */
   async view(tabId: number): Promise<MediaView> {
+    await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(() => null);
     if (tab === null || tab.url === null || !/^https?:/i.test(tab.url)) {
       return { tabId, page: 'other', entries: [] };
@@ -195,6 +215,7 @@ export class MediaCenter {
 
   /** Sends one item from the popup's list to the app. */
   async download(tabId: number, key: string): Promise<MediaSendResult> {
+    await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(() => null);
     if (tab === null) return { ok: false, message: TAB_GONE };
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
