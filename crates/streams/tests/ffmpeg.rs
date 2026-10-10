@@ -244,7 +244,8 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
         &ffmpeg,
         &source,
         "testsrc=duration=3:size=160x120:rate=10",
-        &["-c:v", "mpeg4"],
+        // MPEG-4 Part 2 needs its VOL header repeated in each segment.
+        &["-c:v", "mpeg4", "-bsf:v", "dump_extra"],
         "v",
     );
     generate(&ffmpeg, &source, "sine=duration=3", &["-c:a", "aac"], "a");
@@ -289,6 +290,8 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
             "sine=duration=3",
             "-c:v",
             "mpeg4",
+            "-bsf:v",
+            "dump_extra",
             "-c:a",
             "aac",
         ])
