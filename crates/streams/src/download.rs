@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -229,10 +229,18 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
     let (track, index) = (job.track, job.index);
     let decrypted = blocking(move || {
         let path = work.segment_path(track, index);
+        // Each segment is on disk before it gets its final name and its line
+        // in the log, so a power cut can never leave a logged segment whose
+        // file is empty or short.
         let size = match key {
             None => {
+                // Write access: Windows refuses to flush a read-only handle.
+                let file = fs::OpenOptions::new().write(true).open(&part)?;
+                file.sync_all()?;
+                let size = file.metadata()?.len();
+                drop(file);
                 fs::rename(&part, &path)?;
-                fs::metadata(&path)?.len()
+                size
             }
             Some((key, iv)) => {
                 // Streamed file to file: memory use does not grow with the
@@ -244,7 +252,10 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
                     let _ = fs::remove_file(&path);
                     return Ok(false);
                 };
-                output.flush()?;
+                output
+                    .into_inner()
+                    .map_err(io::IntoInnerError::into_error)?
+                    .sync_all()?;
                 drop(input);
                 fs::remove_file(&part)?;
                 len
