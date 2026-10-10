@@ -87,7 +87,7 @@ impl From<reqwest::Error> for Failure {
 
 impl Failure {
     /// A response whose status is not the one wanted.
-    fn status(response: &Response) -> Self {
+    pub(crate) fn status(response: &Response) -> Self {
         let status = response.status();
         let retry_after = matches!(
             status,
@@ -349,7 +349,7 @@ fn native_roots() -> rustls::RootCertStore {
 /// `https` to `http` unless allowed, gives up waiting for an answer after the
 /// stall timeout, and returns [`Error::Cancelled`] as soon as the download is
 /// cancelled.
-async fn send(
+pub(crate) async fn send(
     client: &Client,
     url: &Url,
     session: &Session,
@@ -553,7 +553,7 @@ pub struct ContentRange {
     pub total: Option<u64>,
 }
 
-fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
+pub(crate) fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
     parse_content_range(headers.get(CONTENT_RANGE)?.to_str().ok()?)
 }
 

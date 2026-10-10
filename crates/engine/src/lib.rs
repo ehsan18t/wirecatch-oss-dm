@@ -152,6 +152,7 @@
 
 mod download;
 mod error;
+pub mod fetch;
 mod http;
 mod limiter;
 pub mod naming;
@@ -163,6 +164,7 @@ mod worker;
 
 pub use download::{DownloadOptions, DownloadRequest, Outcome, PathResolver, RemoteFile, download};
 pub use error::{Error, NetworkError, Result};
+pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;
 pub use progress::Progress;
 /// HTTP header names and values, for [`DownloadOptions::headers`].
