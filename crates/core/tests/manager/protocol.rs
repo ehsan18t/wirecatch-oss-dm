@@ -2,8 +2,8 @@
 //! crashing, and a settings change from any side reaches every client. Also the
 //! extension's capture flow, with and without confirmation.
 
-use std::collections::VecDeque;
-use std::time::Duration;
+use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
@@ -27,6 +27,9 @@ struct Client {
     server: JoinHandle<std::io::Result<()>>,
     next_id: u64,
     events: VecDeque<Event>,
+    /// Responses that arrived while waiting for another one: requests run side by
+    /// side, so their answers may come in any order.
+    answered: HashMap<u64, Outcome>,
 }
 
 impl Client {
@@ -38,6 +41,7 @@ impl Client {
             server,
             next_id: 1,
             events: VecDeque::new(),
+            answered: HashMap::new(),
         }
     }
 
@@ -61,21 +65,30 @@ impl Client {
 
     /// Sends a call and returns its outcome, keeping events that arrive meanwhile.
     async fn call(&mut self, call: Call) -> Result<Reply, ProtocolError> {
+        let id = self.request(call).await;
+        self.response(id).await
+    }
+
+    /// Sends a call without waiting for its answer, and returns its id.
+    async fn request(&mut self, call: Call) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&Message::Request { id, call }).await;
-        self.response(id).await
+        id
     }
 
     async fn response(&mut self, id: u64) -> Result<Reply, ProtocolError> {
         loop {
+            if let Some(outcome) = self.answered.remove(&id) {
+                return match outcome {
+                    Outcome::Ok(reply) => Ok(reply),
+                    Outcome::Err(e) => Err(e),
+                };
+            }
             match self.recv().await.expect("connection closed") {
                 Message::Response { id: got, outcome } => {
-                    assert_eq!(got, id, "response to the wrong request");
-                    return match outcome {
-                        Outcome::Ok(reply) => Ok(reply),
-                        Outcome::Err(e) => Err(e),
-                    };
+                    let earlier = self.answered.insert(got, outcome);
+                    assert!(earlier.is_none(), "two responses to request {got}");
                 }
                 Message::Event { event } => self.events.push_back(event),
                 Message::Request { .. } => panic!("the server sent a request"),
@@ -672,6 +685,76 @@ async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() {
         .await
         .unwrap();
     assert_eq!(outcome, WithdrawOutcome::AlreadyStarted);
+}
+
+/// One slow request must not hold up the others on the same connection: the
+/// extension's withdrawal, in particular, has to arrive while the capture it
+/// withdraws is still waiting for a silent server.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_slow_capture_does_not_hold_up_other_requests() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await;
+    let mut client = Client::connected(&h.manager).await;
+    let waiting = capture(silent.url("slow.pdf"));
+    let added = client.request(Call::AddDownload(waiting.clone())).await;
+    // The capture is now waiting for the server's answer.
+    crate::common::wait_until("the capture to connect", || {
+        (silent.accepted.load(std::sync::atomic::Ordering::SeqCst) > 0).then_some(())
+    })
+    .await;
+
+    let asked = Instant::now();
+    let reply = client.call(Call::ListQueues).await.unwrap();
+    assert!(matches!(reply, Reply::Queues(_)));
+    assert!(
+        asked.elapsed() < Duration::from_secs(1),
+        "ListQueues waited {:?} behind the capture",
+        asked.elapsed()
+    );
+
+    let reply = client
+        .call(Call::WithdrawDownload(WithdrawRequest {
+            handover_id: waiting.handover_id.clone(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(reply, Reply::Withdrawn(WithdrawOutcome::Withdrawn));
+    assert!(
+        asked.elapsed() < Duration::from_secs(3),
+        "the withdrawal waited {:?} behind the capture",
+        asked.elapsed()
+    );
+    let err = client.response(added).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotStarted);
+    assert!(h.manager.list_downloads().is_empty());
+}
+
+/// A client may not pile up requests without limit: the ones beyond the limit get
+/// an error at once, and the connection keeps working.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn requests_beyond_the_limit_are_refused() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await;
+    let mut client = Client::connected(&h.manager).await;
+    // The first add waits for the silent server; every repeat of it waits for the
+    // first one's outcome.
+    let slow = capture(silent.url("slow.pdf"));
+    let mut ids = Vec::new();
+    for _ in 0..=wirecatch_core::MAX_REQUESTS_IN_FLIGHT {
+        ids.push(client.request(Call::AddDownload(slow.clone())).await);
+    }
+    let last = ids.pop().unwrap();
+    let err = client.response(last).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRequest);
+    assert!(err.message.contains("at once"), "{}", err.message);
+    // Withdrawing ends the waiting requests; the connection works afterwards.
+    let outcome = h.manager.withdraw_capture(&slow.handover_id).await.unwrap();
+    assert_eq!(outcome, WithdrawOutcome::Withdrawn);
+    for id in ids {
+        let err = client.response(id).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotStarted, "{}", err.message);
+    }
+    assert!(client.call(Call::ListQueues).await.is_ok());
 }
 
 fn framed(body: &[u8]) -> Vec<u8> {
