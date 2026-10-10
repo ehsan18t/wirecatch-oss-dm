@@ -51,9 +51,11 @@
 //!             println!("saved {bytes} bytes to {}", path.display());
 //! #           std::fs::remove_file(&path)?;
 //!         }
-//!         Outcome::Paused { path, remaining } => {
+//!         Outcome::Paused { path, remaining, .. } => {
 //!             println!("paused with {remaining} bytes left for {}", path.display());
 //!         }
+//!         // Outcome may gain variants in later versions.
+//!         other => println!("{other:?}"),
 //!     }
 //!     Ok(())
 //! }
@@ -80,7 +82,10 @@
 //! `Content-Disposition`, then the URL, and is made safe for Windows and Linux
 //! (see [`naming`]). An existing file is never overwritten: a free name such as
 //! `report (1).pdf` is used instead. Set [`DownloadRequest::exact_path`] to own
-//! the naming yourself.
+//! the naming yourself, or [`DownloadRequest::resolve_path`] to pick the path
+//! from the server's answer (its suggested name, size and type) once it arrives.
+//! [`Progress::path`] tells where the file goes as soon as the server has
+//! answered.
 //!
 //! # Pausing and resuming
 //!
@@ -118,20 +123,28 @@
 //! cookies, `Authorization`, `Referer` and `User-Agent`. Credentials are only
 //! ever sent to the origin (scheme, host and port) of [`DownloadRequest::url`].
 //! When that URL redirects to another origin, the requests there carry only
-//! headers that hold no credentials (`Referer`, `User-Agent`, `Accept`,
-//! `Accept-Language`, `Cache-Control`, `DNT` and `Pragma`).
+//! headers that hold no credentials (`User-Agent`, `Accept`, `Accept-Language`,
+//! `Cache-Control`, `DNT`, `Pragma`, and `Referer` cut down to its origin). A
+//! `user:password@` in the URL is handled the same way, as an `Authorization`
+//! header for its own origin. A redirect from `https` to `http` is refused
+//! unless [`DownloadOptions::allow_insecure_redirects`] is set.
 //!
 //! # Busy servers
 //!
 //! Network errors, timeouts and `408`, `425`, `429`, `500`, `502`, `503` and
 //! `504` answers are retried with growing pauses (see [`Error::is_retryable`]).
+//! A server that accepts a connection but never answers counts as a timeout
+//! after [`DownloadOptions::stall_timeout`], and cancelling never waits for it.
 //! A `429` or `503` with `Retry-After` is retried no sooner than the server asked,
 //! up to five minutes. A server that limits how many connections one client may
-//! open is detected: an extra connection it keeps refusing hands its work to the
-//! connections that are running, and the download finishes with those.
+//! open is detected: an extra connection it keeps refusing (or asks to wait)
+//! hands its work to the connections that are running, and the download
+//! finishes with those.
 //!
-//! All connections of one download share a TLS session cache, so only the first
-//! does a full handshake and the others resume its session. Each connection
+//! All connections share one TLS session cache for the whole process, so only
+//! the first connection to a host does a full handshake and later ones, in the
+//! same download or the next, resume its session. The system's root
+//! certificates are read once per process. Each connection
 //! still has its own TCP connection, so a server that limits speed per
 //! connection is really downloaded from in parallel.
 
@@ -148,8 +161,8 @@ mod state;
 mod storage;
 mod worker;
 
-pub use download::{DownloadOptions, DownloadRequest, Outcome, download};
-pub use error::{Error, Result};
+pub use download::{DownloadOptions, DownloadRequest, Outcome, PathResolver, RemoteFile, download};
+pub use error::{Error, NetworkError, Result};
 pub use limiter::RateLimiter;
 pub use progress::Progress;
 /// HTTP header names and values, for [`DownloadOptions::headers`].

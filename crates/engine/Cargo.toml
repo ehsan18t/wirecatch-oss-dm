@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://docs.rs/wirecatch-engine"
 keywords = ["download", "downloader", "http", "resume", "segmented"]
 categories = ["network-programming", "web-programming::http-client", "asynchronous"]
 # `repository` and `homepage` are added once the public GitHub organization exists.
@@ -14,9 +13,12 @@ categories = ["network-programming", "web-programming::http-client", "asynchrono
 [dependencies]
 bytes.workspace = true
 futures-util.workspace = true
+base64 = "0.22.1"
 httpdate = "1.0.3"
 percent-encoding.workspace = true
-reqwest.workspace = true
+# Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
+# so reqwest needs neither its own root certificates nor a crypto provider.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-no-provider", "http2", "stream"] }
 # Same major version and crypto provider (ring) as reqwest uses, so the shared
 # TLS configuration is the exact type reqwest accepts.
 rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }

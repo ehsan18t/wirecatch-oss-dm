@@ -25,6 +25,10 @@ pub struct Config {
     pub per_connection_bps: Option<u64>,
     /// The first `n` responses break off after `after` bytes.
     pub drop_first: Option<(usize, u64)>,
+    /// The first response (a range request) sends at most this many bytes, with
+    /// a matching `Content-Range`, as servers may. It ends cleanly, so the client
+    /// must ask again for the rest, with no reset that could race the headers.
+    pub short_first: Option<u64>,
     pub content_disposition: Option<String>,
     pub etag: Option<String>,
     /// Send no Content-Length (chunked body of unknown size).
@@ -35,6 +39,11 @@ pub struct Config {
     pub busy: Option<Busy>,
     /// At most this many bodies are served at once; requests beyond it are refused.
     pub max_connections: Option<(usize, Refuse)>,
+    /// `Retry-After` sent with a `Refuse::Status` refusal.
+    pub refuse_retry_after: Option<String>,
+    /// Requests with these sequence numbers are accepted but never answered.
+    pub hang: Option<Range<usize>>,
+    pub content_type: Option<String>,
 }
 
 /// Answers a range of requests with a busy status instead of the file.
@@ -207,6 +216,12 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
             .body(Body::empty())
             .unwrap();
     }
+    if let Some(hang) = &config.hang
+        && hang.contains(&index)
+    {
+        log(&inner, &uri, &headers, StatusCode::REQUEST_TIMEOUT);
+        std::future::pending::<()>().await;
+    }
     if let Some(busy) = &config.busy
         && busy.requests.contains(&index)
     {
@@ -234,6 +249,9 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
     if let Some(cd) = &config.content_disposition {
         builder = builder.header(header::CONTENT_DISPOSITION, cd);
     }
+    if let Some(content_type) = &config.content_type {
+        builder = builder.header(header::CONTENT_TYPE, content_type);
+    }
 
     let mut status = StatusCode::OK;
     let (start, end) = match range {
@@ -246,6 +264,10 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
                 .unwrap();
         }
         Some((start, end)) => {
+            let end = match config.short_first {
+                Some(cap) if index == 0 => end.min(start + cap),
+                _ => end,
+            };
             status = StatusCode::PARTIAL_CONTENT;
             builder = builder.status(status).header(
                 header::CONTENT_RANGE,
@@ -269,10 +291,11 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
             if let Some(Refuse::Status(code)) = refuse {
                 let busy = StatusCode::from_u16(code).unwrap();
                 log(&inner, &uri, &headers, busy);
-                return Response::builder()
-                    .status(busy)
-                    .body(Body::empty())
-                    .unwrap();
+                let mut refusal = Response::builder().status(busy);
+                if let Some(retry_after) = &config.refuse_retry_after {
+                    refusal = refusal.header(header::RETRY_AFTER, retry_after);
+                }
+                return refusal.body(Body::empty()).unwrap();
             }
             // Headers go out, then the body fails at once: hyper resets the connection.
             log(&inner, &uri, &headers, status);

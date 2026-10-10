@@ -19,8 +19,13 @@ use crate::{http, storage};
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
 /// One refusal can be a fluke; two in a row mean the server allows no more
-/// connections than are already open.
+/// connections than are already open. A refusal that asks for a long wait
+/// (`Retry-After`, or a delay beyond the normal backoff) steps back at once,
+/// so the segment is not held hostage while the others could finish it.
 const REFUSALS_BEFORE_STEPPING_BACK: u32 = 2;
+
+/// The longest normal backoff; see [`backoff`].
+const MAX_BACKOFF: Duration = Duration::from_secs(10);
 
 /// How a stretch of streaming ended.
 enum Ended {
@@ -78,10 +83,10 @@ pub(crate) async fn run(
 /// Downloads one segment, retrying transient failures from wherever it got to.
 ///
 /// A 429 or 503 with `Retry-After` is retried no sooner than the server asked.
-/// When the server keeps refusing this connection while others of the same
-/// download are receiving data, the connection steps back instead of retrying:
-/// the server's connection limit is reached, and the remaining connections
-/// finish the work.
+/// When the server keeps refusing this connection (or asks it to wait) while
+/// others of the same download are receiving data, the connection steps back
+/// instead of retrying: the server's connection limit is reached, and the
+/// remaining connections finish the work.
 async fn run_assignment(
     shared: &Shared,
     client: &Client,
@@ -107,7 +112,7 @@ async fn run_assignment(
                     http::fetch(
                         client,
                         &shared.url,
-                        &shared.headers,
+                        &shared.session,
                         from,
                         to,
                         shared.ranged,
@@ -121,6 +126,8 @@ async fn run_assignment(
 
         match attempt.await {
             Ok(ended) => return Ok(ended),
+            // Waiting for an answer was cut short by a pause.
+            Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) if f.error.is_retryable() && failures < shared.opts.max_retries => {
                 let (now, _) = shared.table.lock().unwrap().position(index);
                 let progressed = now > from;
@@ -130,11 +137,15 @@ async fn run_assignment(
                 } else {
                     0
                 };
-                if refusals >= REFUSALS_BEFORE_STEPPING_BACK && step_back(shared, index) {
+                let delay = retry_delay(failures, f.retry_after);
+                let long_wait = f.retry_after.is_some() || delay > MAX_BACKOFF;
+                if refusals > 0
+                    && (refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait)
+                    && step_back(shared, index)
+                {
                     info!(error = %f.error, "server refuses another connection; continuing with the open ones");
                     return Ok(Ended::SteppedBack);
                 }
-                let delay = retry_delay(failures, f.retry_after);
                 warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
                     _ = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
@@ -171,7 +182,7 @@ async fn stream(
         let chunk = match next {
             Err(_) => break Err(Error::Stalled(stall.as_secs())),
             Ok(None) => break Ok(Ended::Eof),
-            Ok(Some(Err(e))) => break Err(e.into()),
+            Ok(Some(Err(e))) => break Err(Error::network(e)),
             Ok(Some(Ok(chunk))) => chunk,
         };
 
@@ -226,6 +237,8 @@ fn is_refusal(error: &Error) -> bool {
     match error {
         Error::HttpStatus { status, .. } => matches!(status, 429 | 503),
         Error::Network(e) => !e.is_timeout(),
+        // No answer in time is not a refusal either.
+        Error::Stalled(_) => false,
         Error::PrematureEof { .. } => true,
         _ => false,
     }
@@ -275,7 +288,7 @@ pub(crate) fn retry_delay(failures: u32, retry_after: Option<Duration>) -> Durat
 pub(crate) fn backoff(failures: u32) -> Duration {
     let base = 500u64
         .saturating_mul(1 << failures.saturating_sub(1).min(5))
-        .min(10_000);
+        .min(MAX_BACKOFF.as_millis() as u64);
     Duration::from_millis(base) + jitter()
 }
 
@@ -360,7 +373,7 @@ impl Writer {
 
     async fn wait(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
         if let Some(handle) = self.in_flight.take() {
-            let (buf, index, end) = handle.await.map_err(std::io::Error::other)??;
+            let (buf, index, end) = handle.await.map_err(Error::task)??;
             table.lock().unwrap().mark_flushed(index, end);
             self.spare = Some(buf);
         }

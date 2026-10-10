@@ -8,8 +8,8 @@ Fast, resumable HTTP and HTTPS downloads over parallel connections. This is the 
 - **Dynamic splitting.** When a connection finishes its part, it takes over half of the largest part still left, so no single slow connection holds up the end.
 - **Straight to disk.** Every byte is written once, at its final offset, in large buffered writes off the async threads. Space is reserved up front without writing it twice (sparse files on NTFS, `fallocate` on Linux).
 - **Resume anywhere.** Data goes to `<name>.wcpart` next to a small `<name>.wcstate` resume file. Pausing, a dropped connection or a killed process all continue from where they stopped. If the file changed on the server (size, `ETag` or `Last-Modified`), the download starts over cleanly instead of producing a corrupt file.
-- **Polite with busy servers.** Network errors and `5xx`/`429` answers are retried with growing pauses; `Retry-After` is honored; a server that refuses extra connections gets only as many as it allows, and the download still completes.
-- **Safe with credentials.** Cookies, `Authorization` and other headers you pass are only sent to the origin you gave them for, never to another host a redirect leads to.
+- **Polite with busy servers.** Network errors, timeouts (including a server that never answers) and the statuses `408`, `425`, `429`, `500`, `502`, `503` and `504` are retried with growing pauses; any other status ends the download. `Retry-After` is honored, up to five minutes. A server that refuses extra connections gets only as many as it allows, and the download still completes.
+- **Safe with credentials.** Cookies, `Authorization`, `user:password@` in the URL and other headers you pass are only sent to the origin you gave them for, never to another host a redirect leads to; other hosts get the `Referer` cut down to its origin. A redirect from `https` to `http` is refused unless you allow it. Proxy credentials go in the proxy URL (for example `HTTPS_PROXY=http://user:password@proxy:8080`), not in a header.
 - **Speed limits** shared across any number of downloads, changeable while they run.
 - **Safe file names** from `Content-Disposition` or the URL, valid on Windows and Linux; an existing file is never overwritten.
 
@@ -35,9 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Outcome::Completed { path, bytes, .. } => {
             println!("saved {bytes} bytes to {}", path.display());
         }
-        Outcome::Paused { path, remaining } => {
+        Outcome::Paused { path, remaining, .. } => {
             println!("paused with {remaining} bytes left for {}", path.display());
         }
+        // Outcome may gain variants in later versions.
+        other => println!("{other:?}"),
     }
     Ok(())
 }

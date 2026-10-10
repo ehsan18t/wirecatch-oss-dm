@@ -12,7 +12,7 @@ use common::{Busy, Config, Refuse, TestServer, test_data};
 use wirecatch_engine::header::{
     AUTHORIZATION, COOKIE, HeaderValue, PROXY_AUTHORIZATION, REFERER, USER_AGENT,
 };
-use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
+use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
@@ -126,7 +126,7 @@ async fn credentials_never_follow_a_redirect_to_another_origin() {
                 "{name} reached the other origin: {request:?}"
             );
         }
-        assert_eq!(request.header("referer"), Some("https://site.example/page"));
+        assert_eq!(request.header("referer"), Some("https://site.example/"));
         assert_eq!(request.header("user-agent"), Some("TestBrowser/1.0"));
     }
 }
@@ -227,17 +227,14 @@ async fn retry_after_as_a_date_is_not_retried_before_that_time() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retry_after_is_honored_in_the_middle_of_a_download() {
-    // The first response breaks off; the retry for the rest is answered with
+    // The first response is short; the request for the rest is answered with
     // 503 and Retry-After. With one connection there is no one else to take
-    // over, so the connection must wait and try again. Throttled so the client
-    // has read the first response's headers before the break (on Windows a reset
-    // discards whatever the client has not read yet).
+    // over, so the connection must wait and try again.
     let server = TestServer::start(
         test_data(MIB),
         Config {
             ranges: true,
-            per_connection_bps: Some(2 * MIB as u64),
-            drop_first: Some((1, 256 * KIB as u64)),
+            short_first: Some(256 * KIB as u64),
             busy: Some(Busy {
                 requests: 1..2,
                 status: 503,
@@ -265,13 +262,14 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
 async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str) {
     const ALLOWED: usize = 2;
     const CONNECTIONS: usize = 8;
-    // Long enough (about 2 s) that connections that kept retrying instead of
-    // stepping back would be refused a third time.
+    // Long enough (about 4 s) that connections that kept retrying instead of
+    // stepping back would be refused at least four times each (at about 0, 0.6,
+    // 1.6 and 3.6 s), well above the bound below even on a slow machine.
     let server = TestServer::start(
-        test_data(6 * MIB),
+        test_data(8 * MIB),
         Config {
             ranges: true,
-            per_connection_bps: Some(2 * MIB as u64),
+            per_connection_bps: Some(MIB as u64),
             max_connections: Some((ALLOWED, refuse)),
             ..Default::default()
         },
@@ -288,15 +286,17 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
     let refused = server.stats.refused.load(Ordering::SeqCst);
     assert!(max <= ALLOWED, "{max} connections served at once");
     assert!(refused >= 1, "the limit was never reached");
-    // Each extra connection is refused twice, then steps back for good. A little
-    // slack covers a working connection that asks again a moment before the
-    // server has counted its previous response as finished.
+    // Each extra connection is refused twice, then steps back for good: 12.
+    // The slack covers working connections that ask again a moment before the
+    // server has counted their previous response as finished, which happens
+    // more on a slow, busy machine.
     let surplus = CONNECTIONS - ALLOWED;
     assert!(
-        refused <= 2 * surplus + 3,
+        refused <= 2 * surplus + 6,
         "{refused} refused requests: connections kept retrying"
     );
-    assert!(took < Duration::from_secs(8), "took {took:?}");
+    // About 4 s of data; generous for a 2-core CI runner.
+    assert!(took < Duration::from_secs(30), "took {took:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -312,4 +312,312 @@ async fn completes_when_extra_connections_get_429() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn completes_when_extra_connections_are_reset() {
     completes_within_the_server_connection_limit(Refuse::Reset, "limit-reset").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn extra_connections_told_to_wait_step_back_at_once() {
+    // Refusals ask for a 20 s wait. Holding a part for that long would delay the
+    // end by 20 s; stepping back lets the two allowed connections finish it.
+    const ALLOWED: usize = 2;
+    const CONNECTIONS: usize = 8;
+    let server = TestServer::start(
+        test_data(4 * MIB),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(2 * MIB as u64),
+            max_connections: Some((ALLOWED, Refuse::Status(503))),
+            refuse_retry_after: Some("20".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("limit-retry-after");
+
+    let started = Instant::now();
+    let path = completed_path(run(request(&server, "wait.bin", &dir, CONNECTIONS)).await);
+    let took = started.elapsed();
+
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    let refused = server.stats.refused.load(Ordering::SeqCst);
+    assert!(refused >= 1, "the limit was never reached");
+    assert!(
+        refused <= CONNECTIONS - ALLOWED + 4,
+        "{refused} refused requests: connections retried instead of stepping back"
+    );
+    // About 1 s of data; anything near 20 s means a part waited out Retry-After.
+    assert!(took < Duration::from_secs(12), "took {took:?}");
+}
+
+fn with_userinfo(mut url: wirecatch_engine::Url) -> wirecatch_engine::Url {
+    url.set_username("alice").unwrap();
+    url.set_password(Some("s3cret")).unwrap();
+    url
+}
+
+/// `alice:s3cret` as an `Authorization` header value.
+const ALICE: &str = "Basic YWxpY2U6czNjcmV0";
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn url_credentials_reach_every_request_to_their_origin() {
+    let server = TestServer::start(
+        test_data(2 * MIB),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(4 * MIB as u64),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("userinfo");
+    let mut req = request(&server, "files/private.bin", &dir, 4);
+    req.url = with_userinfo(req.url);
+
+    let path = completed_path(run(req).await);
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+
+    let seen = server.stats.seen();
+    assert!(seen.len() > 1, "expected worker requests too");
+    for request in &seen {
+        assert_eq!(request.header("authorization"), Some(ALICE), "{request:?}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn url_credentials_never_follow_a_redirect_to_another_origin() {
+    let target = TestServer::start(
+        test_data(2 * MIB),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(4 * MIB as u64),
+            ..Default::default()
+        },
+    )
+    .await;
+    let origin = TestServer::start(
+        Vec::new(),
+        Config {
+            redirect: Some(("/start".into(), target.url("files/data.bin").to_string())),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("userinfo-cross");
+    let mut req = request(&origin, "start", &dir, 4);
+    req.url = with_userinfo(req.url);
+
+    let path = completed_path(run(req).await);
+    assert_eq!(std::fs::read(path).unwrap(), target.data);
+
+    assert_eq!(origin.stats.seen()[0].header("authorization"), Some(ALICE));
+    let seen = target.stats.seen();
+    assert!(seen.len() > 1);
+    for request in &seen {
+        assert!(
+            request.headers.get("authorization").is_none(),
+            "{request:?}"
+        );
+    }
+}
+
+/// Runs `req` in the background and cancels it once `ready` holds, then
+/// expects the download to come back within two seconds.
+async fn cancel_when(
+    req: DownloadRequest,
+    ready: impl Fn() -> bool,
+) -> wirecatch_engine::Result<Outcome> {
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req, Arc::new(Progress::default()), cancel.clone()));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready() {
+        assert!(Instant::now() < deadline, "the expected state never came");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // Let the engine settle into its wait.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("cancelling did not stop the download within 2 s")
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelling_while_the_server_never_answers_the_first_request() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            hang: Some(0..usize::MAX),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("hang-probe");
+    let mut req = request(&server, "hang.bin", &dir, 4);
+    req.options.stall_timeout = Duration::from_secs(60);
+
+    let stats = server.stats.clone();
+    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 1).await;
+    assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelling_while_the_server_never_answers_mid_download() {
+    // The first response is short; the request for the rest is never answered.
+    let server = TestServer::start(
+        test_data(MIB),
+        Config {
+            ranges: true,
+            short_first: Some(256 * KIB as u64),
+            hang: Some(1..usize::MAX),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("hang-mid");
+    let mut req = request(&server, "hang.bin", &dir, 1);
+    req.options.stall_timeout = Duration::from_secs(60);
+
+    let stats = server.stats.clone();
+    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 2).await;
+    assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_that_never_answers_times_out_and_is_retried() {
+    let server = TestServer::start(
+        test_data(256 * KIB),
+        Config {
+            ranges: true,
+            hang: Some(0..1),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("hang-retry");
+    let mut req = request(&server, "hang.bin", &dir, 4);
+    req.options.stall_timeout = Duration::from_millis(500);
+
+    let outcome = tokio::time::timeout(Duration::from_secs(10), run(req))
+        .await
+        .expect("the download waited for an answer forever instead of timing out");
+    let path = completed_path(outcome);
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+
+    let seen = server.stats.seen();
+    let waited = seen[1].at - seen[0].at;
+    assert!(
+        waited >= Duration::from_millis(500),
+        "retried after {waited:?}, before the timeout"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelling_during_a_long_retry_after_on_the_first_request() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            ranges: true,
+            busy: Some(Busy {
+                requests: 0..1,
+                status: 503,
+                retry_after: Some("60".into()),
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("retry-after-cancel-probe");
+    let stats = server.stats.clone();
+    let result = cancel_when(request(&server, "busy.bin", &dir, 4), || {
+        stats.requests.load(Ordering::SeqCst) >= 1
+    })
+    .await;
+    assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelling_during_a_long_retry_after_mid_download() {
+    let server = TestServer::start(
+        test_data(MIB),
+        Config {
+            ranges: true,
+            short_first: Some(256 * KIB as u64),
+            busy: Some(Busy {
+                requests: 1..2,
+                status: 503,
+                retry_after: Some("60".into()),
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("retry-after-cancel-mid");
+    let stats = server.stats.clone();
+    let result = cancel_when(request(&server, "busy.bin", &dir, 1), || {
+        stats.requests.load(Ordering::SeqCst) >= 2
+    })
+    .await;
+    assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
+}
+
+async fn expect_error(server: &TestServer, path: &str, test: &str) -> Error {
+    let dir = temp_dir(test);
+    download(
+        request(server, path, &dir, 4),
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+    )
+    .await
+    .expect_err("the download should fail")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_redirect_loop_is_reported_as_such() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            redirect: Some(("/loop".into(), "/loop".into())),
+            ..Default::default()
+        },
+    )
+    .await;
+    let error = expect_error(&server, "loop", "redirect-loop").await;
+    assert!(matches!(error, Error::TooManyRedirects { .. }), "{error:?}");
+    // The first request plus 20 redirects followed.
+    assert_eq!(server.stats.requests.load(Ordering::SeqCst), 21);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_redirect_to_another_scheme_is_refused() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            redirect: Some(("/ftp".into(), "ftp://files.example/a.bin".into())),
+            ..Default::default()
+        },
+    )
+    .await;
+    let error = expect_error(&server, "ftp", "redirect-ftp").await;
+    assert!(matches!(error, Error::InvalidUrl(_)), "{error:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_redirect_without_location_is_reported_as_such() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            busy: Some(Busy {
+                requests: 0..usize::MAX,
+                status: 302,
+                retry_after: None,
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let error = expect_error(&server, "nowhere", "redirect-nowhere").await;
+    assert!(
+        matches!(error, Error::RedirectWithoutLocation { status: 302, .. }),
+        "{error:?}"
+    );
 }

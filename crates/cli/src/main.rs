@@ -98,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
             path,
             bytes,
             resumed_from,
+            ..
         } => {
             let kept = if resumed_from > 0 {
                 format!(" ({} kept from earlier)", HumanBytes(resumed_from))
@@ -106,13 +107,16 @@ async fn main() -> anyhow::Result<()> {
             };
             println!("Saved {} to {}{kept}", HumanBytes(bytes), path.display());
         }
-        Outcome::Paused { path, remaining } => {
+        Outcome::Paused {
+            path, remaining, ..
+        } => {
             println!(
                 "Paused with {} left for {}. Run the same command again to continue.",
                 HumanBytes(remaining),
                 path.display()
             );
         }
+        other => println!("Finished: {other:?}"),
     }
     Ok(())
 }
