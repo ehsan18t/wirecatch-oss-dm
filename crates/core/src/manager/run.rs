@@ -69,28 +69,30 @@ impl Manager {
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
-        let run = Run {
-            id: run_id,
-            cancel: CancellationToken::new(),
-            exited: CancellationToken::new(),
-            progress: Arc::new(Progress::default()),
-            stop: None,
-            meter: SpeedMeter::default(),
-        };
+        let (cancel, exited) = (CancellationToken::new(), CancellationToken::new());
+        let progress = Arc::new(Progress::default());
         let guard = RunGuard {
             manager: Arc::downgrade(&self.inner),
             runtime: self.inner.runtime.clone(),
             id,
             run_id,
-            exited: run.exited.clone(),
+            exited: exited.clone(),
             reported: false,
         };
-        let work = engine(run.progress.clone(), run.cancel.clone());
-        self.spawn(async move {
+        let work = engine(progress.clone(), cancel.clone());
+        let task = self.spawn(async move {
             let result = work.await;
             guard.report(RunEnd::Engine(result));
         });
-        entry.run = Some(run);
+        entry.run = Some(Run {
+            id: run_id,
+            cancel,
+            exited,
+            progress,
+            stop: None,
+            meter: SpeedMeter::default(),
+            task: task.abort_handle(),
+        });
         entry.resume_first = false;
         entry.row.status = DownloadStatus::Connecting;
         entry.row.error = None;

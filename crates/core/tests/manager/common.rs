@@ -15,7 +15,7 @@ use axum::routing::get;
 use bytes::Bytes;
 use chrono::{NaiveDate, NaiveDateTime};
 use tempfile::TempDir;
-use wirecatch_core::{KnownFolders, Manager, ManagerConfig, ManualClock};
+use wirecatch_core::{DEFAULT_STOP_TIMEOUT, KnownFolders, Manager, ManagerConfig, ManualClock};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, AppSettings, DownloadStatus, DownloadSummary};
 
@@ -247,6 +247,7 @@ pub struct Harness {
     pub clock: Arc<ManualClock>,
     pub folders: KnownFolders,
     pub root: TempDir,
+    stop_timeout: Duration,
 }
 
 impl Harness {
@@ -255,10 +256,19 @@ impl Harness {
     }
 
     pub async fn at(now: NaiveDateTime) -> Self {
+        Self::build(now, DEFAULT_STOP_TIMEOUT).await
+    }
+
+    /// A manager that gives up on a download that does not stop within `timeout`.
+    pub async fn with_stop_timeout(timeout: Duration) -> Self {
+        Self::build(monday(12, 0), timeout).await
+    }
+
+    async fn build(now: NaiveDateTime, stop_timeout: Duration) -> Self {
         let root = tempfile::tempdir().unwrap();
         let folders = KnownFolders::under_home(root.path().join("home"));
         let clock = Arc::new(ManualClock::new(now));
-        let manager = open(&root, &folders, &clock).await;
+        let manager = open(&root, &folders, &clock, stop_timeout).await;
         // One connection per download keeps request counts easy to reason about.
         tune(&manager, |s| s.connections_per_download = 1);
         Self {
@@ -266,13 +276,14 @@ impl Harness {
             clock,
             folders,
             root,
+            stop_timeout,
         }
     }
 
     /// Shuts the manager down and opens a new one on the same data, like an app restart.
     pub async fn restart(&mut self) {
         self.manager.shutdown().await;
-        self.manager = open(&self.root, &self.folders, &self.clock).await;
+        self.manager = open(&self.root, &self.folders, &self.clock, self.stop_timeout).await;
     }
 
     pub async fn add(&self, url: &str) -> DownloadSummary {
@@ -315,10 +326,41 @@ impl Harness {
     }
 }
 
-async fn open(root: &TempDir, folders: &KnownFolders, clock: &Arc<ManualClock>) -> Manager {
-    let config =
-        ManagerConfig::new(root.path().join("data"), folders.clone()).with_clock(clock.clone());
+async fn open(
+    root: &TempDir,
+    folders: &KnownFolders,
+    clock: &Arc<ManualClock>,
+    stop_timeout: Duration,
+) -> Manager {
+    let config = ManagerConfig::new(root.path().join("data"), folders.clone())
+        .with_clock(clock.clone())
+        .with_stop_timeout(stop_timeout);
     Manager::open(config).await.unwrap()
+}
+
+/// A server that accepts connections and never answers.
+pub struct SilentServer {
+    pub base: String,
+}
+
+impl SilentServer {
+    pub async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                held.push(socket);
+            }
+        });
+        Self {
+            base: format!("http://{addr}"),
+        }
+    }
+
+    pub fn url(&self, path: &str) -> String {
+        format!("{}/{}", self.base, path)
+    }
 }
 
 pub fn row(manager: &Manager, id: DownloadId) -> DownloadSummary {

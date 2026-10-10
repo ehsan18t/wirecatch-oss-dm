@@ -16,10 +16,12 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
 
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
+use tracing::warn;
 use wirecatch_engine::{CancellationToken, RateLimiter};
 use wirecatch_protocol::app::{DownloadStatus, UiEvent};
 use wirecatch_protocol::wire::Event;
@@ -45,7 +47,14 @@ pub struct ManagerConfig {
     pub folders: KnownFolders,
     /// Source of the time of day for schedules and timestamps.
     pub clock: Arc<dyn Clock>,
+    /// How long a download may take to stop after being asked (pause, remove,
+    /// shutdown). One still going after this, for example stuck waiting on a server
+    /// that never answers, is abandoned so nothing waits on it forever.
+    pub stop_timeout: Duration,
 }
+
+/// The default [`ManagerConfig::stop_timeout`].
+pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl ManagerConfig {
     /// A configuration using the real clock.
@@ -54,12 +63,19 @@ impl ManagerConfig {
             data_dir: data_dir.into(),
             folders,
             clock: Arc::new(SystemClock),
+            stop_timeout: DEFAULT_STOP_TIMEOUT,
         }
     }
 
     /// Uses `clock` instead of the real clock.
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
+        self
+    }
+
+    /// Uses `timeout` as the [`stop_timeout`](Self::stop_timeout).
+    pub fn with_stop_timeout(mut self, timeout: Duration) -> Self {
+        self.stop_timeout = timeout;
         self
     }
 }
@@ -85,6 +101,7 @@ struct Inner {
     state: Mutex<State>,
     store: Store,
     clock: Arc<dyn Clock>,
+    stop_timeout: Duration,
     folders: KnownFolders,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
@@ -125,6 +142,7 @@ impl Manager {
             state: Mutex::new(restored.state),
             store,
             clock: config.clock,
+            stop_timeout: config.stop_timeout,
             folders: config.folders,
             global_limiter,
             ui_events: broadcast::Sender::new(UI_EVENT_BUFFER),
@@ -160,7 +178,7 @@ impl Manager {
                 .values_mut()
                 .filter_map(|entry| {
                     let exited = entry.run.as_ref().map(|run| run.exited.clone());
-                    entry.stop(Stop::Shutdown);
+                    self.stop_run(entry, Stop::Shutdown);
                     exited
                 })
                 .collect()
@@ -185,6 +203,35 @@ impl Manager {
             self.inner.queues_changed.clone(),
             self.inner.stopped.clone(),
         ));
+    }
+
+    /// Asks a running download to stop, and makes sure it does: a run still going
+    /// after the stop timeout is abandoned, and its end is recorded as if it had
+    /// stopped. Returns `false` if the download was not running.
+    fn stop_run(&self, entry: &mut Entry, why: Stop) -> bool {
+        let first_request = entry.run.as_ref().is_some_and(|run| run.stop.is_none());
+        if !entry.stop(why) {
+            return false;
+        }
+        if first_request && let Some(run) = &entry.run {
+            let (exited, task) = (run.exited.clone(), run.task.clone());
+            let timeout = self.inner.stop_timeout;
+            let id = entry.row.id;
+            self.spawn(async move {
+                if tokio::time::timeout(timeout, exited.cancelled())
+                    .await
+                    .is_err()
+                {
+                    warn!(
+                        id = id.0,
+                        ?timeout,
+                        "download did not stop in time; abandoning it"
+                    );
+                    task.abort();
+                }
+            });
+        }
+        true
     }
 
     /// Starts a task on the manager's runtime, whichever thread this is called from.
@@ -237,7 +284,7 @@ impl Manager {
         let plan = self.plan(state);
         for id in plan.stop {
             if let Some(entry) = state.downloads.get_mut(&id) {
-                entry.stop(Stop::Requeue);
+                self.stop_run(entry, Stop::Requeue);
             }
         }
         for id in plan.start {

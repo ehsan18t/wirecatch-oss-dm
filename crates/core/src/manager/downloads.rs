@@ -95,7 +95,7 @@ impl Manager {
     pub fn pause(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         let entry = state.entry_mut(id)?;
-        if !entry.stop(Stop::Pause) && entry.row.status == DownloadStatus::Queued {
+        if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
             entry.row.status = DownloadStatus::Paused;
             self.save(&mut state, id);
             self.reconcile(&mut state);
@@ -124,7 +124,7 @@ impl Manager {
                 "This download has already finished, so there is nothing to cancel.",
             ));
         }
-        if entry.stop(Stop::Cancel) {
+        if self.stop_run(entry, Stop::Cancel) {
             return Ok(());
         }
         mark_cancelled(entry);
@@ -148,7 +148,7 @@ impl Manager {
                     && let Some(run) = &entry.run
                 {
                     exits.push(run.exited.clone());
-                    entry.stop(Stop::Remove);
+                    self.stop_run(entry, Stop::Remove);
                 }
             }
         }
@@ -202,7 +202,7 @@ impl Manager {
         entry.row.url = url.to_string();
         entry.row.error = None;
         // A running download restarts on the new link; the engine continues the part file.
-        if !entry.stop(Stop::Requeue) {
+        if !self.stop_run(entry, Stop::Requeue) {
             entry.row.status = DownloadStatus::Queued;
         }
         self.save(&mut state, id);
@@ -225,7 +225,7 @@ impl Manager {
             {
                 entry.row.queue = queue;
                 entry.position = position;
-                entry.stop(Stop::Requeue);
+                self.stop_run(entry, Stop::Requeue);
                 self.save(&mut state, *id);
             }
         }
@@ -273,7 +273,7 @@ impl Manager {
             let Some(entry) = state.downloads.get_mut(&id) else {
                 continue;
             };
-            if !entry.stop(Stop::Pause) && entry.row.status == DownloadStatus::Queued {
+            if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
                 entry.row.status = DownloadStatus::Paused;
                 self.save(&mut state, id);
             }

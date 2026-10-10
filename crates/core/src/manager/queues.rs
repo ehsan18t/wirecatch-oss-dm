@@ -79,7 +79,7 @@ impl Manager {
             if let Some(entry) = state.downloads.get_mut(&download) {
                 entry.row.queue = fallback;
                 entry.position = position;
-                entry.stop(Stop::Requeue);
+                self.stop_run(entry, Stop::Requeue);
             }
             self.save(&mut state, download);
         }

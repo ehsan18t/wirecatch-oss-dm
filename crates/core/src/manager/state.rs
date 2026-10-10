@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+use tokio::task::AbortHandle;
 use wirecatch_engine::{CancellationToken, Progress, RateLimiter};
 use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue,
@@ -113,6 +114,8 @@ pub(super) struct Run {
     /// Why the run is being stopped, once it is.
     pub stop: Option<Stop>,
     pub meter: SpeedMeter,
+    /// The run's task, so a run that ignores its stop request can be abandoned.
+    pub task: AbortHandle,
 }
 
 /// Why a run was stopped, which decides the status it ends in.
@@ -307,9 +310,17 @@ mod tests {
                 progress: Arc::new(Progress::default()),
                 stop: None,
                 meter: SpeedMeter::default(),
+                task: idle_task(),
             }),
             resume_first: false,
         }
+    }
+
+    fn idle_task() -> AbortHandle {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.spawn(async {}).abort_handle()
     }
 
     fn reason_after(steps: &[Stop]) -> Option<Stop> {

@@ -25,7 +25,7 @@ mod user_error;
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};
 pub use folders::{KnownFolders, PathError};
-pub use manager::{Manager, ManagerConfig};
+pub use manager::{DEFAULT_STOP_TIMEOUT, Manager, ManagerConfig};
 pub use profile::PROFILE_FORMAT_VERSION;
 pub use server::serve_connection;
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};

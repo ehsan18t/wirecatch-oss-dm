@@ -1,11 +1,13 @@
 //! Acceptance 8 (expired link and refresh) and the rest of a download's life:
 //! naming, cancel, retry, remove, queues and ordering.
 
+use std::time::Duration;
+
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
 
-use crate::common::{Harness, TestServer, exists, partial_files, wait_until};
+use crate::common::{Harness, SilentServer, TestServer, exists, partial_files, wait_until};
 
 const KIB: u64 = 1024;
 
@@ -72,6 +74,31 @@ async fn cancel_discards_progress_and_retry_starts_over() {
         h.manager.cancel(row.id),
         Err(CoreError::WrongState(_))
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_server_that_never_answers_cannot_hang_the_app() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_stop_timeout(Duration::from_millis(300)).await;
+    let paused = h.add(&silent.url("pause.bin")).await;
+    let removed = h.add(&silent.url("remove.bin")).await;
+    let left = h.add(&silent.url("left.bin")).await;
+    for row in [&paused, &removed, &left] {
+        assert_eq!(row.status, DownloadStatus::Connecting);
+    }
+    let patience = Duration::from_secs(5);
+
+    h.manager.pause(paused.id).unwrap();
+    h.wait_status(paused.id, DownloadStatus::Paused).await;
+    tokio::time::timeout(patience, h.manager.remove(&[removed.id], false))
+        .await
+        .expect("remove waited forever")
+        .unwrap();
+    tokio::time::timeout(patience, h.manager.shutdown())
+        .await
+        .expect("shutdown waited forever");
+    // Interrupted by shutdown, so it continues on the next start.
+    assert_eq!(h.row(left.id).status, DownloadStatus::Connecting);
 }
 
 /// Tauri runs synchronous commands on its main thread, outside any Tokio runtime.
