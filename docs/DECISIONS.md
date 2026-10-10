@@ -120,6 +120,8 @@ Decided by the lead while the user was away; easy to revisit before the first re
 - A4. SFTP is not part of "FTP" for v1; it can be added later.
 - A5. Firefox add-on id is `extension@wirecatch.app` and the Chromium development build uses a fixed key so its extension id is stable. Store ids replace these at publication.
 - A6. Saved site passwords are not exported in v1 (D6 encrypted export comes later).
+- A7. HTTP/3 ships as an experimental option, off by default. For bulk downloads, several TCP connections already fill the link and QUIC costs more CPU; it turns on by default once the benchmark shows it winning. Decided by the lead.
+- A8. The ffmpeg add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
 
 ## Open questions
 

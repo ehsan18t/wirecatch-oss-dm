@@ -99,10 +99,31 @@ Acceptance checklist:
 4. Property tests show segments never overlap and always cover the file, across random split, claim and release sequences.
 5. Benchmark numbers do not regress.
 
-## Wave 2: Integration
+## Wave 2: Integration and the rest of v1
 
-Desktop app hosts `wirecatch-core`, tray behavior and `--background`, single instance, start with system. End-to-end test: extension captures a download, bridge relays, app downloads, popup and app stay in sync. Reviewed against D3 to D6 as a whole.
+Wave 1 is merged (engine, protocol, core, ipc, bridge, extension, desktop UI). Wave 2 finishes v1 (D10) in two steps. Protocol additions for media and add-ons are made by the lead before 2a starts.
 
-## Wave 3
+### Wave 2a (parallel)
 
-Installers (Windows NSIS or MSI, Linux formats per the open question) that register the bridge; Linux verification on a real distribution; HLS and DASH (Phase 4); the yt-dlp add-on (Phase 5); FTP and HTTP/3 (Phase 6).
+**WP6 Desktop integration (`apps/desktop`).** The app hosts `wirecatch-core` (D13): every Tauri command calls the manager; `UiEvent`s reach the webview on `wirecatch://event`; the `wirecatch-ipc` listener serves the bridge with `serve_connection`. Tray icon with menu (open, pause all, resume all, quit) and live speed in the tooltip; closing the window destroys the webview and keeps the process in the tray when `close_to_tray` is on; `--background` starts with no window; single instance (a second launch focuses the window and passes a URL argument along); start with system; a notification when a download completes; native dialogs for folders and settings files; open file and open folder. On every start the app runs the bridge's per-user registration (D19). The bridge ships next to the app binary. Installer configuration: per-user NSIS on Windows; deb, rpm and AppImage on Linux. UI for the media quality picker and the add-ons screen, built against the mock first. Polish: the queue header actions fit on one line, the toolbar shows labels when there is room.
+
+**WP7 End-to-end tests (`crates/e2e`, test only).** Real bridge binary plus the core over a real `wirecatch-ipc` endpoint, driven by a scripted fake extension: a capture downloads from the local test server and completes; withdraw before and after the server answers; settings sync from extension to app and back; the bridge relaunching the app after it quits.
+
+**WP8 Streams (`crates/streams`, `wirecatch-streams`).** HLS (master and media playlists, AES-128, byte ranges, live playlists refused with a clear message) and DASH (static MPD, segment templates and lists) downloaded with parallel segment fetching, the same origin-bound credential rules as the engine, resume after interruption, and an ffmpeg step (copy, never re-encode) that joins segments and audio and video tracks into one file. The ffmpeg binary path is passed in; finding or fetching it is the core's job.
+
+**WP9 More protocols (`crates/engine`).** FTP and FTPS (explicit and implicit TLS, passive mode, resume with REST, parallel segments where the server allows several connections) and HTTP/3 used when a server advertises it, falling back to HTTP/2 or 1.1 without the user noticing. Same public API: the URL scheme picks the protocol.
+
+**WP10 Extension media (`apps/extension`).** Detects HLS and DASH manifests and direct media on the page (observing requests, never modifying them), shows the download button over video and audio when `show_media_button` is on, and sends the media hint with the handover. On pages that need an extractor (for example YouTube), the button sends the page to the app, which explains that the media add-on is needed and offers to install it.
+
+### Wave 2b (after 2a merges)
+
+**WP11 Core media and add-ons (`crates/core`).** Add-on manager: install, update and remove the ffmpeg and yt-dlp add-ons from their official release sources, verified by checksum, kept in the per-user data folder, updated quietly (D2). Media flow: a stream or page capture produces a quality choice (`MediaChoice`) for the UI; the chosen option downloads through `wirecatch-streams` or, for yt-dlp pages, through yt-dlp's resolved format URLs with the engine doing the bytes. FTP downloads route through the engine. A `Processing` status while ffmpeg joins files.
+
+**WP12 Wiring and polish (`apps/desktop`, `apps/extension`).** Connect the media picker and add-ons screen to the real core; final end-to-end pass of every D3 principle in the running app.
+
+### Each package
+Same rules as Wave 1: own folder only, D18, independent review, fix round, merge.
+
+## Wave 3: Release readiness
+
+Release build of the installers on Windows; Linux verification through CI (and a real distribution when available); benchmark rerun on a quiet machine; README, user guide and contributor guide; a final security review of everything that handles cookies, credentials or downloaded executables (add-ons).
