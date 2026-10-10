@@ -306,6 +306,8 @@ impl Manager {
                 self.save(&mut state, id);
             }
         }
+        // A paused download no longer waits for its queue: clear its reason now.
+        self.reconcile(&mut state);
         Ok(())
     }
 

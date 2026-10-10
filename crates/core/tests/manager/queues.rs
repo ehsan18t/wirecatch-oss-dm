@@ -177,3 +177,25 @@ async fn waiting_downloads_say_why() {
     assert_eq!(event.status, DownloadStatus::Queued);
     assert_eq!(waiting(&h, b2), Some(WaitReason::QueuePaused));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pause_all_clears_the_reasons_of_downloads_it_paused() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_stop_timeout(SHORT).await;
+    let mut main = queue(&h, DEFAULT_QUEUE_ID);
+    main.max_concurrent = 1;
+    h.manager.update_queue(main).unwrap();
+    let running = h.add(&silent.url("running.bin")).await.id;
+    let behind = h.add(&silent.url("behind.bin")).await.id;
+    assert!(is_running(&h.row(running)));
+    assert!(matches!(
+        waiting(&h, behind),
+        Some(WaitReason::QueueFull { .. })
+    ));
+
+    h.manager.pause_all().unwrap();
+    // A paused download waits for nothing, at once, not only after the next change.
+    let row = h.row(behind);
+    assert_eq!(row.status, DownloadStatus::Paused);
+    assert_eq!(row.waiting, None);
+}
