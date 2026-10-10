@@ -188,7 +188,7 @@ impl Manager {
                 "{MAX_PENDING} downloads are already waiting for your confirmation. Answer some of them first."
             )));
         }
-        let file_name = naming::file_name(capture.suggested_name.as_deref(), &url);
+        let file_name = naming::file_name(capture.suggested_name.as_deref(), &url)?;
         let category = settings::category_of(&state.settings, &file_name);
         let folder = settings::folder_for(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();

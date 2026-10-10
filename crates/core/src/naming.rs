@@ -4,7 +4,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use wirecatch_engine::{Url, naming};
+use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
+
+use crate::error::{CoreError, Result};
 
 /// Paths already promised to unfinished downloads, compared the way the file
 /// system compares them.
@@ -23,15 +25,24 @@ impl Claimed {
     }
 }
 
-/// A safe file name from the user's or browser's choice, else the link.
-pub(crate) fn file_name(preferred: Option<&str>, url: &Url) -> String {
+/// A safe file name from the user's or browser's choice, else the link. Names
+/// ending like the engine's own part and resume files are refused, so a download
+/// can never be mistaken for another one's partial data.
+pub(crate) fn file_name(preferred: Option<&str>, url: &Url) -> Result<String> {
     let raw = preferred
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_string)
         .or_else(|| naming::from_url(url))
         .unwrap_or_default();
-    naming::sanitize(&raw)
+    let name = naming::sanitize(&raw);
+    let lower = name.to_lowercase();
+    if [PART_EXT, STATE_EXT].iter().any(|ext| lower.ends_with(ext)) {
+        return Err(CoreError::Invalid(format!(
+            "File names cannot end in {PART_EXT} or {STATE_EXT}; Wirecatch uses those for downloads in progress. Choose another name."
+        )));
+    }
+    Ok(name)
 }
 
 /// The first of `name`, `name (1)`, `name (2)`... in `dir` that is free on disk
@@ -100,11 +111,23 @@ mod tests {
     #[test]
     fn name_prefers_the_given_one_then_the_link() {
         let url = Url::parse("https://example.com/files/report%20final.pdf?x=1").unwrap();
-        assert_eq!(file_name(Some("my:file.zip"), &url), "my_file.zip");
-        assert_eq!(file_name(Some("  "), &url), "report final.pdf");
-        assert_eq!(file_name(None, &url), "report final.pdf");
+        assert_eq!(file_name(Some("my:file.zip"), &url).unwrap(), "my_file.zip");
+        assert_eq!(file_name(Some("  "), &url).unwrap(), "report final.pdf");
+        assert_eq!(file_name(None, &url).unwrap(), "report final.pdf");
         let bare = Url::parse("https://example.com/").unwrap();
-        assert_eq!(file_name(None, &bare), "download");
+        assert_eq!(file_name(None, &bare).unwrap(), "download");
+    }
+
+    #[test]
+    fn names_of_the_engines_own_files_are_refused() {
+        let url = Url::parse("https://example.com/x").unwrap();
+        for name in ["a.zip.wcpart", "a.zip.WCSTATE", "b.wcpart"] {
+            let err = file_name(Some(name), &url).unwrap_err();
+            assert!(err.to_string().contains("Choose another name"), "{err}");
+        }
+        let from_link = Url::parse("https://example.com/files/movie.mkv.wcpart").unwrap();
+        assert!(file_name(None, &from_link).is_err());
+        assert!(file_name(Some("notes.wcpart.txt"), &url).is_ok());
     }
 
     #[test]

@@ -359,7 +359,7 @@ impl Manager {
         let (dir, name, category) = {
             let state = self.lock_open()?;
             state.slot(new.queue)?;
-            let name = naming::file_name(new.file_name.as_deref(), &new.url);
+            let name = naming::file_name(new.file_name.as_deref(), &new.url)?;
             let category = settings::category_of(&state.settings, &name);
             let dir = match &new.folder {
                 Some(folder) => folder.clone(),
