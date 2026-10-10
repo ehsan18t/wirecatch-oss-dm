@@ -1817,6 +1817,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wirecatch-ipc"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
+ "tokio",
+ "windows-sys 0.59.0",
+ "wirecatch-protocol",
+]
+
+[[package]]
 name = "wirecatch-protocol"
 version = "0.1.0"
 dependencies = [
