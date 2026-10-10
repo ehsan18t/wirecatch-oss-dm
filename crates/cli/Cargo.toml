@@ -1,0 +1,20 @@
+[package]
+name = "wirecatch-cli"
+description = "Command-line interface for the Wirecatch download engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "wirecatch"
+path = "src/main.rs"
+
+[dependencies]
+wirecatch-engine.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+indicatif.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+# New crates under crates/ join automatically. The desktop app adds "apps/desktop/src-tauri" once it exists.
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+rust-version = "1.88"
+
+[workspace.dependencies]
+wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
+wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
+ts-rs = { version = "11", features = ["serde-compat"] }
+anyhow = "1"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+indicatif = "0.17"
+libc = "0.2"
+percent-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "time", "sync", "signal", "net"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl"] }
+axum = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

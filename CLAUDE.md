@@ -1,0 +1,37 @@
+# Wirecatch
+
+Open-source (GPL-3.0-only) download manager for Windows and Linux: Rust engine and core, Tauri 2 + Svelte 5 desktop app, WXT + Svelte 5 browser extension.
+
+Read before working: `docs/DECISIONS.md` (why things are the way they are), `docs/PLAN.md` (work packages, ownership, acceptance checklists), `docs/ROADMAP.md`.
+
+## Layout
+
+- `crates/engine`: download engine library, published to crates.io. Public API must stay documented and stable.
+- `crates/protocol`: single source of truth for every type crossing a process boundary. TypeScript is generated from it.
+- `crates/core`, `crates/bridge`, `crates/cli`: manager, native messaging host, CLI.
+- `apps/desktop` (Tauri, its Rust side in `apps/desktop/src-tauri`), `apps/extension` (WXT).
+- `packages/protocol`: generated TypeScript types. Never edit `src/generated` by hand.
+
+## Commands
+
+```bash
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test --workspace
+pnpm install
+pnpm protocol:generate
+pnpm check && pnpm lint && pnpm test && pnpm build
+```
+
+Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.
+
+## Rules
+
+- Quality before speed. Definition of done is D18 in `docs/DECISIONS.md`. Run the gates yourself before reporting done; report real output, including failures.
+- Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files.
+- Never edit outside the folder your work package owns (see `docs/PLAN.md`). Propose shared changes in your report.
+- Tests that need a server use the local test server in `crates/engine/tests/common`; tests never reach the internet.
+- Performance matters: no blocking calls on async tasks, no per-chunk allocations in hot paths, no polling where an event exists.
+- User-facing text (UI copy, CLI output, errors, docs, comments, commit messages): plain language, no em dashes, never hard-wrap a paragraph. Errors say what happened and how to fix it.
+- Svelte: Svelte 5 runes only (`$state`, `$derived`, `$effect`, `$props`), strict TypeScript, no `any`.
+- Rust: no `unwrap()`/`expect()` on data from outside the process; `thiserror` in libraries, `anyhow` only in binaries; doc comment on every public item.
