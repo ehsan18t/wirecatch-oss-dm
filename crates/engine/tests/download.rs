@@ -1,12 +1,14 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use common::{Config, TestServer, test_data};
-use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
+use common::{Busy, Config, TestServer, test_data};
+use wirecatch_engine::{
+    CancellationToken, DownloadRequest, Error, Outcome, Progress, RemoteFile, download,
+};
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
@@ -74,6 +76,7 @@ async fn parallel_download_is_byte_identical() {
         path,
         bytes,
         resumed_from,
+        ..
     } = outcome
     else {
         panic!("not completed: {outcome:?}")
@@ -340,6 +343,235 @@ async fn exact_path_continues_after_the_link_changes() {
 
     server.configure(|c| c.per_connection_bps = None);
     let mut second = request(&server, "fresh-signed-link", &dir, 4);
+    second.exact_path = Some(target.clone());
+    let outcome = run(second).await;
+
+    let Outcome::Completed {
+        path, resumed_from, ..
+    } = outcome
+    else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(path, target);
+    assert!(
+        resumed_from >= 512 * KIB as u64,
+        "kept only {resumed_from} bytes"
+    );
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+}
+
+/// A server whose first answer is `503` with `Retry-After: 1`, so there is a
+/// second during which the link has not been proven yet.
+async fn slow_to_answer(content_disposition: &str) -> TestServer {
+    TestServer::start(
+        test_data(256 * KIB),
+        Config {
+            ranges: true,
+            content_disposition: Some(content_disposition.to_string()),
+            busy: Some(Busy {
+                requests: 0..1,
+                status: 503,
+                retry_after: Some("1".into()),
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+/// Runs `req`, checks that no path is known while the server has not answered
+/// yet, and returns the outcome with the path progress reported afterwards.
+async fn run_watching_path(req: DownloadRequest) -> (Outcome, Option<PathBuf>) {
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        progress.path(),
+        None,
+        "path known before the server answered"
+    );
+    let outcome = task.await.unwrap().expect("download failed");
+    (outcome, progress.path())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_is_the_server_chosen_name_once_it_answers() {
+    let server = slow_to_answer("attachment; filename=\"report.pdf\"").await;
+    let dir = temp_dir("progress-path");
+    std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
+
+    let (outcome, path) = run_watching_path(request(&server, "download?id=7", &dir, 4)).await;
+
+    let Outcome::Completed { path: saved, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(saved, dir.join("report (1).pdf"));
+    assert_eq!(path, Some(saved));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_is_the_exact_path_once_the_server_answers() {
+    let server = slow_to_answer("attachment; filename=\"ignored.pdf\"").await;
+    let dir = temp_dir("progress-exact");
+    let target = dir.join("chosen").join("by-manager.bin");
+    let mut req = request(&server, "file", &dir, 4);
+    req.exact_path = Some(target.clone());
+
+    let (outcome, path) = run_watching_path(req).await;
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(path, Some(target));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn progress_path_stays_unset_when_the_first_request_fails() {
+    let server = TestServer::start(
+        test_data(KIB),
+        Config {
+            busy: Some(Busy {
+                requests: 0..usize::MAX,
+                status: 404,
+                retry_after: None,
+            }),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("progress-404");
+    let progress = Arc::new(Progress::default());
+
+    let result = download(
+        request(&server, "missing.bin", &dir, 4),
+        progress.clone(),
+        CancellationToken::new(),
+    )
+    .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(wirecatch_engine::Error::HttpStatus { status: 404, .. })
+        ),
+        "{result:?}"
+    );
+    assert_eq!(progress.path(), None);
+    assert_eq!(progress.file_name(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
+    let server = TestServer::start(
+        test_data(512 * KIB),
+        Config {
+            ranges: true,
+            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
+            content_type: Some("application/pdf".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("resolver");
+    let folder = dir.join("Documents");
+    std::fs::create_dir_all(&folder).unwrap();
+    // The resolver owns naming: an existing file is replaced, no "(1)" suffix.
+    std::fs::write(folder.join("report.pdf"), b"old version").unwrap();
+
+    let seen: Arc<Mutex<Option<RemoteFile>>> = Arc::default();
+    let mut req = request(&server, "download?id=7", &dir, 4);
+    req.resolve_path = Some({
+        let (seen, folder) = (seen.clone(), folder.clone());
+        Arc::new(move |remote: &RemoteFile| {
+            *seen.lock().unwrap() = Some(remote.clone());
+            Ok(folder.join(&remote.suggested_name))
+        })
+    });
+    let progress = Arc::new(Progress::default());
+
+    let outcome = download(req, progress.clone(), CancellationToken::new())
+        .await
+        .expect("download failed");
+
+    let remote = seen
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("resolver was not called");
+    assert_eq!(remote.suggested_name, "report.pdf");
+    assert_eq!(remote.total, Some(512 * KIB as u64));
+    assert_eq!(remote.content_type.as_deref(), Some("application/pdf"));
+    assert_eq!(remote.final_url, server.url("download?id=7"));
+    assert!(remote.resumable);
+
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(path, folder.join("report.pdf"));
+    assert_eq!(progress.path(), Some(path.clone()));
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    assert_eq!(only_file(&folder), vec!["report.pdf"]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn path_resolver_can_refuse_the_file_with_nothing_written() {
+    let server = TestServer::start(
+        test_data(64 * KIB),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("resolver-refuses");
+    let mut req = request(&server, "files/setup.exe", &dir, 4);
+    req.resolve_path = Some(Arc::new(|remote: &RemoteFile| {
+        Err(format!(
+            "{} is not an allowed file type",
+            remote.suggested_name
+        ))
+    }));
+    let progress = Arc::new(Progress::default());
+
+    let result = download(req, progress.clone(), CancellationToken::new()).await;
+
+    match result {
+        Err(Error::TargetRejected(reason)) => {
+            assert_eq!(reason, "setup.exe is not an allowed file type");
+        }
+        other => panic!("expected TargetRejected, got {other:?}"),
+    }
+    assert!(
+        only_file(&dir).is_empty(),
+        "files written: {:?}",
+        only_file(&dir)
+    );
+    assert_eq!(progress.path(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resolved_path_resumes_later_as_exact_path() {
+    let server = TestServer::start(
+        test_data(3 * MIB),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB as u64),
+            etag: Some("\"same\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("resolver-resume");
+    let target = dir.join("picked").join("video.mp4");
+
+    let mut first = request(&server, "video", &dir, 4);
+    first.resolve_path = Some({
+        let target = target.clone();
+        Arc::new(move |_: &RemoteFile| Ok(target.clone()))
+    });
+    let paused = pause_midway(first, 512 * KIB as u64).await;
+    assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
+
+    server.configure(|c| c.per_connection_bps = None);
+    let mut second = request(&server, "video", &dir, 4);
     second.exact_path = Some(target.clone());
     let outcome = run(second).await;
 

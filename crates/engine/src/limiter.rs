@@ -38,10 +38,13 @@ impl RateLimiter {
         }
     }
 
+    /// The current limit in bytes per second; `None` is unlimited.
     pub fn limit(&self) -> Option<u64> {
         self.bucket.lock().unwrap().limit
     }
 
+    /// Changes the limit (bytes per second; `None` is unlimited). Every
+    /// connection sharing this limiter follows the new limit within one chunk.
     pub fn set_limit(&self, limit: Option<u64>) {
         let mut bucket = self.bucket.lock().unwrap();
         bucket.limit = normalize(limit);

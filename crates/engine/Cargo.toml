@@ -1,16 +1,28 @@
 [package]
 name = "wirecatch-engine"
-description = "Segmented, resumable download engine for Wirecatch"
+description = "Fast, resumable HTTP(S) download engine: parallel connections, dynamic splitting, positional writes and crash-safe resume"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["download", "downloader", "http", "resume", "segmented"]
+categories = ["network-programming", "web-programming::http-client", "asynchronous"]
+# `repository` and `homepage` are added once the public GitHub organization exists.
 
 [dependencies]
 bytes.workspace = true
 futures-util.workspace = true
+base64 = "0.22.1"
+httpdate = "1.0.3"
 percent-encoding.workspace = true
-reqwest.workspace = true
+# Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
+# so reqwest needs neither its own root certificates nor a crypto provider.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-no-provider", "http2", "stream"] }
+# Same major version and crypto provider (ring) as reqwest uses, so the shared
+# TLS configuration is the exact type reqwest accepts.
+rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }
+rustls-native-certs = "0.8.0"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -30,3 +42,6 @@ axum.workspace = true
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
 futures-util.workspace = true
+proptest = { version = "1.6.0", default-features = false, features = ["std"] }
+rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
