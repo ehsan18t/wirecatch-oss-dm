@@ -186,8 +186,10 @@ impl Stop {
 /// A browser capture waiting for the user's confirmation.
 pub(super) struct Pending {
     pub capture: PendingCapture,
-    /// The extension's handover id.
-    pub handover: String,
+    /// The extension's handover ids: one per capture of this link (several tabs
+    /// can capture the same link while the question is showing). The question
+    /// goes away only when every one of them is withdrawn.
+    pub handovers: Vec<String>,
     pub request: NewDownload,
 }
 

@@ -138,6 +138,10 @@ const RETRY_PAUSES: [Duration; 3] = [
     Duration::from_millis(250),
     Duration::from_secs(1),
 ];
+/// How long kept writes wait for a retry when no new writes arrive.
+const RETRY_KEPT_AFTER: Duration = Duration::from_secs(5);
+/// Most failed writes kept for a later try.
+const MAX_KEPT: usize = 10_000;
 
 enum Op {
     SaveDownloads(Vec<StoredDownload>),
@@ -244,24 +248,123 @@ impl Store {
 
 /// Applies writes until every [`Store`] handle is gone. Writes that queued up while
 /// the disk was busy are committed together in one transaction. A batch that fails
-/// is retried after a short pause; if it still fails, `on_failure` is told why.
+/// is retried after a short pause; if it still fails, its writes are tried one by
+/// one, so one bad write cannot take the others down with it, and `on_failure` is
+/// told why. Writes that still fail are kept, in order, and tried again before
+/// the next writes (or after a while if none come), never dropped: a lost delete
+/// would bring back a removed download.
 fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
-    while let Ok(first) = ops.recv() {
-        let mut writes = Vec::new();
+    let mut kept: Vec<Op> = Vec::new();
+    loop {
+        let first = if kept.is_empty() {
+            match ops.recv() {
+                Ok(op) => Some(op),
+                Err(mpsc::RecvError) => return,
+            }
+        } else {
+            match ops.recv_timeout(RETRY_KEPT_AFTER) {
+                Ok(op) => Some(op),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    // Closing: one last try, then whatever still fails is lost.
+                    let lost = apply_one_by_one(&mut conn, std::mem::take(&mut kept));
+                    if !lost.is_empty() {
+                        error!(
+                            writes = lost.len(),
+                            "changes could not be saved before closing"
+                        );
+                    }
+                    return;
+                }
+            }
+        };
+        let mut writes = std::mem::take(&mut kept);
+        let retried = writes.len();
         let mut flushed = Vec::new();
-        for op in std::iter::once(first).chain(ops.try_iter()) {
+        for op in first.into_iter().chain(ops.try_iter()) {
             match op {
                 Op::Flush(done) => flushed.push(done),
                 write => writes.push(write),
             }
         }
-        if let Err(e) = apply_with_retries(&mut conn, &writes) {
+        if !writes.is_empty()
+            && let Err(e) = apply_with_retries(&mut conn, &writes)
+        {
             error!(error = %e, "could not save changes to the database");
-            on_failure(e.to_string());
+            let fresh = writes.len() > retried;
+            kept = apply_one_by_one(&mut conn, writes);
+            if kept.len() > MAX_KEPT {
+                error!(
+                    dropped = kept.len() - MAX_KEPT,
+                    "too many changes could not be saved; dropping the oldest"
+                );
+                kept.drain(..kept.len() - MAX_KEPT);
+            }
+            // A quiet retry of writes already reported is not news.
+            if fresh {
+                on_failure(e.to_string());
+            }
         }
         for done in flushed {
             let _ = done.send(());
         }
+    }
+}
+
+/// Applies each write on its own and returns the ones that failed, in order. A
+/// write is also held back when an earlier write to the same row or setting
+/// failed, so that writes to one thing never land out of order.
+fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
+    let mut failed = Vec::new();
+    let mut blocked: Vec<Target> = Vec::new();
+    for write in writes.into_iter().flat_map(split) {
+        let target = target_of(&write);
+        if blocked.contains(&target) {
+            failed.push(write);
+            continue;
+        }
+        if let Err(e) = apply(conn, std::slice::from_ref(&write)) {
+            warn!(error = %e, ?write, "a change could not be saved; keeping it to try again");
+            blocked.push(target);
+            failed.push(write);
+        }
+    }
+    failed
+}
+
+/// Splits a write about several downloads into one write per download.
+fn split(op: Op) -> Vec<Op> {
+    match op {
+        Op::SaveDownloads(rows) => rows
+            .into_iter()
+            .map(|row| Op::SaveDownloads(vec![row]))
+            .collect(),
+        Op::DeleteDownloads(ids) => ids
+            .into_iter()
+            .map(|id| Op::DeleteDownloads(vec![id]))
+            .collect(),
+        other => vec![other],
+    }
+}
+
+/// What a single write changes.
+#[derive(Debug, PartialEq, Eq)]
+enum Target {
+    Download(Option<DownloadId>),
+    Queues,
+    Settings,
+    LastIds,
+    Nothing,
+}
+
+fn target_of(op: &Op) -> Target {
+    match op {
+        Op::SaveDownloads(rows) => Target::Download(rows.first().map(|r| r.summary.id)),
+        Op::DeleteDownloads(ids) => Target::Download(ids.first().copied()),
+        Op::SaveQueues(_) => Target::Queues,
+        Op::SaveSettings(_) => Target::Settings,
+        Op::SaveLastIds(_) => Target::LastIds,
+        Op::Flush(_) => Target::Nothing,
     }
 }
 
@@ -616,6 +719,58 @@ mod tests {
         assert!(reports[0].contains("downloads"), "{reports:?}");
     }
 
+    fn stored_ids(conn: &Connection) -> Vec<i64> {
+        let mut stmt = conn
+            .prepare("SELECT id FROM downloads ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<i64>>>()
+            .unwrap()
+    }
+
+    /// One write that keeps failing must not take the others in its batch down
+    /// with it, and is itself kept and tried again later rather than dropped: a
+    /// lost delete would bring back a removed download, cookies and all.
+    #[tokio::test]
+    async fn a_failing_write_is_kept_and_the_others_are_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let reports = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = reports.clone();
+        let (store, _) = Store::open(
+            dir.path(),
+            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+        )
+        .unwrap();
+        store.save_downloads(vec![download(3)]);
+        store.flush().await;
+
+        // Something outside the app makes saving download 2 fail.
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other
+            .execute_batch(
+                "CREATE TRIGGER refuse_two BEFORE INSERT ON downloads WHEN NEW.id = 2
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        store.save_downloads(vec![download(1), download(2)]);
+        store.delete_downloads(vec![DownloadId(3)]);
+        store.delete_downloads(vec![DownloadId(2)]);
+        store.save_downloads(vec![download(2)]);
+        store.flush().await;
+        assert_eq!(stored_ids(&other), vec![1], "the other writes were lost");
+        assert!(
+            reports.lock().unwrap()[0].contains("injected failure"),
+            "{reports:?}"
+        );
+
+        // Once the problem is gone, the kept writes land, in their order.
+        other.execute_batch("DROP TRIGGER refuse_two").unwrap();
+        store.save_last_ids(LastIds::default());
+        store.flush().await;
+        assert_eq!(stored_ids(&other), vec![1, 2]);
+    }
+
     #[tokio::test]
     async fn everything_written_is_read_back() {
         let dir = tempfile::tempdir().unwrap();
@@ -676,12 +831,65 @@ mod tests {
             [],
         )
         .unwrap();
+        insert_old_download(&conn);
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let main = &snapshot.queues[0];
         assert_eq!((main.name.as_str(), main.max_concurrent), ("Main", 3));
         assert!(!main.paused && !main.running_outside_schedule);
+        assert_old_download_upgraded(&snapshot);
+    }
+
+    #[test]
+    fn a_database_from_the_second_version_is_upgraded_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute_batch(MIGRATIONS[1]).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute(
+            "INSERT INTO queues (id, position, name, max_concurrent, is_default, paused,
+                                 running_outside_schedule)
+             VALUES (1, 0, 'Main', 3, 1, 1, 0)",
+            [],
+        )
+        .unwrap();
+        insert_old_download(&conn);
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(snapshot.queues[0].paused, "the queue's pause was lost");
+        assert_old_download_upgraded(&snapshot);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as u32);
+    }
+
+    /// A download as versions before 3 stored it, whose path was always final.
+    fn insert_old_download(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO downloads (id, url, path, queue_id, position, category, status,
+                                    total, done, error, added_at, completed_at, origin)
+             VALUES (7, 'https://example.com/a.zip', ?1, 1, 4, 'archive', 'paused',
+                     100, 40, NULL, 1, NULL, '{\"user_agent\":null,\"headers\":[]}')",
+            [download(7).summary.path],
+        )
+        .unwrap();
+    }
+
+    fn assert_old_download_upgraded(snapshot: &Snapshot) {
+        let [old] = snapshot.downloads.as_slice() else {
+            panic!("expected one download, got {:?}", snapshot.downloads);
+        };
+        assert_eq!(old.summary.id, DownloadId(7));
+        assert_eq!(old.summary.status, DownloadStatus::Paused);
+        assert_eq!((old.summary.done, old.summary.total), (40, Some(100)));
+        assert_eq!(old.summary.file_name, "a.zip");
+        // Its path was chosen before paths waited for the server: it is final.
+        assert_eq!(old.naming, NameChoice::settled());
     }
 
     #[test]

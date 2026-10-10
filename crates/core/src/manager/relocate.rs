@@ -26,7 +26,7 @@ impl Manager {
             .inner
             .folders
             .resolve(&PortablePath(folder.to_string()))?;
-        let (old_path, exited) = {
+        let exited = {
             let mut state = self.lock_open()?;
             let entry = state.entry_mut(id)?;
             if entry.moving.is_some() {
@@ -34,24 +34,35 @@ impl Manager {
                     "This download is already being moved. Wait a moment and try again.",
                 ));
             }
-            let old_path = entry.path().to_path_buf();
-            if old_path.parent() == Some(dir.as_path()) {
+            if entry.path().parent() == Some(dir.as_path()) {
                 return Ok(());
             }
             entry.moving = Some(CancellationToken::new());
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
             self.stop_run(entry, Stop::Requeue);
-            (old_path, exited)
+            exited
         };
         // The engine must close the files before they can be moved; bounded by the
         // stop timeout.
         if let Some(exited) = exited {
             exited.cancelled().await;
         }
+        // Read only now: until the run had exited, the server's answer could still
+        // have settled its path. Removal waits while a download is moving, so it
+        // is still here.
+        let old_path = self
+            .lock()
+            .downloads
+            .get(&id)
+            .map(|entry| entry.path().to_path_buf())
+            .ok_or(CoreError::DownloadNotFound(id))?;
 
-        let moved = self.move_files(id, &old_path, dir).await;
+        let moved = if old_path.parent() == Some(dir.as_path()) {
+            Ok(old_path.clone())
+        } else {
+            self.move_files(id, &old_path, dir.clone()).await
+        };
         let mut state = self.lock();
-        // Removal waits while a download is moving, so it is still here.
         let Some(entry) = state.downloads.get_mut(&id) else {
             return moved.map(|_| ());
         };
@@ -60,14 +71,26 @@ impl Manager {
         }
         match moved {
             Ok(new_path) => {
+                let new_name = file_name_of(&new_path);
+                if !entry.naming.settled {
+                    // The server has not answered yet, so its answer will choose the
+                    // path: it must use the folder the user chose now, and the
+                    // user's name as it is in that folder.
+                    entry.naming.folder = Some(dir.to_string_lossy().into_owned());
+                    if entry.naming.name.is_some() {
+                        entry.naming.name = Some(new_name.clone());
+                    }
+                }
                 entry.row.path = new_path.to_string_lossy().into_owned();
-                entry.row.file_name = file_name_of(&new_path);
+                entry.row.file_name = new_name;
                 if entry.row.status == DownloadStatus::Failed {
                     entry.row.status = DownloadStatus::Queued;
                     entry.row.error = None;
                 }
                 // The new path was claimed while moving; the old one is free now.
-                state.claimed.remove(&old_path);
+                if new_path != old_path {
+                    state.claimed.remove(&old_path);
+                }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
                 Ok(())

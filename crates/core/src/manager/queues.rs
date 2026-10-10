@@ -89,7 +89,8 @@ impl Manager {
         Ok(())
     }
 
-    /// Deletes a queue. Its downloads move to the end of the default queue.
+    /// Deletes a queue. Its downloads move to the end of the default queue, and
+    /// captures waiting for confirmation that were meant for it go there too.
     pub fn delete_queue(&self, id: QueueId) -> Result<()> {
         let mut state = self.lock_open()?;
         if state.slot(id)?.queue.is_default {
@@ -111,6 +112,12 @@ impl Manager {
                 self.stop_run(entry, Stop::Requeue);
             }
             self.save(&mut state, download);
+        }
+        // Captures waiting for the user's answer go with them.
+        for waiting in state.pending.values_mut() {
+            if waiting.capture.queue == id {
+                waiting.capture.queue = fallback;
+            }
         }
         if state.settings.extension.default_queue == id {
             let mut settings = state.settings.clone();

@@ -3,7 +3,7 @@
 //! Settings store folders as [`PortablePath`]s such as `{Downloads}/Video`, so a
 //! settings profile exported on one machine resolves to the right folders on another.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 
 use wirecatch_protocol::app::PortablePath;
 
@@ -27,6 +27,18 @@ pub enum PathError {
         "\"{0}\" contains a part that is not a plain folder name. Folder names cannot contain \":\". Choose the folder again."
     )]
     NotAFolderName(String),
+    /// A Windows device or verbatim path (`\\.\` or `\\?\`), which names a device or
+    /// skips the usual checks on a path rather than naming an ordinary folder.
+    #[error(
+        "\"{0}\" is a special Windows path, not an ordinary folder. Choose a folder on a drive."
+    )]
+    Special(String),
+    /// A network folder (`\\server\share`) from a settings file, which is only used
+    /// when the user chooses it on this computer.
+    #[error(
+        "\"{0}\" is a network folder. Folders from a settings file must be on this computer; choose the network folder in Wirecatch if you want to use it."
+    )]
+    Network(String),
 }
 
 /// Whether `segment` is one ordinary folder name, the same on every system: no
@@ -122,6 +134,22 @@ impl KnownFolders {
         Ok(out)
     }
 
+    /// The folder `path` names on this machine, for a folder from a settings file
+    /// rather than the user's own choice: network folders are refused too.
+    pub fn resolve_local(&self, path: &PortablePath) -> Result<PathBuf, PathError> {
+        let resolved = self.resolve(path)?;
+        // A placeholder names this user's own folder, wherever the system keeps it
+        // (Downloads redirected to a server is still the user's Downloads).
+        let placeholder = path.0.trim_start().starts_with('{');
+        if !placeholder
+            && let Some(Component::Prefix(prefix)) = resolved.components().next()
+            && matches!(prefix.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))
+        {
+            return Err(PathError::Network(path.0.trim().to_string()));
+        }
+        Ok(resolved)
+    }
+
     /// `path` written relative to the most specific known folder that contains it,
     /// so it resolves correctly on another machine. Placeholders and paths outside
     /// every known folder are returned unchanged.
@@ -148,6 +176,17 @@ impl KnownFolders {
 
     fn resolve_plain(&self, raw: &str) -> Result<PathBuf, PathError> {
         let path = Path::new(raw);
+        // A device (`\\.\`) or a verbatim path (`\\?\`, which turns off the usual
+        // checks on names) is never a folder to download into. A verbatim network
+        // path (`\\?\UNC\`) is still a network folder, judged as one.
+        if let Some(Component::Prefix(prefix)) = path.components().next()
+            && matches!(
+                prefix.kind(),
+                Prefix::DeviceNS(_) | Prefix::Verbatim(_) | Prefix::VerbatimDisk(_)
+            )
+        {
+            return Err(PathError::Special(raw.to_string()));
+        }
         if !path.is_absolute() {
             return Err(PathError::NotAbsolute(raw.to_string()));
         }
@@ -263,6 +302,68 @@ mod tests {
         assert_eq!(
             folders.to_portable(&portable(elsewhere)),
             portable(elsewhere)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn device_and_verbatim_paths_are_never_folders() {
+        let folders = KnownFolders::under_home(home());
+        for special in [
+            r"\\.\C:\Downloads",
+            r"\\.\PhysicalDrive0",
+            r"\\.\pipe\wirecatch",
+            r"\\?\C:\Downloads",
+            r"\\?\Volume{12345678-1234-1234-1234-123456789abc}\Downloads",
+        ] {
+            for resolved in [
+                folders.resolve(&portable(special)),
+                folders.resolve_local(&portable(special)),
+            ] {
+                assert!(
+                    matches!(resolved, Err(PathError::Special(_))),
+                    "{special} gave {resolved:?}"
+                );
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn network_folders_need_the_users_own_choice() {
+        let folders = KnownFolders::under_home(home());
+        for network in [
+            r"\\server\share\Downloads",
+            r"\\?\UNC\server\share\Downloads",
+        ] {
+            // Chosen by the user in a dialog: fine.
+            assert_eq!(
+                folders.resolve(&portable(network)),
+                Ok(PathBuf::from(network))
+            );
+            // From a settings file made somewhere else: not used.
+            assert!(
+                matches!(
+                    folders.resolve_local(&portable(network)),
+                    Err(PathError::Network(_))
+                ),
+                "{network} was accepted from a settings file"
+            );
+        }
+        assert_eq!(
+            folders.resolve_local(&portable(r"D:\Media")),
+            Ok(PathBuf::from(r"D:\Media"))
+        );
+        assert_eq!(
+            folders.resolve_local(&portable("{Videos}/Talks")),
+            Ok(home().join("Videos").join("Talks"))
+        );
+        // The user's own Downloads may live on a server; it is still theirs.
+        let mut redirected = KnownFolders::under_home(home());
+        redirected.downloads = PathBuf::from(r"\\server\home\ada\Downloads");
+        assert_eq!(
+            redirected.resolve_local(&portable("{Downloads}/Video")),
+            Ok(PathBuf::from(r"\\server\home\ada\Downloads\Video"))
         );
     }
 

@@ -5,12 +5,20 @@
 //! gets a response with its id, and events are pushed as they happen. A malformed or
 //! oversized frame gets an error response and the connection carries on. An error
 //! that cannot be tied to a request (the frame was unreadable) uses id 0.
+//!
+//! Requests are handled side by side, each in its own task, so a slow one (a
+//! capture waiting up to the capture timeout for its server) never holds up the
+//! others, such as the extension withdrawing that very capture. Responses are
+//! matched to requests by id only and may arrive in any order. One task writes
+//! every response and event, so frames never interleave.
 
 use std::io;
+use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, FrameError, MAX_FRAME_LEN};
@@ -20,6 +28,10 @@ use wirecatch_protocol::wire::{
 };
 
 use crate::manager::Manager;
+
+/// Most requests from one connection that may be handled at once. A request beyond
+/// this gets an error at once, so a client cannot pile up unbounded work.
+pub const MAX_REQUESTS_IN_FLIGHT: usize = 64;
 
 /// How much to read from the stream at a time.
 const READ_CHUNK: usize = 16 * 1024;
@@ -39,19 +51,25 @@ where
     debug!(client = ?hello.client, version = %hello.client_version, "client connected");
 
     let mut events = manager.subscribe_events();
+    // Request tasks hand their responses back here, to be written by this task.
+    let (responder, mut responses) = mpsc::unbounded_channel::<Message>();
+    let slots = Arc::new(Semaphore::new(MAX_REQUESTS_IN_FLIGHT));
     loop {
         tokio::select! {
             frame = frames.next(&mut stream) => {
                 let reply = match frame? {
-                    None => return Ok(()),
-                    Some(Frame::TooLarge(len)) => too_large(len),
+                    None => break,
+                    Some(Frame::TooLarge(len)) => Some(too_large(len)),
                     Some(Frame::Body(body)) => match parse_request(&body) {
-                        Ok((id, call)) => Message::Response { id, outcome: handle(&manager, call).await },
-                        Err(reply) => *reply,
+                        Ok((id, call)) => start_request(&manager, &slots, &responder, id, call),
+                        Err(reply) => Some(*reply),
                     },
                 };
-                send(&mut stream, &reply).await?;
+                if let Some(reply) = reply {
+                    send(&mut stream, &reply).await?;
+                }
             }
+            Some(response) = responses.recv() => send(&mut stream, &response).await?,
             event = events.recv() => match event {
                 Ok(event) => send(&mut stream, &Message::Event { event }).await?,
                 Err(RecvError::Lagged(missed)) => {
@@ -66,6 +84,43 @@ where
             },
         }
     }
+    // The client has stopped sending; answer what it already asked, then close.
+    drop(responder);
+    while let Some(response) = responses.recv().await {
+        send(&mut stream, &response).await?;
+    }
+    Ok(())
+}
+
+/// Starts handling a request in its own task, which sends the response to
+/// `responder`. Returns the error response to send instead when the connection
+/// already has the most requests in flight it may have.
+fn start_request(
+    manager: &Manager,
+    slots: &Arc<Semaphore>,
+    responder: &mpsc::UnboundedSender<Message>,
+    id: u64,
+    call: Call,
+) -> Option<Message> {
+    let Ok(slot) = slots.clone().try_acquire_owned() else {
+        return Some(error(
+            id,
+            ErrorCode::InvalidRequest,
+            format!(
+                "The app is already working on {MAX_REQUESTS_IN_FLIGHT} requests from this connection at once. Wait for some answers, then send this again."
+            ),
+        ));
+    };
+    let (manager, responder) = (manager.clone(), responder.clone());
+    // Not tied to the connection: a request the client stops waiting for still
+    // finishes, so the manager is never left halfway through a change.
+    tokio::spawn(async move {
+        let outcome = handle(&manager, call).await;
+        // The client may be gone; then nobody is waiting for the answer.
+        let _ = responder.send(Message::Response { id, outcome });
+        drop(slot);
+    });
+    None
 }
 
 /// Reads the first frame and checks it is a `hello` this app understands. Returns

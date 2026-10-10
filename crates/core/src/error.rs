@@ -20,7 +20,7 @@ pub enum CoreError {
     QueueNotFound(QueueId),
 
     /// The confirmation was already answered or never existed.
-    #[error("That download was already confirmed or dismissed.")]
+    #[error("That download was already confirmed or dismissed, or the browser took it back.")]
     ConfirmationNotFound(u64),
 
     /// A link that is not an http or https URL.
@@ -88,8 +88,9 @@ pub enum CoreError {
         source: io::Error,
     },
 
-    /// A captured download could not be taken over; the text says why.
-    #[error("Wirecatch could not take over this download: {0} The browser keeps it.")]
+    /// A captured download could not be taken over; the text says why, in one or
+    /// more whole sentences.
+    #[error("Wirecatch could not take over this download. {0} The browser keeps it.")]
     NotStarted(String),
 
     /// The manager has shut down.
@@ -141,6 +142,59 @@ impl CoreError {
         ProtocolError {
             code,
             message: self.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_capture_that_was_not_taken_over_reads_as_whole_sentences() {
+        let error = CoreError::NotStarted("The server did not answer within 8 seconds.".into());
+        assert_eq!(
+            error.to_string(),
+            "Wirecatch could not take over this download. The server did not answer within 8 seconds. The browser keeps it."
+        );
+    }
+
+    #[test]
+    fn messages_follow_the_house_style() {
+        let io = || io::Error::from(io::ErrorKind::PermissionDenied);
+        let errors = [
+            CoreError::DownloadNotFound(DownloadId(1)),
+            CoreError::QueueNotFound(QueueId(1)),
+            CoreError::ConfirmationNotFound(1),
+            CoreError::InvalidUrl("ftp://x".into()),
+            CoreError::DefaultQueue,
+            CoreError::Path(PathError::Special(r"\\.\C:".into())),
+            CoreError::Path(PathError::Network(r"\\server\share".into())),
+            CoreError::ProfileTooNew {
+                found: 2,
+                supported: 1,
+            },
+            CoreError::InvalidProfile("it has no format version".into()),
+            CoreError::DatabaseTooNew {
+                found: 9,
+                supported: 3,
+            },
+            CoreError::File {
+                path: "/x".into(),
+                source: io(),
+            },
+            CoreError::NotStarted("It was removed.".into()),
+            CoreError::Closed,
+            CoreError::Internal("a bug".into()),
+        ];
+        for error in &errors {
+            let message = error.to_string();
+            assert!(!message.contains('\u{2014}'), "em dash in {message}");
+            assert!(message.ends_with('.'), "{message}");
+            assert!(
+                message.starts_with(|c: char| c.is_uppercase() || c == '"'),
+                "{message}"
+            );
         }
     }
 }

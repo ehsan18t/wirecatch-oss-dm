@@ -2,8 +2,8 @@
 //! crashing, and a settings change from any side reaches every client. Also the
 //! extension's capture flow, with and without confirmation.
 
-use std::collections::VecDeque;
-use std::time::Duration;
+use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
@@ -11,7 +11,8 @@ use wirecatch_core::{Manager, serve_connection};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, CaptureSource, ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
+    AddAction, CaptureSource, ExtensionSettingsPatch, Header, NewDownload, WithdrawOutcome,
+    WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -27,6 +28,9 @@ struct Client {
     server: JoinHandle<std::io::Result<()>>,
     next_id: u64,
     events: VecDeque<Event>,
+    /// Responses that arrived while waiting for another one: requests run side by
+    /// side, so their answers may come in any order.
+    answered: HashMap<u64, Outcome>,
 }
 
 impl Client {
@@ -38,6 +42,7 @@ impl Client {
             server,
             next_id: 1,
             events: VecDeque::new(),
+            answered: HashMap::new(),
         }
     }
 
@@ -61,21 +66,30 @@ impl Client {
 
     /// Sends a call and returns its outcome, keeping events that arrive meanwhile.
     async fn call(&mut self, call: Call) -> Result<Reply, ProtocolError> {
+        let id = self.request(call).await;
+        self.response(id).await
+    }
+
+    /// Sends a call without waiting for its answer, and returns its id.
+    async fn request(&mut self, call: Call) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&Message::Request { id, call }).await;
-        self.response(id).await
+        id
     }
 
     async fn response(&mut self, id: u64) -> Result<Reply, ProtocolError> {
         loop {
+            if let Some(outcome) = self.answered.remove(&id) {
+                return match outcome {
+                    Outcome::Ok(reply) => Ok(reply),
+                    Outcome::Err(e) => Err(e),
+                };
+            }
             match self.recv().await.expect("connection closed") {
                 Message::Response { id: got, outcome } => {
-                    assert_eq!(got, id, "response to the wrong request");
-                    return match outcome {
-                        Outcome::Ok(reply) => Ok(reply),
-                        Outcome::Err(e) => Err(e),
-                    };
+                    let earlier = self.answered.insert(got, outcome);
+                    assert!(earlier.is_none(), "two responses to request {got}");
                 }
                 Message::Event { event } => self.events.push_back(event),
                 Message::Request { .. } => panic!("the server sent a request"),
@@ -423,6 +437,79 @@ async fn a_repeated_handover_adds_nothing() {
     assert_eq!(h.manager.pending_confirmations().len(), 1);
 }
 
+/// Two tabs capturing the same link share one confirmation, but each handover is
+/// still its own: one tab withdrawing must not take the other's away, and once
+/// the user has answered, every tab hears the same answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_shared_confirmation_tracks_every_handover() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let from_tab = |name: &str, tab: &str| {
+        let mut capture = capture(server.url(name));
+        capture.handover_id = tab.into();
+        capture
+    };
+
+    // Withdrawn by one tab, then the other: gone only after the last one.
+    for tab in ["a-1", "a-2"] {
+        h.manager.add_capture(from_tab("a.pdf", tab)).await.unwrap();
+    }
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+    assert_eq!(
+        h.manager.withdraw_capture("a-1").await.unwrap(),
+        WithdrawOutcome::Withdrawn
+    );
+    assert_eq!(
+        h.manager.pending_confirmations().len(),
+        1,
+        "one tab withdrew the other tab's download"
+    );
+    assert_eq!(
+        h.manager.withdraw_capture("a-2").await.unwrap(),
+        WithdrawOutcome::Withdrawn
+    );
+    assert!(h.manager.pending_confirmations().is_empty());
+
+    // Confirmed: it is the app's, for every tab, whether the server answered yet or not.
+    for tab in ["b-1", "b-2"] {
+        h.manager.add_capture(from_tab("b.pdf", tab)).await.unwrap();
+    }
+    let proposal = h.manager.pending_confirmations().remove(0);
+    let answer = CaptureConfirmation {
+        folder: None,
+        file_name: None,
+        queue: None,
+    };
+    h.manager
+        .confirm_capture(proposal.id, answer.clone())
+        .await
+        .unwrap();
+    for tab in ["b-1", "b-2"] {
+        assert_eq!(
+            h.manager.withdraw_capture(tab).await.unwrap(),
+            WithdrawOutcome::AlreadyStarted,
+            "{tab}"
+        );
+    }
+    assert_eq!(h.manager.list_downloads().len(), 1);
+
+    // Rejected: nothing was taken over, for every tab.
+    for tab in ["c-1", "c-2"] {
+        h.manager.add_capture(from_tab("c.pdf", tab)).await.unwrap();
+    }
+    let proposal = h.manager.pending_confirmations().remove(0);
+    h.manager.reject_capture(proposal.id).unwrap();
+    for tab in ["c-1", "c-2"] {
+        assert_eq!(
+            h.manager.withdraw_capture(tab).await.unwrap(),
+            WithdrawOutcome::NotFound,
+            "{tab}"
+        );
+    }
+    assert_eq!(h.manager.list_downloads().len(), 1);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn confirmations_are_deduplicated_and_capped() {
     let h = Harness::new().await;
@@ -672,6 +759,183 @@ async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() {
         .await
         .unwrap();
     assert_eq!(outcome, WithdrawOutcome::AlreadyStarted);
+}
+
+/// One slow request must not hold up the others on the same connection: the
+/// extension's withdrawal, in particular, has to arrive while the capture it
+/// withdraws is still waiting for a silent server.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_slow_capture_does_not_hold_up_other_requests() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await;
+    let mut client = Client::connected(&h.manager).await;
+    let waiting = capture(silent.url("slow.pdf"));
+    let added = client.request(Call::AddDownload(waiting.clone())).await;
+    // The capture is now waiting for the server's answer.
+    crate::common::wait_until("the capture to connect", || {
+        (silent.accepted.load(std::sync::atomic::Ordering::SeqCst) > 0).then_some(())
+    })
+    .await;
+
+    let asked = Instant::now();
+    let reply = client.call(Call::ListQueues).await.unwrap();
+    assert!(matches!(reply, Reply::Queues(_)));
+    assert!(
+        asked.elapsed() < Duration::from_secs(1),
+        "ListQueues waited {:?} behind the capture",
+        asked.elapsed()
+    );
+
+    let reply = client
+        .call(Call::WithdrawDownload(WithdrawRequest {
+            handover_id: waiting.handover_id.clone(),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(reply, Reply::Withdrawn(WithdrawOutcome::Withdrawn));
+    assert!(
+        asked.elapsed() < Duration::from_secs(3),
+        "the withdrawal waited {:?} behind the capture",
+        asked.elapsed()
+    );
+    let err = client.response(added).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotStarted);
+    assert!(h.manager.list_downloads().is_empty());
+}
+
+/// A client may not pile up requests without limit: the ones beyond the limit get
+/// an error at once, and the connection keeps working.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn requests_beyond_the_limit_are_refused() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await;
+    let mut client = Client::connected(&h.manager).await;
+    // The first add waits for the silent server; every repeat of it waits for the
+    // first one's outcome.
+    let slow = capture(silent.url("slow.pdf"));
+    let mut ids = Vec::new();
+    for _ in 0..=wirecatch_core::MAX_REQUESTS_IN_FLIGHT {
+        ids.push(client.request(Call::AddDownload(slow.clone())).await);
+    }
+    let last = ids.pop().unwrap();
+    let err = client.response(last).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRequest);
+    assert!(err.message.contains("at once"), "{}", err.message);
+    // Withdrawing ends the waiting requests; the connection works afterwards.
+    crate::common::wait_until("the capture to connect", || {
+        (silent.accepted.load(std::sync::atomic::Ordering::SeqCst) > 0).then_some(())
+    })
+    .await;
+    let outcome = h.manager.withdraw_capture(&slow.handover_id).await.unwrap();
+    assert_eq!(outcome, WithdrawOutcome::Withdrawn);
+    for id in ids {
+        let err = client.response(id).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotStarted, "{}", err.message);
+    }
+    assert!(client.call(Call::ListQueues).await.is_ok());
+}
+
+/// Cookies and credentials belong to the site the browser got them from. A link
+/// refreshed to another site must not carry them there; one refreshed on the
+/// same site keeps them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() {
+    let first = TestServer::fast(1024).await;
+    let other = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    // Held in line, so nothing is requested before the links are refreshed.
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let with_credentials = |name: &str| {
+        let mut capture = capture(first.url(name));
+        capture.extra_headers = vec![
+            Header {
+                name: "Authorization".into(),
+                value: "Bearer secret".into(),
+            },
+            Header {
+                name: "Accept-Language".into(),
+                value: "en".into(),
+            },
+        ];
+        capture
+    };
+    let stays = h.manager.add_capture(with_credentials("stays.pdf")).await;
+    let moves = h.manager.add_capture(with_credentials("moves.pdf")).await;
+    let (stays, moves) = (stays.unwrap().id.unwrap(), moves.unwrap().id.unwrap());
+    h.manager
+        .refresh_link(stays, &first.url("fresh/stays.pdf"))
+        .unwrap();
+    h.manager
+        .refresh_link(moves, &other.url("moves.pdf"))
+        .unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    h.wait_status(stays, DownloadStatus::Completed).await;
+    h.wait_status(moves, DownloadStatus::Completed).await;
+
+    assert_eq!(*first.stats.cookies.lock().unwrap(), vec!["session=abc"]);
+    assert_eq!(
+        *first.stats.authorizations.lock().unwrap(),
+        vec!["Bearer secret"]
+    );
+    assert!(
+        other.stats.cookies.lock().unwrap().is_empty(),
+        "the other site got the first site's cookies"
+    );
+    assert!(
+        other.stats.authorizations.lock().unwrap().is_empty(),
+        "the other site got the first site's credentials"
+    );
+    assert!(
+        other
+            .stats
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    );
+}
+
+/// A queued capture that later gets another file than the browser saw fails with
+/// a way out: refreshing the link from the page.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() {
+    // The browser saw 1024 bytes; this link now serves 2048.
+    let changed = TestServer::fast(2048).await;
+    let right = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let added = h
+        .manager
+        .add_capture(capture(changed.url("report.pdf")))
+        .await
+        .unwrap();
+    assert_eq!(added.action, AddAction::Queued);
+    let id = added.id.unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("different file"),
+        "{}",
+        error.message
+    );
+    assert_eq!(
+        error.fix,
+        Some(wirecatch_protocol::app::FixAction::RefreshLink)
+    );
+
+    h.manager
+        .refresh_link(id, &right.url("report.pdf"))
+        .unwrap();
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(std::fs::read(&done.path).unwrap(), right.data);
 }
 
 fn framed(body: &[u8]) -> Vec<u8> {

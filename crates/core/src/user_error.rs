@@ -46,10 +46,10 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             message: "The site tried to switch this secure download to an unencrypted connection, where it could be read or changed on the way, so Wirecatch stopped it. Get the file from another link or ask the site to fix it.".into(),
             fix: None,
         },
-        EngineError::TargetRejected(reason) => UserError {
-            message: reason.clone(),
-            fix: None,
-        },
+        // Only the manager's own resolver refuses a file, and the reason that
+        // reaches a person is that the server sent something other than the file
+        // the browser saw: a fresh link from the page is the way out.
+        EngineError::TargetRejected(reason) => fix(reason.clone(), FixAction::RefreshLink),
         EngineError::Internal(detail) => fix(
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
@@ -276,13 +276,17 @@ mod tests {
             action(&EngineError::TooManyRedirects { url: "u".into() }, false),
             Some(FixAction::RefreshLink)
         );
+        // The app refused what the server sent (another file than the browser
+        // saw, or a sign-in page): a fresh link from the page is the way out.
         let rejected = describe(
-            &EngineError::TargetRejected("The browser keeps it.".into()),
+            &EngineError::TargetRejected(
+                "The server sent a web page instead of the file. Refresh the link.".into(),
+            ),
             Path::new("/d"),
             false,
         );
-        assert_eq!(rejected.message, "The browser keeps it.");
-        assert_eq!(rejected.fix, None);
+        assert!(rejected.message.starts_with("The server sent a web page"));
+        assert_eq!(rejected.fix, Some(FixAction::RefreshLink));
         assert_eq!(
             action(&EngineError::Internal("bug".into()), false),
             Some(FixAction::Retry)

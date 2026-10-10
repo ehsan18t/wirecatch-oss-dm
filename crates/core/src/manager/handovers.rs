@@ -22,6 +22,8 @@ pub(super) enum Target {
     Pending(u64),
     /// A download in the list.
     Download(DownloadId),
+    /// The user confirmed it, so it is the app's from then on.
+    Confirmed(DownloadId),
     /// The user dismissed it; nothing was downloaded.
     Dismissed,
 }
@@ -37,6 +39,13 @@ pub(super) struct Handover {
     pub deciding: Option<CancellationToken>,
 }
 
+impl Handover {
+    /// Whether this handover's outcome is known, so it may be forgotten.
+    fn may_forget(&self) -> bool {
+        self.deciding.is_none() && !matches!(self.target, Target::Pending(_))
+    }
+}
+
 /// A bounded memory of handovers; the oldest are forgotten first.
 #[derive(Debug, Default)]
 pub(super) struct Handovers {
@@ -49,15 +58,24 @@ impl Handovers {
         self.known.get(id)
     }
 
-    /// Remembers a handover, forgetting the oldest one if full.
+    /// Remembers a handover, forgetting the oldest one that may be forgotten if
+    /// full. One still being decided or waiting for the user's answer is kept:
+    /// forgetting it would leave a duplicate add waiting for an outcome that can no
+    /// longer be recorded, or a withdrawal unable to find its capture. There are
+    /// few of those at a time (each holds a running capture or a question on screen).
     pub fn insert(&mut self, id: &str, handover: Handover) {
         if self.known.insert(id.to_string(), handover).is_none() {
             self.order.push_back(id.to_string());
         }
         while self.order.len() > MAX_REMEMBERED {
-            if let Some(oldest) = self.order.pop_front() {
-                self.known.remove(&oldest);
-            }
+            let oldest = self
+                .order
+                .iter()
+                .position(|known| self.known.get(known).is_none_or(Handover::may_forget));
+            let Some(oldest) = oldest.and_then(|at| self.order.remove(at)) else {
+                break;
+            };
+            self.known.remove(&oldest);
         }
     }
 
@@ -95,7 +113,7 @@ impl Handovers {
 pub(super) fn check_id(id: &str) -> Result<()> {
     if id.is_empty() || id.len() > MAX_ID_LEN {
         return Err(CoreError::Invalid(format!(
-            "The browser sent a download without a valid handover id (1 to {MAX_ID_LEN} characters). Update the extension."
+            "The browser extension sent a download without a usable label (it needs 1 to {MAX_ID_LEN} characters). Update the extension."
         )));
     }
     Ok(())
@@ -127,6 +145,48 @@ mod tests {
         assert!(log.get("5").is_some());
         assert_eq!(log.known.len(), MAX_REMEMBERED);
         assert_eq!(log.order.len(), MAX_REMEMBERED);
+    }
+
+    /// A duplicate add waits for the first add's outcome. If the handover were
+    /// forgotten while still being decided, the outcome could never be recorded
+    /// and the duplicate would wait out its whole patience.
+    #[test]
+    fn a_handover_still_being_decided_is_never_forgotten() {
+        let mut log = Handovers::default();
+        let deciding = CancellationToken::new();
+        log.insert(
+            "first",
+            Handover {
+                deciding: Some(deciding.clone()),
+                ..handover(0)
+            },
+        );
+        for n in 1..(MAX_REMEMBERED as i64 + 5) {
+            log.insert(&n.to_string(), handover(n));
+        }
+        assert!(log.get("first").is_some(), "forgotten while being decided");
+        assert!(log.known.len() <= MAX_REMEMBERED + 1);
+        assert_eq!(log.known.len(), log.order.len());
+        log.decide("first", handover(0).reply);
+        assert!(deciding.is_cancelled(), "the duplicate add was never woken");
+    }
+
+    /// A capture waiting for the user's answer must stay known, so a later
+    /// withdrawal finds it.
+    #[test]
+    fn a_handover_waiting_for_confirmation_is_never_forgotten() {
+        let mut log = Handovers::default();
+        log.insert(
+            "asking",
+            Handover {
+                target: Target::Pending(7),
+                ..handover(0)
+            },
+        );
+        for n in 1..(MAX_REMEMBERED as i64 + 5) {
+            log.insert(&n.to_string(), handover(n));
+        }
+        assert!(log.get("asking").is_some());
     }
 
     #[test]
