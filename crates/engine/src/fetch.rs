@@ -185,10 +185,14 @@ impl Fetcher {
                 .map_err(Error::task)?
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
+        // The addresses the starting host has right now. Only these may be on
+        // the local network later: a name that switches to a local address after
+        // this check (DNS rebinding) is filtered like any other.
+        let start_addrs = host_addresses(&url, options.stall_timeout).await;
         let blocking_private = match private_network {
             PrivateNetwork::Allow => false,
             PrivateNetwork::Block => true,
-            PrivateNetwork::Auto => !host_is_private(&url, options.stall_timeout).await,
+            PrivateNetwork::Auto => !all_private(&start_addrs),
         };
         let resolver = blocking_private.then(|| {
             let guard = Arc::new(NetworkGuard::new(&url, options.stall_timeout));
@@ -201,6 +205,11 @@ impl Fetcher {
             })));
             Arc::new(FilteringResolver {
                 exempt: url.host_str().map(str::to_string),
+                pinned: start_addrs
+                    .iter()
+                    .copied()
+                    .filter(|ip| is_private(*ip))
+                    .collect(),
             })
         });
         let clients = (0..options.connections.max(1))
@@ -601,19 +610,25 @@ async fn resolve(host: &str, port: u16, timeout: Duration) -> Vec<IpAddr> {
     }
 }
 
-/// Whether the host of `url` is on the local network: an address there, or
-/// a name that resolves only to such addresses.
-async fn host_is_private(url: &Url, timeout: Duration) -> bool {
+/// The addresses of the host of `url`: the address itself, or what the name
+/// resolves to (nothing if it does not resolve).
+async fn host_addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
     match url.host() {
-        Some(Host::Ipv4(ip)) => is_private(IpAddr::V4(ip)),
-        Some(Host::Ipv6(ip)) => is_private(IpAddr::V6(ip)),
+        Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
+        Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
         Some(Host::Domain(name)) => {
             let port = url.port_or_known_default().unwrap_or(80);
-            let addrs = resolve(name, port, timeout).await;
-            !addrs.is_empty() && addrs.into_iter().all(is_private)
+            resolve(name, port, timeout).await
         }
-        None => false,
+        None => Vec::new(),
     }
+}
+
+/// Whether a host with these addresses is on the local network: it has
+/// addresses and all of them are local. A host that does not resolve counts as
+/// public, which keeps the guard on.
+fn all_private(addrs: &[IpAddr]) -> bool {
+    !addrs.is_empty() && addrs.iter().all(|ip| is_private(*ip))
 }
 
 /// Refuses requests to the local network, before they are sent; checked for
@@ -681,18 +696,26 @@ impl NetworkGuard {
 /// connection itself can then never reach one, even if a name's address
 /// changes between the check and the connection.
 struct FilteringResolver {
-    /// The fetcher's own host, resolved unfiltered.
+    /// The fetcher's own host.
     exempt: Option<String>,
+    /// Local addresses the fetcher's own host had when the fetcher was created;
+    /// the only local addresses it may use. Empty when it started public, so a
+    /// later switch to a local address is filtered (DNS rebinding).
+    pinned: Vec<IpAddr>,
 }
 
 impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
-        let exempt = self.exempt.as_deref() == Some(host.as_str());
+        let pinned = if self.exempt.as_deref() == Some(host.as_str()) {
+            self.pinned.clone()
+        } else {
+            Vec::new()
+        };
         Box::pin(async move {
             let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
                 .await?
-                .filter(|a| exempt || !is_private(a.ip()))
+                .filter(|a| !is_private(a.ip()) || pinned.contains(&a.ip()))
                 .collect();
             if addrs.is_empty() {
                 return Err(format!(
@@ -818,6 +841,7 @@ mod tests {
         use std::str::FromStr;
         let resolver = FilteringResolver {
             exempt: Some("own-host.invalid".into()),
+            pinned: Vec::new(),
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
@@ -825,16 +849,40 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("blocks for safety"), "{error}");
-        // The fetcher's own host is resolved unfiltered.
+        // The fetcher's own host keeps the local addresses it had at creation.
+        let start = host_addresses(
+            &Url::parse("http://localhost/").unwrap(),
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(all_private(&start), "localhost resolved to {start:?}");
         let resolver = FilteringResolver {
             exempt: Some("localhost".into()),
+            pinned: start.clone(),
         };
         let addrs: Vec<_> = resolver
             .resolve(Name::from_str("localhost").unwrap())
             .await
             .unwrap()
             .collect();
-        assert!(!addrs.is_empty() && addrs.iter().all(|a| a.ip().is_loopback()));
+        assert!(!addrs.is_empty() && addrs.iter().all(|a| start.contains(&a.ip())));
+    }
+
+    #[tokio::test]
+    async fn the_own_host_cannot_switch_to_a_local_address_later() {
+        use std::str::FromStr;
+        // The own host looked public when the fetcher was created (no pinned
+        // local addresses); it now resolves to loopback, as a rebinding DNS
+        // server would make it. Those addresses must be filtered.
+        let resolver = FilteringResolver {
+            exempt: Some("localhost".into()),
+            pinned: Vec::new(),
+        };
+        let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
+            Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("blocks for safety"), "{error}");
     }
 
     #[test]
