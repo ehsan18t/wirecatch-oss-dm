@@ -1,12 +1,11 @@
 import type { MediaKind } from '@wirecatch/protocol';
 import { fileNameFromUrl } from '../file-types';
-import { classifyUrl, isWebUrl } from './detect';
 import { pageSiteFor } from './page-sites';
-import { itemKey, type MediaItem } from './registry';
+import type { MediaItem } from './registry';
 
-/** One thing that can be sent to the app: detected media, the element's own file, or the page. */
+/** One thing that can be sent to the app: detected media, or the page itself. */
 export interface MediaTarget {
-  /** Identifies it within the tab (the registry key, `src:` for the element's file, `page:` for the page). */
+  /** Identifies it within the tab (the registry key, or `page:` for the page). */
   key: string;
   kind: MediaKind;
   url: string;
@@ -55,9 +54,11 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
 /**
  * Picks what the media button sends:
  *
- * 1. The element's own file, when it plays an http(s) address (not `blob:` or
- *    `mediasource:`): that is exactly what the person clicked on. Its kind comes
- *    from the extension, so a `.m3u8` source (native HLS) counts as a stream.
+ * 1. The element's own file, but only when the browser itself loaded exactly that
+ *    address as media in this tab (it is in the detected list). A page decides what
+ *    its `<video src>` says, so an address the browser never loaded is not trusted:
+ *    otherwise a page could make the button send any address on its site, with the
+ *    person's cookies for it.
  * 2. Otherwise a stream manifest detected in the tab (HLS or DASH), the first one,
  *    which is normally the master playlist.
  * 3. Otherwise a direct file detected in the tab.
@@ -67,20 +68,9 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
  */
 export function chooseTarget(items: readonly MediaItem[], context: ButtonContext): MediaTarget | null {
   const src = context.elementSrc;
-  if (src !== null && isWebUrl(src)) {
-    const byUrl = classifyUrl(src);
-    const kind = byUrl?.kind ?? 'direct';
-    const known = items.find((i) => i.key === itemKey(kind, src));
-    if (known !== undefined) return fromItem(known);
-    return {
-      key: `src:${src}`,
-      kind,
-      url: src,
-      mime: null,
-      size: null,
-      audio: byUrl?.audio ?? context.elementIsAudio,
-      site: null,
-    };
+  if (src !== null) {
+    const loaded = items.find((i) => i.url === src);
+    if (loaded !== undefined) return fromItem(loaded);
   }
   const stream = items.find((i) => i.kind === 'hls' || i.kind === 'dash');
   if (stream !== undefined) return fromItem(stream);

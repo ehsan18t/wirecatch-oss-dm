@@ -81,6 +81,8 @@ function fakeDeps(): Fake {
         fake.downloads.push(request);
         return fake.answer instanceof Error ? Promise.reject(fake.answer) : Promise.resolve(fake.answer);
       },
+      // jsdom marks every event as untrusted; the real check is tested on its own below.
+      isTrusted: () => true,
     },
   };
   return fake;
@@ -268,6 +270,19 @@ describe('MediaButton', () => {
     b.button.click();
     await settle();
     expect(b.status.textContent).toBe('Wirecatch could not be reached. Reload this page, then try again.');
+  });
+
+  it('ignores clicks a page script made up', async () => {
+    const fake = fakeDeps();
+    delete fake.deps.isTrusted;
+    const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    b.button.click();
+    b.button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(fake.downloads).toEqual([]);
   });
 
   it("keeps its clicks and keys away from the page's player", async () => {

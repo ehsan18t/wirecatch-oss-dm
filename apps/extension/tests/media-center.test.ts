@@ -95,19 +95,21 @@ describe('chooseTarget (what the media button sends)', () => {
     expect(target).toMatchObject({ kind: 'page', url: 'https://www.youtube-nocookie.com/embed/abc' });
   });
 
-  it("sends the element's own file when it plays a web address, with what was detected about it", () => {
+  it("sends the element's own file only when the browser loaded exactly that address as media", () => {
     expect(chooseTarget(items(HLS, FILE), context({ elementSrc: FILE.url }))).toMatchObject({
       kind: 'direct',
+      url: FILE.url,
       size: 5_242_880,
     });
-    expect(chooseTarget([], context({ elementSrc: 'https://e.com/live/index.m3u8' }))).toMatchObject({
-      kind: 'hls',
-    });
+    // A page can put any address in its <video src>; one the browser never loaded is not sent.
     expect(
-      chooseTarget([], context({ elementSrc: 'https://e.com/stream?id=3', elementIsAudio: true })),
+      chooseTarget(items(HLS), context({ elementSrc: 'https://example.com/account/export' })),
     ).toMatchObject({
-      kind: 'direct',
-      audio: true,
+      url: HLS.url,
+    });
+    expect(chooseTarget([], context({ elementSrc: 'https://example.com/account/export' }))).toBeNull();
+    expect(chooseTarget(items(FILE), context({ elementSrc: `${FILE.url}?other=1` }))).toMatchObject({
+      url: FILE.url,
     });
   });
 
@@ -267,7 +269,8 @@ describe('media button messages', () => {
     registry.add(1, HLS);
     expect(await check(1)).toEqual({ show: true });
     expect(await check(4)).toEqual({ show: true });
-    expect(await check(3, 'https://e.com/a.mp4')).toEqual({ show: true });
+    // An element address the browser never loaded as media does not count.
+    expect(await check(3, 'https://e.com/a.mp4')).toEqual({ show: false });
     // Never in private windows, even with a playable address.
     registry.add(2, HLS);
     expect(await check(2, 'https://e.com/a.mp4')).toEqual({ show: false });

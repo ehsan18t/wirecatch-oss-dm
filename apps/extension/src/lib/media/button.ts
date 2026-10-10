@@ -11,6 +11,11 @@ export interface ButtonDeps {
   check(info: ElementInfo): Promise<boolean>;
   /** Hands the element's media to the app. */
   download(request: ElementInfo & { title: string | null }): Promise<DownloadAnswer>;
+  /**
+   * Whether an activation came from the person (`event.isTrusted`), not from a script.
+   * Replaceable for tests only: jsdom marks every event as untrusted.
+   */
+  isTrusted?(event: Event): boolean;
 }
 
 export interface Box {
@@ -222,7 +227,10 @@ export class MediaButton {
     this.#wrap.append(this.button, this.status);
     root.append(style, this.#wrap);
     for (const type of CONTAINED) this.#wrap.addEventListener(type, (e) => e.stopPropagation());
-    this.button.addEventListener('click', () => void this.#download());
+    // Only a real click or key press, never one a page script made up.
+    this.button.addEventListener('click', (event) => {
+      if (deps.isTrusted?.(event) ?? event.isTrusted) void this.#download();
+    });
     this.button.addEventListener('focus', () => this.#update());
     this.button.addEventListener('blur', () => this.#update());
 
