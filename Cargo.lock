@@ -5123,6 +5123,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wirecatch-bridge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows-sys 0.59.0",
+ "wirecatch-ipc",
+ "wirecatch-protocol",
+]
+
+[[package]]
 name = "wirecatch-cli"
 version = "0.1.0"
 dependencies = [
@@ -5165,6 +5179,17 @@ dependencies = [
  "tracing",
  "url",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "wirecatch-ipc"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror 2.0.21",
+ "tokio",
+ "windows-sys 0.59.0",
+ "wirecatch-protocol",
 ]
 
 [[package]]

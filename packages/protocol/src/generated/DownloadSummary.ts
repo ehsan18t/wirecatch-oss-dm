@@ -4,6 +4,7 @@ import type { DownloadId } from "./DownloadId";
 import type { DownloadStatus } from "./DownloadStatus";
 import type { QueueId } from "./QueueId";
 import type { UserError } from "./UserError";
+import type { WaitReason } from "./WaitReason";
 
 /**
  * One row of the download list.
@@ -17,6 +18,10 @@ path: string, queue: QueueId, category: Category, status: DownloadStatus, total:
  * Smoothed over the last few seconds.
  */
 speed: number, connections: number, eta_secs: number | null, error: UserError | null, 
+/**
+ * Why a `Queued` download is not running yet; `None` for every other status.
+ */
+waiting: WaitReason | null, 
 /**
  * Unix time in milliseconds.
  */
