@@ -14,6 +14,7 @@ use wirecatch_engine::{
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
+use super::settle::path_resolver;
 use super::state::{Entry, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
@@ -50,12 +51,20 @@ impl Manager {
             .collect();
         // Until the server has answered once, the path is only a guess: let the
         // server's answer decide it. Afterwards it is fixed.
-        let target = if entry.naming.settled {
-            Target::Exact
-        } else {
-            Target::Resolve(self.path_resolver(id, run_id, answered.clone()))
+        let settle = (!entry.naming.settled).then(|| self.settler(id, run_id, answered.clone()));
+        let target = match &settle {
+            None => Target::Exact,
+            Some(settle) => Target::Resolve(path_resolver(settle.clone())),
         };
         match engine_request(entry, connections, limiters, target) {
+            #[cfg(test)]
+            Ok(_) if self.fake_engine().is_some() => {
+                let fake = self.fake_engine();
+                let path = entry.path().to_path_buf();
+                self.launch(state, id, run_id, answered, move |_, cancel| {
+                    super::fake::run(fake, settle, path, cancel)
+                });
+            }
             Ok(request) => self.launch(state, id, run_id, answered, move |progress, cancel| {
                 wirecatch_engine::download(request, progress, cancel)
             }),

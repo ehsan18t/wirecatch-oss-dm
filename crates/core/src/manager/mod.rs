@@ -3,6 +3,8 @@
 
 mod captures;
 mod downloads;
+#[cfg(test)]
+mod fake;
 mod handovers;
 mod plan;
 mod preferences;
@@ -13,6 +15,8 @@ mod run;
 mod scheduling;
 mod settle;
 mod state;
+#[cfg(test)]
+mod tests;
 mod ticker;
 
 use std::future::Future;
@@ -135,6 +139,9 @@ struct Inner {
     queues_changed: Arc<Notify>,
     /// Stops the background tasks.
     stopped: CancellationToken,
+    /// Plays the engine in unit tests.
+    #[cfg(test)]
+    fake_engine: Mutex<Option<fake::FakeEngine>>,
 }
 
 impl Drop for Inner {
@@ -188,6 +195,8 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
+            #[cfg(test)]
+            fake_engine: Mutex::new(None),
         });
         let manager = Manager { inner };
         manager.spawn_background_tasks();

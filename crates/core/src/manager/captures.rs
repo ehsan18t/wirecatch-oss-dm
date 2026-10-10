@@ -98,8 +98,11 @@ impl Manager {
                 Ok(reply)
             }
             Err(reason) => {
+                // Answer at once: stopping the attempt can take up to the stop
+                // timeout, and the extension does not wait that long. The attempt
+                // is hidden now and removed in the background.
                 self.lock().handovers.remove(&capture.handover_id);
-                self.remove(&[row.id], false).await?;
+                self.remove_in_background(vec![row.id]);
                 Err(CoreError::NotStarted(reason))
             }
         }
@@ -206,7 +209,9 @@ impl Manager {
                 }
             }
         };
-        self.remove(&[download], false).await?;
+        // Hidden and never started again from now on; stopping it may take up to
+        // the stop timeout, which the extension should not have to wait for.
+        self.remove_in_background(vec![download]);
         Ok(WithdrawOutcome::Withdrawn)
     }
 

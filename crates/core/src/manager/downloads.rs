@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use tracing::warn;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{AddRequest, DownloadStatus, DownloadSummary, PortablePath, UiEvent};
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
@@ -214,6 +215,25 @@ impl Manager {
             Ok(())
         })
         .await
+    }
+
+    /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
+    /// removing them in the background.
+    pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
+        {
+            let mut state = self.lock();
+            for id in &ids {
+                if let Ok(entry) = state.entry_mut(*id) {
+                    entry.removing = true;
+                }
+            }
+        }
+        let manager = self.clone();
+        self.spawn(async move {
+            if let Err(e) = manager.remove(&ids, false).await {
+                warn!(error = %e, "could not finish removing a download");
+            }
+        });
     }
 
     /// Gives a download a fresh link, for example after the old one expired. What

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use wirecatch_engine::{CancellationToken, PathResolver, RemoteFile};
+use wirecatch_engine::{CancellationToken, PathResolver, RemoteFile, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
 
@@ -18,20 +18,50 @@ use super::Manager;
 use super::state::Expectation;
 use crate::{naming, settings};
 
+/// What the server said about the file, as far as choosing its path goes.
+#[derive(Debug, Clone)]
+pub(super) struct ServerAnswer {
+    /// The engine's suggestion: `Content-Disposition`, else the link's name, else
+    /// a generic name.
+    pub suggested_name: String,
+    pub total: Option<u64>,
+    pub content_type: Option<String>,
+    pub final_url: Url,
+}
+
+impl From<&RemoteFile> for ServerAnswer {
+    fn from(remote: &RemoteFile) -> Self {
+        Self {
+            suggested_name: remote.suggested_name.clone(),
+            total: remote.total,
+            content_type: remote.content_type.clone(),
+            final_url: remote.final_url.clone(),
+        }
+    }
+}
+
+/// Chooses a download's path from the server's answer; `Err` refuses the file.
+pub(super) type Settle = Arc<dyn Fn(&ServerAnswer) -> Result<PathBuf, String> + Send + Sync>;
+
+/// The engine's resolver for `settle`.
+pub(super) fn path_resolver(settle: Settle) -> PathResolver {
+    Arc::new(move |remote: &RemoteFile| settle(&ServerAnswer::from(remote)))
+}
+
 impl Manager {
-    /// The resolver for run `run_id` of download `id`. On success it cancels
+    /// Settles the path for run `run_id` of download `id`. On success it cancels
     /// `answered`, which is how a waiting capture learns the server answered.
-    pub(super) fn path_resolver(
+    pub(super) fn settler(
         &self,
         id: DownloadId,
         run_id: u64,
         answered: CancellationToken,
-    ) -> PathResolver {
+    ) -> Settle {
         let manager = Arc::downgrade(&self.inner);
-        Arc::new(move |remote: &RemoteFile| {
+        Arc::new(move |answer: &ServerAnswer| {
             let manager =
                 Manager::from_weak(&manager).ok_or_else(|| "Wirecatch is closing.".to_string())?;
-            let path = manager.settle_path(id, run_id, remote)?;
+            let path = manager.settle_path(id, run_id, answer)?;
             answered.cancel();
             Ok(path)
         })
@@ -44,7 +74,7 @@ impl Manager {
         &self,
         id: DownloadId,
         run_id: u64,
-        remote: &RemoteFile,
+        remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
         let mut guard = self.lock();
         let state = &mut *guard;
@@ -94,7 +124,7 @@ impl Manager {
 /// Whether the server's answer is the file the browser saw. A different size, or
 /// a web page where the browser had a file (often a sign-in page), means the app
 /// did not get the same thing and must not take the download over.
-fn check_expectation(expect: &Expectation, remote: &RemoteFile) -> Result<(), String> {
+fn check_expectation(expect: &Expectation, remote: &ServerAnswer) -> Result<(), String> {
     if let (Some(seen), Some(got)) = (expect.size, remote.total)
         && seen != got
     {
