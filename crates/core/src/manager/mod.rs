@@ -13,10 +13,13 @@ mod state;
 mod ticker;
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
+use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
+use tokio::task::JoinHandle;
 use wirecatch_engine::{CancellationToken, RateLimiter};
 use wirecatch_protocol::app::{DownloadStatus, UiEvent};
 use wirecatch_protocol::wire::Event;
@@ -75,6 +78,10 @@ pub struct Manager {
 }
 
 struct Inner {
+    /// The runtime the manager was opened on. Every task is spawned here, so
+    /// methods also work when called from a thread outside any runtime (Tauri runs
+    /// synchronous commands on its main thread).
+    runtime: Handle,
     state: Mutex<State>,
     store: Store,
     clock: Arc<dyn Clock>,
@@ -100,9 +107,13 @@ impl Drop for Inner {
 impl Manager {
     /// Opens the manager on `config.data_dir`, restoring every download. Downloads
     /// that were running when the app last stopped continue on their own.
+    ///
+    /// Must be called from inside a Tokio runtime; the manager keeps a handle to it
+    /// and runs all its work there, so its methods may then be called from any thread.
     pub async fn open(config: ManagerConfig) -> Result<Self> {
+        let runtime = Handle::current();
         let dir = config.data_dir.clone();
-        let (store, snapshot) = blocking(move || Store::open(&dir)).await?;
+        let (store, snapshot) = blocking(&runtime, move || Store::open(&dir)).await?;
         let restored = restore::restore(snapshot, config.clock.local_now());
         store.save_settings(restored.state.settings.clone());
         store.save_queues(restored.state.queue_list());
@@ -110,6 +121,7 @@ impl Manager {
 
         let global_limiter = Arc::new(RateLimiter::new(restored.state.settings.global_speed_limit));
         let inner = Arc::new(Inner {
+            runtime,
             state: Mutex::new(restored.state),
             store,
             clock: config.clock,
@@ -162,17 +174,41 @@ impl Manager {
 
     fn spawn_background_tasks(&self) {
         let weak = Arc::downgrade(&self.inner);
-        tokio::spawn(ticker::run(
+        self.spawn(ticker::run(
             weak.clone(),
             self.inner.rows_changed.clone(),
             self.inner.stopped.clone(),
         ));
-        tokio::spawn(run_scheduler(
+        self.spawn(run_scheduler(
             weak,
             self.inner.clock.clone(),
             self.inner.queues_changed.clone(),
             self.inner.stopped.clone(),
         ));
+    }
+
+    /// Starts a task on the manager's runtime, whichever thread this is called from.
+    fn spawn<F>(&self, task: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.inner.runtime.spawn(task)
+    }
+
+    /// Runs blocking work (disk access) on the manager's runtime and waits for it.
+    async fn blocking<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        blocking(&self.inner.runtime, work).await
+    }
+
+    /// Deletes files in the background, whichever thread this is called from.
+    fn delete_in_background(&self, files: Vec<PathBuf>) {
+        self.inner
+            .runtime
+            .spawn_blocking(move || run::delete_files(&files));
     }
 
     fn from_weak(weak: &Weak<Inner>) -> Option<Self> {

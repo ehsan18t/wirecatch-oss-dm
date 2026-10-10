@@ -74,6 +74,31 @@ async fn cancel_discards_progress_and_retry_starts_over() {
     ));
 }
 
+/// Tauri runs synchronous commands on its main thread, outside any Tokio runtime.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sync_methods_work_from_a_thread_outside_the_runtime() {
+    let server = TestServer::fast(4 * KIB as usize).await;
+    let h = Harness::new().await;
+    let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
+    let started = h.add_with(&server.url("a.bin"), paused).await;
+    let cancelled = h.add_with(&server.url("b.bin"), paused).await;
+    let manager = h.manager.clone();
+    std::thread::spawn(move || {
+        manager.pause_all().unwrap();
+        manager.resume_all().unwrap();
+        manager.resume(started.id).unwrap();
+        manager.cancel(cancelled.id).unwrap();
+        let queue = manager.create_queue("From a thread").unwrap();
+        manager.update_queue(queue).unwrap();
+        let settings = manager.get_settings();
+        manager.update_settings(settings).unwrap();
+    })
+    .join()
+    .expect("a manager method needed a Tokio runtime on the calling thread");
+    h.wait_status(started.id, DownloadStatus::Completed).await;
+    h.wait_status(cancelled.id, DownloadStatus::Cancelled).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_waiting_download_can_be_cancelled_and_removed() {
     let h = Harness::new().await;

@@ -12,7 +12,7 @@ use super::Manager;
 use super::handovers::{Handover, Target};
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Stop};
-use crate::error::{CoreError, Result, blocking};
+use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
 use crate::settings;
 use crate::store::Origin;
@@ -132,7 +132,7 @@ impl Manager {
         self.save(&mut state, id);
         self.reconcile(&mut state);
         drop(state);
-        tokio::task::spawn_blocking(move || delete_files(&files));
+        self.delete_in_background(files.to_vec());
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl Manager {
             self.emit(UiEvent::DownloadsRemoved(removed));
             self.reconcile(&mut state);
         }
-        blocking(move || {
+        self.blocking(move || {
             delete_files(&files);
             Ok(())
         })
@@ -341,7 +341,9 @@ impl Manager {
         loop {
             let claimed = self.lock_open()?.claimed_paths();
             let (dir, name) = (dir.clone(), name.clone());
-            let path = blocking(move || Ok(naming::unique_path(&dir, &name, &claimed))).await?;
+            let path = self
+                .blocking(move || Ok(naming::unique_path(&dir, &name, &claimed)))
+                .await?;
 
             let mut state = self.lock_open()?;
             if let Some(known) = new.handover.as_deref().and_then(|h| state.handovers.get(h)) {

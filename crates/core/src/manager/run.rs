@@ -57,7 +57,7 @@ impl Manager {
             stop: None,
             meter: SpeedMeter::default(),
         };
-        tokio::spawn(drive(
+        self.spawn(drive(
             Arc::downgrade(&self.inner),
             id,
             run_id,
@@ -126,7 +126,7 @@ impl Manager {
         self.reconcile(&mut state);
         drop(state);
         if let Some(files) = partial {
-            tokio::task::spawn_blocking(move || delete_files(&files));
+            self.delete_in_background(files.to_vec());
         }
     }
 }

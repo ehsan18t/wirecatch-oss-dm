@@ -10,7 +10,7 @@ use wirecatch_protocol::wire::Event;
 use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
-use crate::error::{CoreError, Result, blocking};
+use crate::error::{CoreError, Result};
 use crate::{profile, settings};
 
 impl Manager {
@@ -74,7 +74,7 @@ impl Manager {
         let json =
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
         let path = path.to_path_buf();
-        blocking(move || {
+        self.blocking(move || {
             std::fs::write(&path, json).map_err(|source| CoreError::File {
                 path: path.display().to_string(),
                 source,
@@ -87,13 +87,14 @@ impl Manager {
     /// are resolved on this machine, and downloads are left alone.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let path = path.to_path_buf();
-        let bytes = blocking(move || {
-            std::fs::read(&path).map_err(|source| CoreError::File {
-                path: path.display().to_string(),
-                source,
+        let bytes = self
+            .blocking(move || {
+                std::fs::read(&path).map_err(|source| CoreError::File {
+                    path: path.display().to_string(),
+                    source,
+                })
             })
-        })
-        .await?;
+            .await?;
         let incoming = profile::parse(&bytes)?;
 
         let mut state = self.lock_open()?;

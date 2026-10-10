@@ -102,11 +102,13 @@ pub enum CoreError {
 /// Result of a manager operation.
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 
-/// Runs blocking work (disk access) on the blocking thread pool.
+/// Runs blocking work (disk access) on `runtime`'s blocking thread pool.
 pub(crate) async fn blocking<T: Send + 'static>(
+    runtime: &tokio::runtime::Handle,
     work: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> Result<T> {
-    tokio::task::spawn_blocking(work)
+    runtime
+        .spawn_blocking(work)
         .await
         .map_err(|e| CoreError::Internal(e.to_string()))?
 }
