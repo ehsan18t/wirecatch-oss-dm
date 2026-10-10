@@ -1,0 +1,613 @@
+// Everything the interface knows and every action it can take. Components read from here and
+// call these methods; nothing else talks to the backend.
+
+import type {
+  AddRequest,
+  AppSettings,
+  CaptureConfirmation,
+  DownloadId,
+  DownloadSummary,
+  FixAction,
+  PendingCapture,
+  Queue,
+  QueueId,
+  UiEvent,
+} from '@wirecatch/protocol';
+import { getContext, setContext, untrack } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
+import type { Backend } from '../backend/types';
+import { extractUrls, formatTime, scheduleAllows } from '../format';
+import type { SettingId } from '../settings-schema';
+import { DownloadStore } from './downloads.svelte';
+import { Hints } from './hints.svelte';
+import { countRows, visibleIds, type SortKey, type View } from './view';
+
+export type Screen = 'downloads' | 'settings';
+
+export type Dialog =
+  | { kind: 'add'; urls: string[]; queue?: QueueId }
+  | { kind: 'remove'; ids: DownloadId[] }
+  | { kind: 'queue'; id: QueueId | null }
+  | { kind: 'refresh'; id: DownloadId }
+  | { kind: 'export' }
+  | { kind: 'import' }
+  | { kind: 'shortcuts' };
+
+export interface Toast {
+  id: number;
+  kind: 'info' | 'error' | 'capture';
+  message: string;
+  downloadId?: DownloadId;
+}
+
+const CONTEXT = Symbol('wirecatch-app');
+
+export function setApp(app: AppState): void {
+  setContext(CONTEXT, app);
+}
+
+export function getApp(): AppState {
+  const app = getContext<AppState | undefined>(CONTEXT);
+  if (!app) throw new Error('AppState is missing; wrap the component in the app shell.');
+  return app;
+}
+
+function message(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err) return err;
+  return 'Something went wrong. Try again.';
+}
+
+export class AppState {
+  readonly backend: Backend;
+  readonly downloads = new DownloadStore();
+  readonly hints = new Hints();
+
+  queues = $state<Queue[]>([]);
+  settings = $state<AppSettings | null>(null);
+  ready = $state(false);
+  loadError = $state<string | null>(null);
+
+  screen = $state<Screen>('downloads');
+  /** The setting to scroll to and focus when the settings screen opens. */
+  settingsFocus = $state<SettingId | null>(null);
+  view = $state<View>({ kind: 'all' });
+  search = $state('');
+  sort = $state<SortKey>('queue');
+
+  readonly selection = new SvelteSet<DownloadId>();
+  /** The row the keyboard is on. */
+  active = $state<DownloadId | null>(null);
+  #anchor: DownloadId | null = null;
+
+  dialog = $state<Dialog | null>(null);
+  paletteOpen = $state(false);
+  toasts = $state<Toast[]>([]);
+  pending = $state<PendingCapture[]>([]);
+  /** Refreshed every half minute so schedule labels stay true. */
+  // Replaced whole, never mutated, so a plain Date is enough.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  now = $state(new Date());
+
+  #toastId = 1;
+  #unsubscribe: (() => void) | null = null;
+  #clock: ReturnType<typeof setInterval> | undefined;
+
+  constructor(backend: Backend) {
+    this.backend = backend;
+  }
+
+  // ---- Derived views ----
+
+  readonly #get = (id: DownloadId) => this.downloads.get(id);
+
+  /** Ids the list shows. Rebuilt only when membership, view, search or sort change. */
+  visible = $derived.by(() => {
+    const order = this.downloads.order;
+    const view = this.view;
+    const search = this.search;
+    const sort = this.sort;
+    return untrack(() => visibleIds(order, this.#get, view, search, sort));
+  });
+
+  counts = $derived.by(() => {
+    const order = this.downloads.order;
+    return untrack(() => countRows(order, this.#get));
+  });
+
+  selectedRows = $derived.by(() => {
+    const rows: DownloadSummary[] = [];
+    for (const id of this.selection) {
+      const row = this.downloads.get(id);
+      if (row) rows.push(row);
+    }
+    return rows;
+  });
+
+  defaultQueue = $derived(this.queues.find((q) => q.is_default) ?? this.queues[0]);
+
+  queueById(id: QueueId): Queue | undefined {
+    return this.queues.find((q) => q.id === id);
+  }
+
+  /** A short phrase for the sidebar: what this queue is doing right now. */
+  queueStatus(queue: Queue): string {
+    const c = this.counts.queue.get(queue.id);
+    if (queue.schedule && !scheduleAllows(queue.schedule, this.now)) {
+      return `Starts at ${formatTime(queue.schedule.start)}`;
+    }
+    if (c && c.running > 0) return `${c.running} of ${queue.max_concurrent} running`;
+    if (c && c.waiting > 0) return `${c.waiting} waiting`;
+    if (c && c.paused > 0) return `${c.paused} paused`;
+    return 'Idle';
+  }
+
+  // ---- Startup and events ----
+
+  async init(): Promise<void> {
+    const buffered: UiEvent[] = [];
+    let loading = true;
+    this.#unsubscribe = await this.backend.subscribe((e) => {
+      if (loading) buffered.push(e);
+      else this.handle(e);
+    });
+    try {
+      const [downloads, queues, settings, pending] = await Promise.all([
+        this.backend.listDownloads(),
+        this.backend.listQueues(),
+        this.backend.getSettings(),
+        this.backend.pendingConfirmations(),
+      ]);
+      this.downloads.load(downloads);
+      this.queues = queues;
+      this.settings = settings;
+      this.pending = pending;
+      this.loadError = null;
+    } catch (err) {
+      this.loadError = message(err);
+    } finally {
+      loading = false;
+      for (const e of buffered) this.handle(e);
+      this.ready = true;
+    }
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    this.#clock = setInterval(() => (this.now = new Date()), 30_000);
+  }
+
+  dispose(): void {
+    this.#unsubscribe?.();
+    if (this.#clock) clearInterval(this.#clock);
+  }
+
+  handle(event: UiEvent): void {
+    switch (event.type) {
+      case 'downloads_changed':
+        this.downloads.apply(event.data);
+        break;
+      case 'downloads_removed': {
+        this.downloads.remove(event.data);
+        for (const id of event.data) this.selection.delete(id);
+        if (this.active !== null && event.data.includes(this.active)) this.active = null;
+        break;
+      }
+      case 'queues_changed':
+        this.queues = event.data;
+        if (this.view.kind === 'queue') {
+          const id = this.view.id;
+          if (!event.data.some((q) => q.id === id)) this.view = { kind: 'all' };
+        }
+        break;
+      case 'settings_changed':
+        this.settings = event.data;
+        break;
+      case 'captured':
+        this.downloads.apply([event.data]);
+        this.#toast({ kind: 'capture', message: event.data.file_name, downloadId: event.data.id });
+        break;
+      case 'confirmation_requested':
+        if (!this.pending.some((p) => p.id === event.data.id)) {
+          this.pending = [...this.pending, event.data];
+        }
+        break;
+    }
+  }
+
+  // ---- Toasts ----
+
+  #toast(t: Omit<Toast, 'id'>): number {
+    const id = this.#toastId++;
+    // Keep the stack short; the oldest note goes first.
+    this.toasts = [...this.toasts.slice(-3), { ...t, id }];
+    return id;
+  }
+
+  notify(text: string): void {
+    this.#toast({ kind: 'info', message: text });
+  }
+
+  fail(text: string): void {
+    this.#toast({ kind: 'error', message: text });
+  }
+
+  dismissToast(id: number): void {
+    this.toasts = this.toasts.filter((t) => t.id !== id);
+  }
+
+  /** Runs a backend action and turns any failure into a readable error note. */
+  async #run<T>(action: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await action();
+    } catch (err) {
+      this.fail(message(err));
+      return undefined;
+    }
+  }
+
+  // ---- Navigation ----
+
+  show(view: View): void {
+    this.view = view;
+    this.screen = 'downloads';
+    this.clearSelection();
+  }
+
+  openSettings(focus: SettingId | null = null): void {
+    this.screen = 'settings';
+    this.settingsFocus = focus;
+    this.paletteOpen = false;
+  }
+
+  openDialog(dialog: Dialog): void {
+    this.paletteOpen = false;
+    this.dialog = dialog;
+  }
+
+  closeDialog(): void {
+    this.dialog = null;
+  }
+
+  /** Pasted text: open the Add dialog with every link in it. */
+  pasteText(text: string): boolean {
+    const urls = extractUrls(text);
+    if (urls.length === 0) {
+      this.fail(
+        'There is no link in what you pasted. Copy the full address, starting with https://.',
+      );
+      return false;
+    }
+    this.openDialog({ kind: 'add', urls });
+    return true;
+  }
+
+  // ---- Selection ----
+
+  selectOnly(id: DownloadId): void {
+    this.selection.clear();
+    this.selection.add(id);
+    this.#anchor = id;
+    this.active = id;
+  }
+
+  toggle(id: DownloadId): void {
+    if (this.selection.has(id)) this.selection.delete(id);
+    else this.selection.add(id);
+    this.#anchor = id;
+    this.active = id;
+  }
+
+  /** Selects from the last clicked row to this one, in display order. */
+  selectRange(id: DownloadId, additive = false): void {
+    const list = this.visible;
+    const from = this.#anchor === null ? -1 : list.indexOf(this.#anchor);
+    const to = list.indexOf(id);
+    if (from < 0 || to < 0) {
+      this.selectOnly(id);
+      return;
+    }
+    if (!additive) this.selection.clear();
+    const [a, b] = from < to ? [from, to] : [to, from];
+    for (let i = a; i <= b; i++) {
+      const x = list[i];
+      if (x !== undefined) this.selection.add(x);
+    }
+    this.active = id;
+  }
+
+  selectAll(): void {
+    for (const id of this.visible) this.selection.add(id);
+  }
+
+  clearSelection(): void {
+    this.selection.clear();
+    this.#anchor = null;
+    this.active = null;
+  }
+
+  /** Arrow keys: move the keyboard row, optionally extending the selection. */
+  moveActive(delta: number, extend: boolean): void {
+    const list = this.visible;
+    if (list.length === 0) return;
+    const current = this.active === null ? -1 : list.indexOf(this.active);
+    const next =
+      current < 0
+        ? delta > 0
+          ? 0
+          : list.length - 1
+        : Math.min(list.length - 1, Math.max(0, current + delta));
+    const id = list[next];
+    if (id === undefined) return;
+    if (extend) this.selectRange(id);
+    else this.selectOnly(id);
+  }
+
+  get selectedIds(): DownloadId[] {
+    return [...this.selection];
+  }
+
+  // ---- Download actions ----
+
+  async add(requests: AddRequest[]): Promise<DownloadId[]> {
+    const ids: DownloadId[] = [];
+    for (const r of requests) {
+      const id = await this.#run(() => this.backend.addDownload(r));
+      if (id !== undefined) ids.push(id);
+    }
+    if (ids.length > 0) {
+      this.notify(ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`);
+    }
+    return ids;
+  }
+
+  async pause(ids: DownloadId[] = this.selectedIds): Promise<void> {
+    for (const id of ids) await this.#run(() => this.backend.pause(id));
+  }
+
+  async resume(ids: DownloadId[] = this.selectedIds): Promise<void> {
+    for (const id of ids) await this.#run(() => this.backend.resume(id));
+  }
+
+  /** Space bar: pause what runs, resume what does not. */
+  async togglePause(ids: DownloadId[] = this.selectedIds): Promise<void> {
+    const rows = ids.flatMap((id) => this.downloads.get(id) ?? []);
+    const running = rows.some(
+      (r) => r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued',
+    );
+    if (running) await this.pause(ids);
+    else await this.resume(ids);
+  }
+
+  async retry(ids: DownloadId[] = this.selectedIds): Promise<void> {
+    for (const id of ids) await this.#run(() => this.backend.retry(id));
+  }
+
+  async cancel(ids: DownloadId[] = this.selectedIds): Promise<void> {
+    for (const id of ids) await this.#run(() => this.backend.cancel(id));
+  }
+
+  async remove(ids: DownloadId[], deleteFile: boolean): Promise<void> {
+    await this.#run(() => this.backend.remove(ids, deleteFile));
+  }
+
+  async refreshLink(id: DownloadId, url: string): Promise<boolean> {
+    const ok = await this.#run(async () => {
+      await this.backend.refreshLink(id, url);
+      return true;
+    });
+    return ok === true;
+  }
+
+  async openFile(id: DownloadId): Promise<void> {
+    await this.#run(() => this.backend.openFile(id));
+  }
+
+  async openFolder(id: DownloadId): Promise<void> {
+    await this.#run(() => this.backend.openFolder(id));
+  }
+
+  /** Lets the person pick a new folder for one download. */
+  async chooseFolderFor(id: DownloadId): Promise<boolean> {
+    const row = this.downloads.get(id);
+    const picked = await this.#run(() => this.backend.pickFolder(row?.path));
+    if (!picked) return false;
+    const ok = await this.#run(async () => {
+      await this.backend.setDownloadFolder(id, picked);
+      return true;
+    });
+    if (ok) this.notify(`Saving to ${picked}`);
+    return ok === true;
+  }
+
+  /** Runs the fix an error offers. */
+  async fix(id: DownloadId, action: FixAction): Promise<void> {
+    switch (action) {
+      case 'retry':
+        await this.retry([id]);
+        break;
+      case 'refresh_link':
+        this.openDialog({ kind: 'refresh', id });
+        break;
+      case 'choose_folder':
+        if (await this.chooseFolderFor(id)) await this.retry([id]);
+        break;
+      case 'free_disk_space':
+        await this.openFolder(id);
+        break;
+    }
+  }
+
+  async moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void> {
+    if (ids.length === 0) return;
+    const ok = await this.#run(async () => {
+      await this.backend.moveToQueue(ids, queue);
+      return true;
+    });
+    const name = this.queueById(queue)?.name ?? 'the queue';
+    if (ok)
+      this.notify(
+        ids.length === 1 ? `Moved to ${name}.` : `${ids.length} downloads moved to ${name}.`,
+      );
+  }
+
+  /**
+   * Moves `ids` inside their queue so they sit just before `before` (or at the end when it is
+   * `null`). Only downloads of that one queue take part.
+   */
+  async placeInQueue(queue: QueueId, ids: DownloadId[], before: DownloadId | null): Promise<void> {
+    const current = this.downloads.idsInQueue(queue);
+    const moving = current.filter((id) => ids.includes(id));
+    if (moving.length === 0) return;
+    const rest = current.filter((id) => !ids.includes(id));
+    const at = before === null ? rest.length : rest.indexOf(before);
+    const next = [
+      ...rest.slice(0, at < 0 ? rest.length : at),
+      ...moving,
+      ...rest.slice(at < 0 ? rest.length : at),
+    ];
+    if (next.every((id, i) => id === current[i])) return;
+    const ok = await this.#run(async () => {
+      await this.backend.reorder(queue, next);
+      return true;
+    });
+    if (ok) this.downloads.reorder(queue, next);
+  }
+
+  /** Alt+Up and Alt+Down: nudge the selection one place within its queue. */
+  async nudge(delta: -1 | 1): Promise<void> {
+    if (this.view.kind !== 'queue' || this.sort !== 'queue') {
+      this.notify('Open a queue in the sidebar to change its order.');
+      return;
+    }
+    const queue = this.view.id;
+    const current = this.downloads.idsInQueue(queue);
+    const chosen = current.filter((id) => this.selection.has(id));
+    if (chosen.length === 0) return;
+    const first = current.indexOf(chosen[0] as DownloadId);
+    const last = current.indexOf(chosen[chosen.length - 1] as DownloadId);
+    const rest = current.filter((id) => !this.selection.has(id));
+    let before: DownloadId | null;
+    if (delta < 0) {
+      if (first === 0) return;
+      // The row just above the first selected one is never selected itself.
+      before = current[first - 1] ?? null;
+    } else {
+      if (last === current.length - 1) return;
+      const after = current[last + 1];
+      const i = after === undefined ? -1 : rest.indexOf(after);
+      before = i < 0 ? null : (rest[i + 1] ?? null);
+    }
+    await this.placeInQueue(queue, chosen, before);
+  }
+
+  async pauseAll(): Promise<void> {
+    await this.#run(() => this.backend.pauseAll());
+  }
+
+  async resumeAll(): Promise<void> {
+    await this.#run(() => this.backend.resumeAll());
+  }
+
+  /** Pauses or resumes everything in one queue. */
+  async setQueueRunning(queue: QueueId, running: boolean): Promise<void> {
+    const ids = this.downloads.idsInQueue(queue).filter((id) => {
+      const s = this.downloads.get(id)?.status;
+      return running ? s === 'paused' : s === 'queued' || s === 'connecting' || s === 'downloading';
+    });
+    if (running) await this.resume(ids);
+    else await this.pause(ids);
+  }
+
+  // ---- Queues ----
+
+  async createQueue(name: string): Promise<Queue | undefined> {
+    return this.#run(() => this.backend.createQueue(name));
+  }
+
+  async updateQueue(queue: Queue): Promise<boolean> {
+    const ok = await this.#run(async () => {
+      await this.backend.updateQueue(queue);
+      return true;
+    });
+    return ok === true;
+  }
+
+  async deleteQueue(id: QueueId): Promise<boolean> {
+    const name = this.queueById(id)?.name;
+    const ok = await this.#run(async () => {
+      await this.backend.deleteQueue(id);
+      return true;
+    });
+    if (ok)
+      this.notify(
+        `Deleted ${name ?? 'the queue'}. Its downloads moved to ${this.defaultQueue?.name ?? 'the default queue'}.`,
+      );
+    return ok === true;
+  }
+
+  // ---- Settings ----
+
+  /** Changes settings right away and saves them; on failure the old values come back. */
+  async updateSettings(change: (draft: AppSettings) => void): Promise<void> {
+    if (!this.settings) return;
+    const before = $state.snapshot(this.settings);
+    const draft = $state.snapshot(this.settings);
+    change(draft);
+    this.settings = draft;
+    const ok = await this.#run(async () => {
+      await this.backend.updateSettings(draft);
+      return true;
+    });
+    if (!ok) this.settings = before;
+  }
+
+  async exportSettings(): Promise<string | null> {
+    const path = await this.#run(() => this.backend.pickSaveFile('wirecatch-settings.json'));
+    if (!path) return null;
+    const ok = await this.#run(async () => {
+      await this.backend.exportSettings(path);
+      return true;
+    });
+    return ok ? path : null;
+  }
+
+  async importSettings(): Promise<string | null> {
+    const path = await this.#run(() => this.backend.pickOpenFile());
+    if (!path) return null;
+    const ok = await this.#run(async () => {
+      await this.backend.importSettings(path);
+      return true;
+    });
+    if (!ok) return null;
+    // The core also sends change events; reading back makes sure nothing is missed.
+    const [settings, queues] = await Promise.all([
+      this.#run(() => this.backend.getSettings()),
+      this.#run(() => this.backend.listQueues()),
+    ]);
+    if (settings) this.settings = settings;
+    if (queues) this.queues = queues;
+    return path;
+  }
+
+  // ---- Browser captures ----
+
+  async confirmCapture(id: number, answer: CaptureConfirmation): Promise<void> {
+    const ok = await this.#run(async () => {
+      await this.backend.confirmCapture(id, answer);
+      return true;
+    });
+    if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+  }
+
+  async rejectCapture(id: number): Promise<void> {
+    const ok = await this.#run(async () => {
+      await this.backend.rejectCapture(id);
+      return true;
+    });
+    if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+  }
+
+  async setAskBeforeDownload(ask: boolean): Promise<void> {
+    await this.updateSettings((s) => {
+      s.extension.ask_before_download = ask;
+    });
+  }
+}
