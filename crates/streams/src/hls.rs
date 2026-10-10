@@ -11,7 +11,7 @@ use std::ops::Range;
 
 use url::Url;
 
-use crate::plan::{Encryption, Piece, Refusal};
+use crate::plan::{Encryption, MAX_SEGMENTS, Piece, Refusal, too_many_segments};
 
 /// A parsed playlist.
 #[derive(Debug)]
@@ -232,6 +232,11 @@ fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
             continue;
         }
 
+        // Checked before anything is resolved or stored, so a huge playlist
+        // fails at once instead of filling memory first.
+        if media.pieces.len() as u64 >= MAX_SEGMENTS {
+            return Err(too_many_segments());
+        }
         let url = join(base, line)?;
         let sequence = media_sequence.saturating_add(index);
         if let Some(map) = &map {
@@ -677,6 +682,18 @@ a.ts
             let error = parse(&text, &base()).unwrap_err();
             assert!(error.contains("past any possible file size"), "{error}");
         }
+    }
+
+    #[test]
+    fn huge_playlists_fail_fast() {
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..=MAX_SEGMENTS {
+            text.push_str("#EXTINF:1,\ns.ts\n");
+        }
+        let start = std::time::Instant::now();
+        let error = parse(&text, &base()).unwrap_err();
+        assert!(error.contains("more than 200000 segments"), "{error}");
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]

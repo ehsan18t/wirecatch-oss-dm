@@ -12,9 +12,20 @@ use crate::error::{Error, Result};
 use crate::hls::{self, Master, Media, Playlist, RenditionKind};
 use crate::model::{AudioTrack, Choice, StreamInfo, StreamKind, SubtitleTrack, VideoTrack};
 
-/// Largest playlist or manifest read; long video-on-demand manifests with a
-/// full segment timeline stay far below this.
-const MANIFEST_LIMIT: u64 = 32 * 1024 * 1024;
+/// Largest playlist or manifest read. A ten-hour HLS playlist of 2-second
+/// segments with long signed addresses is about 4 MiB.
+const MANIFEST_LIMIT: u64 = 8 * 1024 * 1024;
+
+/// The most pieces one track may have (about 55 hours of 1-second
+/// segments), so a broken or hostile playlist cannot exhaust memory.
+pub(crate) const MAX_SEGMENTS: u64 = 200_000;
+
+/// The error for a track over [`MAX_SEGMENTS`].
+pub(crate) fn too_many_segments() -> String {
+    format!(
+        "it lists more than {MAX_SEGMENTS} segments, more than any video Wirecatch can download"
+    )
+}
 
 /// Largest `sidx` index read for a DASH `SegmentBase`.
 const INDEX_LIMIT: u64 = 16 * 1024 * 1024;
@@ -268,7 +279,7 @@ impl Source {
     /// Turns a choice of tracks into a plan, reading the media playlists (or
     /// DASH indexes) it needs. Refuses live streams, DRM and anything else
     /// that cannot be downloaded, before a single segment is fetched.
-    pub async fn plan(&self, fetcher: &Fetcher, video: &Choice, audio: &Choice) -> Result<Plan> {
+    pub async fn plan(self, fetcher: &Fetcher, video: &Choice, audio: &Choice) -> Result<Plan> {
         let plan = match self {
             Source::HlsMedia { media, .. } => {
                 let tracks = match video {
@@ -290,7 +301,7 @@ impl Source {
                 }
                 Plan { tracks }
             }
-            Source::HlsMaster { master, .. } => plan_hls(fetcher, master, video, audio).await?,
+            Source::HlsMaster { master, .. } => plan_hls(fetcher, &master, video, audio).await?,
             Source::Dash { mpd, .. } => plan_dash(fetcher, mpd, video, audio).await?,
         };
         if plan.tracks.is_empty() {
@@ -489,14 +500,14 @@ async fn plan_hls(
     let (video_media, audio_media) = tokio::try_join!(video_fetch, audio_fetch)?;
 
     let mut tracks = Vec::new();
-    if let (Some(v), Some(media)) = (variant, &video_media) {
+    if let (Some(v), Some(media)) = (variant, video_media) {
         tracks.push(hls_track(
             Role::Video,
             master.variants[v].codecs.clone(),
             media,
         )?);
     }
-    if let (Some((_, codecs)), Some(media)) = (audio_url, &audio_media) {
+    if let (Some((_, codecs)), Some(media)) = (audio_url, audio_media) {
         tracks.push(hls_track(Role::Audio, codecs, media)?);
     }
     Ok(Plan { tracks })
@@ -513,21 +524,21 @@ async fn media_playlist(fetcher: &Fetcher, url: &Url) -> Result<Media> {
     }
 }
 
-fn hls_track(role: Role, codecs: Option<String>, media: &Media) -> Result<Track> {
+fn hls_track(role: Role, codecs: Option<String>, media: Media) -> Result<Track> {
     if !media.ended {
         return Err(Error::Live);
     }
-    if let Some(refusal) = &media.refusal {
-        return Err(refusal.clone().into());
+    if let Some(refusal) = media.refusal {
+        return Err(refusal.into());
     }
     Ok(Track {
         role,
         codecs,
-        pieces: media.pieces.clone(),
+        pieces: media.pieces,
     })
 }
 
-async fn plan_dash(fetcher: &Fetcher, mpd: &Mpd, video: &Choice, audio: &Choice) -> Result<Plan> {
+async fn plan_dash(fetcher: &Fetcher, mpd: Mpd, video: &Choice, audio: &Choice) -> Result<Plan> {
     if mpd.dynamic {
         return Err(Error::Live);
     }
@@ -568,20 +579,25 @@ async fn plan_dash(fetcher: &Fetcher, mpd: &Mpd, video: &Choice, audio: &Choice)
         (pick(audio, Kind::Audio, "audio")?, Role::Audio),
     ];
 
+    let mut reps: Vec<Option<dash::Rep>> = mpd.reps.into_iter().map(Some).collect();
     let mut tracks = Vec::new();
     for (index, role) in chosen {
-        let Some(index) = index else { continue };
-        let rep = &mpd.reps[index];
-        if let Some(drm) = &rep.drm {
-            return Err(Error::Drm(drm.clone()));
+        let Some(rep) = index.and_then(|i| reps.get_mut(i)).and_then(Option::take) else {
+            continue;
+        };
+        if let Some(drm) = rep.drm {
+            return Err(Error::Drm(drm));
         }
-        let pieces = match rep.segments.pieces().map_err(Error::Manifest)? {
-            Some(pieces) => pieces,
-            None => indexed_pieces(fetcher, &rep.segments).await?,
+        let pieces = match rep.segments {
+            Segments::Indexed { url, index } => indexed_pieces(fetcher, url, index).await?,
+            segments => segments
+                .into_pieces()
+                .map_err(Error::Manifest)?
+                .unwrap_or_default(),
         };
         tracks.push(Track {
             role,
-            codecs: rep.codecs.clone(),
+            codecs: rep.codecs,
             pieces,
         });
     }
@@ -590,13 +606,10 @@ async fn plan_dash(fetcher: &Fetcher, mpd: &Mpd, video: &Choice, audio: &Choice)
 
 /// Reads a `SegmentBase` file's index to split it into ranges that download
 /// in parallel; a file whose index cannot be used is fetched whole.
-async fn indexed_pieces(fetcher: &Fetcher, segments: &Segments) -> Result<Vec<Piece>> {
-    let Segments::Indexed { url, index } = segments else {
-        return Ok(Vec::new());
-    };
-    let fetched = fetcher.get(url, Some(index.clone()), INDEX_LIMIT).await?;
-    Ok(dash::sidx_pieces(url, index, &fetched.body)
-        .unwrap_or_else(|| vec![Piece::plain(url.clone(), None)]))
+async fn indexed_pieces(fetcher: &Fetcher, url: Url, index: Range<u64>) -> Result<Vec<Piece>> {
+    let fetched = fetcher.get(&url, Some(index.clone()), INDEX_LIMIT).await?;
+    Ok(dash::sidx_pieces(&url, &index, &fetched.body)
+        .unwrap_or_else(|| vec![Piece::plain(url, None)]))
 }
 
 /// Codec names (as in `CODECS` or `codecs`) that are video.

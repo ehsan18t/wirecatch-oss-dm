@@ -13,11 +13,7 @@ use std::ops::Range;
 use roxmltree::{Document, Node};
 use url::Url;
 
-use crate::plan::{Piece, is_audio_codec, is_video_codec};
-
-/// The most segments one representation may have, so a broken or hostile
-/// manifest cannot exhaust memory.
-const MAX_SEGMENTS: u64 = 200_000;
+use crate::plan::{MAX_SEGMENTS, Piece, is_audio_codec, is_video_codec, too_many_segments};
 
 /// For segment numbers or times that would pass the largest number.
 const TOO_LARGE: &str = "its segment numbers or times are too large";
@@ -154,6 +150,14 @@ impl Segments {
             Segments::Whole(url) => Ok(Some(vec![Piece::plain(url.clone(), None)])),
         }
     }
+
+    /// Like [`Segments::pieces`], moving a resolved list instead of copying it.
+    pub fn into_pieces(self) -> Result<Option<Vec<Piece>>, String> {
+        match self {
+            Segments::List(pieces) => Ok(Some(pieces)),
+            other => other.pieces(),
+        }
+    }
 }
 
 fn expand(
@@ -180,7 +184,7 @@ fn expand(
     let period_ticks = period.map(|p| (p * timescale as f64).round() as u64);
     let mut push = |number: u64, time: u64| -> Result<(), String> {
         if pieces.len() as u64 > MAX_SEGMENTS {
-            return Err(format!("it lists more than {MAX_SEGMENTS} segments"));
+            return Err(too_many_segments());
         }
         let address = substitute(media, id, bandwidth, Some(number), Some(time))?;
         pieces.push(Piece::plain(join(base, &address)?, None));
@@ -209,7 +213,7 @@ fn expand(
                 end.saturating_sub(time).div_ceil(entry.d)
             };
             if count > MAX_SEGMENTS {
-                return Err(format!("it lists more than {MAX_SEGMENTS} segments"));
+                return Err(too_many_segments());
             }
             for _ in 0..count {
                 push(number, time)?;
@@ -228,7 +232,7 @@ fn expand(
             (None, None) => return Err("the stream does not say how long it is".into()),
         };
         if count > MAX_SEGMENTS {
-            return Err(format!("it lists more than {MAX_SEGMENTS} segments"));
+            return Err(too_many_segments());
         }
         for n in 0..count {
             let number = start.checked_add(n).ok_or(TOO_LARGE)?;
@@ -434,7 +438,7 @@ fn segments(
         }
         for segment in children(*inner, "SegmentURL") {
             if pieces.len() as u64 > MAX_SEGMENTS {
-                return Err(format!("it lists more than {MAX_SEGMENTS} segments"));
+                return Err(too_many_segments());
             }
             let url = match segment.attribute("media") {
                 Some(media) => join(base, media)?,

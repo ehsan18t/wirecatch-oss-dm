@@ -556,3 +556,49 @@ async fn links_that_are_not_streams_are_explained() {
     assert!(matches!(error, Error::Request(_)), "{error}");
     assert!(error.to_string().contains("404"), "{error}");
 }
+
+#[tokio::test]
+async fn huge_playlists_are_refused_quickly_and_clearly() {
+    let server = Server::start().await;
+    // 200 001 short segment lines: under the size limit, over the segment limit.
+    let mut text = String::from("#EXTM3U\n");
+    for _ in 0..=200_000 {
+        text.push_str("#EXTINF:1,\ns.ts\n");
+    }
+    server.put_typed("many.m3u8", text, MPEGURL);
+    // Over 8 MiB: refused by size before parsing.
+    let mut big = String::from("#EXTM3U\n");
+    while big.len() <= 8 * 1024 * 1024 {
+        big.push_str("#EXTINF:1,\nsome-rather-long-segment-name-to-fill-the-playlist.ts\n");
+    }
+    server.put_typed("big.m3u8", big, MPEGURL);
+
+    let start = std::time::Instant::now();
+    let error = inspect(
+        &server.url("many.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, Error::Manifest(_)), "{error}");
+    assert!(
+        error.to_string().contains("more than 200000 segments"),
+        "{error}"
+    );
+    let error = inspect(
+        &server.url("big.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Error::Request(wirecatch_engine::Error::TooLarge { .. })
+        ),
+        "{error}"
+    );
+    assert!(start.elapsed() < Duration::from_secs(10));
+}
