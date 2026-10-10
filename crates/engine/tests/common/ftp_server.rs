@@ -197,10 +197,20 @@ async fn reply(control: &mut BufReader<Box<dyn Io>>, text: &str) -> std::io::Res
 }
 
 async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std::io::Result<()> {
+    // Like vsftpd with `require_ssl_reuse` and ProFTPD: a data connection may
+    // only resume this control connection's TLS session. Session tickets are
+    // sealed with a key of this session's own, so a ticket from any other
+    // session cannot be resumed here (the handshake is then a full one).
+    let session_tls = config.tls.as_ref().map(|tls| {
+        let mut own = (**tls).clone();
+        own.ticketer = rustls::crypto::ring::Ticketer::new().unwrap();
+        own.session_storage = rustls::server::ServerSessionMemoryCache::new(16);
+        Arc::new(own)
+    });
     let mut stream: Box<dyn Io> = Box::new(tcp);
     let mut protected = false;
     if config.implicit
-        && let Some(tls) = &config.tls
+        && let Some(tls) = &session_tls
     {
         stream = Box::new(TlsAcceptor::from(tls.clone()).accept(stream).await?);
         protected = true;
@@ -244,7 +254,7 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
         match verb.as_str() {
             "AUTH" if config.tls.is_some() && !protected && arg.eq_ignore_ascii_case("TLS") => {
                 reply(&mut control, "234 Proceed with negotiation.").await?;
-                let Some(tls) = &config.tls else {
+                let Some(tls) = &session_tls else {
                     unreachable!()
                 };
                 let plain = control.into_inner();
@@ -377,7 +387,7 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                     continue;
                 };
                 let mut data: Box<dyn Io> = Box::new(tcp);
-                if data_tls && let Some(tls) = &config.tls {
+                if data_tls && let Some(tls) = &session_tls {
                     let Ok(secured) = TlsAcceptor::from(tls.clone()).accept(data).await else {
                         reply(&mut control, "522 The data connection needs TLS.").await?;
                         continue;

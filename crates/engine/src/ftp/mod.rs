@@ -30,7 +30,6 @@ use std::time::Duration;
 
 use percent_encoding::percent_decode_str;
 use tokio::io::AsyncReadExt;
-use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use url::{Host, Url};
@@ -157,19 +156,16 @@ impl Target {
             .then(|| -> Result<Tls, Error> {
                 let mut config = tls.clone();
                 config.alpn_protocols.clear();
-                // A cache of its own: the control and data connections of this
-                // download resume each other's sessions, and nothing else does.
-                config.resumption = rustls::client::Resumption::in_memory_sessions(64);
+                // Each control connection gets a session cache of its own
+                // (see `Tls::for_new_session`); this one is never used.
+                config.resumption = rustls::client::Resumption::disabled();
                 let server_name = match &host {
                     Host::Domain(name) => rustls::pki_types::ServerName::try_from(name.clone())
                         .map_err(|_| invalid("has a server name that cannot be used with TLS"))?,
                     Host::Ipv4(ip) => rustls::pki_types::ServerName::IpAddress((*ip).into()),
                     Host::Ipv6(ip) => rustls::pki_types::ServerName::IpAddress((*ip).into()),
                 };
-                Ok(Tls {
-                    connector: TlsConnector::from(Arc::new(config)),
-                    server_name,
-                })
+                Ok(Tls::new(config, server_name))
             })
             .transpose()?;
 
@@ -223,11 +219,12 @@ impl Target {
         }
     }
 
-    /// Connects to `addr`, reads the greeting and sets up TLS as the URL asks.
-    async fn connect(&self, addr: SocketAddr) -> Result<Control, Failure> {
+    /// Connects to `addr`, reads the greeting and sets up TLS as the URL asks,
+    /// with `tls`: the session cache of this control connection.
+    async fn connect(&self, addr: SocketAddr, tls: Option<&Tls>) -> Result<Control, Failure> {
         let mut stream =
             Stream::connect(addr, self.connect_timeout, "FTP control connection").await?;
-        if let (Security::Implicit, Some(tls)) = (self.security, &self.tls) {
+        if let (Security::Implicit, Some(tls)) = (self.security, tls) {
             stream = stream
                 .into_tls(tls, self.connect_timeout, "control connection")
                 .await?;
@@ -242,7 +239,7 @@ impl Target {
             // 421 is how most servers say they have too many connections.
             return Err(self.reply_failure(&greeting));
         }
-        if let (Security::Explicit, Some(tls)) = (self.security, &self.tls) {
+        if let (Security::Explicit, Some(tls)) = (self.security, tls) {
             let reply = control.command("AUTH TLS", "AUTH TLS").await?;
             if reply.code != 234 {
                 return Err(if (400..500).contains(&reply.code) {
@@ -371,8 +368,8 @@ pub(crate) struct Server {
 
 impl Server {
     /// A new, logged-in control connection for one more worker.
-    async fn connect(&self) -> Result<Control, Failure> {
-        let mut control = self.target.connect(self.addr).await?;
+    async fn connect(&self, tls: Option<&Tls>) -> Result<Control, Failure> {
+        let mut control = self.target.connect(self.addr, tls).await?;
         self.target.login(&mut control, false).await?;
         if let Some(expected) = self.size
             && let Some(now) = self.target.size(&mut control).await?
@@ -411,6 +408,7 @@ impl Server {
         mut control: Control,
         from: u64,
         buffer: Vec<u8>,
+        tls: Option<&Tls>,
     ) -> Result<Transfer, Failure> {
         let port = self.passive_port(&mut control).await?;
         let data_addr = SocketAddr::new(self.addr.ip(), port);
@@ -434,7 +432,7 @@ impl Server {
         if !reply.is_preliminary() {
             return Err(self.target.reply_failure(&reply));
         }
-        if let Some(tls) = &self.target.tls {
+        if let Some(tls) = tls {
             data = data
                 .into_tls(tls, self.target.connect_timeout, "data connection")
                 .await?;
@@ -481,10 +479,11 @@ pub(crate) struct Probe {
 /// known before anything is written).
 pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result<Probe, Failure> {
     let work = async {
+        let tls = target.tls.as_ref().map(Tls::for_new_session);
         let mut last = None;
         let mut connected = None;
         for addr in target.resolve().await? {
-            match target.connect(addr).await {
+            match target.connect(addr, tls.as_ref()).await {
                 Ok(control) => {
                     connected = Some((control, addr));
                     break;
@@ -515,11 +514,18 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
             size,
             epsv_refused: AtomicBool::new(false),
         });
-        let transfer = server.start(control, 0, vec![0; READ_BUFFER]).await?;
+        let transfer = server
+            .start(control, 0, vec![0; READ_BUFFER], tls.as_ref())
+            .await?;
         let total = size.or(transfer.announced_size);
         debug!(?total, rest, modified = ?modified, "ftp probe");
         Ok(Probe {
-            connection: Connection::new(server.clone()),
+            connection: Connection {
+                server: server.clone(),
+                control: None,
+                buffer: None,
+                tls,
+            },
             server,
             transfer,
             total,
@@ -543,6 +549,9 @@ pub(crate) struct Connection {
     server: Arc<Server>,
     control: Option<Control>,
     buffer: Option<Vec<u8>>,
+    /// TLS with the session cache of the current control connection; a new
+    /// control connection starts a new one.
+    tls: Option<Tls>,
 }
 
 impl Connection {
@@ -551,6 +560,7 @@ impl Connection {
             server,
             control: None,
             buffer: None,
+            tls: None,
         }
     }
 
@@ -560,13 +570,18 @@ impl Connection {
         let work = async {
             let control = match self.control.take() {
                 Some(control) => control,
-                None => self.server.connect().await?,
+                None => {
+                    self.tls = self.server.target.tls.as_ref().map(Tls::for_new_session);
+                    self.server.connect(self.tls.as_ref()).await?
+                }
             };
             let buffer = self.buffer.take().unwrap_or_else(|| vec![0; READ_BUFFER]);
             // Without range support, every attempt starts at 0 and the worker
             // skips what it already has.
             let from = if shared.ranged { from } else { 0 };
-            self.server.start(control, from, buffer).await
+            self.server
+                .start(control, from, buffer, self.tls.as_ref())
+                .await
         };
         tokio::select! {
             biased;

@@ -159,7 +159,7 @@ async fn explicit_tls_download_is_byte_identical() {
         handshakes
             .iter()
             .all(|&kind| kind == HandshakeKind::Resumed),
-        "data connections resume the control session, as many servers require: {handshakes:?}"
+        "every data connection resumes its own control connection's session (the server seals each session's tickets with its own key), as vsftpd and ProFTPD require: {handshakes:?}"
     );
 }
 
@@ -189,7 +189,14 @@ async fn implicit_tls_download_is_byte_identical() {
         stats.max_transfers.load(Ordering::SeqCst) >= 2,
         "parallel over TLS"
     );
-    assert!(!stats.data_handshakes.lock().unwrap().is_empty());
+    let handshakes = stats.data_handshakes.lock().unwrap().clone();
+    assert!(!handshakes.is_empty());
+    assert!(
+        handshakes
+            .iter()
+            .all(|&kind| kind == HandshakeKind::Resumed),
+        "every data connection resumes its own control session: {handshakes:?}"
+    );
 }
 
 #[tokio::test]

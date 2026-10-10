@@ -88,8 +88,37 @@ impl Stream {
 /// What TLS needs for one server.
 #[derive(Clone)]
 pub(crate) struct Tls {
+    config: std::sync::Arc<rustls::ClientConfig>,
     pub connector: TlsConnector,
     pub server_name: rustls::pki_types::ServerName<'static>,
+}
+
+impl Tls {
+    pub fn new(
+        config: rustls::ClientConfig,
+        server_name: rustls::pki_types::ServerName<'static>,
+    ) -> Self {
+        let config = std::sync::Arc::new(config);
+        Self {
+            connector: TlsConnector::from(config.clone()),
+            config,
+            server_name,
+        }
+    }
+
+    /// The same settings with a TLS session cache of its own, for one control
+    /// connection and its data connections. Those then resume only that
+    /// control connection's session, never another's: servers such as vsftpd
+    /// (`require_ssl_reuse`) and ProFTPD refuse a data connection that resumes
+    /// a different session than its control connection.
+    pub fn for_new_session(&self) -> Self {
+        let mut config = (*self.config).clone();
+        // Room for one server's tickets: rustls keeps a server's entry only
+        // while the cache holds more than one server, so 8 or fewer would
+        // throw every ticket away at once.
+        config.resumption = rustls::client::Resumption::in_memory_sessions(32);
+        Self::new(config, self.server_name.clone())
+    }
 }
 
 impl AsyncRead for Stream {
