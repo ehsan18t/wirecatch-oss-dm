@@ -70,6 +70,35 @@ pub fn write<T: Serialize>(writer: &mut impl Write, value: &T) -> Result<(), Fra
     Ok(())
 }
 
+/// Async read of one frame. Returns `Ok(None)` on a clean end of stream.
+#[cfg(feature = "tokio")]
+pub async fn read_async<T: DeserializeOwned>(
+    reader: &mut (impl tokio::io::AsyncRead + Unpin),
+) -> Result<Option<T>, FrameError> {
+    use tokio::io::AsyncReadExt;
+    let mut header = [0u8; 4];
+    match reader.read_exact(&mut header).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(e.into()),
+    }
+    let mut body = vec![0u8; body_len(header)?];
+    reader.read_exact(&mut body).await?;
+    decode(&body).map(Some)
+}
+
+/// Async write of one frame, flushed.
+#[cfg(feature = "tokio")]
+pub async fn write_async<T: Serialize>(
+    writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+    value: &T,
+) -> Result<(), FrameError> {
+    use tokio::io::AsyncWriteExt;
+    writer.write_all(&encode(value)?).await?;
+    writer.flush().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,6 +117,21 @@ mod tests {
         assert_eq!(read::<Message>(&mut cursor).unwrap(), Some(msg.clone()));
         assert_eq!(read::<Message>(&mut cursor).unwrap(), Some(msg));
         assert_eq!(read::<Message>(&mut cursor).unwrap(), None);
+    }
+
+    #[cfg(feature = "tokio")]
+    #[tokio::test]
+    async fn async_round_trip_over_a_duplex_stream() {
+        let (mut a, mut b) = tokio::io::duplex(64);
+        let msg = Message::Request {
+            id: 3,
+            call: Call::ResumeAll,
+        };
+        let sent = msg.clone();
+        let writer = tokio::spawn(async move { write_async(&mut a, &sent).await });
+        assert_eq!(read_async::<Message>(&mut b).await.unwrap(), Some(msg));
+        writer.await.unwrap().unwrap();
+        assert_eq!(read_async::<Message>(&mut b).await.unwrap(), None);
     }
 
     #[test]

@@ -11,3 +11,11 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
+tokio = { workspace = true, optional = true, features = ["io-util"] }
+
+[features]
+## Async frame reading and writing for tokio streams.
+tokio = ["dep:tokio"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "rt", "macros"] }

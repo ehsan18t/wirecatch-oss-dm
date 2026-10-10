@@ -10,7 +10,7 @@ Work is split into packages that touch separate folders, so several agents can b
 Wave 0  (done)   Workspace, shared protocol, engine APIs the others need
 Wave 1  (parallel)
         WP1 Core          crates/core
-        WP2 Bridge        crates/bridge
+        WP2 Bridge + IPC  crates/bridge, crates/ipc
         WP3 Extension     apps/extension
         WP4 Desktop UI    apps/desktop        (runs against a mock backend)
         WP5 Engine        crates/engine, CI
@@ -22,6 +22,7 @@ Wave 3  Packaging, installers, Linux verification, streams (HLS/DASH), media add
 ## Rules every package follows
 
 - **Stay in your folder.** A package edits only its own folder. Shared files (`Cargo.toml` at the root, `package.json` at the root, `crates/protocol`, `docs/`) belong to the lead. Lock files may change; the lead reconciles them at merge.
+- **Shared identities** (extension ids, native host name) live in `config/extension-ids.json`; both the bridge and the extension read them from there.
 - **Contracts are fixed.** Types that cross a process boundary live in `wirecatch-protocol` (D15). A package that needs a change describes it in its report instead of editing the crate; the lead applies it between waves. Only WP1 may make additive changes there, and must list them.
 - **Dependencies** go in the package's own `Cargo.toml` or `package.json` with explicit versions.
 - **Definition of done** is D18, plus the package's acceptance checklist below.
@@ -35,7 +36,7 @@ Wave 3  Packaging, installers, Linux verification, streams (HLS/DASH), media add
 
 The download manager the desktop app hosts.
 
-Builds: download lifecycle (add, start, pause, resume, cancel, remove, retry, refresh link, move between queues, reorder); queues with concurrency limits, schedules and speed limits; a global concurrency and speed limit; SQLite persistence with migrations; settings store with change notifications; settings export and import with portable paths; category rules that pick the folder; speed smoothing and ETA; mapping engine errors to `UserError` with a fix action; the local socket server speaking the protocol; a confirmation flow for `ask_before_download`; a headless example binary that runs the manager and socket server without any UI, for testing the bridge and extension.
+Builds: download lifecycle (add, start, pause, resume, cancel, remove, retry, refresh link, move between queues, reorder); queues with concurrency limits, schedules and speed limits; a global concurrency and speed limit; SQLite persistence with migrations; settings store with change notifications; settings export and import with portable paths; category rules that pick the folder; speed smoothing and ETA; mapping engine errors to `UserError` with a fix action; the local socket server speaking the protocol; a confirmation flow for `ask_before_download`; a protocol server that serves any async stream (`serve_connection`), so it is tested over in-memory streams and plugged into the real socket from `crates/ipc` in Wave 2; a headless example binary that runs the manager without any UI.
 
 Acceptance checklist:
 1. After a restart, every download is back with its status and progress; ones that were running continue on their own.
@@ -45,14 +46,13 @@ Acceptance checklist:
 5. Export then import on a "different machine" (different home folder) restores settings and queues with folders resolved correctly.
 6. A protocol client that skips `hello`, sends a wrong version, an unknown method or an oversized frame gets a clear error and cannot crash the server.
 7. A settings change from one client reaches every other connected client as an event.
-8. The socket refuses other users: named pipe security descriptor on Windows, 0600 socket on Linux.
-9. An expired link produces `FixAction::RefreshLink`; refreshing keeps the downloaded bytes.
+8. An expired link produces `FixAction::RefreshLink`; refreshing keeps the downloaded bytes.
 
-## WP2: Bridge (`crates/bridge`, `wirecatch-bridge`)
+## WP2: Bridge and IPC (`crates/bridge`, `wirecatch-bridge`; `crates/ipc`, `wirecatch-ipc`)
 
-The native messaging host the browser starts.
+The native messaging host the browser starts, and the local socket transport both the bridge and the app use.
 
-Builds: native messaging on stdin and stdout; caller origin check; connect to the app socket, starting the app with `--background` if needed; relay frames both ways; `install` and `uninstall` subcommands that register the host for Chrome, Chromium, Edge, Brave, Vivaldi, Opera and Firefox on Windows (per-user registry) and Linux (per-browser manifest folders).
+Builds `wirecatch-ipc`: the per-user endpoint name, a listener that only the current user can connect to, and a connector that refuses a server owned by anyone else (protection against another local user squatting the pipe name). Builds the bridge: native messaging on stdin and stdout; caller origin check; connect to the app socket, starting the app with `--background` if needed; relay frames both ways; `install` and `uninstall` subcommands that register the host for Chrome, Chromium, Edge, Brave, Vivaldi, Opera and Firefox on Windows (per-user registry) and Linux (per-browser manifest folders).
 
 Acceptance checklist:
 1. A message from the extension reaches the app and the answer comes back unchanged; app events reach the extension.
@@ -60,6 +60,7 @@ Acceptance checklist:
 3. A caller whose origin is not allowed is refused.
 4. `install` writes correct manifests and registry entries for every listed browser; `uninstall` removes exactly what `install` wrote. Tested against a temporary home folder and a mocked registry.
 5. Uses less than 10 MB of memory while idle and exits when the browser closes the connection.
+6. The listener refuses other users (named pipe security descriptor on Windows, 0600 socket in a 0700 folder on Linux), and the connector refuses a pipe or socket owned by another user. Verified by reading the security descriptor back in a test.
 
 ## WP3: Extension (`apps/extension`, `@wirecatch/extension`)
 
