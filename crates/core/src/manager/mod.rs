@@ -178,6 +178,13 @@ impl Manager {
     }
 
     /// Events for the desktop UI.
+    ///
+    /// Events only describe changes. A receiver that falls behind gets
+    /// [`RecvError::Lagged`](broadcast::error::RecvError::Lagged) and has missed some;
+    /// it must then reload the whole picture with [`list_downloads`](Self::list_downloads),
+    /// [`list_queues`](Self::list_queues), [`get_settings`](Self::get_settings) and
+    /// [`pending_confirmations`](Self::pending_confirmations) before applying further
+    /// events.
     pub fn subscribe(&self) -> broadcast::Receiver<UiEvent> {
         self.inner.ui_events.subscribe()
     }
