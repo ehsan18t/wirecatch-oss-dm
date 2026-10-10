@@ -74,6 +74,8 @@ fn pem(der: &[u8]) -> String {
 #[derive(Default)]
 pub struct Counts {
     pub requests: AtomicUsize,
+    /// Requests that arrived over HTTP/2.
+    pub http2: AtomicUsize,
     pub bytes: AtomicU64,
 }
 
@@ -133,6 +135,9 @@ pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u1
                 let service = hyper::service::service_fn(move |request: Request<Incoming>| {
                     let (status, mut headers, body) = answer(&data, request.headers());
                     counts.requests.fetch_add(1, Ordering::SeqCst);
+                    if request.version() == hyper::Version::HTTP_2 {
+                        counts.http2.fetch_add(1, Ordering::SeqCst);
+                    }
                     counts.bytes.fetch_add(body.len() as u64, Ordering::Relaxed);
                     if let Some(alt_svc) = &alt_svc {
                         headers.insert(ALT_SVC, alt_svc.parse().unwrap());

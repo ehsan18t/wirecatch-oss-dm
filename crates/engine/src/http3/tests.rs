@@ -136,6 +136,11 @@ async fn http3_is_not_used_unless_switched_on() {
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&h3), 0);
     assert!(requests(&tcp) >= 2);
+    assert_eq!(
+        tcp.http2.load(Ordering::SeqCst),
+        requests(&tcp),
+        "TCP requests used HTTP/2"
+    );
 }
 
 #[tokio::test]
