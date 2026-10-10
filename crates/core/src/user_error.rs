@@ -59,6 +59,16 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
     }
 }
 
+/// The message shown when saving to the download list keeps failing.
+pub(crate) fn storage_failed(reason: &str) -> UserError {
+    fix(
+        format!(
+            "Wirecatch could not save changes to the download list ({reason}). Recent changes may be lost when it closes. Make sure the disk has free space."
+        ),
+        FixAction::FreeDiskSpace,
+    )
+}
+
 /// The message for a download whose run ended without a result (a bug).
 pub(crate) fn stopped_unexpectedly() -> UserError {
     fix(

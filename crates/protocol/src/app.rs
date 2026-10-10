@@ -273,4 +273,7 @@ pub enum UiEvent {
     Captured(DownloadSummary),
     /// A capture needs the user's confirmation (`ask_before_download`).
     ConfirmationRequested(PendingCapture),
+    /// Saving to the download list failed even after retrying, so recent changes
+    /// may be lost when the app closes. The UI shows the message.
+    StorageFailed(UserError),
 }

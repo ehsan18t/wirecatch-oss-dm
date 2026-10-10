@@ -31,6 +31,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::store::Store;
+use crate::user_error;
 use state::{Entry, State, Stop};
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
@@ -132,8 +133,13 @@ impl Manager {
     /// and runs all its work there, so its methods may then be called from any thread.
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();
+        let ui_events = broadcast::Sender::new(UI_EVENT_BUFFER);
+        let failures = ui_events.clone();
+        let on_failure = Box::new(move |reason: String| {
+            let _ = failures.send(UiEvent::StorageFailed(user_error::storage_failed(&reason)));
+        });
         let dir = config.data_dir.clone();
-        let (store, snapshot) = blocking(&runtime, move || Store::open(&dir)).await?;
+        let (store, snapshot) = blocking(&runtime, move || Store::open(&dir, on_failure)).await?;
         let restored = restore::restore(snapshot, config.clock.local_now());
         store.save_settings(restored.state.settings.clone());
         store.save_queues(restored.state.queue_list());
@@ -148,7 +154,7 @@ impl Manager {
             stop_timeout: config.stop_timeout,
             folders: config.folders,
             global_limiter,
-            ui_events: broadcast::Sender::new(UI_EVENT_BUFFER),
+            ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),

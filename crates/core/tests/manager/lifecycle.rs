@@ -77,6 +77,37 @@ async fn cancel_discards_progress_and_retry_starts_over() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_ui_hears_when_saving_keeps_failing() {
+    let h = Harness::new().await;
+    let mut events = h.manager.subscribe();
+    let db = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    let other = rusqlite::Connection::open(db).unwrap();
+    other.execute("DROP TABLE downloads", []).unwrap();
+
+    h.add_with("https://example.com/a.bin", |r| r.start = false)
+        .await;
+    let error = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(UiEvent::StorageFailed(error)) = events.recv().await {
+                return error;
+            }
+        }
+    })
+    .await
+    .expect("no StorageFailed event");
+    assert_eq!(error.fix, Some(FixAction::FreeDiskSpace));
+    assert!(
+        error.message.contains("could not save"),
+        "{}",
+        error.message
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resume_and_retry_pressed_while_stopping_are_not_lost() {
     let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
     let h = Harness::new().await;

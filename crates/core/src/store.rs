@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::de::DeserializeOwned;
@@ -80,6 +81,18 @@ pub(crate) struct Snapshot {
     pub downloads: Vec<StoredDownload>,
 }
 
+/// Told why saving failed after every retry.
+pub(crate) type FailureHandler = Box<dyn Fn(String) + Send>;
+
+/// How long a write waits for a lock held by someone else (a backup tool, say).
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Pauses before each retry of a failed batch of writes.
+const RETRY_PAUSES: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(250),
+    Duration::from_secs(1),
+];
+
 enum Op {
     SaveDownloads(Vec<StoredDownload>),
     DeleteDownloads(Vec<DownloadId>),
@@ -109,7 +122,10 @@ impl std::fmt::Debug for Op {
 impl Store {
     /// Opens (or creates) the database in `dir`, brings its schema up to date and
     /// loads everything. Blocks on the disk, so call it from a blocking thread.
-    pub fn open(dir: &Path) -> Result<(Store, Snapshot)> {
+    ///
+    /// `on_failure` is called (on the database thread) with the reason whenever a
+    /// batch of writes could not be saved even after retrying.
+    pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
         std::fs::create_dir_all(dir).map_err(|source| CoreError::File {
             path: dir.display().to_string(),
             source,
@@ -119,6 +135,7 @@ impl Store {
         let path = dir.join(DATABASE_FILE);
         let mut conn = Connection::open(&path)?;
         restrict_to_owner(&path);
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         configure(&conn)?;
         migrate(&mut conn)?;
         let snapshot = load(&conn)?;
@@ -126,7 +143,7 @@ impl Store {
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
             .name("wirecatch-db".into())
-            .spawn(move || run(conn, rx))
+            .spawn(move || run(conn, rx, on_failure))
             .map_err(|source| CoreError::File {
                 path: path.display().to_string(),
                 source,
@@ -173,13 +190,21 @@ impl Store {
 }
 
 /// Applies writes until every [`Store`] handle is gone. Writes that queued up while
-/// the disk was busy are committed together in one transaction.
-fn run(mut conn: Connection, ops: mpsc::Receiver<Op>) {
+/// the disk was busy are committed together in one transaction. A batch that fails
+/// is retried after a short pause; if it still fails, `on_failure` is told why.
+fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
     while let Ok(first) = ops.recv() {
-        let batch: Vec<Op> = std::iter::once(first).chain(ops.try_iter()).collect();
+        let mut writes = Vec::new();
         let mut flushed = Vec::new();
-        if let Err(e) = apply(&mut conn, batch, &mut flushed) {
+        for op in std::iter::once(first).chain(ops.try_iter()) {
+            match op {
+                Op::Flush(done) => flushed.push(done),
+                write => writes.push(write),
+            }
+        }
+        if let Err(e) = apply_with_retries(&mut conn, &writes) {
             error!(error = %e, "could not save changes to the database");
+            on_failure(e.to_string());
         }
         for done in flushed {
             let _ = done.send(());
@@ -187,13 +212,25 @@ fn run(mut conn: Connection, ops: mpsc::Receiver<Op>) {
     }
 }
 
-fn apply(
-    conn: &mut Connection,
-    batch: Vec<Op>,
-    flushed: &mut Vec<oneshot::Sender<()>>,
-) -> rusqlite::Result<()> {
+fn apply_with_retries(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
+    let mut pauses = RETRY_PAUSES.iter();
+    loop {
+        match apply(conn, writes) {
+            Ok(()) => return Ok(()),
+            Err(e) => match pauses.next() {
+                Some(pause) => {
+                    warn!(error = %e, retry_in = ?pause, "saving failed; trying again");
+                    thread::sleep(*pause);
+                }
+                None => return Err(e),
+            },
+        }
+    }
+}
+
+fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
-    for op in batch {
+    for op in writes {
         match op {
             Op::SaveDownloads(rows) => rows.iter().try_for_each(|row| save_download(&tx, row))?,
             Op::DeleteDownloads(ids) => {
@@ -202,14 +239,14 @@ fn apply(
                     stmt.execute([id.0])?;
                 }
             }
-            Op::SaveQueues(queues) => save_queues(&tx, &queues)?,
+            Op::SaveQueues(queues) => save_queues(&tx, queues)?,
             Op::SaveSettings(settings) => {
                 tx.execute(
                     "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-                    params![SETTINGS_KEY, to_json(&*settings)],
+                    params![SETTINGS_KEY, to_json(&**settings)],
                 )?;
             }
-            Op::Flush(done) => flushed.push(done),
+            Op::Flush(_) => {}
         }
     }
     tx.commit()
@@ -474,10 +511,38 @@ mod tests {
         }
     }
 
+    fn ignore_failures() -> FailureHandler {
+        Box::new(|_| {})
+    }
+
+    #[tokio::test]
+    async fn a_write_that_keeps_failing_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let reports = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = reports.clone();
+        let (store, _) = Store::open(
+            dir.path(),
+            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+        )
+        .unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush().await;
+        assert!(reports.lock().unwrap().is_empty());
+
+        // Something outside the app breaks the database.
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute("DROP TABLE downloads", []).unwrap();
+        store.save_downloads(vec![download(2)]);
+        store.flush().await;
+        let reports = reports.lock().unwrap();
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert!(reports[0].contains("downloads"), "{reports:?}");
+    }
+
     #[tokio::test]
     async fn everything_written_is_read_back() {
         let dir = tempfile::tempdir().unwrap();
-        let (store, snapshot) = Store::open(dir.path()).unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(snapshot.settings.is_none() && snapshot.queues.is_empty());
 
         let queue = Queue {
@@ -505,7 +570,7 @@ mod tests {
         store.flush().await;
         drop(store);
 
-        let (_store, snapshot) = Store::open(dir.path()).unwrap();
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.settings, Some(settings));
         assert_eq!(snapshot.queues, vec![queue]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
@@ -517,7 +582,7 @@ mod tests {
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.pragma_update(None, "user_version", 99).unwrap();
         drop(conn);
-        let err = Store::open(dir.path()).unwrap_err();
+        let err = Store::open(dir.path(), ignore_failures()).unwrap_err();
         assert!(matches!(err, CoreError::DatabaseTooNew { found: 99, .. }));
         assert!(err.to_string().contains("Update Wirecatch"));
     }
@@ -535,8 +600,8 @@ mod tests {
     #[test]
     fn migrations_run_once() {
         let dir = tempfile::tempdir().unwrap();
-        drop(Store::open(dir.path()).unwrap());
-        drop(Store::open(dir.path()).unwrap());
+        drop(Store::open(dir.path(), ignore_failures()).unwrap());
+        drop(Store::open(dir.path(), ignore_failures()).unwrap());
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -547,13 +612,13 @@ mod tests {
     #[tokio::test]
     async fn unreadable_rows_are_skipped() {
         let dir = tempfile::tempdir().unwrap();
-        let (store, _) = Store::open(dir.path()).unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
         store.save_downloads(vec![download(1), download(2)]);
         store.flush().await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET status = 'exploded' WHERE id = 2", [])
             .unwrap();
-        let (_, snapshot) = Store::open(dir.path()).unwrap();
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![download(1)]);
     }
 }
