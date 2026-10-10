@@ -1,0 +1,39 @@
+[package]
+name = "wirecatch-bridge"
+description = "Native messaging host that connects the Wirecatch browser extension to the Wirecatch app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "wirecatch-bridge"
+path = "src/main.rs"
+
+[dependencies]
+wirecatch-ipc = { path = "../ipc", version = "0.1.0" }
+wirecatch-protocol.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process"] }
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }

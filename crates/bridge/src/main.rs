@@ -1,0 +1,205 @@
+//! `wirecatch-bridge`: the native messaging host that connects the Wirecatch
+//! browser extension to the Wirecatch app.
+//!
+//! - Started by the browser (native messaging mode): checks the caller, then
+//!   relays length-prefixed JSON frames between stdin/stdout and the app's
+//!   per-user local socket, starting the app with `--background` when needed. In
+//!   this mode stdout carries only frames; every log line goes to stderr.
+//! - `wirecatch-bridge install` / `uninstall`: register or remove the host for the
+//!   current user in every supported browser.
+
+// Stdout belongs to the browser in native messaging mode. Printing to it anywhere
+// else is a bug, so it is denied except in the install command.
+#![deny(clippy::print_stdout)]
+
+use std::ffi::OsString;
+use std::io::{self, Write};
+use std::process::ExitCode;
+use std::thread;
+
+use tokio::sync::mpsc;
+
+/// Writes one line to stderr, never stdout. A failure to write the log is
+/// ignored (the browser may have closed stderr) instead of panicking.
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), "wirecatch-bridge: {}", format_args!($($arg)*));
+    }};
+}
+pub(crate) use log;
+
+mod app;
+mod caller;
+mod config;
+mod install;
+mod raw_frame;
+mod relay;
+
+use raw_frame::RawFrame;
+
+/// Frames buffered between the stdio threads and the relay. Small on purpose:
+/// a slow side slows the other down instead of growing memory.
+const QUEUE_LEN: usize = 4;
+
+const USAGE: &str = "\
+wirecatch-bridge connects the Wirecatch browser extension to the Wirecatch app.
+Browsers start it on their own; you do not need to run it.
+
+Usage:
+  wirecatch-bridge install     Register the bridge with your browsers (current user)
+  wirecatch-bridge uninstall   Remove that registration
+";
+
+fn main() -> ExitCode {
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    let first = args.first().and_then(|arg| arg.to_str());
+    match (first, args.len()) {
+        (Some("install"), 1) => install::run(install::Command::Install),
+        (Some("uninstall"), 1) => install::run(install::Command::Uninstall),
+        (Some("--help" | "-h" | "help"), 1) => {
+            let _ = io::stdout().write_all(USAGE.as_bytes());
+            ExitCode::SUCCESS
+        }
+        _ => native_messaging_host(&args),
+    }
+}
+
+fn native_messaging_host(args: &[OsString]) -> ExitCode {
+    let config = match config::Config::embedded() {
+        Ok(config) => config,
+        Err(e) => {
+            log!("{e:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(reason) = caller::identify(args, &config) {
+        log!(
+            "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `wirecatch-bridge --help` for the commands you can use."
+        );
+        return ExitCode::FAILURE;
+    }
+
+    #[cfg(windows)]
+    keep_browser_pipes_private();
+
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            log!("could not start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let (to_relay, incoming) = mpsc::channel(QUEUE_LEN);
+    let (outgoing, to_browser) = mpsc::channel(QUEUE_LEN);
+    // Blocking threads for the browser pipes: they need no runtime support, and
+    // a blocked read never holds up shutdown.
+    if let Err(e) = thread::Builder::new()
+        .name("stdin".into())
+        .spawn(move || read_browser(to_relay))
+    {
+        log!("could not start: {e}");
+        return ExitCode::FAILURE;
+    }
+    let writer = match thread::Builder::new()
+        .name("stdout".into())
+        .spawn(move || write_browser(to_browser))
+    {
+        Ok(writer) => writer,
+        Err(e) => {
+            log!("could not start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    runtime.block_on(relay::run(incoming, outgoing, || async {
+        let endpoint = app::endpoint().map_err(|e| {
+            log!("{e}");
+            app::Unavailable::REFUSED
+        })?;
+        let launcher = app::launcher().map_err(|e| {
+            log!("{e:#}");
+            app::Unavailable::NOT_STARTED
+        })?;
+        app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET).await
+    }));
+    // Dropping the runtime drops the app reader task and with it the last sender
+    // to the stdout thread, which then finishes what is queued and stops.
+    drop(runtime);
+    let _ = writer.join();
+    ExitCode::SUCCESS
+}
+
+/// Reads frames from the browser until it closes stdin.
+fn read_browser(to_relay: mpsc::Sender<RawFrame>) {
+    let stdin = io::stdin();
+    let mut stdin = stdin.lock();
+    loop {
+        match raw_frame::read_blocking(&mut stdin) {
+            Ok(Some(frame)) => {
+                if to_relay.blocking_send(frame).is_err() {
+                    return;
+                }
+            }
+            Ok(None) => return,
+            Err(e) => {
+                // The stream cannot be resynchronized after a bad frame; treat it
+                // as the end of the session.
+                log!("stopped reading from the browser: {e}");
+                return;
+            }
+        }
+    }
+}
+
+/// Writes frames to the browser, one flush per frame.
+fn write_browser(mut to_browser: mpsc::Receiver<RawFrame>) {
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    while let Some(frame) = to_browser.blocking_recv() {
+        if let Err(e) = stdout
+            .write_all(frame.as_bytes())
+            .and_then(|()| stdout.flush())
+        {
+            log!("stopped writing to the browser: {e}");
+            return;
+        }
+    }
+}
+
+/// Marks the stdin, stdout and stderr handles the browser gave us as not
+/// inheritable.
+///
+/// Windows hands every inheritable handle to a child process. Without this, the
+/// app started by the bridge would hold copies of the browser's pipe handles, so
+/// the browser would not see the pipes close when the bridge exits, and the app
+/// could read or write the extension's channel.
+#[cfg(windows)]
+fn keep_browser_pipes_private() {
+    use windows_sys::Win32::Foundation::{
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{
+        GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: GetStdHandle has no preconditions; the handle is only used for
+        // the call below and not closed.
+        let handle = unsafe { GetStdHandle(which) };
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            continue;
+        }
+        // SAFETY: `handle` is one of this process's standard handles.
+        if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
+            log!(
+                "could not keep a browser pipe private: {}",
+                io::Error::last_os_error()
+            );
+        }
+    }
+}
