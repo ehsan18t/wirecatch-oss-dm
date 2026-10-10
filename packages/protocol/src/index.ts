@@ -25,6 +25,8 @@ export type { FixAction } from "./generated/FixAction";
 export type { Header } from "./generated/Header";
 export type { Hello } from "./generated/Hello";
 export type { HelloReply } from "./generated/HelloReply";
+export type { ImportSummary } from "./generated/ImportSummary";
+export type { ImportedFolder } from "./generated/ImportedFolder";
 export type { Message } from "./generated/Message";
 export type { NewDownload } from "./generated/NewDownload";
 export type { Outcome } from "./generated/Outcome";

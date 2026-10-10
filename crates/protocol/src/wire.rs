@@ -148,6 +148,10 @@ pub enum ErrorCode {
     /// Produced by the bridge when it cannot reach or start the app.
     AppUnavailable,
     Internal,
+    /// The app could not take over a captured download (the server did not answer
+    /// in time, or sent something other than what the browser saw). The browser
+    /// keeps its own download.
+    NotStarted,
 }
 
 #[cfg(test)]
