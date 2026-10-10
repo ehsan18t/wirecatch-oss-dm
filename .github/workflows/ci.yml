@@ -49,6 +49,16 @@ jobs:
             build-essential file libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
+      # The streams crate's join tests need a real ffmpeg; they skip without one,
+      # so Linux CI is where the real stream-copy join is proven.
+      - name: Install ffmpeg
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          echo "WIRECATCH_TEST_FFMPEG=$(command -v ffmpeg)" >> "$GITHUB_ENV"
+          echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
+
       # tauri::generate_context! embeds the built frontend at compile time and
       # fails if its folder is missing. Clippy and the tests do not need the real
       # frontend, so an empty folder at the configured path is enough here; the
