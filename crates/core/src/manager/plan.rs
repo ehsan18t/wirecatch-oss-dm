@@ -1,0 +1,208 @@
+//! Which downloads to start and stop so every limit holds. A pure function of a
+//! snapshot, so the rules are tested without running anything.
+
+use std::collections::HashMap;
+
+use wirecatch_protocol::{DownloadId, QueueId};
+
+/// A queue as the planner sees it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct QueueView {
+    pub id: QueueId,
+    pub max_concurrent: u32,
+    /// Whether its schedule lets it run now.
+    pub open: bool,
+}
+
+/// What a download is doing, as far as limits are concerned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Activity {
+    /// Waiting for a slot.
+    Waiting,
+    /// Running.
+    Running,
+    /// Told to stop but not finished yet; it still holds its slot.
+    Stopping,
+}
+
+/// A download that is waiting or holds a slot.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct DownloadView {
+    pub id: DownloadId,
+    pub queue: QueueId,
+    pub position: i64,
+    /// Goes before other waiting downloads (it was running before a restart).
+    pub first: bool,
+    pub activity: Activity,
+}
+
+/// The changes needed to honour every limit.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct Plan {
+    pub start: Vec<DownloadId>,
+    /// Running downloads to send back to waiting.
+    pub stop: Vec<DownloadId>,
+}
+
+/// Plans starts and stops.
+///
+/// A closed queue gives up its running downloads. A queue over its limit, and then
+/// all queues together over the global limit, give up the ones furthest back in
+/// line. Free slots are then filled in turn across the open queues (in sidebar
+/// order), so one long queue cannot starve the others. A download that is still
+/// stopping keeps its slot until it has stopped, so a limit is never exceeded even
+/// briefly.
+pub(super) fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -> Plan {
+    let mut out = Plan::default();
+    let mut held: HashMap<QueueId, u32> = HashMap::new();
+    let mut running_total = 0u32;
+
+    let mut running: Vec<&DownloadView> = downloads
+        .iter()
+        .filter(|d| d.activity != Activity::Waiting)
+        .collect();
+    // Stopping ones claim their slots before anyone else; then front of the line
+    // first, so stops come from the back.
+    running.sort_by_key(|d| (d.activity != Activity::Stopping, d.position));
+    for d in running {
+        let queue = queues.iter().find(|q| q.id == d.queue);
+        let queue_room = queue
+            .is_some_and(|q| q.open && held.get(&q.id).copied().unwrap_or(0) < q.max_concurrent);
+        let over = d.activity == Activity::Running && (!queue_room || running_total >= global_max);
+        if over {
+            out.stop.push(d.id);
+            continue;
+        }
+        *held.entry(d.queue).or_default() += 1;
+        running_total += 1;
+    }
+
+    let mut waiting: HashMap<QueueId, Vec<&DownloadView>> = HashMap::new();
+    for d in downloads.iter().filter(|d| d.activity == Activity::Waiting) {
+        waiting.entry(d.queue).or_default().push(d);
+    }
+    for line in waiting.values_mut() {
+        // Reversed, so the next to start is popped from the end.
+        line.sort_by_key(|d| std::cmp::Reverse((!d.first, d.position)));
+    }
+
+    loop {
+        let mut started_any = false;
+        for q in queues.iter().filter(|q| q.open) {
+            if running_total >= global_max {
+                return out;
+            }
+            let count = held.entry(q.id).or_default();
+            if *count >= q.max_concurrent {
+                continue;
+            }
+            if let Some(next) = waiting.get_mut(&q.id).and_then(Vec::pop) {
+                out.start.push(next.id);
+                *count += 1;
+                running_total += 1;
+                started_any = true;
+            }
+        }
+        if !started_any {
+            return out;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn queue(id: i64, max: u32) -> QueueView {
+        QueueView {
+            id: QueueId(id),
+            max_concurrent: max,
+            open: true,
+        }
+    }
+
+    fn dl(id: i64, queue: i64, activity: Activity) -> DownloadView {
+        DownloadView {
+            id: DownloadId(id),
+            queue: QueueId(queue),
+            position: id,
+            first: false,
+            activity,
+        }
+    }
+
+    fn ids(list: &[DownloadId]) -> Vec<i64> {
+        list.iter().map(|d| d.0).collect()
+    }
+
+    #[test]
+    fn fills_each_queue_up_to_its_limit() {
+        let queues = [queue(1, 2)];
+        let downloads: Vec<_> = (1..=5).map(|i| dl(i, 1, Activity::Waiting)).collect();
+        let plan = plan(&queues, &downloads, 10);
+        assert_eq!(ids(&plan.start), vec![1, 2]);
+        assert!(plan.stop.is_empty());
+    }
+
+    #[test]
+    fn global_limit_is_shared_in_turn_across_queues() {
+        let queues = [queue(1, 3), queue(2, 3)];
+        let downloads: Vec<_> = (1..=3)
+            .map(|i| dl(i, 1, Activity::Waiting))
+            .chain((4..=6).map(|i| dl(i, 2, Activity::Waiting)))
+            .collect();
+        let plan = plan(&queues, &downloads, 3);
+        assert_eq!(ids(&plan.start), vec![1, 4, 2]);
+    }
+
+    #[test]
+    fn running_and_stopping_downloads_hold_their_slots() {
+        let queues = [queue(1, 2)];
+        let downloads = [
+            dl(1, 1, Activity::Stopping),
+            dl(2, 1, Activity::Running),
+            dl(3, 1, Activity::Waiting),
+        ];
+        assert_eq!(plan(&queues, &downloads, 10), Plan::default());
+    }
+
+    #[test]
+    fn closed_queue_stops_its_downloads() {
+        let mut q = queue(1, 2);
+        q.open = false;
+        let downloads = [
+            dl(1, 1, Activity::Running),
+            dl(2, 1, Activity::Stopping),
+            dl(3, 1, Activity::Waiting),
+        ];
+        let plan = plan(&[q], &downloads, 10);
+        assert_eq!(ids(&plan.stop), vec![1]);
+        assert!(plan.start.is_empty());
+    }
+
+    #[test]
+    fn lowered_limits_stop_the_ones_furthest_back() {
+        let downloads: Vec<_> = (1..=4).map(|i| dl(i, 1, Activity::Running)).collect();
+        assert_eq!(ids(&plan(&[queue(1, 2)], &downloads, 10).stop), vec![3, 4]);
+        assert_eq!(
+            ids(&plan(&[queue(1, 10)], &downloads, 1).stop),
+            vec![2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn downloads_resumed_after_a_restart_go_first() {
+        let mut late = dl(9, 1, Activity::Waiting);
+        late.first = true;
+        let downloads = [dl(1, 1, Activity::Waiting), late];
+        assert_eq!(ids(&plan(&[queue(1, 1)], &downloads, 10).start), vec![9]);
+    }
+
+    #[test]
+    fn downloads_of_an_unknown_queue_never_run() {
+        let downloads = [dl(1, 7, Activity::Waiting), dl(2, 7, Activity::Running)];
+        let plan = plan(&[queue(1, 1)], &downloads, 10);
+        assert!(plan.start.is_empty());
+        assert_eq!(ids(&plan.stop), vec![2]);
+    }
+}
