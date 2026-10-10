@@ -492,3 +492,66 @@ async fn a_folder_link_is_refused_before_connecting() {
     assert_eq!(server.stats.sessions.load(Ordering::SeqCst), 0);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Cancels `cancel` once `ready` holds, and records when.
+fn cancel_when(
+    cancel: &CancellationToken,
+    ready: impl Fn() -> bool + Send + 'static,
+) -> Arc<std::sync::Mutex<Option<std::time::Instant>>> {
+    let at = Arc::new(std::sync::Mutex::new(None));
+    let (cancel, recorded) = (cancel.clone(), at.clone());
+    tokio::spawn(async move {
+        while !ready() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        *recorded.lock().unwrap() = Some(std::time::Instant::now());
+        cancel.cancel();
+    });
+    at
+}
+
+fn since(at: &std::sync::Mutex<Option<std::time::Instant>>) -> Duration {
+    at.lock().unwrap().expect("cancelled").elapsed()
+}
+
+#[tokio::test]
+async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
+    let data = test_data(8 * MIB);
+    let mut config = serving(&data);
+    config.data_bps = Some(2 * MIB as u64);
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("held-426");
+    let url = server.url("ftp", "", "pub/file.bin");
+
+    // A first run pauses with most of the file still to come.
+    let cancel = CancellationToken::new();
+    let progress = Arc::new(Progress::default());
+    let seen = progress.clone();
+    cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    let outcome = download(request(&url, &dir, 2), progress, cancel)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+
+    // On resuming, the first transfer (from byte 0) is not needed and is cut
+    // short. The server now takes 30 s to answer that; pause meanwhile.
+    server.configure(|c| c.hold_abort_reply = Some(Duration::from_secs(30)));
+    let held = server.stats.held_replies.load(Ordering::SeqCst);
+    let cancel = CancellationToken::new();
+    let stats = server.stats.clone();
+    let paused_at = cancel_when(&cancel, move || {
+        stats.held_replies.load(Ordering::SeqCst) > held
+    });
+    let outcome = download(
+        request(&url, &dir, 2),
+        Arc::new(Progress::default()),
+        cancel,
+    )
+    .await
+    .unwrap();
+
+    let took = since(&paused_at);
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+    assert!(took < Duration::from_secs(2), "paused after {took:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

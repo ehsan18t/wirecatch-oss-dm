@@ -51,6 +51,9 @@ pub struct FtpConfig {
     pub data_bps: Option<u64>,
     /// The first `n` transfers break off after `after` bytes.
     pub drop_first: Option<(usize, u64)>,
+    /// How long to hold back the `426` after the client closed a data
+    /// connection early.
+    pub hold_abort_reply: Option<Duration>,
 }
 
 impl Default for FtpConfig {
@@ -68,6 +71,7 @@ impl Default for FtpConfig {
             pasv_ip: [127, 0, 0, 1],
             data_bps: None,
             drop_first: None,
+            hold_abort_reply: None,
         }
     }
 }
@@ -88,6 +92,8 @@ pub struct FtpStats {
     pub bytes_sent: AtomicU64,
     /// `REST` offsets the transfers started from.
     pub rest_offsets: Mutex<Vec<u64>>,
+    /// `426` replies currently held back (see `hold_abort_reply`).
+    pub held_replies: AtomicUsize,
     /// How each TLS data connection's handshake went.
     pub data_handshakes: Mutex<Vec<HandshakeKind>>,
 }
@@ -411,6 +417,10 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                     // Broken off on purpose, or the client closed the connection.
                     Ok(false) | Err(_) => {
                         drop(data);
+                        if let Some(hold) = config.hold_abort_reply {
+                            stats.held_replies.fetch_add(1, Ordering::SeqCst);
+                            tokio::time::sleep(hold).await;
+                        }
                         reply(&mut control, "426 Connection closed; transfer aborted.").await?;
                     }
                 }

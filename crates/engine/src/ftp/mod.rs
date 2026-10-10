@@ -611,11 +611,14 @@ impl Connection {
                 // Closing the data connection ends the transfer; the server
                 // answers with 426 or 226.
                 drop(data);
-                if cancel.is_cancelled() {
-                    return;
-                }
                 let wait = control.stall.min(FINISH_WAIT);
-                if let Ok(Ok(reply)) = tokio::time::timeout(wait, control.reply()).await
+                // A pause never waits for the server's answer.
+                let reply = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return,
+                    reply = tokio::time::timeout(wait, control.reply()) => reply,
+                };
+                if let Ok(Ok(reply)) = reply
                     && !reply.is_preliminary()
                 {
                     self.control = Some(control);
