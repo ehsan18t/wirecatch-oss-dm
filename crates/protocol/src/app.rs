@@ -185,3 +185,63 @@ pub struct SettingsProfile {
     /// Ids of installed add-ons, reinstalled on import.
     pub addons: Vec<String>,
 }
+
+/// A download added from the app itself (paste, Add dialog, command palette).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AddRequest {
+    pub url: String,
+    /// Default queue if absent.
+    pub queue: Option<QueueId>,
+    /// Absolute folder; the category rule decides if absent.
+    pub folder: Option<String>,
+    /// The server's name is used if absent.
+    pub file_name: Option<String>,
+    /// `false` adds it paused.
+    pub start: bool,
+}
+
+/// A captured download waiting for the user because `ask_before_download` is on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PendingCapture {
+    /// Identifies this confirmation; not a download id yet.
+    #[ts(type = "number")]
+    pub id: u64,
+    pub url: String,
+    pub file_name: String,
+    /// Where it will be saved if the user just confirms.
+    pub folder: String,
+    pub category: Category,
+    #[ts(type = "number | null")]
+    pub size: Option<u64>,
+    pub queue: QueueId,
+    /// The page it came from, shown so the user knows what they are confirming.
+    pub page_url: Option<String>,
+}
+
+/// The user's answer to a [`PendingCapture`]; absent fields keep the proposal.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CaptureConfirmation {
+    pub folder: Option<String>,
+    pub file_name: Option<String>,
+    pub queue: Option<QueueId>,
+}
+
+/// Everything the core pushes to the desktop UI. The desktop app forwards these
+/// to the webview as one event stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum UiEvent {
+    /// Changed rows only, batched (at most about ten batches per second).
+    DownloadsChanged(Vec<DownloadSummary>),
+    DownloadsRemoved(Vec<DownloadId>),
+    QueuesChanged(Vec<Queue>),
+    SettingsChanged(AppSettings),
+    /// A browser capture started; the UI shows the toast with Change and Open folder (D4).
+    Captured(DownloadSummary),
+    /// A capture needs the user's confirmation (`ask_before_download`).
+    ConfirmationRequested(PendingCapture),
+}
