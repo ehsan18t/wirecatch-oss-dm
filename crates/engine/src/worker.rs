@@ -1,18 +1,26 @@
 //! One connection's loop: take a range, stream it to disk, take the next.
 
 use std::fs::File;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use reqwest::{Client, Response};
 use tokio::task::JoinHandle;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::download::Shared;
 use crate::error::{Error, Result};
+use crate::http::Failure;
 use crate::segment::{Assignment, SegmentTable, UNKNOWN_END};
 use crate::{http, storage};
+
+/// Consecutive refused attempts, while other connections of the same download
+/// are receiving data, after which a connection gives up its part to them.
+/// One refusal can be a fluke; two in a row mean the server allows no more
+/// connections than are already open.
+const REFUSALS_BEFORE_STEPPING_BACK: u32 = 2;
 
 /// How a stretch of streaming ended.
 enum Ended {
@@ -21,6 +29,9 @@ enum Ended {
     Cancelled,
     /// The server closed the body.
     Eof,
+    /// The server refuses this extra connection; the segment was handed back
+    /// to the connections that are working.
+    SteppedBack,
 }
 
 pub(crate) async fn run(
@@ -51,6 +62,7 @@ pub(crate) async fn run(
             run_assignment(&shared, &client, &mut writer, assignment.index, response).await;
         match result {
             Ok(Ended::Done) => continue,
+            Ok(Ended::SteppedBack) => return Ok(()),
             Ok(Ended::Cancelled) | Ok(Ended::Eof) => {
                 shared.table.lock().unwrap().release(assignment.index);
                 return Ok(());
@@ -64,6 +76,12 @@ pub(crate) async fn run(
 }
 
 /// Downloads one segment, retrying transient failures from wherever it got to.
+///
+/// A 429 or 503 with `Retry-After` is retried no sooner than the server asked.
+/// When the server keeps refusing this connection while others of the same
+/// download are receiving data, the connection steps back instead of retrying:
+/// the server's connection limit is reached, and the remaining connections
+/// finish the work.
 async fn run_assignment(
     shared: &Shared,
     client: &Client,
@@ -72,6 +90,7 @@ async fn run_assignment(
     mut response: Option<Response>,
 ) -> Result<Ended> {
     let mut failures = 0u32;
+    let mut refusals = 0u32;
     loop {
         if shared.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
@@ -85,25 +104,44 @@ async fn run_assignment(
             let (resp, skip) = match response.take() {
                 Some(resp) => (resp, 0),
                 None => {
-                    http::fetch(client, &shared.url, from, to, shared.ranged, shared.total).await?
+                    http::fetch(
+                        client,
+                        &shared.url,
+                        &shared.headers,
+                        from,
+                        to,
+                        shared.ranged,
+                        shared.total,
+                    )
+                    .await?
                 }
             };
-            stream(shared, writer, index, from, resp, skip).await
+            Ok::<_, Failure>(stream(shared, writer, index, from, resp, skip).await?)
         };
 
         match attempt.await {
             Ok(ended) => return Ok(ended),
-            Err(e) if e.is_retryable() && failures < shared.opts.max_retries => {
+            Err(f) if f.error.is_retryable() && failures < shared.opts.max_retries => {
                 let (now, _) = shared.table.lock().unwrap().position(index);
-                failures = if now > from { 0 } else { failures + 1 };
-                let delay = backoff(failures);
-                warn!(error = %e, retry_in = ?delay, "connection failed, retrying");
+                let progressed = now > from;
+                failures = if progressed { 0 } else { failures + 1 };
+                refusals = if !progressed && is_refusal(&f.error) {
+                    refusals + 1
+                } else {
+                    0
+                };
+                if refusals >= REFUSALS_BEFORE_STEPPING_BACK && step_back(shared, index) {
+                    info!(error = %f.error, "server refuses another connection; continuing with the open ones");
+                    return Ok(Ended::SteppedBack);
+                }
+                let delay = retry_delay(failures, f.retry_after);
+                warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
                     _ = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
                     _ = tokio::time::sleep(delay) => {}
                 }
             }
-            Err(e) => return Err(e),
+            Err(f) => return Err(f.error),
         }
     }
 }
@@ -119,6 +157,7 @@ async fn stream(
     mut skip: u64,
 ) -> Result<Ended> {
     let _connection = shared.progress.connection_opened();
+    let _receiving = Receiving::new(&shared.receiving);
     writer.start(index, from);
     let mut body = response.bytes_stream();
     let stall = shared.opts.stall_timeout;
@@ -180,17 +219,73 @@ async fn stream(
     }
 }
 
+/// Whether a failed attempt that received nothing looks like the server turning
+/// this connection away: busy statuses, or a connection that was accepted and
+/// then closed or reset. Timeouts are not refusals; a slow network is not a limit.
+fn is_refusal(error: &Error) -> bool {
+    match error {
+        Error::HttpStatus { status, .. } => matches!(status, 429 | 503),
+        Error::Network(e) => !e.is_timeout(),
+        Error::PrematureEof { .. } => true,
+        _ => false,
+    }
+}
+
+/// Hands segment `index` back for the other connections if at least one is
+/// receiving data and another segment's owner still has bytes to fetch (so it
+/// will come back for more work and pick this segment up). Decided under the
+/// table lock, so the segment can never be left without a connection to take it.
+fn step_back(shared: &Shared, index: usize) -> bool {
+    let mut table = shared.table.lock().unwrap();
+    let others_working = shared.receiving.load(Ordering::SeqCst) > 0 && table.others_active(index);
+    if others_working {
+        table.release(index);
+    }
+    others_working
+}
+
+/// Counts a connection as receiving while it streams a body.
+struct Receiving<'a>(&'a AtomicUsize);
+
+impl<'a> Receiving<'a> {
+    fn new(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::SeqCst);
+        Self(count)
+    }
+}
+
+impl Drop for Receiving<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// How long to wait before the next attempt: what the server asked for in
+/// `Retry-After` if it said, otherwise [`backoff`]. Jitter is only ever added,
+/// so a server's delay is never cut short.
+pub(crate) fn retry_delay(failures: u32, retry_after: Option<Duration>) -> Duration {
+    match retry_after {
+        Some(delay) => delay + jitter(),
+        None => backoff(failures),
+    }
+}
+
 /// 0.5 s, 1 s, 2 s ... capped at 10 s, with a little jitter so workers that
 /// failed together do not retry in lockstep.
 pub(crate) fn backoff(failures: u32) -> Duration {
     let base = 500u64
         .saturating_mul(1 << failures.saturating_sub(1).min(5))
         .min(10_000);
-    let jitter = std::time::SystemTime::now()
+    Duration::from_millis(base) + jitter()
+}
+
+/// 0 to 249 ms.
+fn jitter() -> Duration {
+    let ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| u64::from(d.subsec_millis()) % 250)
         .unwrap_or(0);
-    Duration::from_millis(base + jitter)
+    Duration::from_millis(ms)
 }
 
 /// A finished write hands back its emptied buffer, the segment and the new flushed offset.
@@ -288,5 +383,13 @@ mod tests {
         assert!(backoff(1) < Duration::from_millis(800));
         assert!(backoff(3) >= Duration::from_secs(2));
         assert!(backoff(30) <= Duration::from_millis(10_250));
+    }
+
+    #[test]
+    fn retry_after_is_never_shortened() {
+        let asked = Duration::from_secs(3);
+        let delay = retry_delay(1, Some(asked));
+        assert!(delay >= asked && delay < asked + Duration::from_millis(250));
+        assert!(retry_delay(1, None) < Duration::from_millis(800));
     }
 }

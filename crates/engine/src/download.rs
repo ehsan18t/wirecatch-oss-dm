@@ -1,6 +1,7 @@
 //! Runs one download from first request to final rename.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::http::{self, Probe};
+use crate::http::{self, Clients, Probe, RequestHeaders};
 use crate::limiter::RateLimiter;
 use crate::progress::Progress;
 use crate::segment::SegmentTable;
@@ -102,6 +103,8 @@ pub enum Outcome {
 /// State every worker of one download shares.
 pub(crate) struct Shared {
     pub url: Url,
+    /// The caller's headers, limited per request to what `url`'s origin may see.
+    pub headers: RequestHeaders,
     pub ranged: bool,
     pub total: Option<u64>,
     pub table: Mutex<SegmentTable>,
@@ -109,6 +112,8 @@ pub(crate) struct Shared {
     pub progress: Arc<Progress>,
     pub cancel: CancellationToken,
     pub opts: DownloadOptions,
+    /// Connections currently streaming a response body.
+    pub receiving: AtomicUsize,
 }
 
 struct Target {
@@ -128,8 +133,16 @@ pub async fn download(
     cancel: CancellationToken,
 ) -> Result<Outcome> {
     let opts = request.options.clone();
-    let first_client = http::build_client(&opts)?;
-    let probe = probe_with_retries(&first_client, &request.url, &opts, &cancel).await?;
+    // Reading the system certificate store blocks, so keep it off the async threads.
+    let clients = {
+        let opts = opts.clone();
+        tokio::task::spawn_blocking(move || Clients::new(&opts))
+            .await
+            .map_err(std::io::Error::other)?
+    };
+    let headers = RequestHeaders::new(&request.url, &opts.headers);
+    let first_client = clients.build()?;
+    let probe = probe_with_retries(&first_client, &request.url, &headers, &opts, &cancel).await?;
     debug!(ranged = probe.ranged, total = ?probe.total, url = %probe.final_url, "probed");
 
     let target = match &request.exact_path {
@@ -187,6 +200,7 @@ pub async fn download(
 
     let shared = Arc::new(Shared {
         url: final_url,
+        headers,
         ranged,
         total,
         table: Mutex::new(table),
@@ -194,6 +208,7 @@ pub async fn download(
         progress,
         cancel,
         opts,
+        receiving: AtomicUsize::new(0),
     });
     let save_state = {
         let shared = shared.clone();
@@ -234,7 +249,7 @@ pub async fn download(
             let client = if id == 0 {
                 first_client.clone()
             } else {
-                http::build_client(&shared.opts)?
+                clients.build()?
             };
             workers.spawn(worker::run(
                 id,
@@ -306,25 +321,29 @@ pub async fn download(
 
 /// The first request gets the same retry treatment as every later one: a server
 /// can drop a connection before sending any headers.
+///
+/// A 429 or 503 with `Retry-After` waits as long as the server asked (up to
+/// five minutes) instead of the usual backoff.
 async fn probe_with_retries(
     client: &reqwest::Client,
     url: &Url,
+    headers: &RequestHeaders,
     opts: &DownloadOptions,
     cancel: &CancellationToken,
 ) -> Result<Probe> {
     let mut failures = 0;
     loop {
-        match http::probe(client, url).await {
-            Err(e) if e.is_retryable() && failures < opts.max_retries => {
+        match http::probe(client, url, headers).await {
+            Err(f) if f.error.is_retryable() && failures < opts.max_retries => {
                 failures += 1;
-                let delay = worker::backoff(failures);
-                warn!(error = %e, retry_in = ?delay, "first request failed, retrying");
+                let delay = worker::retry_delay(failures, f.retry_after);
+                warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
                 tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::Cancelled),
                     _ = tokio::time::sleep(delay) => {}
                 }
             }
-            result => return result,
+            result => return result.map_err(|f| f.error),
         }
     }
 }
