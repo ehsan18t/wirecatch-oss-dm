@@ -111,7 +111,8 @@ impl Manager {
     }
 
     /// Waits until the server has answered the app with the captured file, the
-    /// attempt failed, or the capture timeout ran out. `Err` carries the reason.
+    /// attempt failed, or the capture timeout ran out. `Err` carries the reason as
+    /// whole sentences, for [`CoreError::NotStarted`].
     async fn await_answer(
         &self,
         id: DownloadId,
@@ -133,7 +134,7 @@ impl Manager {
                 _ = exited.cancelled() => {}
                 _ = timeout => {
                     return Err(format!(
-                        "the server did not answer within {} seconds.",
+                        "The server did not answer within {} seconds.",
                         self.inner.capture_timeout.as_secs()
                     ));
                 }
@@ -141,13 +142,13 @@ impl Manager {
         }
         let state = self.lock();
         if state.handovers.get(handover).is_none() {
-            return Err("the browser withdrew it.".into());
+            return Err("The browser took it back.".into());
         }
         match state.entry(id) {
-            Err(_) => Err("it was removed.".into()),
+            Err(_) => Err("It was removed.".into()),
             Ok(entry) if entry.server_answered() => Ok(()),
             Ok(entry) => Err(entry.row.error.as_ref().map_or_else(
-                || "it stopped before the server answered.".to_string(),
+                || "It stopped before the server answered.".to_string(),
                 |e| e.message.clone(),
             )),
         }
@@ -174,7 +175,7 @@ impl Manager {
         match state.handovers.get(handover) {
             Some(known) if known.deciding.is_none() => Ok(known.reply.clone()),
             _ => Err(CoreError::NotStarted(
-                "an earlier attempt to take it over did not work.".into(),
+                "An earlier attempt to take it over did not work.".into(),
             )),
         }
     }

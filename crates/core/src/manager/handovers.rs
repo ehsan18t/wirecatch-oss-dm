@@ -113,7 +113,7 @@ impl Handovers {
 pub(super) fn check_id(id: &str) -> Result<()> {
     if id.is_empty() || id.len() > MAX_ID_LEN {
         return Err(CoreError::Invalid(format!(
-            "The browser sent a download without a valid handover id (1 to {MAX_ID_LEN} characters). Update the extension."
+            "The browser extension sent a download without a usable label (it needs 1 to {MAX_ID_LEN} characters). Update the extension."
         )));
     }
     Ok(())
