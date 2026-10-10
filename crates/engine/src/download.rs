@@ -1,7 +1,7 @@
 //! Runs one download from first request to final rename.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -358,13 +358,17 @@ pub async fn download(
     // and a late checkpoint writes nothing (it could otherwise put back a resume
     // file next to a finished download).
     let closed = Arc::new(Mutex::new(false));
+    // Set if this future is dropped before it ends: a save already queued on the
+    // blocking pool then writes nothing either.
+    let abandoned = Arc::new(AtomicBool::new(false));
     let save_state = {
         let shared = shared.clone();
         let closed = closed.clone();
+        let abandoned = abandoned.clone();
         let (url, path) = (request.url.to_string(), target.state_path.clone());
         move || {
             let closed = closed.lock().unwrap();
-            if *closed {
+            if *closed || abandoned.load(Ordering::SeqCst) {
                 return Ok(());
             }
             let remaining = shared.table.lock().unwrap().remaining();
@@ -416,11 +420,17 @@ pub async fn download(
     let checkpoints = {
         let save_state = save_state.clone();
         let every = shared.opts.checkpoint_interval;
-        tokio::spawn(async move {
+        let cancel = shared.cancel.clone();
+        Checkpoints::spawn(abandoned, async move {
             let mut tick = tokio::time::interval(every);
             tick.tick().await;
             loop {
-                tick.tick().await;
+                tokio::select! {
+                    _ = tick.tick() => {}
+                    // Once asked to stop, the download saves its state itself on
+                    // the way out.
+                    _ = cancel.cancelled() => return,
+                }
                 let save = save_state.clone();
                 if let Ok(Err(e)) = tokio::task::spawn_blocking(save).await {
                     warn!(error = %e, "could not save resume state");
@@ -437,7 +447,7 @@ pub async fn download(
             first_error.get_or_insert(e);
         }
     }
-    checkpoints.abort();
+    checkpoints.stop();
 
     let (complete, remaining, file_len) = {
         let table = shared.table.lock().unwrap();
@@ -473,6 +483,48 @@ pub async fn download(
         at: file_len - remaining,
         end: file_len,
     }))
+}
+
+/// The task that saves the resume file at every checkpoint while a download runs.
+///
+/// It must never outlive the download: if the download's future is dropped before
+/// it ends (its task aborted), dropping this stops the task and marks the download
+/// abandoned, so a save already queued writes nothing. Otherwise it would keep
+/// rewriting the resume file, bringing it back after its owner deleted it or
+/// overwriting a newer run's with stale ranges.
+struct Checkpoints {
+    task: tokio::task::JoinHandle<()>,
+    abandoned: Arc<AtomicBool>,
+    /// Set by [`stop`](Self::stop): the download ended normally.
+    ended: bool,
+}
+
+impl Checkpoints {
+    fn spawn(
+        abandoned: Arc<AtomicBool>,
+        work: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Self {
+        Self {
+            task: tokio::spawn(work),
+            abandoned,
+            ended: false,
+        }
+    }
+
+    /// Stops the checkpoints of a download that ended normally; it saves its
+    /// final state itself.
+    fn stop(mut self) {
+        self.ended = true;
+    }
+}
+
+impl Drop for Checkpoints {
+    fn drop(&mut self) {
+        self.task.abort();
+        if !self.ended {
+            self.abandoned.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 /// The first request gets the same retry treatment as every later one: a server

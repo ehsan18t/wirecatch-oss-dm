@@ -321,6 +321,50 @@ async fn rate_limiter_caps_combined_speed() {
     assert!(secs >= 1.6, "finished in {secs:.2} s despite the limit");
 }
 
+/// A caller may drop a download's future before it ends (a manager abandons a
+/// run that does not stop in time). Nothing of that download may keep writing
+/// afterwards: a resume file saved later could come back after the caller deleted
+/// it, or overwrite a newer run's with stale ranges.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_dropped_download_never_writes_its_resume_file_again() {
+    let server = TestServer::start(
+        test_data(4 * MIB),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(256 * KIB as u64),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("dropped");
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(
+        request(&server, "d.bin", &dir, 2),
+        progress.clone(),
+        CancellationToken::new(),
+    ));
+    while progress.done() < 64 * KIB as u64 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    // Let a save that was already running finish, then delete the files, as a
+    // cancelled download's owner does.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (part, state) = (dir.join("d.bin.wcpart"), dir.join("d.bin.wcstate"));
+    std::fs::remove_file(&part).unwrap();
+    std::fs::remove_file(&state).unwrap();
+
+    // Twenty checkpoint intervals later, nothing came back.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        !state.exists(),
+        "the dropped download wrote its resume file again"
+    );
+    assert!(!part.exists());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exact_path_continues_after_the_link_changes() {
     let server = TestServer::start(
