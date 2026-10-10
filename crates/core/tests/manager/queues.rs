@@ -199,3 +199,44 @@ async fn pause_all_clears_the_reasons_of_downloads_it_paused() {
     assert_eq!(row.status, DownloadStatus::Paused);
     assert_eq!(row.waiting, None);
 }
+
+/// A capture waiting for the user's answer was meant for a queue that is then
+/// deleted: like the queue's downloads, it moves to the default queue, so saying
+/// yes still works.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let later = h.manager.create_queue("Later").unwrap().id;
+    let capture = wirecatch_protocol::extension::NewDownload {
+        handover_id: "tab-1".into(),
+        url: server.url("report.pdf"),
+        referrer: None,
+        page_url: None,
+        suggested_name: Some("report.pdf".into()),
+        mime: None,
+        size_hint: Some(1024),
+        cookies: None,
+        user_agent: None,
+        extra_headers: vec![],
+        source: wirecatch_protocol::extension::CaptureSource::BrowserDownload,
+        queue: Some(later),
+        media: None,
+    };
+    h.manager.add_capture(capture).await.unwrap();
+    assert_eq!(h.manager.pending_confirmations()[0].queue, later);
+
+    h.manager.delete_queue(later).unwrap();
+    let waiting = h.manager.pending_confirmations().remove(0);
+    assert_eq!(waiting.queue, DEFAULT_QUEUE_ID);
+    let answer = wirecatch_protocol::app::CaptureConfirmation {
+        folder: None,
+        file_name: None,
+        queue: None,
+    };
+    h.manager.confirm_capture(waiting.id, answer).await.unwrap();
+    let row = h.manager.list_downloads().remove(0);
+    assert_eq!(row.queue, DEFAULT_QUEUE_ID);
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+}
