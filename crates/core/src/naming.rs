@@ -53,11 +53,18 @@ pub(crate) fn settled_name(
         .map_or_else(|| GENERIC_NAME.to_string(), |name| naming::sanitize(&name));
     let server_named_it = suggested != from_link && suggested != GENERIC_NAME;
     let name = match choice.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(chosen) => chosen,
+        // The user can choose again, so their name is refused rather than changed.
+        Some(chosen) => return checked(naming::sanitize(chosen)),
         None if server_named_it || provisional.is_empty() => suggested,
         None => provisional,
     };
-    checked(naming::sanitize(name))
+    // A server cannot be asked for another name: change it instead, or the
+    // download would fail on every try.
+    let mut name = naming::sanitize(name);
+    while checked(name.clone()).is_err() {
+        name.push('_');
+    }
+    Ok(name)
 }
 
 /// The engine's name for a file when neither the server nor the link offers one.
@@ -184,6 +191,20 @@ mod tests {
         let no_hint = settled_name(None, "get", &link, "").unwrap();
         assert_eq!(no_hint, "get");
         assert!(settle(Some("x.wcpart"), "server.pdf").is_err());
+    }
+
+    /// The user can pick another name; a server cannot be asked to. Its name is
+    /// changed instead of failing the download on every try.
+    #[test]
+    fn a_server_name_like_the_engines_own_files_is_changed() {
+        let link = Url::parse("https://example.com/get?id=7").unwrap();
+        for (server, kept) in [
+            ("movie.mkv.wcpart", "movie.mkv.wcpart_"),
+            ("state.WCSTATE", "state.WCSTATE_"),
+        ] {
+            assert_eq!(settled_name(None, server, &link, "").unwrap(), kept);
+            assert_eq!(settled_name(None, server, &link, "a.pdf").unwrap(), kept);
+        }
     }
 
     #[test]

@@ -898,6 +898,46 @@ async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() {
     );
 }
 
+/// A queued capture that later gets another file than the browser saw fails with
+/// a way out: refreshing the link from the page.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() {
+    // The browser saw 1024 bytes; this link now serves 2048.
+    let changed = TestServer::fast(2048).await;
+    let right = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let added = h
+        .manager
+        .add_capture(capture(changed.url("report.pdf")))
+        .await
+        .unwrap();
+    assert_eq!(added.action, AddAction::Queued);
+    let id = added.id.unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("different file"),
+        "{}",
+        error.message
+    );
+    assert_eq!(
+        error.fix,
+        Some(wirecatch_protocol::app::FixAction::RefreshLink)
+    );
+
+    h.manager
+        .refresh_link(id, &right.url("report.pdf"))
+        .unwrap();
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(std::fs::read(&done.path).unwrap(), right.data);
+}
+
 fn framed(body: &[u8]) -> Vec<u8> {
     let mut out = (body.len() as u32).to_le_bytes().to_vec();
     out.extend_from_slice(body);
