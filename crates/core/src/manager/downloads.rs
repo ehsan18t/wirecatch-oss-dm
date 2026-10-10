@@ -136,9 +136,9 @@ impl Manager {
         Ok(())
     }
 
-    /// Removes downloads from the list, stopping them first. Partial files are
-    /// always deleted; the downloaded file only when `delete_file` is set. Ids that
-    /// no longer exist are ignored.
+    /// Removes downloads from the list, stopping them first. The partial files of an
+    /// unfinished download are always deleted; the file of a completed download only
+    /// when `delete_file` is set. Ids that no longer exist are ignored.
     pub async fn remove(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
@@ -184,11 +184,14 @@ impl Manager {
                 let Some(entry) = state.downloads.remove(id) else {
                     continue;
                 };
-                if entry.row.status != DownloadStatus::Completed {
+                if entry.row.status == DownloadStatus::Completed {
+                    if delete_file {
+                        files.push(entry.path().to_path_buf());
+                    }
+                } else {
+                    // An unfinished download has no file of its own at its final
+                    // path yet; whatever is there belongs to someone else.
                     files.extend(partial_files(entry.path()));
-                }
-                if delete_file {
-                    files.push(entry.path().to_path_buf());
                 }
                 state.dirty.remove(id);
                 removed.push(*id);

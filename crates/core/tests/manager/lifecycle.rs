@@ -217,6 +217,24 @@ async fn sync_methods_work_from_a_thread_outside_the_runtime() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_an_unfinished_download_never_deletes_someone_elses_file() {
+    let h = Harness::new().await;
+    let row = h
+        .add_with("https://example.com/report.pdf", |r| r.start = false)
+        .await;
+    // The user saved a file of the same name there meanwhile.
+    let path = std::path::Path::new(&row.path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, b"not ours").unwrap();
+    let [part, _] = partial_files(&row.path);
+    std::fs::write(&part, b"ours").unwrap();
+
+    h.manager.remove(&[row.id], true).await.unwrap();
+    assert!(exists(path), "an unrelated file was deleted");
+    assert!(!exists(&part));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_waiting_download_can_be_cancelled_and_removed() {
     let h = Harness::new().await;
     let row = h
