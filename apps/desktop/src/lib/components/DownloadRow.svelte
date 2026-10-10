@@ -1,12 +1,15 @@
 <script lang="ts">
   import type { DownloadId } from '@wirecatch/protocol';
   import {
+    FIX_LABEL,
+    FIX_SHORT,
     formatEta,
     formatPercent,
     formatSize,
     formatSpeed,
     progressFraction,
     STATUS_LABEL,
+    waitShort,
   } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -14,9 +17,8 @@
   let {
     id,
     index,
-    setSize,
     dropBefore = false,
-  }: { id: DownloadId; index: number; setSize: number; dropBefore?: boolean } = $props();
+  }: { id: DownloadId; index: number; dropBefore?: boolean } = $props();
 
   const app = getApp();
 
@@ -25,6 +27,13 @@
   const selected = $derived(app.selection.has(id));
   const active = $derived(app.active === id);
   const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
+  const statusText = $derived(
+    row
+      ? row.status === 'queued' && row.waiting
+        ? waitShort(row.waiting)
+        : STATUS_LABEL[row.status]
+      : '',
+  );
 </script>
 
 {#if row}
@@ -34,31 +43,46 @@
     class:selected
     class:active
     class:drop-before={dropBefore}
-    role="option"
+    role="row"
     aria-selected={selected}
-    aria-posinset={index + 1}
-    aria-setsize={setSize}
+    aria-rowindex={index + 1}
     data-id={id}
     draggable="true"
   >
-    <span class="icon"><CategoryIcon category={row.category} /></span>
-    <span class="name" title={row.file_name}>{row.file_name}</span>
+    <span class="icon" role="gridcell"><CategoryIcon category={row.category} /></span>
+    <span class="name" role="gridcell" title={row.file_name}>{row.file_name}</span>
     {#if row.status === 'failed' && row.error}
-      <span class="error">{row.error.message}</span>
+      <span class="error" role="gridcell">
+        <span class="message" title={row.error.message}>{row.error.message}</span>
+        {#if row.error.fix}
+          {@const fix = row.error.fix}
+          <!-- Reached by mouse here; by keyboard, Enter on the row runs the same fix. -->
+          <button
+            type="button"
+            class="btn small fix"
+            tabindex="-1"
+            title={FIX_LABEL[fix]}
+            onclick={() => app.fix(row.id, fix)}
+          >
+            {FIX_SHORT[fix]}
+          </button>
+        {/if}
+      </span>
     {:else}
-      <span class="size num">{formatSize(row.done, row.total, row.status)}</span>
-      <span class="pct num"
+      <span class="size num" role="gridcell">{formatSize(row.done, row.total, row.status)}</span>
+      <span class="pct num" role="gridcell"
         >{row.status === 'completed' ? '' : formatPercent(row.done, row.total)}</span
       >
       <span
         class="speed num"
+        role="gridcell"
         title={row.connections > 0 ? `${row.connections} connections` : undefined}
       >
         {formatSpeed(row.speed)}
       </span>
-      <span class="eta num">{formatEta(row.eta_secs)}</span>
+      <span class="eta num" role="gridcell">{formatEta(row.eta_secs)}</span>
     {/if}
-    <span class="status">{STATUS_LABEL[row.status]}</span>
+    <span class="status" role="gridcell" title={statusText}>{statusText}</span>
     <span class="wire" aria-hidden="true">
       {#if fraction === null && (row.status === 'downloading' || row.status === 'connecting')}
         <span class="fill unknown"></span>
@@ -105,7 +129,8 @@
   }
 
   /* Keyboard position: only drawn while the list itself has keyboard focus. */
-  :global(.list:focus-visible) .row.active {
+  :global(.list:focus-visible) .row.active,
+  :global(.list.menu-open) .row.active {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
@@ -153,13 +178,40 @@
   }
 
   .error {
-    grid-column: 3 / 7;
+    display: flex;
+    grid-column: 3 / -2;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
-    overflow: hidden;
     color: var(--danger);
     font-size: var(--text-sm);
+  }
+
+  .message {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .fix {
+    flex: none;
+    height: 24px;
+    color: var(--ink);
+  }
+
+  /* Narrow windows drop time left first, then speed; the detail panel still shows both. */
+  @container main (max-width: 899px) {
+    .eta {
+      display: none;
+    }
+  }
+
+  @container main (max-width: 759px) {
+    .speed {
+      display: none;
+    }
   }
 
   .status {

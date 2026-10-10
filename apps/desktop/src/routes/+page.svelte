@@ -4,7 +4,8 @@
   import Shell from '$lib/components/Shell.svelte';
   import { AppState, setApp } from '$lib/state/app.svelte';
 
-  const app = new AppState(createBackend());
+  // The backend loads asynchronously so the mock never ships in a production build.
+  const app = new AppState(createBackend);
   setApp(app);
 
   onMount(() => {

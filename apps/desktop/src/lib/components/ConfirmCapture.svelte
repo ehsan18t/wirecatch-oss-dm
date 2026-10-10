@@ -3,7 +3,7 @@
   import ConfirmCaptureForm from './ConfirmCaptureForm.svelte';
 
   const app = getApp();
-  const current = $derived(app.dialog === null ? app.pending[0] : undefined);
+  const current = $derived(app.dialog === null && !app.pendingHidden ? app.pending[0] : undefined);
 </script>
 
 {#if current}

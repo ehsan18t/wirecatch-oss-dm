@@ -10,6 +10,8 @@ export const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 export async function renderApp(options: MockOptions = {}) {
   const backend = new MockBackend({ autoTick: false, now: () => NOON, ...options });
   const app = new AppState(backend);
+  // Schedules in labels follow the same fixed clock as the mock.
+  app.now = new Date(NOON);
   const result = render(TestHost, { props: { app } });
   await app.init();
   await settle();
@@ -26,7 +28,7 @@ export async function settle(): Promise<void> {
 }
 
 export function rowByName(name: string): HTMLElement {
-  const el = screen.getAllByRole('option').find((o) => o.textContent?.includes(name));
+  const el = screen.getAllByRole('row').find((o) => o.textContent?.includes(name));
   if (!el) throw new Error(`no row named ${name}`);
   return el;
 }

@@ -3,7 +3,10 @@
   import Command from '@lucide/svelte/icons/command';
   import Gauge from '@lucide/svelte/icons/gauge';
   import Keyboard from '@lucide/svelte/icons/keyboard';
+  import Bell from '@lucide/svelte/icons/bell';
+  import Pause from '@lucide/svelte/icons/pause';
   import Pencil from '@lucide/svelte/icons/pencil';
+  import Play from '@lucide/svelte/icons/play';
   import Plus from '@lucide/svelte/icons/plus';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import type { Queue } from '@wirecatch/protocol';
@@ -55,7 +58,9 @@
       </svg>
       Wirecatch
     </p>
-    <p class="speed num" title="Total download speed">{speed || 'Idle'}</p>
+    <p class="speed num" title="Total download speed">
+      {speed || (active > 0 ? 'Starting' : 'Idle')}
+    </p>
     <p class="sub num">
       {#if active + waiting === 0}
         Nothing running
@@ -64,6 +69,17 @@
       {/if}
     </p>
   </header>
+
+  {#if app.pending.length > 0 && app.pendingHidden}
+    <button class="pending" onclick={() => app.showPending()}>
+      <Bell size={14} aria-hidden="true" />
+      <span>
+        {app.pending.length === 1
+          ? '1 browser download waits for your answer'
+          : `${app.pending.length} browser downloads wait for your answer`}
+      </span>
+    </button>
+  {/if}
 
   <button class="palette" onclick={() => (app.paletteOpen = true)}>
     <Command size={14} aria-hidden="true" />
@@ -119,6 +135,7 @@
           {@const status = app.queueStatus(q)}
           <li
             class="queue"
+            class:paused={q.paused}
             class:drop={dropTarget === q.id}
             ondragover={(e) => ondragover(e, q)}
             ondragleave={() => (dropTarget = null)}
@@ -137,9 +154,10 @@
                   <span class="count num">{c.total}</span>
                 {/if}
               </span>
-              <span class="qstate num"
-                >{status}{status === 'Idle' ? `, up to ${q.max_concurrent} at once` : ''}</span
-              >
+              <span class="qstate num">
+                {#if q.paused}<Pause size={11} aria-hidden="true" />{/if}
+                {status}{status === 'Idle' ? `, up to ${q.max_concurrent} at once` : ''}
+              </span>
               <span class="qmeta">
                 <span
                   ><Clock size={12} aria-hidden="true" />
@@ -159,6 +177,22 @@
             >
               <Pencil size={14} aria-hidden="true" />
             </button>
+            <button
+              class="icon-btn toggle"
+              aria-label={q.paused ? `Resume the ${q.name} queue` : `Pause the ${q.name} queue`}
+              title={q.paused ? 'Resume this queue' : 'Pause this queue'}
+              onclick={() => app.setQueuePaused(q.id, !q.paused)}
+            >
+              {#if q.paused}<Play size={14} aria-hidden="true" />{:else}<Pause
+                  size={14}
+                  aria-hidden="true"
+                />{/if}
+            </button>
+            {#if app.isOutsideSchedule(q) && !q.paused}
+              <button class="btn small start-now" onclick={() => app.startQueueNow(q.id)}>
+                <Play size={12} aria-hidden="true" /> Start now
+              </button>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -201,7 +235,7 @@
       <span class="label">Keyboard shortcuts</span>
       <kbd>F1</kbd>
     </button>
-    {#if app.backend.kind === 'mock'}
+    {#if app.sampleData}
       <p class="sample">Sample data. Nothing is really downloading.</p>
     {/if}
   </footer>
@@ -457,11 +491,53 @@
     gap: 4px;
   }
 
-  .edit {
+  .edit,
+  .toggle {
     position: absolute;
-    top: 5px;
     right: 4px;
-    color: var(--ink-3);
+    color: var(--ink-2);
+  }
+
+  .edit {
+    top: 5px;
+  }
+
+  .toggle {
+    top: 33px;
+  }
+
+  .queue.paused .qstate {
+    color: var(--warn);
+    font-weight: 600;
+  }
+
+  .qstate :global(svg) {
+    vertical-align: -1px;
+  }
+
+  .start-now {
+    margin: 0 0 6px 10px;
+  }
+
+  .pending {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-m);
+    background: var(--accent-soft);
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .pending :global(svg) {
+    flex: none;
+    color: var(--accent-text);
   }
 
   .foot {

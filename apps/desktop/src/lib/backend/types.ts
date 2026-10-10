@@ -15,9 +15,18 @@ import type {
 
 export type Unsubscribe = () => void;
 
+/** Only the mock backend has this: palette actions that pretend the browser sent a download. */
+export interface SampleData {
+  commands: ReadonlyArray<{ id: string; title: string; keywords: string; run: () => void }>;
+  /** The sample clock, so schedule labels agree with the simulation. */
+  now: () => number;
+}
+
 export interface Backend {
   /** Which implementation this is, so the interface can label sample data. */
   readonly kind: 'tauri' | 'mock';
+  /** Present only on the mock backend. */
+  readonly sampleData?: SampleData;
 
   listDownloads(): Promise<DownloadSummary[]>;
   addDownload(request: AddRequest): Promise<DownloadId>;
@@ -38,6 +47,10 @@ export interface Backend {
   createQueue(name: string): Promise<Queue>;
   updateQueue(queue: Queue): Promise<void>;
   deleteQueue(id: QueueId): Promise<void>;
+  /** A paused queue starts nothing new and pauses what it was running. */
+  setQueuePaused(id: QueueId, paused: boolean): Promise<void>;
+  /** Runs a scheduled queue now, outside its hours, until it is empty or paused. */
+  startQueueNow(id: QueueId): Promise<void>;
 
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<void>;
@@ -50,10 +63,7 @@ export interface Backend {
 
   openFile(id: DownloadId): Promise<void>;
   openFolder(id: DownloadId): Promise<void>;
-  /**
-   * Proposed, not yet in the fixed command list: moves a download (running or not) to another
-   * folder. Needed by the capture toast's Change button and the Choose folder fix.
-   */
+  /** Moves a download, running or not, to another folder. */
   setDownloadFolder(id: DownloadId, folder: string): Promise<void>;
 
   /** Every change the core pushes, in order. */
@@ -86,6 +96,8 @@ export const COMMANDS = {
   createQueue: 'create_queue',
   updateQueue: 'update_queue',
   deleteQueue: 'delete_queue',
+  setQueuePaused: 'set_queue_paused',
+  startQueueNow: 'start_queue_now',
   getSettings: 'get_settings',
   updateSettings: 'update_settings',
   exportSettings: 'export_settings',

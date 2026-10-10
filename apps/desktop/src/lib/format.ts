@@ -1,6 +1,14 @@
 // Turning raw numbers from the backend into short, readable text.
 
-import type { Category, DownloadStatus, Schedule, TimeOfDay, Weekday } from '@wirecatch/protocol';
+import type {
+  Category,
+  DownloadStatus,
+  FixAction,
+  Schedule,
+  TimeOfDay,
+  WaitReason,
+  Weekday,
+} from '@wirecatch/protocol';
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
@@ -234,4 +242,62 @@ export function folderOf(path: string): string {
 /** Shows a portable path like `{Downloads}/Video` as `Downloads/Video`. */
 export function displayPath(path: string): string {
   return path.replace(/^\{(\w+)\}/, '$1');
+}
+
+/** The button text for each fix an error can offer. */
+export const FIX_LABEL: Record<FixAction, string> = {
+  retry: 'Try again',
+  refresh_link: 'Get a fresh link',
+  choose_folder: 'Choose another folder',
+  free_disk_space: 'Open the folder to free space',
+};
+
+/** Shorter button text for the fix inside a list row, where room is tight. */
+export const FIX_SHORT: Record<FixAction, string> = {
+  retry: 'Try again',
+  refresh_link: 'New link',
+  choose_folder: 'Change folder',
+  free_disk_space: 'Open folder',
+};
+
+/** 1st, 2nd, 3rd, 4th, 11th, 21st. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  const suffix = ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+  return `${n}${n % 10 > 3 ? 'th' : suffix}`;
+}
+
+/** Why a download waits, in a couple of words for its row. */
+export function waitShort(w: WaitReason): string {
+  switch (w.type) {
+    case 'queue_paused':
+      return 'Queue paused';
+    case 'queue_schedule':
+      return w.data.starts_at ? `Starts ${formatTime(w.data.starts_at)}` : 'Outside its hours';
+    case 'queue_full':
+      return 'Queue full';
+    case 'global_limit':
+      return 'Overall limit';
+    case 'in_line':
+      return `${ordinal(w.data.position)} in line`;
+  }
+}
+
+/** Why a download waits, in a full sentence for the detail panel. */
+export function waitLong(w: WaitReason, queueName: string): string {
+  switch (w.type) {
+    case 'queue_paused':
+      return `${queueName} is paused. Resume the queue to start it.`;
+    case 'queue_schedule':
+      return w.data.starts_at
+        ? `Waiting for ${queueName}, which starts at ${formatTime(w.data.starts_at)}.`
+        : `${queueName} is outside its hours.`;
+    case 'queue_full':
+      return `${queueName} is running ${w.data.running} of ${w.data.limit}. This starts when one of them finishes.`;
+    case 'global_limit':
+      return `Overall limit: ${w.data.running} of ${w.data.limit} downloads are running. This starts when one of them finishes.`;
+    case 'in_line':
+      return `${ordinal(w.data.position)} in line in ${queueName}.`;
+  }
 }

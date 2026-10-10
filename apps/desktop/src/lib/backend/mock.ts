@@ -13,6 +13,7 @@ import type {
   QueueId,
   SettingsProfile,
   UiEvent,
+  WaitReason,
 } from '@wirecatch/protocol';
 import { fileNameFromUrl, folderOf, scheduleAllows } from '../format';
 import {
@@ -25,7 +26,7 @@ import {
   HOME,
   SEEDS,
 } from './mock-data';
-import { BackendError, type Backend, type Unsubscribe } from './types';
+import { BackendError, type Backend, type SampleData, type Unsubscribe } from './types';
 
 export interface MockOptions {
   /** Total downloads. Beyond the hand-written samples, generated ones fill the list. */
@@ -63,8 +64,29 @@ function rng(seed: number): () => number {
 
 const RUNNING = new Set(['connecting', 'downloading']);
 
+function sameWait(a: WaitReason | null, b: WaitReason | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export class MockBackend implements Backend {
   readonly kind = 'mock';
+  readonly sampleData: SampleData = {
+    commands: [
+      {
+        id: 'mock.capture',
+        title: 'Pretend the browser sent a download',
+        keywords: 'simulate capture toast',
+        run: () => this.simulateCapture(),
+      },
+      {
+        id: 'mock.confirm',
+        title: 'Pretend the browser sent a download that asks first',
+        keywords: 'simulate confirmation',
+        run: () => this.simulateConfirmation(),
+      },
+    ],
+    now: () => this.#now(),
+  };
 
   readonly #rows = new Map<DownloadId, DownloadSummary>();
   readonly #sim = new Map<DownloadId, Sim>();
@@ -91,6 +113,8 @@ export class MockBackend implements Backend {
     this.#tickMs = options.tickMs ?? 250;
     this.#lastTick = this.#now();
     if (!options.empty) this.#seed(options.count ?? SEEDS.length, options.active ?? 0);
+    // Work out what runs and why the rest waits before anyone asks.
+    this.tick(0);
     if (options.autoTick ?? true) {
       this.#timer = setInterval(() => this.tick(), this.#tickMs);
     }
@@ -125,6 +149,7 @@ export class MockBackend implements Backend {
           connections: 0,
           eta_secs: null,
           error: s.error ?? null,
+          waiting: null,
           added_at: Math.round(now - s.age * 3_600_000),
           completed_at:
             s.status === 'completed' ? Math.round(now - (s.age - 0.2) * 3_600_000) : null,
@@ -154,6 +179,7 @@ export class MockBackend implements Backend {
           connections: 0,
           eta_secs: null,
           error: null,
+          waiting: null,
           added_at: now - i * 60_000,
           completed_at: status === 'completed' ? now - i * 60_000 + 30_000 : null,
         },
@@ -209,34 +235,72 @@ export class MockBackend implements Backend {
     const changed = new Map<DownloadId, DownloadSummary>();
     const date = new Date(now);
 
-    // Decide what runs: each queue in order, up to its own limit and the global limit.
-    let globalRoom = this.#settings.max_concurrent_downloads;
+    // Decide what runs: each queue in order, up to its own limit and the global limit, and say
+    // why everything else waits.
+    const globalMax = this.#settings.max_concurrent_downloads;
+    let globalRoom = globalMax;
     const runningByQueue = new Map<QueueId, DownloadSummary[]>();
+    let queuesChanged = false;
+    const setWait = (row: DownloadSummary, waiting: WaitReason | null) => {
+      if (!sameWait(row.waiting, waiting)) {
+        row.waiting = waiting;
+        changed.set(row.id, row);
+      }
+    };
     for (const q of this.#queues) {
-      let room = scheduleAllows(q.schedule, date) ? q.max_concurrent : 0;
+      const inWindow = q.running_outside_schedule || scheduleAllows(q.schedule, date);
+      let room = !q.paused && inWindow ? q.max_concurrent : 0;
       const list: DownloadSummary[] = [];
+      let waitingCount = 0;
+      let active = 0;
       for (const id of this.#order) {
         const row = this.#rows.get(id);
         if (!row || row.queue !== q.id) continue;
-        if (row.status !== 'queued' && !RUNNING.has(row.status)) continue;
+        if (row.status !== 'queued' && !RUNNING.has(row.status)) {
+          if (row.waiting !== null) setWait(row, null);
+          continue;
+        }
+        active += 1;
         if (room > 0 && globalRoom > 0) {
           room -= 1;
           globalRoom -= 1;
           list.push(row);
+          setWait(row, null);
           if (row.status === 'queued') {
             row.status = 'connecting';
             const sim = this.#sim.get(row.id);
             if (sim) sim.connectingMs = 0;
             changed.set(row.id, row);
           }
-        } else if (row.status !== 'queued') {
+          continue;
+        }
+        if (row.status !== 'queued') {
           row.status = 'queued';
           this.#stop(row);
           changed.set(row.id, row);
         }
+        waitingCount += 1;
+        let why: WaitReason;
+        if (q.paused) why = { type: 'queue_paused' };
+        else if (!inWindow)
+          why = { type: 'queue_schedule', data: { starts_at: q.schedule?.start ?? null } };
+        else if (waitingCount > 1) why = { type: 'in_line', data: { position: waitingCount } };
+        else if (room <= 0)
+          why = {
+            type: 'queue_full',
+            data: { running: q.max_concurrent, limit: q.max_concurrent },
+          };
+        else why = { type: 'global_limit', data: { running: globalMax, limit: globalMax } };
+        setWait(row, why);
+      }
+      // "Start now" lasts until the queue runs out of work.
+      if (q.running_outside_schedule && active === 0) {
+        q.running_outside_schedule = false;
+        queuesChanged = true;
       }
       runningByQueue.set(q.id, list);
     }
+    if (queuesChanged) this.#queuesChanged();
 
     // Move bytes, honoring queue limits and then the global limit.
     const wanted = new Map<DownloadId, number>();
@@ -330,6 +394,7 @@ export class MockBackend implements Backend {
       connections: 0,
       eta_secs: null,
       error: null,
+      waiting: null,
       added_at: this.#now(),
       completed_at: null,
     };
@@ -359,6 +424,7 @@ export class MockBackend implements Backend {
     const row = this.#row(id);
     if (row.status === 'completed' || row.status === 'paused') return;
     row.status = 'paused';
+    row.waiting = null;
     this.#stop(row);
     this.#changed([row]);
   }
@@ -480,6 +546,8 @@ export class MockBackend implements Backend {
       speed_limit: null,
       schedule: null,
       is_default: false,
+      paused: false,
+      running_outside_schedule: false,
     };
     this.#queues.push(q);
     this.#queuesChanged();
@@ -491,8 +559,30 @@ export class MockBackend implements Backend {
     if (i < 0) throw new BackendError('That queue no longer exists.');
     if (!queue.name.trim()) throw new BackendError('Give the queue a name.');
     const old = this.#queues[i];
-    this.#queues[i] = { ...structuredClone(queue), is_default: old?.is_default ?? false };
+    // Pausing and "start now" have their own commands; an edit keeps the queue's current state.
+    this.#queues[i] = {
+      ...structuredClone(queue),
+      is_default: old?.is_default ?? false,
+      paused: old?.paused ?? false,
+      running_outside_schedule: old?.running_outside_schedule ?? false,
+    };
     this.#queuesChanged();
+  }
+
+  async setQueuePaused(id: QueueId, paused: boolean) {
+    const q = this.#queue(id);
+    q.paused = paused;
+    if (paused) q.running_outside_schedule = false;
+    this.#queuesChanged();
+    this.tick(0);
+  }
+
+  async startQueueNow(id: QueueId) {
+    const q = this.#queue(id);
+    q.paused = false;
+    if (!scheduleAllows(q.schedule, new Date(this.#now()))) q.running_outside_schedule = true;
+    this.#queuesChanged();
+    this.tick(0);
   }
 
   async deleteQueue(id: QueueId) {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getApp } from '$lib/state/app.svelte';
   import AddDialog from './AddDialog.svelte';
+  import CancelDialog from './CancelDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
   import RemoveDialog from './RemoveDialog.svelte';
@@ -17,6 +18,8 @@
       <AddDialog urls={d.urls} queue={d.queue} />
     {:else if d.kind === 'remove'}
       <RemoveDialog ids={d.ids} />
+    {:else if d.kind === 'cancel'}
+      <CancelDialog ids={d.ids} />
     {:else if d.kind === 'queue'}
       <QueueDialog id={d.id} />
     {:else if d.kind === 'refresh'}

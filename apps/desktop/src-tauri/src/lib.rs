@@ -5,6 +5,49 @@
 //! [`EVENT_NAME`]. The command names and argument names here are the contract the interface
 //! uses (`apps/desktop/src/lib/backend/tauri.ts`); a test on the TypeScript side checks that
 //! both lists agree.
+//!
+//! # Command contract
+//!
+//! Wave 2 implements exactly these commands with these parameter names (the webview sends the
+//! camelCase form, for example `deleteFile` for `delete_file`; Tauri maps it). Every command
+//! fails with a plain-language `String`.
+//!
+//! | Command | Parameters | Returns |
+//! |---|---|---|
+//! | `list_downloads` | none | `Vec<DownloadSummary>`, in queue order |
+//! | `add_download` | `request: AddRequest` | `DownloadId` |
+//! | `pause` | `id: DownloadId` | nothing |
+//! | `resume` | `id: DownloadId` | nothing |
+//! | `cancel` | `id: DownloadId` | nothing |
+//! | `remove` | `ids: Vec<DownloadId>`, `delete_file: bool` | nothing |
+//! | `retry` | `id: DownloadId` | nothing |
+//! | `refresh_link` | `id: DownloadId`, `url: String` | nothing |
+//! | `move_to_queue` | `ids: Vec<DownloadId>`, `queue: QueueId` | nothing |
+//! | `reorder` | `queue: QueueId`, `ids_in_order: Vec<DownloadId>` | nothing |
+//! | `pause_all` | none | nothing |
+//! | `resume_all` | none | nothing |
+//! | `list_queues` | none | `Vec<Queue>` |
+//! | `create_queue` | `name: String` | `Queue` |
+//! | `update_queue` | `queue: Queue` | nothing |
+//! | `delete_queue` | `id: QueueId` | nothing |
+//! | `set_queue_paused` | `id: QueueId`, `paused: bool` | nothing |
+//! | `start_queue_now` | `id: QueueId` | nothing |
+//! | `get_settings` | none | `AppSettings` |
+//! | `update_settings` | `settings: AppSettings` | nothing |
+//! | `export_settings` | `path: String` | nothing |
+//! | `import_settings` | `path: String` | nothing |
+//! | `pending_confirmations` | none | `Vec<PendingCapture>` |
+//! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | nothing |
+//! | `reject_capture` | `id: u64` | nothing |
+//! | `open_file` | `id: DownloadId` | nothing |
+//! | `open_folder` | `id: DownloadId` | nothing |
+//! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
+//!
+//! # Starting in the background
+//!
+//! `--background` (passed by the bridge) only skips creating the window for now. There is no
+//! tray icon and no single-instance guard yet, so a second launch starts a second process; Wave 2
+//! adds both, together with hosting `wirecatch-core`.
 
 use wirecatch_protocol::app::{
     AddRequest, AppSettings, CaptureConfirmation, DownloadSummary, PendingCapture, Queue,
@@ -168,8 +211,18 @@ fn open_folder(id: DownloadId) -> CommandResult<()> {
     not_connected()
 }
 
-/// Proposed addition to the command list: move a download to another folder. The capture
-/// toast's Change button and the Choose folder fix need it.
+#[tauri::command]
+fn set_queue_paused(id: QueueId, paused: bool) -> CommandResult<()> {
+    let _ = (id, paused);
+    not_connected()
+}
+
+#[tauri::command]
+fn start_queue_now(id: QueueId) -> CommandResult<()> {
+    let _ = id;
+    not_connected()
+}
+
 #[tauri::command]
 fn set_download_folder(id: DownloadId, folder: String) -> CommandResult<()> {
     let _ = (id, folder);
@@ -190,8 +243,8 @@ where
         .any(|a| a.as_ref() == BACKGROUND_FLAG)
 }
 
-/// Starts the desktop app. With `--background` no window opens; Wave 2 adds the tray icon and
-/// keeps the core running there.
+/// Starts the desktop app. With `--background` no window opens. There is no tray icon or
+/// single-instance guard yet (Wave 2 adds them), so the process simply runs without a window.
 pub fn run() {
     let background = wants_background(std::env::args());
     let result = tauri::Builder::default()
@@ -223,6 +276,8 @@ pub fn run() {
             create_queue,
             update_queue,
             delete_queue,
+            set_queue_paused,
+            start_queue_now,
             get_settings,
             update_settings,
             export_settings,

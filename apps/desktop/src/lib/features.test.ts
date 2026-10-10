@@ -64,28 +64,36 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(palette('sel.resume')).toBe(true);
   });
 
-  it('error fixes: row, then the fix button, 2 clicks', async () => {
+  it('error fixes: the fix button in the row, 1 click (also in the detail panel)', async () => {
     const { app, click, palette } = await setup();
-    await click(rowByName('Conference keynote'));
-    expect(screen.getByRole('alert')).toHaveTextContent('The download link expired');
-    await click(button('Get a fresh link'));
+    const inRow = (name: string, fix: string) =>
+      within(rowByName(name)).getByRole('button', { name: fix });
+
+    await click(inRow('Conference keynote', 'New link'));
     expect(within(dialog()).getByText('Give it a fresh link')).toBeInTheDocument();
     expect(palette('sel.refresh')).toBe(true);
     app.closeDialog();
     await settle();
 
-    await click(rowByName('nightly-build'));
-    await click(button('Try again'));
-    expect(app.selectedRows[0]?.status).toBe('queued');
-    expect(palette('sel.retry')).toBe(true);
+    const nightly = rowByName('nightly-build');
+    await click(within(nightly).getByRole('button', { name: 'Try again' }));
+    expect(app.downloads.get(Number(nightly.dataset.id))?.status).toBe('queued');
 
-    await click(rowByName('climate-dataset'));
-    await click(button('Choose another folder'));
-    expect(app.selectedRows[0]?.path).not.toContain('E:\\Backups');
+    const climate = rowByName('climate-dataset');
+    await click(within(climate).getByRole('button', { name: 'Change folder' }));
+    const climateRow = app.downloads.get(Number(climate.dataset.id));
+    expect(climateRow?.path.startsWith('E:')).toBe(false);
+    expect(climateRow?.status).toBe('queued');
     expect(palette('sel.choosefolder')).toBe(true);
 
+    // The detail panel shows the same message and fix.
     await click(rowByName('win11-dev'));
-    expect(button('Open the folder to free space')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Drive C: is full');
+    expect(
+      within(alert).getByRole('button', { name: 'Open the folder to free space' }),
+    ).toBeInTheDocument();
+    expect(palette('sel.retry')).toBe(true);
   });
 
   it('remove, cancel, show in folder, copy link: row, then the button, 2 clicks', async () => {
@@ -137,7 +145,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
       'queue.edit.1',
       'queue.show.3',
       'queue.delete.3',
-      'queue.stop.1',
+      'queue.pause.1',
     ]) {
       expect(palette(id)).toBe(true);
     }
@@ -191,10 +199,11 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     await settle();
     const toasts = screen.getByRole('region', { name: 'Notifications' });
     expect(within(toasts).getByText(/^Downloading/)).toBeInTheDocument();
-    expect(button('Open folder')).toBeInTheDocument();
-    await click(button('Change'));
+    const inToast = (name: string) => within(toasts).getByRole('button', { name });
+    expect(inToast('Open folder')).toBeInTheDocument();
+    expect(inToast('Ask me first next time')).toBeInTheDocument();
+    await click(inToast('Change'));
     expect(screen.getByText(/Saving to/)).toBeInTheDocument();
-    expect(button('Ask me first next time')).toBeInTheDocument();
   });
 
   it('ask before downloading: the confirmation dialog appears on its own', async () => {

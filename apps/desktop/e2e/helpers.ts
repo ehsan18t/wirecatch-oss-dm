@@ -17,7 +17,9 @@ export async function open(
       localStorage.removeItem('wirecatch.hints.dismissed');
     }
   }, hints);
-  await page.goto(`/?${query}`);
+  // A fixed sample clock (noon) keeps schedules, and so the screenshots, the same on every run.
+  const at = query.includes('at=') ? '' : '&at=12:00';
+  await page.goto(`/?${query}${at}`);
   await page.getByRole('navigation', { name: 'Views and queues' }).waitFor();
   await page.evaluate(() => document.fonts.ready);
 }
@@ -27,5 +29,5 @@ export function row(page: Page, name: string) {
 }
 
 export function rows(page: Page) {
-  return page.getByRole('listbox', { name: 'Downloads' }).getByRole('option');
+  return page.getByRole('grid', { name: 'Downloads' }).getByRole('row');
 }

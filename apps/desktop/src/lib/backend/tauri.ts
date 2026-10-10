@@ -96,6 +96,12 @@ export class TauriBackend implements Backend {
   updateQueue(queue: Queue) {
     return this.#exec(COMMANDS.updateQueue, { queue });
   }
+  setQueuePaused(id: QueueId, paused: boolean) {
+    return this.#exec(COMMANDS.setQueuePaused, { id, paused });
+  }
+  startQueueNow(id: QueueId) {
+    return this.#exec(COMMANDS.startQueueNow, { id });
+  }
   deleteQueue(id: QueueId) {
     return this.#exec(COMMANDS.deleteQueue, { id });
   }

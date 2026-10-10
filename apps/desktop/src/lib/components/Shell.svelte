@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { focusSearch } from '$lib/commands';
+  import { isDownloadDrag } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import ConfirmCapture from './ConfirmCapture.svelte';
@@ -13,12 +15,29 @@
 
   const app = getApp();
 
+  /** Below this width the detail panel floats over the list instead of taking a column. */
+  const DOCK_WIDTH = 1360;
+
+  onMount(() => {
+    const query = window.matchMedia(`(min-width: ${DOCK_WIDTH}px)`);
+    const update = () => (app.wide = query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  });
+
   // Apply the theme setting. "System" leaves it to the operating system's preference.
   $effect(() => {
     const theme = app.settings?.theme ?? 'system';
     const root = document.documentElement;
     if (theme === 'system') delete root.dataset.theme;
     else root.dataset.theme = theme;
+  });
+
+  const detail = $derived.by((): 'docked' | 'overlay' | null => {
+    if (app.screen !== 'downloads') return null;
+    if (app.wide) return app.detailsOpen ? 'docked' : null;
+    return app.selection.size > 0 ? 'overlay' : null;
   });
 
   function isEditable(el: EventTarget | null): boolean {
@@ -31,7 +50,8 @@
     return el instanceof HTMLSelectElement;
   }
 
-  const blocked = $derived(app.dialog !== null || app.pending.length > 0);
+  // A visible question (a dialog, or the ask-first dialog) takes the keyboard.
+  const blocked = $derived(app.dialog !== null || (app.pending.length > 0 && !app.pendingHidden));
 
   function onkeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -67,12 +87,32 @@
     e.preventDefault();
     app.pasteText(text);
   }
+
+  /** A link dragged in from a browser or another app, not one of our own rows. */
+  function isLinkDrag(e: DragEvent): boolean {
+    const types = e.dataTransfer?.types ?? [];
+    return !isDownloadDrag(e) && (types.includes('text/uri-list') || types.includes('text/plain'));
+  }
+
+  function ondragover(e: DragEvent) {
+    if (blocked || !isLinkDrag(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  }
+
+  function ondrop(e: DragEvent) {
+    if (blocked || !isLinkDrag(e)) return;
+    e.preventDefault();
+    const text =
+      e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
+    if (text) app.pasteText(text);
+  }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {ondragover} {ondrop} />
 <svelte:document {onpaste} />
 
-<div class="app">
+<div class="app" class:docked={detail === 'docked'}>
   <Sidebar />
   <main class="main" aria-label={app.screen === 'settings' ? 'Settings' : 'Downloads'}>
     {#if app.screen === 'settings'}
@@ -86,12 +126,17 @@
           <button class="btn primary" onclick={() => app.init()}>Try again</button>
         </div>
       {:else}
-        <DownloadList />
+        <div class="body">
+          <DownloadList />
+          {#if detail === 'overlay'}
+            <DetailPanel mode="overlay" />
+          {/if}
+        </div>
       {/if}
     {/if}
   </main>
-  {#if app.screen === 'downloads'}
-    <DetailPanel />
+  {#if detail === 'docked'}
+    <DetailPanel mode="docked" />
   {/if}
 </div>
 
@@ -102,9 +147,14 @@
 
 <style>
   .app {
+    position: relative;
     display: grid;
-    grid-template-columns: 236px minmax(0, 1fr) auto;
+    grid-template-columns: 236px minmax(0, 1fr);
     height: 100vh;
+  }
+
+  .app.docked {
+    grid-template-columns: 236px minmax(0, 1fr) auto;
   }
 
   .main {
@@ -114,6 +164,16 @@
     min-height: 0;
     background: var(--surface);
     border-left: 1px solid var(--line);
+    /* The toolbar and the list adapt to the room they get, not to the window. */
+    container: main / inline-size;
+  }
+
+  .body {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .load-error {

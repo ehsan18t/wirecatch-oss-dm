@@ -27,6 +27,13 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'error selected');
     await row(page, 'android-studio').click();
     await audit(page, 'paused selected');
+    await row(page, 'LibreOffice').click({ button: 'right' });
+    await audit(page, 'context menu');
+    await page.keyboard.press('Escape');
+    await row(page, 'LibreOffice').click();
+    await page.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+    await audit(page, 'cancel confirmation');
+    await page.keyboard.press('Escape');
     await page.keyboard.press('Control+K');
     await audit(page, 'palette');
     await page.keyboard.press('Escape');

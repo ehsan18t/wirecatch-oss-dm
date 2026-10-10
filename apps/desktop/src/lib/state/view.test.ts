@@ -21,6 +21,7 @@ const rows: DownloadSummary[] = [
   connections: 0,
   eta_secs: null,
   error: null,
+  waiting: null,
   added_at: added_at as number,
   completed_at: null,
 }));

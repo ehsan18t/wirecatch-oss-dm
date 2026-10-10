@@ -27,7 +27,7 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
   const firstRowsMs = Date.now() - navStart;
 
   const domRows = await rows(page).count();
-  const total = await rows(page).first().getAttribute('aria-setsize');
+  const total = await page.getByRole('grid', { name: 'Downloads' }).getAttribute('aria-rowcount');
 
   const measure = (scroll: boolean) =>
     page.evaluate(async (doScroll): Promise<FrameStats> => {

@@ -5,6 +5,7 @@
   import Play from '@lucide/svelte/icons/play';
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import Trash from '@lucide/svelte/icons/trash-2';
+  import X from '@lucide/svelte/icons/x';
   import type { DownloadSummary, QueueId } from '@wirecatch/protocol';
   import {
     formatBytes,
@@ -16,10 +17,14 @@
     folderOf,
     progressFraction,
     STATUS_LABEL,
+    waitLong,
   } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
   import ErrorFix from './ErrorFix.svelte';
+
+  /** `docked` takes a column; `overlay` floats over the list in narrower windows. */
+  let { mode = 'docked' }: { mode?: 'docked' | 'overlay' } = $props();
 
   const app = getApp();
 
@@ -54,7 +59,17 @@
   );
 </script>
 
-<aside class="detail" aria-label="Selected download">
+<aside class="detail {mode}" aria-label="Selected download">
+  {#if mode === 'overlay'}
+    <button
+      class="icon-btn close"
+      aria-label="Close details and clear the selection"
+      title="Close"
+      onclick={() => app.clearSelection()}
+    >
+      <X size={16} aria-hidden="true" />
+    </button>
+  {/if}
   {#if one}
     {@const fraction = progressFraction(one.done, one.total)}
     <header>
@@ -62,6 +77,10 @@
       <h2>{one.file_name}</h2>
       <p class="status {one.status}">{STATUS_LABEL[one.status]}</p>
     </header>
+
+    {#if one.status === 'queued' && one.waiting}
+      <p class="waiting">{waitLong(one.waiting, app.queueById(one.queue)?.name ?? 'Its queue')}</p>
+    {/if}
 
     {#if one.status === 'failed' && one.error}
       <ErrorFix row={one} />
@@ -192,7 +211,10 @@
       {/if}
     </dl>
     {#if one.status !== 'completed' && one.status !== 'cancelled'}
-      <button class="btn ghost small cancel" onclick={() => app.cancel([one.id])}>
+      <button
+        class="btn ghost small cancel"
+        onclick={() => app.openDialog({ kind: 'cancel', ids: [one.id] })}
+      >
         Cancel and discard the partial file
       </button>
     {/if}
@@ -246,7 +268,38 @@
 </aside>
 
 <style>
+  .detail.overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    box-shadow: var(--shadow);
+  }
+
+  .close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+  }
+
+  .overlay header {
+    padding-right: 28px;
+  }
+
+  .waiting {
+    margin: -6px 0 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--wire-done);
+    border-radius: var(--radius-s);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+  }
+
   .detail {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;

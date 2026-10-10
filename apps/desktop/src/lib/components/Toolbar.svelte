@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PanelRight from '@lucide/svelte/icons/panel-right';
   import Pause from '@lucide/svelte/icons/pause';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Play from '@lucide/svelte/icons/play';
@@ -28,6 +29,9 @@
 
   const sorts = Object.keys(SORT_LABEL) as SortKey[];
   const count = $derived(app.visible.length);
+  // Nothing to pause or resume means the button would do nothing; say so by disabling it.
+  const canPauseAll = $derived(app.counts.status.active + app.counts.status.waiting > 0);
+  const canResumeAll = $derived(app.counts.status.paused > 0);
 </script>
 
 <header class="toolbar">
@@ -47,12 +51,20 @@
         >
           <Pencil size={13} aria-hidden="true" /> Edit queue
         </button>
-        <button class="btn ghost small" onclick={() => app.setQueueRunning(queue.id, false)}>
-          <Pause size={13} aria-hidden="true" /> Pause queue
-        </button>
-        <button class="btn ghost small" onclick={() => app.setQueueRunning(queue.id, true)}>
-          <Play size={13} aria-hidden="true" /> Resume queue
-        </button>
+        {#if queue.paused}
+          <button class="btn ghost small" onclick={() => app.setQueuePaused(queue.id, false)}>
+            <Play size={13} aria-hidden="true" /> Resume queue
+          </button>
+        {:else}
+          <button class="btn ghost small" onclick={() => app.setQueuePaused(queue.id, true)}>
+            <Pause size={13} aria-hidden="true" /> Pause queue
+          </button>
+        {/if}
+        {#if app.isOutsideSchedule(queue)}
+          <button class="btn ghost small" onclick={() => app.startQueueNow(queue.id)}>
+            <Play size={13} aria-hidden="true" /> Start now
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -80,21 +92,39 @@
       />
     </div>
     <label class="sort">
-      <span>Sort</span>
-      <select class="field" bind:value={app.sort}>
+      <span class="sort-label">Sort</span>
+      <select class="field" aria-label="Sort" bind:value={app.sort}>
         {#each sorts as key (key)}
           <option value={key}>{SORT_LABEL[key]}</option>
         {/each}
       </select>
     </label>
-    <div class="group" role="group" aria-label="Everything">
-      <button class="btn" onclick={() => app.pauseAll()} title="Pause every download">
-        <Pause size={14} aria-hidden="true" /> Pause all
+    <button
+      class="btn"
+      onclick={() => app.pauseAll()}
+      disabled={!canPauseAll}
+      title={canPauseAll ? 'Pause every download' : 'Nothing is running or waiting'}
+    >
+      <Pause size={14} aria-hidden="true" /><span class="label">Pause all</span>
+    </button>
+    <button
+      class="btn"
+      onclick={() => app.resumeAll()}
+      disabled={!canResumeAll}
+      title={canResumeAll ? 'Resume every paused download' : 'Nothing is paused'}
+    >
+      <Play size={14} aria-hidden="true" /><span class="label">Resume all</span>
+    </button>
+    {#if app.wide}
+      <button
+        class="btn"
+        aria-pressed={app.detailsOpen}
+        title={app.detailsOpen ? 'Hide the details panel' : 'Show the details panel'}
+        onclick={() => (app.detailsOpen = !app.detailsOpen)}
+      >
+        <PanelRight size={14} aria-hidden="true" /><span class="label">Details</span>
       </button>
-      <button class="btn" onclick={() => app.resumeAll()} title="Resume every paused download">
-        <Play size={14} aria-hidden="true" /> Resume all
-      </button>
-    </div>
+    {/if}
     <button
       class="btn primary"
       aria-keyshortcuts="Control+N"
@@ -108,43 +138,51 @@
 <style>
   .toolbar {
     display: flex;
-    flex-wrap: wrap;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 12px 20px;
+    gap: 16px;
     padding: 18px 20px 12px;
     border-bottom: 1px solid var(--line);
   }
 
   .title {
+    flex: 1;
     min-width: 0;
   }
 
   h1 {
     margin: 0;
+    overflow: hidden;
     font-size: var(--text-xl);
     font-weight: 620;
     letter-spacing: -0.01em;
     line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .meta {
     margin: 2px 0 0;
+    overflow: hidden;
     color: var(--ink-2);
     font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .queue-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 2px;
     margin: 6px 0 0 -9px;
   }
 
+  /* One line, always: the tools keep their size and the title gives way. */
   .tools {
     display: flex;
-    flex-wrap: wrap;
+    flex: none;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .search {
@@ -161,7 +199,7 @@
   }
 
   .search input {
-    width: 220px;
+    width: 210px;
     padding-left: 29px;
   }
 
@@ -173,8 +211,24 @@
     font-size: var(--text-sm);
   }
 
-  .group {
-    display: flex;
-    gap: 4px;
+  /* With less room, labels give way to icons; the names stay for screen readers and tooltips. */
+  @container main (max-width: 999px) {
+    .search input {
+      width: 160px;
+    }
+
+    .sort-label,
+    .label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    .btn:has(.label) {
+      padding: 0 8px;
+    }
   }
 </style>

@@ -2,7 +2,6 @@
 // shortcuts call the same `AppState` methods, so there is one behavior per action.
 
 import type { AppState } from './state/app.svelte';
-import { MockBackend } from './backend/mock';
 import { CATEGORIES, CATEGORY_LABEL } from './format';
 import { SETTINGS, SECTIONS } from './settings-schema';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
@@ -72,7 +71,7 @@ export function buildCommands(app: AppState): Command[] {
         group: g,
         title: `Cancel ${n} and discard the partial file`,
         keywords: 'stop abort',
-        run: () => app.cancel(ids),
+        run: () => app.openDialog({ kind: 'cancel', ids }),
       },
       {
         id: 'sel.remove',
@@ -179,6 +178,13 @@ export function buildCommands(app: AppState): Command[] {
       run: () => app.resumeAll(),
     },
     {
+      id: 'dl.retryfailed',
+      group: 'Downloads',
+      title: 'Retry all failed downloads',
+      keywords: 'try again errors needs attention',
+      run: () => app.retryAllFailed(),
+    },
+    {
       id: 'dl.selectall',
       group: 'Downloads',
       title: 'Select every download in the list',
@@ -243,21 +249,31 @@ export function buildCommands(app: AppState): Command[] {
         keywords: 'rename schedule speed limit concurrent settings',
         run: () => app.openDialog({ kind: 'queue', id: q.id }),
       },
-      {
-        id: `queue.start.${q.id}`,
-        group: 'Queues',
-        title: `Resume everything in ${q.name}`,
-        keywords: 'start run',
-        run: () => app.setQueueRunning(q.id, true),
-      },
-      {
-        id: `queue.stop.${q.id}`,
-        group: 'Queues',
-        title: `Pause everything in ${q.name}`,
-        keywords: 'stop hold',
-        run: () => app.setQueueRunning(q.id, false),
-      },
+      q.paused
+        ? {
+            id: `queue.resume.${q.id}`,
+            group: 'Queues',
+            title: `Resume the ${q.name} queue`,
+            keywords: 'start run continue unpause',
+            run: () => app.setQueuePaused(q.id, false),
+          }
+        : {
+            id: `queue.pause.${q.id}`,
+            group: 'Queues',
+            title: `Pause the ${q.name} queue`,
+            keywords: 'stop hold',
+            run: () => app.setQueuePaused(q.id, true),
+          },
     );
+    if (q.schedule && app.isOutsideSchedule(q)) {
+      out.push({
+        id: `queue.startnow.${q.id}`,
+        group: 'Queues',
+        title: `Start ${q.name} now, outside its hours`,
+        keywords: 'run schedule override immediately',
+        run: () => app.startQueueNow(q.id),
+      });
+    }
     if (!q.is_default) {
       out.push({
         id: `queue.delete.${q.id}`,
@@ -339,25 +355,23 @@ export function buildCommands(app: AppState): Command[] {
     run: () => app.openDialog({ kind: 'shortcuts' }),
   });
 
-  if (app.backend instanceof MockBackend) {
-    const mock = app.backend;
-    out.push(
-      {
-        id: 'mock.capture',
-        group: 'Sample data',
-        title: 'Pretend the browser sent a download',
-        keywords: 'simulate capture toast',
-        run: () => mock.simulateCapture(),
-      },
-      {
-        id: 'mock.confirm',
-        group: 'Sample data',
-        title: 'Pretend the browser sent a download that asks first',
-        keywords: 'simulate confirmation',
-        run: () => mock.simulateConfirmation(),
-      },
-    );
+  if (app.pending.length > 0) {
+    out.push({
+      id: 'pending.answer',
+      group: 'Downloads',
+      title:
+        app.pending.length === 1
+          ? 'Answer the browser download that is waiting'
+          : `Answer the ${app.pending.length} browser downloads that are waiting`,
+      keywords: 'ask confirm pending capture',
+      run: () => app.showPending(),
+    });
   }
+
+  // Only the mock backend has sample-data actions; they live in the mock module, so none of
+  // their text ships in a production build.
+  const sample = app.ready ? app.backend.sampleData : undefined;
+  for (const c of sample?.commands ?? []) out.push({ ...c, group: 'Sample data' });
   return out;
 }
 
@@ -369,27 +383,42 @@ export function focusSearch(): void {
   }
 }
 
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function isSubsequence(needle: string, hay: string): boolean {
+  let i = 0;
+  for (const ch of hay) if (ch === needle[i]) i += 1;
+  return i === needle.length;
+}
+
 /**
- * Scores how well `query` matches `text`: every typed character must appear in order. Matches
- * at the start of words and runs of consecutive letters score higher. `-1` means no match.
+ * Scores how well `query` matches `text`. Every typed word must match the start of a word in
+ * the text ("pau" finds "Pause"), or be a short form of one word that starts with the same
+ * letter ("pse" finds "Pause"). Letters scattered across words do not count, so "move" does
+ * not find "Resume". `-1` means no match.
  */
 export function fuzzyScore(query: string, text: string): number {
-  const q = query.toLowerCase().replace(/\s+/g, '');
-  if (!q) return 0;
-  const t = text.toLowerCase();
+  const typed = words(query);
+  if (typed.length === 0) return 0;
+  const available = words(text);
   let score = 0;
-  let ti = 0;
-  let run = 0;
-  for (const ch of q) {
-    const found = t.indexOf(ch, ti);
-    if (found < 0) return -1;
-    const atWordStart = found === 0 || /[\s:.,"'()-]/.test(t[found - 1] ?? ' ');
-    run = found === ti ? run + 1 : 0;
-    score += 1 + (atWordStart ? 4 : 0) + run * 2 - Math.min(3, (found - ti) * 0.1);
-    ti = found + 1;
+  for (const q of typed) {
+    let best = -1;
+    for (const w of available) {
+      if (w === q) best = Math.max(best, 12);
+      else if (w.startsWith(q)) best = Math.max(best, 8 + q.length / w.length);
+      else if (q.length >= 2 && w[0] === q[0] && isSubsequence(q, w)) best = Math.max(best, 3);
+    }
+    if (best < 0) return -1;
+    score += best;
   }
-  // A plain substring match beats a scattered one.
-  if (t.includes(query.toLowerCase().trim())) score += 10;
+  // The words typed together, in order, beat the same words spread out.
+  if (text.toLowerCase().includes(query.toLowerCase().trim())) score += 5;
   return score;
 }
 
@@ -398,10 +427,8 @@ export function searchCommands(commands: readonly Command[], query: string): Com
   const scored: Array<{ c: Command; s: number }> = [];
   for (const c of commands) {
     const titleScore = fuzzyScore(query, c.title);
-    // Keywords only match whole typed words, so long descriptions do not match everything.
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const hay = `${c.title} ${c.keywords ?? ''}`.toLowerCase();
-    const kwScore = words.every((w) => hay.includes(w)) ? 3 : -1;
+    // Keywords count for less than the title, but let "bandwidth" find the speed limit.
+    const kwScore = c.keywords ? fuzzyScore(query, `${c.title} ${c.keywords}`) * 0.5 : -1;
     const s = Math.max(titleScore, kwScore);
     if (s >= 0) scored.push({ c, s });
   }

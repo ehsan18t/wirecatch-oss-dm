@@ -22,6 +22,8 @@ const FIXED = [
   'create_queue',
   'update_queue',
   'delete_queue',
+  'set_queue_paused',
+  'start_queue_now',
   'get_settings',
   'update_settings',
   'export_settings',
@@ -31,12 +33,12 @@ const FIXED = [
   'reject_capture',
   'open_file',
   'open_folder',
+  'set_download_folder',
 ];
-const PROPOSED = ['set_download_folder'];
 
 describe('Tauri command names', () => {
-  it('match the fixed list exactly, plus the proposed additions', () => {
-    expect(Object.values(COMMANDS).sort()).toEqual([...FIXED, ...PROPOSED].sort());
+  it('match the agreed list exactly', () => {
+    expect(Object.values(COMMANDS).sort()).toEqual([...FIXED].sort());
   });
 
   it('are all registered on the Rust side', () => {
@@ -47,7 +49,7 @@ describe('Tauri command names', () => {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    expect(registered.sort()).toEqual([...FIXED, ...PROPOSED].sort());
+    expect(registered.sort()).toEqual([...FIXED].sort());
   });
 });
 

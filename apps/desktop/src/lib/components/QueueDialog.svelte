@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Queue, QueueId, Weekday } from '@wirecatch/protocol';
-  import { formatTime, parseTime, WEEKDAY_SHORT, WEEKDAYS } from '$lib/format';
+  import { formatDays, formatTime, parseTime, WEEKDAY_SHORT, WEEKDAYS } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import Dialog from './Dialog.svelte';
 
@@ -26,14 +26,19 @@
   let error = $state('');
   let confirmDelete = $state(false);
   let busy = $state(false);
+  /** A queue this dialog already created, so a retried save updates it instead of making another. */
+  let created = $state<Queue>();
 
-  // An empty list means every day, so the first click on a day turns just that day off.
+  // Picking days limits the queue to those days; picking none means every day.
   function toggleDay(d: Weekday) {
-    const current = days.length === 0 ? [...WEEKDAYS] : days;
-    const next = current.includes(d) ? current.filter((x) => x !== d) : [...current, d];
-    if (next.length === 0) return;
-    days = next.length === 7 ? [] : next;
+    days = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
   }
+
+  const daysHelp = $derived.by(() => {
+    if (days.length === 0 || days.length === 7) return 'No days picked, so it runs every day.';
+    const words = formatDays(days);
+    return `Runs only on ${words === 'Weekdays' || words === 'Weekends' ? words.toLowerCase() : words}.`;
+  });
 
   function build(base: Queue): Queue | string {
     if (!name.trim()) return 'Give the queue a name.';
@@ -66,10 +71,11 @@
   }
 
   async function save() {
+    if (busy) return;
     error = '';
     busy = true;
     try {
-      let base = original;
+      let base = original ?? created;
       if (!base) {
         const check = build({
           id: 0,
@@ -78,6 +84,8 @@
           speed_limit: null,
           schedule: null,
           is_default: false,
+          paused: false,
+          running_outside_schedule: false,
         });
         if (typeof check === 'string') {
           error = check;
@@ -85,6 +93,7 @@
         }
         base = await app.createQueue(name.trim());
         if (!base) return;
+        created = base;
       }
       const next = build(base);
       if (typeof next === 'string') {
@@ -94,6 +103,8 @@
       if (await app.updateQueue(next)) {
         app.closeDialog();
         if (!original) app.show({ kind: 'queue', id: next.id });
+      } else if (created) {
+        error = 'The queue was made, but its settings were not saved. Save again to retry.';
       }
     } finally {
       busy = false;
@@ -186,20 +197,26 @@
             <span class="help">the queue is empty</span>
           {/if}
         </div>
-        <div class="days" role="group" aria-label="Days">
-          {#each WEEKDAYS as d (d)}
-            <button
-              type="button"
-              class="day"
-              aria-pressed={days.length === 0 || days.includes(d)}
-              onclick={() => toggleDay(d)}
-            >
-              {WEEKDAY_SHORT[d]}
-            </button>
-          {/each}
-          <span class="help"
-            >{days.length === 0 ? 'Every day. Pick days to narrow it down.' : ''}</span
+        <div class="days-row">
+          <span class="label" id="queue-days-label">Only on these days</span>
+          <div
+            class="days"
+            role="group"
+            aria-labelledby="queue-days-label"
+            aria-describedby="queue-days-help"
           >
+            {#each WEEKDAYS as d (d)}
+              <button
+                type="button"
+                class="day"
+                aria-pressed={days.includes(d)}
+                onclick={() => toggleDay(d)}
+              >
+                {WEEKDAY_SHORT[d]}
+              </button>
+            {/each}
+          </div>
+          <span id="queue-days-help" class="help">{daysHelp}</span>
         </div>
       {/if}
     </fieldset>
@@ -217,7 +234,7 @@
     {/if}
     <button type="button" class="btn" onclick={() => app.closeDialog()}>Cancel</button>
     <button type="submit" form="queue-form" class="btn primary" disabled={busy}>
-      {original ? 'Save' : 'Create queue'}
+      {original || created ? 'Save' : 'Create queue'}
     </button>
   {/snippet}
 </Dialog>
@@ -273,6 +290,11 @@
     align-items: center;
     gap: 8px;
     font-size: var(--text-sm);
+  }
+
+  .days-row {
+    display: grid;
+    gap: 4px;
   }
 
   .days {

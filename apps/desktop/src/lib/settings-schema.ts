@@ -66,7 +66,7 @@ export const SETTINGS: readonly SettingDef[] = [
     section: 'general',
     label: 'Start Wirecatch when you sign in',
     help: 'Runs quietly in the tray so browser downloads are caught right away.',
-    keywords: 'startup boot login autostart launch',
+    keywords: 'windows startup boot login sign in autostart launch',
   },
   {
     id: 'close_to_tray',

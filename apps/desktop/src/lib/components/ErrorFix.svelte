@@ -1,17 +1,11 @@
 <script lang="ts">
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
-  import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
+  import type { DownloadSummary } from '@wirecatch/protocol';
+  import { FIX_LABEL } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
 
   let { row }: { row: DownloadSummary } = $props();
   const app = getApp();
-
-  const FIX_LABEL: Record<FixAction, string> = {
-    retry: 'Try again',
-    refresh_link: 'Get a fresh link',
-    choose_folder: 'Choose another folder',
-    free_disk_space: 'Open the folder to free space',
-  };
 </script>
 
 {#if row.error}

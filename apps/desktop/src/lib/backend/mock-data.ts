@@ -83,6 +83,8 @@ export function defaultQueues(): Queue[] {
       speed_limit: null,
       schedule: null,
       is_default: true,
+      paused: false,
+      running_outside_schedule: false,
     },
     {
       id: 2,
@@ -91,6 +93,8 @@ export function defaultQueues(): Queue[] {
       speed_limit: 4 * MB,
       schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
       is_default: false,
+      paused: false,
+      running_outside_schedule: false,
     },
     {
       id: 3,
@@ -99,6 +103,8 @@ export function defaultQueues(): Queue[] {
       speed_limit: 1 * MB,
       schedule: null,
       is_default: false,
+      paused: false,
+      running_outside_schedule: false,
     },
   ];
 }

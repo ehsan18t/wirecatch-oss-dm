@@ -27,6 +27,7 @@ export type Screen = 'downloads' | 'settings';
 export type Dialog =
   | { kind: 'add'; urls: string[]; queue?: QueueId }
   | { kind: 'remove'; ids: DownloadId[] }
+  | { kind: 'cancel'; ids: DownloadId[] }
   | { kind: 'queue'; id: QueueId | null }
   | { kind: 'refresh'; id: DownloadId }
   | { kind: 'export' }
@@ -58,8 +59,20 @@ function message(err: unknown): string {
   return 'Something went wrong. Try again.';
 }
 
+/** Says what failed in a bulk action, once, instead of one note per download. */
+export function bulkFailureMessage(
+  verb: string,
+  failed: number,
+  total: number,
+  first: string,
+): string {
+  if (total === 1) return first;
+  return `Could not ${verb} ${failed} of ${total} downloads. ${first}`;
+}
+
 export class AppState {
-  readonly backend: Backend;
+  #backend: Backend | null = null;
+  readonly #loadBackend: () => Promise<Backend>;
   readonly downloads = new DownloadStore();
   readonly hints = new Hints();
 
@@ -80,10 +93,19 @@ export class AppState {
   active = $state<DownloadId | null>(null);
   #anchor: DownloadId | null = null;
 
+  /** The window is wide enough for the detail panel to have its own column. */
+  wide = $state(true);
+  /** In a wide window, whether the detail panel column is shown. */
+  detailsOpen = $state(true);
+
   dialog = $state<Dialog | null>(null);
   paletteOpen = $state(false);
   toasts = $state<Toast[]>([]);
   pending = $state<PendingCapture[]>([]);
+  /** The ask-first dialog was closed without an answer; the downloads still wait. */
+  pendingHidden = $state(false);
+  /** True when the interface runs on sample data instead of the real engine. */
+  sampleData = $state(false);
   /** Refreshed every half minute so schedule labels stay true. */
   // Replaced whole, never mutated, so a plain Date is enough.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -92,9 +114,25 @@ export class AppState {
   #toastId = 1;
   #unsubscribe: (() => void) | null = null;
   #clock: ReturnType<typeof setInterval> | undefined;
+  /** Where "now" comes from: the system clock, or the sample clock of the mock backend. */
+  #clockSource: () => number = () => Date.now();
+  /** Bumped by every init and dispose, so a superseded init cleans up after itself. */
+  #generation = 0;
 
-  constructor(backend: Backend) {
-    this.backend = backend;
+  /** Takes a backend, or a function that loads one (so the mock can stay out of production). */
+  constructor(backend: Backend | (() => Promise<Backend>)) {
+    if (typeof backend === 'function') {
+      this.#loadBackend = backend;
+    } else {
+      this.#backend = backend;
+      this.#loadBackend = async () => backend;
+    }
+  }
+
+  /** The backend. Available once `init` has started; components only use it after loading. */
+  get backend(): Backend {
+    if (!this.#backend) throw new Error('The backend is not loaded yet.');
+    return this.#backend;
   }
 
   // ---- Derived views ----
@@ -130,12 +168,23 @@ export class AppState {
     return this.queues.find((q) => q.id === id);
   }
 
+  /** True when a scheduled queue is outside its hours and not started by hand. */
+  isOutsideSchedule(queue: Queue): boolean {
+    return (
+      queue.schedule !== null &&
+      !queue.running_outside_schedule &&
+      !scheduleAllows(queue.schedule, this.now)
+    );
+  }
+
   /** A short phrase for the sidebar: what this queue is doing right now. */
   queueStatus(queue: Queue): string {
     const c = this.counts.queue.get(queue.id);
-    if (queue.schedule && !scheduleAllows(queue.schedule, this.now)) {
+    if (queue.paused) return 'Paused';
+    if (queue.schedule && this.isOutsideSchedule(queue)) {
       return `Starts at ${formatTime(queue.schedule.start)}`;
     }
+    if (queue.running_outside_schedule) return 'Started by hand, outside its hours';
     if (c && c.running > 0) return `${c.running} of ${queue.max_concurrent} running`;
     if (c && c.waiting > 0) return `${c.waiting} waiting`;
     if (c && c.paused > 0) return `${c.paused} paused`;
@@ -144,13 +193,42 @@ export class AppState {
 
   // ---- Startup and events ----
 
+  /**
+   * Loads everything and starts listening. Safe to call again (the Try again button does): the
+   * previous listener and clock are torn down first, and an init that is overtaken by a newer
+   * init or by `dispose` drops what it set up.
+   */
   async init(): Promise<void> {
+    this.#teardown();
+    const generation = ++this.#generation;
     const buffered: UiEvent[] = [];
     let loading = true;
-    this.#unsubscribe = await this.backend.subscribe((e) => {
-      if (loading) buffered.push(e);
-      else this.handle(e);
-    });
+    let backend: Backend;
+    let unsubscribe: () => void;
+    try {
+      backend = this.#backend ?? (await this.#loadBackend());
+      this.#backend = backend;
+      this.sampleData = backend.kind === 'mock';
+      this.#clockSource = backend.sampleData?.now ?? (() => Date.now());
+      // Replaced whole, never mutated, so a plain Date is enough.
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity
+      this.now = new Date(this.#clockSource());
+      unsubscribe = await backend.subscribe((e) => {
+        if (loading) buffered.push(e);
+        else this.handle(e);
+      });
+    } catch (err) {
+      if (generation === this.#generation) {
+        this.loadError = message(err);
+        this.ready = true;
+      }
+      return;
+    }
+    if (generation !== this.#generation) {
+      unsubscribe();
+      return;
+    }
+    this.#unsubscribe = unsubscribe;
     try {
       const [downloads, queues, settings, pending] = await Promise.all([
         this.backend.listDownloads(),
@@ -158,25 +236,36 @@ export class AppState {
         this.backend.getSettings(),
         this.backend.pendingConfirmations(),
       ]);
+      if (generation !== this.#generation) return;
       this.downloads.load(downloads);
       this.queues = queues;
       this.settings = settings;
       this.pending = pending;
       this.loadError = null;
     } catch (err) {
-      this.loadError = message(err);
+      if (generation === this.#generation) this.loadError = message(err);
     } finally {
       loading = false;
-      for (const e of buffered) this.handle(e);
-      this.ready = true;
+      if (generation === this.#generation) {
+        for (const e of buffered) this.handle(e);
+        this.ready = true;
+      }
     }
+    if (generation !== this.#generation) return;
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    this.#clock = setInterval(() => (this.now = new Date()), 30_000);
+    this.#clock = setInterval(() => (this.now = new Date(this.#clockSource())), 30_000);
+  }
+
+  #teardown(): void {
+    this.#unsubscribe?.();
+    this.#unsubscribe = null;
+    if (this.#clock) clearInterval(this.#clock);
+    this.#clock = undefined;
   }
 
   dispose(): void {
-    this.#unsubscribe?.();
-    if (this.#clock) clearInterval(this.#clock);
+    this.#generation += 1;
+    this.#teardown();
   }
 
   handle(event: UiEvent): void {
@@ -208,6 +297,8 @@ export class AppState {
         if (!this.pending.some((p) => p.id === event.data.id)) {
           this.pending = [...this.pending, event.data];
         }
+        // A new question always shows, even if an earlier one was put aside.
+        this.pendingHidden = false;
         break;
     }
   }
@@ -231,6 +322,26 @@ export class AppState {
 
   dismissToast(id: number): void {
     this.toasts = this.toasts.filter((t) => t.id !== id);
+  }
+
+  /**
+   * Runs one action for many downloads at once and reports any failures in a single note.
+   * Returns how many succeeded.
+   */
+  async #bulk(
+    ids: DownloadId[],
+    verb: string,
+    action: (id: DownloadId) => Promise<void>,
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const results = await Promise.allSettled(ids.map((id) => action(id)));
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failures.length > 0) {
+      this.fail(
+        bulkFailureMessage(verb, failures.length, ids.length, message(failures[0]?.reason)),
+      );
+    }
+    return ids.length - failures.length;
   }
 
   /** Runs a backend action and turns any failure into a readable error note. */
@@ -359,11 +470,11 @@ export class AppState {
   }
 
   async pause(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    for (const id of ids) await this.#run(() => this.backend.pause(id));
+    await this.#bulk(ids, 'pause', (id) => this.backend.pause(id));
   }
 
   async resume(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    for (const id of ids) await this.#run(() => this.backend.resume(id));
+    await this.#bulk(ids, 'resume', (id) => this.backend.resume(id));
   }
 
   /** Space bar: pause what runs, resume what does not. */
@@ -383,11 +494,23 @@ export class AppState {
   }
 
   async retry(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    for (const id of ids) await this.#run(() => this.backend.retry(id));
+    await this.#bulk(ids, 'restart', (id) => this.backend.retry(id));
+  }
+
+  /** Tries every download that needs attention again. */
+  async retryAllFailed(): Promise<void> {
+    const failed = this.downloads.order.filter((id) => this.downloads.get(id)?.status === 'failed');
+    if (failed.length === 0) {
+      this.notify('Nothing needs attention right now.');
+      return;
+    }
+    const ok = await this.#bulk(failed, 'restart', (id) => this.backend.retry(id));
+    if (ok > 0)
+      this.notify(ok === 1 ? 'Trying 1 download again.' : `Trying ${ok} downloads again.`);
   }
 
   async cancel(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    for (const id of ids) await this.#run(() => this.backend.cancel(id));
+    await this.#bulk(ids, 'cancel', (id) => this.backend.cancel(id));
   }
 
   async remove(ids: DownloadId[], deleteFile: boolean): Promise<void> {
@@ -512,14 +635,19 @@ export class AppState {
     await this.#run(() => this.backend.resumeAll());
   }
 
-  /** Pauses or resumes everything in one queue. */
-  async setQueueRunning(queue: QueueId, running: boolean): Promise<void> {
-    const ids = this.downloads.idsInQueue(queue).filter((id) => {
-      const s = this.downloads.get(id)?.status;
-      return running ? s === 'paused' : s === 'queued' || s === 'connecting' || s === 'downloading';
+  /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */
+  async setQueuePaused(queue: QueueId, paused: boolean): Promise<void> {
+    await this.#run(() => this.backend.setQueuePaused(queue, paused));
+  }
+
+  /** Runs a scheduled queue now, outside its hours, until it is empty or paused. */
+  async startQueueNow(queue: QueueId): Promise<void> {
+    const ok = await this.#run(async () => {
+      await this.backend.startQueueNow(queue);
+      return true;
     });
-    if (running) await this.resume(ids);
-    else await this.pause(ids);
+    const name = this.queueById(queue)?.name ?? 'The queue';
+    if (ok) this.notify(`${name} is running now. Its schedule applies again once it is empty.`);
   }
 
   // ---- Queues ----
@@ -601,6 +729,12 @@ export class AppState {
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+  }
+
+  /** Brings back the ask-first dialog after it was closed without an answer. */
+  showPending(): void {
+    this.paletteOpen = false;
+    this.pendingHidden = false;
   }
 
   async rejectCapture(id: number): Promise<void> {

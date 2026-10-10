@@ -40,7 +40,7 @@ async function axeViolations(): Promise<string[]> {
 describe('keyboard only', () => {
   it('moves through the list, selects, pauses and removes', async () => {
     const { app, press } = await setup();
-    const list = screen.getByRole('listbox', { name: 'Downloads' });
+    const list = screen.getByRole('grid', { name: 'Downloads' });
     list.focus();
     await press('{ArrowDown}');
     const first = app.visible[0];
@@ -68,7 +68,7 @@ describe('keyboard only', () => {
     const { app, press } = await setup();
     app.show({ kind: 'queue', id: 1 });
     await settle();
-    const list = screen.getByRole('listbox', { name: 'Downloads' });
+    const list = screen.getByRole('grid', { name: 'Downloads' });
     list.focus();
     await press('{ArrowDown}{ArrowDown}');
     const moving = app.active;

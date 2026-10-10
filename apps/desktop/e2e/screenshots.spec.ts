@@ -77,6 +77,29 @@ for (const theme of ['light', 'dark'] as const) {
       await page.screenshot({ path: `${dir}/${theme}-09-queue-editor.png` });
     });
 
+    test('right-click menu', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await row(page, 'LibreOffice').click({ button: 'right' });
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: `${dir}/${theme}-12-context-menu.png` });
+    });
+
+    test('cancel asks first', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await row(page, 'LibreOffice').click();
+      await page.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-13-cancel-confirmation.png` });
+    });
+
+    test('paused queue and start now', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.getByRole('button', { name: 'Pause the Main queue' }).click();
+      await page.getByRole('button', { name: /^Overnight/ }).click();
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: `${dir}/${theme}-14-paused-queue-and-start-now.png` });
+    });
+
     test('first run', async ({ page }) => {
       await open(page, 'empty&capture=0', { theme });
       await page.waitForTimeout(300);

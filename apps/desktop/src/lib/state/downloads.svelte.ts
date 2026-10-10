@@ -117,6 +117,7 @@ export class DownloadStore {
       if (row.connections !== s.connections) row.connections = s.connections;
       if (row.eta_secs !== s.eta_secs) row.eta_secs = s.eta_secs;
       if (!sameError(row.error, s.error)) row.error = s.error === null ? null : { ...s.error };
+      if (JSON.stringify(row.waiting) !== JSON.stringify(s.waiting)) row.waiting = s.waiting;
       if (row.added_at !== s.added_at) row.added_at = s.added_at;
       if (row.completed_at !== s.completed_at) row.completed_at = s.completed_at;
     }

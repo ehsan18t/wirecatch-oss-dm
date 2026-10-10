@@ -36,7 +36,7 @@
   description={waiting > 0
     ? `From your browser. ${waiting} more ${waiting === 1 ? 'is' : 'are'} waiting after this one.`
     : 'From your browser. Change anything you like, then download.'}
-  onclose={() => app.rejectCapture(capture.id)}
+  onclose={() => (app.pendingHidden = true)}
   width={520}
 >
   <form

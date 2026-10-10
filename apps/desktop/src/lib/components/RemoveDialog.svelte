@@ -34,8 +34,8 @@
   </label>
 
   {#snippet footer()}
-    <button class="btn" onclick={() => app.closeDialog()}>Keep</button>
-    <button class="btn danger" data-autofocus onclick={remove}>
+    <button class="btn" data-autofocus onclick={() => app.closeDialog()}>Keep</button>
+    <button class="btn danger" onclick={remove}>
       {deleteFiles ? 'Remove and delete files' : 'Remove from list'}
     </button>
   {/snippet}
