@@ -34,7 +34,7 @@ fn decrypt_in_chunks(
     iv: &[u8; 16],
     chunk: usize,
 ) -> io::Result<Option<u64>> {
-    debug_assert!(chunk > 0 && chunk % BLOCK == 0);
+    debug_assert!(chunk > 0 && chunk.is_multiple_of(BLOCK));
     let mut cipher = cbc::Decryptor::<Aes128>::new(key.into(), iv.into());
     // One chunk plus the block held back from the previous one.
     let mut buf = vec![0u8; chunk + BLOCK];
@@ -45,7 +45,7 @@ fn decrypt_in_chunks(
         held += filled;
         if held < buf.len() {
             // The end: everything left, padding included.
-            if held == 0 || held % BLOCK != 0 {
+            if held == 0 || !held.is_multiple_of(BLOCK) {
                 return Ok(None);
             }
             decrypt_blocks(&mut cipher, &mut buf[..held]);
@@ -82,7 +82,8 @@ fn fill(input: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
 
 /// Decrypts whole blocks in place; `data.len()` is a multiple of 16.
 fn decrypt_blocks(cipher: &mut cbc::Decryptor<Aes128>, data: &mut [u8]) {
-    for block in data.chunks_exact_mut(BLOCK) {
+    let (blocks, _) = data.as_chunks_mut::<BLOCK>();
+    for block in blocks {
         cipher.decrypt_block_mut(GenericArray::from_mut_slice(block));
     }
 }
