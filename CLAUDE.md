@@ -16,14 +16,17 @@ Read before working: `docs/DECISIONS.md` (why things are the way they are), `doc
 
 ```bash
 cargo fmt --all
-cargo clippy --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --features wirecatch-bridge/test-overrides -- -D warnings
+cargo test --workspace --exclude wirecatch-desktop --features wirecatch-bridge/test-overrides
+cargo test -p wirecatch-desktop
 pnpm install
 pnpm protocol:generate
 pnpm check && pnpm lint && pnpm test && pnpm build
 ```
 
 Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.
+
+Notes: the desktop crate needs its frontend built once (`pnpm --filter @wirecatch/desktop build`) before any cargo command touching it. The desktop crate's tests run separately because Tauri's build script breaks other crates' doctests when linked together. `wirecatch-bridge/test-overrides` is for tests only and must never be enabled in a build.
 
 ## Rules
 

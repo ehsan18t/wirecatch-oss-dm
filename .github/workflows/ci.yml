@@ -77,8 +77,13 @@ jobs:
 
       # test-overrides only exists for the bridge's end-to-end tests; it is
       # never enabled in a build.
+      # The desktop crate is tested on its own: its Tauri build script adds link
+      # paths that break other crates' doctests when everything links together.
       - name: Tests
-        run: cargo test --workspace --locked --features wirecatch-bridge/test-overrides
+        run: cargo test --workspace --exclude wirecatch-desktop --locked --features wirecatch-bridge/test-overrides
+
+      - name: Desktop tests
+        run: cargo test -p wirecatch-desktop --locked
 
       # The engine is published to crates.io: its docs must build cleanly and
       # the package must verify. Once per run is enough.
