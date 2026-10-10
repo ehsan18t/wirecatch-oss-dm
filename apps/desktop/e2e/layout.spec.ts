@@ -60,5 +60,30 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(panel).toBeHidden();
       }
     });
+
+    test(`${size.width}x${size.height}, ${theme} theme: queue actions on one line, labels shown`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await open(page, 'capture=0', { theme });
+      // Overnight is outside its hours at noon, so all three queue actions show.
+      await page.getByRole('button', { name: /^Overnight/ }).click();
+      const actions = page.getByRole('group', { name: 'This queue' }).getByRole('button');
+      await expect(actions).toHaveCount(3);
+      const centers = await actions.evaluateAll((els) =>
+        els.map((e) => {
+          const r = e.getBoundingClientRect();
+          return Math.round(r.top + r.height / 2);
+        }),
+      );
+      expect(Math.max(...centers) - Math.min(...centers), 'queue actions on one line').toBe(0);
+      // There is room for every toolbar label at these sizes, so none is reduced to an icon.
+      const labels = await page
+        .locator('.toolbar .label')
+        .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
+      expect(labels.length).toBeGreaterThan(0);
+      for (const w of labels) expect(w, 'toolbar label shown').toBeGreaterThan(20);
+      await checkLayout(page);
+    });
   }
 }

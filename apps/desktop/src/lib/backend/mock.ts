@@ -873,7 +873,11 @@ export class MockBackend implements Backend {
       source: MEDIA_SAMPLES.find((s) => s.title === choice.title)?.source ?? 'page',
     };
     const sim = this.#sim.get(row.id);
-    if (sim) sim.needsJoin = option.needs_ffmpeg;
+    if (sim) {
+      sim.needsJoin = option.needs_ffmpeg;
+      // Sample media finishes in about eight seconds, so the joining step is quick to see.
+      sim.rate = (row.total ?? 48 * 1024 * 1024) / 8;
+    }
     this.#changed([row]);
   }
 

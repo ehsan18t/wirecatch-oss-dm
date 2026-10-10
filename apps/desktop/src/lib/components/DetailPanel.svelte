@@ -197,7 +197,7 @@
           </button>
         </dd>
       </div>
-      {#if one.status !== 'completed' && one.status !== 'failed' && one.status !== 'cancelled'}
+      {#if !['completed', 'failed', 'cancelled', 'processing'].includes(one.status)}
         <div>
           <dt>Link expired?</dt>
           <dd>
@@ -220,7 +220,7 @@
         </div>
       {/if}
     </dl>
-    {#if one.status !== 'completed' && one.status !== 'cancelled'}
+    {#if !['completed', 'cancelled', 'processing'].includes(one.status)}
       <button
         class="btn ghost small cancel"
         onclick={() => app.openDialog({ kind: 'cancel', ids: [one.id] })}
