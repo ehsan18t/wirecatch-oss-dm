@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Read};
+use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -235,13 +235,19 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
                 fs::metadata(&path)?.len()
             }
             Some((key, iv)) => {
-                let mut data = fs::read(&part)?;
-                let Some(len) = crypto::decrypt(&mut data, &key, &iv) else {
+                // Streamed file to file: memory use does not grow with the
+                // segment's size.
+                let mut input = File::open(&part)?;
+                let mut output = BufWriter::with_capacity(256 * 1024, File::create(&path)?);
+                let Some(len) = crypto::decrypt(&mut input, &mut output, &key, &iv)? else {
+                    drop(output);
+                    let _ = fs::remove_file(&path);
                     return Ok(false);
                 };
-                fs::write(&path, &data[..len])?;
+                output.flush()?;
+                drop(input);
                 fs::remove_file(&part)?;
-                len as u64
+                len
             }
         };
         work.record_segment(track, index, size)?;
