@@ -126,9 +126,7 @@ pub(crate) fn validate(
         ));
     }
     ext.capture_extensions = clean_extensions(&ext.capture_extensions);
-    ext.ignored_sites = clean_list(&ext.ignored_sites, |s| {
-        s.trim().trim_end_matches('/').to_lowercase()
-    });
+    ext.ignored_sites = clean_list(&ext.ignored_sites, normalize_site);
     Ok(settings)
 }
 
@@ -212,6 +210,11 @@ fn clean_extensions(list: &[String]) -> Vec<String> {
 }
 
 /// Applies `normalize`, drops empty entries and duplicates, keeps the order.
+/// A host name the way the ignored-sites list stores it.
+pub(crate) fn normalize_site(site: &str) -> String {
+    site.trim().trim_end_matches('/').to_lowercase()
+}
+
 fn clean_list(list: &[String], normalize: impl Fn(&str) -> String) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(list.len());
     for item in list.iter().map(|s| normalize(s)) {

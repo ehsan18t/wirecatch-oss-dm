@@ -59,14 +59,6 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
     }
 }
 
-/// The message shown for a download the user cancelled.
-pub(crate) fn cancelled() -> UserError {
-    fix(
-        "You cancelled this download. Try again to start it from the beginning.",
-        FixAction::Retry,
-    )
-}
-
 fn http_status(status: u16, previously_worked: bool) -> UserError {
     match status {
         401 | 403 | 404 | 410 if previously_worked => fix(
@@ -237,6 +229,5 @@ mod tests {
                 assert!(m.ends_with('.'), "{m}");
             }
         }
-        assert!(!cancelled().message.contains('\u{2014}'));
     }
 }

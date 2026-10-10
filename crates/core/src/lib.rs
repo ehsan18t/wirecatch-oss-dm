@@ -27,6 +27,6 @@ pub use error::{CoreError, Result};
 pub use folders::{KnownFolders, PathError};
 pub use manager::{Manager, ManagerConfig};
 pub use profile::PROFILE_FORMAT_VERSION;
-pub use server::{UNKNOWN_REQUEST_ID, serve_connection};
+pub use server::serve_connection;
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
 pub use store::DATABASE_FILE;

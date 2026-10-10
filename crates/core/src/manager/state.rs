@@ -13,6 +13,7 @@ use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, QueueId};
 
+use super::handovers::Handovers;
 use crate::error::{CoreError, Result};
 use crate::naming::Claimed;
 use crate::schedule::Gate;
@@ -25,6 +26,7 @@ pub(super) struct State {
     pub queues: Vec<QueueSlot>,
     pub downloads: BTreeMap<DownloadId, Entry>,
     pub pending: BTreeMap<u64, Pending>,
+    pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
@@ -137,6 +139,8 @@ impl Stop {
 /// A browser capture waiting for the user's confirmation.
 pub(super) struct Pending {
     pub capture: PendingCapture,
+    /// The extension's handover id.
+    pub handover: String,
     pub request: NewDownload,
 }
 
@@ -221,6 +225,17 @@ impl Entry {
 
     pub fn is_running(&self) -> bool {
         self.run.is_some()
+    }
+
+    /// Whether a server has answered the app with this file at some point, so the
+    /// browser's copy is no longer needed.
+    pub fn server_answered(&self) -> bool {
+        self.row.status == DownloadStatus::Completed
+            || self.row.done > 0
+            || self
+                .run
+                .as_ref()
+                .is_some_and(|run| run.progress.file_name().is_some())
     }
 
     pub fn stored(&self) -> StoredDownload {

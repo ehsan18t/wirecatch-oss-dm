@@ -33,11 +33,22 @@ impl Manager {
         self.lock().settings.extension.clone()
     }
 
-    /// Changes some of the extension's settings, as asked by a socket client.
+    /// Changes some of the extension's settings, as asked by a socket client. Sites
+    /// to add or remove are matched the way the list stores them (lower case).
     pub fn update_extension_settings(
         &self,
-        patch: ExtensionSettingsPatch,
+        mut patch: ExtensionSettingsPatch,
     ) -> Result<ExtensionSettings> {
+        for list in [
+            &mut patch.add_ignored_sites,
+            &mut patch.remove_ignored_sites,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            list.iter_mut()
+                .for_each(|s| *s = settings::normalize_site(s));
+        }
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.extension.apply(patch);

@@ -72,6 +72,7 @@ pub(super) fn restore(snapshot: Snapshot, now: NaiveDateTime) -> Restored {
             queues,
             downloads,
             pending: BTreeMap::new(),
+            handovers: Default::default(),
             dirty: Default::default(),
             last_checked: now,
             ids,

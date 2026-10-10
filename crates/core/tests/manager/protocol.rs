@@ -7,15 +7,16 @@ use std::time::Duration;
 
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
-use wirecatch_core::{Manager, UNKNOWN_REQUEST_ID, serve_connection};
+use wirecatch_core::{Manager, serve_connection};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
-    AddAction, CaptureSource, ExtensionSettingsPatch, NewDownload,
+    AddAction, CaptureSource, ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, Message, Outcome, ProtocolError, Reply,
+    UNKNOWN_REQUEST_ID,
 };
 
 use crate::common::{Harness, TestServer, tune};
@@ -111,8 +112,10 @@ fn hello(protocol_version: u32) -> Call {
     })
 }
 
+/// A capture whose handover id is derived from its link.
 fn capture(url: String) -> NewDownload {
     NewDownload {
+        handover_id: format!("handover-{url}"),
         url,
         referrer: Some("https://example.com/page".into()),
         page_url: Some("https://example.com/page".into()),
@@ -365,6 +368,133 @@ async fn ask_before_download_waits_for_the_user() {
     assert!(h.manager.pending_confirmations().is_empty());
     assert_eq!(h.manager.list_downloads().len(), 1);
     assert!(h.manager.reject_capture(second.id).is_err());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repeated_handover_adds_nothing() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    let mut client = Client::connected(&h.manager).await;
+
+    let first = client
+        .call(Call::AddDownload(capture(server.url("x.pdf"))))
+        .await
+        .unwrap();
+    let again = client
+        .call(Call::AddDownload(capture(server.url("x.pdf"))))
+        .await
+        .unwrap();
+    assert_eq!(first, again);
+
+    // Two copies racing each other still make one download.
+    let racing = capture(server.url("y.pdf"));
+    let (a, b) = tokio::join!(
+        h.manager.add_capture(racing.clone()),
+        h.manager.add_capture(racing)
+    );
+    assert_eq!(a.unwrap(), b.unwrap());
+    assert_eq!(h.manager.list_downloads().len(), 2);
+
+    // The same holds while confirmations are asked for.
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let asked = capture(server.url("z.pdf"));
+    let first = h.manager.add_capture(asked.clone()).await.unwrap();
+    let again = h.manager.add_capture(asked).await.unwrap();
+    assert_eq!(
+        (first.action, &first),
+        (AddAction::AwaitingConfirmation, &again)
+    );
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn withdraw_drops_only_what_the_server_has_not_answered() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    let mut client = Client::connected(&h.manager).await;
+    let withdraw = |capture: &NewDownload| {
+        Call::WithdrawDownload(WithdrawRequest {
+            handover_id: capture.handover_id.clone(),
+        })
+    };
+    let outcome = |reply| match reply {
+        Reply::Withdrawn(outcome) => outcome,
+        other => panic!("unexpected reply {other:?}"),
+    };
+
+    let unknown = capture(server.url("never-sent"));
+    let reply = client.call(withdraw(&unknown)).await.unwrap();
+    assert_eq!(outcome(reply), WithdrawOutcome::NotFound);
+
+    // A capture waiting for its queue's schedule has not reached the server.
+    let mut queue = h.manager.list_queues().remove(0);
+    queue.schedule = Some(wirecatch_protocol::app::Schedule {
+        start: wirecatch_protocol::app::TimeOfDay { hour: 2, minute: 0 },
+        stop: Some(wirecatch_protocol::app::TimeOfDay { hour: 3, minute: 0 }),
+        days: vec![],
+    });
+    h.manager.update_queue(queue.clone()).unwrap();
+    let waiting = capture(server.url("waiting.bin"));
+    let added = h.manager.add_capture(waiting.clone()).await.unwrap();
+    assert_eq!(added.action, AddAction::Queued);
+    let reply = client.call(withdraw(&waiting)).await.unwrap();
+    assert_eq!(outcome(reply), WithdrawOutcome::Withdrawn);
+    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        server
+            .stats
+            .requests
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    let reply = client.call(withdraw(&waiting)).await.unwrap();
+    assert_eq!(outcome(reply), WithdrawOutcome::NotFound);
+
+    // A finished one is the app's now.
+    queue.schedule = None;
+    h.manager.update_queue(queue).unwrap();
+    let done = capture(server.url("done.bin"));
+    let id = h
+        .manager
+        .add_capture(done.clone())
+        .await
+        .unwrap()
+        .id
+        .unwrap();
+    h.wait_status(id, DownloadStatus::Completed).await;
+    let reply = client.call(withdraw(&done)).await.unwrap();
+    assert_eq!(outcome(reply), WithdrawOutcome::AlreadyStarted);
+    assert_eq!(h.manager.list_downloads().len(), 1);
+
+    // A capture waiting for the user's confirmation is dropped too.
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let asked = capture(server.url("asked.bin"));
+    h.manager.add_capture(asked.clone()).await.unwrap();
+    let reply = client.call(withdraw(&asked)).await.unwrap();
+    assert_eq!(outcome(reply), WithdrawOutcome::Withdrawn);
+    assert!(h.manager.pending_confirmations().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ignored_site_edits_from_two_browsers_merge() {
+    let h = Harness::new().await;
+    let mut chrome = Client::connected(&h.manager).await;
+    let mut firefox = Client::connected(&h.manager).await;
+    let edit = |add: &[&str], remove: &[&str]| {
+        let list = |l: &[&str]| Some(l.iter().map(|s| s.to_string()).collect());
+        Call::UpdateExtensionSettings(ExtensionSettingsPatch {
+            add_ignored_sites: list(add),
+            remove_ignored_sites: list(remove),
+            ..Default::default()
+        })
+    };
+    chrome.call(edit(&["A.example"], &[])).await.unwrap();
+    firefox.call(edit(&["b.example"], &[])).await.unwrap();
+    let reply = chrome.call(edit(&[], &["a.EXAMPLE/"])).await.unwrap();
+    let Reply::ExtensionSettings(saved) = reply else {
+        panic!("unexpected reply {reply:?}");
+    };
+    assert_eq!(saved.ignored_sites, vec!["b.example"]);
 }
 
 fn framed(body: &[u8]) -> Vec<u8> {

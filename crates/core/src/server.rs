@@ -16,12 +16,10 @@ use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, FrameError, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
+    UNKNOWN_REQUEST_ID,
 };
 
 use crate::manager::Manager;
-
-/// The id used for an error about a frame whose request id could not be read.
-pub const UNKNOWN_REQUEST_ID: u64 = 0;
 
 /// How much to read from the stream at a time.
 const READ_CHUNK: usize = 16 * 1024;
@@ -112,6 +110,10 @@ async fn handle(manager: &Manager, call: Call) -> Outcome {
             protocol_version: PROTOCOL_VERSION,
         })),
         Call::AddDownload(capture) => manager.add_capture(capture).await.map(Reply::DownloadAdded),
+        Call::WithdrawDownload(request) => manager
+            .withdraw_capture(&request.handover_id)
+            .await
+            .map(Reply::Withdrawn),
         Call::GetExtensionSettings => Ok(Reply::ExtensionSettings(manager.extension_settings())),
         Call::UpdateExtensionSettings(patch) => manager
             .update_extension_settings(patch)

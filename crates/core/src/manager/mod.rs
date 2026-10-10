@@ -3,6 +3,7 @@
 
 mod captures;
 mod downloads;
+mod handovers;
 mod plan;
 mod preferences;
 mod queues;

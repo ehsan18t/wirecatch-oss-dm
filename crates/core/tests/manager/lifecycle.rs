@@ -55,11 +55,9 @@ async fn cancel_discards_progress_and_retry_starts_over() {
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
     h.manager.cancel(row.id).unwrap();
-    let cancelled = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let cancelled = h.wait_status(row.id, DownloadStatus::Cancelled).await;
     assert_eq!(cancelled.done, 0);
-    let error = cancelled.error.unwrap();
-    assert_eq!(error.fix, Some(FixAction::Retry));
-    assert!(error.message.contains("cancelled"));
+    assert_eq!(cancelled.error, None);
     let partials = partial_files(&row.path);
     wait_until("partial files deleted", || {
         partials.iter().all(|p| !exists(p)).then_some(())
@@ -74,6 +72,18 @@ async fn cancel_discards_progress_and_retry_starts_over() {
         h.manager.cancel(row.id),
         Err(CoreError::WrongState(_))
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_waiting_download_can_be_cancelled_and_removed() {
+    let h = Harness::new().await;
+    let row = h
+        .add_with("https://example.com/later.bin", |r| r.start = false)
+        .await;
+    h.manager.cancel(row.id).unwrap();
+    assert_eq!(h.row(row.id).status, DownloadStatus::Cancelled);
+    h.manager.remove(&[row.id], false).await.unwrap();
+    assert!(h.manager.list_downloads().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

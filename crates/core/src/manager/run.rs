@@ -131,10 +131,10 @@ impl Manager {
     }
 }
 
-/// Puts a download in the cancelled state: failed, with nothing kept.
+/// Puts a download in the cancelled state, with nothing kept.
 pub(super) fn mark_cancelled(entry: &mut Entry) {
-    entry.row.status = DownloadStatus::Failed;
-    entry.row.error = Some(user_error::cancelled());
+    entry.row.status = DownloadStatus::Cancelled;
+    entry.row.error = None;
     entry.row.done = 0;
 }
 
