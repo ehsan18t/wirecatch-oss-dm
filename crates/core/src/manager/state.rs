@@ -120,6 +120,9 @@ pub(super) struct Entry {
     pub cleanup: Option<CancellationToken>,
     /// Being removed: hidden from the list and from every operation, and never started.
     pub removing: bool,
+    /// Set while its files are moved to another folder (cancelled when done); it is
+    /// not started meanwhile.
+    pub moving: Option<CancellationToken>,
 }
 
 /// An engine run in progress.
@@ -397,6 +400,7 @@ mod tests {
             resume_first: false,
             cleanup: None,
             removing: false,
+            moving: None,
         }
     }
 

@@ -413,6 +413,107 @@ async fn downloads_move_between_queues_and_keep_their_order() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_running_download_moves_folder_and_continues() {
+    let len = 512 * KIB;
+    let server = TestServer::throttled(len as usize, 128 * KIB).await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("big.bin")).await;
+    h.wait_for(row.id, "a good part downloaded", |r| r.done >= 64 * KIB)
+        .await;
+
+    let elsewhere = h.root.path().join("elsewhere");
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await
+        .unwrap();
+    let kept = h.row(row.id).done;
+    assert!(kept >= 64 * KIB);
+    // Running again in the new folder, counting from what was kept, not from zero.
+    let resumed = h
+        .wait_for(row.id, "running again", |r| {
+            r.status == DownloadStatus::Downloading
+        })
+        .await;
+    assert!(
+        resumed.done >= kept,
+        "{} < {kept}: it started over",
+        resumed.done
+    );
+    assert_eq!(
+        std::path::Path::new(&resumed.path),
+        elsewhere.join("big.bin")
+    );
+
+    server.configure(|c| c.per_connection_bps = None);
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
+    assert_eq!(done.total, Some(len));
+    assert!(!exists(&row.path) && partial_files(&row.path).iter().all(|p| !exists(p)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_file_moves_and_keeps_clear_of_existing_names() {
+    let server = TestServer::fast(4 * KIB as usize).await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("report.pdf")).await;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    let elsewhere = h.root.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(elsewhere.join("report.pdf"), b"someone else's").unwrap();
+
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await
+        .unwrap();
+    let moved = h.row(row.id);
+    assert_eq!(moved.file_name, "report (1).pdf");
+    assert_eq!(std::fs::read(&moved.path).unwrap(), server.data);
+    assert!(!exists(&row.path));
+    assert_eq!(
+        std::fs::read(elsewhere.join("report.pdf")).unwrap(),
+        b"someone else's"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn choosing_a_new_folder_fixes_a_folder_error() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    let blocker = h.root.path().join("not-a-folder");
+    std::fs::write(&blocker, b"x").unwrap();
+    let folder = blocker.join("sub").to_string_lossy().into_owned();
+    let row = h
+        .add_with(&server.url("f.bin"), |r| r.folder = Some(folder))
+        .await;
+    let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
+    assert_eq!(failed.error.unwrap().fix, Some(FixAction::ChooseFolder));
+
+    // Folders that cannot be used are refused in plain words.
+    let err = h
+        .manager
+        .set_download_folder(row.id, "relative/folder")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("not a full folder path"), "{err}");
+    let err = h
+        .manager
+        .set_download_folder(row.id, &blocker.to_string_lossy())
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("Could not use"), "{err}");
+
+    h.manager
+        .set_download_folder(row.id, "{Downloads}/Fixed")
+        .await
+        .unwrap();
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(
+        std::path::Path::new(&done.path),
+        h.folders.downloads.join("Fixed").join("f.bin")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_list_is_grouped_by_queue_in_line_order() {
     let h = Harness::new().await;
     let later = h.manager.create_queue("Later").unwrap().id;

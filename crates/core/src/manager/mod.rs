@@ -7,6 +7,7 @@ mod handovers;
 mod plan;
 mod preferences;
 mod queues;
+mod relocate;
 mod restore;
 mod run;
 mod state;
@@ -359,7 +360,10 @@ fn view_of(entry: &Entry) -> Option<plan::DownloadView> {
     let activity = match &entry.run {
         Some(run) if run.stop.is_some() => plan::Activity::Stopping,
         Some(_) => plan::Activity::Running,
-        None if !entry.removing && entry.row.status == DownloadStatus::Queued => {
+        None if !entry.removing
+            && entry.moving.is_none()
+            && entry.row.status == DownloadStatus::Queued =>
+        {
             plan::Activity::Waiting
         }
         None => return None,

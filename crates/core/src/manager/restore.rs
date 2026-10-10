@@ -71,6 +71,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
             resume_first: false,
             cleanup: None,
             removing: false,
+            moving: None,
         };
         let mut fixed = false;
         if !queues.iter().any(|s| s.queue.id == entry.row.queue) {

@@ -155,26 +155,29 @@ impl Manager {
                 }
             }
         }
-        // The engine must close its files before they can be deleted. Each wait is
-        // bounded by the stop timeout.
+        // The engine must close its files before they can be deleted, and a move to
+        // another folder must finish so the right files are deleted. Each wait for a
+        // run is bounded by the stop timeout; a move takes as long as the disk.
         loop {
-            let mut exits = Vec::new();
+            let mut waits = Vec::new();
             {
                 let mut state = self.lock_open()?;
                 for id in ids {
-                    if let Some(entry) = state.downloads.get_mut(id).filter(|e| e.removing)
-                        && let Some(run) = &entry.run
-                    {
-                        exits.push(run.exited.clone());
+                    let Some(entry) = state.downloads.get_mut(id).filter(|e| e.removing) else {
+                        continue;
+                    };
+                    waits.extend(entry.moving.clone());
+                    if let Some(run) = &entry.run {
+                        waits.push(run.exited.clone());
                         self.stop_run(entry, Stop::Remove);
                     }
                 }
             }
-            if exits.is_empty() {
+            if waits.is_empty() {
                 break;
             }
-            for exited in exits {
-                exited.cancelled().await;
+            for done in waits {
+                done.cancelled().await;
             }
         }
 
@@ -428,6 +431,7 @@ impl Manager {
                 resume_first: false,
                 cleanup: None,
                 removing: false,
+                moving: None,
             });
             self.save(&mut state, id);
             self.reconcile(&mut state);
