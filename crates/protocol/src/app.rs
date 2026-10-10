@@ -31,6 +31,8 @@ pub struct DownloadSummary {
     pub error: Option<UserError>,
     /// Why a `Queued` download is not running yet; `None` for every other status.
     pub waiting: Option<WaitReason>,
+    /// Set for video and audio downloaded from a stream or a media page.
+    pub media: Option<MediaSummary>,
     /// Unix time in milliseconds.
     #[ts(type = "number")]
     pub added_at: i64,
@@ -51,6 +53,8 @@ pub enum DownloadStatus {
     Failed,
     /// Stopped by the user; the partial file is gone. Retry starts over.
     Cancelled,
+    /// Downloaded; ffmpeg is joining the video and audio into one file.
+    Processing,
 }
 
 /// An error worded for a person, with the fix offered as a button (D3, rule 4).
@@ -105,6 +109,91 @@ pub struct Queue {
     /// Set by "start now": the queue runs outside its schedule until it is empty
     /// or paused, then the schedule applies again.
     pub running_outside_schedule: bool,
+}
+
+/// Media details shown on a download row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaSummary {
+    /// For example "1080p" or "Audio only".
+    pub quality: String,
+    pub source: crate::extension::MediaKind,
+}
+
+/// The app found several qualities and asks the user to pick one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaChoice {
+    /// Identifies this choice; not a download id yet.
+    #[ts(type = "number")]
+    pub id: u64,
+    pub title: String,
+    pub page_url: Option<String>,
+    /// Best first. The UI preselects the first one.
+    pub options: Vec<MediaOption>,
+    /// Where it will be saved if the user just confirms.
+    pub folder: String,
+    pub queue: QueueId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaOption {
+    pub id: String,
+    /// Plain words, for example "1080p, MP4".
+    pub label: String,
+    pub height: Option<u32>,
+    pub audio_only: bool,
+    /// Estimated size when the source says.
+    #[ts(type = "number | null")]
+    pub size: Option<u64>,
+    /// True when ffmpeg must join separate video and audio for this option.
+    pub needs_ffmpeg: bool,
+}
+
+/// The user's pick for a [`MediaChoice`]; absent fields keep the proposal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaSelection {
+    pub option_id: String,
+    pub folder: Option<String>,
+    pub file_name: Option<String>,
+    pub queue: Option<QueueId>,
+}
+
+/// An optional component (D2): ffmpeg, the yt-dlp media add-on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AddonInfo {
+    /// Stable id, for example `ffmpeg` or `yt-dlp`.
+    pub id: String,
+    pub name: String,
+    /// One plain-language line on what it adds.
+    pub description: String,
+    pub state: AddonState,
+    pub installed_version: Option<String>,
+    pub latest_version: Option<String>,
+    /// Download size of the latest version, when known.
+    #[ts(type = "number | null")]
+    pub size: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum AddonState {
+    NotInstalled,
+    Installing {
+        #[ts(type = "number")]
+        done: u64,
+        #[ts(type = "number | null")]
+        total: Option<u64>,
+    },
+    Installed,
+    UpdateAvailable,
+    Failed {
+        message: String,
+    },
 }
 
 /// Why a queued download is waiting, shown in plain words so queues are never a
@@ -199,6 +288,13 @@ pub struct AppSettings {
     /// Closing the window keeps downloads running in the tray.
     pub close_to_tray: bool,
     pub notify_on_complete: bool,
+    /// Keep installed add-ons up to date without asking.
+    #[serde(default = "default_true")]
+    pub auto_update_addons: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// The file written by settings export and read by import (D6).
@@ -273,4 +369,42 @@ pub enum UiEvent {
     Captured(DownloadSummary),
     /// A capture needs the user's confirmation (`ask_before_download`).
     ConfirmationRequested(PendingCapture),
+    /// Saving to the download list failed even after retrying, so recent changes
+    /// may be lost when the app closes. The UI shows the message.
+    StorageFailed(UserError),
+    /// A settings profile was imported; the UI shows what changed.
+    SettingsImported(ImportSummary),
+    /// Media with several qualities: the UI shows the picker.
+    MediaChoiceRequested(MediaChoice),
+    AddonsChanged(Vec<AddonInfo>),
+    /// A capture needs an add-on that is not installed; the UI offers to install it.
+    AddonRequired {
+        addon: AddonInfo,
+        url: String,
+    },
+}
+
+/// What importing a settings profile changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImportSummary {
+    /// Every folder setting in the profile and the folder it became on this machine.
+    pub folders: Vec<ImportedFolder>,
+    pub queues_added: u32,
+    pub queues_updated: u32,
+}
+
+/// One folder setting from an imported profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImportedFolder {
+    /// The setting in plain words, for example "Default folder" or "Video folder".
+    pub setting: String,
+    /// The folder as written in the profile.
+    pub requested: PortablePath,
+    /// The folder now used. Differs from `requested` when that does not exist on
+    /// this machine (an absolute path from another system).
+    pub used: PortablePath,
+    /// Where `used` is on this machine.
+    pub resolved: String,
 }

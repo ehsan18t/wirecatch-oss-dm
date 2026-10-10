@@ -112,6 +112,9 @@ Decided by the lead while the user was away; easy to revisit before the first re
 - Browser registration: the app runs the Bridge's per-user `install` on every start (it is idempotent), so installers, AppImages and portable copies all register themselves and repair a broken registration. Uninstall runs `uninstall`.
 - Updates: `tauri-plugin-updater` with signed update manifests on GitHub Releases, switched on once the GitHub organization and signing key exist. Until then the updater is compiled in but disabled.
 
+### D20. One-click media add-on (yt-dlp, ffmpeg and a JavaScript runtime)
+Decided by the user on 2026-10-11. ffmpeg is not bundled with the app (the static LGPL build alone is 134 MB). It ships inside one optional "Media add-on" together with yt-dlp and the JavaScript runtime yt-dlp needs for some sites (Deno). One click installs all of it; the app offers it at the moment it is first needed (a stream whose video and audio must be joined, or a page such as YouTube that needs extraction), and it also lives in Settings, Add-ons. Every component is pinned to an exact release and verified by SHA-256 before use (A8 lists the sources). Plain files and single-track streams never need it. A later improvement replaces the general ffmpeg build with a small remux-only LGPL build made in CI, which cuts the add-on download from about 60 MB to a few MB.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
@@ -121,7 +124,7 @@ Decided by the lead while the user was away; easy to revisit before the first re
 - A5. Firefox add-on id is `extension@wirecatch.app` and the Chromium development build uses a fixed key so its extension id is stable. Store ids replace these at publication.
 - A6. Saved site passwords are not exported in v1 (D6 encrypted export comes later).
 - A7. HTTP/3 ships as an experimental option, off by default. For bulk downloads, several TCP connections already fill the link and QUIC costs more CPU; it turns on by default once the benchmark shows it winning. Decided by the lead.
-- A8. The ffmpeg add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
+- A8. The ffmpeg part of the media add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
 
 ## Open questions
 

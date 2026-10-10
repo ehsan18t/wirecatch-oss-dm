@@ -47,6 +47,7 @@ export function groupOf(status: DownloadStatus): StatusGroup {
   switch (status) {
     case 'connecting':
     case 'downloading':
+    case 'processing':
       return 'active';
     case 'queued':
       return 'waiting';

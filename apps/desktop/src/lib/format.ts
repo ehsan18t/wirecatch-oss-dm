@@ -89,6 +89,7 @@ export const STATUS_LABEL: Record<DownloadStatus, string> = {
   completed: 'Finished',
   failed: 'Needs attention',
   cancelled: 'Cancelled',
+  processing: 'Joining video and audio',
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {

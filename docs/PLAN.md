@@ -117,7 +117,7 @@ Wave 1 is merged (engine, protocol, core, ipc, bridge, extension, desktop UI). W
 
 ### Wave 2b (after 2a merges)
 
-**WP11 Core media and add-ons (`crates/core`).** Add-on manager: install, update and remove the ffmpeg and yt-dlp add-ons from their official release sources, verified by checksum, kept in the per-user data folder, updated quietly (D2). Media flow: a stream or page capture produces a quality choice (`MediaChoice`) for the UI; the chosen option downloads through `wirecatch-streams` or, for yt-dlp pages, through yt-dlp's resolved format URLs with the engine doing the bytes. FTP downloads route through the engine. A `Processing` status while ffmpeg joins files.
+**WP11 Core media and add-ons (`crates/core`).** Add-on manager for the one media add-on (D20: yt-dlp, ffmpeg and Deno installed together with one click): install, update and remove from their official release sources, verified by checksum, kept in the per-user data folder, updated quietly (D2). Media flow: a stream or page capture produces a quality choice (`MediaChoice`) for the UI; the chosen option downloads through `wirecatch-streams` or, for yt-dlp pages, through yt-dlp's resolved format URLs with the engine doing the bytes. FTP downloads route through the engine. A `Processing` status while ffmpeg joins files.
 
 **WP12 Wiring and polish (`apps/desktop`, `apps/extension`).** Connect the media picker and add-ons screen to the real core; final end-to-end pass of every D3 principle in the running app.
 

@@ -23,4 +23,8 @@ global_speed_limit: number | null, extension: ExtensionSettings, theme: Theme, s
 /**
  * Closing the window keeps downloads running in the tray.
  */
-close_to_tray: boolean, notify_on_complete: boolean, };
+close_to_tray: boolean, notify_on_complete: boolean, 
+/**
+ * Keep installed add-ons up to date without asking.
+ */
+auto_update_addons: boolean, };

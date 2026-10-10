@@ -18,6 +18,9 @@ use crate::extension::{
 /// unreadable frame). Clients start their ids at 1.
 pub const UNKNOWN_REQUEST_ID: u64 = 0;
 
+// Messages are decoded, handled and dropped one at a time, so the size gap
+// between variants costs nothing worth an extra allocation per request.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
@@ -148,6 +151,10 @@ pub enum ErrorCode {
     /// Produced by the bridge when it cannot reach or start the app.
     AppUnavailable,
     Internal,
+    /// The app could not take over a captured download (the server did not answer
+    /// in time, or sent something other than what the browser saw). The browser
+    /// keeps its own download.
+    NotStarted,
 }
 
 #[cfg(test)]
