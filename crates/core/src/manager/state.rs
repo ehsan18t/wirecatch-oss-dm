@@ -128,6 +128,12 @@ pub(super) enum Stop {
     Shutdown,
 }
 
+impl Stop {
+    fn is_users_choice(self) -> bool {
+        matches!(self, Stop::Pause | Stop::Cancel | Stop::Remove)
+    }
+}
+
 /// A browser capture waiting for the user's confirmation.
 pub(super) struct Pending {
     pub capture: PendingCapture,
@@ -230,11 +236,11 @@ impl Entry {
     pub fn stop(&mut self, why: Stop) -> bool {
         match &mut self.run {
             Some(run) => {
-                // A stronger reason replaces a weaker one: a download the scheduler was
-                // already stopping can still be paused, cancelled or removed.
+                // The user's latest choice wins, and the app's own reasons (a limit,
+                // a schedule, shutting down) never override a choice the user made.
                 if run
                     .stop
-                    .is_none_or(|current| why != Stop::Requeue || current == Stop::Requeue)
+                    .is_none_or(|current| why.is_users_choice() || !current.is_users_choice())
                 {
                     run.stop = Some(why);
                 }
@@ -250,5 +256,85 @@ impl Entry {
         self.row.speed = 0;
         self.row.connections = 0;
         self.row.eta_secs = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wirecatch_protocol::app::Category;
+
+    fn running() -> Entry {
+        Entry {
+            row: DownloadSummary {
+                id: DownloadId(1),
+                url: "https://example.com/f".into(),
+                file_name: "f".into(),
+                path: "f".into(),
+                queue: QueueId(1),
+                category: Category::Other,
+                status: DownloadStatus::Downloading,
+                total: None,
+                done: 0,
+                speed: 0,
+                connections: 0,
+                eta_secs: None,
+                error: None,
+                added_at: 0,
+                completed_at: None,
+            },
+            position: 1,
+            origin: Origin::default(),
+            run: Some(Run {
+                id: 1,
+                cancel: CancellationToken::new(),
+                exited: CancellationToken::new(),
+                progress: Arc::new(Progress::default()),
+                stop: None,
+                meter: SpeedMeter::default(),
+            }),
+            resume_first: false,
+        }
+    }
+
+    fn reason_after(steps: &[Stop]) -> Option<Stop> {
+        let mut entry = running();
+        for step in steps {
+            assert!(entry.stop(*step));
+        }
+        let run = entry.run.unwrap();
+        assert!(run.cancel.is_cancelled());
+        run.stop
+    }
+
+    #[test]
+    fn the_users_choice_is_never_overridden_by_the_app() {
+        assert_eq!(
+            reason_after(&[Stop::Pause, Stop::Shutdown]),
+            Some(Stop::Pause)
+        );
+        assert_eq!(
+            reason_after(&[Stop::Cancel, Stop::Requeue]),
+            Some(Stop::Cancel)
+        );
+        assert_eq!(
+            reason_after(&[Stop::Requeue, Stop::Pause]),
+            Some(Stop::Pause)
+        );
+        assert_eq!(
+            reason_after(&[Stop::Requeue, Stop::Shutdown]),
+            Some(Stop::Shutdown)
+        );
+        assert_eq!(
+            reason_after(&[Stop::Pause, Stop::Remove]),
+            Some(Stop::Remove)
+        );
+    }
+
+    #[test]
+    fn stopping_an_idle_download_does_nothing() {
+        let mut entry = running();
+        entry.run = None;
+        assert!(!entry.stop(Stop::Pause));
     }
 }
