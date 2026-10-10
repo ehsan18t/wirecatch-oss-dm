@@ -15,6 +15,7 @@
     formatSize,
     formatSpeed,
     folderOf,
+    MEDIA_SOURCE_LABEL,
     progressFraction,
     STATUS_LABEL,
     waitLong,
@@ -84,6 +85,15 @@
 
     {#if one.status === 'failed' && one.error}
       <ErrorFix row={one} />
+    {/if}
+
+    {#if one.media}
+      <p class="waiting">
+        {one.media.quality}, {MEDIA_SOURCE_LABEL[one.media.source]}.
+        {#if one.status === 'processing'}
+          The video and audio are downloaded; Wirecatch is joining them into one file.
+        {/if}
+      </p>
     {/if}
 
     <section class="progress" aria-label="Progress">

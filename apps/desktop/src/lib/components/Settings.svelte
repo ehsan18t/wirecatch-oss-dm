@@ -12,6 +12,8 @@
     type SettingId,
   } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
+  import { MEDIA_ADDON } from '$lib/addons';
+  import AddonCard from './AddonCard.svelte';
   import ListEditor from './ListEditor.svelte';
   import Toggle from './Toggle.svelte';
 
@@ -204,6 +206,18 @@
             checked={s.notify_on_complete}
             onchange={(v) => save((d) => void (d.notify_on_complete = v))}
           />
+        {:else if def.id === 'media_addon'}
+          {@const addon = app.addons?.find((a) => a.id === MEDIA_ADDON)}
+          {#if addon}
+            <AddonCard {addon} describedby={help} />
+          {:else if app.addonsError}
+            <p class="addon-note">
+              {app.addonsError}
+              <button class="btn small" onclick={() => app.loadAddons()}>Check again</button>
+            </p>
+          {:else}
+            <p class="addon-note">Checking.</p>
+          {/if}
         {:else if def.id === 'auto_update_addons'}
           <Toggle
             label={def.label}
@@ -543,6 +557,16 @@
 
   .narrow {
     width: 90px;
+  }
+
+  .addon-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 320px;
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
   }
 
   .unit {

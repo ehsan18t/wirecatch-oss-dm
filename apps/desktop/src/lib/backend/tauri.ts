@@ -5,17 +5,27 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import type {
+  AddonInfo,
   AddRequest,
   AppSettings,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  MediaSelection,
   PendingCapture,
   Queue,
   QueueId,
   UiEvent,
 } from '@wirecatch/protocol';
-import { BackendError, COMMANDS, EVENT_NAME, type Backend, type Unsubscribe } from './types';
+import {
+  BackendError,
+  COMMANDS,
+  EVENT_NAME,
+  SIGNAL_EVENTS,
+  type Backend,
+  type ShellSignal,
+  type Unsubscribe,
+} from './types';
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -136,8 +146,40 @@ export class TauriBackend implements Backend {
     return this.#exec(COMMANDS.setDownloadFolder, { id, folder });
   }
 
+  takeLaunchLinks() {
+    return this.#call<string[]>(COMMANDS.takeLaunchLinks);
+  }
+  chooseMedia(id: number, selection: MediaSelection) {
+    return this.#exec(COMMANDS.chooseMedia, { id, selection });
+  }
+  dismissMediaChoice(id: number) {
+    return this.#exec(COMMANDS.dismissMediaChoice, { id });
+  }
+  listAddons() {
+    return this.#call<AddonInfo[]>(COMMANDS.listAddons);
+  }
+  installAddon(id: string) {
+    return this.#exec(COMMANDS.installAddon, { id });
+  }
+  updateAddon(id: string) {
+    return this.#exec(COMMANDS.updateAddon, { id });
+  }
+  removeAddon(id: string) {
+    return this.#exec(COMMANDS.removeAddon, { id });
+  }
+
   async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {
     return listen<UiEvent>(EVENT_NAME, (e) => listener(e.payload));
+  }
+
+  async onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe> {
+    const signals = Object.keys(SIGNAL_EVENTS) as ShellSignal[];
+    const stops = await Promise.all(
+      signals.map((signal) => listen(SIGNAL_EVENTS[signal], () => listener(signal))),
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
   }
 
   async pickFolder(current?: string) {

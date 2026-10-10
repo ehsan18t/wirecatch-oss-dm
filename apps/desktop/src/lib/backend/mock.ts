@@ -3,11 +3,14 @@
 // and browser captures, and pushes the same `UiEvent`s the real core will.
 
 import type {
+  AddonInfo,
   AddRequest,
   AppSettings,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  MediaChoice,
+  MediaSelection,
   PendingCapture,
   Queue,
   QueueId,
@@ -26,7 +29,44 @@ import {
   HOME,
   SEEDS,
 } from './mock-data';
-import { BackendError, type Backend, type SampleData, type Unsubscribe } from './types';
+import {
+  BackendError,
+  type Backend,
+  type SampleData,
+  type ShellSignal,
+  type Unsubscribe,
+} from './types';
+
+/** The one optional add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
+export function mediaAddon(): AddonInfo {
+  return {
+    id: 'media',
+    name: 'Media add-on',
+    description:
+      'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp and ffmpeg.',
+    state: { type: 'not_installed' },
+    installed_version: null,
+    latest_version: '2026.10.02',
+    size: 96 * 1024 * 1024,
+  };
+}
+
+/** Sample media pages: a title, its page, and the qualities it offers, best first. */
+const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' | 'page' }> = [
+  {
+    title: 'Northern lights over Tromso, 4K time-lapse',
+    page: 'https://video.example.com/watch/aurora-tromso',
+    source: 'page',
+  },
+  {
+    title: 'Conference talk: fast downloads explained',
+    page: 'https://talks.example.org/2026/fast-downloads',
+    source: 'hls',
+  },
+];
+
+/** How long the mock spends joining video and audio after a media download. */
+const PROCESSING_MS = 2500;
 
 export interface MockOptions {
   /** Total downloads. Beyond the hand-written samples, generated ones fill the list. */
@@ -48,6 +88,10 @@ interface Sim {
   rate: number;
   /** Time spent connecting so far, in milliseconds. */
   connectingMs: number;
+  /** Time spent joining video and audio so far, in milliseconds. */
+  processingMs: number;
+  /** Media that needs joining once downloaded. */
+  needsJoin: boolean;
 }
 
 /** Small deterministic random source, so tests and screenshots are repeatable. */
@@ -84,6 +128,18 @@ export class MockBackend implements Backend {
         keywords: 'simulate confirmation',
         run: () => this.simulateConfirmation(),
       },
+      {
+        id: 'mock.media',
+        title: 'Pretend the browser found a video with several qualities',
+        keywords: 'simulate media quality picker stream youtube',
+        run: () => this.simulateMediaChoice(),
+      },
+      {
+        id: 'mock.addon',
+        title: 'Pretend a site needs the media add-on',
+        keywords: 'simulate addon add-on required youtube yt-dlp',
+        run: () => this.simulateAddonRequired(),
+      },
     ],
     now: () => this.#now(),
   };
@@ -94,6 +150,12 @@ export class MockBackend implements Backend {
   #queues: Queue[] = defaultQueues();
   #settings: AppSettings = defaultSettings();
   #pending: PendingCapture[] = [];
+  #mediaChoices: MediaChoice[] = [];
+  #addons: AddonInfo[] = [mediaAddon()];
+  /** Pages that asked for the media add-on; they continue once it is installed. */
+  #waitingForAddon: string[] = [];
+  #nextMediaId = 1;
+  #mediaIndex = 0;
   readonly #listeners = new Set<(e: UiEvent) => void>();
   readonly #files = new Map<string, SettingsProfile>();
   #nextId = 1;
@@ -198,7 +260,7 @@ export class MockBackend implements Backend {
 
   #insert(row: DownloadSummary, rate: number) {
     this.#rows.set(row.id, row);
-    this.#sim.set(row.id, { rate, connectingMs: 0 });
+    this.#sim.set(row.id, { rate, connectingMs: 0, processingMs: 0, needsJoin: false });
     this.#order.push(row.id);
   }
 
@@ -344,8 +406,13 @@ export class MockBackend implements Backend {
       row.done += Math.round((speed * dt) / 1000);
       if (row.total !== null && row.done >= row.total) {
         row.done = row.total;
-        row.status = 'completed';
-        row.completed_at = now;
+        // Media with separate video and audio is joined before it counts as finished.
+        if (this.#sim.get(id)?.needsJoin) {
+          row.status = 'processing';
+        } else {
+          row.status = 'completed';
+          row.completed_at = now;
+        }
         this.#stop(row);
       } else {
         row.eta_secs =
@@ -355,7 +422,20 @@ export class MockBackend implements Backend {
       }
       changed.set(id, row);
     }
+
+    // Joining video and audio takes a moment, then the file is finished.
+    for (const [id, sim] of this.#sim) {
+      const row = this.#rows.get(id);
+      if (row?.status !== 'processing' || wanted.has(id)) continue;
+      sim.processingMs += dt;
+      if (sim.processingMs >= PROCESSING_MS) {
+        row.status = 'completed';
+        row.completed_at = now;
+        changed.set(id, row);
+      }
+    }
     this.#changed([...changed.values()]);
+    this.#advanceInstall(dt);
   }
 
   // ---- Downloads ----
@@ -707,6 +787,163 @@ export class MockBackend implements Backend {
     this.#settings.extension.ask_before_download = true;
     this.simulateCapture();
     this.#settings.extension.ask_before_download = ask;
+  }
+
+  // ---- Media and add-ons ----
+
+  /** Sample data only: the browser found media with several qualities. */
+  simulateMediaChoice(page?: string): void {
+    const sample = MEDIA_SAMPLES[this.#mediaIndex++ % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
+    if (!sample) return;
+    const MB = 1024 * 1024;
+    const choice: MediaChoice = {
+      id: this.#nextMediaId++,
+      title: sample.title,
+      page_url: page ?? sample.page,
+      options: [
+        {
+          id: '2160',
+          label: '4K (2160p), MP4',
+          height: 2160,
+          audio_only: false,
+          size: 1840 * MB,
+          needs_ffmpeg: true,
+        },
+        {
+          id: '1080',
+          label: '1080p, MP4',
+          height: 1080,
+          audio_only: false,
+          size: 612 * MB,
+          needs_ffmpeg: true,
+        },
+        {
+          id: '720',
+          label: '720p, MP4',
+          height: 720,
+          audio_only: false,
+          size: 298 * MB,
+          needs_ffmpeg: false,
+        },
+        {
+          id: 'audio',
+          label: 'Audio only, M4A',
+          height: null,
+          audio_only: true,
+          size: null,
+          needs_ffmpeg: false,
+        },
+      ],
+      folder: folderFor('video', this.#settings),
+      queue: this.#settings.extension.default_queue,
+    };
+    this.#mediaChoices.push(choice);
+    this.#emit({ type: 'media_choice_requested', data: structuredClone(choice) });
+  }
+
+  /** Sample data only: a page that needs the media add-on to download. */
+  simulateAddonRequired(): void {
+    const page = 'https://www.youtube.com/watch?v=sample';
+    const addon = this.#addon('media');
+    if (addon.state.type === 'installed' || addon.state.type === 'update_available') {
+      this.simulateMediaChoice(page);
+      return;
+    }
+    this.#waitingForAddon.push(page);
+    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page } });
+  }
+
+  async chooseMedia(id: number, selection: MediaSelection) {
+    const choice = this.#mediaChoices.find((c) => c.id === id);
+    if (!choice) throw new BackendError('That video was already downloaded or dismissed.');
+    const option = choice.options.find((o) => o.id === selection.option_id);
+    if (!option) throw new BackendError('That quality is no longer offered. Pick another one.');
+    this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    const ext = option.audio_only ? 'm4a' : 'mp4';
+    const name = selection.file_name?.trim() || `${choice.title}.${ext}`;
+    const row = this.#create(choice.page_url ?? choice.title, {
+      queue: selection.queue ?? choice.queue,
+      folder: selection.folder ?? choice.folder,
+      fileName: name,
+      start: true,
+      size: option.size ?? 48 * 1024 * 1024,
+    });
+    row.media = {
+      quality: option.label.split(',')[0] ?? option.label,
+      source: MEDIA_SAMPLES.find((s) => s.title === choice.title)?.source ?? 'page',
+    };
+    const sim = this.#sim.get(row.id);
+    if (sim) sim.needsJoin = option.needs_ffmpeg;
+    this.#changed([row]);
+  }
+
+  async dismissMediaChoice(id: number) {
+    this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+  }
+
+  #addon(id: string): AddonInfo {
+    const addon = this.#addons.find((a) => a.id === id);
+    if (!addon) throw new BackendError('That add-on is not available.');
+    return addon;
+  }
+
+  #addonsChanged() {
+    this.#emit({ type: 'addons_changed', data: structuredClone(this.#addons) });
+  }
+
+  async listAddons() {
+    return structuredClone(this.#addons);
+  }
+
+  async installAddon(id: string) {
+    const addon = this.#addon(id);
+    if (addon.state.type === 'installing') return;
+    addon.state = { type: 'installing', data: { done: 0, total: addon.size } };
+    this.#addonsChanged();
+  }
+
+  async updateAddon(id: string) {
+    await this.installAddon(id);
+  }
+
+  async removeAddon(id: string) {
+    const addon = this.#addon(id);
+    addon.state = { type: 'not_installed' };
+    addon.installed_version = null;
+    this.#addonsChanged();
+  }
+
+  /** Moves a simulated add-on install along, about four seconds from start to finish. */
+  #advanceInstall(dt: number) {
+    let changed = false;
+    for (const addon of this.#addons) {
+      if (addon.state.type !== 'installing') continue;
+      const total = addon.state.data.total ?? 96 * 1024 * 1024;
+      const done = Math.min(total, addon.state.data.done + Math.round((total * dt) / 4000));
+      changed = true;
+      if (done < total) {
+        addon.state = { type: 'installing', data: { done, total } };
+        continue;
+      }
+      addon.state = { type: 'installed' };
+      addon.installed_version = addon.latest_version;
+      // What asked for the add-on continues on its own.
+      const waiting = this.#waitingForAddon;
+      this.#waitingForAddon = [];
+      queueMicrotask(() => {
+        for (const page of waiting) this.simulateMediaChoice(page);
+      });
+    }
+    if (changed) this.#addonsChanged();
+  }
+
+  async takeLaunchLinks(): Promise<string[]> {
+    return [];
+  }
+
+  async onShellSignal(_listener: (signal: ShellSignal) => void): Promise<Unsubscribe> {
+    // A browser tab has no desktop shell to signal anything.
+    return () => {};
   }
 
   // ---- Files and pickers ----

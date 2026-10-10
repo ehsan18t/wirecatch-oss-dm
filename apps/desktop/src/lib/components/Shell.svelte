@@ -4,10 +4,10 @@
   import { isDownloadDrag } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
   import CommandPalette from './CommandPalette.svelte';
-  import ConfirmCapture from './ConfirmCapture.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import Dialogs from './Dialogs.svelte';
   import DownloadList from './DownloadList.svelte';
+  import Questions from './Questions.svelte';
   import Settings from './Settings.svelte';
   import Sidebar from './Sidebar.svelte';
   import Toasts from './Toasts.svelte';
@@ -51,7 +51,12 @@
   }
 
   // A visible question (a dialog, or the ask-first dialog) takes the keyboard.
-  const blocked = $derived(app.dialog !== null || (app.pending.length > 0 && !app.pendingHidden));
+  const blocked = $derived(
+    app.dialog !== null ||
+      (app.pending.length > 0 && !app.pendingHidden) ||
+      app.mediaChoices.length > 0 ||
+      app.addonRequest !== null,
+  );
 
   function onkeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -141,7 +146,7 @@
 </div>
 
 <Dialogs />
-<ConfirmCapture />
+<Questions />
 <CommandPalette />
 <Toasts />
 
