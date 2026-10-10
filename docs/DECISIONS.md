@@ -105,6 +105,13 @@ A change is done only when all of these hold:
 5. User-facing text follows the house style (no em dashes, plain language, errors say how to fix them).
 6. An independent reviewer, not the author, has checked the work against its acceptance checklist.
 
+### D19. Packaging, browser registration and updates
+Decided by the lead while the user was away; easy to revisit before the first release.
+- Windows: per-user NSIS installer from the Tauri bundler (no administrator rights needed).
+- Linux: `.deb`, `.rpm` and AppImage from the Tauri bundler. Flatpak waits, because sandboxed browsers and native messaging do not mix well yet.
+- Browser registration: the app runs the Bridge's per-user `install` on every start (it is idempotent), so installers, AppImages and portable copies all register themselves and repair a broken registration. Uninstall runs `uninstall`.
+- Updates: `tauri-plugin-updater` with signed update manifests on GitHub Releases, switched on once the GitHub organization and signing key exist. Until then the updater is compiled in but disabled.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
@@ -116,7 +123,7 @@ A change is done only when all of these hold:
 
 ## Open questions
 
-- Linux package formats (deb, rpm, AppImage, Flatpak) and the update mechanism: decided before packaging work starts.
+- None blocking. GitHub organization, domains and code-signing certificate are the user's to set up (see D9, D19).
 
 ## Rejected names (for reference)
 

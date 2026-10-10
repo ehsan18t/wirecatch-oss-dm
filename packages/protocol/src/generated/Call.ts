@@ -2,8 +2,9 @@
 import type { ExtensionSettingsPatch } from "./ExtensionSettingsPatch";
 import type { Hello } from "./Hello";
 import type { NewDownload } from "./NewDownload";
+import type { WithdrawRequest } from "./WithdrawRequest";
 
 /**
  * What a client asks the app to do.
  */
-export type Call = { "method": "hello", "params": Hello } | { "method": "add_download", "params": NewDownload } | { "method": "get_extension_settings" } | { "method": "update_extension_settings", "params": ExtensionSettingsPatch } | { "method": "list_queues" } | { "method": "pause_all" } | { "method": "resume_all" };
+export type Call = { "method": "hello", "params": Hello } | { "method": "add_download", "params": NewDownload } | { "method": "withdraw_download", "params": WithdrawRequest } | { "method": "get_extension_settings" } | { "method": "update_extension_settings", "params": ExtensionSettingsPatch } | { "method": "list_queues" } | { "method": "pause_all" } | { "method": "resume_all" };

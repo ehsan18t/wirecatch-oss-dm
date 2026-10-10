@@ -3,4 +3,8 @@ import type { Call } from "./Call";
 import type { Event } from "./Event";
 import type { Outcome } from "./Outcome";
 
-export type Message = { "kind": "request", id: number, call: Call, } | { "kind": "response", id: number, outcome: Outcome, } | { "kind": "event", event: Event, };
+export type Message = { "kind": "request", 
+/**
+ * Chosen by the client, unique per connection, never [`UNKNOWN_REQUEST_ID`].
+ */
+id: number, call: Call, } | { "kind": "response", id: number, outcome: Outcome, } | { "kind": "event", event: Event, };
