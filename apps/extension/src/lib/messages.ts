@@ -3,6 +3,7 @@
  * everything that reaches the app uses `@wirecatch/protocol`).
  */
 import type { ExtensionSettings, ExtensionSettingsPatch, QueueSummary } from '@wirecatch/protocol';
+import type { MediaView } from './media/center';
 import type { ConnectionStatus } from './native/status';
 
 /** Name of the `runtime.connect` port the popup opens to the background script. */
@@ -33,7 +34,11 @@ export type PopupCommand =
   | { type: 'pause_all' }
   | { type: 'resume_all' }
   | { type: 'reconnect' }
-  | { type: 'dismiss_notice' };
+  | { type: 'dismiss_notice' }
+  /** Start sending `media` messages for this tab's "Media on this page" list. */
+  | { type: 'watch_media'; tabId: number }
+  /** Send one item of that list to the app. */
+  | { type: 'download_media'; tabId: number; key: string };
 
 export interface PopupRequest {
   id: number;
@@ -42,7 +47,9 @@ export interface PopupRequest {
 
 export type BackgroundMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
-  | { type: 'result'; id: number; ok: true }
+  | { type: 'media'; view: MediaView }
+  /** `message`, when present, is a sentence to show for the success (for example "Sent to Wirecatch."). */
+  | { type: 'result'; id: number; ok: true; message?: string }
   | { type: 'result'; id: number; ok: false; message: string };
 
 /** The part of `runtime.Port` both sides use; `Out` is what this side sends, `In` what it receives. */
@@ -58,6 +65,8 @@ const COMMAND_TYPES = new Set<string>([
   'resume_all',
   'reconnect',
   'dismiss_notice',
+  'watch_media',
+  'download_media',
 ]);
 
 /** Checks the outer shape of a message from the popup. */
@@ -70,6 +79,11 @@ export function asPopupRequest(raw: unknown): PopupRequest | null {
   if (type === 'update_settings') {
     const patch = (command as { patch?: unknown }).patch;
     if (typeof patch !== 'object' || patch === null) return null;
+  }
+  if (type === 'watch_media' || type === 'download_media') {
+    const { tabId, key } = command as { tabId?: unknown; key?: unknown };
+    if (typeof tabId !== 'number' || !Number.isInteger(tabId) || tabId < 0) return null;
+    if (type === 'download_media' && typeof key !== 'string') return null;
   }
   return raw as PopupRequest;
 }

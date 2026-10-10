@@ -6,6 +6,7 @@
   import { SIZE_UNITS, splitSize, toBytes, type SizeUnit } from '../lib/size';
   import { matchingSite, siteForPage } from '../lib/sites';
   import IgnoredSites from './IgnoredSites.svelte';
+  import MediaSection from './MediaSection.svelte';
   import SwitchRow from './SwitchRow.svelte';
 
   interface Props {
@@ -163,6 +164,13 @@
     {#if cachedNote !== null}
       <p class="note">{cachedNote}</p>
     {/if}
+
+    <MediaSection
+      view={model.media}
+      statuses={model.mediaStatus}
+      buttonOn={model.settings?.show_media_button ?? null}
+      ondownload={(key: string) => model.downloadMedia(key)}
+    />
 
     {#if !showSettings}
       <p class="note">

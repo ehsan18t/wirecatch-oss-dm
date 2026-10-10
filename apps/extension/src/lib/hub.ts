@@ -21,6 +21,7 @@ import {
 } from './capture/handover';
 import { shouldCapture } from './capture/should-capture';
 import { fileNameFromUrl } from './file-types';
+import type { MediaRequest, MediaSendResult, MediaView } from './media/center';
 import {
   asPopupRequest,
   type BackgroundMessage,
@@ -81,6 +82,14 @@ export interface HubDeps {
   requestTimeoutMs?: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs?: number;
+  /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
+  media?: MediaCommands;
+}
+
+/** What the popup's media commands need from the background's media side. */
+export interface MediaCommands {
+  watch(tabId: number, push: (view: MediaView) => void): () => void;
+  download(tabId: number, key: string): Promise<MediaSendResult>;
 }
 
 /** What the context menu passes on a click (`contextMenus.OnClickData`), plus the tab it happened in. */
@@ -115,6 +124,11 @@ const RECENT_LIMIT = 50;
 
 const NO_SITE_ACCESS =
   'Wirecatch needs access to websites to take downloads with their cookies. Open this popup and click Allow access.';
+
+/** For media there is no browser download to fall back on, so the person has to act. */
+export const MEDIA_UNREACHABLE = 'Wirecatch could not be reached. Open Wirecatch, then try again.';
+const MEDIA_NO_SITE_ACCESS =
+  'Wirecatch needs access to websites to send media with its cookies. Open the Wirecatch popup and click Allow access.';
 
 function describeError(error: unknown): string {
   if (error instanceof RequestError) {
@@ -204,12 +218,32 @@ export class Hub {
   /** Connects an open popup: it gets a snapshot once the cache is loaded, and after every change. */
   addPopup(channel: Channel<BackgroundMessage, unknown>): void {
     this.#popups.add(channel);
-    channel.onDisconnect.addListener(() => this.#popups.delete(channel));
+    let stopWatching: (() => void) | null = null;
+    channel.onDisconnect.addListener(() => {
+      this.#popups.delete(channel);
+      stopWatching?.();
+    });
     channel.onMessage.addListener((raw) => {
       const request = asPopupRequest(raw);
       if (request === null) return;
-      void this.#runCommand(request.command).then(
-        () => this.#post(channel, { type: 'result', id: request.id, ok: true }),
+      const { command } = request;
+      if (command.type === 'watch_media') {
+        // One list per popup: the active tab's.
+        stopWatching?.();
+        stopWatching =
+          this.#deps.media?.watch(command.tabId, (view) => this.#post(channel, { type: 'media', view })) ??
+          null;
+        this.#post(channel, { type: 'result', id: request.id, ok: true });
+        return;
+      }
+      void this.#runCommand(command).then(
+        (message) =>
+          this.#post(
+            channel,
+            message === undefined
+              ? { type: 'result', id: request.id, ok: true }
+              : { type: 'result', id: request.id, ok: true, message },
+          ),
         (error: unknown) =>
           this.#post(channel, { type: 'result', id: request.id, ok: false, message: describeError(error) }),
       );
@@ -326,6 +360,71 @@ export class Hub {
     );
   }
 
+  /**
+   * Hands media to the app (from the media button or the popup). Uses the same
+   * handover as downloads: a fresh handover id, and a withdraw when the answer is
+   * lost. There is no browser download to keep, so when the app cannot be reached
+   * the answer says to open Wirecatch instead of failing quietly.
+   */
+  async sendMedia(request: MediaRequest): Promise<MediaSendResult> {
+    const { target } = request;
+    if (!(await this.#siteAccess(target.url))) return { ok: false, message: MEDIA_NO_SITE_ACCESS };
+    await this.#ready;
+    if (this.#client.status.state !== 'connected' || this.#live === null) {
+      // Connect (and learn the default queue) first, so "could not be reached" is certain:
+      // nothing has been sent yet when this fails.
+      try {
+        const reply = await this.#client.request(
+          { method: 'get_extension_settings' },
+          this.#deps.connectWaitMs ?? 6_000,
+        );
+        if (reply.type === 'extension_settings') this.#adoptSettings(reply.data);
+      } catch {
+        return { ok: false, message: MEDIA_UNREACHABLE };
+      }
+    }
+    const result = await submit(
+      {
+        handover_id: this.#newHandoverId(),
+        url: target.url,
+        referrer: request.referrer,
+        page_url: request.pageUrl,
+        suggested_name: null,
+        mime: target.mime,
+        size_hint: target.size,
+        cookies: await this.#deps.cookieHeader(target.url, request.cookieStoreId),
+        user_agent: this.#deps.userAgent,
+        extra_headers: [],
+        source: 'media_button',
+        queue: this.#live?.default_queue ?? null,
+        media: { kind: target.kind, title: request.title },
+      },
+      {
+        addDownload: (download) => this.#addDownload(download),
+        withdraw: (id) => this.#withdraw(id),
+      },
+    );
+    if (result.taken) {
+      return {
+        ok: true,
+        message:
+          result.action === 'awaiting_confirmation'
+            ? 'Sent to Wirecatch. Confirm it there to start.'
+            : 'Sent to Wirecatch.',
+      };
+    }
+    if (result.reason === 'refused') {
+      const why = result.detail === null ? '' : ` ${result.detail.replace(/\.?$/, '.')}`;
+      return { ok: false, message: `Wirecatch did not take it.${why}` };
+    }
+    return {
+      ok: false,
+      message: result.uncertain
+        ? 'Wirecatch did not answer in time. Open Wirecatch and check its list before trying again.'
+        : 'Wirecatch did not answer in time, so nothing was added. Open Wirecatch, then try again.',
+    };
+  }
+
   async #browserFallback(url: string, message: string): Promise<'browser' | 'failed'> {
     try {
       await this.#deps.downloads.start(url);
@@ -418,8 +517,18 @@ export class Hub {
     await this.#persistInFlight();
   }
 
-  async #runCommand(command: PopupCommand): Promise<void> {
+  /** Runs a popup command; resolves with a sentence to show when there is one. */
+  async #runCommand(command: PopupCommand): Promise<string | undefined> {
     switch (command.type) {
+      case 'watch_media':
+        return undefined;
+      case 'download_media': {
+        const media = this.#deps.media;
+        if (media === undefined) throw new Error('Media cannot be sent from here.');
+        const result = await media.download(command.tabId, command.key);
+        if (!result.ok) throw new Error(result.message);
+        return result.message;
+      }
       case 'reconnect':
         this.#client.reconnectNow();
         return;

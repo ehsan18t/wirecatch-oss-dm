@@ -1,4 +1,5 @@
 import type { ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/protocol';
+import type { MediaView } from '../media/center';
 import type { BackgroundMessage, Channel, PopupCommand, PopupRequest, Snapshot } from '../messages';
 import { applyPatch, patchOf, type SettingsChange } from '../protocol';
 
@@ -7,10 +8,18 @@ export interface Feedback {
   text: string;
 }
 
+/** What happened to one item of the media list after its Download button was clicked. */
+export interface MediaStatus {
+  tone: 'busy' | 'success' | 'error';
+  text: string;
+}
+
+type Result = { ok: true; message?: string } | { ok: false; message: string };
+
 function isBackgroundMessage(raw: unknown): raw is BackgroundMessage {
   if (typeof raw !== 'object' || raw === null) return false;
   const type = (raw as { type?: unknown }).type;
-  return type === 'snapshot' || type === 'result';
+  return type === 'snapshot' || type === 'result' || type === 'media';
 }
 
 /**
@@ -20,6 +29,10 @@ function isBackgroundMessage(raw: unknown): raw is BackgroundMessage {
 export class PopupModel {
   snapshot = $state<Snapshot | null>(null);
   feedback = $state<Feedback | null>(null);
+  /** The active tab's "Media on this page" list; null until the background sends it. */
+  media = $state<MediaView | null>(null);
+  /** Per item key: the outcome of its Download button. */
+  mediaStatus = $state<Record<string, MediaStatus>>({});
   #pending = $state<Array<{ id: number; patch: ExtensionSettingsPatch }>>([]);
 
   /** The settings to show: the app's (or cached) values with changes still on their way applied on top. */
@@ -38,7 +51,7 @@ export class PopupModel {
   readonly #channel: Channel<PopupRequest, unknown>;
   // Callbacks for requests on their way, not displayed state, so a plain Map is right.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  readonly #waiting = new Map<number, (result: { ok: true } | { ok: false; message: string }) => void>();
+  readonly #waiting = new Map<number, (result: Result) => void>();
   #nextId = 1;
 
   constructor(channel: Channel<PopupRequest, unknown>) {
@@ -84,12 +97,31 @@ export class PopupModel {
     void this.#send({ type: 'dismiss_notice' });
   }
 
+  /** Asks for the media list of a tab (the active one), kept current while the popup is open. */
+  watchMedia(tabId: number): void {
+    void this.#send({ type: 'watch_media', tabId });
+  }
+
+  /** Sends one item of the media list to the app; its outcome shows in `mediaStatus`. */
+  async downloadMedia(key: string): Promise<void> {
+    const view = this.media;
+    if (view === null || this.mediaStatus[key]?.tone === 'busy') return;
+    this.mediaStatus = { ...this.mediaStatus, [key]: { tone: 'busy', text: 'Sending to Wirecatch…' } };
+    const result = await this.#send({ type: 'download_media', tabId: view.tabId, key });
+    this.mediaStatus = {
+      ...this.mediaStatus,
+      [key]: result.ok
+        ? { tone: 'success', text: result.message ?? 'Sent to Wirecatch.' }
+        : { tone: 'error', text: result.message },
+    };
+  }
+
   async #simple(command: PopupCommand, success: string): Promise<void> {
     const result = await this.#send(command);
     this.feedback = result.ok ? { tone: 'success', text: success } : { tone: 'error', text: result.message };
   }
 
-  #send(command: PopupCommand): Promise<{ ok: true } | { ok: false; message: string }> {
+  #send(command: PopupCommand): Promise<Result> {
     const id = this.#nextId++;
     return new Promise((resolve) => {
       this.#waiting.set(id, resolve);
@@ -107,9 +139,19 @@ export class PopupModel {
       this.snapshot = message.snapshot;
       return;
     }
+    if (message.type === 'media') {
+      this.media = message.view;
+      return;
+    }
     const done = this.#waiting.get(message.id);
     if (done === undefined) return;
     this.#waiting.delete(message.id);
-    done(message.ok ? { ok: true } : { ok: false, message: message.message });
+    done(
+      message.ok
+        ? message.message === undefined
+          ? { ok: true }
+          : { ok: true, message: message.message }
+        : { ok: false, message: message.message },
+    );
   }
 }

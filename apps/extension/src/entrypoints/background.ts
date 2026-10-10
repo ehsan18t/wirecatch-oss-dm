@@ -6,12 +6,31 @@ import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { cookieHeader } from '@/lib/cookies';
 import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
+import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
+import type { ObservedResponse } from '@/lib/media/detect';
+import { MediaRegistry } from '@/lib/media/registry';
+import { MediaWatcher } from '@/lib/media/watch';
 import { POPUP_PORT_NAME } from '@/lib/messages';
 import { NativeClient, type NativePort } from '@/lib/native/client';
-import { originPattern } from '@/lib/site-access';
+import { SITE_ORIGINS, originPattern } from '@/lib/site-access';
 
 const MENU_ID = 'wirecatch-download';
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
+const MEDIA_KEY = 'wirecatch.media.v1';
+
+/**
+ * Responses worth looking at for media. Only types both Chromium and Firefox know
+ * (an unknown type makes Chromium refuse the listener); images, scripts, styles and
+ * fonts are left out so the background is not woken for them.
+ */
+const MEDIA_REQUEST_TYPES = [
+  'main_frame',
+  'sub_frame',
+  'media',
+  'xmlhttprequest',
+  'object',
+  'other',
+] as const;
 
 interface FirefoxRuntime {
   getBrowserInfo?: () => Promise<{ name: string; version: string }>;
@@ -66,6 +85,31 @@ function inFlightStore(): InFlightStore | undefined {
   };
 }
 
+function mediaStore(): MediaStore | undefined {
+  const area = (browser.storage as Partial<typeof browser.storage>).session;
+  if (area === undefined) return undefined;
+  return {
+    async load() {
+      const items = await area.get(MEDIA_KEY);
+      return items[MEDIA_KEY];
+    },
+    async save(value) {
+      await area.set({ [MEDIA_KEY]: value });
+    },
+  };
+}
+
+async function tabInfo(tabId: number): Promise<TabInfo | null> {
+  try {
+    const tab = await browser.tabs.get(tabId);
+    // Firefox adds `cookieStoreId` to tabs; Chromium tabs use the default cookie store.
+    const cookieStoreId = (tab as { cookieStoreId?: string }).cookieStoreId ?? null;
+    return { url: tab.url ?? null, title: tab.title ?? null, incognito: tab.incognito, cookieStoreId };
+  } catch {
+    return null;
+  }
+}
+
 function makeBadge(): Badge {
   let last = '';
   return {
@@ -115,7 +159,19 @@ export default defineBackground(() => {
     },
   };
 
-  const hub = new Hub({
+  const registry = new MediaRegistry();
+  const media: MediaCenter = new MediaCenter({
+    registry,
+    getTab: tabInfo,
+    send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
+    store: mediaStore(),
+  });
+  const watcher = new MediaWatcher(registry, {
+    isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
+  });
+
+  const hub: Hub = new Hub({
+    media,
     client,
     cache: storageCache(browser.storage.local),
     downloads,
@@ -146,10 +202,32 @@ export default defineBackground(() => {
     hub.onMenuClick(info, menuTab).catch(() => undefined);
   });
 
+  // Observe only: no `blocking` option, so requests are never held up or changed.
+  browser.webRequest.onResponseStarted.addListener(
+    (details) => {
+      watcher.onResponse(details as ObservedResponse).catch(() => undefined);
+    },
+    { urls: SITE_ORIGINS, types: [...MEDIA_REQUEST_TYPES] },
+    ['responseHeaders'],
+  );
+  browser.tabs.onRemoved.addListener((tabId) => watcher.onTabRemoved(tabId));
+
+  // The media button's questions. Answered through `sendResponse`, which both browsers support.
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (sender.id !== browser.runtime.id || sender.tab === undefined) return;
+    const answer = media.handleContentMessage(message, sender);
+    if (answer === null) return;
+    answer.then(sendResponse, () => sendResponse(null));
+    return true;
+  });
+
   browser.runtime.onConnect.addListener((port) => {
-    if (port.name !== POPUP_PORT_NAME || port.sender?.id !== browser.runtime.id) return;
+    // Only the popup itself, never a content script that knows the port name.
+    const fromExtensionPage = port.sender?.url?.startsWith(browser.runtime.getURL('/')) === true;
+    if (port.name !== POPUP_PORT_NAME || port.sender?.id !== browser.runtime.id || !fromExtensionPage) return;
     hub.addPopup(port);
   });
 
+  void media.start();
   void hub.start();
 });
