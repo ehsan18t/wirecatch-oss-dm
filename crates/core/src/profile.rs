@@ -78,6 +78,8 @@ pub(crate) fn merge(
     folders: &KnownFolders,
     mut next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
+    // Checked before the merge so a huge file costs nothing.
+    settings::check_queue_count(profile.queues.len())?;
     let mut queues = current.to_vec();
     let mut ids = HashMap::new();
     for incoming in profile.queues {
@@ -118,6 +120,7 @@ pub(crate) fn merge(
         .copied()
         .unwrap_or(DEFAULT_QUEUE_ID);
     localize_folders(&mut settings, folders);
+    settings::check_queue_count(queues.len())?;
     let settings = settings::validate(settings, &queues, folders)?;
     Ok(Imported { settings, queues })
 }
@@ -232,6 +235,22 @@ mod tests {
             (QueueId(3), "Videos", false)
         );
         assert_eq!(imported.settings.extension.default_queue, QueueId(3));
+    }
+
+    #[test]
+    fn a_profile_with_too_many_queues_is_refused() {
+        let profile = SettingsProfile {
+            format_version: 1,
+            app_version: "0.1.0".into(),
+            exported_at: 0,
+            settings: default_settings(),
+            queues: (0..=settings::MAX_QUEUES as i64)
+                .map(|i| queue(i + 10, &format!("Q{i}")))
+                .collect(),
+            addons: vec![],
+        };
+        let err = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap_err();
+        assert!(err.to_string().contains("at most 100 queues"), "{err}");
     }
 
     #[test]

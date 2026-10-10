@@ -26,6 +26,7 @@ impl Manager {
     /// Adds a queue with no schedule and no speed limit.
     pub fn create_queue(&self, name: &str) -> Result<Queue> {
         let mut state = self.lock_open()?;
+        settings::check_queue_count(state.queues.len() + 1)?;
         let queue = settings::validate_queue(Queue {
             id: QueueId(0),
             name: name.to_string(),
