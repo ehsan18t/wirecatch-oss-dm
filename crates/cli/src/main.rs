@@ -14,7 +14,9 @@ use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Ur
 #[derive(Parser, Debug)]
 #[command(name = "wirecatch", version)]
 struct Args {
-    /// The URL to download.
+    /// The URL to download: http, https, ftp, ftps or ftpes.
+    ///
+    /// FTP links may carry a login, as in ftp://user:password@host/path; without one the download logs in anonymously. ftps:// is encrypted from the start (port 990), or with AUTH TLS on port 21; ftpes:// always uses AUTH TLS. An encrypted link never falls back to an unencrypted connection.
     url: String,
 
     /// Folder to save into.
@@ -29,11 +31,17 @@ struct Args {
     #[arg(short = 'c', long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..=64))]
     connections: u16,
 
-    /// Extra request header, for example -H "Cookie: a=b". Repeatable.
+    /// Extra request header, for example -H "Cookie: a=b". Repeatable. HTTP and HTTPS only.
     ///
     /// Cookies, Authorization and other credentials are only sent to the URL's own site, never to another site it redirects to.
     #[arg(short = 'H', long = "header")]
     headers: Vec<String>,
+
+    /// Use HTTP/3 when the server offers it (experimental).
+    ///
+    /// The other connections switch to HTTP/3 when the server's first answer advertises it, and switch back to HTTP/2 or HTTP/1.1 on any problem. Needs a wirecatch built with the http3 feature.
+    #[arg(long)]
+    http3: bool,
 
     /// Print no progress bar.
     #[arg(short, long)]
@@ -52,13 +60,28 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let url = Url::parse(&args.url).with_context(|| format!("not a valid URL: {}", args.url))?;
-    if !matches!(url.scheme(), "http" | "https") {
-        bail!("only http and https URLs are supported so far");
+    let is_ftp = match url.scheme() {
+        "http" | "https" => false,
+        "ftp" | "ftps" | "ftpes" => true,
+        other => bail!(
+            "wirecatch cannot download \"{other}\" links. Use an http, https, ftp, ftps or ftpes link"
+        ),
+    };
+    if is_ftp && !args.headers.is_empty() {
+        bail!(
+            "request headers (-H) only apply to http and https links. For an FTP login, put it in the link: ftp://user:password@host/path"
+        );
+    }
+    if args.http3 && !cfg!(feature = "http3") {
+        bail!(
+            "this wirecatch was built without HTTP/3 support. Build it with `cargo build -p wirecatch-cli --features http3`, or leave out --http3"
+        );
     }
 
     let mut request = DownloadRequest::new(url, args.output_dir);
     request.file_name = args.name;
     request.options.connections = args.connections.into();
+    request.options.http3 = args.http3;
     for raw in &args.headers {
         let (name, value) = raw
             .split_once(':')

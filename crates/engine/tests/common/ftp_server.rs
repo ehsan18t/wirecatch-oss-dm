@@ -114,7 +114,12 @@ pub struct FtpServer {
 
 impl FtpServer {
     pub async fn start(config: FtpConfig) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Self::start_on(0, config).await
+    }
+
+    /// Listens on `port` of 127.0.0.1 (0 picks a free one).
+    pub async fn start_on(port: u16, config: FtpConfig) -> Self {
+        let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let stats = Arc::new(FtpStats::default());
         let config = Arc::new(Mutex::new(config));
