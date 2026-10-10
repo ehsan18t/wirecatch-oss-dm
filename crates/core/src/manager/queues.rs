@@ -49,8 +49,9 @@ impl Manager {
     }
 
     /// Changes a queue's name, limits or schedule. New limits apply to running
-    /// downloads at once. Whether a queue is the default cannot be changed.
-    pub fn update_queue(&self, queue: Queue) -> Result<Queue> {
+    /// downloads at once. Whether a queue is the default cannot be changed. The
+    /// stored queue arrives as `QueuesChanged`.
+    pub fn update_queue(&self, queue: Queue) -> Result<()> {
         let queue = settings::validate_queue(queue)?;
         let mut state = self.lock_open()?;
         ensure_name_free(&state, &queue.name, Some(queue.id))?;
@@ -59,9 +60,9 @@ impl Manager {
             is_default: slot.queue.is_default,
             ..queue
         };
-        apply_to_slot(slot, updated.clone());
+        apply_to_slot(slot, updated);
         self.queues_changed(&mut state);
-        Ok(updated)
+        Ok(())
     }
 
     /// Deletes a queue. Its downloads move to the end of the default queue.

@@ -19,13 +19,14 @@ impl Manager {
         self.lock().settings.clone()
     }
 
-    /// Replaces the settings after checking them. Returns them cleaned up (lists in
-    /// lower case without duplicates). New limits apply to running downloads at once.
-    pub fn update_settings(&self, new: AppSettings) -> Result<AppSettings> {
+    /// Replaces the settings after checking them. Lists are cleaned up (lower case,
+    /// no duplicates), and the stored result arrives as `SettingsChanged`. New
+    /// limits apply to running downloads at once.
+    pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
         let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
-        self.apply_settings(&mut state, new.clone());
-        Ok(new)
+        self.apply_settings(&mut state, new);
+        Ok(())
     }
 
     /// The settings the extension shows.

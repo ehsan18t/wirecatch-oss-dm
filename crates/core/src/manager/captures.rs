@@ -118,12 +118,9 @@ impl Manager {
             .collect()
     }
 
-    /// Accepts a waiting capture, with the user's changes, and starts it.
-    pub async fn confirm_capture(
-        &self,
-        id: u64,
-        answer: CaptureConfirmation,
-    ) -> Result<DownloadSummary> {
+    /// Accepts a waiting capture, with the user's changes, and starts it. The new
+    /// download arrives with the next `DownloadsChanged` event.
+    pub async fn confirm_capture(&self, id: u64, answer: CaptureConfirmation) -> Result<()> {
         let pending = self
             .lock_open()?
             .pending
@@ -133,7 +130,7 @@ impl Manager {
             Ok(row) => {
                 let target = Target::Download(row.id);
                 self.lock().handovers.retarget(&pending.handover, target);
-                Ok(row)
+                Ok(())
             }
             Err(e) => {
                 // Keep it so the user can fix the problem (another folder, say) and confirm again.

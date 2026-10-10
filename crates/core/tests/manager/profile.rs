@@ -14,22 +14,20 @@ fn absolute(path: std::path::PathBuf) -> PortablePath {
 async fn settings_and_queues_move_to_another_machine() {
     let here = Harness::new().await;
     let night = here.manager.create_queue("Night").unwrap();
-    let night = here
-        .manager
-        .update_queue(Queue {
-            max_concurrent: 4,
-            speed_limit: Some(500_000),
-            schedule: Some(Schedule {
-                start: TimeOfDay { hour: 1, minute: 0 },
-                stop: Some(TimeOfDay {
-                    hour: 6,
-                    minute: 30,
-                }),
-                days: vec![],
+    let night = Queue {
+        max_concurrent: 4,
+        speed_limit: Some(500_000),
+        schedule: Some(Schedule {
+            start: TimeOfDay { hour: 1, minute: 0 },
+            stop: Some(TimeOfDay {
+                hour: 6,
+                minute: 30,
             }),
-            ..night
-        })
-        .unwrap();
+            days: vec![],
+        }),
+        ..night
+    };
+    here.manager.update_queue(night.clone()).unwrap();
     let downloads = here.folders.downloads.clone();
     let videos = here.folders.videos.clone();
     tune(&here.manager, |s| {

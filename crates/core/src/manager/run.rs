@@ -287,7 +287,7 @@ mod tests {
         let folders = KnownFolders::under_home(dir.path().join("home"));
         let config = ManagerConfig::new(dir.path().join("data"), folders);
         let manager = Manager::open(config).await.unwrap();
-        let row = manager
+        let id = manager
             .add_download(AddRequest {
                 url: "https://example.com/a.bin".into(),
                 queue: None,
@@ -297,7 +297,7 @@ mod tests {
             })
             .await
             .unwrap();
-        (manager, row.id, dir)
+        (manager, id, dir)
     }
 
     async fn panicking_engine() -> Result<Outcome, EngineError> {

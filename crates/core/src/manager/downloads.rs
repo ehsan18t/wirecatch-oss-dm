@@ -61,8 +61,10 @@ impl Manager {
         entries.into_iter().map(|e| e.row.clone()).collect()
     }
 
-    /// Adds a download from the app itself (paste, Add dialog, command palette).
-    pub async fn add_download(&self, request: AddRequest) -> Result<DownloadSummary> {
+    /// Adds a download from the app itself (paste, Add dialog, command palette) and
+    /// returns its id. Its row arrives with the next `DownloadsChanged` event and is
+    /// in [`list_downloads`](Self::list_downloads) at once.
+    pub async fn add_download(&self, request: AddRequest) -> Result<DownloadId> {
         let url = parse_url(&request.url)?;
         let queue = match request.queue {
             Some(queue) => queue,
@@ -84,7 +86,7 @@ impl Manager {
             })
             .await?;
         match added {
-            Added::New(row) => Ok(row),
+            Added::New(row) => Ok(row.id),
             Added::Known(_) => Err(CoreError::Internal(
                 "a download without a handover was matched to one".into(),
             )),

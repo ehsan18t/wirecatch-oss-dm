@@ -360,8 +360,7 @@ async fn ask_before_download_waits_for_the_user() {
 
     // The user picks another name and folder.
     let folder = h.folders.home.join("Chosen");
-    let row = h
-        .manager
+    h.manager
         .confirm_capture(
             proposal.id,
             CaptureConfirmation {
@@ -372,6 +371,7 @@ async fn ask_before_download_waits_for_the_user() {
         )
         .await
         .unwrap();
+    let row = h.manager.list_downloads().remove(0);
     assert_eq!(std::path::Path::new(&row.path), folder.join("mine.pdf"));
     h.wait_status(row.id, DownloadStatus::Completed).await;
     assert!(h.manager.pending_confirmations().is_empty());

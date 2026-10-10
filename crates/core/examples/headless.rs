@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
             start: true,
         };
         match manager.add_download(request).await {
-            Ok(row) => eprintln!("Added {} as {}", row.url, row.path),
+            Ok(id) => eprintln!("Added download {}", id.0),
             Err(e) => eprintln!("Could not add: {e}"),
         }
     }

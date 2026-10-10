@@ -191,6 +191,46 @@ async fn a_server_that_never_answers_cannot_hang_the_app() {
     assert_eq!(h.row(left.id).status, DownloadStatus::Connecting);
 }
 
+/// The desktop UI calls these as Tauri commands and relies on exactly these return
+/// types: the new id from `add_download`, the new queue from `create_queue`, and
+/// nothing from the rest. Errors reach it as their plain-language text.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn commands_return_what_the_ui_expects() {
+    let h = Harness::new().await;
+    let m = &h.manager;
+    let request = wirecatch_protocol::app::AddRequest {
+        url: "https://example.com/a.bin".into(),
+        queue: None,
+        folder: None,
+        file_name: None,
+        start: false,
+    };
+    let id: DownloadId = m.add_download(request).await.unwrap();
+    let queue: wirecatch_protocol::app::Queue = m.create_queue("Later").unwrap();
+    let nothing: [(); 11] = [
+        m.update_queue(queue.clone()).unwrap(),
+        m.update_settings(m.get_settings()).unwrap(),
+        m.pause(id).unwrap(),
+        m.resume(id).unwrap(),
+        m.pause_all().unwrap(),
+        m.resume_all().unwrap(),
+        m.move_to_queue(&[id], queue.id).unwrap(),
+        m.reorder(queue.id, &[id]).unwrap(),
+        m.refresh_link(id, "https://example.com/b.bin").unwrap(),
+        m.cancel(id).unwrap(),
+        m.retry(id).unwrap(),
+    ];
+    assert_eq!(nothing.len(), 11);
+    let (): () = m.remove(&[id], false).await.unwrap();
+    let (): () = m.delete_queue(queue.id).unwrap();
+
+    let error = m.resume(id).unwrap_err().to_string();
+    assert_eq!(
+        error,
+        "That download no longer exists. It may have been removed."
+    );
+}
+
 /// Tauri runs synchronous commands on its main thread, outside any Tokio runtime.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sync_methods_work_from_a_thread_outside_the_runtime() {

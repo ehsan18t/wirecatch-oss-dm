@@ -303,7 +303,8 @@ impl Harness {
             start: true,
         };
         change(&mut request);
-        self.manager.add_download(request).await.unwrap()
+        let id = self.manager.add_download(request).await.unwrap();
+        self.row(id)
     }
 
     pub fn row(&self, id: DownloadId) -> DownloadSummary {
