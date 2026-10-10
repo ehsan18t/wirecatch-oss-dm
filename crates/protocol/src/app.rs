@@ -29,6 +29,8 @@ pub struct DownloadSummary {
     #[ts(type = "number | null")]
     pub eta_secs: Option<u64>,
     pub error: Option<UserError>,
+    /// Why a `Queued` download is not running yet; `None` for every other status.
+    pub waiting: Option<WaitReason>,
     /// Unix time in milliseconds.
     #[ts(type = "number")]
     pub added_at: i64,
@@ -96,6 +98,31 @@ pub struct Queue {
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
     pub is_default: bool,
+    /// A paused queue starts nothing new, including downloads added later, and
+    /// its running downloads are paused. Resuming it does not resume downloads
+    /// the user paused one by one.
+    pub paused: bool,
+    /// Set by "start now": the queue runs outside its schedule until it is empty
+    /// or paused, then the schedule applies again.
+    pub running_outside_schedule: bool,
+}
+
+/// Why a queued download is waiting, shown in plain words so queues are never a
+/// mystery (D3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum WaitReason {
+    /// Its queue is paused.
+    QueuePaused,
+    /// Outside its queue's schedule; `starts_at` is the next start, if any.
+    QueueSchedule { starts_at: Option<TimeOfDay> },
+    /// Its queue already runs as many downloads as it may.
+    QueueFull { running: u32, limit: u32 },
+    /// The app already runs as many downloads as allowed overall.
+    GlobalLimit { running: u32, limit: u32 },
+    /// Ahead of it in the same queue are other waiting downloads.
+    InLine { position: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

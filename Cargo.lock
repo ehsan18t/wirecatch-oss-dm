@@ -2079,6 +2079,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
+name = "wirecatch-bridge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows-sys 0.59.0",
+ "wirecatch-ipc",
+ "wirecatch-protocol",
+]
+
+[[package]]
 name = "wirecatch-cli"
 version = "0.1.0"
 dependencies = [
@@ -2131,6 +2145,17 @@ dependencies = [
  "tracing",
  "url",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "wirecatch-ipc"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
+ "tokio",
+ "windows-sys 0.59.0",
+ "wirecatch-protocol",
 ]
 
 [[package]]
