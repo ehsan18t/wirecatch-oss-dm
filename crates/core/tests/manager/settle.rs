@@ -79,6 +79,36 @@ async fn the_users_name_and_folder_win() {
     assert_eq!(std::path::Path::new(&done.path), chosen.join("mine.bin"));
 }
 
+/// The capture toast's Change button is often pressed before the server has
+/// answered; the folder chosen then must still be where the file ends up.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_folder_chosen_before_the_server_answers_is_kept() {
+    let server = TestServer::start(
+        test_data(4 * KIB),
+        Config {
+            ranges: true,
+            etag: Some("\"v1\"".into()),
+            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
+            answer_delay: Some(std::time::Duration::from_millis(500)),
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("dl")).await;
+    let chosen = h.root.path().join("chosen");
+    h.manager
+        .set_download_folder(row.id, &chosen.to_string_lossy())
+        .await
+        .unwrap();
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(std::path::Path::new(&done.path), chosen.join("report.pdf"));
+    assert_eq!(
+        std::fs::read(chosen.join("report.pdf")).unwrap(),
+        server.data
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_server_name_twice_gets_a_free_name() {
     let server = server_naming("report.pdf", 4 * KIB, None).await;

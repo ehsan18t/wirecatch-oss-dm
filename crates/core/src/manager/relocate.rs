@@ -60,7 +60,7 @@ impl Manager {
         let moved = if old_path.parent() == Some(dir.as_path()) {
             Ok(old_path.clone())
         } else {
-            self.move_files(id, &old_path, dir).await
+            self.move_files(id, &old_path, dir.clone()).await
         };
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
@@ -71,8 +71,18 @@ impl Manager {
         }
         match moved {
             Ok(new_path) => {
+                let new_name = file_name_of(&new_path);
+                if !entry.naming.settled {
+                    // The server has not answered yet, so its answer will choose the
+                    // path: it must use the folder the user chose now, and the
+                    // user's name as it is in that folder.
+                    entry.naming.folder = Some(dir.to_string_lossy().into_owned());
+                    if entry.naming.name.is_some() {
+                        entry.naming.name = Some(new_name.clone());
+                    }
+                }
                 entry.row.path = new_path.to_string_lossy().into_owned();
-                entry.row.file_name = file_name_of(&new_path);
+                entry.row.file_name = new_name;
                 if entry.row.status == DownloadStatus::Failed {
                     entry.row.status = DownloadStatus::Queued;
                     entry.row.error = None;
