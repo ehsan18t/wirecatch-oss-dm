@@ -1,6 +1,21 @@
-import type { Call, Event, Hello, Message, ProtocolError, Reply } from '@wirecatch/protocol';
-import { PROTOCOL_VERSION } from '../protocol';
+import {
+  PROTOCOL_VERSION,
+  UNKNOWN_REQUEST_ID,
+  type Call,
+  type Event,
+  type Hello,
+  type Message,
+  type Outcome,
+  type ProtocolError,
+  type Reply,
+} from '@wirecatch/protocol';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
+
+/** Largest message the bridge accepts (D14: 1 MiB of UTF-8 JSON). */
+export const MAX_MESSAGE_BYTES = 1024 * 1024;
+
+/** How many timed-out requests are remembered so a late answer can still be recognized. */
+const LATE_MEMORY = 64;
 
 /** The part of `runtime.Port` the client uses, so tests can pass a fake. */
 export interface NativePort {
@@ -33,7 +48,9 @@ export type RequestErrorKind =
   /** No connection to the app, or it broke before the answer came. */
   | 'disconnected'
   /** The app answered with an error. */
-  | 'app';
+  | 'app'
+  /** The request is larger than the bridge accepts; it was not sent. */
+  | 'too_large';
 
 export class RequestError extends Error {
   constructor(
@@ -47,6 +64,7 @@ export class RequestError extends Error {
 }
 
 interface Pending {
+  call: Call;
   resolve(reply: Reply): void;
   reject(error: RequestError): void;
   timer: ReturnType<typeof setTimeout>;
@@ -72,6 +90,12 @@ function asMessage(raw: unknown): Message | null {
   return null;
 }
 
+const encoder = new TextEncoder();
+
+function utf8Length(text: string): number {
+  return encoder.encode(text).length;
+}
+
 function problemFromHelloError(error: RequestError): Problem {
   const code = error.protocolError?.code;
   if (code === 'app_unavailable') return { kind: 'app_unavailable', detail: error.message };
@@ -94,8 +118,11 @@ export class NativeClient {
   #port: NativePort | null = null;
   /** Bumped whenever a port is dropped, so late events from it are ignored. */
   #generation = 0;
-  #nextId = 1;
+  #nextId = UNKNOWN_REQUEST_ID + 1;
   #attempt = 0;
+  /** Requests that timed out on the current port, so an answer arriving later is passed on. */
+  readonly #late = new Map<number, Call>();
+  readonly #lateListeners = new Set<(call: Call, outcome: Outcome) => void>();
   #started = false;
   #stopped = false;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,6 +171,12 @@ export class NativeClient {
   onEvent(listener: (event: Event) => void): () => void {
     this.#eventListeners.add(listener);
     return () => this.#eventListeners.delete(listener);
+  }
+
+  /** Called when the app answers a request after it already timed out here. */
+  onLateAnswer(listener: (call: Call, outcome: Outcome) => void): () => void {
+    this.#lateListeners.add(listener);
+    return () => this.#lateListeners.delete(listener);
   }
 
   /**
@@ -247,14 +280,26 @@ export class NativeClient {
       return Promise.reject(new RequestError('disconnected', 'Wirecatch is not connected.'));
     }
     const id = this.#nextId++;
+    if (this.#nextId === UNKNOWN_REQUEST_ID) this.#nextId += 1;
+    const message: Message = { kind: 'request', id, call };
+    // Checked here so one oversized request fails on its own instead of making the bridge drop the port.
+    if (utf8Length(JSON.stringify(message)) > MAX_MESSAGE_BYTES) {
+      return Promise.reject(
+        new RequestError(
+          'too_large',
+          'This request is too large to send to Wirecatch (over 1 MiB). Try a shorter list or a shorter address.',
+        ),
+      );
+    }
     return new Promise<Reply>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
+        this.#rememberLate(id, call);
         reject(new RequestError('timeout', 'Wirecatch did not answer in time.'));
       }, timeoutMs);
-      this.#pending.set(id, { resolve, reject, timer });
+      this.#pending.set(id, { call, resolve, reject, timer });
       try {
-        port.postMessage({ kind: 'request', id, call });
+        port.postMessage(message);
       } catch (error) {
         clearTimeout(timer);
         this.#pending.delete(id);
@@ -272,20 +317,31 @@ export class NativeClient {
       return;
     }
     if (message.kind !== 'response') return;
-    const pending = this.#pending.get(message.id);
-    if (pending === undefined) return;
-    this.#pending.delete(message.id);
-    clearTimeout(pending.timer);
     const { outcome } = message;
-    if (outcome.status === 'ok') {
-      pending.resolve(outcome.value);
-      return;
+    const pending = this.#pending.get(message.id);
+    if (pending !== undefined) {
+      this.#pending.delete(message.id);
+      clearTimeout(pending.timer);
+      if (outcome.status === 'ok') pending.resolve(outcome.value);
+      else pending.reject(new RequestError('app', outcome.value.message, outcome.value));
+    } else {
+      const late = this.#late.get(message.id);
+      if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
+      this.#late.delete(message.id);
+      for (const listener of this.#lateListeners) listener(late, outcome);
     }
-    pending.reject(new RequestError('app', outcome.value.message, outcome.value));
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.
-    if (outcome.value.code === 'app_unavailable') {
+    if (outcome.status === 'err' && outcome.value.code === 'app_unavailable') {
       this.#fail({ kind: 'app_unavailable', detail: outcome.value.message });
+    }
+  }
+
+  #rememberLate(id: number, call: Call): void {
+    this.#late.set(id, call);
+    if (this.#late.size > LATE_MEMORY) {
+      const oldest = this.#late.keys().next().value;
+      if (oldest !== undefined) this.#late.delete(oldest);
     }
   }
 
@@ -317,6 +373,8 @@ export class NativeClient {
 
   #dropPort(): void {
     this.#generation += 1;
+    // Request ids belong to one connection; answers to them can no longer arrive.
+    this.#late.clear();
     const port = this.#port;
     this.#port = null;
     if (port === null) return;

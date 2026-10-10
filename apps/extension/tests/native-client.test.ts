@@ -1,7 +1,8 @@
-import type { Event, Hello } from '@wirecatch/protocol';
+import { UNKNOWN_REQUEST_ID, type Event, type Hello } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NativeClient, RequestError } from '../src/lib/native/client';
+import { MAX_MESSAGE_BYTES, NativeClient, RequestError } from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
+import { patchOf } from '../src/lib/protocol';
 import { FakeApp, flush } from './fakes';
 
 const HELLO: Hello = {
@@ -91,6 +92,83 @@ describe('NativeClient', () => {
     expect(error).toBeInstanceOf(RequestError);
     expect((error as RequestError).kind).toBe('timeout');
     expect(client.status.state).toBe('connected');
+  });
+
+  it('fails an oversized request on its own, without sending it or dropping the connection', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    const port = app.openPort;
+    const huge = 'x'.repeat(MAX_MESSAGE_BYTES);
+    const error = await client
+      .request({ method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) }, 1_000)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ kind: 'too_large' });
+    expect((error as RequestError).message).toContain('too large');
+    expect(app.calls('update_extension_settings')).toHaveLength(0);
+    expect(client.status.state).toBe('connected');
+    expect(app.openPort).toBe(port);
+    expect(await client.request({ method: 'pause_all' }, 1_000)).toEqual({ type: 'done' });
+  });
+
+  it('counts the limit in UTF-8 bytes, not characters', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    // About 0.4 M characters, but each is 3 bytes in UTF-8: over 1 MiB.
+    const wide = '€'.repeat(400_000);
+    const error = await client
+      .request({ method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [wide] }) }, 1_000)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ kind: 'too_large' });
+  });
+
+  it('passes an answer that arrives after the timeout to late-answer listeners', async () => {
+    client = makeClient(app);
+    const late: Array<[string, string]> = [];
+    client.onLateAnswer((call, outcome) => late.push([call.method, outcome.status]));
+    client.start();
+    await flush();
+    app.answers = false;
+    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await result).toMatchObject({ kind: 'timeout' });
+    const sent = app.requests.at(-1);
+    if (sent === undefined) throw new Error('nothing sent');
+    app.openPort?.deliver({
+      kind: 'response',
+      id: sent.id,
+      outcome: { status: 'ok', value: { type: 'done' } },
+    });
+    await flush();
+    expect(late).toEqual([['pause_all', 'ok']]);
+    // Only once.
+    app.openPort?.deliver({
+      kind: 'response',
+      id: sent.id,
+      outcome: { status: 'ok', value: { type: 'done' } },
+    });
+    await flush();
+    expect(late).toHaveLength(1);
+  });
+
+  it('never uses request id 0 and ignores answers carrying it', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    app.answers = false;
+    const pending = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    await flush();
+    expect(app.requests.map((r) => r.id)).not.toContain(UNKNOWN_REQUEST_ID);
+    app.openPort?.deliver({
+      kind: 'response',
+      id: UNKNOWN_REQUEST_ID,
+      outcome: { status: 'err', value: { code: 'invalid_request', message: 'Bad frame.' } },
+    });
+    await flush();
+    expect(client.status.state).toBe('connected');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await pending).toMatchObject({ kind: 'timeout' });
   });
 
   it('passes app errors on with their code', async () => {
