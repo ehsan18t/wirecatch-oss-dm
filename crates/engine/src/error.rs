@@ -116,6 +116,28 @@ pub enum Error {
     #[error("the download was not saved: {0}")]
     TargetRejected(String),
 
+    /// A [`Fetcher`](crate::Fetcher) answer was larger than the size limit the
+    /// caller set for it, so it was not read to the end.
+    #[error(
+        "{url} sent more than {limit} bytes, more than expected for it; the link may not point to what was expected"
+    )]
+    TooLarge {
+        /// The URL that answered.
+        url: String,
+        /// The limit in bytes.
+        limit: u64,
+    },
+
+    /// A [`Fetcher`](crate::Fetcher) refused to send a request to an address
+    /// on the local network (loopback, private, link-local or unspecified),
+    /// because a resource from the internet pointed there; see
+    /// [`PrivateNetwork`](crate::fetch::PrivateNetwork).
+    #[error("{url} points to a device on your own network, which Wirecatch blocks for safety")]
+    PrivateNetwork {
+        /// The address that was refused.
+        url: String,
+    },
+
     /// Something inside the engine failed that should not, such as a task that
     /// panicked. This is a bug in Wirecatch; please report it with the text.
     #[error("internal error: {0}. This is a bug in Wirecatch; please report it")]
