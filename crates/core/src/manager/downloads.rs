@@ -52,7 +52,10 @@ pub(super) fn capture_action(row: &DownloadSummary) -> AddAction {
 }
 
 impl Manager {
-    /// Every download, in sidebar queue order and then in line order.
+    /// Every download, grouped by queue: the queues in the order
+    /// [`list_queues`](Self::list_queues) returns them, and within each queue in
+    /// line order (the order [`reorder`](Self::reorder) sets, new downloads last).
+    /// The UI may rely on this order.
     pub fn list_downloads(&self) -> Vec<DownloadSummary> {
         let state = self.lock();
         let mut entries: Vec<&Entry> = state.visible().collect();

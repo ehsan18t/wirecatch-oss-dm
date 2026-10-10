@@ -410,6 +410,34 @@ async fn downloads_move_between_queues_and_keep_their_order() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_list_is_grouped_by_queue_in_line_order() {
+    let h = Harness::new().await;
+    let later = h.manager.create_queue("Later").unwrap().id;
+    let main = DEFAULT_QUEUE_ID;
+    let mut add = Vec::new();
+    // Added alternately, so neither id nor time order matches the expected order.
+    for (name, queue) in [("a1", main), ("b1", later), ("a2", main), ("b2", later)] {
+        let row = h
+            .add_with(&format!("https://example.com/{name}.bin"), |r| {
+                r.start = false;
+                r.queue = Some(queue);
+            })
+            .await;
+        add.push(row.id);
+    }
+    let [a1, b1, a2, b2] = add[..] else {
+        unreachable!()
+    };
+    let ids = || -> Vec<DownloadId> { h.manager.list_downloads().iter().map(|r| r.id).collect() };
+    assert_eq!(ids(), vec![a1, a2, b1, b2]);
+    h.manager.reorder(later, &[b2, b1]).unwrap();
+    h.manager.reorder(main, &[a2, a1]).unwrap();
+    assert_eq!(ids(), vec![a2, a1, b2, b1]);
+    let queues: Vec<_> = h.manager.list_queues().iter().map(|q| q.id).collect();
+    assert_eq!(queues, vec![main, later]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pause_all_and_resume_all() {
     let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
     let h = Harness::new().await;
