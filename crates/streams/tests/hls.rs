@@ -9,7 +9,7 @@ use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit};
 use common::{Server, segment, temp_dir};
 use wirecatch_engine::header::{COOKIE, HeaderValue};
-use wirecatch_engine::{CancellationToken, DownloadOptions};
+use wirecatch_engine::{CancellationToken, DownloadOptions, RateLimiter};
 use wirecatch_streams::{
     Choice, Error, Outcome, PrivateNetwork, Stage, StreamKind, StreamProgress, StreamRequest,
     download, inspect,
@@ -723,4 +723,77 @@ async fn streams_from_the_internet_cannot_reach_the_local_network() {
     let error = run(auto).await.unwrap_err();
     assert!(matches!(error, Error::Decrypt { .. }), "{error}");
     assert_eq!(device.requests("key"), 1);
+}
+
+#[tokio::test]
+async fn no_more_than_the_configured_connections_are_used() {
+    let server = Server::start().await;
+    let segments = media_playlist(&server, "c", 12, 11);
+    // Slow answers keep every connection busy, so the limit is reached.
+    for i in 0..12 {
+        server.delay(&format!("c/seg{i}.ts"), Duration::from_millis(80));
+    }
+    let dir = temp_dir("hls-connections");
+    let mut req = request(&server, "c/index.m3u8", &dir.join("v.ts"));
+    req.options.connections = 3;
+    let (path, _) = completed(run(req).await.unwrap());
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    assert_eq!(
+        server.max_active(),
+        3,
+        "exactly the configured number at most"
+    );
+}
+
+#[tokio::test]
+async fn speed_limits_apply_to_streams() {
+    let server = Server::start().await;
+    // Ten segments of 30 kB: 300 kB in all.
+    let mut text = String::from(
+        "#EXTM3U
+",
+    );
+    let mut segments = Vec::new();
+    for i in 0..10 {
+        let data = segment(500 + i, 30_000);
+        server.put(&format!("r/{i}.ts"), data.clone());
+        text.push_str(&format!(
+            "#EXTINF:2,
+{i}.ts
+"
+        ));
+        segments.push(data);
+    }
+    text.push_str(
+        "#EXT-X-ENDLIST
+",
+    );
+    server.put_typed("r/index.m3u8", text, MPEGURL);
+    let total: usize = segments.iter().map(Vec::len).sum();
+    let dir = temp_dir("hls-rate");
+
+    let mut req = request(&server, "r/index.m3u8", &dir.join("fast.ts"));
+    req.options.connections = 4;
+    let start = std::time::Instant::now();
+    completed(run(req.clone()).await.unwrap());
+    let unlimited = start.elapsed();
+
+    // 200 kB/s shared by all four connections: 300 kB takes 1.5 s, minus at
+    // most the limiter's quarter-second burst.
+    req.output = dir.join("slow.ts");
+    let limiter = Arc::new(RateLimiter::new(Some(200_000)));
+    req.options.rate_limiters = vec![limiter];
+    let start = std::time::Instant::now();
+    let (path, _) = completed(run(req).await.unwrap());
+    let limited = start.elapsed();
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    let expected = Duration::from_secs_f64(total as f64 / 200_000.0);
+    assert!(
+        limited >= expected.mul_f64(0.75),
+        "{total} bytes took {limited:?} at 200 kB/s"
+    );
+    assert!(
+        unlimited < expected / 2,
+        "without a limit it took {unlimited:?}"
+    );
 }
