@@ -53,27 +53,49 @@ pub(crate) struct DirFacts {
     pub mode: u32,
 }
 
-/// Checks that a folder is private to `uid`. Returns the reason when it is not.
+/// Why a folder is not private, and what the user can do about it.
 #[cfg_attr(not(unix), allow(dead_code))]
-pub(crate) fn check_private_dir(facts: DirFacts, uid: u32) -> Result<(), String> {
-    if facts.is_symlink {
-        return Err("it is a symbolic link".into());
-    }
-    if !facts.is_dir {
-        return Err("it is not a folder".into());
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DirProblem {
+    pub reason: String,
+    pub fix: String,
+}
+
+/// Checks that a folder is private to `uid`. `shown` is the folder as it appears
+/// in advice.
+#[cfg_attr(not(unix), allow(dead_code))]
+pub(crate) fn check_private_dir(facts: DirFacts, uid: u32, shown: &str) -> Result<(), DirProblem> {
+    let problem = |reason: String, fix: String| Err(DirProblem { reason, fix });
+    if facts.is_symlink || !facts.is_dir {
+        let what = if facts.is_symlink {
+            "it is a symbolic link"
+        } else {
+            "it is not a folder"
+        };
+        return problem(
+            what.into(),
+            format!("Wirecatch did not create it. Remove {shown}, then open Wirecatch again."),
+        );
     }
     if facts.owner_uid != uid {
-        return Err(format!(
-            "it belongs to user {} instead of you (user {uid})",
-            facts.owner_uid
-        ));
+        // chmod or deleting it is not possible for us; only its owner or an
+        // administrator can remove it.
+        return problem(
+            format!(
+                "it belongs to user {} instead of you (user {uid}), so that user could intercept your downloads",
+                facts.owner_uid
+            ),
+            "Ask an administrator to delete it, or restart the computer (which empties the temporary folder on most systems), then open Wirecatch again.".into(),
+        );
     }
-    let open_to_others = facts.mode & 0o077;
-    if open_to_others != 0 {
-        return Err(format!(
-            "other users have access to it (permissions {:03o}, expected 700)",
-            facts.mode & 0o777
-        ));
+    if facts.mode & 0o077 != 0 {
+        return problem(
+            format!(
+                "other users have access to it (permissions {:03o}, expected 700)",
+                facts.mode & 0o777
+            ),
+            format!("Run `chmod 700 {shown}` (or delete the folder), then open Wirecatch again."),
+        );
     }
     Ok(())
 }
@@ -122,24 +144,30 @@ mod tests {
         }
     }
 
+    const SHOWN: &str = "/tmp/wirecatch-1000";
+
     #[test]
     fn a_private_folder_owned_by_the_user_is_accepted() {
-        assert!(check_private_dir(dir(1000, 0o700), 1000).is_ok());
-        assert!(check_private_dir(dir(1000, 0o500), 1000).is_ok());
+        assert!(check_private_dir(dir(1000, 0o700), 1000, SHOWN).is_ok());
+        assert!(check_private_dir(dir(1000, 0o500), 1000, SHOWN).is_ok());
     }
 
     #[test]
-    fn a_folder_others_can_reach_is_refused() {
+    fn a_folder_others_can_reach_is_refused_with_chmod_advice() {
         for mode in [0o701, 0o710, 0o750, 0o755, 0o777, 0o707] {
-            let err = check_private_dir(dir(1000, mode), 1000).unwrap_err();
-            assert!(err.contains("other users"), "{mode:o}: {err}");
+            let err = check_private_dir(dir(1000, mode), 1000, SHOWN).unwrap_err();
+            assert!(err.reason.contains("other users"), "{mode:o}: {err:?}");
+            assert!(err.fix.contains("chmod 700 /tmp/wirecatch-1000"), "{err:?}");
         }
     }
 
     #[test]
-    fn a_folder_owned_by_someone_else_is_refused() {
-        let err = check_private_dir(dir(0, 0o700), 1000).unwrap_err();
-        assert!(err.contains("belongs to user 0"), "{err}");
+    fn a_folder_owned_by_someone_else_gets_advice_the_user_can_follow() {
+        let err = check_private_dir(dir(0, 0o700), 1000, SHOWN).unwrap_err();
+        assert!(err.reason.contains("belongs to user 0"), "{err:?}");
+        // The user cannot chmod a folder they do not own.
+        assert!(!err.fix.contains("chmod"), "{err:?}");
+        assert!(err.fix.contains("administrator"), "{err:?}");
     }
 
     #[test]
@@ -148,11 +176,12 @@ mod tests {
             is_symlink: true,
             ..dir(1000, 0o700)
         };
-        assert!(check_private_dir(link, 1000).is_err());
+        assert!(check_private_dir(link, 1000, SHOWN).is_err());
         let file = DirFacts {
             is_dir: false,
             ..dir(1000, 0o600)
         };
-        assert!(check_private_dir(file, 1000).is_err());
+        let err = check_private_dir(file, 1000, SHOWN).unwrap_err();
+        assert!(err.fix.contains("Remove /tmp/wirecatch-1000"), "{err:?}");
     }
 }

@@ -73,9 +73,12 @@ pub(crate) fn verify_private_dir(dir: &Path, uid: u32) -> Result<(), IpcError> {
         owner_uid: meta.uid(),
         mode: meta.mode(),
     };
-    paths::check_private_dir(facts, uid).map_err(|reason| IpcError::UnsafeDirectory {
-        path: dir.to_path_buf(),
-        reason,
+    paths::check_private_dir(facts, uid, &dir.display().to_string()).map_err(|problem| {
+        IpcError::UnsafeDirectory {
+            path: dir.to_path_buf(),
+            reason: problem.reason,
+            fix: problem.fix,
+        }
     })
 }
 

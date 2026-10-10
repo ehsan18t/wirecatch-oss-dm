@@ -118,6 +118,17 @@ pub enum IpcError {
         /// The owner that was found.
         actual: String,
     },
+    /// The endpoint name is held by a different user account, so the listener did
+    /// not start (and nothing was exposed).
+    #[error(
+        "Another user account ({owner}) is holding the connection point {endpoint} that Wirecatch needs, so Wirecatch did not start listening and nothing was exposed. That account may be trying to intercept your downloads. Ask that user to sign out, or restart the computer, then open Wirecatch again."
+    )]
+    EndpointTaken {
+        /// The endpoint that is taken.
+        endpoint: String,
+        /// Who holds it, as far as could be told.
+        owner: String,
+    },
     /// A client from a different user account tried to connect and was refused.
     /// The listener stays usable; keep calling [`Listener::accept`].
     #[error("Refused a connection from another user account ({peer}).")]
@@ -126,15 +137,14 @@ pub enum IpcError {
         peer: String,
     },
     /// The folder that holds the socket is not private to the current user.
-    #[error(
-        "The folder {} is not safe to use: {reason}. Delete the folder (or make it yours with `chmod 700`), then open Wirecatch again.",
-        path.display()
-    )]
+    #[error("The folder {} is not safe to use: {reason}. {fix}", path.display())]
     UnsafeDirectory {
         /// The folder that was checked.
         path: PathBuf,
         /// What is wrong with it.
         reason: String,
+        /// What the user can do about it.
+        fix: String,
     },
     /// An operating system call failed.
     #[error("{context}: {source}")]

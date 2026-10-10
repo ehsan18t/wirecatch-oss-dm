@@ -192,13 +192,20 @@ fn to_wide(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(iter::once(0)).collect()
 }
 
-/// The SDDL for the pipe: owned by `sid`, with a protected DACL (nothing
-/// inherited) that grants full file access to `sid` and nothing to anyone else.
+/// The SDDL for the pipe:
+///
+/// - `O:` owned by `sid`;
+/// - `D:P(A;;FA;;;sid)`: a protected DACL (nothing inherited) that grants full
+///   file access to `sid` and nothing to anyone else;
+/// - `S:(ML;;NWNR;;;ME)`: a medium mandatory label with no-write-up and
+///   no-read-up, so a low-integrity process (a sandboxed renderer, for example)
+///   cannot open it even though it runs as the same user. Without a label Windows
+///   applies medium no-write-up only, which still lets such a process read.
 pub(crate) fn owner_only_sddl(sid: &str) -> String {
-    format!("O:{sid}D:P(A;;FA;;;{sid})")
+    format!("O:{sid}D:P(A;;FA;;;{sid})S:(ML;;NWNR;;;ME)")
 }
 
-/// A self-relative security descriptor built from [`owner_only_sddl`].
+/// A self-relative security descriptor, normally built from [`owner_only_sddl`].
 struct OwnerOnlyDescriptor(PSECURITY_DESCRIPTOR);
 
 // SAFETY: the descriptor is a heap block owned by this value and never written
@@ -209,8 +216,11 @@ unsafe impl Sync for OwnerOnlyDescriptor {}
 
 impl OwnerOnlyDescriptor {
     fn new(user: &Sid) -> io::Result<Self> {
-        let sddl = owner_only_sddl(&user.to_string_form()?);
-        let wide = to_wide(OsStr::new(&sddl));
+        Self::from_sddl(&owner_only_sddl(&user.to_string_form()?))
+    }
+
+    fn from_sddl(sddl: &str) -> io::Result<Self> {
+        let wide = to_wide(OsStr::new(sddl));
         let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; on success `descriptor` receives a
         // LocalAlloc block that Drop frees.
@@ -267,6 +277,43 @@ fn create_instance(
     }
 }
 
+/// Opens an existing pipe as a client just long enough to read its owner. Never
+/// writes to it.
+fn probe_owner(endpoint: &Endpoint) -> io::Result<Sid> {
+    let client = ClientOptions::new()
+        .security_qos_flags(SECURITY_IDENTIFICATION)
+        .open(endpoint.as_os_str())?;
+    handle_owner(client.as_raw_handle())
+}
+
+/// Decides what a pipe name that already exists means, from what probing it
+/// found.
+fn classify_taken(endpoint: &Endpoint, user: &Sid, probe: io::Result<Sid>) -> IpcError {
+    let taken_by = |owner: String| IpcError::EndpointTaken {
+        endpoint: endpoint.to_string(),
+        owner,
+    };
+    match probe {
+        Ok(owner) if &owner == user => IpcError::AlreadyInUse {
+            endpoint: endpoint.to_string(),
+        },
+        Ok(owner) => taken_by(owner.to_string()),
+        // Our own pipe always lets us in, so a refusal means someone else's.
+        Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+            taken_by("an account that does not let you in".into())
+        }
+        // Every instance is busy serving a client: our own app under load is the
+        // likely case, and either way the name is not ours to take.
+        Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => IpcError::AlreadyInUse {
+            endpoint: endpoint.to_string(),
+        },
+        Err(e) => IpcError::io(
+            format!("{endpoint} is already in use and could not be checked"),
+            e,
+        ),
+    }
+}
+
 /// The server side. Always keeps one instance waiting for the next client.
 #[derive(Debug)]
 pub(crate) struct PipeListener {
@@ -281,17 +328,16 @@ impl PipeListener {
         let descriptor = OwnerOnlyDescriptor::new(&user).map_err(|e| {
             IpcError::io("Could not prepare the access rules for the connection", e)
         })?;
-        let next = create_instance(endpoint, &descriptor, true).map_err(|e| {
-            if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
-                // FILE_FLAG_FIRST_PIPE_INSTANCE fails this way when the name
-                // already exists, whoever created it.
-                IpcError::AlreadyInUse {
-                    endpoint: endpoint.to_string(),
-                }
-            } else {
-                IpcError::io(format!("Could not listen at {endpoint}"), e)
+        let next = match create_instance(endpoint, &descriptor, true) {
+            Ok(next) => next,
+            // FILE_FLAG_FIRST_PIPE_INSTANCE fails this way when the name already
+            // exists, whoever created it. Find out who, so the user gets the
+            // right advice.
+            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+                return Err(classify_taken(endpoint, &user, probe_owner(endpoint)));
             }
-        })?;
+            Err(e) => return Err(IpcError::io(format!("Could not listen at {endpoint}"), e)),
+        };
         Ok(Self {
             endpoint: endpoint.clone(),
             descriptor,
@@ -425,14 +471,19 @@ mod tests {
     };
     use windows_sys::Win32::Security::{
         ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
-        DACL_SECURITY_INFORMATION, GetAce, GetAclInformation, GetSecurityDescriptorControl,
-        ImpersonateAnonymousToken, RevertToSelf, SE_DACL_PROTECTED,
+        DACL_SECURITY_INFORMATION, DuplicateTokenEx, GetAce, GetAclInformation,
+        GetSecurityDescriptorControl, ImpersonateAnonymousToken, LABEL_SECURITY_INFORMATION,
+        RevertToSelf, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES, SecurityImpersonation,
+        SetTokenInformation, TOKEN_ADJUST_DEFAULT, TOKEN_DUPLICATE, TOKEN_IMPERSONATE,
+        TOKEN_MANDATORY_LABEL, TokenImpersonation, TokenIntegrityLevel,
     };
     use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ALL_ACCESS, OPEN_EXISTING};
     use windows_sys::Win32::System::SystemServices::{
-        ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE,
+        ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, SE_GROUP_INTEGRITY,
+        SYSTEM_MANDATORY_LABEL_ACE_TYPE, SYSTEM_MANDATORY_LABEL_NO_READ_UP,
+        SYSTEM_MANDATORY_LABEL_NO_WRITE_UP,
     };
-    use windows_sys::Win32::System::Threading::GetCurrentThread;
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadToken};
 
     fn unique_endpoint() -> Endpoint {
         static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -460,23 +511,75 @@ mod tests {
         dacl_protected: bool,
         /// `None` is a null DACL, which would mean everyone has full access.
         aces: Option<Vec<AceInfo>>,
+        /// Mandatory label entries from the SACL.
+        label: Vec<AceInfo>,
     }
 
-    /// Reads the owner and DACL of an object back from Windows.
+    /// Reads the entries of an ACL whose entries all share the
+    /// ACCESS_ALLOWED_ACE layout (allowed, denied and mandatory label entries).
+    ///
+    /// # Safety
+    ///
+    /// `acl` must point at a valid ACL that stays alive during the call.
+    unsafe fn read_acl(acl: *const ACL, expected: &[u32]) -> io::Result<Vec<AceInfo>> {
+        // SAFETY: zeroed is a valid ACL_SIZE_INFORMATION (plain integers).
+        let mut info: ACL_SIZE_INFORMATION = unsafe { mem::zeroed() };
+        // SAFETY: `acl` is valid (caller); `info` matches the requested class.
+        if unsafe {
+            GetAclInformation(
+                acl,
+                (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+                mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let mut aces = Vec::new();
+        for index in 0..info.AceCount {
+            let mut ace: *mut c_void = ptr::null_mut();
+            // SAFETY: `index` is below the ACE count reported above.
+            if unsafe { GetAce(acl, index, &mut ace) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            // SAFETY: every ACE starts with an ACE_HEADER.
+            let header = unsafe { &*(ace as *const ACE_HEADER) };
+            let ace_type = u32::from(header.AceType);
+            if !expected.contains(&ace_type) {
+                return Err(io::Error::other(format!("unexpected ACE type {ace_type}")));
+            }
+            // SAFETY: the expected types share the ACCESS_ALLOWED_ACE layout, with
+            // the SID starting at `SidStart`.
+            let body = unsafe { &*(ace as *const ACCESS_ALLOWED_ACE) };
+            // SAFETY: as above.
+            let sid = unsafe { Sid::copy_from(ptr::addr_of!(body.SidStart) as PSID) }?;
+            aces.push(AceInfo {
+                ace_type,
+                mask: body.Mask,
+                sid,
+            });
+        }
+        Ok(aces)
+    }
+
+    /// Reads the owner, DACL and mandatory label of an object back from
+    /// Windows.
     fn read_security(handle: RawHandle) -> io::Result<Security> {
         let mut owner: PSID = ptr::null_mut();
         let mut dacl: *mut ACL = ptr::null_mut();
+        let mut sacl: *mut ACL = ptr::null_mut();
         let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
-        // SAFETY: as in `handle_owner`.
+        // SAFETY: as in `handle_owner`. Reading the label needs only READ_CONTROL.
         let status = unsafe {
             GetSecurityInfo(
                 handle as HANDLE,
                 SE_KERNEL_OBJECT,
-                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+                OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION,
                 &mut owner,
                 ptr::null_mut(),
                 &mut dacl,
-                ptr::null_mut(),
+                &mut sacl,
                 &mut descriptor,
             )
         };
@@ -493,55 +596,23 @@ mod tests {
         if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
             return Err(io::Error::last_os_error());
         }
-
         let aces = if dacl.is_null() {
             None
         } else {
-            // SAFETY: zeroed is a valid ACL_SIZE_INFORMATION (plain integers).
-            let mut info: ACL_SIZE_INFORMATION = unsafe { mem::zeroed() };
-            // SAFETY: `dacl` points into the live descriptor; `info` is the right
-            // size for the requested class.
-            if unsafe {
-                GetAclInformation(
-                    dacl,
-                    (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-                    mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
-                    AclSizeInformation,
-                )
-            } == 0
-            {
-                return Err(io::Error::last_os_error());
-            }
-            let mut aces = Vec::new();
-            for index in 0..info.AceCount {
-                let mut ace: *mut c_void = ptr::null_mut();
-                // SAFETY: `index` is below the ACE count reported above.
-                if unsafe { GetAce(dacl, index, &mut ace) } == 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                // SAFETY: every ACE starts with an ACE_HEADER.
-                let header = unsafe { &*(ace as *const ACE_HEADER) };
-                let ace_type = u32::from(header.AceType);
-                if ace_type != ACCESS_ALLOWED_ACE_TYPE && ace_type != ACCESS_DENIED_ACE_TYPE {
-                    return Err(io::Error::other(format!("unexpected ACE type {ace_type}")));
-                }
-                // SAFETY: allowed and denied ACEs share the ACCESS_ALLOWED_ACE
-                // layout, with the SID starting at `SidStart`.
-                let body = unsafe { &*(ace as *const ACCESS_ALLOWED_ACE) };
-                // SAFETY: as above.
-                let sid = unsafe { Sid::copy_from(ptr::addr_of!(body.SidStart) as PSID) }?;
-                aces.push(AceInfo {
-                    ace_type,
-                    mask: body.Mask,
-                    sid,
-                });
-            }
-            Some(aces)
+            // SAFETY: `dacl` points into the live descriptor.
+            Some(unsafe { read_acl(dacl, &[ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE]) }?)
+        };
+        let label = if sacl.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: `sacl` points into the live descriptor.
+            unsafe { read_acl(sacl, &[SYSTEM_MANDATORY_LABEL_ACE_TYPE]) }?
         };
         Ok(Security {
             owner,
             dacl_protected: control & SE_DACL_PROTECTED != 0,
             aces,
+            label,
         })
     }
 
@@ -558,6 +629,16 @@ mod tests {
                 }][..]
             ),
             "the only entry must grant the current user, and nobody else"
+        );
+        assert_eq!(
+            security.label,
+            [AceInfo {
+                ace_type: SYSTEM_MANDATORY_LABEL_ACE_TYPE,
+                mask: SYSTEM_MANDATORY_LABEL_NO_WRITE_UP | SYSTEM_MANDATORY_LABEL_NO_READ_UP,
+                // Medium integrity.
+                sid: Sid::parse("S-1-16-8192").unwrap(),
+            }],
+            "medium label with no-write-up and no-read-up"
         );
     }
 
@@ -655,12 +736,151 @@ mod tests {
         );
     }
 
+    /// Opens the pipe from a thread running as the current user but at low
+    /// integrity, like a sandboxed browser process.
+    fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<(), u32> {
+        let name = to_wide(endpoint.as_os_str());
+        std::thread::spawn(move || {
+            let low = Sid::parse("S-1-16-4096").unwrap();
+            let mut process_token: HANDLE = ptr::null_mut();
+            let mut token: HANDLE = ptr::null_mut();
+            // SAFETY: plain Win32 calls on handles opened and closed here; the
+            // impersonation only affects this thread and is reverted.
+            unsafe {
+                assert_ne!(
+                    OpenProcessToken(
+                        GetCurrentProcess(),
+                        TOKEN_DUPLICATE | TOKEN_QUERY,
+                        &mut process_token
+                    ),
+                    0
+                );
+                assert_ne!(
+                    DuplicateTokenEx(
+                        process_token,
+                        TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
+                        ptr::null(),
+                        SecurityImpersonation,
+                        TokenImpersonation,
+                        &mut token,
+                    ),
+                    0
+                );
+                CloseHandle(process_token);
+                let label = TOKEN_MANDATORY_LABEL {
+                    Label: SID_AND_ATTRIBUTES {
+                        Sid: low.as_psid(),
+                        Attributes: SE_GROUP_INTEGRITY as u32,
+                    },
+                };
+                let size =
+                    mem::size_of::<TOKEN_MANDATORY_LABEL>() as u32 + GetLengthSid(low.as_psid());
+                assert_ne!(
+                    SetTokenInformation(
+                        token,
+                        TokenIntegrityLevel,
+                        (&label as *const TOKEN_MANDATORY_LABEL).cast(),
+                        size,
+                    ),
+                    0
+                );
+                assert_ne!(SetThreadToken(ptr::null(), token), 0);
+                let handle = CreateFileW(
+                    name.as_ptr(),
+                    access,
+                    0,
+                    ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    ptr::null_mut(),
+                );
+                let error = GetLastError();
+                RevertToSelf();
+                CloseHandle(token);
+                if handle == INVALID_HANDLE_VALUE {
+                    Err(error)
+                } else {
+                    CloseHandle(handle);
+                    Ok(())
+                }
+            }
+        })
+        .join()
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_low_integrity_process_of_the_same_user_cannot_open_the_pipe() {
+        let user = Sid::current_user().unwrap().to_string_form().unwrap();
+        // Control: the same owner-only DACL without a label lets a low-integrity
+        // process of the same user read, which is why the label is there.
+        let control = unique_endpoint();
+        let unlabeled =
+            OwnerOnlyDescriptor::from_sddl(&format!("O:{user}D:P(A;;FA;;;{user})")).unwrap();
+        let _control_pipe = create_instance(&control, &unlabeled, true).unwrap();
+        assert_eq!(open_at_low_integrity(&control, GENERIC_READ), Ok(()));
+
+        let endpoint = unique_endpoint();
+        let _listener = PipeListener::bind(&endpoint).unwrap();
+        assert_eq!(
+            open_at_low_integrity(&endpoint, GENERIC_READ),
+            Err(ERROR_ACCESS_DENIED)
+        );
+        assert_eq!(
+            open_at_low_integrity(&endpoint, GENERIC_READ | GENERIC_WRITE),
+            Err(ERROR_ACCESS_DENIED)
+        );
+    }
+
+    #[test]
+    fn a_taken_name_is_classified_by_its_owner() {
+        let endpoint = unique_endpoint();
+        let user = Sid::current_user().unwrap();
+        let forged = Sid::parse("S-1-5-21-1111111111-2222222222-3333333333-1001").unwrap();
+        assert!(matches!(
+            classify_taken(&endpoint, &user, Ok(user.clone())),
+            IpcError::AlreadyInUse { .. }
+        ));
+        match classify_taken(&endpoint, &user, Ok(forged.clone())) {
+            IpcError::EndpointTaken { owner, .. } => assert_eq!(owner, forged.to_string()),
+            other => panic!("expected EndpointTaken, got {other:?}"),
+        }
+        assert!(matches!(
+            classify_taken(
+                &endpoint,
+                &user,
+                Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32))
+            ),
+            IpcError::EndpointTaken { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_name_held_by_a_pipe_that_shuts_us_out_is_reported_as_taken() {
+        // Stands in for another user's squatting pipe: its DACL admits only
+        // SYSTEM, so the current user cannot open it, as with a real squatter
+        // whose DACL leaves us out. (Making a pipe whose owner is truly another
+        // account needs a second account or SeRestorePrivilege.)
+        let endpoint = unique_endpoint();
+        let user = Sid::current_user().unwrap().to_string_form().unwrap();
+        let foreign = OwnerOnlyDescriptor::from_sddl(&format!("O:{user}D:P(A;;FA;;;SY)")).unwrap();
+        let _squatter = create_instance(&endpoint, &foreign, true).unwrap();
+        let err = PipeListener::bind(&endpoint).unwrap_err();
+        assert!(matches!(err, IpcError::EndpointTaken { .. }), "{err:?}");
+        assert!(err.to_string().contains("nothing was exposed"), "{err}");
+    }
+
     #[tokio::test]
     async fn connector_refuses_a_pipe_owned_by_someone_else() {
         let endpoint = unique_endpoint();
         let _listener = PipeListener::bind(&endpoint).unwrap();
-        // The real pipe is owned by the current user; expecting another account
-        // stands in for a pipe squatted by that account.
+        // Limitation: this does not create a pipe that is really owned by another
+        // account; that needs a second account or SeRestorePrivilege, neither of
+        // which a test run has. Instead the pipe is real and owned by the current
+        // user, and the connector is told to expect a different account. That
+        // runs the same code a squatted pipe would (open, read the owner back from
+        // Windows, compare, refuse before writing anything); only the roles of
+        // "real" and "expected" owner are swapped.
         let forged = Sid::parse("S-1-5-21-1111111111-2222222222-3333333333-1001").unwrap();
         let err = connect(&endpoint, &forged).await.unwrap_err();
         match err {
@@ -711,7 +931,7 @@ mod tests {
     fn sddl_grants_only_the_owner() {
         assert_eq!(
             owner_only_sddl("S-1-5-21-9"),
-            "O:S-1-5-21-9D:P(A;;FA;;;S-1-5-21-9)"
+            "O:S-1-5-21-9D:P(A;;FA;;;S-1-5-21-9)S:(ML;;NWNR;;;ME)"
         );
     }
 }
