@@ -91,19 +91,23 @@ fn checked(name: String) -> Result<String> {
 /// (no file, part file or resume file) and not claimed by another download.
 /// Touches the file system, so call it off async threads.
 pub(crate) fn unique_path(dir: &Path, name: &str, claimed: &Claimed) -> PathBuf {
-    let (stem, ext) = split_ext(name);
-    let mut n = 0u64;
+    let mut n = 0;
     loop {
-        let candidate = if n == 0 {
-            dir.join(name)
-        } else {
-            dir.join(format!("{stem} ({n}){ext}"))
-        };
+        let candidate = candidate(dir, name, n);
         if !claimed.contains(&candidate) && is_free_on_disk(&candidate) {
             return candidate;
         }
         n += 1;
     }
+}
+
+/// The `n`th name tried for `name` in `dir`: `name` itself, then `name (1)`...
+pub(crate) fn candidate(dir: &Path, name: &str, n: u64) -> PathBuf {
+    if n == 0 {
+        return dir.join(name);
+    }
+    let (stem, ext) = split_ext(name);
+    dir.join(format!("{stem} ({n}){ext}"))
 }
 
 /// The part and resume files the engine keeps next to `path` while downloading.
@@ -124,7 +128,9 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
         .map(|m| m.len())
 }
 
-fn is_free_on_disk(path: &Path) -> bool {
+/// Whether nothing is at `path`: no file, part file or resume file. Touches the
+/// file system.
+pub(crate) fn is_free_on_disk(path: &Path) -> bool {
     !path.exists() && partial_files(path).iter().all(|p| !p.exists())
 }
 
@@ -134,6 +140,11 @@ fn split_ext(name: &str) -> (&str, &str) {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
         _ => (name, ""),
     }
+}
+
+/// Whether `a` and `b` name the same file, compared the way claims are.
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    key(a) == key(b)
 }
 
 /// Windows file names are case-insensitive; Linux ones are not.

@@ -251,3 +251,39 @@ async fn a_server_answer_during_a_move_settles_nothing() {
         "a part file was left behind"
     );
 }
+
+/// Checking whether a name is free can take long (a network folder that does not
+/// answer); it must not hold the lock every command needs meanwhile.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn names_are_checked_on_disk_without_holding_the_lock() {
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/get?id=1"))
+        .await
+        .unwrap();
+    let run_id = manager.lock().downloads[&id].run.as_ref().unwrap().id;
+
+    let (checks, under_lock) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let free_on_disk = |path: &Path| {
+        checks.fetch_add(1, Ordering::SeqCst);
+        if manager.inner.state.try_lock().is_err() {
+            under_lock.fetch_add(1, Ordering::SeqCst);
+        }
+        // Someone else's file already has the server's name.
+        !path.ends_with("report.pdf")
+    };
+    let path = manager
+        .settle_path_checking(id, run_id, &answer("report.pdf"), &free_on_disk)
+        .unwrap();
+    assert!(path.ends_with("report (1).pdf"), "{}", path.display());
+    assert_eq!(checks.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        under_lock.load(Ordering::SeqCst),
+        0,
+        "the disk was checked with the lock held"
+    );
+    let state = manager.lock();
+    assert!(state.claimed.contains(&path));
+    assert_eq!(Path::new(&state.downloads[&id].row.path), path);
+    state.assert_consistent();
+}

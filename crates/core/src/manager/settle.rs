@@ -7,7 +7,7 @@
 //! `Content-Disposition` and the folder from the real file type, without an extra
 //! request. The chosen path is saved at once; later runs use it as is.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use wirecatch_engine::{CancellationToken, PathResolver, RemoteFile, Url};
@@ -15,7 +15,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
 
 use super::Manager;
-use super::state::{Entry, Expectation};
+use super::state::{Entry, Expectation, State};
 use crate::{naming, settings};
 
 /// What the server said about the file, as far as choosing its path goes.
@@ -76,47 +76,89 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
-        let mut guard = self.lock();
-        let state = &mut *guard;
-        let Some(entry) = state
-            .downloads
-            .get_mut(&id)
-            .filter(|e| e.run.as_ref().is_some_and(|run| run.id == run_id))
-        else {
-            return Err("The download was removed before the server answered.".into());
-        };
-        // A run that is stopping (paused, moved to another folder or queue, being
-        // removed) must not take a path: whoever stopped it has already decided
-        // where the download lives, and its files would be left behind.
-        if is_stopping(entry) {
-            return Err("The download was stopped before the server answered.".into());
-        }
-        if let Some(expect) = &entry.expect {
-            check_expectation(expect, remote)?;
-        }
-        let name = naming::settled_name(
-            entry.naming.name.as_deref(),
-            &remote.suggested_name,
-            &remote.final_url,
-            &entry.row.file_name,
-        )
-        .map_err(|e| e.to_string())?;
-        let mut category = settings::category_of(&state.settings, &name);
-        if category == Category::Other
-            && let Some(content_type) = &remote.content_type
-        {
-            category = settings::category_from_mime(content_type);
-        }
-        let dir = match &entry.naming.folder {
-            Some(folder) => PathBuf::from(folder),
-            None => settings::folder_for(&state.settings, category, &self.inner.folders)
-                .map_err(|e| e.to_string())?,
+        self.settle_path_checking(id, run_id, remote, &naming::is_free_on_disk)
+    }
+
+    /// [`settle_path`](Self::settle_path), asking `free_on_disk` whether a path is
+    /// free on disk.
+    pub(super) fn settle_path_checking(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+        free_on_disk: &dyn Fn(&Path) -> bool,
+    ) -> Result<PathBuf, String> {
+        let (dir, name, category, provisional) = {
+            let state = self.lock();
+            let entry = current_run(&state, id, run_id)?;
+            if let Some(expect) = &entry.expect {
+                check_expectation(expect, remote)?;
+            }
+            let name = naming::settled_name(
+                entry.naming.name.as_deref(),
+                &remote.suggested_name,
+                &remote.final_url,
+                &entry.row.file_name,
+            )
+            .map_err(|e| e.to_string())?;
+            let mut category = settings::category_of(&state.settings, &name);
+            if category == Category::Other
+                && let Some(content_type) = &remote.content_type
+            {
+                category = settings::category_from_mime(content_type);
+            }
+            let dir = match &entry.naming.folder {
+                Some(folder) => PathBuf::from(folder),
+                None => settings::folder_for(&state.settings, category, &self.inner.folders)
+                    .map_err(|e| e.to_string())?,
+            };
+            (dir, name, category, entry.path().to_path_buf())
         };
 
-        // The provisional name is given up first, so the download may keep it.
-        state.claimed.remove(entry.path());
-        let path = naming::unique_path(&dir, &name, &state.claimed);
-        state.claimed.insert(&path);
+        // The disk is checked without the lock, which a folder that is slow to
+        // answer (an unreachable network share) would otherwise keep from every
+        // command. Each name is claimed before its check, so no other download can
+        // take it meanwhile, and given back if the disk says it is taken.
+        let mut tried = 0;
+        let (path, claimed_here) = loop {
+            let candidate = naming::candidate(&dir, &name, tried);
+            tried += 1;
+            let claimed_here = {
+                let mut state = self.lock();
+                current_run(&state, id, run_id)?;
+                // The download's own provisional path is its to keep.
+                if naming::same_path(&candidate, &provisional) {
+                    false
+                } else if state.claimed.contains(&candidate) {
+                    continue;
+                } else {
+                    state.claimed.insert(&candidate);
+                    true
+                }
+            };
+            if free_on_disk(&candidate) {
+                break (candidate, claimed_here);
+            }
+            if claimed_here {
+                self.lock().claimed.remove(&candidate);
+            }
+        };
+
+        let mut guard = self.lock();
+        let state = &mut *guard;
+        // The run may have been stopped while the disk was checked.
+        if let Err(reason) = current_run(state, id, run_id) {
+            if claimed_here {
+                state.claimed.remove(&path);
+            }
+            return Err(reason);
+        }
+        if !naming::same_path(&path, &provisional) {
+            state.claimed.remove(&provisional);
+        }
+        let Some(entry) = state.downloads.get_mut(&id) else {
+            return Err(REMOVED.into());
+        };
         entry.row.path = path.to_string_lossy().into_owned();
         entry.row.file_name = naming_of(&path);
         entry.row.category = category;
@@ -125,6 +167,24 @@ impl Manager {
         self.save(state, id);
         Ok(path)
     }
+}
+
+const REMOVED: &str = "The download was removed before the server answered.";
+
+/// The download if run `run_id` is still its run and may still take a path.
+fn current_run(state: &State, id: DownloadId, run_id: u64) -> Result<&Entry, String> {
+    let entry = state
+        .downloads
+        .get(&id)
+        .filter(|e| e.run.as_ref().is_some_and(|run| run.id == run_id))
+        .ok_or(REMOVED)?;
+    // A run that is stopping (paused, moved to another folder or queue, being
+    // removed) must not take a path: whoever stopped it has already decided where
+    // the download lives, and its files would be left behind.
+    if is_stopping(entry) {
+        return Err("The download was stopped before the server answered.".into());
+    }
+    Ok(entry)
 }
 
 /// Whether the server's answer is the file the browser saw. A different size, or
