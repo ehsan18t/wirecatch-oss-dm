@@ -2,7 +2,6 @@
 //! when the server "answers", and whether the run honours its stop request.
 
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -18,8 +17,6 @@ pub(super) type EngineFuture = Pin<Box<dyn Future<Output = Result<Outcome, Engin
 pub(super) struct FakeRun {
     /// Chooses the path from the server's answer; `None` once the path is settled.
     pub settle: Option<Settle>,
-    /// The download's path when the run started.
-    pub path: PathBuf,
     pub cancel: CancellationToken,
 }
 
@@ -30,14 +27,9 @@ pub(super) type FakeEngine = Arc<dyn Fn(FakeRun) -> EngineFuture + Send + Sync>;
 pub(super) fn run(
     fake: Option<FakeEngine>,
     settle: Option<Settle>,
-    path: PathBuf,
     cancel: CancellationToken,
 ) -> EngineFuture {
-    let run = FakeRun {
-        settle,
-        path,
-        cancel,
-    };
+    let run = FakeRun { settle, cancel };
     match fake {
         Some(fake) => fake(run),
         None => Box::pin(std::future::ready(Err(EngineError::Cancelled))),

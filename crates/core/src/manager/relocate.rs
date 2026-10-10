@@ -26,7 +26,7 @@ impl Manager {
             .inner
             .folders
             .resolve(&PortablePath(folder.to_string()))?;
-        let (old_path, exited) = {
+        let exited = {
             let mut state = self.lock_open()?;
             let entry = state.entry_mut(id)?;
             if entry.moving.is_some() {
@@ -34,24 +34,35 @@ impl Manager {
                     "This download is already being moved. Wait a moment and try again.",
                 ));
             }
-            let old_path = entry.path().to_path_buf();
-            if old_path.parent() == Some(dir.as_path()) {
+            if entry.path().parent() == Some(dir.as_path()) {
                 return Ok(());
             }
             entry.moving = Some(CancellationToken::new());
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
             self.stop_run(entry, Stop::Requeue);
-            (old_path, exited)
+            exited
         };
         // The engine must close the files before they can be moved; bounded by the
         // stop timeout.
         if let Some(exited) = exited {
             exited.cancelled().await;
         }
+        // Read only now: until the run had exited, the server's answer could still
+        // have settled its path. Removal waits while a download is moving, so it
+        // is still here.
+        let old_path = self
+            .lock()
+            .downloads
+            .get(&id)
+            .map(|entry| entry.path().to_path_buf())
+            .ok_or(CoreError::DownloadNotFound(id))?;
 
-        let moved = self.move_files(id, &old_path, dir).await;
+        let moved = if old_path.parent() == Some(dir.as_path()) {
+            Ok(old_path.clone())
+        } else {
+            self.move_files(id, &old_path, dir).await
+        };
         let mut state = self.lock();
-        // Removal waits while a download is moving, so it is still here.
         let Some(entry) = state.downloads.get_mut(&id) else {
             return moved.map(|_| ());
         };
@@ -67,7 +78,9 @@ impl Manager {
                     entry.row.error = None;
                 }
                 // The new path was claimed while moving; the old one is free now.
-                state.claimed.remove(&old_path);
+                if new_path != old_path {
+                    state.claimed.remove(&old_path);
+                }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
                 Ok(())

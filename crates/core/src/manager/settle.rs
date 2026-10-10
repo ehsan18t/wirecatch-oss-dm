@@ -15,7 +15,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
 
 use super::Manager;
-use super::state::Expectation;
+use super::state::{Entry, Expectation};
 use crate::{naming, settings};
 
 /// What the server said about the file, as far as choosing its path goes.
@@ -85,6 +85,12 @@ impl Manager {
         else {
             return Err("The download was removed before the server answered.".into());
         };
+        // A run that is stopping (paused, moved to another folder or queue, being
+        // removed) must not take a path: whoever stopped it has already decided
+        // where the download lives, and its files would be left behind.
+        if is_stopping(entry) {
+            return Err("The download was stopped before the server answered.".into());
+        }
         if let Some(expect) = &entry.expect {
             check_expectation(expect, remote)?;
         }
@@ -147,6 +153,13 @@ fn check_expectation(expect: &Expectation, remote: &ServerAnswer) -> Result<(), 
         );
     }
     Ok(())
+}
+
+/// Whether the download's run has been asked to stop, or it is being moved or removed.
+fn is_stopping(entry: &Entry) -> bool {
+    entry.removing
+        || entry.moving.is_some()
+        || entry.run.as_ref().is_some_and(|run| run.stop.is_some())
 }
 
 fn naming_of(path: &std::path::Path) -> String {

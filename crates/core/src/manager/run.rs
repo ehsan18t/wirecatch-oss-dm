@@ -60,9 +60,8 @@ impl Manager {
             #[cfg(test)]
             Ok(_) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
-                let path = entry.path().to_path_buf();
                 self.launch(state, id, run_id, answered, move |_, cancel| {
-                    super::fake::run(fake, settle, path, cancel)
+                    super::fake::run(fake, settle, cancel)
                 });
             }
             Ok(request) => self.launch(state, id, run_id, answered, move |progress, cancel| {
