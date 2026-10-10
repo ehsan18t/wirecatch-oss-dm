@@ -12,3 +12,4 @@ coverage/
 *.log
 .claude/worktrees/
 .playwright-mcp/
+.cache/
