@@ -211,12 +211,11 @@ fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
                     let url = attr(&attrs, "URI")
                         .ok_or("an EXT-X-MAP has no URI")
                         .and_then(|u| join(base, u).map_err(|_| "an EXT-X-MAP has a bad URI"))?;
-                    let range = attr(&attrs, "BYTERANGE").map(byte_range).transpose()?.map(
-                        |(len, offset)| {
-                            let start = offset.unwrap_or(0);
-                            start..start + len
-                        },
-                    );
+                    let range = attr(&attrs, "BYTERANGE")
+                        .map(byte_range)
+                        .transpose()?
+                        .map(|(len, offset)| span(offset.unwrap_or(0), len))
+                        .transpose()?;
                     map = Some(Map {
                         url,
                         range,
@@ -253,9 +252,9 @@ fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
         }
         let range = match pending_range.take() {
             None => None,
-            Some((len, Some(offset))) => Some(offset..offset.saturating_add(len)),
+            Some((len, Some(offset))) => Some(span(offset, len)?),
             Some((len, None)) => match &previous_end {
-                Some((previous, end)) if *previous == url => Some(*end..end.saturating_add(len)),
+                Some((previous, end)) if *previous == url => Some(span(*end, len)?),
                 _ => {
                     return Err(
                         "a byte range without an offset does not follow a part of the same file"
@@ -386,6 +385,14 @@ fn byte_range(value: &str) -> Result<(u64, Option<u64>), String> {
         None => (value, None),
     };
     Ok((len.trim().parse().map_err(|_| bad())?, offset))
+}
+
+/// `[start, start + len)`, refused when it would pass the largest offset.
+fn span(start: u64, len: u64) -> Result<Range<u64>, String> {
+    start
+        .checked_add(len)
+        .map(|end| start..end)
+        .ok_or_else(|| format!("the byte range {len}@{start} ends past any possible file size"))
 }
 
 /// Splits `#EXT-X-NAME:value` into its name and value.
@@ -635,6 +642,41 @@ mod tests {
         );
         assert!(m.refusal.is_none());
         assert!(m.pieces[0].encryption.is_some());
+    }
+
+    #[test]
+    fn byte_ranges_that_overflow_are_errors() {
+        let max = u64::MAX;
+        for text in [
+            format!(
+                "#EXTM3U
+#EXT-X-MAP:URI=\"i.mp4\",BYTERANGE=\"{max}@10\"
+#EXTINF:1,
+a.ts
+"
+            ),
+            format!(
+                "#EXTM3U
+#EXTINF:1,
+#EXT-X-BYTERANGE:10@{max}
+a.ts
+"
+            ),
+            format!(
+                "#EXTM3U
+#EXTINF:1,
+#EXT-X-BYTERANGE:{}@0
+a.ts
+#EXTINF:1,
+#EXT-X-BYTERANGE:2
+a.ts
+",
+                max - 1
+            ),
+        ] {
+            let error = parse(&text, &base()).unwrap_err();
+            assert!(error.contains("past any possible file size"), "{error}");
+        }
     }
 
     #[test]

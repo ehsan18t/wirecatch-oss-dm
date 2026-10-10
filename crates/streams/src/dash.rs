@@ -19,6 +19,9 @@ use crate::plan::{Piece, is_audio_codec, is_video_codec};
 /// manifest cannot exhaust memory.
 const MAX_SEGMENTS: u64 = 200_000;
 
+/// For segment numbers or times that would pass the largest number.
+const TOO_LARGE: &str = "its segment numbers or times are too large";
+
 /// What a manifest offers, from its first period.
 #[derive(Debug)]
 pub(crate) struct Mpd {
@@ -210,8 +213,8 @@ fn expand(
             }
             for _ in 0..count {
                 push(number, time)?;
-                time = time.saturating_add(entry.d);
-                number = number.saturating_add(1);
+                time = time.checked_add(entry.d).ok_or(TOO_LARGE)?;
+                number = number.checked_add(1).ok_or(TOO_LARGE)?;
             }
         }
     } else {
@@ -228,7 +231,12 @@ fn expand(
             return Err(format!("it lists more than {MAX_SEGMENTS} segments"));
         }
         for n in 0..count {
-            push(start + n, offset.saturating_add(n.saturating_mul(duration)))?;
+            let number = start.checked_add(n).ok_or(TOO_LARGE)?;
+            let time = n
+                .checked_mul(duration)
+                .and_then(|t| t.checked_add(offset))
+                .ok_or(TOO_LARGE)?;
+            push(number, time)?;
         }
     }
     Ok(pieces)
@@ -574,7 +582,8 @@ fn byte_range(value: &str) -> Result<Range<u64>, String> {
     if last < first {
         return Err(bad());
     }
-    Ok(first..last + 1)
+    let end = last.checked_add(1).ok_or_else(bad)?;
+    Ok(first..end)
 }
 
 fn set_kind(set: Node, first: Option<Node>) -> Option<Kind> {
@@ -906,6 +915,37 @@ mod tests {
         assert_eq!(mpd.reps[0].drm.as_deref(), Some("Google Widevine"));
         // Without a duration, a duration-based template cannot be counted.
         assert!(mpd.reps[0].segments.pieces().is_err());
+    }
+
+    #[test]
+    fn numbers_that_overflow_are_errors() {
+        let max = u64::MAX;
+        let mpd = |inner: &str| {
+            format!(
+                r#"<MPD mediaPresentationDuration="PT10S"><Period><AdaptationSet mimeType="video/mp4"><Representation id="v" bandwidth="1">{inner}</Representation></AdaptationSet></Period></MPD>"#
+            )
+        };
+        // startNumber + n, times past the largest number, and `last + 1`.
+        for inner in [
+            format!(r#"<SegmentTemplate media="$Number$" duration="1" startNumber="{max}"/>"#),
+            format!(
+                r#"<SegmentTemplate media="$Time$" duration="1" presentationTimeOffset="{max}"/>"#
+            ),
+            format!(
+                r#"<SegmentTemplate media="$Time$"><SegmentTimeline><S t="{}" d="5" r="3"/></SegmentTimeline></SegmentTemplate>"#,
+                max - 6
+            ),
+        ] {
+            let parsed = parse(&mpd(&inner), &base()).unwrap();
+            let error = parsed.reps[0].segments.pieces().unwrap_err();
+            assert!(error.contains("too large"), "{error}");
+        }
+        let inner = format!(r#"<SegmentList><SegmentURL mediaRange="0-{max}"/></SegmentList>"#);
+        assert!(
+            parse(&mpd(&inner), &base())
+                .unwrap_err()
+                .contains("byte range")
+        );
     }
 
     #[test]

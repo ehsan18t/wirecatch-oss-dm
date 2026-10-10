@@ -449,7 +449,8 @@ impl Sink {
     /// Prepares for `len` more bytes; refuses them if they would not fit.
     fn expect(&mut self, len: u64) -> Result<()> {
         if let Sink::Memory { buf, limit, url } = self {
-            if buf.len() as u64 + len > *limit {
+            // `len` comes from the server, so it may be anything up to u64::MAX.
+            if (buf.len() as u64).saturating_add(len) > *limit {
                 return Err(Error::TooLarge {
                     url: url.clone(),
                     limit: *limit,
@@ -538,6 +539,11 @@ mod tests {
         assert!(sink.expect(4).is_ok());
         assert!(matches!(
             sink.expect(5),
+            Err(Error::TooLarge { limit: 4, .. })
+        ));
+        // A size near the largest number from a hostile server must not overflow.
+        assert!(matches!(
+            sink.expect(u64::MAX),
             Err(Error::TooLarge { limit: 4, .. })
         ));
     }
