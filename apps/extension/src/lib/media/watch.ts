@@ -10,6 +10,23 @@ export interface WatchDeps {
  * Feeds `webRequest` responses into the registry: a new page in a tab clears its
  * list, media is recorded, and anything from a private window or outside a tab is
  * ignored, the same as downloads from private windows stay out of Wirecatch.
+ *
+ * Chromium and Firefox differences handled here and in the background script:
+ *
+ * - Background: Chromium runs a service worker and Firefox an event page. Both can
+ *   be stopped when idle and are woken by the `webRequest` listener, which is
+ *   registered synchronously at start for that reason. The lists are saved to
+ *   `storage.session`, so a restarted background still knows each tab's media.
+ * - Requests outside a tab (`tabId` -1): service workers, prefetches, the browser
+ *   itself, other extensions. Both browsers report them; they are ignored, so media
+ *   a site's service worker fetches is not seen.
+ * - Private windows: Firefox marks each request (`incognito`); Chromium does not,
+ *   so the tab is asked once (`tabs.get`) and the answer kept until the tab closes.
+ * - Pages loading in the background (Chromium prerendering) are skipped; they are
+ *   not shown to anyone yet.
+ * - Navigation: a new document in the tab clears its list. Pages that change their
+ *   address with the history API (single-page sites) keep their list, so media from
+ *   an earlier view may stay listed until the next full page load.
  */
 export class MediaWatcher {
   readonly #registry: MediaRegistry;

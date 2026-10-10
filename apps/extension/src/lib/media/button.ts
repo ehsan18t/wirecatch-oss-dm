@@ -402,19 +402,18 @@ export class MediaButton {
     if (target !== null && fullscreen !== null && (fullscreen === target || !fullscreen.contains(target))) {
       state = 'none';
     }
-    let position: { top: number; left: number } | null = null;
-    if (state !== 'none' && target !== null) {
+    const place = (el: HTMLMediaElement): { top: number; left: number } | null => {
       const view = this.#doc.defaultView;
-      const width = this.button.offsetWidth || 112;
-      const height = this.button.offsetHeight || 32;
-      position = placeButton(
-        target.getBoundingClientRect(),
-        { audio: target.tagName === 'AUDIO', controls: target.controls },
+      return placeButton(
+        el.getBoundingClientRect(),
+        { audio: el.tagName === 'AUDIO', controls: el.controls },
         { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
-        { width, height },
+        // Measured once the button is in the page; a typical size until then.
+        { width: this.button.offsetWidth || 112, height: this.button.offsetHeight || 32 },
       );
-    }
-    if (position === null) {
+    };
+    let position = state === 'none' || target === null ? null : place(target);
+    if (position === null || target === null) {
       this.host.remove();
       this.#state = 'none';
       return;
@@ -422,10 +421,20 @@ export class MediaButton {
     // Outside the body, where page frameworks do not manage the children, unless a
     // player container is full screen: only its contents are drawn then.
     const parent = fullscreen ?? this.#doc.documentElement;
-    this.host.style.cssText = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
-    if (this.host.parentNode !== parent) parent.append(this.host);
+    const attached = this.host.parentNode === parent;
+    this.#position(position);
+    if (!attached) {
+      parent.append(this.host);
+      // Placed again with the button's real size, now that it can be measured.
+      position = place(target) ?? position;
+      this.#position(position);
+    }
     this.#wrap.classList.toggle('idle', state === 'idle');
     this.#state = state;
+  }
+
+  #position(position: { top: number; left: number }): void {
+    this.host.style.cssText = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
   }
 
   async #download(): Promise<void> {

@@ -57,8 +57,8 @@ const CONFIRMED_ACTIONS: ReadonlySet<string> = new Set<AddAction>([
  * `queued` and `awaiting_confirmation` mean accepted but the link not yet tried, so
  * there is a remaining risk: a link that only works once, or one that needs the
  * browser's POST request, may fail later in the app after the browser copy is gone.
- * The app then shows the error with a retry. Detecting POST downloads would need the
- * webRequest permission, which this extension deliberately does not ask for.
+ * The app then shows the error with a retry. The extension's webRequest access only
+ * observes responses (to spot media); it does not look at download requests.
  */
 export function isConfirmed(action: AddAction): boolean {
   return CONFIRMED_ACTIONS.has(action);
