@@ -13,10 +13,18 @@
 //!   `NativeMessagingHosts` folder (honoring `XDG_CONFIG_HOME` the way Chromium
 //!   browsers do) and Firefox's `~/.mozilla/native-messaging-hosts`.
 //!
-//! `uninstall` removes a file or key only if it still holds exactly what
-//! `install` would write from this copy of the bridge, so it never removes a
-//! registration that belongs to another copy. It then removes the folders and
-//! keys `install` may have created, but only those that are empty.
+//! `uninstall` removes a manifest only if it still holds exactly what `install`
+//! would write from this copy of the bridge, and a registry key only if it points
+//! to such a manifest (or to one that no longer exists). Every copy installed for
+//! one user writes the same manifest paths, so the manifest contents (which name
+//! the executable) are what tell the copies apart; a registration that belongs to
+//! another copy is never removed.
+//!
+//! Afterwards it removes the `NativeMessagingHosts` folder or key it wrote into
+//! when that is left empty, and nothing above it: the browser folders and keys
+//! above may belong to the browser even when empty. Removing an empty folder is a
+//! single atomic step. For a key, the only realistic concurrent change is another
+//! host registering a subkey, which makes the delete fail instead of losing it.
 
 use std::fs;
 use std::io;
@@ -46,10 +54,6 @@ struct Browser {
     engine: Engine,
     /// Windows: the key under HKCU that holds `NativeMessagingHosts`.
     windows_root: &'static str,
-    /// Windows: keys above `windows_root` (and `windows_root` itself) that
-    /// `install` may have created, deepest first. Removed by `uninstall` only
-    /// when empty.
-    windows_prune: &'static [&'static str],
     /// Linux: where the browser's folder lives.
     linux_base: LinuxBase,
     /// Linux: the browser's folder below that base, as path components.
@@ -75,7 +79,6 @@ const BROWSERS: &[Browser] = &[
         name: "Google Chrome",
         engine: Engine::Chromium,
         windows_root: r"Software\Google\Chrome",
-        windows_prune: &[r"Software\Google\Chrome", r"Software\Google"],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["google-chrome"],
         linux_hosts: "NativeMessagingHosts",
@@ -84,7 +87,6 @@ const BROWSERS: &[Browser] = &[
         name: "Chromium",
         engine: Engine::Chromium,
         windows_root: r"Software\Chromium",
-        windows_prune: &[r"Software\Chromium"],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["chromium"],
         linux_hosts: "NativeMessagingHosts",
@@ -93,7 +95,6 @@ const BROWSERS: &[Browser] = &[
         name: "Microsoft Edge",
         engine: Engine::Chromium,
         windows_root: r"Software\Microsoft\Edge",
-        windows_prune: &[r"Software\Microsoft\Edge"],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["microsoft-edge"],
         linux_hosts: "NativeMessagingHosts",
@@ -102,10 +103,6 @@ const BROWSERS: &[Browser] = &[
         name: "Brave",
         engine: Engine::Chromium,
         windows_root: r"Software\BraveSoftware\Brave-Browser",
-        windows_prune: &[
-            r"Software\BraveSoftware\Brave-Browser",
-            r"Software\BraveSoftware",
-        ],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["BraveSoftware", "Brave-Browser"],
         linux_hosts: "NativeMessagingHosts",
@@ -114,7 +111,6 @@ const BROWSERS: &[Browser] = &[
         name: "Vivaldi",
         engine: Engine::Chromium,
         windows_root: r"Software\Vivaldi",
-        windows_prune: &[r"Software\Vivaldi"],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["vivaldi"],
         linux_hosts: "NativeMessagingHosts",
@@ -123,7 +119,6 @@ const BROWSERS: &[Browser] = &[
         name: "Opera",
         engine: Engine::Chromium,
         windows_root: r"Software\Google\Chrome",
-        windows_prune: &[r"Software\Google\Chrome", r"Software\Google"],
         linux_base: LinuxBase::ConfigHome,
         linux_dir: &["opera"],
         linux_hosts: "NativeMessagingHosts",
@@ -132,7 +127,6 @@ const BROWSERS: &[Browser] = &[
         name: "Mozilla Firefox",
         engine: Engine::Firefox,
         windows_root: r"Software\Mozilla",
-        windows_prune: &[r"Software\Mozilla"],
         linux_base: LinuxBase::Home,
         linux_dir: &[".mozilla"],
         linux_hosts: "native-messaging-hosts",
@@ -201,24 +195,29 @@ fn absolute_env(name: &str) -> Option<PathBuf> {
         .filter(|path| path.is_absolute())
 }
 
-/// A manifest file and the folders `install` may create for it.
+/// A manifest file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ManifestFile {
     pub(crate) path: PathBuf,
     pub(crate) contents: String,
     pub(crate) browsers: Vec<&'static str>,
-    /// Deepest first; removed by `uninstall` only when empty.
-    pub(crate) prune_dirs: Vec<PathBuf>,
+    /// The `NativeMessagingHosts` folder holding it; `uninstall` removes it when
+    /// it is left empty.
+    pub(crate) hosts_dir: PathBuf,
 }
 
 /// A registry key under HKCU whose default value is a manifest path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegistryEntry {
     pub(crate) key: String,
+    /// The manifest path.
     pub(crate) value: String,
+    /// What this copy writes into that manifest.
+    pub(crate) manifest_contents: String,
     pub(crate) browsers: Vec<&'static str>,
-    /// Deepest first; removed by `uninstall` only when empty.
-    pub(crate) prune_keys: Vec<String>,
+    /// The `NativeMessagingHosts` key holding it; `uninstall` removes it when it
+    /// is left empty.
+    pub(crate) hosts_key: String,
 }
 
 /// Everything `install` writes and `uninstall` removes.
@@ -289,8 +288,9 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
     };
     match layout {
         Layout::Windows { local_app_data, .. } => {
-            let app_dir = local_app_data.join("Wirecatch");
-            let dir = app_dir.join("NativeMessagingHosts");
+            let dir = local_app_data
+                .join("Wirecatch")
+                .join("NativeMessagingHosts");
             for engine in [Engine::Chromium, Engine::Firefox] {
                 let suffix = match engine {
                     Engine::Chromium => "chromium",
@@ -301,11 +301,12 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
                     .to_str()
                     .with_context(|| format!("The folder {} has an unusual name", dir.display()))?
                     .to_string();
+                let contents = manifest(config, exe_text, engine)?;
                 plan.files.push(ManifestFile {
                     path,
-                    contents: manifest(config, exe_text, engine)?,
+                    contents: contents.clone(),
                     browsers: Vec::new(),
-                    prune_dirs: vec![dir.clone(), app_dir.clone()],
+                    hosts_dir: dir.clone(),
                 });
                 for browser in BROWSERS.iter().filter(|b| b.engine == engine) {
                     if let Some(file) = plan.files.last_mut() {
@@ -317,13 +318,12 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
                         entry.browsers.push(browser.name);
                         continue;
                     }
-                    let mut prune_keys = vec![hosts_key];
-                    prune_keys.extend(browser.windows_prune.iter().map(|k| k.to_string()));
                     plan.keys.push(RegistryEntry {
                         key,
                         value: value.clone(),
+                        manifest_contents: contents.clone(),
                         browsers: vec![browser.name],
-                        prune_keys,
+                        hosts_key,
                     });
                 }
             }
@@ -336,21 +336,14 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
                     LinuxBase::ConfigHome => config_home,
                     LinuxBase::Home => home,
                 };
-                // Every folder from the hosts folder up to (not including) the base.
-                let mut prune_dirs = Vec::new();
                 let mut dir = base.clone();
-                for part in browser.linux_dir {
-                    dir.push(part);
-                    prune_dirs.push(dir.clone());
-                }
+                dir.extend(browser.linux_dir);
                 dir.push(browser.linux_hosts);
-                prune_dirs.push(dir.clone());
-                prune_dirs.reverse();
                 plan.files.push(ManifestFile {
                     path: dir.join(format!("{host}.json")),
                     contents: manifest(config, exe_text, browser.engine)?,
                     browsers: vec![browser.name],
-                    prune_dirs,
+                    hosts_dir: dir,
                 });
             }
         }
@@ -697,29 +690,54 @@ pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
     report
 }
 
-/// Removes what [`install`] wrote, leaving anything that changed since alone.
+/// Removes what [`install`] wrote from this copy of the bridge, leaving anything
+/// that another copy wrote or that changed since alone.
 pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
     let mut report = Report::default();
+    // Keys first, while the manifests they point to can still be compared.
     for entry in &plan.keys {
         let name = format!(r"HKEY_CURRENT_USER\{}", entry.key);
-        match host.registry_value(&entry.key) {
+        let value = match host.registry_value(&entry.key) {
+            Ok(None) => continue,
+            Ok(Some(value)) => value,
+            Err(e) => {
+                report.fail(format!("Could not read {name}: {e}"));
+                continue;
+            }
+        };
+        if value != entry.value {
+            report.ok(format!(
+                "Left {name} in place: it points to {value}, which this copy did not write"
+            ));
+            continue;
+        }
+        // Every copy for this user writes the same manifest path, so the path
+        // alone does not say whose registration this is; the manifest does.
+        match host.read_file(Path::new(&entry.value)) {
             Ok(None) => {}
-            Ok(Some(value)) if value == entry.value => match host.delete_registry_key(&entry.key) {
-                Ok(()) => {
-                    report.ok(format!("Removed {name}"));
-                    for key in &entry.prune_keys {
-                        if let Err(e) = host.delete_registry_key_if_empty(key) {
-                            report.fail(format!(r"Could not tidy HKEY_CURRENT_USER\{key}: {e}"));
-                            break;
-                        }
-                    }
+            Ok(Some(bytes)) if bytes == entry.manifest_contents.as_bytes() => {}
+            Ok(Some(_)) => {
+                report.ok(format!(
+                    "Left {name} in place: the manifest it points to belongs to another copy of Wirecatch"
+                ));
+                continue;
+            }
+            Err(e) => {
+                report.fail(format!("Could not read {}: {e}", entry.value));
+                continue;
+            }
+        }
+        match host.delete_registry_key(&entry.key) {
+            Ok(()) => {
+                report.ok(format!("Removed {name}"));
+                if let Err(e) = host.delete_registry_key_if_empty(&entry.hosts_key) {
+                    report.fail(format!(
+                        r"Could not tidy HKEY_CURRENT_USER\{}: {e}",
+                        entry.hosts_key
+                    ));
                 }
-                Err(e) => report.fail(format!("Could not remove {name}: {e}")),
-            },
-            Ok(Some(value)) => report.ok(format!(
-                "Left {name} in place: it points to {value}, which another copy of Wirecatch wrote"
-            )),
-            Err(e) => report.fail(format!("Could not read {name}: {e}")),
+            }
+            Err(e) => report.fail(format!("Could not remove {name}: {e}")),
         }
     }
     for file in &plan.files {
@@ -730,11 +748,9 @@ pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
                 match host.remove_file(&file.path) {
                     Ok(()) => {
                         report.ok(format!("Removed {shown}"));
-                        for dir in &file.prune_dirs {
-                            if let Err(e) = host.remove_dir_if_empty(dir) {
-                                report.fail(format!("Could not tidy {}: {e}", dir.display()));
-                                break;
-                            }
+                        if let Err(e) = host.remove_dir_if_empty(&file.hosts_dir) {
+                            report
+                                .fail(format!("Could not tidy {}: {e}", file.hosts_dir.display()));
                         }
                     }
                     Err(e) => report.fail(format!("Could not remove {shown}: {e}")),
@@ -943,6 +959,11 @@ mod tests {
             .unwrap();
         host.set_registry_value(r"Software\Microsoft\Edge\BLBeacon", "keep")
             .unwrap();
+        // An empty browser key that was already there must not be removed.
+        host.registry.insert(
+            r"software\mozilla".into(),
+            (r"Software\Mozilla".into(), None),
+        );
         let files_before = tree(&temp.0);
         let registry_before = host.snapshot();
 
@@ -1021,11 +1042,48 @@ mod tests {
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
         assert_eq!(tree(&temp.0), files_before);
-        assert_eq!(host.snapshot(), registry_before);
+        let hosts_keys: Vec<&str> = plan.keys.iter().map(|k| k.hosts_key.as_str()).collect();
+        assert_only_empty_parents_added(&registry_before, &host.snapshot(), |key| {
+            hosts_keys
+                .iter()
+                .any(|hosts| hosts.starts_with(&format!(r"{key}\")))
+        });
 
         // Uninstalling again is harmless.
+        let registry_after = host.snapshot();
         assert_eq!(uninstall(&plan, &mut host).failures, 0);
         assert_eq!(tree(&temp.0), files_before);
+        assert_eq!(host.snapshot(), registry_after);
+    }
+
+    /// `after` holds everything `before` did, unchanged, plus only empty entries
+    /// that `is_parent` accepts as parents of a hosts folder or key. Nothing at or
+    /// below a `NativeMessagingHosts` level is left.
+    fn assert_only_empty_parents_added<K: Ord + std::fmt::Debug, V: PartialEq + std::fmt::Debug>(
+        before: &BTreeMap<K, Option<V>>,
+        after: &BTreeMap<K, Option<V>>,
+        is_parent: impl Fn(&K) -> bool,
+    ) {
+        for (name, value) in before {
+            assert_eq!(after.get(name), Some(value), "{name:?} changed or vanished");
+        }
+        for (name, value) in after {
+            if before.contains_key(name) {
+                continue;
+            }
+            assert!(value.is_none(), "{name:?} was left with content");
+            assert!(
+                is_parent(name),
+                "{name:?} is not a parent of a hosts folder"
+            );
+            assert!(
+                !format!("{name:?}")
+                    .to_lowercase()
+                    .contains("nativemessaginghosts")
+                    && !format!("{name:?}").contains("native-messaging-hosts"),
+                "{name:?} was left behind"
+            );
+        }
     }
 
     #[test]
@@ -1057,6 +1115,8 @@ mod tests {
             b"keep",
         )
         .unwrap();
+        // An empty browser folder that was already there must not be removed.
+        fs::create_dir_all(home.join(".config").join("vivaldi")).unwrap();
         let before = tree(&temp.0);
 
         let report = install(&plan, &mut host);
@@ -1099,7 +1159,16 @@ mod tests {
 
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert_eq!(tree(&temp.0), before);
+        let hosts_dirs: Vec<PathBuf> = plan
+            .files
+            .iter()
+            .map(|f| f.hosts_dir.strip_prefix(&temp.0).unwrap().to_path_buf())
+            .collect();
+        assert_only_empty_parents_added(&before, &tree(&temp.0), |dir| {
+            hosts_dirs
+                .iter()
+                .any(|hosts| hosts.starts_with(dir) && hosts != dir)
+        });
     }
 
     #[test]
@@ -1130,34 +1199,71 @@ mod tests {
 
     #[test]
     fn uninstall_leaves_registrations_from_another_copy_alone() {
+        // Two copies of the bridge for one user share LOCALAPPDATA, so they write
+        // the same manifest paths and the same registry values; only the
+        // manifest contents (the executable path) differ.
         let temp = TempDir::new();
-        let layout = Layout::Windows {
-            exe: temp.0.join("a").join("wirecatch-bridge.exe"),
-            local_app_data: temp.0.join("LocalAppData"),
-        };
-        let mine = plan(&config(), &layout).unwrap();
-        let other_layout = Layout::Windows {
-            exe: temp.0.join("b").join("wirecatch-bridge.exe"),
-            local_app_data: temp.0.join("OtherAppData"),
-        };
-        let theirs = plan(&config(), &other_layout).unwrap();
+        let local = temp.0.join("LocalAppData");
+        let mine = plan(
+            &config(),
+            &Layout::Windows {
+                exe: temp.0.join("a").join("wirecatch-bridge.exe"),
+                local_app_data: local.clone(),
+            },
+        )
+        .unwrap();
+        let theirs = plan(
+            &config(),
+            &Layout::Windows {
+                exe: temp.0.join("b").join("wirecatch-bridge.exe"),
+                local_app_data: local,
+            },
+        )
+        .unwrap();
+        for (a, b) in mine.keys.iter().zip(&theirs.keys) {
+            assert_eq!((&a.key, &a.value), (&b.key, &b.value));
+        }
+
         let mut host = FakeHost::default();
         assert_eq!(install(&theirs, &mut host).failures, 0);
         let files = tree(&temp.0);
         let registry = host.snapshot();
 
-        // Same manifest paths, different contents: also left alone.
-        for file in &mine.files {
-            files::write(&file.path, b"{\"changed\": true}").unwrap();
-        }
         let report = uninstall(&mine, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert_eq!(host.snapshot(), registry);
-        for file in &mine.files {
-            assert_eq!(fs::read(&file.path).unwrap(), b"{\"changed\": true}");
+        assert_eq!(
+            host.snapshot(),
+            registry,
+            "their registry keys were removed"
+        );
+        assert_eq!(tree(&temp.0), files, "their manifests were removed");
+
+        // Their own uninstall still removes everything.
+        assert_eq!(uninstall(&theirs, &mut host).failures, 0);
+        for entry in &theirs.keys {
+            assert_eq!(host.registry_value(&entry.key).unwrap(), None);
         }
-        for (path, contents) in &files {
-            assert_eq!(tree(&temp.0).get(path), Some(contents));
+    }
+
+    #[test]
+    fn uninstall_removes_a_key_whose_manifest_is_already_gone() {
+        let temp = TempDir::new();
+        let plan = plan(
+            &config(),
+            &Layout::Windows {
+                exe: temp.0.join("a").join("wirecatch-bridge.exe"),
+                local_app_data: temp.0.join("LocalAppData"),
+            },
+        )
+        .unwrap();
+        let mut host = FakeHost::default();
+        assert_eq!(install(&plan, &mut host).failures, 0);
+        for file in &plan.files {
+            fs::remove_file(&file.path).unwrap();
+        }
+        assert_eq!(uninstall(&plan, &mut host).failures, 0);
+        for entry in &plan.keys {
+            assert_eq!(host.registry_value(&entry.key).unwrap(), None);
         }
     }
 
