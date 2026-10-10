@@ -59,6 +59,14 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
     }
 }
 
+/// The message for a download whose run ended without a result (a bug).
+pub(crate) fn stopped_unexpectedly() -> UserError {
+    fix(
+        "The download stopped unexpectedly. Try again; the part already downloaded is kept.",
+        FixAction::Retry,
+    )
+}
+
 fn http_status(status: u16, previously_worked: bool) -> UserError {
     match status {
         401 | 403 | 404 | 410 if previously_worked => fix(
