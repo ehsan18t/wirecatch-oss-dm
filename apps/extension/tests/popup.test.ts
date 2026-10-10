@@ -28,6 +28,8 @@ async function openPopup(
   options: {
     configure?: (app: FakeApp, cache: MemoryCache) => void;
     currentUrl?: string | null;
+    siteAccess?: boolean;
+    requestSiteAccess?: () => Promise<boolean>;
   } = {},
 ): Promise<Opened> {
   const app = new FakeApp();
@@ -44,6 +46,7 @@ async function openPopup(
     cache,
     downloads: new FakeDownloads(),
     cookieHeader: () => Promise.resolve(null),
+    hasSiteAccess: () => Promise.resolve(true),
     userAgent: null,
   });
   await hub.start();
@@ -56,6 +59,8 @@ async function openPopup(
     props: {
       model,
       currentUrl: options.currentUrl === undefined ? 'https://www.example.com/page' : options.currentUrl,
+      siteAccess: options.siteAccess ?? true,
+      requestSiteAccess: options.requestSiteAccess,
     },
   });
   const result = { app, hub, client, model, container };
@@ -147,6 +152,19 @@ describe('popup', () => {
     expect(screen.getByText('Downloads from example.com stay in the browser.')).toBeTruthy();
     await user.click(undo);
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
+    // One site added and removed, never the whole list.
+    expect(app.calls('update_extension_settings')).toEqual([
+      { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: ['example.com'] }) },
+      { method: 'update_extension_settings', params: patchOf({ remove_ignored_sites: ['example.com'] }) },
+    ]);
+  });
+
+  it('does not overwrite a site another browser added at the same time', async () => {
+    const { app } = await openPopup({ currentUrl: 'https://www.example.com/downloads' });
+    // Another browser adds a site; this popup has not heard about it yet.
+    app.settings = { ...app.settings, ignored_sites: ['other.example'] };
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Ignore this site' }));
+    await waitFor(() => expect(app.settings.ignored_sites).toEqual(['other.example', 'example.com']));
   });
 
   it('cannot ignore a browser page', async () => {
@@ -179,6 +197,65 @@ describe('popup', () => {
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['tracker.example.net']));
     await user.click(await screen.findByRole('button', { name: 'Stop ignoring tracker.example.net' }));
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
+    expect(app.calls('update_extension_settings').slice(-2)).toEqual([
+      {
+        method: 'update_extension_settings',
+        params: patchOf({ add_ignored_sites: ['tracker.example.net'] }),
+      },
+      {
+        method: 'update_extension_settings',
+        params: patchOf({ remove_ignored_sites: ['tracker.example.net'] }),
+      },
+    ]);
+  });
+
+  it('keeps what the person is typing in file types when a change arrives from the app', async () => {
+    const { app } = await openPopup();
+    const user = userEvent.setup();
+    const types = screen.getByRole('textbox', { name: 'File types to capture' });
+    await user.click(types);
+    await user.keyboard('zip, ex');
+    app.changeSettings({ capture_enabled: false });
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty('checked', false),
+    );
+    expect(types).toHaveProperty('value', 'zip, ex');
+    await user.keyboard('e{Enter}');
+    await waitFor(() => expect(app.settings.capture_extensions).toEqual(['zip', 'exe']));
+    await user.tab();
+    expect(types).toHaveProperty('value', 'zip, exe');
+  });
+
+  it('marks the queues and shows clearly when the default queue no longer exists', async () => {
+    const { app } = await openPopup({
+      configure: (app) => {
+        app.settings = { ...app.settings, default_queue: 9 };
+      },
+    });
+    const select = screen.getByRole('combobox', { name: 'Default queue' });
+    expect(select).toHaveProperty('value', '9');
+    expect(screen.getByRole('option', { name: 'Missing queue (choose another)' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Main (default)' })).toBeTruthy();
+    expect(screen.getByText('This queue no longer exists in Wirecatch. Choose another one.')).toBeTruthy();
+    expect(select.getAttribute('aria-invalid')).toBe('true');
+    await userEvent.setup().selectOptions(select, 'Main (default)');
+    await waitFor(() => expect(app.settings.default_queue).toBe(1));
+    await waitFor(() => expect(screen.queryByText(/no longer exists/)).toBeNull());
+  });
+
+  it('offers to allow website access again when it was revoked', async () => {
+    let asked = 0;
+    await openPopup({
+      siteAccess: false,
+      requestSiteAccess: () => {
+        asked += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(screen.getByRole('heading', { name: 'Wirecatch cannot read website cookies.' })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Allow access' }));
+    expect(asked).toBe(1);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Allow access' })).toBeNull());
   });
 
   it('explains invalid input next to the field', async () => {
@@ -226,7 +303,7 @@ describe('popup', () => {
     });
     expect(screen.getByText('Not connected')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Wirecatch is not set up for this browser.' })).toBeTruthy();
-    expect(screen.getByText(/Install the Wirecatch app/)).toBeTruthy();
+    expect(screen.getByText('Reinstall the Wirecatch app, then click Try again.')).toBeTruthy();
     expect(screen.getByText('Details: Specified native messaging host not found.')).toBeTruthy();
     expect(screen.getByText(/Showing your last saved settings/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty('value', 'iso');
@@ -252,6 +329,19 @@ describe('popup', () => {
       },
     });
     expect(screen.getByText('Your settings show here once Wirecatch is connected.')).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
+  it('does not show made-up settings while connecting for the first time', async () => {
+    await openPopup({
+      configure: (app) => {
+        app.answers = false; // hello never answered: still connecting
+      },
+    });
+    expect(screen.getByText('Connecting')).toBeTruthy();
+    expect(
+      screen.getByText('Connecting to Wirecatch. Your settings show here once it is connected.'),
+    ).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
@@ -281,6 +371,16 @@ describe('popup accessibility', () => {
     const { container } = await openPopup({
       configure: (app) => {
         app.settings = { ...app.settings, ignored_sites: ['a.example', 'b.example'] };
+      },
+    });
+    expect(await axeViolations(container)).toEqual([]);
+  });
+
+  it('has no axe violations with the access panel and a missing default queue', async () => {
+    const { container } = await openPopup({
+      siteAccess: false,
+      configure: (app) => {
+        app.settings = { ...app.settings, default_queue: 9 };
       },
     });
     expect(await axeViolations(container)).toEqual([]);

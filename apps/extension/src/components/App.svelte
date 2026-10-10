@@ -12,15 +12,27 @@
     model: PopupModel;
     /** Address of the active tab, for "Ignore this site". */
     currentUrl: string | null;
+    /** False when the person revoked the extension's access to websites (possible in Firefox). */
+    siteAccess?: boolean;
+    /** Asks the browser to grant website access again; resolves with the new state. */
+    requestSiteAccess?: () => Promise<boolean>;
   }
 
-  let { model, currentUrl }: Props = $props();
+  let { model, currentUrl, siteAccess = true, requestSiteAccess }: Props = $props();
 
-  /** Shown (disabled) until the first answer, so the layout does not jump. */
-  const PLACEHOLDER: ExtensionSettings = {
-    capture_enabled: true,
+  let accessGranted = $state<boolean | null>(null);
+  const hasSiteAccess = $derived(accessGranted ?? siteAccess);
+
+  async function allowAccess(): Promise<void> {
+    if (requestSiteAccess === undefined) return;
+    accessGranted = await requestSiteAccess();
+  }
+
+  /** Stands in while there are no settings; the form is not shown then, so these values never appear. */
+  const EMPTY: ExtensionSettings = {
+    capture_enabled: false,
     ask_before_download: false,
-    show_media_button: true,
+    show_media_button: false,
     ignored_sites: [],
     capture_extensions: [],
     min_capture_size: 0,
@@ -28,7 +40,10 @@
   };
 
   const snapshot = $derived(model.snapshot);
-  const settings = $derived(model.settings ?? PLACEHOLDER);
+  const settings = $derived(model.settings ?? EMPTY);
+  const queues = $derived(snapshot?.queues ?? []);
+  /** The default queue was deleted in the app (or renamed away): say so instead of quietly showing another. */
+  const queueMissing = $derived(queues.length > 0 && !queues.some((q) => q.id === settings.default_queue));
   const editable = $derived(model.editable);
   const status = $derived(snapshot?.status ?? { state: 'connecting' as const });
   const problem = $derived(status.state === 'unavailable' ? status.problem : null);
@@ -60,15 +75,20 @@
   });
 
   /** With nothing to show (never connected, no cache), say so instead of showing made-up values. */
-  const showSettings = $derived(model.settings !== null || status.state !== 'unavailable');
+  const showSettings = $derived(model.settings !== null);
 
   function toggleSite(): void {
+    // Add and remove one site rather than replacing the list, so an edit made at the
+    // same time in another browser is not overwritten.
     if (pageIgnoredBy !== null) {
-      void model.update({ ignored_sites: settings.ignored_sites.filter((s) => s !== pageIgnoredBy) });
+      void model.update({ remove_ignored_sites: [pageIgnoredBy] });
     } else if (pageSite !== null) {
-      void model.update({ ignored_sites: [...settings.ignored_sites, pageSite] });
+      void model.update({ add_ignored_sites: [pageSite] });
     }
   }
+
+  /** What the person is typing in the file types box; kept while it has focus so incoming changes do not overwrite it. */
+  let typesDraft = $state<string | null>(null);
 
   function commitFileTypes(value: string): void {
     const types = parseFileTypes(value);
@@ -125,6 +145,14 @@
       </section>
     {/if}
 
+    {#if !hasSiteAccess}
+      <section class="panel panel-warning" aria-labelledby="access-title">
+        <h2 id="access-title">Wirecatch cannot read website cookies.</h2>
+        <p>Downloads stay in the browser until you allow access to websites.</p>
+        <button type="button" class="button" onclick={allowAccess}>Allow access</button>
+      </section>
+    {/if}
+
     {#if snapshot?.notice}
       <section class="panel panel-{snapshot.notice.tone}" aria-label="Message">
         <p>{snapshot.notice.message}</p>
@@ -137,7 +165,11 @@
     {/if}
 
     {#if !showSettings}
-      <p class="note">Your settings show here once Wirecatch is connected.</p>
+      <p class="note">
+        {status.state === 'connecting'
+          ? 'Connecting to Wirecatch. Your settings show here once it is connected.'
+          : 'Your settings show here once Wirecatch is connected.'}
+      </p>
     {:else}
       <fieldset class="settings" disabled={!editable}>
         <legend class="visually-hidden">Wirecatch settings</legend>
@@ -195,16 +227,25 @@
           <p class="help" id="default-queue-help">Downloads from the browser join this queue.</p>
           <select
             id="default-queue"
-            aria-describedby="default-queue-help"
+            aria-describedby={queueMissing ? 'default-queue-missing' : 'default-queue-help'}
+            aria-invalid={queueMissing}
             value={settings.default_queue}
             onchange={(event) => model.update({ default_queue: Number(event.currentTarget.value) })}
           >
-            {#each snapshot?.queues ?? [] as queue (queue.id)}
-              <option value={queue.id}>{queue.name}{queue.is_default ? ' (main)' : ''}</option>
+            {#if queueMissing}
+              <option value={settings.default_queue}>Missing queue (choose another)</option>
+            {/if}
+            {#each queues as queue (queue.id)}
+              <option value={queue.id}>{queue.name}{queue.is_default ? ' (default)' : ''}</option>
             {:else}
               <option value={settings.default_queue}>Default queue</option>
             {/each}
           </select>
+          {#if queueMissing}
+            <p id="default-queue-missing" class="error-text">
+              This queue no longer exists in Wirecatch. Choose another one.
+            </p>
+          {/if}
         </div>
 
         <div class="field">
@@ -217,7 +258,10 @@
             spellcheck="false"
             placeholder="Every file type"
             aria-describedby="file-types-help"
-            value={formatFileTypes(settings.capture_extensions)}
+            value={typesDraft ?? formatFileTypes(settings.capture_extensions)}
+            onfocus={(event) => (typesDraft = event.currentTarget.value)}
+            oninput={(event) => (typesDraft = event.currentTarget.value)}
+            onblur={() => (typesDraft = null)}
             onchange={(event) => commitFileTypes(event.currentTarget.value)}
             onkeydown={(event) => {
               if (event.key === 'Enter') commitFileTypes(event.currentTarget.value);
@@ -259,7 +303,8 @@
         <IgnoredSites
           sites={settings.ignored_sites}
           disabled={!editable}
-          onchange={(sites: string[]) => model.update({ ignored_sites: sites })}
+          onadd={(site: string) => model.update({ add_ignored_sites: [site] })}
+          onremove={(site: string) => model.update({ remove_ignored_sites: [site] })}
         />
       </fieldset>
     {/if}

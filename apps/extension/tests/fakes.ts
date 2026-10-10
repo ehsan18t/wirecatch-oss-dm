@@ -11,9 +11,11 @@ import type {
   Outcome,
   ProtocolError,
   QueueSummary,
+  WithdrawOutcome,
 } from '@wirecatch/protocol';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
-import type { CachedSettings, BrowserDownloads, SettingsCache } from '../src/lib/hub';
+import type { DownloadState } from '../src/lib/capture/handover';
+import type { BrowserDownloads, CachedSettings, InFlightStore, SettingsCache } from '../src/lib/hub';
 import type { Channel } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 import { applyPatch } from '../src/lib/protocol';
@@ -98,6 +100,9 @@ export class FakeApp implements NativeTransport {
   /** When false, nothing is answered (a hung bridge). */
   answers = true;
   addBehavior: AddBehavior = 'started';
+  /** When set, `add_download` is answered (as `addBehavior` says) only after this many milliseconds. */
+  addLateMs: number | null = null;
+  withdrawBehavior: WithdrawOutcome | 'hang' | { error: ProtocolError } = 'withdrawn';
   /** When set, `update_extension_settings` is refused with this error. */
   updateError: ProtocolError | null = null;
   /** Every request received, in order. */
@@ -178,9 +183,22 @@ export class FakeApp implements NativeTransport {
       case 'resume_all':
         reply({ status: 'ok', value: { type: 'done' } });
         return;
+      case 'withdraw_download': {
+        const behavior = this.withdrawBehavior;
+        if (behavior === 'hang') return;
+        if (typeof behavior === 'object') reply({ status: 'err', value: behavior.error });
+        else reply({ status: 'ok', value: { type: 'withdrawn', data: behavior } });
+        return;
+      }
       case 'add_download': {
         const behavior = this.addBehavior;
         if (behavior === 'hang') return;
+        if (this.addLateMs !== null) {
+          const late = this.addLateMs;
+          this.addLateMs = null;
+          setTimeout(() => this.receiveAgain(port, id, call), late);
+          return;
+        }
         if (behavior === 'disconnect') {
           void Promise.resolve().then(() => port.browserDisconnect('Native host has exited.'));
           return;
@@ -207,12 +225,28 @@ export class FakeApp implements NativeTransport {
       }
     }
   }
+
+  /** Answers a request that was held back (used by `addLateMs`), without recording it twice. */
+  private receiveAgain(port: FakeNativePort, id: number, call: Call): void {
+    const before = this.requests.length;
+    const hook = this.onRequest;
+    this.onRequest = null;
+    this.receive(port, { kind: 'request', id, call });
+    this.onRequest = hook;
+    this.requests.splice(before);
+  }
 }
 
 /** A browser downloads API that records every call in order and can be told to fail. */
 export class FakeDownloads implements BrowserDownloads {
   readonly log: string[] = [];
   readonly failing = new Set<'pause' | 'resume' | 'cancel' | 'erase' | 'start'>();
+  /** What `state()` reports (the browser's own view of the download). */
+  browserState: DownloadState | null = { state: 'in_progress', paused: true };
+
+  state(): Promise<DownloadState | null> {
+    return Promise.resolve(this.browserState);
+  }
 
   #run(op: 'pause' | 'resume' | 'cancel' | 'erase' | 'start', arg: number | string): Promise<void> {
     this.log.push(`${op}:${String(arg)}`);
@@ -234,6 +268,20 @@ export class FakeDownloads implements BrowserDownloads {
   }
   start(url: string): Promise<void> {
     return this.#run('start', url);
+  }
+}
+
+export class MemoryInFlight implements InFlightStore {
+  ids: number[] = [];
+  /** Every list saved, in order. */
+  readonly saves: number[][] = [];
+  load(): Promise<number[]> {
+    return Promise.resolve([...this.ids]);
+  }
+  save(ids: number[]): Promise<void> {
+    this.ids = [...ids];
+    this.saves.push([...ids]);
+    return Promise.resolve();
   }
 }
 

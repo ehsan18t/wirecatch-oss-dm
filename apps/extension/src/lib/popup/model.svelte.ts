@@ -1,6 +1,6 @@
 import type { ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/protocol';
 import type { BackgroundMessage, Channel, PopupCommand, PopupRequest, Snapshot } from '../messages';
-import { applyPatch, patchOf } from '../protocol';
+import { applyPatch, patchOf, type SettingsChange } from '../protocol';
 
 export interface Feedback {
   tone: 'success' | 'error';
@@ -54,7 +54,7 @@ export class PopupModel {
   }
 
   /** Sends a settings change to the app. Resolves with true once the app accepted it. */
-  async update(changes: Partial<ExtensionSettings>): Promise<boolean> {
+  async update(changes: SettingsChange): Promise<boolean> {
     const patch = patchOf(changes);
     const id = this.#nextId;
     this.#pending = [...this.#pending, { id, patch }];

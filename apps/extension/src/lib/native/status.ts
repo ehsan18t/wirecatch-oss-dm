@@ -51,7 +51,7 @@ export function describeProblem(kind: ProblemKind): ProblemText {
     case 'host_missing':
       return {
         title: 'Wirecatch is not set up for this browser.',
-        fix: 'Install the Wirecatch app (or run "wirecatch-bridge install" if it is already installed), restart the browser, then click Try again.',
+        fix: 'Reinstall the Wirecatch app, then click Try again.',
       };
     case 'app_unavailable':
       return {

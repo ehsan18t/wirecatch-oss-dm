@@ -9,6 +9,7 @@
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox --mv3",
     "build": "wxt build && wxt build -b firefox --mv3",
+    "build:dev": "wxt build --mode development",
     "zip": "wxt zip && wxt zip -b firefox --mv3",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "lint": "eslint . --max-warnings 0 && prettier --check .",

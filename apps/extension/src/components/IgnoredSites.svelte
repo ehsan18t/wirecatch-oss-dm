@@ -4,10 +4,11 @@
   interface Props {
     sites: readonly string[];
     disabled?: boolean;
-    onchange: (sites: string[]) => void;
+    onadd: (site: string) => void;
+    onremove: (site: string) => void;
   }
 
-  let { sites, disabled = false, onchange }: Props = $props();
+  let { sites, disabled = false, onadd, onremove }: Props = $props();
 
   let draft = $state('');
   let error = $state<string | null>(null);
@@ -21,11 +22,11 @@
     }
     error = null;
     draft = '';
-    if (!sites.includes(site)) onchange([...sites, site]);
+    if (!sites.includes(site)) onadd(site);
   }
 
   function remove(site: string): void {
-    onchange(sites.filter((s) => s !== site));
+    onremove(site);
   }
 </script>
 

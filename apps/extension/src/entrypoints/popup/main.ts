@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import App from '@/components/App.svelte';
 import { POPUP_PORT_NAME, type PopupRequest } from '@/lib/messages';
 import { PopupModel } from '@/lib/popup/model.svelte';
+import { SITE_ORIGINS } from '@/lib/site-access';
 import './style.css';
 
 /** Longest the popup waits for the background before showing itself anyway. */
@@ -38,10 +39,19 @@ async function start(): Promise<void> {
   };
   const model = new PopupModel(channel);
   // Mount once the first state is in, so the popup opens at its final size.
-  const [currentUrl] = await Promise.all([activeTabUrl(), firstSnapshot(port)]);
+  const [currentUrl, siteAccess] = await Promise.all([
+    activeTabUrl(),
+    browser.permissions.contains({ origins: SITE_ORIGINS }).catch(() => true),
+    firstSnapshot(port),
+  ]);
   const target = document.getElementById('app');
   if (target === null) return;
-  mount(App, { target, props: { model, currentUrl } });
+  mount(App, { target, props: { model, currentUrl, siteAccess, requestSiteAccess } });
+}
+
+/** Must run from the click itself: browsers only show the permission prompt for a user action. */
+function requestSiteAccess(): Promise<boolean> {
+  return browser.permissions.request({ origins: SITE_ORIGINS }).catch(() => false);
 }
 
 void start();

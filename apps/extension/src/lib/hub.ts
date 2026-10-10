@@ -1,14 +1,24 @@
 import type {
   AddedDownload,
+  Call,
   Event,
   ExtensionSettings,
   ExtensionSettingsPatch,
   NewDownload,
+  Outcome,
   QueueSummary,
   Reply,
+  WithdrawOutcome,
 } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from './capture/candidate';
-import { handOver, type DownloadControl, type HandoverResult } from './capture/handover';
+import {
+  handOver,
+  resumeBrowserCopy,
+  submit,
+  type DownloadControl,
+  type HandoverResult,
+  type JudgingSettings,
+} from './capture/handover';
 import { shouldCapture } from './capture/should-capture';
 import { fileNameFromUrl } from './file-types';
 import {
@@ -35,6 +45,15 @@ export interface SettingsCache {
   save(value: CachedSettings): Promise<void>;
 }
 
+/**
+ * Ids of browser downloads paused for a handover, kept in `storage.session` so a
+ * background script that is restarted mid-handover can resume them.
+ */
+export interface InFlightStore {
+  load(): Promise<number[]>;
+  save(ids: number[]): Promise<void>;
+}
+
 export interface BrowserDownloads extends DownloadControl {
   /** Starts a download in the browser itself (`downloads.download`), used when the app cannot take a context menu link. */
   start(url: string): Promise<void>;
@@ -49,16 +68,22 @@ export interface HubDeps {
   cache: SettingsCache;
   downloads: BrowserDownloads;
   cookieHeader(url: string, storeId: string | null): Promise<string | null>;
+  /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
+  hasSiteAccess(url: string): Promise<boolean>;
   userAgent: string | null;
+  inFlight?: InFlightStore;
+  newHandoverId?: () => string;
   badge?: Badge;
   now?: () => number;
   /** How long a paused download waits for the app to connect before it resumes in the browser. */
   connectWaitMs?: number;
   /** How long to wait for the app to answer a call. */
   requestTimeoutMs?: number;
+  /** How long to wait for the answer to `withdraw_download`. */
+  withdrawTimeoutMs?: number;
 }
 
-/** What the context menu passes on a click (`contextMenus.OnClickData`). */
+/** What the context menu passes on a click (`contextMenus.OnClickData`), plus the tab it happened in. */
 export interface MenuClick {
   linkUrl?: string;
   srcUrl?: string;
@@ -66,7 +91,15 @@ export interface MenuClick {
   frameUrl?: string;
 }
 
-/** Used to rule out blob, data and internal addresses before anything is known about the app's settings. */
+export interface MenuTab {
+  incognito?: boolean;
+  /** Firefox container or private cookie store of the tab. */
+  cookieStoreId?: string;
+}
+
+export type MenuResult = 'handed_over' | 'browser' | 'failed' | 'private_window';
+
+/** Used to rule out blob, data and internal addresses before anything is known about the settings. */
 const CAPTURE_EVERYTHING: ExtensionSettings = {
   capture_enabled: true,
   ask_before_download: false,
@@ -77,12 +110,26 @@ const CAPTURE_EVERYTHING: ExtensionSettings = {
   default_queue: 1,
 };
 
+/** How many handover ids are remembered for spotting late answers. */
+const RECENT_LIMIT = 50;
+
+const NO_SITE_ACCESS =
+  'Wirecatch needs access to websites to take downloads with their cookies. Open this popup and click Allow access.';
+
 function describeError(error: unknown): string {
   if (error instanceof RequestError) {
     if (error.kind === 'timeout') return 'Wirecatch did not answer in time.';
     return error.message;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
+  map.set(key, value);
+  if (map.size > RECENT_LIMIT) {
+    const oldest = map.keys().next();
+    if (oldest.done !== true) map.delete(oldest.value);
+  }
 }
 
 /**
@@ -93,7 +140,14 @@ export class Hub {
   readonly #deps: HubDeps;
   readonly #now: () => number;
   readonly #popups = new Set<Channel<BackgroundMessage, unknown>>();
+  /** Browser downloads being handed over right now (persisted through `deps.inFlight`). */
   readonly #inFlight = new Set<number>();
+  /** Handovers kept in the browser although the app may have them (the withdraw failed). */
+  readonly #uncertain = new Map<string, string>();
+  /** Handovers the app confirmed only after this side stopped waiting. */
+  readonly #lateConfirmed = new Map<string, string>();
+  readonly #ready: Promise<void>;
+  #markReady: () => void = () => undefined;
   #live: ExtensionSettings | null = null;
   #queues: QueueSummary[] = [];
   #cache: CachedSettings | null = null;
@@ -102,25 +156,36 @@ export class Hub {
   constructor(deps: HubDeps) {
     this.#deps = deps;
     this.#now = deps.now ?? Date.now;
+    this.#ready = new Promise((resolve) => {
+      this.#markReady = resolve;
+    });
   }
 
   get #client(): NativeClient {
     return this.#deps.client;
   }
 
-  /** Loads the display cache, then connects to the app. */
+  /** Resolves once the display cache is loaded, so downloads are never judged without it. */
+  get ready(): Promise<void> {
+    return this.#ready;
+  }
+
+  /** Connects to the app, loads the display cache and resumes downloads a previous run left paused. */
   async start(): Promise<void> {
     this.#client.onStatus((status) => this.#onStatus(status));
     this.#client.onEvent((event) => this.#onEvent(event));
+    this.#client.onLateAnswer((call, outcome) => this.#onLateAnswer(call, outcome));
     this.#client.start();
-    try {
-      const cached = await this.#deps.cache.load();
-      // Settings fetched from the app while loading win over the cache.
-      if (this.#cache === null) this.#cache = cached;
-    } catch {
-      // No cache yet, or storage unavailable: nothing to show until the app answers.
-    }
+    // Both are read before `ready`, so no new download can overwrite the list of paused ones first.
+    const [cached, leftPaused] = await Promise.all([
+      this.#deps.cache.load().catch(() => null),
+      this.#deps.inFlight?.load().catch(() => []) ?? Promise.resolve([]),
+    ]);
+    // Settings fetched from the app while loading win over the cache.
+    if (this.#cache === null) this.#cache = cached;
+    this.#markReady();
     this.#publish();
+    await this.#recoverInFlight(leftPaused);
   }
 
   snapshot(): Snapshot {
@@ -136,7 +201,7 @@ export class Hub {
     };
   }
 
-  /** Connects an open popup: it gets a snapshot now and after every change. */
+  /** Connects an open popup: it gets a snapshot once the cache is loaded, and after every change. */
   addPopup(channel: Channel<BackgroundMessage, unknown>): void {
     this.#popups.add(channel);
     channel.onDisconnect.addListener(() => this.#popups.delete(channel));
@@ -149,36 +214,55 @@ export class Hub {
           this.#post(channel, { type: 'result', id: request.id, ok: false, message: describeError(error) }),
       );
     });
-    this.#post(channel, { type: 'snapshot', snapshot: this.snapshot() });
+    void this.#ready.then(() => this.#post(channel, { type: 'snapshot', snapshot: this.snapshot() }));
   }
 
   /**
-   * Called for every new browser download. Decides quickly from the settings at
-   * hand, then runs the handover (which checks the app's live settings again).
-   * Resolves with null when the download was not even considered.
+   * Called for every new browser download. Decides from the settings at hand
+   * (never before the cache is loaded), then runs the handover, which checks the
+   * settings again after pausing. Resolves with null when the download was not
+   * touched at all.
    */
   async onDownload(item: DownloadItemLike): Promise<HandoverResult | null> {
     if (this.#inFlight.has(item.id)) return null;
-    const candidate = candidateFromItem(item);
-    const known = this.#live ?? this.#cache?.settings ?? CAPTURE_EVERYTHING;
-    if (!shouldCapture(candidate, known).capture) return null;
-
     this.#inFlight.add(item.id);
+    let persisted = false;
     try {
+      await this.#ready;
+      const candidate = candidateFromItem(item);
+      const known = this.#live ?? this.#cache?.settings ?? CAPTURE_EVERYTHING;
+      if (!shouldCapture(candidate, known).capture) return null;
+      const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
+
+      if (!(await this.#siteAccess(candidate.url))) {
+        this.#setNotice({
+          tone: 'warning',
+          message: `${name} stayed in the browser. ${NO_SITE_ACCESS}`,
+          at: this.#now(),
+        });
+        return null;
+      }
+
+      // Recorded before pausing, so a restarted background can resume it.
+      await this.#persistInFlight();
+      persisted = true;
       const result = await handOver(
         { downloadId: item.id, candidate, cookieStoreId: item.cookieStoreId ?? null },
         {
           downloads: this.#deps.downloads,
-          liveSettings: () => this.#liveSettings(),
+          liveSettings: () => this.#judgingSettings(),
           addDownload: (download) => this.#addDownload(download),
+          withdraw: (handoverId) => this.#withdraw(handoverId),
           cookieHeader: (url, storeId) => this.#deps.cookieHeader(url, storeId),
           userAgent: this.#deps.userAgent,
+          newHandoverId: () => this.#newHandoverId(),
         },
       );
-      this.#noticeFor(result, candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download');
+      this.#noticeFor(result, name);
       return result;
     } finally {
       this.#inFlight.delete(item.id);
+      if (persisted) await this.#persistInFlight();
     }
   }
 
@@ -186,9 +270,19 @@ export class Hub {
    * "Download with Wirecatch" from the context menu. If the app does not take the
    * link, the browser downloads it instead, so the click is never lost.
    */
-  async onMenuClick(click: MenuClick): Promise<'handed_over' | 'browser' | 'failed'> {
+  async onMenuClick(click: MenuClick, tab: MenuTab | undefined): Promise<MenuResult> {
     const url = click.linkUrl ?? click.srcUrl;
     if (url === undefined || url === '') return 'failed';
+    if (tab?.incognito === true) {
+      // Like browser downloads from private windows, these stay out of Wirecatch's list.
+      this.#setNotice({
+        tone: 'warning',
+        message:
+          'Wirecatch does not take downloads from private windows. Use the browser\'s own "Save as" option there.',
+        at: this.#now(),
+      });
+      return 'private_window';
+    }
     const isWeb = /^https?:/i.test(url);
     const name = (isWeb ? fileNameFromUrl(url) : null) ?? 'this item';
 
@@ -198,29 +292,37 @@ export class Hub {
         `Wirecatch can only take web links, so the browser is downloading ${name} instead.`,
       );
     }
-    let reason: string;
-    try {
-      const added = await this.#addDownload({
+    if (!(await this.#siteAccess(url))) {
+      return this.#browserFallback(url, `The browser is downloading ${name} instead. ${NO_SITE_ACCESS}`);
+    }
+    await this.#ready;
+    const handoverId = this.#newHandoverId();
+    const result = await submit(
+      {
+        handover_id: handoverId,
         url,
         referrer: click.frameUrl ?? click.pageUrl ?? null,
         page_url: click.pageUrl ?? null,
         suggested_name: null,
         mime: null,
         size_hint: null,
-        cookies: await this.#deps.cookieHeader(url, null),
+        cookies: await this.#deps.cookieHeader(url, tab?.cookieStoreId ?? null),
         user_agent: this.#deps.userAgent,
         extra_headers: [],
         source: 'context_menu',
         queue: this.#live?.default_queue ?? null,
-      });
-      if (isConfirmed(added.action)) return 'handed_over';
-      reason = 'Wirecatch gave an unexpected answer.';
-    } catch (error) {
-      reason = describeError(error);
-    }
+      },
+      {
+        addDownload: (download) => this.#addDownload(download),
+        withdraw: (id) => this.#withdraw(id),
+      },
+    );
+    if (result.taken) return 'handed_over';
+    if (result.uncertain) this.#markUncertain(handoverId, name);
+    const reason = result.detail === null ? '' : ` ${result.detail}`;
     return this.#browserFallback(
       url,
-      `Wirecatch could not take ${name}, so the browser is downloading it instead. ${reason}`,
+      `Wirecatch could not take ${name}, so the browser is downloading it instead.${reason}`,
     );
   }
 
@@ -239,6 +341,18 @@ export class Hub {
     }
   }
 
+  async #siteAccess(url: string): Promise<boolean> {
+    try {
+      return await this.#deps.hasSiteAccess(url);
+    } catch {
+      return false;
+    }
+  }
+
+  #newHandoverId(): string {
+    return this.#deps.newHandoverId?.() ?? crypto.randomUUID();
+  }
+
   async #addDownload(download: NewDownload): Promise<AddedDownload> {
     const reply = await this.#client.request(
       { method: 'add_download', params: download },
@@ -250,20 +364,58 @@ export class Hub {
     return reply.data;
   }
 
-  /** The app's settings, connecting first if needed; null when the app cannot be reached in time. */
-  async #liveSettings(): Promise<ExtensionSettings | null> {
-    if (this.#live !== null && this.#client.status.state === 'connected') return this.#live;
+  async #withdraw(handoverId: string): Promise<WithdrawOutcome> {
+    const reply = await this.#client.request(
+      { method: 'withdraw_download', params: { handover_id: handoverId } },
+      this.#deps.withdrawTimeoutMs ?? 3_000,
+    );
+    if (reply.type !== 'withdrawn') throw new Error('Wirecatch gave an unexpected answer.');
+    return reply.data;
+  }
+
+  /**
+   * The settings to judge a paused download by: the app's, connecting first if
+   * needed; when the app cannot be reached in time, the cached copy (marked as
+   * such, so a cached "capture off" still keeps the download in the browser).
+   */
+  async #judgingSettings(): Promise<JudgingSettings | null> {
+    if (this.#live !== null && this.#client.status.state === 'connected') {
+      return { settings: this.#live, fromApp: true };
+    }
     try {
       const reply = await this.#client.request(
         { method: 'get_extension_settings' },
         this.#deps.connectWaitMs ?? 6_000,
       );
-      if (reply.type !== 'extension_settings') return null;
-      this.#adoptSettings(reply.data);
-      return reply.data;
+      if (reply.type === 'extension_settings') {
+        this.#adoptSettings(reply.data);
+        return { settings: reply.data, fromApp: true };
+      }
     } catch {
-      return null;
+      // Unreachable: fall back to the cache below.
     }
+    return this.#cache === null ? null : { settings: this.#cache.settings, fromApp: false };
+  }
+
+  async #persistInFlight(): Promise<void> {
+    try {
+      await this.#deps.inFlight?.save([...this.#inFlight]);
+    } catch {
+      // Session storage unavailable: recovery after a restart is best effort.
+    }
+  }
+
+  /** Resumes downloads a previous run of the background script paused and never finished handing over. */
+  async #recoverInFlight(ids: readonly number[]): Promise<void> {
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      if (this.#inFlight.has(id)) continue;
+      const state = await this.#deps.downloads.state(id).catch(() => null);
+      if (state?.state === 'in_progress' && state.paused) {
+        await resumeBrowserCopy(this.#deps.downloads, id);
+      }
+    }
+    await this.#persistInFlight();
   }
 
   async #runCommand(command: PopupCommand): Promise<void> {
@@ -296,7 +448,7 @@ export class Hub {
     }
   }
 
-  async #call(call: Parameters<NativeClient['request']>[0]): Promise<Reply> {
+  async #call(call: Call): Promise<Reply> {
     if (this.#client.status.state !== 'connected') {
       throw new Error('Wirecatch is not connected, so this cannot be done right now.');
     }
@@ -340,6 +492,40 @@ export class Hub {
     }
   }
 
+  /** The app confirmed a handover after this side gave up waiting: warn if the browser kept its copy too. */
+  #onLateAnswer(call: Call, outcome: Outcome): void {
+    if (call.method !== 'add_download' || outcome.status !== 'ok') return;
+    const reply = outcome.value;
+    if (reply.type !== 'download_added' || !isConfirmed(reply.data.action)) return;
+    const id = call.params.handover_id;
+    const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
+    if (this.#uncertain.has(id)) {
+      this.#uncertain.delete(id);
+      this.#warnDuplicate(name);
+    } else {
+      remember(this.#lateConfirmed, id, name);
+    }
+  }
+
+  /** Remembers a handover the app may still have; returns true if its late answer already came (and warns). */
+  #markUncertain(handoverId: string, name: string): boolean {
+    if (this.#lateConfirmed.has(handoverId)) {
+      this.#lateConfirmed.delete(handoverId);
+      this.#warnDuplicate(name);
+      return true;
+    }
+    remember(this.#uncertain, handoverId, name);
+    return false;
+  }
+
+  #warnDuplicate(name: string): void {
+    this.#setNotice({
+      tone: 'warning',
+      message: `${name} may be downloading twice: Wirecatch took it after all, and the browser kept its copy too. You can cancel one of them.`,
+      at: this.#now(),
+    });
+  }
+
   #adoptSettings(settings: ExtensionSettings): void {
     this.#live = settings;
     this.#saveCache();
@@ -366,7 +552,9 @@ export class Hub {
       }
       return;
     }
-    if (!result.resumed) {
+    // The person cancelled it in the browser meanwhile, or it finished: nothing to say.
+    if (result.browserCopy === 'gone') return;
+    if (result.browserCopy === 'stuck_paused') {
       this.#setNotice({
         tone: 'error',
         message: `${name} is paused in the browser. Open the browser's downloads page and click Resume.`,
@@ -374,11 +562,20 @@ export class Hub {
       });
       return;
     }
-    if (result.reason === 'app_unreachable' || result.reason === 'app_refused') {
+    if (result.uncertain && result.handoverId !== null && this.#markUncertain(result.handoverId, name)) {
+      return;
+    }
+    if (
+      result.reason === 'app_unreachable' ||
+      result.reason === 'app_refused' ||
+      result.reason === 'no_answer'
+    ) {
       const why =
         result.reason === 'app_unreachable'
           ? 'Wirecatch could not be reached'
-          : (result.detail ?? 'Wirecatch did not accept it');
+          : result.reason === 'no_answer'
+            ? 'Wirecatch did not answer in time'
+            : (result.detail ?? 'Wirecatch did not accept it');
       this.#setNotice({
         tone: 'warning',
         message: `${name} stayed in the browser: ${why.replace(/\.$/, '')}.`,

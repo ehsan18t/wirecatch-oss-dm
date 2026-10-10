@@ -6,6 +6,7 @@ import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../s
 import { asPopupRequest } from '../src/lib/messages';
 import { classifyDisconnect, describeProblem, type ProblemKind } from '../src/lib/native/status';
 import { applyPatch, isConfirmed, patchOf } from '../src/lib/protocol';
+import { originPattern } from '../src/lib/site-access';
 import { splitSize, toBytes } from '../src/lib/size';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
 import { DEFAULT_SETTINGS } from './fakes';
@@ -79,17 +80,42 @@ describe('protocol helpers', () => {
       ask_before_download: true,
       show_media_button: null,
       ignored_sites: null,
+      add_ignored_sites: null,
+      remove_ignored_sites: null,
       capture_extensions: null,
       min_capture_size: null,
       default_queue: null,
     });
     expect(patchOf({ capture_enabled: false, min_capture_size: 0 }).capture_enabled).toBe(false);
     expect(patchOf({ min_capture_size: 0 }).min_capture_size).toBe(0);
+    expect(patchOf({ add_ignored_sites: ['a.com'] }).add_ignored_sites).toEqual(['a.com']);
   });
 
   it('applies a patch like the app does', () => {
     const next = applyPatch(DEFAULT_SETTINGS, patchOf({ ignored_sites: ['a.com'] }));
     expect(next).toEqual({ ...DEFAULT_SETTINGS, ignored_sites: ['a.com'] });
+  });
+
+  it('applies site edits in the app order: whole list, then additions, then removals', () => {
+    // Mirrors `site_list_edits_merge_instead_of_overwriting` in crates/protocol.
+    const start = { ...DEFAULT_SETTINGS, ignored_sites: ['a.com', 'b.com'] };
+    const next = applyPatch(
+      start,
+      patchOf({ add_ignored_sites: ['c.com', 'a.com'], remove_ignored_sites: ['b.com'] }),
+    );
+    expect(next.ignored_sites).toEqual(['a.com', 'c.com']);
+    const replaced = applyPatch(
+      start,
+      patchOf({ ignored_sites: ['x.com'], add_ignored_sites: ['y.com'], remove_ignored_sites: ['x.com'] }),
+    );
+    expect(replaced.ignored_sites).toEqual(['y.com']);
+  });
+
+  it('turns an address into the site permission pattern', () => {
+    expect(originPattern('https://cdn.example.com:8443/a/b.zip?x=1')).toBe('https://cdn.example.com/*');
+    expect(originPattern('http://example.com')).toBe('http://example.com/*');
+    expect(originPattern('blob:https://example.com/1')).toBeNull();
+    expect(originPattern('nonsense')).toBeNull();
   });
 
   it('treats only known actions as a confirmed handover', () => {
