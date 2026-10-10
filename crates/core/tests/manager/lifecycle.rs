@@ -67,9 +67,12 @@ async fn cancel_discards_progress_and_retry_starts_over() {
     .await;
 
     server.configure(|c| c.per_connection_bps = None);
+    let sent_before = server.bytes_sent();
     h.manager.retry(row.id).unwrap();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
+    // Retry started over: the whole file came again.
+    assert_eq!(server.bytes_sent() - sent_before, server.data.len() as u64);
     assert!(matches!(
         h.manager.cancel(row.id),
         Err(CoreError::WrongState(_))
