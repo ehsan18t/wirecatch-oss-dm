@@ -22,25 +22,52 @@ use crate::{naming, storage, worker};
 const MIB: u64 = 1024 * 1024;
 
 /// Tuning for a download. The defaults suit most connections.
+///
+/// Start from [`DownloadOptions::default`] and change what you need:
+///
+/// ```
+/// # use wirecatch_engine::DownloadOptions;
+/// let options = DownloadOptions {
+///     connections: 16,
+///     ..DownloadOptions::default()
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct DownloadOptions {
-    /// Most parallel connections to open.
+    /// Most parallel connections to open (default 8). Fewer are used when the
+    /// file is too small to split that often, when the server does not accept
+    /// byte ranges, or when the server refuses extra connections.
     pub connections: usize,
-    /// A range is only split if both halves would be at least this big.
+    /// A range is only split if both halves would be at least this big, in
+    /// bytes (default 1 MiB).
     pub min_split: u64,
-    /// Bytes collected per connection before each disk write.
+    /// Bytes collected per connection before each disk write (default 1 MiB).
     pub buffer_size: usize,
-    /// Consecutive failed attempts without progress before a connection gives up.
+    /// Consecutive failed attempts without progress before a connection gives
+    /// up (default 6).
     pub max_retries: u32,
-    /// A connection that receives nothing for this long is retried.
+    /// A connection that receives nothing for this long is retried (default 30 s).
     pub stall_timeout: Duration,
+    /// How long opening a connection may take, TLS handshake included
+    /// (default 15 s).
     pub connect_timeout: Duration,
+    /// The `User-Agent` sent with every request (default `Wirecatch/<version>`).
+    /// A `User-Agent` in [`headers`](Self::headers) takes precedence.
     pub user_agent: String,
-    /// Extra request headers, such as cookies and referer handed over by a browser.
+    /// Extra request headers, such as the cookies, referer and user agent a
+    /// browser hands over.
+    ///
+    /// They are sent in full only to the origin (scheme, host and port) of
+    /// [`DownloadRequest::url`]. If that URL redirects to another origin, only
+    /// headers that carry no credentials follow: `Referer`, `User-Agent`,
+    /// `Accept`, `Accept-Language`, `Cache-Control`, `DNT` and `Pragma`.
+    /// Cookies, `Authorization` and any other header stay with their origin.
     pub headers: HeaderMap,
-    /// How often the resume file is rewritten while downloading.
+    /// How often the resume file is rewritten while downloading (default 1 s).
+    /// A killed process loses at most this much progress.
     pub checkpoint_interval: Duration,
-    /// Speed limits this download obeys, for example a global one and its queue's.
+    /// Speed limits this download obeys, for example a global one and its
+    /// queue's. Every limiter in the list applies (default none).
     pub rate_limiters: Vec<Arc<RateLimiter>>,
 }
 
@@ -61,11 +88,16 @@ impl Default for DownloadOptions {
     }
 }
 
+/// What to download and where to put it.
 #[derive(Debug, Clone)]
 pub struct DownloadRequest {
+    /// The address to download. Redirects are followed.
     pub url: Url,
+    /// The folder to save into; created if missing. Ignored when
+    /// [`exact_path`](Self::exact_path) is set.
     pub dest_dir: PathBuf,
-    /// Overrides the name the server suggests.
+    /// Overrides the name the server suggests. It is still made safe for the
+    /// file system, and a free name is picked if a file with it already exists.
     pub file_name: Option<String>,
     /// Save to exactly this path, ignoring `dest_dir` and `file_name`. The caller
     /// owns naming (no `(1)` suffix is added, and an existing file is replaced on
@@ -73,10 +105,12 @@ pub struct DownloadRequest {
     /// the URL differs, for example after a link refresh, as long as the server
     /// still reports the same size and validators.
     pub exact_path: Option<PathBuf>,
+    /// Connection count, retries, headers, speed limits and other tuning.
     pub options: DownloadOptions,
 }
 
 impl DownloadRequest {
+    /// A request for `url` into the folder `dest_dir`, with default options.
     pub fn new(url: Url, dest_dir: impl Into<PathBuf>) -> Self {
         Self {
             url,
@@ -88,16 +122,27 @@ impl DownloadRequest {
     }
 }
 
+/// How a download that did not fail ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
+    /// The whole file is on disk under its final name.
     Completed {
+        /// Where the file was saved.
         path: PathBuf,
+        /// Size of the file.
         bytes: u64,
         /// Bytes kept from an earlier run instead of downloaded again.
         resumed_from: u64,
     },
     /// Cancelled; running the same request again continues where it stopped.
-    Paused { path: PathBuf, remaining: u64 },
+    Paused {
+        /// Where the file will be saved once complete. The data so far is in
+        /// this path plus [`PART_EXT`](crate::PART_EXT), next to the resume
+        /// file (plus [`STATE_EXT`](crate::STATE_EXT)).
+        path: PathBuf,
+        /// Bytes still to download.
+        remaining: u64,
+    },
 }
 
 /// State every worker of one download shares.
@@ -125,8 +170,17 @@ struct Target {
 
 /// Downloads `request.url` into `request.dest_dir`.
 ///
+/// `progress` is updated live and can be read from any task or thread.
 /// Cancelling `cancel` stops all connections, writes what has arrived, saves the
-/// resume file and returns [`Outcome::Paused`].
+/// resume file and returns [`Outcome::Paused`]. Running the same request again
+/// later resumes it. See the [crate documentation](crate) for an example.
+///
+/// # Errors
+///
+/// Returns an [`Error`] when the download cannot finish: the server refuses it,
+/// the network stays down beyond the retries, the disk fails, or the file
+/// changes on the server in a way that cannot be reconciled. Whatever was
+/// downloaded before the error is kept for a later run whenever possible.
 pub async fn download(
     request: DownloadRequest,
     progress: Arc<Progress>,

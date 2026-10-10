@@ -1,9 +1,15 @@
+//! Live counters for one download.
+
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 const UNKNOWN: u64 = u64::MAX;
 
 /// Live counters for one download. Cheap to read from another task or thread.
+///
+/// Create one with [`Progress::default`], pass it to [`download`](crate::download)
+/// in an `Arc`, and read it from anywhere, for example a few times a second to
+/// draw a progress bar. Speed is the change in [`done`](Self::done) over time.
 #[derive(Debug)]
 pub struct Progress {
     total: AtomicU64,
@@ -40,6 +46,7 @@ impl Progress {
         self.connections.load(Ordering::Relaxed)
     }
 
+    /// The name the file is saved under, once decided.
     pub fn file_name(&self) -> Option<String> {
         self.file_name.lock().unwrap().clone()
     }

@@ -30,6 +30,8 @@ struct Args {
     connections: u16,
 
     /// Extra request header, for example -H "Cookie: a=b". Repeatable.
+    ///
+    /// Cookies, Authorization and other credentials are only sent to the URL's own site, never to another site it redirects to.
     #[arg(short = 'H', long = "header")]
     headers: Vec<String>,
 
