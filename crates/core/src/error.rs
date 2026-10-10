@@ -88,6 +88,10 @@ pub enum CoreError {
         source: io::Error,
     },
 
+    /// A captured download could not be taken over; the text says why.
+    #[error("Wirecatch could not take over this download: {0} The browser keeps it.")]
+    NotStarted(String),
+
     /// The manager has shut down.
     #[error("Wirecatch is shutting down. Start it again to continue.")]
     Closed,
@@ -121,6 +125,7 @@ impl CoreError {
             | CoreError::QueueNotFound(_)
             | CoreError::ConfirmationNotFound(_) => ErrorCode::NotFound,
             CoreError::InvalidUrl(_) => ErrorCode::InvalidUrl,
+            CoreError::NotStarted(_) => ErrorCode::NotStarted,
             CoreError::Invalid(_)
             | CoreError::WrongState(_)
             | CoreError::DefaultQueue

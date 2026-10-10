@@ -19,7 +19,7 @@ use wirecatch_protocol::wire::{
     UNKNOWN_REQUEST_ID,
 };
 
-use crate::common::{Harness, TestServer, tune};
+use crate::common::{Config, Harness, SilentServer, TestServer, test_data, tune};
 
 /// A socket client talking to `serve_connection` over an in-memory stream.
 struct Client {
@@ -332,7 +332,7 @@ async fn a_capture_starts_at_once_and_shows_a_toast() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ask_before_download_waits_for_the_user() {
-    let server = TestServer::fast(2048).await;
+    let server = TestServer::fast(1024).await;
     let h = Harness::new().await;
     tune(&h.manager, |s| s.extension.ask_before_download = true);
     let mut ui = h.manager.subscribe();
@@ -541,6 +541,136 @@ async fn ignored_site_edits_from_two_browsers_merge() {
         panic!("unexpected reply {reply:?}");
     };
     assert_eq!(saved.ignored_sites, vec!["b.example"]);
+}
+
+async fn capture_server(len: usize, change: impl FnOnce(&mut Config)) -> TestServer {
+    let mut config = Config {
+        ranges: true,
+        ..Config::default()
+    };
+    change(&mut config);
+    TestServer::start(test_data(len), config).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn started_means_the_server_answered() {
+    let delay = Duration::from_millis(400);
+    let server = capture_server(1024, |c| c.answer_delay = Some(delay)).await;
+    let h = Harness::new().await;
+    let start = std::time::Instant::now();
+    let added = h
+        .manager
+        .add_capture(capture(server.url("report.pdf")))
+        .await
+        .unwrap();
+    assert_eq!(added.action, AddAction::Started);
+    assert!(
+        start.elapsed() >= delay,
+        "replied before the server answered"
+    );
+    let row = h.row(added.id.unwrap());
+    assert!(
+        matches!(
+            row.status,
+            DownloadStatus::Downloading | DownloadStatus::Connecting | DownloadStatus::Completed
+        ) && row.path.ends_with("report.pdf")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_server_that_does_not_answer_in_time_leaves_the_download_to_the_browser() {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_capture_timeout(Duration::from_millis(300)).await;
+    let mut client = Client::connected(&h.manager).await;
+    let lost = capture(silent.url("never.pdf"));
+    let err = client
+        .call(Call::AddDownload(lost.clone()))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotStarted);
+    assert!(err.message.contains("did not answer"), "{}", err.message);
+    assert!(
+        err.message.contains("The browser keeps it"),
+        "{}",
+        err.message
+    );
+    assert!(
+        h.manager.list_downloads().is_empty(),
+        "the attempt was left behind"
+    );
+    let reply = client
+        .call(Call::WithdrawDownload(WithdrawRequest {
+            handover_id: lost.handover_id,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(reply, Reply::Withdrawn(WithdrawOutcome::NotFound));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_different_file_than_the_browser_saw_is_not_taken_over() {
+    // The browser saw 1024 bytes; the app's request gets 2048.
+    let resized = capture_server(2048, |_| {}).await;
+    // The browser saw a PDF; the app's request gets a sign-in page.
+    let page = capture_server(1024, |c| {
+        c.content_type = Some("text/html; charset=utf-8".into());
+    })
+    .await;
+    let h = Harness::new().await;
+
+    let err = h
+        .manager
+        .add_capture(capture(resized.url("report.pdf")))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("different file"), "{err}");
+    let err = h
+        .manager
+        .add_capture(capture(page.url("report.pdf")))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("web page"), "{err}");
+    assert!(h.manager.list_downloads().is_empty());
+    // Nothing was written.
+    let documents = h.folders.downloads.join("Documents");
+    let left = std::fs::read_dir(&documents).map_or(0, |d| d.count());
+    assert_eq!(left, 0, "files were left in {}", documents.display());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() {
+    let delay = Duration::from_millis(500);
+    let server = capture_server(1024, |c| c.answer_delay = Some(delay)).await;
+    let h = Harness::new().await;
+
+    let first = capture(server.url("a.pdf"));
+    let (a, b) = tokio::join!(h.manager.add_capture(first.clone()), async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        h.manager.add_capture(first.clone()).await
+    });
+    let (a, b) = (a.unwrap(), b.unwrap());
+    assert_eq!(a, b);
+    assert_eq!(a.action, AddAction::Started);
+
+    let second = capture(server.url("b.pdf"));
+    let (added, withdrawn) = tokio::join!(h.manager.add_capture(second.clone()), async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        h.manager.withdraw_capture(&second.handover_id).await
+    });
+    assert_eq!(withdrawn.unwrap(), WithdrawOutcome::Withdrawn);
+    assert!(matches!(
+        added,
+        Err(wirecatch_core::CoreError::NotStarted(_))
+    ));
+    let ids: Vec<_> = h.manager.list_downloads().iter().map(|r| r.id).collect();
+    assert_eq!(ids, vec![a.id.unwrap()]);
+    // Once started, a withdrawal no longer takes it back.
+    let outcome = h
+        .manager
+        .withdraw_capture(&first.handover_id)
+        .await
+        .unwrap();
+    assert_eq!(outcome, WithdrawOutcome::AlreadyStarted);
 }
 
 fn framed(body: &[u8]) -> Vec<u8> {

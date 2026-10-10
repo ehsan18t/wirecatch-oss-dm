@@ -19,7 +19,7 @@ use crate::error::{CoreError, Result};
 use crate::naming::Claimed;
 use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
-use crate::store::{LastIds, Origin, StoredDownload};
+use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
 
 pub(super) struct State {
     pub settings: AppSettings,
@@ -112,6 +112,10 @@ pub(super) struct Entry {
     /// Order within its queue; lower runs first.
     pub position: i64,
     pub origin: Origin,
+    /// Whether its path is final, and the user's or browser's choices for it.
+    pub naming: NameChoice,
+    /// What the browser saw of a captured file, checked when the server answers.
+    pub expect: Option<Expectation>,
     /// Present while the engine works on it.
     pub run: Option<Run>,
     /// Was running when the app last stopped, so it gets the first free slot.
@@ -125,9 +129,22 @@ pub(super) struct Entry {
     pub moving: Option<CancellationToken>,
 }
 
+/// What the browser saw of a captured download, so the app can tell when its own
+/// request got something else (another size, or a web page instead of the file).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Expectation {
+    /// The size the browser reported, if any.
+    pub size: Option<u64>,
+    /// The browser's name for the file, which says whether a web page is expected.
+    pub name: Option<String>,
+}
+
 /// An engine run in progress.
 pub(super) struct Run {
     pub id: u64,
+    /// Cancelled once the server has answered with the file and its final path is
+    /// chosen; only on a download's first run, whose path is not settled yet.
+    pub answered: CancellationToken,
     pub cancel: CancellationToken,
     /// Cancelled by the run's task once the engine has returned and closed its files.
     pub exited: CancellationToken,
@@ -304,12 +321,7 @@ impl Entry {
     /// Whether a server has answered the app with this file at some point, so the
     /// browser's copy is no longer needed.
     pub fn server_answered(&self) -> bool {
-        self.row.status == DownloadStatus::Completed
-            || self.row.done > 0
-            || self
-                .run
-                .as_ref()
-                .is_some_and(|run| run.progress.file_name().is_some())
+        self.naming.settled || self.row.status == DownloadStatus::Completed
     }
 
     pub fn stored(&self) -> StoredDownload {
@@ -317,6 +329,7 @@ impl Entry {
             summary: self.row.clone(),
             position: self.position,
             origin: self.origin.clone(),
+            naming: self.naming.clone(),
         }
     }
 
@@ -388,8 +401,11 @@ mod tests {
             },
             position: 1,
             origin: Origin::default(),
+            naming: NameChoice::settled(),
+            expect: None,
             run: Some(Run {
                 id: 1,
+                answered: CancellationToken::new(),
                 cancel: CancellationToken::new(),
                 exited: CancellationToken::new(),
                 progress: Arc::new(Progress::default()),

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use wirecatch_engine::Url;
+use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{AddRequest, DownloadStatus, DownloadSummary, PortablePath, UiEvent};
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -11,17 +11,19 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use super::Manager;
 use super::handovers::{Handover, Target};
 use super::run::{delete_files, mark_cancelled};
-use super::state::{Entry, Stop};
+use super::state::{Entry, Expectation, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
 use crate::settings;
-use crate::store::Origin;
+use crate::store::{NameChoice, Origin};
 
 /// Everything needed to add a download, whichever way it arrived.
 pub(super) struct NewEntry {
     pub url: Url,
-    /// Preferred file name; the link's name is used if absent.
+    /// A name the user chose; it wins over the server's.
     pub file_name: Option<String>,
+    /// A name the browser suggested, shown until the server answers.
+    pub hint_name: Option<String>,
     /// Folder to save in; the category rule decides if absent.
     pub folder: Option<PathBuf>,
     pub queue: QueueId,
@@ -30,18 +32,13 @@ pub(super) struct NewEntry {
     pub origin: Origin,
     /// The extension's handover id, for captures.
     pub handover: Option<String>,
+    /// What the browser saw of a captured file.
+    pub expect: Option<Expectation>,
 }
 
-/// What [`Manager::insert`] did.
-pub(super) enum Added {
-    /// A new download.
-    New(DownloadSummary),
-    /// The handover was already known; this is the answer given then.
-    Known(AddedDownload),
-}
-
-/// How a captured download stands, for the extension. Until the engine reports that
-/// the server has answered, a running download counts as started.
+/// How a captured download stands right after it was added: started if it is
+/// running (provisionally, until the server answers) or already finished, queued
+/// if its queue cannot run it yet.
 pub(super) fn capture_action(row: &DownloadSummary) -> AddAction {
     match row.status {
         DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Completed => {
@@ -81,16 +78,18 @@ impl Manager {
             .insert(NewEntry {
                 url,
                 file_name: request.file_name,
+                hint_name: None,
                 folder,
                 queue,
                 start: request.start,
                 origin: Origin::default(),
                 handover: None,
+                expect: None,
             })
             .await?;
         match added {
-            Added::New(row) => Ok(row.id),
-            Added::Known(_) => Err(CoreError::Internal(
+            Some(row) => Ok(row.id),
+            None => Err(CoreError::Internal(
                 "a download without a handover was matched to one".into(),
             )),
         }
@@ -363,13 +362,17 @@ impl Manager {
     }
 
     /// Adds a download: picks its file name, category and a free path, then lets
-    /// it start if its queue has room. A capture whose handover is already known
-    /// (a retry from the extension, or two copies racing) adds nothing.
-    pub(super) async fn insert(&self, new: NewEntry) -> Result<Added> {
+    /// it start if its queue has room. Returns the new row, or `None` for a capture
+    /// whose handover is already known (a retry from the extension, or two copies
+    /// racing), which adds nothing.
+    pub(super) async fn insert(&self, new: NewEntry) -> Result<Option<DownloadSummary>> {
         let (dir, name, category) = {
             let state = self.lock_open()?;
             state.slot(new.queue)?;
-            let name = naming::file_name(new.file_name.as_deref(), &new.url)?;
+            let name = naming::file_name(
+                new.file_name.as_deref().or(new.hint_name.as_deref()),
+                &new.url,
+            )?;
             let category = settings::category_of(&state.settings, &name);
             let dir = match &new.folder {
                 Some(folder) => folder.clone(),
@@ -388,8 +391,12 @@ impl Manager {
                 .await?;
 
             let mut state = self.lock_open()?;
-            if let Some(known) = new.handover.as_deref().and_then(|h| state.handovers.get(h)) {
-                return Ok(Added::Known(known.reply.clone()));
+            if new
+                .handover
+                .as_deref()
+                .is_some_and(|h| state.handovers.get(h).is_some())
+            {
+                return Ok(None);
             }
             if state.claimed.contains(&path) {
                 continue;
@@ -423,10 +430,21 @@ impl Manager {
                 completed_at: None,
                 waiting: None,
             };
+            // The path is a guess until the server answers with its own name.
+            let naming = NameChoice {
+                settled: false,
+                name: new.file_name.clone(),
+                folder: new
+                    .folder
+                    .as_ref()
+                    .map(|f| f.to_string_lossy().into_owned()),
+            };
             state.insert_entry(Entry {
                 row,
                 position,
                 origin: new.origin,
+                naming,
+                expect: new.expect,
                 run: None,
                 resume_first: false,
                 cleanup: None,
@@ -437,14 +455,23 @@ impl Manager {
             self.reconcile(&mut state);
             let row = state.entry(id)?.row.clone();
             if let Some(handover) = &new.handover {
+                let action = capture_action(&row);
+                // A started capture is only taken over once the server answers;
+                // until then a duplicate add waits for that outcome.
+                let deciding = (action == AddAction::Started).then(CancellationToken::new);
                 let reply = AddedDownload {
                     id: Some(id),
-                    action: capture_action(&row),
+                    action,
                 };
                 let target = Target::Download(id);
-                state.handovers.insert(handover, Handover { reply, target });
+                let record = Handover {
+                    reply,
+                    target,
+                    deciding,
+                };
+                state.handovers.insert(handover, record);
             }
-            return Ok(Added::New(row));
+            return Ok(Some(row));
         }
     }
 }

@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::extension::AddedDownload;
 
@@ -31,6 +32,9 @@ pub(super) struct Handover {
     /// The answer given the first time, repeated for a duplicate add.
     pub reply: AddedDownload,
     pub target: Target,
+    /// Set while the first add is still waiting for the server, so a duplicate add
+    /// waits for the same outcome; cancelled when it is decided.
+    pub deciding: Option<CancellationToken>,
 }
 
 /// A bounded memory of handovers; the oldest are forgotten first.
@@ -64,10 +68,25 @@ impl Handovers {
         }
     }
 
-    /// Forgets a handover.
+    /// Records the final answer for a handover that was still being decided, and
+    /// wakes duplicate adds waiting for it.
+    pub fn decide(&mut self, id: &str, reply: AddedDownload) {
+        if let Some(handover) = self.known.get_mut(id) {
+            handover.reply = reply;
+            if let Some(deciding) = handover.deciding.take() {
+                deciding.cancel();
+            }
+        }
+    }
+
+    /// Forgets a handover, waking duplicate adds waiting for it (they then find it
+    /// gone and report that it was not taken over).
     pub fn remove(&mut self, id: &str) {
-        if self.known.remove(id).is_some() {
+        if let Some(handover) = self.known.remove(id) {
             self.order.retain(|known| known != id);
+            if let Some(deciding) = handover.deciding {
+                deciding.cancel();
+            }
         }
     }
 }
@@ -94,6 +113,7 @@ mod tests {
                 action: AddAction::Queued,
             },
             target: Target::Download(DownloadId(n)),
+            deciding: None,
         }
     }
 

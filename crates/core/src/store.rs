@@ -58,6 +58,11 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE queues ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE queues ADD COLUMN running_outside_schedule INTEGER NOT NULL DEFAULT 0;
 "#,
+    r#"
+    ALTER TABLE downloads ADD COLUMN settled INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE downloads ADD COLUMN chosen_name TEXT;
+    ALTER TABLE downloads ADD COLUMN chosen_folder TEXT;
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -86,6 +91,31 @@ pub(crate) struct StoredDownload {
     /// Order within its queue; lower runs first.
     pub position: i64,
     pub origin: Origin,
+    pub naming: NameChoice,
+}
+
+/// How a download's final name and folder get decided.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NameChoice {
+    /// The final path is fixed: the server has answered with the file. Until then
+    /// the download's path is a provisional guess made when it was added.
+    pub settled: bool,
+    /// A name the user or the browser chose; it wins over the server's suggestion.
+    pub name: Option<String>,
+    /// A folder the user chose; otherwise the category rule decides.
+    pub folder: Option<String>,
+}
+
+impl NameChoice {
+    /// A download whose path is already final.
+    #[cfg(test)]
+    pub fn settled() -> Self {
+        Self {
+            settled: true,
+            name: None,
+            folder: None,
+        }
+    }
 }
 
 /// Everything loaded at startup.
@@ -330,7 +360,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
-                added_at, completed_at, origin
+                added_at, completed_at, origin, settled, chosen_name, chosen_folder
          FROM downloads ORDER BY position",
     )?;
     let downloads = stmt
@@ -393,8 +423,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     tx.prepare_cached(
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
-             added_at, completed_at, origin)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             added_at, completed_at, origin, settled, chosen_name, chosen_folder)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
     )?
     .execute(params![
         d.id.0,
@@ -410,6 +440,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         d.added_at,
         d.completed_at,
         to_json(&row.origin),
+        row.naming.settled,
+        row.naming.name,
+        row.naming.folder,
     ])?;
     Ok(())
 }
@@ -453,6 +486,11 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
         },
         position: row.get(4)?,
         origin,
+        naming: NameChoice {
+            settled: row.get(13)?,
+            name: row.get(14)?,
+            folder: row.get(15)?,
+        },
     }))
 }
 
@@ -539,6 +577,11 @@ mod tests {
                     name: "Cookie".into(),
                     value: "a=b".into(),
                 }],
+            },
+            naming: NameChoice {
+                settled: false,
+                name: Some("chosen.zip".into()),
+                folder: None,
             },
         }
     }

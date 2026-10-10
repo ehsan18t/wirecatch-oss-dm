@@ -8,7 +8,8 @@ use tokio::runtime::Handle;
 use tracing::{debug, warn};
 
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error as EngineError, Outcome, Progress, RateLimiter, Url,
+    CancellationToken, DownloadRequest, Error as EngineError, Outcome, PathResolver, Progress,
+    RateLimiter, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
@@ -32,6 +33,8 @@ pub(super) enum RunEnd {
 impl Manager {
     /// Starts the engine on `id`. The caller has already checked every limit.
     pub(super) fn start_run(&self, state: &mut State, id: DownloadId) {
+        let run_id = state.ids.run();
+        let answered = CancellationToken::new();
         let connections = usize::from(state.settings.connections_per_download);
         let Some(entry) = state.downloads.get(&id) else {
             return;
@@ -45,8 +48,15 @@ impl Manager {
             .into_iter()
             .flatten()
             .collect();
-        match engine_request(entry, connections, limiters) {
-            Ok(request) => self.launch(state, id, move |progress, cancel| {
+        // Until the server has answered once, the path is only a guess: let the
+        // server's answer decide it. Afterwards it is fixed.
+        let target = if entry.naming.settled {
+            Target::Exact
+        } else {
+            Target::Resolve(self.path_resolver(id, run_id, answered.clone()))
+        };
+        match engine_request(entry, connections, limiters, target) {
+            Ok(request) => self.launch(state, id, run_id, answered, move |progress, cancel| {
                 wirecatch_engine::download(request, progress, cancel)
             }),
             Err(error) => {
@@ -61,12 +71,17 @@ impl Manager {
 
     /// Runs `engine` as the run of `id`. Kept apart from [`start_run`](Self::start_run)
     /// so tests can stand in for the engine.
-    fn launch<F, Fut>(&self, state: &mut State, id: DownloadId, engine: F)
-    where
+    fn launch<F, Fut>(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        run_id: u64,
+        answered: CancellationToken,
+        engine: F,
+    ) where
         F: FnOnce(Arc<Progress>, CancellationToken) -> Fut,
         Fut: Future<Output = Result<Outcome, EngineError>> + Send + 'static,
     {
-        let run_id = state.ids.run();
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
@@ -91,6 +106,7 @@ impl Manager {
         });
         entry.run = Some(Run {
             id: run_id,
+            answered,
             cancel,
             exited,
             progress,
@@ -248,11 +264,21 @@ impl Drop for RunGuard {
     }
 }
 
-/// The engine request for a download, always saving to the path the manager chose.
+/// Where a run saves its file.
+enum Target {
+    /// At the download's settled path.
+    Exact,
+    /// Wherever this resolver decides once the server has answered.
+    Resolve(PathResolver),
+}
+
+/// The engine request for a download. The manager always decides the path, either
+/// up front or through its resolver.
 fn engine_request(
     entry: &Entry,
     connections: usize,
     rate_limiters: Vec<Arc<RateLimiter>>,
+    target: Target,
 ) -> Result<DownloadRequest, UserError> {
     let url = Url::parse(&entry.row.url).map_err(|e| {
         user_error::describe(
@@ -264,7 +290,10 @@ fn engine_request(
     let path = PathBuf::from(&entry.row.path);
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut request = DownloadRequest::new(url, dir);
-    request.exact_path = Some(path);
+    match target {
+        Target::Exact => request.exact_path = Some(path),
+        Target::Resolve(resolver) => request.resolve_path = Some(resolver),
+    }
     let options = &mut request.options;
     options.connections = connections;
     options.rate_limiters = rate_limiters;
@@ -310,7 +339,9 @@ mod tests {
         let (manager, id, _dir) = paused_download().await;
         let exited = {
             let mut state = manager.lock();
-            manager.launch(&mut state, id, |_, _| panicking_engine());
+            let run_id = state.ids.run();
+            let answered = CancellationToken::new();
+            manager.launch(&mut state, id, run_id, answered, |_, _| panicking_engine());
             state.downloads[&id].run.as_ref().unwrap().exited.clone()
         };
         tokio::time::timeout(Duration::from_secs(5), exited.cancelled())

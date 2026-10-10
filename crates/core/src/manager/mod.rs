@@ -11,6 +11,7 @@ mod relocate;
 mod restore;
 mod run;
 mod scheduling;
+mod settle;
 mod state;
 mod ticker;
 
@@ -57,7 +58,14 @@ pub struct ManagerConfig {
     /// shutdown). One still going after this, for example stuck waiting on a server
     /// that never answers, is abandoned so nothing waits on it forever.
     pub stop_timeout: Duration,
+    /// How long a captured download may wait for the server's first answer before
+    /// the app gives up and the browser keeps the download. Shorter than the
+    /// extension's own wait for the app's reply.
+    pub capture_timeout: Duration,
 }
+
+/// The default [`ManagerConfig::capture_timeout`].
+pub const DEFAULT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// The default [`ManagerConfig::stop_timeout`].
 pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -70,12 +78,19 @@ impl ManagerConfig {
             folders,
             clock: Arc::new(SystemClock),
             stop_timeout: DEFAULT_STOP_TIMEOUT,
+            capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
         }
     }
 
     /// Uses `clock` instead of the real clock.
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
+        self
+    }
+
+    /// Uses `timeout` as the [`capture_timeout`](Self::capture_timeout).
+    pub fn with_capture_timeout(mut self, timeout: Duration) -> Self {
+        self.capture_timeout = timeout;
         self
     }
 
@@ -108,6 +123,7 @@ struct Inner {
     store: Store,
     clock: Arc<dyn Clock>,
     stop_timeout: Duration,
+    capture_timeout: Duration,
     folders: KnownFolders,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
@@ -164,6 +180,7 @@ impl Manager {
             store,
             clock: config.clock,
             stop_timeout: config.stop_timeout,
+            capture_timeout: config.capture_timeout,
             folders: config.folders,
             global_limiter,
             ui_events,

@@ -188,6 +188,49 @@ pub(crate) fn validate_queue(mut queue: Queue) -> Result<Queue> {
     Ok(queue)
 }
 
+/// A category from a `Content-Type`, for a file whose name says nothing (no
+/// extension, or one no rule lists).
+pub(crate) fn category_from_mime(content_type: &str) -> Category {
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let (kind, subtype) = mime.split_once('/').unwrap_or((mime.as_str(), ""));
+    match (kind, subtype) {
+        ("video", _) => Category::Video,
+        ("audio", _) => Category::Audio,
+        ("image", _) => Category::Image,
+        ("text", "plain" | "csv") | ("application", "pdf" | "msword" | "rtf" | "epub+zip") => {
+            Category::Document
+        }
+        ("application", sub)
+            if sub.starts_with("vnd.openxmlformats") || sub.starts_with("vnd.oasis") =>
+        {
+            Category::Document
+        }
+        (
+            "application",
+            "zip" | "x-zip-compressed" | "x-7z-compressed" | "x-rar-compressed" | "vnd.rar"
+            | "gzip" | "x-gzip" | "x-tar" | "x-bzip2" | "x-xz" | "zstd" | "x-iso9660-image",
+        ) => Category::Archive,
+        (
+            "application",
+            "x-msdownload"
+            | "vnd.microsoft.portable-executable"
+            | "x-msi"
+            | "x-ms-installer"
+            | "vnd.debian.binary-package"
+            | "x-rpm"
+            | "vnd.android.package-archive"
+            | "vnd.appimage"
+            | "x-apple-diskimage",
+        ) => Category::Program,
+        _ => Category::Other,
+    }
+}
+
 /// The category whose rule lists the extension of `file_name`.
 pub(crate) fn category_of(settings: &AppSettings, file_name: &str) -> Category {
     let Some((_, ext)) = file_name.rsplit_once('.') else {

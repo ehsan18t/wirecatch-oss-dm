@@ -36,6 +36,33 @@ impl Claimed {
     }
 }
 
+/// The name a download settles on once the server has answered: the user's
+/// choice; else the name the server gave (`Content-Disposition`); else the
+/// provisional name, which may come from the browser and know better than the
+/// link (a page can name a download the server never names); else the link's.
+///
+/// `suggested` is the engine's suggestion, which falls back to the name in the
+/// link (`final_url`) or a generic name when the server gave none.
+pub(crate) fn settled_name(
+    choice: Option<&str>,
+    suggested: &str,
+    final_url: &Url,
+    provisional: &str,
+) -> Result<String> {
+    let from_link = naming::from_url(final_url)
+        .map_or_else(|| GENERIC_NAME.to_string(), |name| naming::sanitize(&name));
+    let server_named_it = suggested != from_link && suggested != GENERIC_NAME;
+    let name = match choice.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(chosen) => chosen,
+        None if server_named_it || provisional.is_empty() => suggested,
+        None => provisional,
+    };
+    checked(naming::sanitize(name))
+}
+
+/// The engine's name for a file when neither the server nor the link offers one.
+const GENERIC_NAME: &str = "download";
+
 /// A safe file name from the user's or browser's choice, else the link. Names
 /// ending like the engine's own part and resume files are refused, so a download
 /// can never be mistaken for another one's partial data.
@@ -46,7 +73,11 @@ pub(crate) fn file_name(preferred: Option<&str>, url: &Url) -> Result<String> {
         .map(str::to_string)
         .or_else(|| naming::from_url(url))
         .unwrap_or_default();
-    let name = naming::sanitize(&raw);
+    checked(naming::sanitize(&raw))
+}
+
+/// Refuses names ending like the engine's part and resume files.
+fn checked(name: String) -> Result<String> {
     let lower = name.to_lowercase();
     if [PART_EXT, STATE_EXT].iter().any(|ext| lower.ends_with(ext)) {
         return Err(CoreError::Invalid(format!(
@@ -127,6 +158,21 @@ mod tests {
         assert_eq!(file_name(None, &url).unwrap(), "report final.pdf");
         let bare = Url::parse("https://example.com/").unwrap();
         assert_eq!(file_name(None, &bare).unwrap(), "download");
+    }
+
+    #[test]
+    fn the_settled_name_prefers_choice_then_server_then_browser_then_link() {
+        let link = Url::parse("https://example.com/get?id=7").unwrap();
+        let settle = |choice, suggested| settled_name(choice, suggested, &link, "report.pdf");
+        assert_eq!(settle(Some("mine.pdf"), "server.pdf").unwrap(), "mine.pdf");
+        // The server named it (Content-Disposition): that wins over the browser.
+        assert_eq!(settle(None, "server.pdf").unwrap(), "server.pdf");
+        // Only the link's name or the generic one: the browser's name wins.
+        assert_eq!(settle(None, "get").unwrap(), "report.pdf");
+        assert_eq!(settle(None, "download").unwrap(), "report.pdf");
+        let no_hint = settled_name(None, "get", &link, "").unwrap();
+        assert_eq!(no_hint, "get");
+        assert!(settle(Some("x.wcpart"), "server.pdf").is_err());
     }
 
     #[test]

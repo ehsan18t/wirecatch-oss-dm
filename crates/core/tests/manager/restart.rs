@@ -9,25 +9,47 @@ const KIB: usize = 1024;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() {
+    let slow = TestServer::throttled(512 * KIB, 64 * KIB as u64).await;
     let mut h = Harness::new().await;
-    let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
-    let finished = h.add_with("https://example.com/done.bin", paused).await;
-    let unfinished = h.add_with("https://example.com/half.bin", paused).await;
-    // The engine renamed the part file just before the app stopped.
-    for row in [&finished, &unfinished] {
+    // Two downloads whose server has answered, so their paths are final.
+    let mut settled = Vec::new();
+    for name in ["done.bin", "half.bin"] {
+        let row = h.add(&slow.url(name)).await;
+        h.wait_for(row.id, "the server's answer", |r| r.done > 0)
+            .await;
+        h.manager.pause(row.id).unwrap();
+        settled.push(h.wait_status(row.id, DownloadStatus::Paused).await);
+    }
+    let [finished, unfinished] = &settled[..] else {
+        unreachable!()
+    };
+    // One that never ran: its path is still a guess.
+    let guessed = h
+        .add_with(&slow.url("guess.bin"), |r| r.start = false)
+        .await;
+
+    // The engine renamed the first one's part file just before the app stopped.
+    let partials = |path: &str| {
+        [wirecatch_engine::PART_EXT, wirecatch_engine::STATE_EXT].map(|ext| format!("{path}{ext}"))
+    };
+    for partial in partials(&finished.path) {
+        std::fs::remove_file(partial).unwrap();
+    }
+    for row in [finished, unfinished, &guessed] {
         let path = std::path::Path::new(&row.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, b"12345").unwrap();
     }
-    let part = format!("{}{}", unfinished.path, wirecatch_engine::PART_EXT);
-    std::fs::write(part, b"12345").unwrap();
 
     h.restart().await;
 
     let row = h.row(finished.id);
     assert_eq!(row.status, DownloadStatus::Completed);
     assert_eq!((row.done, row.total), (5, Some(5)));
+    // Still has its partial files: not finished.
     assert_eq!(h.row(unfinished.id).status, DownloadStatus::Paused);
+    // A file at a guessed path is not this download's.
+    assert_eq!(h.row(guessed.id).status, DownloadStatus::Paused);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

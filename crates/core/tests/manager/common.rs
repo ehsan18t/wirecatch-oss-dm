@@ -15,7 +15,10 @@ use axum::routing::get;
 use bytes::Bytes;
 use chrono::{NaiveDate, NaiveDateTime};
 use tempfile::TempDir;
-use wirecatch_core::{DEFAULT_STOP_TIMEOUT, KnownFolders, Manager, ManagerConfig, ManualClock};
+use wirecatch_core::{
+    DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager, ManagerConfig,
+    ManualClock,
+};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, AppSettings, DownloadStatus, DownloadSummary};
 
@@ -30,6 +33,10 @@ pub struct Config {
     pub etag: Option<String>,
     /// Paths answered with this status instead of the file.
     pub refuse: Vec<(String, u16)>,
+    pub content_disposition: Option<String>,
+    pub content_type: Option<String>,
+    /// How long to wait before answering at all.
+    pub answer_delay: Option<Duration>,
 }
 
 #[derive(Default)]
@@ -172,12 +179,21 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
     } else {
         None
     };
+    if let Some(delay) = config.answer_delay {
+        tokio::time::sleep(delay).await;
+    }
     let mut builder = Response::builder();
     if config.ranges {
         builder = builder.header(header::ACCEPT_RANGES, "bytes");
     }
     if let Some(etag) = &config.etag {
         builder = builder.header(header::ETAG, etag);
+    }
+    if let Some(disposition) = &config.content_disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, disposition);
+    }
+    if let Some(content_type) = &config.content_type {
+        builder = builder.header(header::CONTENT_TYPE, content_type);
     }
     let (start, end) = match range {
         Some((start, _)) if start >= len => {
@@ -247,7 +263,7 @@ pub struct Harness {
     pub clock: Arc<ManualClock>,
     pub folders: KnownFolders,
     pub root: TempDir,
-    stop_timeout: Duration,
+    timeouts: (Duration, Duration),
 }
 
 impl Harness {
@@ -256,19 +272,25 @@ impl Harness {
     }
 
     pub async fn at(now: NaiveDateTime) -> Self {
-        Self::build(now, DEFAULT_STOP_TIMEOUT).await
+        Self::build(now, DEFAULT_STOP_TIMEOUT, DEFAULT_CAPTURE_TIMEOUT).await
     }
 
     /// A manager that gives up on a download that does not stop within `timeout`.
     pub async fn with_stop_timeout(timeout: Duration) -> Self {
-        Self::build(monday(12, 0), timeout).await
+        Self::build(monday(12, 0), timeout, DEFAULT_CAPTURE_TIMEOUT).await
     }
 
-    async fn build(now: NaiveDateTime, stop_timeout: Duration) -> Self {
+    /// A manager that waits at most `timeout` for a captured download's server.
+    pub async fn with_capture_timeout(timeout: Duration) -> Self {
+        Self::build(monday(12, 0), Duration::from_millis(300), timeout).await
+    }
+
+    async fn build(now: NaiveDateTime, stop_timeout: Duration, capture_timeout: Duration) -> Self {
         let root = tempfile::tempdir().unwrap();
         let folders = KnownFolders::under_home(root.path().join("home"));
         let clock = Arc::new(ManualClock::new(now));
-        let manager = open(&root, &folders, &clock, stop_timeout).await;
+        let timeouts = (stop_timeout, capture_timeout);
+        let manager = open(&root, &folders, &clock, timeouts).await;
         // One connection per download keeps request counts easy to reason about.
         tune(&manager, |s| s.connections_per_download = 1);
         Self {
@@ -276,14 +298,14 @@ impl Harness {
             clock,
             folders,
             root,
-            stop_timeout,
+            timeouts,
         }
     }
 
     /// Shuts the manager down and opens a new one on the same data, like an app restart.
     pub async fn restart(&mut self) {
         self.manager.shutdown().await;
-        self.manager = open(&self.root, &self.folders, &self.clock, self.stop_timeout).await;
+        self.manager = open(&self.root, &self.folders, &self.clock, self.timeouts).await;
     }
 
     pub async fn add(&self, url: &str) -> DownloadSummary {
@@ -331,11 +353,12 @@ async fn open(
     root: &TempDir,
     folders: &KnownFolders,
     clock: &Arc<ManualClock>,
-    stop_timeout: Duration,
+    (stop_timeout, capture_timeout): (Duration, Duration),
 ) -> Manager {
     let config = ManagerConfig::new(root.path().join("data"), folders.clone())
         .with_clock(clock.clone())
-        .with_stop_timeout(stop_timeout);
+        .with_stop_timeout(stop_timeout)
+        .with_capture_timeout(capture_timeout);
     Manager::open(config).await.unwrap()
 }
 

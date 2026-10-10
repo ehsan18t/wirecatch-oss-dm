@@ -67,6 +67,8 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
             row: stored.summary,
             position: stored.position,
             origin: stored.origin,
+            naming: stored.naming,
+            expect: None,
             run: None,
             resume_first: false,
             cleanup: None,
@@ -78,11 +80,16 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
             entry.row.queue = default_queue;
             fixed = true;
         }
-        let settled = matches!(
+        let done_with = matches!(
             entry.row.status,
             DownloadStatus::Completed | DownloadStatus::Cancelled
         );
-        if !settled && let Some(size) = (around.finished_size)(entry.path()) {
+        // A provisional path has no file of this download's yet; whatever is there
+        // is someone else's.
+        if !done_with
+            && entry.naming.settled
+            && let Some(size) = (around.finished_size)(entry.path())
+        {
             mark_completed(&mut entry, size, around.now_millis);
             fixed = true;
         }
@@ -126,6 +133,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::NameChoice;
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -182,6 +190,7 @@ mod tests {
             },
             position: id * 10,
             origin: Origin::default(),
+            naming: NameChoice::settled(),
         }
     }
 
