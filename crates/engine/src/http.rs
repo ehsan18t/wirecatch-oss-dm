@@ -219,6 +219,24 @@ pub(crate) struct Session {
     allow_insecure_redirects: bool,
     answer_timeout: Duration,
     cancel: CancellationToken,
+    /// Checked before every request and every redirect hop; see [`Guard`].
+    pub guard: Option<Guard>,
+}
+
+/// The future a [`Guard`] returns.
+pub(crate) type GuardCheck =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
+
+/// Decides whether a request may go to an address; an error stops it before
+/// anything is sent. Used by [`Fetcher`](crate::Fetcher) to keep streams away
+/// from the local network.
+#[derive(Clone)]
+pub(crate) struct Guard(pub Arc<dyn Fn(&Url) -> GuardCheck + Send + Sync>);
+
+impl std::fmt::Debug for Guard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Guard")
+    }
 }
 
 impl Session {
@@ -231,6 +249,7 @@ impl Session {
             allow_insecure_redirects: opts.allow_insecure_redirects,
             answer_timeout: opts.stall_timeout,
             cancel,
+            guard: None,
         };
         (session, url)
     }
@@ -285,6 +304,11 @@ impl Clients {
 
     /// A client with its own connection pool and the shared TLS session cache.
     pub fn build(&self) -> Result<Client> {
+        self.builder().build().map_err(Error::network)
+    }
+
+    /// The settings every client shares, for a caller that adds its own.
+    pub fn builder(&self) -> reqwest::ClientBuilder {
         let mut headers = HeaderMap::new();
         // Compressed transfer encodings break byte offsets.
         headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
@@ -299,8 +323,6 @@ impl Clients {
             .connect_timeout(self.connect_timeout)
             .tcp_nodelay(true)
             .pool_max_idle_per_host(1)
-            .build()
-            .map_err(Error::network)
     }
 }
 
@@ -359,6 +381,9 @@ pub(crate) async fn send(
     let mut url = url.clone();
     let mut hops = 0;
     loop {
+        if let Some(guard) = &session.guard {
+            (guard.0)(&url).await?;
+        }
         let mut request = client
             .get(url.clone())
             .headers(session.headers.for_url(&url).clone());

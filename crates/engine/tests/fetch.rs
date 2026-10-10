@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 use common::{Busy, Config, TestServer, test_data};
 use wirecatch_engine::header::{AUTHORIZATION, COOKIE, HeaderValue, REFERER};
-use wirecatch_engine::{CancellationToken, DownloadOptions, Error, Fetcher, RateLimiter, Url};
+use wirecatch_engine::{
+    CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
+};
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -330,4 +332,101 @@ async fn rate_limits_apply() {
     f.get(f.url(), None, 1 << 20).await.unwrap();
     // 200 kB at 400 kB/s is half a second, minus the limiter's small burst.
     assert!(start.elapsed() >= Duration::from_millis(300));
+}
+
+async fn blocking_fetcher(url: &Url, mode: PrivateNetwork) -> Fetcher {
+    Fetcher::with_private_network(url, &options(), CancellationToken::new(), mode)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_local_network_is_blocked_when_asked() {
+    let site = TestServer::start(test_data(100), Config::default()).await;
+    let device = TestServer::start(test_data(100), Config::default()).await;
+    // The test servers are on 127.0.0.1, so `Block` stands in for a site on
+    // the internet: its own origin stays reachable, everything local is not.
+    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block).await;
+    assert!(f.blocks_private_network());
+    f.get(f.url(), None, 1000).await.unwrap();
+
+    let device_port = device.url("x").port().unwrap();
+    for target in [
+        device.url("seg.ts").to_string(),
+        format!("http://localhost:{device_port}/seg.ts"),
+        "http://10.0.0.1/seg.ts".to_string(),
+        "http://192.168.1.1/key".to_string(),
+        "http://169.254.169.254/latest/meta-data".to_string(),
+        "http://[::1]/seg.ts".to_string(),
+        "http://[fe80::1]/seg.ts".to_string(),
+        "http://0.0.0.0/seg.ts".to_string(),
+    ] {
+        let start = Instant::now();
+        let error = f
+            .get(&Url::parse(&target).unwrap(), None, 1000)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::PrivateNetwork { .. }),
+            "{target}: {error}"
+        );
+        assert!(
+            error.to_string().ends_with(
+                "points to a device on your own network, which Wirecatch blocks for safety"
+            ),
+            "{error}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "refused without retries"
+        );
+    }
+    assert!(
+        device.stats.seen().is_empty(),
+        "the device was never contacted"
+    );
+}
+
+#[tokio::test]
+async fn a_redirect_into_the_local_network_is_blocked() {
+    let device = TestServer::start(test_data(100), Config::default()).await;
+    let site = TestServer::start(
+        test_data(100),
+        Config {
+            redirect: Some(("/seg.ts".into(), device.url("secret").to_string())),
+            ..Config::default()
+        },
+    )
+    .await;
+    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block).await;
+    let path =
+        std::env::temp_dir().join(format!("wirecatch-fetch-redirect-{}", std::process::id()));
+    let error = f
+        .save(&site.url("seg.ts"), None, &path, |_| {})
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
+    assert_eq!(site.stats.seen().len(), 1, "the site answered the redirect");
+    assert!(device.stats.seen().is_empty(), "the hop was never sent");
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn the_local_network_is_allowed_for_a_local_start_or_when_asked() {
+    let site = TestServer::start(test_data(100), Config::default()).await;
+    let device = TestServer::start(test_data(100), Config::default()).await;
+    // A playlist that is itself on the local network (a media server at home)
+    // may point to other local addresses.
+    let auto = fetcher(&site.url("index.m3u8"), &options()).await;
+    assert!(!auto.blocks_private_network());
+    auto.get(&device.url("a.ts"), None, 1000).await.unwrap();
+    let allow = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Allow).await;
+    allow.get(&device.url("b.ts"), None, 1000).await.unwrap();
+    assert_eq!(device.stats.seen().len(), 2);
+
+    // A public starting address turns blocking on by itself. Nothing is
+    // fetched from it: the decision is made when the fetcher is created.
+    let public = Url::parse("http://93.184.215.14/index.m3u8").unwrap();
+    let auto = fetcher(&public, &options()).await;
+    assert!(auto.blocks_private_network());
 }

@@ -64,7 +64,13 @@ async fn run(
     // Stopping the segment downloads after an error must not look like the
     // caller's cancellation, so the fetcher gets a child token.
     let stop = cancel.child_token();
-    let fetcher = Fetcher::new(&request.url, &request.options, stop.clone()).await?;
+    let fetcher = Fetcher::with_private_network(
+        &request.url,
+        &request.options,
+        stop.clone(),
+        request.private_network,
+    )
+    .await?;
     let source = Source::load(&fetcher).await?;
     let plan = source
         .plan(&fetcher, &request.video, &request.audio)
@@ -211,6 +217,7 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
         .await
         .map_err(|e| match e {
             wirecatch_engine::Error::Cancelled => Error::Cancelled,
+            wirecatch_engine::Error::PrivateNetwork { .. } => Error::PrivateNetwork,
             source => Error::Segment {
                 number: job.number,
                 total: shared.total,
@@ -267,6 +274,7 @@ impl Keys {
                     .await
                     .map_err(|e| match e {
                         wirecatch_engine::Error::Cancelled => Error::Cancelled,
+                        wirecatch_engine::Error::PrivateNetwork { .. } => Error::PrivateNetwork,
                         e => Error::Key {
                             url: url.to_string(),
                             reason: e.to_string(),

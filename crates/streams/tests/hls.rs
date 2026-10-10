@@ -11,7 +11,8 @@ use common::{Server, segment, temp_dir};
 use wirecatch_engine::header::{COOKIE, HeaderValue};
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{
-    Choice, Error, Outcome, Stage, StreamKind, StreamProgress, StreamRequest, download, inspect,
+    Choice, Error, Outcome, PrivateNetwork, Stage, StreamKind, StreamProgress, StreamRequest,
+    download, inspect,
 };
 
 const MPEGURL: Option<&str> = Some("application/vnd.apple.mpegurl");
@@ -677,4 +678,49 @@ async fn a_changed_extension_never_replaces_another_file() {
     );
     assert_eq!(path, dir.join("exact.ts"));
     assert_eq!(std::fs::read(&path).unwrap(), segments.concat());
+}
+
+#[tokio::test]
+async fn streams_from_the_internet_cannot_reach_the_local_network() {
+    let site = Server::start().await;
+    let device = Server::start().await;
+    device.put("key", b"0123456789abcdef".to_vec());
+    device.put("seg.ts", segment(1, 100));
+    site.put("ok.ts", segment(2, 100));
+    let playlists = [
+        // A segment at a private address written as an IP.
+        "#EXTM3U\n#EXTINF:2,\nhttp://192.168.1.20/seg.ts\n#EXT-X-ENDLIST\n".to_string(),
+        // A key on another local origin (the device).
+        format!(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"{}\"\n#EXTINF:2,\nok.ts\n#EXT-X-ENDLIST\n",
+            device.url("key")
+        ),
+        // An init section, reached through a name for the local machine.
+        format!(
+            "#EXTM3U\n#EXT-X-MAP:URI=\"http://localhost:{}/seg.ts\"\n#EXTINF:2,\nok.ts\n#EXT-X-ENDLIST\n",
+            device.url("x").port().unwrap()
+        ),
+    ];
+    let dir = temp_dir("hls-private");
+    for (i, text) in playlists.iter().enumerate() {
+        site.put_typed(&format!("p{i}.m3u8"), text.clone(), MPEGURL);
+        let mut req = request(&site, &format!("p{i}.m3u8"), &dir.join(format!("{i}.ts")));
+        // The test servers run on 127.0.0.1; `Block` makes the site count as
+        // one on the internet, as `Auto` does for a real website.
+        req.private_network = PrivateNetwork::Block;
+        let error = run(req).await.unwrap_err();
+        assert!(matches!(error, Error::PrivateNetwork), "{i}: {error}");
+        assert_eq!(
+            error.to_string(),
+            "This video points to a device on your own network, which Wirecatch blocks for safety."
+        );
+    }
+    assert!(device.seen().is_empty(), "the device was never contacted");
+
+    // With the default (`Auto`) a playlist on the local network itself may
+    // point to other local addresses, as a media server at home does.
+    let auto = request(&site, "p1.m3u8", &dir.join("auto.ts"));
+    let error = run(auto).await.unwrap_err();
+    assert!(matches!(error, Error::Decrypt { .. }), "{error}");
+    assert_eq!(device.requests("key"), 1);
 }

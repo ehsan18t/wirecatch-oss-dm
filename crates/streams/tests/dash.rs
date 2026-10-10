@@ -7,7 +7,8 @@ use std::time::Duration;
 use common::{Server, segment, temp_dir};
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{
-    Choice, Error, Outcome, StreamKind, StreamProgress, StreamRequest, download, inspect,
+    Choice, Error, Outcome, PrivateNetwork, StreamKind, StreamProgress, StreamRequest, download,
+    inspect,
 };
 
 const DASH: Option<&str> = Some("application/dash+xml");
@@ -272,4 +273,21 @@ async fn live_drm_and_several_periods_are_refused() {
         !server.seen().iter().any(|s| s.path.ends_with(".m4s")),
         "nothing fetched"
     );
+}
+
+#[tokio::test]
+async fn a_base_url_into_the_local_network_is_refused() {
+    let server = Server::start().await;
+    server.put_typed(
+        "lan.mpd",
+        r#"<MPD type="static" mediaPresentationDuration="PT4S"><BaseURL>http://10.0.0.5/media/</BaseURL><Period>
+          <AdaptationSet mimeType="video/mp4"><SegmentTemplate media="$Number$.m4s" duration="2"/>
+          <Representation id="v" bandwidth="1"/></AdaptationSet></Period></MPD>"#,
+        DASH,
+    );
+    let dir = temp_dir("dash-private");
+    let mut req = request(&server, "lan.mpd", &dir.join("v.mp4"));
+    req.private_network = PrivateNetwork::Block;
+    let error = run(req).await.unwrap_err();
+    assert!(matches!(error, Error::PrivateNetwork), "{error}");
 }

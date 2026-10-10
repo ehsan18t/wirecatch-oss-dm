@@ -109,6 +109,15 @@ pub enum Error {
         total: usize,
     },
 
+    /// The stream points to an address on the local network (a router, a
+    /// printer, this computer) although it comes from the internet. Refused
+    /// so a website cannot use Wirecatch to reach devices at home; see
+    /// [`StreamRequest::private_network`](crate::StreamRequest::private_network).
+    #[error(
+        "This video points to a device on your own network, which Wirecatch blocks for safety."
+    )]
+    PrivateNetwork,
+
     /// Reading or writing files failed.
     #[error(
         "Could not write the video to disk: {0}. Check that the folder is writable and has free space."
@@ -126,6 +135,7 @@ impl From<wirecatch_engine::Error> for Error {
     fn from(error: wirecatch_engine::Error) -> Self {
         match error {
             wirecatch_engine::Error::Cancelled => Error::Cancelled,
+            wirecatch_engine::Error::PrivateNetwork { .. } => Error::PrivateNetwork,
             other => Error::Request(other),
         }
     }

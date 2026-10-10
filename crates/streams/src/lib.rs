@@ -57,6 +57,12 @@
 //! Segments and keys on another origin, such as a CDN, get only headers that
 //! hold no credentials (see [`wirecatch_engine::fetch`]).
 //!
+//! A stream from the internet may not point Wirecatch at the local network:
+//! segments, keys, init sections and DASH base addresses that are (or resolve
+//! to, or redirect to) loopback, private, link-local or unspecified addresses
+//! are refused with [`Error::PrivateNetwork`] (see
+//! [`StreamRequest::private_network`]).
+//!
 //! # Joining
 //!
 //! With ffmpeg, the tracks are copied (never re-encoded) into MP4, or Matroska
@@ -85,6 +91,7 @@ pub use model::{
     AudioTrack, Choice, Outcome, Stage, StreamInfo, StreamKind, StreamProgress, StreamRequest,
     SubtitleTrack, VideoTrack,
 };
+pub use wirecatch_engine::PrivateNetwork;
 pub use workdir::DIR_SUFFIX;
 
 use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};

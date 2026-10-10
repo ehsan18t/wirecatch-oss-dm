@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use url::Url;
-use wirecatch_engine::DownloadOptions;
+use wirecatch_engine::{DownloadOptions, PrivateNetwork};
 
 /// The streaming format of a link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +190,12 @@ pub struct StreamRequest {
     /// together in one track can be saved, as the stream's own segments joined
     /// end to end.
     pub ffmpeg: Option<PathBuf>,
+    /// Whether segments, keys and init sections may come from the local
+    /// network (default [`PrivateNetwork::Auto`]: refused with
+    /// [`Error::PrivateNetwork`](crate::Error::PrivateNetwork) when the
+    /// playlist itself is on the internet, allowed when it is on the local
+    /// network too, such as a media server at home).
+    pub private_network: PrivateNetwork,
     /// Headers (cookies and the like, bound to the playlist's origin), user
     /// agent, timeouts, retries and speed limits, as for a download.
     /// [`DownloadOptions::connections`] is how many segments are downloaded at
@@ -207,6 +213,7 @@ impl StreamRequest {
             video: Choice::Auto,
             audio: Choice::Auto,
             ffmpeg: None,
+            private_network: PrivateNetwork::Auto,
             options: DownloadOptions::default(),
         }
     }
