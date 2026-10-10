@@ -30,20 +30,35 @@ fn fake_ffmpeg() -> Option<PathBuf> {
 }
 
 /// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH`.
+///
+/// Without one the test is skipped with a note, unless
+/// `WIRECATCH_REQUIRE_FFMPEG=1` (set in CI): then it fails, so a missing
+/// ffmpeg can never make these tests pass silently.
 fn real_ffmpeg() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("WIRECATCH_TEST_FFMPEG").map(PathBuf::from)
-        && path.is_file()
-    {
-        return Some(path);
-    }
-    let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
-    let found = std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|d| d.join(&name))
-            .find(|p| p.is_file())
-    });
+    let configured = std::env::var_os("WIRECATCH_TEST_FFMPEG").map(PathBuf::from);
+    let found = match &configured {
+        Some(path) if path.is_file() => Some(path.clone()),
+        Some(_) => None,
+        None => {
+            let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
+            std::env::var_os("PATH").and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|d| d.join(&name))
+                    .find(|p| p.is_file())
+            })
+        }
+    };
     if found.is_none() {
-        eprintln!("skipped: no ffmpeg on PATH and WIRECATCH_TEST_FFMPEG is not set");
+        let why = match &configured {
+            Some(path) => format!(
+                "WIRECATCH_TEST_FFMPEG is {}, which is not a file",
+                path.display()
+            ),
+            None => "no ffmpeg on PATH and WIRECATCH_TEST_FFMPEG is not set".to_string(),
+        };
+        let required = std::env::var("WIRECATCH_REQUIRE_FFMPEG").is_ok_and(|v| v == "1");
+        assert!(!required, "WIRECATCH_REQUIRE_FFMPEG=1 but {why}");
+        eprintln!("skipped: {why}");
     }
     found
 }
