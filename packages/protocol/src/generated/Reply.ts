@@ -3,8 +3,9 @@ import type { AddedDownload } from "./AddedDownload";
 import type { ExtensionSettings } from "./ExtensionSettings";
 import type { HelloReply } from "./HelloReply";
 import type { QueueSummary } from "./QueueSummary";
+import type { WithdrawOutcome } from "./WithdrawOutcome";
 
 /**
  * The successful answer to a [`Call`]; the variant matches the call.
  */
-export type Reply = { "type": "hello", "data": HelloReply } | { "type": "download_added", "data": AddedDownload } | { "type": "extension_settings", "data": ExtensionSettings } | { "type": "queues", "data": Array<QueueSummary> } | { "type": "done" };
+export type Reply = { "type": "hello", "data": HelloReply } | { "type": "download_added", "data": AddedDownload } | { "type": "withdrawn", "data": WithdrawOutcome } | { "type": "extension_settings", "data": ExtensionSettings } | { "type": "queues", "data": Array<QueueSummary> } | { "type": "done" };

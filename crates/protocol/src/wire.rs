@@ -9,13 +9,21 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::QueueId;
-use crate::extension::{AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload};
+use crate::extension::{
+    AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
+    WithdrawRequest,
+};
+
+/// Request id the app uses for an error it cannot tie to a request (for example an
+/// unreadable frame). Clients start their ids at 1.
+pub const UNKNOWN_REQUEST_ID: u64 = 0;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Message {
     Request {
+        /// Chosen by the client, unique per connection, never [`UNKNOWN_REQUEST_ID`].
         #[ts(type = "number")]
         id: u64,
         call: Call,
@@ -37,6 +45,7 @@ pub enum Message {
 pub enum Call {
     Hello(Hello),
     AddDownload(NewDownload),
+    WithdrawDownload(WithdrawRequest),
     GetExtensionSettings,
     UpdateExtensionSettings(ExtensionSettingsPatch),
     ListQueues,
@@ -59,6 +68,7 @@ pub enum Outcome {
 pub enum Reply {
     Hello(HelloReply),
     DownloadAdded(AddedDownload),
+    Withdrawn(WithdrawOutcome),
     ExtensionSettings(ExtensionSettings),
     Queues(Vec<QueueSummary>),
     /// For calls with nothing to return.

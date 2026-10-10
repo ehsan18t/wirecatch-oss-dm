@@ -6,7 +6,13 @@ import type { QueueId } from "./QueueId";
 /**
  * A download captured in the browser.
  */
-export type NewDownload = { url: string, referrer: string | null, 
+export type NewDownload = { 
+/**
+ * Chosen by the extension, unique per handover. The app treats a repeated
+ * `add_download` with the same id as the same download (idempotent), and
+ * [`Call::WithdrawDownload`](crate::wire::Call::WithdrawDownload) refers to it.
+ */
+handover_id: string, url: string, referrer: string | null, 
 /**
  * The page the download started from.
  */
