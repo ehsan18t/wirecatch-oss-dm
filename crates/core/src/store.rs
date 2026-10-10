@@ -831,12 +831,65 @@ mod tests {
             [],
         )
         .unwrap();
+        insert_old_download(&conn);
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let main = &snapshot.queues[0];
         assert_eq!((main.name.as_str(), main.max_concurrent), ("Main", 3));
         assert!(!main.paused && !main.running_outside_schedule);
+        assert_old_download_upgraded(&snapshot);
+    }
+
+    #[test]
+    fn a_database_from_the_second_version_is_upgraded_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute_batch(MIGRATIONS[1]).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute(
+            "INSERT INTO queues (id, position, name, max_concurrent, is_default, paused,
+                                 running_outside_schedule)
+             VALUES (1, 0, 'Main', 3, 1, 1, 0)",
+            [],
+        )
+        .unwrap();
+        insert_old_download(&conn);
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(snapshot.queues[0].paused, "the queue's pause was lost");
+        assert_old_download_upgraded(&snapshot);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len() as u32);
+    }
+
+    /// A download as versions before 3 stored it, whose path was always final.
+    fn insert_old_download(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO downloads (id, url, path, queue_id, position, category, status,
+                                    total, done, error, added_at, completed_at, origin)
+             VALUES (7, 'https://example.com/a.zip', ?1, 1, 4, 'archive', 'paused',
+                     100, 40, NULL, 1, NULL, '{\"user_agent\":null,\"headers\":[]}')",
+            [download(7).summary.path],
+        )
+        .unwrap();
+    }
+
+    fn assert_old_download_upgraded(snapshot: &Snapshot) {
+        let [old] = snapshot.downloads.as_slice() else {
+            panic!("expected one download, got {:?}", snapshot.downloads);
+        };
+        assert_eq!(old.summary.id, DownloadId(7));
+        assert_eq!(old.summary.status, DownloadStatus::Paused);
+        assert_eq!((old.summary.done, old.summary.total), (40, Some(100)));
+        assert_eq!(old.summary.file_name, "a.zip");
+        // Its path was chosen before paths waited for the server: it is final.
+        assert_eq!(old.naming, NameChoice::settled());
     }
 
     #[test]
