@@ -226,9 +226,14 @@ enum Frame {
 
 /// Splits a byte stream into frames. Its only await point is a cancel-safe read,
 /// so it can sit in a `select!` next to the event stream without losing data.
+///
+/// Frames are taken from the buffer by moving a cursor; the unread rest (at most
+/// one partial frame) is moved to the front only when more data must be read.
 #[derive(Debug, Default)]
 struct FrameReader {
     buf: Vec<u8>,
+    /// Where the unread part of `buf` starts.
+    start: usize,
     /// Bytes of an oversized body still to throw away.
     skip: usize,
 }
@@ -240,6 +245,7 @@ impl FrameReader {
             if let Some(frame) = self.take_frame() {
                 return Ok(Some(frame));
             }
+            self.compact();
             self.buf.reserve(READ_CHUNK);
             if reader.read_buf(&mut self.buf).await? == 0 {
                 if !self.buf.is_empty() {
@@ -252,27 +258,36 @@ impl FrameReader {
 
     fn take_frame(&mut self) -> Option<Frame> {
         if self.skip > 0 {
-            let n = self.skip.min(self.buf.len());
-            self.buf.drain(..n);
+            let n = self.skip.min(self.buf.len() - self.start);
+            self.start += n;
             self.skip -= n;
             if self.skip > 0 {
                 return None;
             }
         }
-        let header: [u8; 4] = self.buf.get(..4)?.try_into().ok()?;
+        let unread = &self.buf[self.start..];
+        let header: [u8; 4] = unread.get(..4)?.try_into().ok()?;
         match frame::body_len(header) {
-            Ok(len) if self.buf.len() >= 4 + len => {
-                let body = self.buf[4..4 + len].to_vec();
-                self.buf.drain(..4 + len);
+            Ok(len) if unread.len() >= 4 + len => {
+                let body = unread[4..4 + len].to_vec();
+                self.start += 4 + len;
                 Some(Frame::Body(body))
             }
             Ok(_) => None,
             Err(_) => {
                 let len = u32::from_le_bytes(header) as usize;
-                self.buf.drain(..4);
+                self.start += 4;
                 self.skip = len;
                 Some(Frame::TooLarge(len))
             }
+        }
+    }
+
+    /// Moves the unread bytes to the front of the buffer.
+    fn compact(&mut self) {
+        if self.start > 0 {
+            self.buf.drain(..self.start);
+            self.start = 0;
         }
     }
 }
@@ -307,6 +322,22 @@ mod tests {
         );
         writer.await.unwrap();
         assert_eq!(frames.next(&mut server).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn many_frames_from_one_read_are_taken_in_order() {
+        let bytes: Vec<u8> = (0..2000u32)
+            .flat_map(|i| framed(i.to_string().as_bytes()))
+            .collect();
+        let mut reader = bytes.as_slice();
+        let mut frames = FrameReader::default();
+        for i in 0..2000u32 {
+            assert_eq!(
+                frames.next(&mut reader).await.unwrap(),
+                Some(Frame::Body(i.to_string().into_bytes()))
+            );
+        }
+        assert_eq!(frames.next(&mut reader).await.unwrap(), None);
     }
 
     #[tokio::test]

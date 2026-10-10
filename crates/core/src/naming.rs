@@ -10,13 +10,24 @@ use crate::error::{CoreError, Result};
 
 /// Paths already promised to unfinished downloads, compared the way the file
 /// system compares them.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Claimed(HashSet<String>);
 
 impl Claimed {
     /// Marks `path` as taken.
     pub fn insert(&mut self, path: &Path) {
         self.0.insert(key(path));
+    }
+
+    /// Marks `path` as free again.
+    pub fn remove(&mut self, path: &Path) {
+        self.0.remove(&key(path));
+    }
+
+    /// How many paths are taken.
+    #[cfg(debug_assertions)]
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     /// Whether `path` is taken.

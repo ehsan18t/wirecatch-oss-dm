@@ -181,7 +181,7 @@ impl Manager {
                 if !state.downloads.get(id).is_some_and(|e| e.removing) {
                     continue;
                 }
-                let Some(entry) = state.downloads.remove(id) else {
+                let Some(entry) = state.remove_entry(*id) else {
                     continue;
                 };
                 if entry.row.status == DownloadStatus::Completed {
@@ -193,7 +193,6 @@ impl Manager {
                     // path yet; whatever is there belongs to someone else.
                     files.extend(partial_files(entry.path()));
                 }
-                state.dirty.remove(id);
                 removed.push(*id);
             }
             if removed.is_empty() {
@@ -374,7 +373,7 @@ impl Manager {
         // Checking the disk blocks, so it happens off the lock and off async threads;
         // if another add claimed the same path meanwhile, look again.
         loop {
-            let claimed = self.lock_open()?.claimed_paths();
+            let claimed = self.lock_open()?.claimed.clone();
             let (dir, name) = (dir.clone(), name.clone());
             let path = self
                 .blocking(move || Ok(naming::unique_path(&dir, &name, &claimed)))
@@ -384,7 +383,7 @@ impl Manager {
             if let Some(known) = new.handover.as_deref().and_then(|h| state.handovers.get(h)) {
                 return Ok(Added::Known(known.reply.clone()));
             }
-            if state.claimed_paths().contains(&path) {
+            if state.claimed.contains(&path) {
                 continue;
             }
             state.slot(new.queue)?;
@@ -416,18 +415,15 @@ impl Manager {
                 completed_at: None,
                 waiting: None,
             };
-            state.downloads.insert(
-                id,
-                Entry {
-                    row,
-                    position,
-                    origin: new.origin,
-                    run: None,
-                    resume_first: false,
-                    cleanup: None,
-                    removing: false,
-                },
-            );
+            state.insert_entry(Entry {
+                row,
+                position,
+                origin: new.origin,
+                run: None,
+                resume_first: false,
+                cleanup: None,
+                removing: false,
+            });
             self.save(&mut state, id);
             self.reconcile(&mut state);
             let row = state.entry(id)?.row.clone();

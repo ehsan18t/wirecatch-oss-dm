@@ -60,7 +60,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
             .fold(snapshot.last_ids.queue, i64::max),
         ..Counters::default()
     };
-    let mut downloads = BTreeMap::new();
+    let mut downloads = Vec::with_capacity(snapshot.downloads.len());
     let mut changed = Vec::new();
     for stored in snapshot.downloads {
         let mut entry = Entry {
@@ -100,23 +100,26 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
         if fixed {
             changed.push(entry.stored());
         }
-        downloads.insert(entry.row.id, entry);
+        downloads.push(entry);
     }
 
-    Restored {
-        state: State {
-            settings,
-            queues,
-            downloads,
-            pending: BTreeMap::new(),
-            handovers: Default::default(),
-            dirty: Default::default(),
-            last_checked: around.now,
-            ids,
-            closed: false,
-        },
-        changed,
+    let mut state = State {
+        settings,
+        queues,
+        downloads: BTreeMap::new(),
+        claimed: Default::default(),
+        running: Default::default(),
+        pending: BTreeMap::new(),
+        handovers: Default::default(),
+        dirty: Default::default(),
+        last_checked: around.now,
+        ids,
+        closed: false,
+    };
+    for entry in downloads {
+        state.insert_entry(entry);
     }
+    Restored { state, changed }
 }
 
 #[cfg(test)]

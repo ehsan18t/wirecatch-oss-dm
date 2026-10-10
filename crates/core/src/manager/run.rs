@@ -101,6 +101,7 @@ impl Manager {
         entry.resume_first = false;
         entry.row.status = DownloadStatus::Connecting;
         entry.row.error = None;
+        state.running.insert(id);
         debug!(id = id.0, "download started");
         self.save(state, id);
     }
@@ -109,6 +110,7 @@ impl Manager {
     fn finish(&self, id: DownloadId, run_id: u64, end: RunEnd) {
         let now = self.inner.clock.unix_millis();
         let mut state = self.lock();
+        let state = &mut *state;
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
@@ -118,6 +120,7 @@ impl Manager {
         let Some(run) = entry.run.take() else {
             return;
         };
+        state.running.remove(&id);
         let started = run.progress.file_name().is_some();
         let worked_before = started || entry.row.done > 0;
         if started {
@@ -135,6 +138,8 @@ impl Manager {
                 // Cookies and headers were only needed to download it.
                 entry.origin = Origin::default();
                 entry.row.error = None;
+                // The finished file now holds the name on disk.
+                state.claimed.remove(entry.path());
             }
             (_, Some(Stop::Pause | Stop::Remove))
             | (RunEnd::Engine(Ok(Outcome::Paused { .. })), None) => {
@@ -164,8 +169,8 @@ impl Manager {
                 entry.row.error = Some(user_error::stopped_unexpectedly());
             }
         }
-        self.save(&mut state, id);
-        self.reconcile(&mut state);
+        self.save(state, id);
+        self.reconcile(state);
     }
 
     /// Deletes a download's partial files in the background. A run started before
@@ -313,6 +318,7 @@ mod tests {
         let state = manager.lock();
         let entry = &state.downloads[&id];
         assert!(entry.run.is_none(), "the slot is still taken");
+        state.assert_consistent();
         assert_eq!(entry.row.status, DownloadStatus::Failed);
         assert_eq!(entry.row.error, Some(user_error::stopped_unexpectedly()));
     }

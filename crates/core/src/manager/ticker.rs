@@ -48,21 +48,22 @@ impl Manager {
         let now = Instant::now();
         let mut state = self.lock();
         let state = &mut *state;
-        let mut running = false;
-        for entry in state.downloads.values_mut() {
-            if entry.is_running() {
-                running = true;
-                if sample(entry, now) {
-                    state.dirty.insert(entry.row.id);
-                }
+        #[cfg(debug_assertions)]
+        state.assert_consistent();
+        for id in &state.running {
+            if let Some(entry) = state.downloads.get_mut(id)
+                && sample(entry, now)
+            {
+                state.dirty.insert(*id);
             }
         }
+        let running = !state.running.is_empty();
 
         if running && now.duration_since(*last_saved) >= SAVE_PROGRESS_EVERY {
             let rows = state
-                .downloads
-                .values()
-                .filter(|e| e.is_running())
+                .running
+                .iter()
+                .filter_map(|id| state.downloads.get(id))
                 .map(Entry::stored)
                 .collect();
             self.inner.store.save_downloads(rows);

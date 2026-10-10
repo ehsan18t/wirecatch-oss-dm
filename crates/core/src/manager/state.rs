@@ -26,6 +26,12 @@ pub(super) struct State {
     /// In sidebar order.
     pub queues: Vec<QueueSlot>,
     pub downloads: BTreeMap<DownloadId, Entry>,
+    /// Final paths of unfinished downloads, so a new one never picks the same.
+    /// Kept up to date by [`State::insert_entry`], [`State::remove_entry`] and by
+    /// completion, which hands the name to the finished file.
+    pub claimed: Claimed,
+    /// Downloads with a run, so the ticker visits only those.
+    pub running: BTreeSet<DownloadId>,
     pub pending: BTreeMap<u64, Pending>,
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
@@ -224,15 +230,50 @@ impl State {
             .collect()
     }
 
-    /// Paths promised to downloads that have not finished.
-    pub fn claimed_paths(&self) -> Claimed {
-        let mut claimed = Claimed::default();
-        for entry in self.downloads.values() {
-            if entry.row.status != DownloadStatus::Completed {
-                claimed.insert(entry.path());
-            }
+    /// Adds a download, claiming its path unless it has already finished.
+    pub fn insert_entry(&mut self, entry: Entry) {
+        if entry.row.status != DownloadStatus::Completed {
+            self.claimed.insert(entry.path());
         }
-        claimed
+        self.downloads.insert(entry.row.id, entry);
+    }
+
+    /// Takes a download out, giving up its path.
+    pub fn remove_entry(&mut self, id: DownloadId) -> Option<Entry> {
+        let entry = self.downloads.remove(&id)?;
+        self.claimed.remove(entry.path());
+        self.running.remove(&id);
+        self.dirty.remove(&id);
+        Some(entry)
+    }
+
+    /// Checks that the maintained sets agree with the downloads. Debug builds only;
+    /// every test that runs the ticker exercises it.
+    #[cfg(debug_assertions)]
+    pub fn assert_consistent(&self) {
+        let running = self.downloads.values().filter(|e| e.is_running()).count();
+        assert_eq!(running, self.running.len(), "running set out of step");
+        assert!(
+            self.running
+                .iter()
+                .all(|id| self.downloads.get(id).is_some_and(Entry::is_running)),
+            "running set names a download that is not running"
+        );
+        let unfinished = self
+            .downloads
+            .values()
+            .filter(|e| e.row.status != DownloadStatus::Completed);
+        assert_eq!(
+            unfinished.clone().count(),
+            self.claimed.len(),
+            "claimed paths out of step"
+        );
+        assert!(
+            unfinished
+                .into_iter()
+                .all(|e| self.claimed.contains(e.path())),
+            "an unfinished download's path is not claimed"
+        );
     }
 
     /// Whether a queue other than `except` already uses `name`.
