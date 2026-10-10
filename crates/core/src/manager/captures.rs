@@ -26,6 +26,9 @@ use crate::naming;
 use crate::settings;
 use crate::store::Origin;
 
+/// Most captures that can wait for confirmation at once.
+const MAX_PENDING: usize = 100;
+
 impl Manager {
     /// Takes over a download captured in the browser. Starts it at once and tells
     /// the UI to show its toast, or, when the user asked to confirm each download,
@@ -167,23 +170,39 @@ impl Manager {
         if let Some(known) = state.handovers.get(&capture.handover_id) {
             return Ok(known.reply.clone());
         }
+        let reply = AddedDownload {
+            id: None,
+            action: AddAction::AwaitingConfirmation,
+        };
+        // The same link captured again joins the confirmation already showing.
+        let url_text = url.to_string();
+        if let Some(existing) = state.pending.values().find(|p| p.capture.url == url_text) {
+            let target = Target::Pending(existing.capture.id);
+            let handover = Handover {
+                reply: reply.clone(),
+                target,
+            };
+            state.handovers.insert(&capture.handover_id, handover);
+            return Ok(reply);
+        }
+        if state.pending.len() >= MAX_PENDING {
+            return Err(CoreError::Invalid(format!(
+                "{MAX_PENDING} downloads are already waiting for your confirmation. Answer some of them first."
+            )));
+        }
         let file_name = naming::file_name(capture.suggested_name.as_deref(), &url);
         let category = settings::category_of(&state.settings, &file_name);
         let folder = settings::folder_for(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();
         let proposal = PendingCapture {
             id,
-            url: url.to_string(),
+            url: url_text,
             file_name,
             folder: folder.to_string_lossy().into_owned(),
             category,
             size: capture.size_hint,
             queue,
             page_url: capture.page_url.clone(),
-        };
-        let reply = AddedDownload {
-            id: None,
-            action: AddAction::AwaitingConfirmation,
         };
         state.handovers.insert(
             &capture.handover_id,

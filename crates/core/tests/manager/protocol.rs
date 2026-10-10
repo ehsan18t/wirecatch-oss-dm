@@ -408,6 +408,37 @@ async fn a_repeated_handover_adds_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn confirmations_are_deduplicated_and_capped() {
+    let h = Harness::new().await;
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let mut first = capture("https://example.com/same.zip".into());
+    let mut second = first.clone();
+    first.handover_id = "tab-1".into();
+    second.handover_id = "tab-2".into();
+    h.manager.add_capture(first).await.unwrap();
+    let again = h.manager.add_capture(second).await.unwrap();
+    assert_eq!(again.action, AddAction::AwaitingConfirmation);
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+
+    for i in 1..100 {
+        h.manager
+            .add_capture(capture(format!("https://example.com/{i}.zip")))
+            .await
+            .unwrap();
+    }
+    let err = h
+        .manager
+        .add_capture(capture("https://example.com/one-too-many.zip".into()))
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("Answer some of them first"),
+        "{err}"
+    );
+    assert_eq!(h.manager.pending_confirmations().len(), 100);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn withdraw_drops_only_what_the_server_has_not_answered() {
     let server = TestServer::fast(1024).await;
     let h = Harness::new().await;
