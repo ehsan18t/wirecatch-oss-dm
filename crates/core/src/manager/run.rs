@@ -141,8 +141,9 @@ impl Manager {
                 // The finished file now holds the name on disk.
                 state.claimed.remove(entry.path());
             }
-            (_, Some(Stop::Pause | Stop::Remove))
-            | (RunEnd::Engine(Ok(Outcome::Paused { .. })), None) => {
+            // A cancelled run that was not asked to stop, or an outcome added to the
+            // engine later: keep it paused, so nothing is lost.
+            (_, Some(Stop::Pause | Stop::Remove)) | (RunEnd::Engine(Ok(_)), None) => {
                 entry.row.status = DownloadStatus::Paused;
             }
             (_, Some(Stop::Requeue)) => entry.row.status = DownloadStatus::Queued,

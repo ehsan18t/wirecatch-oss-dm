@@ -1,6 +1,7 @@
 //! Runs one download from first request to final rename.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::error::{Error, Result};
-use crate::http::{self, Probe};
+use crate::http::{self, Clients, Probe, Session};
 use crate::limiter::RateLimiter;
 use crate::progress::Progress;
 use crate::segment::SegmentTable;
@@ -21,26 +22,70 @@ use crate::{naming, storage, worker};
 const MIB: u64 = 1024 * 1024;
 
 /// Tuning for a download. The defaults suit most connections.
+///
+/// Start from [`DownloadOptions::default`] and change what you need:
+///
+/// ```
+/// # use wirecatch_engine::DownloadOptions;
+/// let mut options = DownloadOptions::default();
+/// options.connections = 16;
+/// ```
+///
+/// New options may be added in minor releases, which is why the struct cannot
+/// be built field by field outside this crate.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DownloadOptions {
-    /// Most parallel connections to open.
+    /// Most parallel connections to open (default 8). Fewer are used when the
+    /// file is too small to split that often, when the server does not accept
+    /// byte ranges, or when the server refuses extra connections.
     pub connections: usize,
-    /// A range is only split if both halves would be at least this big.
+    /// A range is only split if both halves would be at least this big, in
+    /// bytes (default 1 MiB).
     pub min_split: u64,
-    /// Bytes collected per connection before each disk write.
+    /// Bytes collected per connection before each disk write (default 1 MiB).
     pub buffer_size: usize,
-    /// Consecutive failed attempts without progress before a connection gives up.
+    /// Consecutive failed attempts without progress before a connection gives
+    /// up (default 6).
     pub max_retries: u32,
-    /// A connection that receives nothing for this long is retried.
+    /// How long to wait for the server, either for the answer to a request or
+    /// for more data while receiving, before the attempt counts as failed and
+    /// is retried (default 30 s).
     pub stall_timeout: Duration,
+    /// How long opening a connection may take, TLS handshake included
+    /// (default 15 s).
     pub connect_timeout: Duration,
+    /// The `User-Agent` sent with every request (default `Wirecatch/<version>`).
+    /// A `User-Agent` in [`headers`](Self::headers) takes precedence.
     pub user_agent: String,
-    /// Extra request headers, such as cookies and referer handed over by a browser.
+    /// Extra request headers, such as the cookies, referer and user agent a
+    /// browser hands over.
+    ///
+    /// They are sent in full only to the origin (scheme, host and port) of
+    /// [`DownloadRequest::url`]. If that URL redirects to another origin, only
+    /// headers that carry no credentials follow: `User-Agent`, `Accept`,
+    /// `Accept-Language`, `Cache-Control`, `DNT`, `Pragma`, and `Referer` cut
+    /// down to its origin (`https://site.example/`), as browsers do. Cookies,
+    /// `Authorization` and any other header stay with their origin.
+    ///
+    /// A `user:password@` in the URL becomes an `Authorization: Basic` header
+    /// bound the same way, unless this map already has an `Authorization`.
+    ///
+    /// Proxy credentials do not belong here: a `Proxy-Authorization` header is
+    /// sent to the server, not to a proxy. Put them in the proxy URL instead,
+    /// for example `HTTPS_PROXY=http://user:password@proxy.example:8080`.
     pub headers: HeaderMap,
-    /// How often the resume file is rewritten while downloading.
+    /// How often the resume file is rewritten while downloading (default 1 s).
+    /// A killed process loses at most this much progress.
     pub checkpoint_interval: Duration,
-    /// Speed limits this download obeys, for example a global one and its queue's.
+    /// Speed limits this download obeys, for example a global one and its
+    /// queue's. Every limiter in the list applies (default none).
     pub rate_limiters: Vec<Arc<RateLimiter>>,
+    /// Follow a redirect from a secure `https` address to an insecure `http`
+    /// one (default `false`: the download stops with
+    /// [`Error::InsecureRedirect`] instead, because anyone on the network could
+    /// read or change the file).
+    pub allow_insecure_redirects: bool,
 }
 
 impl Default for DownloadOptions {
@@ -56,15 +101,50 @@ impl Default for DownloadOptions {
             headers: HeaderMap::new(),
             checkpoint_interval: Duration::from_secs(1),
             rate_limiters: Vec::new(),
+            allow_insecure_redirects: false,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+/// What the server said about the file, handed to a [`PathResolver`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RemoteFile {
+    /// The name the server suggests, already made safe for the file system:
+    /// from `Content-Disposition`, else from the URL, else `download`.
+    pub suggested_name: String,
+    /// Size of the file, if the server said.
+    pub total: Option<u64>,
+    /// The `Content-Type` the server sent, if any, for example `application/pdf`.
+    pub content_type: Option<String>,
+    /// The address the file actually comes from, after redirects.
+    pub final_url: Url,
+    /// Whether the server accepts byte ranges, so the download can be paused
+    /// and resumed.
+    pub resumable: bool,
+}
+
+/// Picks where a download goes once the server has answered; see
+/// [`DownloadRequest::resolve_path`]. Return `Err` with a reason to refuse the
+/// file. It runs on the download's task, so it must return quickly and must not
+/// block.
+pub type PathResolver = Arc<dyn Fn(&RemoteFile) -> Result<PathBuf, String> + Send + Sync>;
+
+/// What to download and where to put it.
+///
+/// Create one with [`DownloadRequest::new`] and set the fields you need. New
+/// fields may be added in minor releases.
+#[derive(Clone)]
+#[non_exhaustive]
 pub struct DownloadRequest {
+    /// The address to download. Redirects are followed.
     pub url: Url,
+    /// The folder to save into; created if missing. Ignored when
+    /// [`exact_path`](Self::exact_path) or [`resolve_path`](Self::resolve_path)
+    /// is set.
     pub dest_dir: PathBuf,
-    /// Overrides the name the server suggests.
+    /// Overrides the name the server suggests. It is still made safe for the
+    /// file system, and a free name is picked if a file with it already exists.
     pub file_name: Option<String>,
     /// Save to exactly this path, ignoring `dest_dir` and `file_name`. The caller
     /// owns naming (no `(1)` suffix is added, and an existing file is replaced on
@@ -72,36 +152,86 @@ pub struct DownloadRequest {
     /// the URL differs, for example after a link refresh, as long as the server
     /// still reports the same size and validators.
     pub exact_path: Option<PathBuf>,
+    /// Decides the path from the server's answer, for callers that pick the
+    /// folder or name from what the server says (its suggested name, size or
+    /// type) without an extra request.
+    ///
+    /// Used only when [`exact_path`](Self::exact_path) is `None`. Called once,
+    /// right after the server answered the first request successfully and
+    /// before anything is written. The path it returns is then treated exactly
+    /// like `exact_path`: an earlier partial download there is resumed, and no
+    /// `(1)` suffix is added. Returning `Err` ends the download with
+    /// [`Error::TargetRejected`] and nothing written. To resume later, pass the
+    /// same path as `exact_path` (it is also in [`Progress::path`]).
+    pub resolve_path: Option<PathResolver>,
+    /// Connection count, retries, headers, speed limits and other tuning.
     pub options: DownloadOptions,
 }
 
+impl std::fmt::Debug for DownloadRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadRequest")
+            .field("url", &self.url)
+            .field("dest_dir", &self.dest_dir)
+            .field("file_name", &self.file_name)
+            .field("exact_path", &self.exact_path)
+            .field(
+                "resolve_path",
+                &self.resolve_path.as_ref().map(|_| "<resolver>"),
+            )
+            .field("options", &self.options)
+            .finish()
+    }
+}
+
 impl DownloadRequest {
+    /// A request for `url` into the folder `dest_dir`, with default options.
     pub fn new(url: Url, dest_dir: impl Into<PathBuf>) -> Self {
         Self {
             url,
             dest_dir: dest_dir.into(),
             file_name: None,
             exact_path: None,
+            resolve_path: None,
             options: DownloadOptions::default(),
         }
     }
 }
 
+/// How a download that did not fail ended.
+///
+/// New variants and fields may be added in minor releases, so a `match` needs
+/// a `_` arm and patterns need `..`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Outcome {
+    /// The whole file is on disk under its final name.
+    #[non_exhaustive]
     Completed {
+        /// Where the file was saved.
         path: PathBuf,
+        /// Size of the file.
         bytes: u64,
         /// Bytes kept from an earlier run instead of downloaded again.
         resumed_from: u64,
     },
     /// Cancelled; running the same request again continues where it stopped.
-    Paused { path: PathBuf, remaining: u64 },
+    #[non_exhaustive]
+    Paused {
+        /// Where the file will be saved once complete. The data so far is in
+        /// this path plus [`PART_EXT`](crate::PART_EXT), next to the resume
+        /// file (plus [`STATE_EXT`](crate::STATE_EXT)).
+        path: PathBuf,
+        /// Bytes still to download.
+        remaining: u64,
+    },
 }
 
 /// State every worker of one download shares.
 pub(crate) struct Shared {
     pub url: Url,
+    /// Which headers go where, redirect rules, timeouts and cancellation.
+    pub session: Session,
     pub ranged: bool,
     pub total: Option<u64>,
     pub table: Mutex<SegmentTable>,
@@ -109,6 +239,8 @@ pub(crate) struct Shared {
     pub progress: Arc<Progress>,
     pub cancel: CancellationToken,
     pub opts: DownloadOptions,
+    /// Connections currently streaming a response body.
+    pub receiving: AtomicUsize,
 }
 
 struct Target {
@@ -120,30 +252,53 @@ struct Target {
 
 /// Downloads `request.url` into `request.dest_dir`.
 ///
+/// `progress` is updated live and can be read from any task or thread.
 /// Cancelling `cancel` stops all connections, writes what has arrived, saves the
-/// resume file and returns [`Outcome::Paused`].
+/// resume file and returns [`Outcome::Paused`]. Running the same request again
+/// later resumes it. See the [crate documentation](crate) for an example.
+///
+/// # Errors
+///
+/// Returns an [`Error`] when the download cannot finish: the server refuses it,
+/// the network stays down beyond the retries, the disk fails, or the file
+/// changes on the server in a way that cannot be reconciled. Whatever was
+/// downloaded before the error is kept for a later run whenever possible.
 pub async fn download(
     request: DownloadRequest,
     progress: Arc<Progress>,
     cancel: CancellationToken,
 ) -> Result<Outcome> {
     let opts = request.options.clone();
-    let first_client = http::build_client(&opts)?;
-    let probe = probe_with_retries(&first_client, &request.url, &opts, &cancel).await?;
+    // The first download reads the system certificate store, which blocks, so
+    // that one happens off the async threads.
+    let clients = if Clients::shared_ready() {
+        Clients::new(&opts)
+    } else {
+        let opts = opts.clone();
+        tokio::task::spawn_blocking(move || Clients::new(&opts))
+            .await
+            .map_err(Error::task)?
+    };
+    let (session, url) = Session::new(&request.url, &opts, cancel.clone());
+    let first_client = clients.build()?;
+    let probe = probe_with_retries(&first_client, &url, &session, &opts, &cancel).await?;
     debug!(ranged = probe.ranged, total = ?probe.total, url = %probe.final_url, "probed");
 
-    let target = match &request.exact_path {
-        Some(path) => plan_exact(path, &probe)?,
-        None => {
-            let name = naming::sanitize(
-                &request
-                    .file_name
-                    .clone()
-                    .or_else(|| probe.file_name.clone())
-                    .or_else(|| naming::from_url(&probe.final_url))
-                    .or_else(|| naming::from_url(&request.url))
-                    .unwrap_or_default(),
-            );
+    let target = match (&request.exact_path, &request.resolve_path) {
+        (Some(path), _) => plan_exact(path, &probe)?,
+        (None, Some(resolve)) => {
+            let remote = RemoteFile {
+                suggested_name: suggested_name(None, &probe, &url),
+                total: probe.total,
+                content_type: probe.content_type.clone(),
+                final_url: probe.final_url.clone(),
+                resumable: probe.ranged,
+            };
+            let path = resolve(&remote).map_err(Error::TargetRejected)?;
+            plan_exact(&path, &probe)?
+        }
+        (None, None) => {
+            let name = suggested_name(request.file_name.clone(), &probe, &url);
             std::fs::create_dir_all(&request.dest_dir)?;
             plan_target(&request.dest_dir, &name, request.url.as_str(), &probe)
         }
@@ -183,10 +338,11 @@ pub async fn download(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    progress.start(&file_name, total, resumed_from);
+    progress.start(&target.final_path, &file_name, total, resumed_from);
 
     let shared = Arc::new(Shared {
         url: final_url,
+        session,
         ranged,
         total,
         table: Mutex::new(table),
@@ -194,11 +350,23 @@ pub async fn download(
         progress,
         cancel,
         opts,
+        receiving: AtomicUsize::new(0),
     });
+    // Saves run one at a time: a checkpoint already running on the blocking
+    // pool is not stopped by aborting its task, and two saves at once would race
+    // on the same temporary file. Once the download has ended, `closed` is set
+    // and a late checkpoint writes nothing (it could otherwise put back a resume
+    // file next to a finished download).
+    let closed = Arc::new(Mutex::new(false));
     let save_state = {
         let shared = shared.clone();
+        let closed = closed.clone();
         let (url, path) = (request.url.to_string(), target.state_path.clone());
         move || {
+            let closed = closed.lock().unwrap();
+            if *closed {
+                return Ok(());
+            }
             let remaining = shared.table.lock().unwrap().remaining();
             ResumeState::new(&url, total, ranged, &validators, remaining).save(&path)
         }
@@ -234,7 +402,7 @@ pub async fn download(
             let client = if id == 0 {
                 first_client.clone()
             } else {
-                http::build_client(&shared.opts)?
+                clients.build()?
             };
             workers.spawn(worker::run(
                 id,
@@ -263,7 +431,7 @@ pub async fn download(
 
     let mut first_error = None;
     while let Some(joined) = workers.join_next().await {
-        let result = joined.unwrap_or_else(|e| Err(std::io::Error::other(e).into()));
+        let result = joined.unwrap_or_else(|e| Err(Error::task(e)));
         if let Err(e) = result {
             warn!(error = %e, "connection gave up");
             first_error.get_or_insert(e);
@@ -281,6 +449,8 @@ pub async fn download(
     };
 
     if complete {
+        // Waits for a checkpoint still writing, then stops any later one.
+        *closed.lock().unwrap() = true;
         storage::finalize(&target.part_path, &target.final_path, file_len)?;
         let _ = std::fs::remove_file(&target.state_path);
         info!(path = %target.final_path.display(), bytes = file_len, "completed");
@@ -292,6 +462,7 @@ pub async fn download(
     }
 
     save_state()?;
+    *closed.lock().unwrap() = true;
     if shared.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
             path: target.final_path,
@@ -306,27 +477,44 @@ pub async fn download(
 
 /// The first request gets the same retry treatment as every later one: a server
 /// can drop a connection before sending any headers.
+///
+/// A 429 or 503 with `Retry-After` waits as long as the server asked (up to
+/// five minutes) instead of the usual backoff.
 async fn probe_with_retries(
     client: &reqwest::Client,
     url: &Url,
+    session: &Session,
     opts: &DownloadOptions,
     cancel: &CancellationToken,
 ) -> Result<Probe> {
     let mut failures = 0;
     loop {
-        match http::probe(client, url).await {
-            Err(e) if e.is_retryable() && failures < opts.max_retries => {
+        match http::probe(client, url, session).await {
+            Err(f) if f.error.is_retryable() && failures < opts.max_retries => {
                 failures += 1;
-                let delay = worker::backoff(failures);
-                warn!(error = %e, retry_in = ?delay, "first request failed, retrying");
+                let delay = worker::retry_delay(failures, f.retry_after);
+                warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
                 tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::Cancelled),
                     _ = tokio::time::sleep(delay) => {}
                 }
             }
-            result => return result,
+            result => return result.map_err(|f| f.error),
         }
     }
+}
+
+/// The file name to use: the caller's, else the server's `Content-Disposition`,
+/// else the URL's last segment, made safe for the file system (`download` if
+/// nothing usable is left).
+fn suggested_name(chosen: Option<String>, probe: &Probe, url: &Url) -> String {
+    naming::sanitize(
+        &chosen
+            .or_else(|| probe.file_name.clone())
+            .or_else(|| naming::from_url(&probe.final_url))
+            .or_else(|| naming::from_url(url))
+            .unwrap_or_default(),
+    )
 }
 
 /// Target for [`DownloadRequest::exact_path`]: the URL is not compared, only what

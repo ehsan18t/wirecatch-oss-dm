@@ -1,0 +1,64 @@
+// Review blocker 1: the window works at 960x600, 1280x800 and 1440x900, in both themes. Names
+// keep real room, the toolbar stays on one line, nothing scrolls sideways, and the detail panel
+// floats over the list in narrower windows.
+
+import { expect, test, type Page } from '@playwright/test';
+import { open, row, rows } from './helpers';
+
+const SIZES = [
+  { width: 960, height: 600 },
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+] as const;
+
+async function checkLayout(page: Page) {
+  const header = page.locator('.header span', { hasText: /^Name$/ });
+  const nameHeader = await header.boundingBox();
+  expect(nameHeader?.width ?? 0, 'Name column width').toBeGreaterThanOrEqual(160);
+  const firstName = await rows(page).first().locator('.name').boundingBox();
+  expect(firstName?.width ?? 0, 'first row name width').toBeGreaterThanOrEqual(160);
+
+  const tools = await page.locator('.toolbar .tools > *').evaluateAll((els) =>
+    els.map((e) => {
+      const r = e.getBoundingClientRect();
+      return { top: Math.round(r.top + r.height / 2), height: Math.round(r.height) };
+    }),
+  );
+  const centers = new Set(tools.map((t) => t.top));
+  expect(Math.max(...centers) - Math.min(...centers), 'toolbar on one line').toBeLessThanOrEqual(2);
+  const add = await page.getByRole('button', { name: 'Add download' }).boundingBox();
+  expect(add?.height ?? 99, 'Add download on one line').toBeLessThanOrEqual(32);
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  expect(overflow, 'no sideways scrolling').toBeLessThanOrEqual(0);
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const size of SIZES) {
+    test(`${size.width}x${size.height}, ${theme} theme`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await open(page, 'capture=0', { theme });
+      await checkLayout(page);
+      await page.screenshot({
+        path: `docs/screenshots/${theme}-layout-${size.width}x${size.height}.png`,
+      });
+
+      await row(page, 'Conference keynote').click();
+      const panel = page.getByRole('complementary', { name: 'Selected download' });
+      await expect(panel).toBeVisible();
+      const docked = await panel.evaluate((el) => !el.classList.contains('overlay'));
+      expect(docked, 'docked only in wide windows').toBe(size.width >= 1360);
+      await checkLayout(page);
+      await page.screenshot({
+        path: `docs/screenshots/${theme}-layout-${size.width}x${size.height}-selected.png`,
+      });
+
+      if (!docked) {
+        await page.getByRole('button', { name: 'Close details and clear the selection' }).click();
+        await expect(panel).toBeHidden();
+      }
+    });
+  }
+}

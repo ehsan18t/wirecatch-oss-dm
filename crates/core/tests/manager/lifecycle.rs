@@ -141,6 +141,8 @@ async fn a_download_being_removed_cannot_be_brought_back() {
     let silent = SilentServer::start().await;
     let h = Harness::with_stop_timeout(Duration::from_millis(500)).await;
     let row = h.add(&silent.url("gone.bin")).await;
+    let accepted = || silent.accepted.load(std::sync::atomic::Ordering::SeqCst);
+    wait_until("the first connection", || (accepted() == 1).then_some(())).await;
     let manager = h.manager.clone();
     let removal = tokio::spawn(async move { manager.remove(&[row.id], false).await });
     wait_until("the removal to begin", || {

@@ -25,8 +25,33 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             "This link is not a valid web address. Refresh the link with one copied from the page.",
             FixAction::RefreshLink,
         ),
+        EngineError::Network(e) if e.is_timeout() => fix(
+            "The server took too long to answer. Try again in a few minutes.",
+            FixAction::Retry,
+        ),
         EngineError::Network(_) => fix(
             "Could not reach the server. Check your internet connection, then try again.",
+            FixAction::Retry,
+        ),
+        EngineError::TooManyRedirects { .. } => fix(
+            "This link keeps sending Wirecatch somewhere else and never reaches the file. Open it in your browser to check it, or refresh the link with a fresh one.",
+            FixAction::RefreshLink,
+        ),
+        EngineError::RedirectWithoutLocation { .. } => fix(
+            "The server sent a broken redirect for this link. Refresh the link with one copied from the page.",
+            FixAction::RefreshLink,
+        ),
+        // Deliberately no fix: retrying would hit the same insecure redirect.
+        EngineError::InsecureRedirect { .. } => UserError {
+            message: "The site tried to switch this secure download to an unencrypted connection, where it could be read or changed on the way, so Wirecatch stopped it. Get the file from another link or ask the site to fix it.".into(),
+            fix: None,
+        },
+        EngineError::TargetRejected(reason) => UserError {
+            message: reason.clone(),
+            fix: None,
+        },
+        EngineError::Internal(detail) => fix(
+            format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
         ),
         EngineError::Stalled(secs) => fix(
@@ -54,6 +79,11 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         ),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
+            FixAction::Retry,
+        ),
+        // A kind of error added to the engine after this was written.
+        other => fix(
+            format!("The download failed ({other}). Try again."),
             FixAction::Retry,
         ),
     }
@@ -223,6 +253,42 @@ mod tests {
         assert!(e.message.contains("locked"));
     }
 
+    fn insecure() -> EngineError {
+        EngineError::InsecureRedirect {
+            from: "https://example.com/f".into(),
+            to: "http://example.com/f".into(),
+        }
+    }
+
+    #[test]
+    fn redirect_problems_are_explained() {
+        let insecure = describe(&insecure(), Path::new("/d"), true);
+        assert_eq!(
+            insecure.fix, None,
+            "an insecure redirect must not offer a retry"
+        );
+        assert!(
+            insecure.message.contains("unencrypted"),
+            "{}",
+            insecure.message
+        );
+        assert_eq!(
+            action(&EngineError::TooManyRedirects { url: "u".into() }, false),
+            Some(FixAction::RefreshLink)
+        );
+        let rejected = describe(
+            &EngineError::TargetRejected("The browser keeps it.".into()),
+            Path::new("/d"),
+            false,
+        );
+        assert_eq!(rejected.message, "The browser keeps it.");
+        assert_eq!(rejected.fix, None);
+        assert_eq!(
+            action(&EngineError::Internal("bug".into()), false),
+            Some(FixAction::Retry)
+        );
+    }
+
     #[test]
     fn messages_follow_the_house_style() {
         let errors = [
@@ -239,6 +305,13 @@ mod tests {
             EngineError::State("x".into()),
             EngineError::Cancelled,
             EngineError::Io(io::ErrorKind::Other.into()),
+            EngineError::TooManyRedirects { url: "u".into() },
+            EngineError::RedirectWithoutLocation {
+                status: 302,
+                url: "u".into(),
+            },
+            insecure(),
+            EngineError::Internal("x".into()),
         ];
         for e in &errors {
             for worked in [false, true] {
