@@ -19,7 +19,7 @@ describe('settings schema', () => {
     for (const d of SETTINGS) {
       expect(d.label.length).toBeGreaterThan(3);
       expect(d.help).not.toMatch(/\n/);
-      expect(`${d.label} ${d.help}`).not.toMatch(/—/);
+      expect(`${d.label} ${d.help}`).not.toContain(String.fromCharCode(0x2014));
       expect(SECTIONS.some((s) => s.id === d.section)).toBe(true);
     }
   });

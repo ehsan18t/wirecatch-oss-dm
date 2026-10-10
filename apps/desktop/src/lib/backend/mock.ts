@@ -373,8 +373,8 @@ export class MockBackend implements Backend {
 
   async cancel(id: DownloadId) {
     const row = this.#row(id);
-    if (row.status === 'completed') return;
-    row.status = 'paused';
+    if (row.status === 'completed' || row.status === 'cancelled') return;
+    row.status = 'cancelled';
     row.done = 0;
     row.error = null;
     this.#stop(row);
@@ -393,6 +393,8 @@ export class MockBackend implements Backend {
 
   async retry(id: DownloadId) {
     const row = this.#row(id);
+    // A cancelled download lost its partial file, so it starts from zero.
+    if (row.status === 'cancelled') row.done = 0;
     row.status = 'queued';
     row.error = null;
     this.#changed([row]);

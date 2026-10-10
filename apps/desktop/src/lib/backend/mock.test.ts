@@ -32,7 +32,14 @@ describe('MockBackend', () => {
     const { mock } = make();
     const rows = await mock.listDownloads();
     const statuses = new Set(rows.map((r) => r.status));
-    for (const s of ['queued', 'downloading', 'paused', 'completed', 'failed'] as const) {
+    for (const s of [
+      'queued',
+      'downloading',
+      'paused',
+      'completed',
+      'failed',
+      'cancelled',
+    ] as const) {
       expect(statuses.has(s)).toBe(true);
     }
     const fixes = new Set(rows.map((r) => r.error?.fix).filter(Boolean));

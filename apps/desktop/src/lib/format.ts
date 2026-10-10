@@ -80,6 +80,7 @@ export const STATUS_LABEL: Record<DownloadStatus, string> = {
   paused: 'Paused',
   completed: 'Finished',
   failed: 'Needs attention',
+  cancelled: 'Cancelled',
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {

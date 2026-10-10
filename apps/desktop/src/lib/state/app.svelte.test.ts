@@ -107,6 +107,20 @@ describe('AppState', () => {
     app.dispose();
   });
 
+  it('cancels a download, then starts it over from zero', async () => {
+    const { app } = await make();
+    const id = app.visible.find((x) => app.downloads.get(x)?.status === 'paused') as number;
+    expect(app.downloads.get(id)?.done).toBeGreaterThan(0);
+    await app.cancel([id]);
+    expect(app.downloads.get(id)?.status).toBe('cancelled');
+    expect(app.downloads.get(id)?.done).toBe(0);
+    expect(app.counts.status.cancelled).toBe(2);
+    // Space on a cancelled download starts it over.
+    await app.togglePause([id]);
+    expect(app.downloads.get(id)?.status).toBe('queued');
+    app.dispose();
+  });
+
   it('confirms and rejects browser captures', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();

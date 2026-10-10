@@ -372,8 +372,14 @@ export class AppState {
     const running = rows.some(
       (r) => r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued',
     );
-    if (running) await this.pause(ids);
-    else await this.resume(ids);
+    if (running) {
+      await this.pause(ids);
+      return;
+    }
+    // A cancelled download has no partial file left; it starts over.
+    const cancelled = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
+    await this.retry(cancelled);
+    await this.resume(ids.filter((id) => !cancelled.includes(id)));
   }
 
   async retry(ids: DownloadId[] = this.selectedIds): Promise<void> {

@@ -8,7 +8,7 @@ import type {
   QueueId,
 } from '@wirecatch/protocol';
 
-export type StatusGroup = 'active' | 'waiting' | 'paused' | 'finished' | 'failed';
+export type StatusGroup = 'active' | 'waiting' | 'paused' | 'finished' | 'failed' | 'cancelled';
 
 export type View =
   | { kind: 'all' }
@@ -31,6 +31,7 @@ export const STATUS_GROUPS: readonly StatusGroup[] = [
   'paused',
   'finished',
   'failed',
+  'cancelled',
 ];
 
 export const STATUS_GROUP_LABEL: Record<StatusGroup, string> = {
@@ -39,6 +40,7 @@ export const STATUS_GROUP_LABEL: Record<StatusGroup, string> = {
   paused: 'Paused',
   finished: 'Finished',
   failed: 'Needs attention',
+  cancelled: 'Cancelled',
 };
 
 export function groupOf(status: DownloadStatus): StatusGroup {
@@ -54,6 +56,8 @@ export function groupOf(status: DownloadStatus): StatusGroup {
       return 'finished';
     case 'failed':
       return 'failed';
+    case 'cancelled':
+      return 'cancelled';
   }
 }
 
@@ -136,7 +140,7 @@ export function countRows(
 ): Counts {
   const counts: Counts = {
     all: 0,
-    status: { active: 0, waiting: 0, paused: 0, finished: 0, failed: 0 },
+    status: { active: 0, waiting: 0, paused: 0, finished: 0, failed: 0, cancelled: 0 },
     category: { video: 0, audio: 0, archive: 0, document: 0, program: 0, image: 0, other: 0 },
     queue: new Map(),
   };
@@ -152,7 +156,7 @@ export function countRows(
       q = { total: 0, running: 0, waiting: 0, paused: 0 };
       counts.queue.set(row.queue, q);
     }
-    if (group !== 'finished') q.total += 1;
+    if (group !== 'finished' && group !== 'cancelled') q.total += 1;
     if (group === 'active') q.running += 1;
     if (group === 'waiting') q.waiting += 1;
     if (group === 'paused') q.paused += 1;

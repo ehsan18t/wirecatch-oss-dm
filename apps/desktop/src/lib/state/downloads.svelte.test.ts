@@ -125,12 +125,15 @@ describe('DownloadStore', () => {
       flushSync();
     }
     const perBatch = (performance.now() - start) / batches.length;
-    console.info(`[bench] apply 60 changed rows into 10,000: ${perBatch.toFixed(3)} ms per batch`);
+    process.stdout.write(
+      `[bench] apply 60 changed rows into 10,000: ${perBatch.toFixed(3)} ms per batch\n`,
+    );
 
     expect(rebuilds).toBe(before);
     expect(store.lastBatchTouched).toBe(60);
-    // Generous ceiling so the test is not flaky on slow machines; the measured value is reported.
-    expect(perBatch).toBeLessThan(8);
+    // Ceiling of one 60 Hz frame, generous so the test is not flaky when other test files run in
+    // parallel; the measured value is printed. Alone it is under a millisecond.
+    expect(perBatch).toBeLessThan(16);
 
     store.apply([row(1, { status: 'completed', done: 1000 })]);
     flushSync();

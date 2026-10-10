@@ -53,7 +53,14 @@ describe('countRows', () => {
   it('counts for the sidebar', () => {
     const c = countRows(order, get);
     expect(c.all).toBe(4);
-    expect(c.status).toEqual({ active: 1, waiting: 1, paused: 0, finished: 1, failed: 1 });
+    expect(c.status).toEqual({
+      active: 1,
+      waiting: 1,
+      paused: 0,
+      finished: 1,
+      failed: 1,
+      cancelled: 0,
+    });
     expect(c.category.video).toBe(1);
     expect(c.queue.get(1)).toEqual({ total: 1, running: 1, waiting: 0, paused: 0 });
     expect(c.queue.get(2)).toEqual({ total: 2, running: 0, waiting: 1, paused: 0 });

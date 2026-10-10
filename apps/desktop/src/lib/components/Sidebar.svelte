@@ -87,18 +87,20 @@
         </li>
         {#each STATUS_GROUPS as group (group)}
           {@const n = app.counts.status[group]}
-          <li>
-            <button
-              class="item"
-              class:alert={group === 'failed' && n > 0}
-              aria-current={current({ kind: 'status', group }) ? 'page' : undefined}
-              onclick={() => app.show({ kind: 'status', group })}
-            >
-              <span class="dot {group}" aria-hidden="true"></span>
-              <span class="label">{STATUS_GROUP_LABEL[group]}</span>
-              {#if n > 0}<span class="count num">{n}</span>{/if}
-            </button>
-          </li>
+          {#if group !== 'cancelled' || n > 0 || current({ kind: 'status', group })}
+            <li>
+              <button
+                class="item"
+                class:alert={group === 'failed' && n > 0}
+                aria-current={current({ kind: 'status', group }) ? 'page' : undefined}
+                onclick={() => app.show({ kind: 'status', group })}
+              >
+                <span class="dot {group}" aria-hidden="true"></span>
+                <span class="label">{STATUS_GROUP_LABEL[group]}</span>
+                {#if n > 0}<span class="count num">{n}</span>{/if}
+              </button>
+            </li>
+          {/if}
         {/each}
       </ul>
     </section>

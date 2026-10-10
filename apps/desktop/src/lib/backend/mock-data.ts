@@ -276,6 +276,16 @@ export const SEEDS: readonly Seed[] = [
     },
   },
   {
+    name: 'old-installer-draft.exe',
+    url: 'https://example.com/builds/old-installer-draft.exe',
+    total: 220 * MB,
+    fraction: 0,
+    status: 'cancelled',
+    queue: 1,
+    rate: 5 * MB,
+    age: 12,
+  },
+  {
     name: 'debian-13.1.0-amd64-DVD-1.iso',
     url: 'https://cdimage.debian.org/debian-cd/current/amd64/iso-dvd/debian-13.1.0-amd64-DVD-1.iso',
     total: 3.9 * GB,

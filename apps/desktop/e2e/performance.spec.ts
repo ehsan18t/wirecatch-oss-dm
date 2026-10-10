@@ -71,7 +71,8 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
       obs.disconnect();
       deltas.shift();
       const sorted = [...deltas].sort((a, b) => a - b);
-      const at = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? 0;
+      const at = (p: number) =>
+        sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? 0;
       const round = (n: number) => Math.round(n * 100) / 100;
       return {
         frames: deltas.length,
@@ -88,7 +89,13 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
 
   const idle = await measure(false);
   const scrolling = await measure(true);
-  const results = { firstRowsMs, domRows, total, idleWithUpdates: idle, scrollingWithUpdates: scrolling };
+  const results = {
+    firstRowsMs,
+    domRows,
+    total,
+    idleWithUpdates: idle,
+    scrollingWithUpdates: scrolling,
+  };
   console.log(JSON.stringify(results, null, 2));
   mkdirSync('test-results', { recursive: true });
   writeFileSync('test-results/performance.json', JSON.stringify(results, null, 2));

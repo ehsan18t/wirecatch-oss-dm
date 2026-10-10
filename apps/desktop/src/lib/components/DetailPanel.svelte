@@ -32,7 +32,7 @@
 
   const anyRunning = $derived(rows.some(isRunning));
   const anyStopped = $derived(rows.some((r) => r.status === 'paused' || r.status === 'failed'));
-  const anyFailed = $derived(rows.some((r) => r.status === 'failed'));
+  const anyFailed = $derived(rows.some((r) => r.status === 'failed' || r.status === 'cancelled'));
   const totalSize = $derived(rows.reduce((sum, r) => sum + (r.total ?? 0), 0));
 
   async function copyLink(url: string) {
@@ -103,6 +103,10 @@
         <button class="btn primary" onclick={() => app.resume([one.id])}
           ><Play size={14} aria-hidden="true" /> Resume</button
         >
+      {:else if one.status === 'cancelled'}
+        <button class="btn primary" onclick={() => app.retry([one.id])}
+          ><RotateCw size={14} aria-hidden="true" /> Start over</button
+        >
       {:else if one.status === 'failed' && !one.error}
         <!-- With an error, the error box above already offers Try again. -->
         <button class="btn" onclick={() => app.retry([one.id])}
@@ -164,7 +168,7 @@
           </button>
         </dd>
       </div>
-      {#if one.status !== 'completed' && one.status !== 'failed'}
+      {#if one.status !== 'completed' && one.status !== 'failed' && one.status !== 'cancelled'}
         <div>
           <dt>Link expired?</dt>
           <dd>
@@ -187,7 +191,7 @@
         </div>
       {/if}
     </dl>
-    {#if one.status !== 'completed'}
+    {#if one.status !== 'completed' && one.status !== 'cancelled'}
       <button class="btn ghost small cancel" onclick={() => app.cancel([one.id])}>
         Cancel and discard the partial file
       </button>

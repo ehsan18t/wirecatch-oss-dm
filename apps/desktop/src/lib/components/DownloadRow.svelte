@@ -178,6 +178,12 @@
     color: var(--warn);
   }
 
+  .cancelled .name {
+    color: var(--ink-2);
+    text-decoration: line-through;
+    text-decoration-color: var(--line-strong);
+  }
+
   .failed .status {
     color: var(--danger);
     font-weight: 600;

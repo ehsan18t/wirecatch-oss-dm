@@ -185,7 +185,9 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    args.into_iter().skip(1).any(|a| a.as_ref() == BACKGROUND_FLAG)
+    args.into_iter()
+        .skip(1)
+        .any(|a| a.as_ref() == BACKGROUND_FLAG)
 }
 
 /// Starts the desktop app. With `--background` no window opens; Wave 2 adds the tray icon and
@@ -247,7 +249,10 @@ mod tests {
     fn stubs_explain_they_are_not_connected() {
         let err = list_downloads().expect_err("stub must refuse");
         assert!(err.contains("not connected"));
-        assert!(!err.contains('\u{2014}'), "no em dashes in user-facing text");
+        assert!(
+            !err.contains('\u{2014}'),
+            "no em dashes in user-facing text"
+        );
     }
 
     #[test]

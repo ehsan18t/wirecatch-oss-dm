@@ -6,9 +6,15 @@ import { expect, test, type Page } from '@playwright/test';
 import { open, row } from './helpers';
 
 async function audit(page: Page, label: string) {
-  const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  const result = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+    .analyze();
   const problems = result.violations.map(
-    (v) => `${label}: ${v.id} (${v.nodes.length}) ${v.nodes.map((n) => n.target.join(' ')).slice(0, 3).join(' | ')}`,
+    (v) =>
+      `${label}: ${v.id} (${v.nodes.length}) ${v.nodes
+        .map((n) => n.target.join(' '))
+        .slice(0, 3)
+        .join(' | ')}`,
   );
   expect(problems, problems.join('\n')).toEqual([]);
 }
@@ -41,7 +47,10 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Control+K');
     await page.keyboard.type('pretend the browser sent a download');
     await page.keyboard.press('Enter');
-    await page.getByRole('region', { name: 'Notifications' }).getByText(/^Downloading/).waitFor();
+    await page
+      .getByRole('region', { name: 'Notifications' })
+      .getByText(/^Downloading/)
+      .waitFor();
     await audit(page, 'capture toast');
   });
 }
@@ -57,7 +66,10 @@ test('keyboard only: every stop shows a visible focus ring', async ({ page }) =>
       const s = getComputedStyle(el);
       const ring = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
       const shadow = s.boxShadow !== 'none';
-      return { name: el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30) ?? el.tagName, visible: ring || shadow };
+      return {
+        name: el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30) ?? el.tagName,
+        visible: ring || shadow,
+      };
     });
     if (!info) continue;
     seen.push(info.name);
