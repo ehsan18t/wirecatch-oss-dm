@@ -2,6 +2,7 @@
 import type { AppSettings } from "./AppSettings";
 import type { DownloadId } from "./DownloadId";
 import type { DownloadSummary } from "./DownloadSummary";
+import type { ImportSummary } from "./ImportSummary";
 import type { PendingCapture } from "./PendingCapture";
 import type { Queue } from "./Queue";
 import type { UserError } from "./UserError";
@@ -10,4 +11,4 @@ import type { UserError } from "./UserError";
  * Everything the core pushes to the desktop UI. The desktop app forwards these
  * to the webview as one event stream.
  */
-export type UiEvent = { "type": "downloads_changed", "data": Array<DownloadSummary> } | { "type": "downloads_removed", "data": Array<DownloadId> } | { "type": "queues_changed", "data": Array<Queue> } | { "type": "settings_changed", "data": AppSettings } | { "type": "captured", "data": DownloadSummary } | { "type": "confirmation_requested", "data": PendingCapture } | { "type": "storage_failed", "data": UserError };
+export type UiEvent = { "type": "downloads_changed", "data": Array<DownloadSummary> } | { "type": "downloads_removed", "data": Array<DownloadId> } | { "type": "queues_changed", "data": Array<Queue> } | { "type": "settings_changed", "data": AppSettings } | { "type": "captured", "data": DownloadSummary } | { "type": "confirmation_requested", "data": PendingCapture } | { "type": "storage_failed", "data": UserError } | { "type": "settings_imported", "data": ImportSummary };

@@ -1,9 +1,13 @@
 //! Settings export and import (D6): one versioned JSON file with portable paths.
 
 use std::collections::HashMap;
+use std::io::Read;
+use std::path::Path;
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AppSettings, PortablePath, Queue, SettingsProfile};
+use wirecatch_protocol::app::{
+    AppSettings, Category, ImportSummary, ImportedFolder, PortablePath, Queue, SettingsProfile,
+};
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
@@ -11,6 +15,10 @@ use crate::settings::{self, DEFAULT_QUEUE_ID};
 
 /// Version of the profile format this build writes and the newest it reads.
 pub const PROFILE_FORMAT_VERSION: u32 = 1;
+
+/// Largest profile file accepted. Real ones are a few kilobytes; the limits on
+/// queues and lists keep even a full one far below this.
+const MAX_PROFILE_BYTES: u64 = 1024 * 1024;
 
 /// A profile of the current settings and queues, with every folder written
 /// relative to the user's standard folders where possible.
@@ -57,11 +65,33 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
     serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))
 }
 
-/// Settings and queues after applying an imported profile.
+/// Settings and queues after applying an imported profile, and what changed.
 #[derive(Debug)]
 pub(crate) struct Imported {
     pub settings: AppSettings,
     pub queues: Vec<Queue>,
+    pub summary: ImportSummary,
+}
+
+/// Reads a profile file, refusing one larger than any real profile could be
+/// before reading it whole. Blocks on the disk.
+pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
+    let file_error = |source| CoreError::File {
+        path: path.display().to_string(),
+        source,
+    };
+    let file = std::fs::File::open(path).map_err(file_error)?;
+    let mut bytes = Vec::new();
+    file.take(MAX_PROFILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(file_error)?;
+    if bytes.len() as u64 > MAX_PROFILE_BYTES {
+        return Err(CoreError::InvalidProfile(format!(
+            "it is larger than {} MB",
+            MAX_PROFILE_BYTES / (1024 * 1024)
+        )));
+    }
+    Ok(bytes)
 }
 
 /// Merges `profile` into the current queues and checks the result.
@@ -82,6 +112,7 @@ pub(crate) fn merge(
     settings::check_queue_count(profile.queues.len())?;
     let mut queues = current.to_vec();
     let mut ids = HashMap::new();
+    let (mut added, mut updated) = (0, 0);
     for incoming in profile.queues {
         let incoming = settings::validate_queue(incoming)?;
         let target = if incoming.is_default {
@@ -99,9 +130,11 @@ pub(crate) fn merge(
                     is_default: existing.is_default,
                     ..incoming.clone()
                 };
+                updated += 1;
                 existing.id
             }
             None => {
+                added += 1;
                 let id = next_queue_id();
                 queues.push(Queue {
                     id,
@@ -119,21 +152,66 @@ pub(crate) fn merge(
         .get(&settings.extension.default_queue)
         .copied()
         .unwrap_or(DEFAULT_QUEUE_ID);
-    localize_folders(&mut settings, folders);
+    let folder_report = localize_folders(&mut settings, folders);
     settings::check_queue_count(queues.len())?;
     let settings = settings::validate(settings, &queues, folders)?;
-    Ok(Imported { settings, queues })
+    Ok(Imported {
+        settings,
+        queues,
+        summary: ImportSummary {
+            folders: folder_report,
+            queues_added: added,
+            queues_updated: updated,
+        },
+    })
 }
 
-fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) {
-    let fallback = PortablePath("{Downloads}".into());
-    if folders.resolve(&settings.default_folder).is_err() {
-        settings.default_folder = fallback;
-    }
+/// Replaces folders that do not exist on this machine with a fallback, and reports
+/// every folder setting with where it ended up.
+fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) -> Vec<ImportedFolder> {
+    let mut report = Vec::with_capacity(settings.categories.len() + 1);
+    let mut place = |setting: String, folder: &mut PortablePath, fallback: &PortablePath| {
+        let requested = folder.clone();
+        let resolved = match folders.resolve(folder) {
+            Ok(path) => path,
+            Err(_) => {
+                *folder = fallback.clone();
+                folders.resolve(folder).unwrap_or_default()
+            }
+        };
+        report.push(ImportedFolder {
+            setting,
+            requested,
+            used: folder.clone(),
+            resolved: resolved.to_string_lossy().into_owned(),
+        });
+    };
+    let downloads = PortablePath("{Downloads}".into());
+    place(
+        "Default folder".into(),
+        &mut settings.default_folder,
+        &downloads,
+    );
+    let default_folder = settings.default_folder.clone();
     for rule in &mut settings.categories {
-        if folders.resolve(&rule.folder).is_err() {
-            rule.folder = settings.default_folder.clone();
-        }
+        place(
+            category_folder_name(rule.category).into(),
+            &mut rule.folder,
+            &default_folder,
+        );
+    }
+    report
+}
+
+fn category_folder_name(category: Category) -> &'static str {
+    match category {
+        Category::Video => "Video folder",
+        Category::Audio => "Music folder",
+        Category::Archive => "Compressed files folder",
+        Category::Document => "Documents folder",
+        Category::Program => "Programs folder",
+        Category::Image => "Images folder",
+        Category::Other => "Other files folder",
     }
 }
 
@@ -240,6 +318,18 @@ mod tests {
     }
 
     #[test]
+    fn an_oversized_file_is_refused_before_it_is_read_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("big.json");
+        std::fs::write(&big, vec![b' '; MAX_PROFILE_BYTES as usize + 1]).unwrap();
+        let err = read_file(&big).unwrap_err();
+        assert!(err.to_string().contains("larger than 1 MB"), "{err}");
+        let small = dir.path().join("small.json");
+        std::fs::write(&small, b"{}").unwrap();
+        assert_eq!(read_file(&small).unwrap(), b"{}");
+    }
+
+    #[test]
     fn a_profile_with_too_many_queues_is_refused() {
         let profile = SettingsProfile {
             format_version: 1,
@@ -278,6 +368,15 @@ mod tests {
             imported.settings.default_folder,
             PortablePath("{Downloads}".into())
         );
+        let first = &imported.summary.folders[0];
+        assert_eq!(first.setting, "Default folder");
+        assert_eq!(first.requested, PortablePath(foreign.into()));
+        assert_eq!(first.used, PortablePath("{Downloads}".into()));
+        assert_eq!(
+            first.resolved,
+            folders().downloads.to_string_lossy().into_owned()
+        );
+        assert_eq!(imported.summary.folders[1].setting, "Video folder");
         assert_eq!(
             imported.settings.categories[0].folder,
             PortablePath("{Downloads}".into())

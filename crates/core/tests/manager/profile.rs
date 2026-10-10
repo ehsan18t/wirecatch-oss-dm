@@ -98,16 +98,27 @@ async fn settings_and_queues_move_to_another_machine() {
         there.folders.downloads.join("Stuff").join("notes.bin")
     );
 
-    // The UI heard about both changes.
+    // The UI heard about both changes, and got a summary to show.
     let mut saw = (false, false);
+    let mut summary = None;
     while let Ok(event) = events.try_recv() {
         match event {
             UiEvent::QueuesChanged(_) => saw.0 = true,
             UiEvent::SettingsChanged(_) => saw.1 = true,
+            UiEvent::SettingsImported(s) => summary = Some(s),
             _ => {}
         }
     }
     assert_eq!(saw, (true, true));
+    let summary = summary.expect("no import summary");
+    assert_eq!((summary.queues_added, summary.queues_updated), (1, 1));
+    let default = &summary.folders[0];
+    assert_eq!(default.setting, "Default folder");
+    assert_eq!(default.used, PortablePath("{Downloads}/Stuff".into()));
+    assert_eq!(
+        std::path::Path::new(&default.resolved),
+        there.folders.downloads.join("Stuff")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

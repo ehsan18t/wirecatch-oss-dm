@@ -276,4 +276,31 @@ pub enum UiEvent {
     /// Saving to the download list failed even after retrying, so recent changes
     /// may be lost when the app closes. The UI shows the message.
     StorageFailed(UserError),
+    /// A settings profile was imported; the UI shows what changed.
+    SettingsImported(ImportSummary),
+}
+
+/// What importing a settings profile changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImportSummary {
+    /// Every folder setting in the profile and the folder it became on this machine.
+    pub folders: Vec<ImportedFolder>,
+    pub queues_added: u32,
+    pub queues_updated: u32,
+}
+
+/// One folder setting from an imported profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImportedFolder {
+    /// The setting in plain words, for example "Default folder" or "Video folder".
+    pub setting: String,
+    /// The folder as written in the profile.
+    pub requested: PortablePath,
+    /// The folder now used. Differs from `requested` when that does not exist on
+    /// this machine (an absolute path from another system).
+    pub used: PortablePath,
+    /// Where `used` is on this machine.
+    pub resolved: String,
 }

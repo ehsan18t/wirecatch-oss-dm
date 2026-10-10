@@ -84,17 +84,12 @@ impl Manager {
     }
 
     /// Applies a settings profile from `path`. Queues are matched by name, folders
-    /// are resolved on this machine, and downloads are left alone.
+    /// are resolved on this machine, and downloads are left alone. What changed,
+    /// including any folder that had to be replaced, is sent to the UI as
+    /// [`UiEvent::SettingsImported`].
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let path = path.to_path_buf();
-        let bytes = self
-            .blocking(move || {
-                std::fs::read(&path).map_err(|source| CoreError::File {
-                    path: path.display().to_string(),
-                    source,
-                })
-            })
-            .await?;
+        let bytes = self.blocking(move || profile::read_file(&path)).await?;
         let incoming = profile::parse(&bytes)?;
 
         let mut state = self.lock_open()?;
@@ -112,6 +107,7 @@ impl Manager {
         // Queues first: the new settings may name a queue that was just added.
         self.queues_changed(&mut state);
         self.apply_settings(&mut state, imported.settings);
+        self.emit(UiEvent::SettingsImported(imported.summary));
         Ok(())
     }
 
