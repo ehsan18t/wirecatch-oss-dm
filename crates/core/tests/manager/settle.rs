@@ -109,6 +109,53 @@ async fn a_folder_chosen_before_the_server_answers_is_kept() {
     );
 }
 
+/// The app stopped right after the server answered and the engine had started
+/// the file, but before the chosen path reached the database. On the next run the
+/// download must pick up its own part file, not start over as "name (1)" and
+/// leave the old one behind.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_part_file_left_by_a_crash_is_picked_up_again() {
+    let len = 512 * KIB;
+    let server = server_naming("report.pdf", len, Some(128 * 1024)).await;
+    let h = Harness::new().await;
+    let documents = h.folders.downloads.join("Documents");
+    let path = documents.join("report.pdf");
+
+    // What the crashed run left: the part and resume files at the chosen path.
+    let mut request =
+        wirecatch_engine::DownloadRequest::new(server.url("dl").parse().unwrap(), &documents);
+    request.exact_path = Some(path.clone());
+    request.options.connections = 1;
+    request.options.checkpoint_interval = std::time::Duration::from_millis(100);
+    let progress = std::sync::Arc::new(wirecatch_engine::Progress::default());
+    let cancel = wirecatch_engine::CancellationToken::new();
+    let crashed = tokio::spawn(wirecatch_engine::download(
+        request,
+        progress.clone(),
+        cancel.clone(),
+    ));
+    crate::common::wait_until("part of the file", || (progress.done() > 0).then_some(())).await;
+    cancel.cancel();
+    crashed.await.unwrap().unwrap();
+    let [part, state] = crate::common::partial_files(&path.to_string_lossy());
+    assert!(part.exists() && state.exists());
+
+    server.configure(|c| c.per_connection_bps = None);
+    let row = h.add(&server.url("dl")).await;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(std::path::Path::new(&done.path), path);
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert!(
+        !part.exists() && !state.exists(),
+        "partial files left behind"
+    );
+    let names: Vec<_> = std::fs::read_dir(&documents)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec!["report.pdf"]);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_server_name_twice_gets_a_free_name() {
     let server = server_naming("report.pdf", 4 * KIB, None).await;

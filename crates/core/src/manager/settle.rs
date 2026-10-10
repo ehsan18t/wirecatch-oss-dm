@@ -76,7 +76,17 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
-        self.settle_path_checking(id, run_id, remote, &naming::is_free_on_disk)
+        let url = self
+            .lock()
+            .downloads
+            .get(&id)
+            .map(|entry| entry.row.url.clone())
+            .unwrap_or_default();
+        // A path holding only this download's own part and resume files is free
+        // for it: the app stopped there before the path was saved, and the engine
+        // continues those files.
+        let usable = |path: &Path| naming::is_free_on_disk(path) || naming::left_by(path, &url);
+        self.settle_path_checking(id, run_id, remote, &usable)
     }
 
     /// [`settle_path`](Self::settle_path), asking `free_on_disk` whether a path is

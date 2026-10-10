@@ -135,6 +135,29 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
         .map(|m| m.len())
 }
 
+/// Whether the only things at `path` are a part file and a resume file that a
+/// download of `url` left there, with no finished file: what a run leaves when the
+/// app stops right after the server answered, before the chosen path was saved.
+/// The download may take that path again and continue. Touches the file system.
+pub(crate) fn left_by(path: &Path, url: &str) -> bool {
+    let [part, state] = partial_files(path);
+    if path.exists() || !part.is_file() {
+        return false;
+    }
+    // The resume file is small JSON that names the link it was made for.
+    let Ok(json) = std::fs::read(&state) else {
+        return false;
+    };
+    let saved = serde_json::from_slice::<serde_json::Value>(&json)
+        .ok()
+        .and_then(|v| v.get("url")?.as_str().map(normalized_url));
+    saved.is_some_and(|saved| saved == normalized_url(url))
+}
+
+fn normalized_url(url: &str) -> String {
+    Url::parse(url).map_or_else(|_| url.to_string(), |u| u.to_string())
+}
+
 /// Whether nothing is at `path`: no file, part file or resume file. Touches the
 /// file system.
 pub(crate) fn is_free_on_disk(path: &Path) -> bool {
@@ -234,6 +257,26 @@ mod tests {
             unique_path(dir.path(), ".bashrc", &claimed),
             dir.path().join(".bashrc")
         );
+    }
+
+    #[test]
+    fn only_partial_files_of_the_same_link_are_taken_up_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"x").unwrap();
+        std::fs::write(
+            &state,
+            br#"{"version":1,"url":"https://example.com/a.zip"}"#,
+        )
+        .unwrap();
+        assert!(left_by(&path, "https://example.com/a.zip"));
+        assert!(!left_by(&path, "https://example.com/other.zip"));
+        std::fs::write(&path, b"finished").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.zip"));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&state, b"not json").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.zip"));
     }
 
     #[cfg(windows)]
