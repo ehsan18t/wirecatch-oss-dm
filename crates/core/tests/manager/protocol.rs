@@ -437,6 +437,79 @@ async fn a_repeated_handover_adds_nothing() {
     assert_eq!(h.manager.pending_confirmations().len(), 1);
 }
 
+/// Two tabs capturing the same link share one confirmation, but each handover is
+/// still its own: one tab withdrawing must not take the other's away, and once
+/// the user has answered, every tab hears the same answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_shared_confirmation_tracks_every_handover() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let from_tab = |name: &str, tab: &str| {
+        let mut capture = capture(server.url(name));
+        capture.handover_id = tab.into();
+        capture
+    };
+
+    // Withdrawn by one tab, then the other: gone only after the last one.
+    for tab in ["a-1", "a-2"] {
+        h.manager.add_capture(from_tab("a.pdf", tab)).await.unwrap();
+    }
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+    assert_eq!(
+        h.manager.withdraw_capture("a-1").await.unwrap(),
+        WithdrawOutcome::Withdrawn
+    );
+    assert_eq!(
+        h.manager.pending_confirmations().len(),
+        1,
+        "one tab withdrew the other tab's download"
+    );
+    assert_eq!(
+        h.manager.withdraw_capture("a-2").await.unwrap(),
+        WithdrawOutcome::Withdrawn
+    );
+    assert!(h.manager.pending_confirmations().is_empty());
+
+    // Confirmed: it is the app's, for every tab, whether the server answered yet or not.
+    for tab in ["b-1", "b-2"] {
+        h.manager.add_capture(from_tab("b.pdf", tab)).await.unwrap();
+    }
+    let proposal = h.manager.pending_confirmations().remove(0);
+    let answer = CaptureConfirmation {
+        folder: None,
+        file_name: None,
+        queue: None,
+    };
+    h.manager
+        .confirm_capture(proposal.id, answer.clone())
+        .await
+        .unwrap();
+    for tab in ["b-1", "b-2"] {
+        assert_eq!(
+            h.manager.withdraw_capture(tab).await.unwrap(),
+            WithdrawOutcome::AlreadyStarted,
+            "{tab}"
+        );
+    }
+    assert_eq!(h.manager.list_downloads().len(), 1);
+
+    // Rejected: nothing was taken over, for every tab.
+    for tab in ["c-1", "c-2"] {
+        h.manager.add_capture(from_tab("c.pdf", tab)).await.unwrap();
+    }
+    let proposal = h.manager.pending_confirmations().remove(0);
+    h.manager.reject_capture(proposal.id).unwrap();
+    for tab in ["c-1", "c-2"] {
+        assert_eq!(
+            h.manager.withdraw_capture(tab).await.unwrap(),
+            WithdrawOutcome::NotFound,
+            "{tab}"
+        );
+    }
+    assert_eq!(h.manager.list_downloads().len(), 1);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn confirmations_are_deduplicated_and_capped() {
     let h = Harness::new().await;

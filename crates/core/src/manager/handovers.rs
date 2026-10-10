@@ -22,6 +22,8 @@ pub(super) enum Target {
     Pending(u64),
     /// A download in the list.
     Download(DownloadId),
+    /// The user confirmed it, so it is the app's from then on.
+    Confirmed(DownloadId),
     /// The user dismissed it; nothing was downloaded.
     Dismissed,
 }

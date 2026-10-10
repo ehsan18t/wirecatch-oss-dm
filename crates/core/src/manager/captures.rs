@@ -24,6 +24,8 @@ use crate::{headers, naming};
 
 /// Most captures that can wait for confirmation at once.
 const MAX_PENDING: usize = 100;
+/// Most captures of one link that can share one confirmation.
+const MAX_HANDOVERS_PER_CONFIRMATION: usize = 32;
 
 impl Manager {
     /// Takes over a download captured in the browser.
@@ -189,8 +191,16 @@ impl Manager {
             };
             match known.target {
                 Target::Dismissed => return Ok(WithdrawOutcome::NotFound),
+                // The user said yes in the app; the browser no longer needs its copy.
+                Target::Confirmed(_) => return Ok(WithdrawOutcome::AlreadyStarted),
                 Target::Pending(pending) => {
-                    state.pending.remove(&pending);
+                    // Other tabs may still be waiting on the same question.
+                    if let Some(waiting) = state.pending.get_mut(&pending) {
+                        waiting.handovers.retain(|h| h != handover_id);
+                        if waiting.handovers.is_empty() {
+                            state.pending.remove(&pending);
+                        }
+                    }
                     state.handovers.remove(handover_id);
                     return Ok(WithdrawOutcome::Withdrawn);
                 }
@@ -234,8 +244,12 @@ impl Manager {
             .ok_or(CoreError::ConfirmationNotFound(id))?;
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
-                let target = Target::Download(row.id);
-                self.lock().handovers.retarget(&pending.handover, target);
+                let mut state = self.lock();
+                for handover in &pending.handovers {
+                    state
+                        .handovers
+                        .retarget(handover, Target::Confirmed(row.id));
+                }
                 Ok(())
             }
             Err(e) => {
@@ -255,9 +269,9 @@ impl Manager {
             .pending
             .remove(&id)
             .ok_or(CoreError::ConfirmationNotFound(id))?;
-        state
-            .handovers
-            .retarget(&pending.handover, Target::Dismissed);
+        for handover in &pending.handovers {
+            state.handovers.retarget(handover, Target::Dismissed);
+        }
         Ok(())
     }
 
@@ -277,11 +291,20 @@ impl Manager {
         };
         // The same link captured again joins the confirmation already showing.
         let url_text = url.to_string();
-        if let Some(existing) = state.pending.values().find(|p| p.capture.url == url_text) {
-            let target = Target::Pending(existing.capture.id);
+        if let Some(existing) = state
+            .pending
+            .values_mut()
+            .find(|p| p.capture.url == url_text)
+        {
+            if existing.handovers.len() >= MAX_HANDOVERS_PER_CONFIRMATION {
+                return Err(CoreError::Invalid(
+                    "This link was captured many times and is already waiting for your confirmation. Answer that first.".into(),
+                ));
+            }
+            existing.handovers.push(capture.handover_id.clone());
             let handover = Handover {
                 reply: reply.clone(),
-                target,
+                target: Target::Pending(existing.capture.id),
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
@@ -318,7 +341,7 @@ impl Manager {
             id,
             Pending {
                 capture: proposal.clone(),
-                handover: capture.handover_id.clone(),
+                handovers: vec![capture.handover_id.clone()],
                 request: capture,
             },
         );
