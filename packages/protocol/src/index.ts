@@ -41,6 +41,7 @@ export type { Theme } from "./generated/Theme";
 export type { TimeOfDay } from "./generated/TimeOfDay";
 export type { UiEvent } from "./generated/UiEvent";
 export type { UserError } from "./generated/UserError";
+export type { WaitReason } from "./generated/WaitReason";
 export type { Weekday } from "./generated/Weekday";
 export type { WithdrawOutcome } from "./generated/WithdrawOutcome";
 export type { WithdrawRequest } from "./generated/WithdrawRequest";

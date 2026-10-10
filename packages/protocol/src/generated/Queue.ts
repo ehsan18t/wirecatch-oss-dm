@@ -14,4 +14,15 @@ speed_limit: number | null,
 /**
  * When set, the queue only runs inside this window.
  */
-schedule: Schedule | null, is_default: boolean, };
+schedule: Schedule | null, is_default: boolean, 
+/**
+ * A paused queue starts nothing new, including downloads added later, and
+ * its running downloads are paused. Resuming it does not resume downloads
+ * the user paused one by one.
+ */
+paused: boolean, 
+/**
+ * Set by "start now": the queue runs outside its schedule until it is empty
+ * or paused, then the schedule applies again.
+ */
+running_outside_schedule: boolean, };
