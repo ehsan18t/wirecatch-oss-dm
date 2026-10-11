@@ -12,7 +12,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
 wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
-ts-rs = { version = "11", features = ["serde-compat"] }
+ts-rs = { version = "12", features = ["serde-compat"] }
 anyhow = "1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
