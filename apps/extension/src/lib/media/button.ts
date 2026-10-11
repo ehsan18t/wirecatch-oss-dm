@@ -77,7 +77,7 @@ export function placeButton(
   return { top: Math.round(top), left: Math.round(left) };
 }
 
-/** A muted, looping video without controls is decoration (a moving background), so playing alone does not show the button. */
+/** A muted, looping video without controls is decoration (a moving background): no button, playing or hovered. */
 export function isDecorative(el: HTMLMediaElement): boolean {
   // `defaultMuted` is the `muted` attribute, which only sets `muted` when the page's HTML is parsed.
   return el.tagName === 'VIDEO' && (el.muted || el.defaultMuted) && el.loop && !el.controls;
@@ -367,7 +367,7 @@ export class MediaButton {
   }
 
   #onFocus(target: EventTarget | null): void {
-    if (target instanceof HTMLMediaElement && isCandidate(target)) {
+    if (target instanceof HTMLMediaElement && isCandidate(target) && !isDecorative(target)) {
       this.#track(target);
       this.#hovered = target;
       this.#lastActive = this.#now();
@@ -409,7 +409,8 @@ export class MediaButton {
         this.#tracked.delete(el);
         continue;
       }
-      if (!isCandidate(el)) continue;
+      // A moving background is not something to download, hovered or not.
+      if (!isCandidate(el) || isDecorative(el)) continue;
       const r = el.getBoundingClientRect();
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = el;
     }

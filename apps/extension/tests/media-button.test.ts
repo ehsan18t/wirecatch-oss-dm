@@ -188,16 +188,27 @@ describe('MediaButton', () => {
     expect(b.host.isConnected).toBe(false);
   });
 
-  it('ignores decorative background videos while they play, but shows on hover, even under an overlay', async () => {
+  it('ignores decorative background videos, playing or hovered', async () => {
     const fake = fakeDeps();
     const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/bg.mp4', muted: '', loop: '' });
-    const overlay = document.createElement('div');
-    document.body.append(overlay);
     const b = start(fake);
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(b.state).toBe('none');
+    video.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }));
+    await settle();
+    expect(b.state).toBe('none');
+    video.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    await settle();
+    expect(b.state).toBe('none');
+  });
 
+  it("shows on hover, even under a player's transparent overlay", async () => {
+    const fake = fakeDeps();
+    media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    const overlay = document.createElement('div');
+    document.body.append(overlay);
+    const b = start(fake);
     overlay.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }));
     await settle();
     expect(b.state).toBe('shown');
