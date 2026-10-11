@@ -23,3 +23,19 @@ catalog:
   typescript-eslint: 8.71.1
   vite: 8.3.4
   vitest: 5.0.3
+
+# Security floors for transitive dependencies; remove one when its parent requires the fixed version itself.
+overrides:
+  # GHSA-pqg4-j6r4-53mv: command injection in quote(), reached through web-ext.
+  "shell-quote@>=1.8.4 <1.11.0": ">=1.11.0"
+  # GHSA-pxg6-pf52-xh8x: out-of-bounds characters in cookie names, reached through SvelteKit.
+  "cookie@<0.7.0": ">=0.7.0 <0.8.0"
+
+auditConfig:
+  ignoreGhsas:
+    # node-forge, no fixed release: reached only through web-ext's Android support, which the Firefox signing script never uses.
+    - GHSA-86w9-cpqp-85rv
+
+# Packages allowed to run install scripts.
+onlyBuiltDependencies:
+  - esbuild

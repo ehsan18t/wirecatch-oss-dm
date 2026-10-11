@@ -402,7 +402,7 @@ const CHECKS = {
     requireCargoTool('cargo-machete');
     cargo('machete');
   },
-  // Ignored advisories live in `pnpm.auditConfig` in package.json. GHSA-86w9-cpqp-85rv (node-forge, no fixed release) reaches us only through web-ext's Android device support, which the Firefox signing script never uses.
+  // Ignored advisories live in `auditConfig` in pnpm-workspace.yaml. GHSA-86w9-cpqp-85rv (node-forge, no fixed release) reaches us only through web-ext's Android device support, which the Firefox signing script never uses.
   'npm-audit': () => pnpm('audit'),
 };
 
