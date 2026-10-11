@@ -29,6 +29,12 @@ impl Manager {
         let exited = {
             let mut state = self.lock_open()?;
             let entry = state.entry_mut(id)?;
+            if entry.media_job.is_some() && entry.row.status != DownloadStatus::Completed {
+                // Its parts live in work folders that are not moved along.
+                return Err(CoreError::WrongState(
+                    "A video can be moved to another folder once it has finished downloading. To save it somewhere else now, remove it and download it again.",
+                ));
+            }
             if entry.moving.is_some() {
                 return Err(CoreError::WrongState(
                     "This download is already being moved. Wait a moment and try again.",

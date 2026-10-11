@@ -193,6 +193,13 @@ async fn a_live_stream_says_so_in_the_list() {
     );
     assert_eq!(error.fix, None);
     assert!(h.manager.pending_media_choices().is_empty());
+    // An unfinished video stays where its parts are.
+    let elsewhere = h.folders.home.join("Elsewhere");
+    let moved = h
+        .manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await;
+    assert!(matches!(moved, Err(CoreError::WrongState(_))), "{moved:?}");
 }
 
 /// The fake yt-dlp's description of a page: 1080p video and audio as separate

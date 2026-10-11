@@ -280,3 +280,28 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
         others
     );
 }
+
+/// D6: a settings profile lists the installed add-ons, and importing it on
+/// another machine installs them there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn importing_settings_reinstalls_the_add_on() {
+    let server = FileServer::start().await;
+    let sources = publish(&server, &Releases::fake(), "prof");
+    let first = harness(sources.clone()).await;
+    assert_eq!(install(&first).await.state, AddonState::Installed);
+    let file = first.root.path().join("profile.json");
+    first.manager.export_settings(&file).await.unwrap();
+    let profile: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(profile["addons"], serde_json::json!(["media"]));
+
+    let second = harness(sources).await;
+    let mut ui = second.manager.subscribe();
+    second.manager.import_settings(&file).await.unwrap();
+    let info = wait_addon(&mut ui, "installed on import", |a| {
+        a.state == AddonState::Installed
+    })
+    .await;
+    assert_eq!(info.id, "media");
+    assert!(addon_dir(&second).join("installed.json").is_file());
+}

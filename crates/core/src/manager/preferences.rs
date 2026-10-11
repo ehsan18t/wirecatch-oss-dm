@@ -10,6 +10,7 @@ use wirecatch_protocol::wire::Event;
 use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
+use crate::addons::manifest::MEDIA_ADDON_ID;
 use crate::error::{CoreError, Result};
 use crate::{profile, settings};
 
@@ -65,12 +66,16 @@ impl Manager {
     pub async fn export_settings(&self, path: &Path) -> Result<()> {
         let profile = {
             let state = self.lock();
-            profile::export(
+            let mut profile = profile::export(
                 &state.settings,
                 &state.queue_list(),
                 &self.inner.folders,
                 self.inner.clock.unix_millis(),
-            )
+            );
+            if state.addon.tools.is_some() {
+                profile.addons.push(MEDIA_ADDON_ID.to_string());
+            }
+            profile
         };
         let json =
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
@@ -87,11 +92,13 @@ impl Manager {
     /// Applies a settings profile from `path`. Queues are matched by name, folders
     /// are resolved on this machine, and downloads are left alone. What changed,
     /// including any folder that had to be replaced, is sent to the UI as
-    /// [`UiEvent::SettingsImported`].
+    /// [`UiEvent::SettingsImported`]. Add-ons the profile lists that are not
+    /// installed here are installed in the background.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let path = path.to_path_buf();
         let bytes = self.blocking(move || profile::read_file(&path)).await?;
         let incoming = profile::parse(&bytes)?;
+        let wants_media = incoming.addons.iter().any(|a| a == MEDIA_ADDON_ID);
 
         let mut state = self.lock_open()?;
         let current = state.queue_list();
@@ -109,6 +116,11 @@ impl Manager {
         self.queues_changed(&mut state);
         self.apply_settings(&mut state, imported.settings);
         self.emit(UiEvent::SettingsImported(imported.summary));
+        let install = wants_media && state.addon.tools.is_none();
+        drop(state);
+        if install {
+            self.install_addon(MEDIA_ADDON_ID)?;
+        }
         Ok(())
     }
 
