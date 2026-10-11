@@ -2,12 +2,13 @@
 
 ## Phases
 
-1. **Engine and CLI.** Segmented HTTP(S) downloads, dynamic splitting, resume, retries. Benchmarked locally. (current)
-2. **Background Engine, Bridge and Extension.** Engine runs as a background process with SQLite state; the Bridge (native messaging host) and the WXT Extension catch browser downloads in Chromium and Firefox; settings sync (D5).
-3. **Desktop UI.** Tauri 2 window: download list, queues in the sidebar, schedules, speed limits, command palette, settings import and export (D6).
-4. **Streams.** HLS and DASH detection in the Extension, parallel segment download in the Engine, ffmpeg muxing (fetched on demand).
-5. **Media Add-on.** yt-dlp Extractor Add-on with one-click install and quiet updates (D2).
-6. **Remaining v1 protocols.** FTP/FTPS and HTTP/3 (D10).
+1. **Engine and CLI.** Segmented HTTP(S) downloads, dynamic splitting, resume, retries. Benchmarked locally. Done.
+2. **Core, Bridge and Extension.** The download manager with SQLite state, the native messaging bridge, the WXT extension for Chromium and Firefox, settings sync (D5). Done.
+3. **Desktop UI.** Tauri 2 app hosting the core: download list, queues in the sidebar, schedules, speed limits, command palette, settings export and import (D6), tray, single instance. Built; final fixes in progress.
+4. **Streams.** HLS and DASH detection in the extension and parallel segment download with joining (`wirecatch-streams`). Done.
+5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno with quiet updates (D20). In progress.
+6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
+7. **Release readiness.** Installers built and signed, Linux verified on a real distribution, extension store listings, a quiet-machine benchmark, user guide. Next.
 
 ## Phase 1 acceptance checklist
 

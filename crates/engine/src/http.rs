@@ -288,6 +288,12 @@ impl Clients {
         SHARED_TLS.get().is_some()
     }
 
+    /// The TLS configuration (root certificates included) other protocols
+    /// start from.
+    pub fn tls(&self) -> &rustls::ClientConfig {
+        &self.tls
+    }
+
     /// Uses the given root certificates and a session cache of its own.
     #[cfg(test)]
     pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {

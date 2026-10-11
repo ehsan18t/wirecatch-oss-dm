@@ -13,13 +13,15 @@ use std::io;
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// The URL could not be used, for example a redirect to an address that is
-    /// not `http` or `https`. The text says which URL and why.
+    /// The URL could not be used, for example a scheme the engine does not
+    /// download from, or a redirect to an address that is not `http` or
+    /// `https`. The text says which URL and why.
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
 
     /// The connection failed: DNS, refused or reset connections, TLS errors,
-    /// timeouts while connecting.
+    /// timeouts while connecting. Used for every protocol (HTTP, HTTP/3 and
+    /// FTP).
     #[error("network error: {0}")]
     Network(NetworkError),
 
@@ -138,6 +140,60 @@ pub enum Error {
         url: String,
     },
 
+    /// The FTP server answered a command with an error, for example `550` for
+    /// a file that does not exist. Codes from 400 to 499 mean the problem is
+    /// temporary, so they are retried (see [`Error::is_retryable`]); others
+    /// are not.
+    #[error("the FTP server answered \"{code} {message}\" for {url}{}", ftp_reply_hint(*code))]
+    #[non_exhaustive]
+    FtpReply {
+        /// The FTP reply code, such as `550`.
+        code: u16,
+        /// The text the server sent with the code.
+        message: String,
+        /// The address being downloaded, without any password.
+        url: String,
+    },
+
+    /// The FTP server did not accept the user name or password. The text the
+    /// server sent is included; the password never is.
+    #[error("{}", login_refused_text(host, *code, message, *anonymous))]
+    #[non_exhaustive]
+    FtpLoginRefused {
+        /// The server's host name or address.
+        host: String,
+        /// The FTP reply code, usually `530`.
+        code: u16,
+        /// The text the server sent with the code.
+        message: String,
+        /// Whether the login was the anonymous one (no user name in the
+        /// link), which many servers do not allow.
+        anonymous: bool,
+    },
+
+    /// An `ftps` or `ftpes` link asked for encryption, but the server does not
+    /// offer it. The download stops rather than continue unencrypted.
+    #[error(
+        "the FTP server {host} does not offer encryption, so the secure download was stopped. If downloading without encryption is acceptable, use an ftp:// link instead"
+    )]
+    #[non_exhaustive]
+    FtpTlsUnavailable {
+        /// The server's host name or address.
+        host: String,
+    },
+
+    /// A proxy is set in the environment (for example `ALL_PROXY` or
+    /// `FTP_PROXY`), but FTP downloads cannot go through a proxy yet, and
+    /// going around it without asking could expose what it is there to hide.
+    #[error(
+        "FTP downloads cannot go through a proxy yet, and the {variable} environment variable sets one. To download this link directly instead, remove {variable} from the environment"
+    )]
+    #[non_exhaustive]
+    FtpProxyUnsupported {
+        /// The environment variable that sets the proxy.
+        variable: String,
+    },
+
     /// Something inside the engine failed that should not, such as a task that
     /// panicked. This is a bug in Wirecatch; please report it with the text.
     #[error("internal error: {0}. This is a bug in Wirecatch; please report it")]
@@ -152,12 +208,40 @@ impl Error {
             Error::HttpStatus { status, .. } => {
                 matches!(status, 408 | 425 | 429 | 500 | 502 | 503 | 504)
             }
+            // FTP's 4xx replies are "transient negative completion" (RFC 959):
+            // too many connections, data connection failed, file busy.
+            Error::FtpReply { code, .. } => (400..500).contains(code),
             _ => false,
         }
     }
 
     pub(crate) fn network(error: reqwest::Error) -> Self {
-        Error::Network(NetworkError(error))
+        Error::Network(NetworkError(Inner::Http(error)))
+    }
+
+    /// A socket error while talking to a server (not a disk error). `what`
+    /// says what was being done; `connecting` whether the connection was still
+    /// being opened.
+    pub(crate) fn socket(what: impl Into<String>, error: io::Error, connecting: bool) -> Self {
+        Error::Network(NetworkError(Inner::Io {
+            what: what.into(),
+            error,
+            connecting,
+        }))
+    }
+
+    /// A failure of another transport library (QUIC, HTTP/3).
+    #[cfg(feature = "http3")]
+    pub(crate) fn transport(
+        what: impl Into<String>,
+        error: impl std::error::Error + Send + Sync + 'static,
+        connecting: bool,
+    ) -> Self {
+        Error::Network(NetworkError(Inner::Other {
+            what: what.into(),
+            error: Box::new(error),
+            connecting,
+        }))
     }
 
     /// For a background task that panicked or was aborted.
@@ -166,30 +250,95 @@ impl Error {
     }
 }
 
+/// What to add to an FTP error reply to say how to fix it.
+fn ftp_reply_hint(code: u16) -> &'static str {
+    match code {
+        550 => {
+            ". Check that the file exists. The path in the link is relative to the folder the server logs in to; to give a path from the top folder, start it with %2F, as in ftp://host/%2Fpub/file.iso"
+        }
+        _ => "",
+    }
+}
+
+fn login_refused_text(host: &str, code: u16, message: &str, anonymous: bool) -> String {
+    if anonymous {
+        format!(
+            "the FTP server {host} did not accept an anonymous login (\"{code} {message}\"); it may not allow anonymous access. Add a user name and password to the link, as in ftp://user:password@{host}/path"
+        )
+    } else {
+        format!(
+            "the FTP server {host} did not accept the login (\"{code} {message}\"). Check the user name and password in the link"
+        )
+    }
+}
+
 /// A failed connection or request. The message says what failed, including
 /// the underlying cause (for example "connection refused" or a certificate
 /// problem); [`std::error::Error::source`] gives the chain.
-pub struct NetworkError(reqwest::Error);
+pub struct NetworkError(Inner);
+
+enum Inner {
+    /// From the HTTP client.
+    Http(reqwest::Error),
+    /// A socket error, for example on an FTP connection.
+    Io {
+        what: String,
+        error: io::Error,
+        connecting: bool,
+    },
+    /// From another transport library, such as QUIC for HTTP/3.
+    #[cfg(feature = "http3")]
+    Other {
+        what: String,
+        error: Box<dyn std::error::Error + Send + Sync>,
+        connecting: bool,
+    },
+}
 
 impl NetworkError {
     /// Whether a time limit ran out (connecting, or waiting for the server).
     pub fn is_timeout(&self) -> bool {
-        self.0.is_timeout()
+        match &self.0 {
+            Inner::Http(e) => e.is_timeout(),
+            Inner::Io { error, .. } => error.kind() == io::ErrorKind::TimedOut,
+            #[cfg(feature = "http3")]
+            Inner::Other { .. } => false,
+        }
     }
 
     /// Whether the connection could not be opened at all (name lookup, refused
     /// connection, TLS handshake).
     pub fn is_connect(&self) -> bool {
-        self.0.is_connect()
+        match &self.0 {
+            Inner::Http(e) => e.is_connect(),
+            Inner::Io { connecting, .. } => *connecting,
+            #[cfg(feature = "http3")]
+            Inner::Other { connecting, .. } => *connecting,
+        }
+    }
+
+    /// The first error in the chain below the one this error displays itself.
+    fn first_cause(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.0 {
+            Inner::Http(e) => std::error::Error::source(e),
+            Inner::Io { error, .. } => error.get_ref().and_then(|e| e.source()),
+            #[cfg(feature = "http3")]
+            Inner::Other { error, .. } => error.source(),
+        }
     }
 }
 
 impl fmt::Display for NetworkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)?;
+        match &self.0 {
+            Inner::Http(e) => write!(f, "{e}")?,
+            Inner::Io { what, error, .. } => write!(f, "{what}: {error}")?,
+            #[cfg(feature = "http3")]
+            Inner::Other { what, error, .. } => write!(f, "{what}: {error}")?,
+        }
         // The top message is often just "error sending request"; the deepest
         // cause says what actually happened.
-        let mut cause = std::error::Error::source(&self.0);
+        let mut cause = self.first_cause();
         let mut deepest = None;
         while let Some(c) = cause {
             deepest = Some(c);
@@ -204,13 +353,25 @@ impl fmt::Display for NetworkError {
 
 impl fmt::Debug for NetworkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        match &self.0 {
+            Inner::Http(e) => fmt::Debug::fmt(e, f),
+            Inner::Io { what, error, .. } => write!(f, "{what}: {error:?}"),
+            #[cfg(feature = "http3")]
+            Inner::Other { what, error, .. } => write!(f, "{what}: {error:?}"),
+        }
     }
 }
 
 impl std::error::Error for NetworkError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        std::error::Error::source(&self.0)
+        match &self.0 {
+            // The HTTP client's error is displayed as this one, so its own
+            // source comes next.
+            Inner::Http(e) => std::error::Error::source(e),
+            Inner::Io { error, .. } => Some(error),
+            #[cfg(feature = "http3")]
+            Inner::Other { error, .. } => Some(error.as_ref()),
+        }
     }
 }
 
