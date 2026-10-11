@@ -432,6 +432,16 @@ mod tests {
         }
     }
 
+    /// The interface tells this error from others by its start (`isAddonRequired` in
+    /// `src/lib/addons.ts`).
+    #[test]
+    fn the_add_on_required_error_keeps_its_wording() {
+        assert!(
+            plain(CoreError::AddonRequired).starts_with("This needs the media add-on"),
+            "update isAddonRequired in src/lib/addons.ts too"
+        );
+    }
+
     #[test]
     fn the_source_site_is_named_plainly() {
         assert_eq!(

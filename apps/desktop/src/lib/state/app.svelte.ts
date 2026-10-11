@@ -19,7 +19,7 @@ import type {
 } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { isInstalled, MEDIA_ADDON } from '../addons';
+import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend } from '../backend/types';
 import { extractUrls, formatTime, hostOf, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
@@ -986,7 +986,7 @@ export class AppState {
       await this.backend.chooseMedia(id, selection);
     } catch (err) {
       this.#answering.delete(id);
-      if (needsAddon && !isInstalled(this.addons?.find((a) => a.id === MEDIA_ADDON))) {
+      if (needsAddon && isAddonRequired(message(err))) {
         // The core asked for the add-on instead; its prompt explains, and the choice
         // continues once it is installed.
         this.choiceAwaitingAddon = { id, selection };

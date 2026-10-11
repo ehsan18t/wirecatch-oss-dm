@@ -6,6 +6,14 @@ import { formatBytes } from './format';
 /** The id of the one add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
 export const MEDIA_ADDON = 'media';
 
+/**
+ * Whether an error is the core's "this needs the media add-on" (`CoreError::AddonRequired`),
+ * which comes with an `addon_required` prompt, rather than any other failure.
+ */
+export function isAddonRequired(message: string): boolean {
+  return message.startsWith('This needs the media add-on');
+}
+
 /** How far an install has got, from 0 to 1, or `null` when the size is not known. */
 export function installFraction(state: AddonState): number | null {
   if (state.type !== 'installing') return null;

@@ -168,6 +168,26 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('shows a failure that is not about the add-on, instead of waiting for the add-on', async () => {
+    const { app, backend } = await make();
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[0];
+    const joined = choice?.options.find((o) => o.needs_ffmpeg);
+    // The window does not know the add-on is missing, and the core fails for another reason.
+    app.addons = null;
+    vi.spyOn(backend, 'chooseMedia').mockRejectedValueOnce(new Error('The disk is full.'));
+    const ok = await app.chooseMedia(choice?.id ?? 0, {
+      option_id: joined?.id ?? '',
+      file_name: null,
+      folder: null,
+      queue: null,
+    });
+    expect(ok).toBe(false);
+    expect(app.choiceAwaitingAddon).toBeNull();
+    expect(app.toasts.at(-1)).toMatchObject({ kind: 'error', message: 'The disk is full.' });
+    app.dispose();
+  });
+
   it('says nothing when a question answered here closes', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();
