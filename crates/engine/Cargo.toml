@@ -1,12 +1,12 @@
 [package]
 name = "wirecatch-engine"
-description = "Fast, resumable HTTP(S) download engine: parallel connections, dynamic splitting, positional writes and crash-safe resume"
+description = "Fast, resumable HTTP(S) and FTP(S) download engine: parallel connections, dynamic splitting, positional writes and crash-safe resume"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-keywords = ["download", "downloader", "http", "resume", "segmented"]
+keywords = ["download", "downloader", "http", "ftp", "resume"]
 categories = ["network-programming", "web-programming::http-client", "asynchronous"]
 # `repository` and `homepage` are added once the public GitHub organization exists.
 
@@ -26,10 +26,25 @@ rustls-native-certs = "0.8.0"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+# TLS on FTP connections. reqwest already builds it (through hyper-rustls), so
+# FTPS adds no new crate to the build.
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
 tokio-util.workspace = true
 tracing.workspace = true
 url.workspace = true
+
+# HTTP/3, only with the `http3` feature.
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+http = { version = "1.1.0", optional = true }
+quinn = { version = "0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
+
+[features]
+default = []
+# Experimental HTTP/3 support, see `DownloadOptions::http3`. Off by default to
+# keep the default build lean (it adds 18 crates, quinn and h3 among them).
+http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
@@ -42,6 +57,18 @@ axum.workspace = true
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
 futures-util.workspace = true
+# An HTTP/2 test server for the HTTP/3 tests and benchmark.
+hyper = { version = "1.4.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"] }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Process CPU time in the HTTP/3 benchmark.
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
+
+[[example]]
+name = "bench_http3"
+required-features = ["http3"]

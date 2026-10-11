@@ -1,0 +1,241 @@
+//! HTTP/3 against local servers with a test certificate: used when
+//! advertised, ignored when switched off, and abandoned for TCP when QUIC is
+//! blocked or breaks mid-download.
+
+#[path = "../../tests/common/h3_server.rs"]
+mod h3_server;
+
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
+
+use bytes::Bytes;
+use tokio_util::sync::CancellationToken;
+
+use super::*;
+use crate::download::{DownloadRequest, Outcome, download_with};
+use crate::http::Clients;
+use crate::progress::Progress;
+use h3_server::{Cert, Counts};
+use reqwest::header::HeaderValue;
+
+#[test]
+fn alt_svc_values() {
+    let host = "files.example";
+    assert_eq!(h3_port(r#"h3=":443"; ma=86400"#, host), Some(443));
+    assert_eq!(
+        h3_port(r#"h3-29=":8443", h3=":4433"; ma=60"#, host),
+        Some(4433)
+    );
+    assert_eq!(h3_port(r#"h3="files.example:443""#, host), Some(443));
+    assert_eq!(h3_port(r#"h3="FILES.example:443""#, host), Some(443));
+    // Another host would need its own trust decisions; not used.
+    assert_eq!(h3_port(r#"h3="cdn.example:443""#, host), None);
+    assert_eq!(h3_port(r#"h3-29=":443""#, host), None);
+    assert_eq!(h3_port("clear", host), None);
+    assert_eq!(h3_port(r#"h3=":0""#, host), None);
+    assert_eq!(h3_port(r#"h2=":443""#, host), None);
+}
+
+#[test]
+fn http3_is_not_used_through_a_proxy() {
+    use std::ffi::OsString;
+
+    let opts = crate::download::DownloadOptions::default();
+    let clients = Clients::with_roots(&opts, rustls::RootCertStore::empty());
+    let url = Url::parse("https://files.example/a.iso").unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert("alt-svc", HeaderValue::from_static(r#"h3=":443""#));
+    let advertised = |env: &dyn Fn(&str) -> Option<OsString>| {
+        Origin::advertised_in(&url, &headers, None, clients.tls(), &opts, env).is_some()
+    };
+
+    assert!(advertised(&|_| None), "no proxy: HTTP/3 is used");
+    for variable in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
+        let env = move |name: &str| (name == variable).then(|| OsString::from("http://proxy:8080"));
+        assert!(
+            !advertised(&env),
+            "{variable} is set: QUIC would go around it"
+        );
+    }
+    // An empty variable sets no proxy, and an HTTP-only proxy does not apply.
+    assert!(advertised(
+        &|name: &str| (name == "HTTPS_PROXY").then(OsString::new)
+    ));
+    assert!(advertised(&|name: &str| {
+        (name == "HTTP_PROXY").then(|| OsString::from("http://proxy:8080"))
+    }));
+}
+
+fn test_data(len: usize) -> Bytes {
+    Bytes::from(
+        (0..len)
+            .map(|i| (i * 31 + i / 509) as u8)
+            .collect::<Vec<u8>>(),
+    )
+}
+
+const MIB: usize = 1024 * 1024;
+
+/// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
+/// No retries are allowed: falling back from HTTP/3 must never need one.
+async fn fetch(cert: &Cert, tcp_port: u16, http3: bool, test: &str) -> (Vec<u8>, Duration) {
+    fetch_from(cert, "127.0.0.1", tcp_port, http3, test, |_| {}).await
+}
+
+async fn fetch_from(
+    cert: &Cert,
+    host: &str,
+    tcp_port: u16,
+    http3: bool,
+    test: &str,
+    tune: impl FnOnce(&mut crate::download::DownloadOptions),
+) -> (Vec<u8>, Duration) {
+    let dir = std::env::temp_dir().join(format!("wirecatch-h3-{test}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
+    let mut request = DownloadRequest::new(url, &dir);
+    request.options.connections = 4;
+    request.options.http3 = http3;
+    request.options.max_retries = 0;
+    tune(&mut request.options);
+    let clients = Clients::with_roots(&request.options, cert.roots.clone());
+    let started = Instant::now();
+    let outcome = download_with(
+        request,
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+        clients,
+    )
+    .await
+    .unwrap();
+    let took = started.elapsed();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("expected Completed, got {outcome:?}");
+    };
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    (bytes, took)
+}
+
+fn requests(counts: &Counts) -> usize {
+    counts.requests.load(Ordering::SeqCst)
+}
+
+#[tokio::test]
+async fn downloads_over_http3_when_the_server_advertises_it() {
+    let data = test_data(8 * MIB + 777);
+    let cert = Cert::new();
+    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let alt_svc = format!(r#"h3=":{h3_port}"; ma=3600"#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, _) = fetch(&cert, tcp_port, true, "used").await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
+    assert!(requests(&h3) >= 3, "the other connections used HTTP/3");
+}
+
+/// `localhost` may resolve to `::1` first while the servers only listen on
+/// 127.0.0.1: QUIC must go to the address the first request reached.
+#[tokio::test]
+async fn quic_goes_to_the_address_the_first_request_reached() {
+    let data = test_data(8 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost", |_| {}).await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
+    assert!(requests(&h3) >= 3, "the other connections used HTTP/3");
+    assert!(
+        took < Duration::from_secs(3),
+        "no handshake timeout: {took:?}"
+    );
+}
+
+#[tokio::test]
+async fn http3_is_not_used_unless_switched_on() {
+    let data = test_data(4 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, _) = fetch(&cert, tcp_port, false, "off").await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&h3), 0);
+    assert!(requests(&tcp) >= 2);
+    assert_eq!(
+        tcp.http2.load(Ordering::SeqCst),
+        requests(&tcp),
+        "TCP requests used HTTP/2"
+    );
+}
+
+#[tokio::test]
+async fn falls_back_to_tcp_when_quic_is_blocked() {
+    let data = test_data(8 * MIB);
+    let cert = Cert::new();
+    let (_socket, blocked_port) = h3_server::blackhole();
+    let alt_svc = format!(r#"h3=":{blocked_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, took) = fetch(&cert, tcp_port, true, "blocked").await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert!(requests(&tcp) >= 2, "the other connections went over TCP");
+    // One handshake timeout (3 s), not one per connection or per range.
+    assert!(took < Duration::from_secs(10), "took {took:?}");
+}
+
+#[tokio::test]
+async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
+    let data = test_data(8 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) =
+        h3_server::start_h3_breaking(data.clone(), &cert, Some(100_000), Duration::ZERO).await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let (bytes, _) = fetch(&cert, tcp_port, true, "broken").await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert!(requests(&h3) >= 1, "HTTP/3 was tried");
+    assert!(
+        requests(&h3) <= 4,
+        "and given up after it broke, not tried again"
+    );
+    assert!(requests(&tcp) >= 2, "and abandoned for TCP");
+}
+
+/// The HTTP/3 connection breaks late in its range, after the only other
+/// connection has finished and stopped. With no retries allowed, the range
+/// must still finish over TCP: a switch of protocol is not a failed attempt.
+#[tokio::test]
+async fn falling_back_mid_stream_does_not_use_up_a_retry() {
+    let data = test_data(16 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) =
+        h3_server::start_h3_breaking(data.clone(), &cert, Some(7 * MIB), Duration::from_secs(1))
+            .await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    // Two connections, 8 MiB each, and parts too big to split again: the TCP
+    // connection finishes its half and stops before HTTP/3 breaks.
+    let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
+        o.connections = 2;
+        o.min_split = 4 * MIB as u64;
+    })
+    .await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&h3), 1);
+    assert_eq!(requests(&tcp), 2, "the broken range went on over TCP");
+}

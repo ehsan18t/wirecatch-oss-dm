@@ -5,8 +5,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::StreamExt;
-use reqwest::{Client, Response};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -14,7 +12,8 @@ use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::segment::{Assignment, SegmentTable, UNKNOWN_END};
-use crate::{http, storage};
+use crate::storage;
+use crate::transport::{Body, Connection};
 
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
@@ -37,13 +36,16 @@ enum Ended {
     /// The server refuses this extra connection; the segment was handed back
     /// to the connections that are working.
     SteppedBack,
+    /// HTTP/3 failed and was given up for the download; the segment carries
+    /// on over TCP from where it got to, without counting as a failed attempt.
+    SwitchedProtocol,
 }
 
 pub(crate) async fn run(
     id: usize,
     shared: Arc<Shared>,
-    client: Client,
-    mut first: Option<(Assignment, Response)>,
+    mut connection: Connection,
+    mut first: Option<(Assignment, Body)>,
 ) -> Result<()> {
     let file = Arc::new(storage::open_for_write(&shared.part_path)?);
     let mut writer = Writer::new(file, shared.opts.buffer_size);
@@ -63,10 +65,17 @@ pub(crate) async fn run(
             "assigned"
         );
 
-        let result =
-            run_assignment(&shared, &client, &mut writer, assignment.index, response).await;
+        let result = run_assignment(
+            &shared,
+            &mut connection,
+            &mut writer,
+            assignment.index,
+            response,
+        )
+        .await;
         match result {
-            Ok(Ended::Done) => continue,
+            // `run_assignment` deals with a protocol switch itself.
+            Ok(Ended::Done) | Ok(Ended::SwitchedProtocol) => continue,
             Ok(Ended::SteppedBack) => return Ok(()),
             Ok(Ended::Cancelled) | Ok(Ended::Eof) => {
                 shared.table.lock().unwrap().release(assignment.index);
@@ -89,13 +98,12 @@ pub(crate) async fn run(
 /// remaining connections finish the work.
 async fn run_assignment(
     shared: &Shared,
-    client: &Client,
+    connection: &mut Connection,
     writer: &mut Writer,
     index: usize,
-    mut response: Option<Response>,
+    mut response: Option<Body>,
 ) -> Result<Ended> {
-    let mut failures = 0u32;
-    let mut refusals = 0u32;
+    let mut attempts = Attempts::default();
     loop {
         if shared.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
@@ -106,53 +114,105 @@ async fn run_assignment(
         }
 
         let attempt = async {
-            let (resp, skip) = match response.take() {
-                Some(resp) => (resp, 0),
-                None => {
-                    http::fetch(
-                        client,
-                        &shared.url,
-                        &shared.session,
-                        from,
-                        to,
-                        shared.ranged,
-                        shared.total,
-                    )
-                    .await?
-                }
+            let (mut body, skip) = match response.take() {
+                Some(body) => (body, 0),
+                None => connection.open(shared, from, to).await?,
             };
-            Ok::<_, Failure>(stream(shared, writer, index, from, resp, skip).await?)
+            let ended = stream(shared, writer, index, from, &mut body, skip).await;
+            connection.finish(body, &shared.cancel).await;
+            Ok::<_, Failure>(ended?)
         };
 
         match attempt.await {
+            Ok(Ended::SwitchedProtocol) => continue,
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
             Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
-            Err(f) if f.error.is_retryable() && failures < shared.opts.max_retries => {
+            Err(f) => {
                 let (now, _) = shared.table.lock().unwrap().position(index);
-                let progressed = now > from;
-                failures = if progressed { 0 } else { failures + 1 };
-                refusals = if !progressed && is_refusal(&f.error) {
-                    refusals + 1
-                } else {
-                    0
+                let next = attempts.after_failure(
+                    &f.error,
+                    f.retry_after,
+                    now > from,
+                    shared.opts.max_retries,
+                );
+                let delay = match next {
+                    Next::GiveUp => return Err(f.error),
+                    Next::StepBackOrRetry(_) if step_back(shared, index) => {
+                        info!(error = %f.error, "server refuses another connection; continuing with the open ones");
+                        return Ok(Ended::SteppedBack);
+                    }
+                    Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
-                let delay = retry_delay(failures, f.retry_after);
-                let long_wait = f.retry_after.is_some() || delay > MAX_BACKOFF;
-                if refusals > 0
-                    && (refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait)
-                    && step_back(shared, index)
-                {
-                    info!(error = %f.error, "server refuses another connection; continuing with the open ones");
-                    return Ok(Ended::SteppedBack);
-                }
                 warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
                     _ = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
                     _ = tokio::time::sleep(delay) => {}
                 }
             }
-            Err(f) => return Err(f.error),
+        }
+    }
+}
+
+/// What a connection does after a failed attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Next {
+    /// Try again after this long.
+    Retry(Duration),
+    /// The server keeps refusing this connection: hand the segment to the
+    /// connections that are working if there are any, else retry after this
+    /// long.
+    StepBackOrRetry(Duration),
+    GiveUp,
+}
+
+/// A connection's failed attempts in a row.
+#[derive(Debug, Default)]
+struct Attempts {
+    /// Attempts in a row that received nothing.
+    failures: u32,
+    /// Of those, attempts the server turned away.
+    refusals: u32,
+}
+
+impl Attempts {
+    /// Decides what follows a failed attempt. `progressed` says whether it
+    /// received anything, which resets the count.
+    ///
+    /// A refusal is retried even when the error alone would not be: an FTP
+    /// server turning away one more login (530) already accepted the same
+    /// login on another connection.
+    fn after_failure(
+        &mut self,
+        error: &Error,
+        retry_after: Option<Duration>,
+        progressed: bool,
+        max_retries: u32,
+    ) -> Next {
+        let refused = is_refusal(error);
+        if !(error.is_retryable() || refused) {
+            return Next::GiveUp;
+        }
+        // Only attempts that received nothing count against the budget
+        // (`DownloadOptions::max_retries`).
+        if progressed {
+            self.failures = 0;
+        } else if self.failures >= max_retries {
+            return Next::GiveUp;
+        } else {
+            self.failures += 1;
+        }
+        self.refusals = if !progressed && refused {
+            self.refusals + 1
+        } else {
+            0
+        };
+        let delay = retry_delay(self.failures, retry_after);
+        let long_wait = retry_after.is_some() || delay > MAX_BACKOFF;
+        if self.refusals > 0 && (self.refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait) {
+            Next::StepBackOrRetry(delay)
+        } else {
+            Next::Retry(delay)
         }
     }
 }
@@ -164,14 +224,15 @@ async fn stream(
     writer: &mut Writer,
     index: usize,
     from: u64,
-    response: Response,
+    body: &mut Body,
     mut skip: u64,
 ) -> Result<Ended> {
     let _connection = shared.progress.connection_opened();
     let _receiving = Receiving::new(&shared.receiving);
     writer.start(index, from);
-    let mut body = response.bytes_stream();
     let stall = shared.opts.stall_timeout;
+    // Whether receiving failed (rather than, say, writing to disk).
+    let mut body_failed = false;
 
     let outcome: Result<Ended> = loop {
         let next = tokio::select! {
@@ -179,14 +240,19 @@ async fn stream(
             _ = shared.cancel.cancelled() => break Ok(Ended::Cancelled),
             next = tokio::time::timeout(stall, body.next()) => next,
         };
-        let chunk = match next {
-            Err(_) => break Err(Error::Stalled(stall.as_secs())),
-            Ok(None) => break Ok(Ended::Eof),
-            Ok(Some(Err(e))) => break Err(Error::network(e)),
-            Ok(Some(Ok(chunk))) => chunk,
+        let mut data = match next {
+            Err(_) => {
+                body_failed = true;
+                break Err(Error::Stalled(stall.as_secs()));
+            }
+            Ok(Ok(None)) => break Ok(Ended::Eof),
+            Ok(Err(e)) => {
+                body_failed = true;
+                break Err(e);
+            }
+            Ok(Ok(Some(chunk))) => chunk,
         };
 
-        let mut data = &chunk[..];
         if skip > 0 {
             let n = skip.min(data.len() as u64);
             data = &data[n as usize..];
@@ -213,6 +279,11 @@ async fn stream(
 
     writer.finish(&shared.table).await?;
 
+    // A failure of HTTP/3 itself: the range carries on over TCP.
+    let outcome = match outcome {
+        Err(e) if body_failed && body.abandon_http3(&e) => Ok(Ended::SwitchedProtocol),
+        other => other,
+    };
     match outcome? {
         Ended::Eof => {
             let mut table = shared.table.lock().unwrap();
@@ -240,6 +311,10 @@ fn is_refusal(error: &Error) -> bool {
         // No answer in time is not a refusal either.
         Error::Stalled(_) => false,
         Error::PrematureEof { .. } => true,
+        // 421: too many connections. 530 on a later connection: this login
+        // worked on the first one, so the server limits sessions. 425: the
+        // server would not open another data connection.
+        Error::FtpReply { code, .. } => matches!(code, 421 | 425 | 530),
         _ => false,
     }
 }
@@ -396,6 +471,88 @@ mod tests {
         assert!(backoff(1) < Duration::from_millis(800));
         assert!(backoff(3) >= Duration::from_secs(2));
         assert!(backoff(30) <= Duration::from_millis(10_250));
+    }
+
+    fn ftp(code: u16) -> Error {
+        Error::FtpReply {
+            code,
+            message: "test".into(),
+            url: "ftp://h/f".into(),
+        }
+    }
+
+    /// What two failed attempts in a row, receiving nothing, lead to.
+    fn refused_twice(error: &Error) -> (Next, Next) {
+        let mut attempts = Attempts::default();
+        let first = attempts.after_failure(error, None, false, 6);
+        let second = attempts.after_failure(error, None, false, 6);
+        (first, second)
+    }
+
+    #[test]
+    fn ftp_session_limits_count_as_refusals() {
+        // 421 too many connections, 425 no data connection, and 530 for a
+        // login that worked on another connection: the second in a row steps
+        // back, so the connections that are working finish the file.
+        for code in [421, 425, 530] {
+            let (first, second) = refused_twice(&ftp(code));
+            assert!(matches!(first, Next::Retry(_)), "{code}: {first:?}");
+            assert!(
+                matches!(second, Next::StepBackOrRetry(_)),
+                "{code}: {second:?}"
+            );
+        }
+        // 530 alone is not retryable; only the refusal rule retries it.
+        assert!(!ftp(530).is_retryable());
+        // Other 4xx replies are retried but are not refusals.
+        let (_, second) = refused_twice(&ftp(450));
+        assert!(matches!(second, Next::Retry(_)), "{second:?}");
+        // A permanent failure ends at once.
+        let mut attempts = Attempts::default();
+        assert_eq!(
+            attempts.after_failure(&ftp(550), None, false, 6),
+            Next::GiveUp
+        );
+    }
+
+    #[test]
+    fn the_retry_budget_and_progress() {
+        let mut attempts = Attempts::default();
+        assert_eq!(
+            attempts.after_failure(&ftp(421), None, false, 0),
+            Next::GiveUp
+        );
+        let mut attempts = Attempts::default();
+        assert!(matches!(
+            attempts.after_failure(&ftp(450), None, false, 1),
+            Next::Retry(_)
+        ));
+        assert_eq!(
+            attempts.after_failure(&ftp(450), None, false, 1),
+            Next::GiveUp
+        );
+        // An attempt that received something does not count, and starts the
+        // count again.
+        let mut attempts = Attempts::default();
+        attempts.after_failure(&ftp(450), None, false, 1);
+        assert!(matches!(
+            attempts.after_failure(&ftp(450), None, true, 1),
+            Next::Retry(_)
+        ));
+        assert!(matches!(
+            attempts.after_failure(&ftp(450), None, false, 1),
+            Next::Retry(_)
+        ));
+        // A refusal that asks for a long wait steps back at once.
+        let mut attempts = Attempts::default();
+        let busy = Error::HttpStatus {
+            status: 503,
+            url: "https://h/f".into(),
+        };
+        assert!(matches!(
+            attempts.after_failure(&busy, Some(Duration::from_secs(5)), false, 6),
+            Next::StepBackOrRetry(_)
+        ));
     }
 
     #[test]

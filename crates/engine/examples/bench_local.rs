@@ -7,9 +7,14 @@
 //!
 //! `cargo run --release -p wirecatch-engine --example bench_local -- serve [port] [MiB/s per connection]`
 //!     Keeps a capped server running for trying the CLI by hand.
+//!
+//! `cargo run --release -p wirecatch-engine --example bench_local -- serve-ftp [port] [MiB/s per connection]`
+//!     The same with an FTP server (anonymous login, at most 4 sessions).
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+#[path = "../tests/common/ftp_server.rs"]
+mod ftp_server;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,6 +31,12 @@ async fn main() {
         let port: u16 = args.get(1).and_then(|p| p.parse().ok()).unwrap_or(8765);
         let cap: u64 = args.get(2).and_then(|c| c.parse().ok()).unwrap_or(4);
         serve(port, cap).await;
+        return;
+    }
+    if args.first().map(String::as_str) == Some("serve-ftp") {
+        let port: u16 = args.get(1).and_then(|p| p.parse().ok()).unwrap_or(2121);
+        let cap: u64 = args.get(2).and_then(|c| c.parse().ok()).unwrap_or(4);
+        serve_ftp(port, cap).await;
         return;
     }
 
@@ -137,4 +148,25 @@ async fn serve(port: u16, cap_mib: u64) {
         });
         tokio::time::sleep(Duration::ZERO).await;
     }
+}
+
+async fn serve_ftp(port: u16, cap_mib: u64) {
+    let _server = ftp_server::FtpServer::start_on(
+        port,
+        ftp_server::FtpConfig {
+            files: vec![(
+                "file.bin".to_string(),
+                Arc::new(test_data(256 * MIB as usize)),
+            )],
+            mdtm: Some("20260101000000".to_string()),
+            max_sessions: Some((4, ftp_server::Refuse::Greeting421)),
+            data_bps: Some(cap_mib * MIB),
+            ..Default::default()
+        },
+    )
+    .await;
+    println!(
+        "Serving 256 MiB at ftp://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection, at most 4 sessions). Ctrl+C to stop."
+    );
+    let _ = tokio::signal::ctrl_c().await;
 }

@@ -1,10 +1,11 @@
-//! Fast, resumable HTTP and HTTPS downloads over parallel connections.
+//! Fast, resumable HTTP, HTTPS, FTP and FTPS downloads over parallel connections.
 //!
 //! This is the download engine of Wirecatch, an open-source download manager. It downloads one file over several connections
 //! at once, splits the largest remaining range whenever a connection frees up (so
 //! no slow tail holds up the end), writes every byte straight to its final offset
 //! on disk, and keeps a small resume file so an interrupted download continues
-//! where it stopped, even after a crash.
+//! where it stopped, even after a crash. The URL's scheme picks the protocol;
+//! everything else works the same for all of them.
 //!
 //! # Quick start
 //!
@@ -147,19 +148,74 @@
 //! certificates are read once per process. Each connection
 //! still has its own TCP connection, so a server that limits speed per
 //! connection is really downloaded from in parallel.
+//!
+//! # FTP and FTPS
+//!
+//! `ftp://`, `ftps://` and `ftpes://` links download through the same
+//! [`download`] call, with the same parallel connections, resume files, speed
+//! limits and retries:
+//!
+//! | Link | Encryption | Default port |
+//! |---|---|---|
+//! | `ftp://` | none | 21 |
+//! | `ftps://` | TLS from the start (implicit); on port 21, `AUTH TLS` (explicit) | 990 |
+//! | `ftpes://` | `AUTH TLS` on a plain connection (explicit) | 21 |
+//!
+//! An `ftps` or `ftpes` link never falls back to an unencrypted connection: a
+//! server that does not offer TLS, or will not encrypt the data connections,
+//! ends the download with [`Error::FtpTlsUnavailable`]. An `ftp` link is not
+//! upgraded to TLS behind the caller's back either, so it behaves the same
+//! way on every server. Data connections are always passive (`EPSV`, else
+//! `PASV`) and go to the address the control connection uses, whatever
+//! address the server names.
+//!
+//! The user name and password come from the URL
+//! (`ftp://user:password@host/path`), percent-decoded; without them the
+//! engine logs in as `anonymous`. They are only ever sent to that server, are
+//! never logged, and are left out of [`RemoteFile::final_url`], errors and the
+//! resume file. The path is relative to the folder the server logs in to, as
+//! RFC 1738 says; start it with `%2F` for an absolute path. Paths are sent as
+//! UTF-8 (`OPTS UTF8 ON` is sent after logging in).
+//!
+//! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
+//! set, an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
+//! going around the proxy.
+//!
+//! Each connection logs in once and then downloads range after range: it
+//! asks for a passive data connection, sends `REST` with the offset and
+//! `RETR`, reads until its range is done and closes the data connection. The
+//! size comes from `SIZE`, and `MDTM` (the modification time) plays the part
+//! of `Last-Modified` when deciding whether a paused download can continue.
+//! A server without `REST` is downloaded over one connection and cannot
+//! resume. A server that allows only so many sessions (refusing more with
+//! `421`, or with `530` for a login that worked on the first connection) is
+//! handled like an HTTP server that limits connections.
+//!
+//! # HTTP/3 (experimental)
+//!
+//! With the crate's `http3` feature and [`DownloadOptions::http3`] switched
+//! on, a download whose server advertises HTTP/3 (`Alt-Svc: h3`) uses it for
+//! its connections, each over a QUIC connection of its own, and falls back to
+//! HTTP/2 or HTTP/1.1 quietly when QUIC fails. It is off by default: for
+//! bulk downloads several TCP connections are as fast, and QUIC costs more
+//! processor time per byte.
 
 #![deny(missing_docs)]
 
 mod download;
 mod error;
 pub mod fetch;
+mod ftp;
 mod http;
+#[cfg(feature = "http3")]
+mod http3;
 mod limiter;
 pub mod naming;
 mod progress;
 mod segment;
 mod state;
 mod storage;
+mod transport;
 mod worker;
 
 pub use download::{DownloadOptions, DownloadRequest, Outcome, PathResolver, RemoteFile, download};
