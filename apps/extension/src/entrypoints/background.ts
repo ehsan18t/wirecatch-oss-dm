@@ -7,30 +7,16 @@ import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { cookieHeader } from '@/lib/cookies';
 import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
 import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
-import type { ObservedResponse } from '@/lib/media/detect';
+import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { POPUP_PORT_NAME } from '@/lib/messages';
 import { NativeClient, type NativePort } from '@/lib/native/client';
-import { SITE_ORIGINS, originPattern } from '@/lib/site-access';
+import { originPattern } from '@/lib/site-access';
 
 const MENU_ID = 'wirecatch-download';
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
 const MEDIA_KEY = 'wirecatch.media.v1';
-
-/**
- * Responses worth looking at for media. Only types both Chromium and Firefox know
- * (an unknown type makes Chromium refuse the listener); images, scripts, styles and
- * fonts are left out so the background is not woken for them.
- */
-const MEDIA_REQUEST_TYPES = [
-  'main_frame',
-  'sub_frame',
-  'media',
-  'xmlhttprequest',
-  'object',
-  'other',
-] as const;
 
 interface FirefoxRuntime {
   getBrowserInfo?: () => Promise<{ name: string; version: string }>;
@@ -207,38 +193,18 @@ export default defineBackground(() => {
     hub.onMenuClick(info, menuTab).catch(() => undefined);
   });
 
-  // Observe only: no `blocking` option, so requests are never held up or changed.
-  browser.webRequest.onResponseStarted.addListener(
-    (details) => {
-      watcher.onResponse(details as ObservedResponse).catch(() => undefined);
+  registerMediaListeners(
+    {
+      onResponseStarted: browser.webRequest
+        .onResponseStarted as unknown as MediaEventApi['onResponseStarted'],
+      onTabRemoved: browser.tabs.onRemoved,
+      onTabUpdated: browser.tabs.onUpdated,
+      onMessage: browser.runtime.onMessage,
+      extensionId: browser.runtime.id,
+      firefox: typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function',
     },
-    { urls: SITE_ORIGINS, types: [...MEDIA_REQUEST_TYPES] },
-    ['responseHeaders'],
+    { watcher, media },
   );
-  browser.tabs.onRemoved.addListener((tabId) => watcher.onTabRemoved(tabId));
-  // Address changes without a new document (history API, back-forward cache).
-  const onUpdated = (tabId: number, change: { url?: string }): void => {
-    if (change.url !== undefined) watcher.onUrlChange(tabId, change.url).catch(() => undefined);
-  };
-  const isFirefox = typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function';
-  if (isFirefox) {
-    // Firefox can limit the event to address changes; Chromium has no such filter and refuses the argument.
-    (browser.tabs.onUpdated.addListener as (l: typeof onUpdated, f: { properties: string[] }) => void)(
-      onUpdated,
-      { properties: ['url'] },
-    );
-  } else {
-    browser.tabs.onUpdated.addListener(onUpdated);
-  }
-
-  // The media button's questions. Answered through `sendResponse`, which both browsers support.
-  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (sender.id !== browser.runtime.id || sender.tab === undefined) return;
-    const answer = media.handleContentMessage(message, sender);
-    if (answer === null) return;
-    answer.then(sendResponse, () => sendResponse(null));
-    return true;
-  });
 
   browser.runtime.onConnect.addListener((port) => {
     // Only the popup itself, never a content script that knows the port name.
