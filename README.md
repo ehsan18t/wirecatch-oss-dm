@@ -79,11 +79,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the quality gates, conventions and ho
 
 | Connections | MiB/s | Speedup |
 |---:|---:|---:|
-| 1 | 12.7 | 1.0x |
-| 2 | 25.1 | 2.0x |
-| 4 | 49.3 | 3.9x |
-| 8 | 94.2 | 7.4x |
-| 16 | 168.6 | 13.3x |
+| 1 | 12.8 | 1.0x |
+| 2 | 25.3 | 2.0x |
+| 4 | 49.8 | 3.9x |
+| 8 | 95.5 | 7.5x |
+| 16 | 180.8 | 14.2x |
+
+Without the cap, the engine moves about 900 to 930 MiB/s over localhost with 8 connections, well above any real internet link. Measured on a quiet machine after all v0.1 hardening (credential binding, private network guard, retries, FTP and HTTP/3 support), so none of it cost speed.
 
 ## Status
 
