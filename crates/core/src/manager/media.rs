@@ -389,6 +389,10 @@ impl Manager {
                 usize::from(state.settings.connections_per_download),
             )
         };
+        self.emit(UiEvent::MediaAnalysing {
+            id,
+            url: source.url.to_string(),
+        });
         let found = match source.kind {
             MediaKind::Page => match &tools {
                 Some(tools) => {
@@ -410,6 +414,8 @@ impl Manager {
         }
         if let Some((pending, error)) = self.offer(id, found) {
             warn!(error = %error.message, "media could not be read");
+            // The reading is over; the failed download that follows says why.
+            self.emit(UiEvent::ConfirmationClosed { id });
             self.record_media_failure(pending, error).await;
         }
     }

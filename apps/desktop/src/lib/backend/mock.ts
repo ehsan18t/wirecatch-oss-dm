@@ -157,6 +157,12 @@ export class MockBackend implements Backend {
         keywords: 'simulate confirmation closed withdrawn another window',
         run: () => this.simulateAnsweredElsewhere(),
       },
+      {
+        id: 'mock.reading',
+        title: 'Pretend the browser sent a video page that takes a while to read',
+        keywords: 'simulate reading analysing page media',
+        run: () => this.simulateSlowReading(),
+      },
     ],
     now: () => this.#now(),
   };
@@ -885,8 +891,18 @@ export class MockBackend implements Backend {
       folder: folderFor('video', this.#settings),
       queue: this.#settings.extension.default_queue,
     };
+    // Like the core: the reading is announced, then the choice comes under the same id.
+    this.#emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
     this.#mediaChoices.push(choice);
     this.#emit({ type: 'media_choice_requested', data: structuredClone(choice) });
+  }
+
+  /** Sample data only: a page that takes three seconds to read before its qualities show. */
+  simulateSlowReading(): void {
+    const id = this.#nextPendingId++;
+    const page = 'https://video.example.com/watch/slow-page';
+    this.#emit({ type: 'media_analysing', data: { id, url: page } });
+    setTimeout(() => this.simulateMediaChoice(page, id), 3000);
   }
 
   /** Sample data only: a page that needs the media add-on to download. */

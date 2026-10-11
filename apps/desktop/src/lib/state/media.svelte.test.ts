@@ -226,6 +226,29 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('notes a page being read until its choice comes or it closes', async () => {
+    const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    let push: ((e: UiEvent) => void) | undefined;
+    vi.spyOn(backend, 'subscribe').mockImplementation(async (listener) => {
+      push = listener;
+      return () => {};
+    });
+    const app = new AppState(backend);
+    await app.init();
+    push?.({ type: 'media_analysing', data: { id: 7, url: 'https://videos.example/watch/1' } });
+    push?.({ type: 'media_analysing', data: { id: 8, url: 'https://videos.example/watch/2' } });
+    expect(app.analysing.map((a) => a.id)).toEqual([7, 8]);
+    // Read: its choice replaces the note.
+    push?.({
+      type: 'media_choice_requested',
+      data: { id: 7, title: 'One', page_url: null, options: [], folder: 'C:/V', queue: 1 },
+    });
+    // Could not be read (or dismissed, or withdrawn): closed.
+    push?.({ type: 'confirmation_closed', data: { id: 8 } });
+    expect(app.analysing).toEqual([]);
+    app.dispose();
+  });
+
   it('says nothing when a question answered here closes', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();

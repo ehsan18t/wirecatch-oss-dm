@@ -376,6 +376,16 @@ pub enum UiEvent {
     SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
+    /// Wirecatch started reading a captured page or stream to find its qualities, which can
+    /// take a few seconds. It ends with a [`MediaChoiceRequested`](Self::MediaChoiceRequested)
+    /// with the same id, or a [`ConfirmationClosed`](Self::ConfirmationClosed) with it
+    /// (dismissed, withdrawn by the browser, or it could not be read, in which case a failed
+    /// download says why).
+    MediaAnalysing {
+        #[ts(type = "number")]
+        id: u64,
+        url: String,
+    },
     AddonsChanged(Vec<AddonInfo>),
     /// A capture needs an add-on that is not installed; the UI offers to install it.
     AddonRequired {

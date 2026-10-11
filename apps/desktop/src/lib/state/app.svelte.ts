@@ -131,6 +131,8 @@ export class AppState {
   mediaChoices = $state<MediaChoice[]>([]);
   /** The quality picker was put aside; the choices still wait. */
   mediaHidden = $state(false);
+  /** Captured pages and streams being read for their qualities, shown as a quiet note. */
+  analysing = $state<Array<{ id: number; url: string }>>([]);
   /** Saving the download list failed; shown in a banner until dealt with. */
   storageProblem = $state<string | null>(null);
   /** Add-ons and their state; `null` until loaded. */
@@ -434,6 +436,12 @@ export class AppState {
         }
         // A new question always shows, even if an earlier one was put aside.
         this.mediaHidden = false;
+        this.analysing = this.analysing.filter((a) => a.id !== event.data.id);
+        break;
+      case 'media_analysing':
+        if (!this.analysing.some((a) => a.id === event.data.id)) {
+          this.analysing = [...this.analysing, event.data];
+        }
         break;
       case 'addons_changed': {
         this.addons = event.data;
@@ -1026,6 +1034,7 @@ export class AppState {
     const choice = this.mediaChoices.find((c) => c.id === id);
     if (capture) this.pending = this.pending.filter((p) => p.id !== id);
     if (choice) this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    this.analysing = this.analysing.filter((a) => a.id !== id);
     if (this.choiceAwaitingAddon?.id === id) this.choiceAwaitingAddon = null;
     const page = this.addonRequest?.id === id ? this.addonRequest : null;
     if (this.#answering.delete(id)) return;

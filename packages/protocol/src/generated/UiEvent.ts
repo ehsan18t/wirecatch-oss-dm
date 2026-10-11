@@ -13,7 +13,7 @@ import type { UserError } from "./UserError";
  * Everything the core pushes to the desktop UI. The desktop app forwards these
  * to the webview as one event stream.
  */
-export type UiEvent = { "type": "downloads_changed", "data": Array<DownloadSummary> } | { "type": "downloads_removed", "data": Array<DownloadId> } | { "type": "queues_changed", "data": Array<Queue> } | { "type": "settings_changed", "data": AppSettings } | { "type": "captured", "data": DownloadSummary } | { "type": "confirmation_requested", "data": PendingCapture } | { "type": "storage_failed", "data": UserError } | { "type": "settings_imported", "data": ImportSummary } | { "type": "media_choice_requested", "data": MediaChoice } | { "type": "addons_changed", "data": Array<AddonInfo> } | { "type": "addon_required", "data": { addon: AddonInfo, url: string, 
+export type UiEvent = { "type": "downloads_changed", "data": Array<DownloadSummary> } | { "type": "downloads_removed", "data": Array<DownloadId> } | { "type": "queues_changed", "data": Array<Queue> } | { "type": "settings_changed", "data": AppSettings } | { "type": "captured", "data": DownloadSummary } | { "type": "confirmation_requested", "data": PendingCapture } | { "type": "storage_failed", "data": UserError } | { "type": "settings_imported", "data": ImportSummary } | { "type": "media_choice_requested", "data": MediaChoice } | { "type": "media_analysing", "data": { id: number, url: string, } } | { "type": "addons_changed", "data": Array<AddonInfo> } | { "type": "addon_required", "data": { addon: AddonInfo, url: string, 
 /**
  * The media that waits: a page waiting for the add-on (dismiss it with
  * `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality

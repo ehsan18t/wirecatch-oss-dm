@@ -12,7 +12,14 @@
   import type { Queue } from '@wirecatch/protocol';
   import { MEDIA_ADDON } from '$lib/addons';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
-  import { CATEGORIES, CATEGORY_LABEL, formatRate, formatSchedule, formatSpeed } from '$lib/format';
+  import {
+    CATEGORIES,
+    CATEGORY_LABEL,
+    formatRate,
+    formatSchedule,
+    formatSpeed,
+    hostOf,
+  } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -92,6 +99,12 @@
       </span>
     </button>
   {/if}
+  {#each app.analysing as reading (reading.id)}
+    <p class="reading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Reading the video on {hostOf(reading.url)}</span>
+    </p>
+  {/each}
   {#if app.addonRequest && app.addonHidden}
     {@const state = app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type}
     <button class="pending" onclick={() => app.showAddonRequest()}>
@@ -574,6 +587,39 @@
     font-weight: 600;
     text-align: left;
     cursor: pointer;
+  }
+
+  .reading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 8px;
+    padding: 7px 10px;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .spinner {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--wire-track);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
 
   .pending :global(svg) {
