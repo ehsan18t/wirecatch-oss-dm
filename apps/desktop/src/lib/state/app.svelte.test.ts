@@ -141,6 +141,20 @@ describe('AppState', () => {
     // What changed, as the core reports it, for the import dialog to show.
     expect(app.lastImport?.queues_updated).toBeGreaterThan(0);
     expect(app.lastImport?.folders[0]?.setting).toBe('Default folder');
+    expect(app.lastImport?.addons_to_offer).toEqual([]);
+    app.dispose();
+  });
+
+  it('offers the add-ons an imported profile lists, and installs nothing by itself', async () => {
+    const { app, backend } = await make();
+    await app.installAddon('media');
+    backend.tick(4500);
+    expect(await app.exportSettings()).toBeTruthy();
+    await app.removeAddon('media');
+    await app.importSettings();
+    expect(app.lastImport?.addons_to_offer).toEqual(['media']);
+    const [addon] = await backend.listAddons();
+    expect(addon?.state.type).toBe('not_installed');
     app.dispose();
   });
 });

@@ -231,6 +231,33 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.addons?.[0]?.state.type).toBe('not_installed');
   });
 
+  it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {
+    const { app, backend, click } = await setup();
+    await app.installAddon('media');
+    backend.tick(4500);
+    await app.exportSettings();
+    await app.removeAddon('media');
+    await settle();
+    app.openDialog({ kind: 'import' });
+    await settle();
+    await click(button('Choose a settings file'));
+    await settle();
+    const offer = within(dialog());
+    expect(offer.getByText(/The file lists the media add-on/)).toBeInTheDocument();
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+    // The button that started the import is gone; Done has the focus.
+    expect(offer.getByRole('button', { name: 'Done' })).toHaveFocus();
+    await click(offer.getByRole('button', { name: 'Install' }));
+    expect(app.addons?.[0]?.state.type).toBe('installing');
+    // The same button now stops the install, so the focus stays on it.
+    const stop = offer.getByRole('button', { name: 'Stop installing the media add-on' });
+    expect(stop).toHaveFocus();
+    backend.tick(4500);
+    await settle();
+    // Installed: Stop is gone, and the focus moves to Remove rather than being lost.
+    expect(offer.getByRole('button', { name: 'Remove the media add-on' })).toHaveFocus();
+  });
+
   it('quality picker: appears on its own; put aside, the sidebar note brings it back, 1 click', async () => {
     const { app, backend, click, palette } = await setup();
     backend.simulateMediaChoice();

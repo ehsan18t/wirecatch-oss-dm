@@ -747,7 +747,7 @@ export class MockBackend implements Backend {
       exported_at: this.#now(),
       settings: structuredClone(this.#settings),
       queues: structuredClone(this.#queues),
-      addons: [],
+      addons: this.#addons.filter((a) => a.state.type !== 'not_installed').map((a) => a.id),
     });
   }
 
@@ -771,6 +771,10 @@ export class MockBackend implements Backend {
         folders: [{ setting: 'Default folder', requested: folder, used: folder, resolved: folder }],
         queues_added: added,
         queues_updated: profile.queues.length - added,
+        // Like the core: offered, never installed by the import itself.
+        addons_to_offer: profile.addons.filter(
+          (id) => this.#addons.find((a) => a.id === id)?.state.type === 'not_installed',
+        ),
       },
     });
   }

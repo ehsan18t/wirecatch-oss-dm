@@ -18,15 +18,44 @@
   let busy = $state(false);
 
   async function run(work: () => Promise<unknown>) {
+    if (busy) return;
     busy = true;
     await work();
     busy = false;
   }
 
+  function main() {
+    // Stopping an install removes what it put in place so far.
+    if (installing) return run(() => app.removeAddon(addon.id));
+    return run(() =>
+      action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id),
+    );
+  }
+
+  // When the focused button goes away (Install once installed, Stop once stopped), the focus
+  // moves to the card's other button instead of being lost.
+  let card = $state<HTMLDivElement>();
+  let hadFocus = false;
+  $effect(() => {
+    void addon.state.type;
+    const active = document.activeElement;
+    if (hadFocus && card && (!active || active === document.body)) {
+      card.querySelector<HTMLElement>('button')?.focus();
+    }
+  });
+
   const ACTION_LABEL = { install: 'Install', update: 'Update', retry: 'Try again' } as const;
 </script>
 
-<div class="addon">
+<div
+  class="addon"
+  bind:this={card}
+  onfocusin={() => (hadFocus = true)}
+  onfocusout={(e) => {
+    // A button removed while focused leaves no new target; that still counts as inside.
+    if (e.relatedTarget instanceof Node && !card?.contains(e.relatedTarget)) hadFocus = false;
+  }}
+>
   <p class="status" class:failed={addon.state.type === 'failed'}>
     {addonStatus(addon)}
   </p>
@@ -48,21 +77,24 @@
     </div>
   {/if}
   <div class="buttons">
-    {#if action}
+    <!-- One button for install, update, try again and stop, so the keyboard focus stays on it
+         as the state changes. -->
+    {#if action || installing}
       <button
-        class="btn small primary"
+        class="btn small"
+        class:primary={!installing}
         aria-describedby={describedby}
-        disabled={busy}
-        onclick={() =>
-          run(() => (action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id)))}
+        aria-disabled={busy}
+        aria-label={installing ? `Stop installing the ${addon.name.toLowerCase()}` : undefined}
+        onclick={main}
       >
-        {ACTION_LABEL[action]}
+        {installing ? 'Stop' : action ? ACTION_LABEL[action] : ''}
       </button>
     {/if}
     {#if isInstalled(addon)}
       <button
         class="btn small"
-        disabled={busy}
+        aria-disabled={busy}
         aria-label="Remove the {addon.name.toLowerCase()}"
         onclick={() => run(() => app.removeAddon(addon.id))}>Remove</button
       >

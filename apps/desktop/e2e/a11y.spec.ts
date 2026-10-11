@@ -106,6 +106,10 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('Tab');
       expect(await inside()).toBe(true);
     }
+    // Enter on Install: the buttons change, and the focus moves to the new main button.
+    await prompt.getByRole('button', { name: 'Install', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(prompt.getByRole('button', { name: 'Close and keep installing' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(prompt).toBeHidden();
   });

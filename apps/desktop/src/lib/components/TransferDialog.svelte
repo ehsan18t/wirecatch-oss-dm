@@ -2,6 +2,7 @@
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import { getApp } from '$lib/state/app.svelte';
+  import AddonCard from './AddonCard.svelte';
   import Dialog from './Dialog.svelte';
 
   let { mode }: { mode: 'export' | 'import' } = $props();
@@ -15,12 +16,22 @@
     'Queues with their schedules and speed limits',
     'Folders by file type',
     'Sites to leave to the browser',
-    'Which add-ons are installed (they are installed again on import)',
+    'Which add-ons are installed (on import, Wirecatch asks before installing them)',
   ];
   const excluded = ['Download history', 'Saved site passwords'];
 
   // What the import changed, as the core reported it.
   const summary = $derived(app.lastImport);
+  // Add-ons the file lists that are not installed here. The core downloads nothing on import;
+  // the person decides here.
+  const offered = $derived(
+    (summary?.addons_to_offer ?? []).flatMap((id) => app.addons?.find((a) => a.id === id) ?? []),
+  );
+  let doneButton = $state<HTMLButtonElement>();
+  // The button that started the import is gone once it is done; Done takes the focus.
+  $effect(() => {
+    if (done) doneButton?.focus();
+  });
   const moved = $derived(summary?.folders.filter((f) => f.used !== f.requested) ?? []);
   const queuesLine = $derived.by(() => {
     if (!summary) return '';
@@ -61,6 +72,16 @@
       {#if queuesLine}
         <p class="note">{queuesLine}</p>
       {/if}
+      {#each offered as addon (addon.id)}
+        <div class="offer">
+          <h3>{addon.name}</h3>
+          <p class="note" id="offer-{addon.id}">
+            The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing was
+            downloaded. Install it now, or later from Settings, Add-ons.
+          </p>
+          <AddonCard {addon} describedby="offer-{addon.id}" />
+        </div>
+      {/each}
       {#if moved.length > 0}
         <div class="moved">
           <h3>Folders changed to fit this computer</h3>
@@ -98,7 +119,9 @@
 
   {#snippet footer()}
     {#if done}
-      <button class="btn primary" data-autofocus onclick={() => app.closeDialog()}>Done</button>
+      <button class="btn primary" bind:this={doneButton} onclick={() => app.closeDialog()}
+        >Done</button
+      >
     {:else}
       <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
       <button class="btn primary" data-autofocus disabled={busy} onclick={run}>
@@ -161,6 +184,24 @@
 
   .moved {
     margin-top: 14px;
+  }
+
+  .offer {
+    display: grid;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .offer h3,
+  .offer .note {
+    margin: 0;
+  }
+
+  /* The card sits on the right in Settings; here it follows the text. */
+  .offer :global(.addon),
+  .offer :global(.status) {
+    justify-items: start;
+    text-align: left;
   }
 
   li.folder {
