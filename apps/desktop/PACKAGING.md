@@ -11,6 +11,8 @@ pnpm --filter @wirecatch/desktop build:tauri  # debug installers, for checking t
 
 Both first run `scripts/prepare-bridge.mjs`, which builds `wirecatch-bridge` and copies it to `src-tauri/binaries/wirecatch-bridge-<target triple>[.exe]` (ignored by git). Then `tauri build` runs with `src-tauri/tauri.bundle.conf.json` merged in, which lists the bridge as an external binary. The bundler installs it next to the app with its plain name, `wirecatch-bridge(.exe)`, which matters: the bridge starts `wirecatch-app --background` from its own folder, and the app runs `wirecatch-bridge install` from its own folder.
 
+The bridge is built without any cargo feature in both profiles. Which extensions it trusts never depends on how it was built: every build trusts the one Chromium extension id in `config/extension-ids.json` and the Firefox add-on id, and `install` lists that Chromium id in `allowed_origins` for every Chromium browser (D22). Its `test-overrides` feature is for tests only, and `prepare-bridge.mjs` refuses to bundle a bridge built with any feature.
+
 The external binary lives in a separate config file because Tauri's build script refuses to build when a listed external binary is missing, and plain `cargo build` and `cargo test` should not depend on building the bridge first.
 
 | Platform | Output                                                | Notes                                                            |
@@ -22,6 +24,8 @@ The external binary lives in a separate config file because Tauri's build script
 ## Browser registration and uninstall
 
 The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
+
+Registration covers Google Chrome, Chromium, ungoogled-chromium, Microsoft Edge, Brave, Vivaldi, Opera, Opera GX and Arc (Windows), Thorium, Yandex Browser (Linux), and Firefox with LibreWolf, Waterfox, Zen and Floorp. Many of them read another browser's location (on Windows most Chromium browsers read Google Chrome's key, and the Firefox forks read Mozilla's key and `~/.mozilla/native-messaging-hosts`), so the bridge writes only the locations browsers really read; `crates/bridge/src/install.rs` lists each one with its source. Flatpak and Snap browsers cannot start a program outside their sandbox, so nothing is written inside them: Firefox as a Snap or Flatpak reaches the bridge through the WebExtensions portal where the distribution provides it, and Chromium-based Flatpaks and Snaps are not supported.
 
 Uninstalling removes the registration before the files go:
 

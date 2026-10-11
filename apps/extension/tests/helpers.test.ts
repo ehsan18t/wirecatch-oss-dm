@@ -4,7 +4,12 @@ import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
 import { asPopupRequest } from '../src/lib/messages';
-import { classifyDisconnect, describeProblem, type ProblemKind } from '../src/lib/native/status';
+import {
+  classifyDisconnect,
+  describeProblem,
+  disconnectMessage,
+  type ProblemKind,
+} from '../src/lib/native/status';
 import { applyPatch, isConfirmed, patchOf } from '../src/lib/protocol';
 import { originPattern } from '../src/lib/site-access';
 import { splitSize, toBytes } from '../src/lib/size';
@@ -127,23 +132,100 @@ describe('protocol helpers', () => {
 });
 
 describe('connection problems', () => {
-  it('recognizes a missing native host in each browser', () => {
-    expect(classifyDisconnect('Specified native messaging host not found.')).toBe('host_missing');
-    expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe('host_missing');
-    expect(classifyDisconnect('Access to the specified native messaging host is forbidden.')).toBe(
+  // The exact strings Chromium reports (extensions/browser/api/messaging/native_message_host.cc).
+  it.each([
+    ['Specified native messaging host not found.', 'host_missing'],
+    ['Failed to start native messaging host.', 'host_missing'],
+    ['Access to the specified native messaging host is forbidden.', 'host_untrusted'],
+    ['Native host has exited.', 'disconnected'],
+    ['Error when communicating with the native messaging host.', 'disconnected'],
+  ] as const)('sorts the Chromium message "%s" as %s', (message, kind) => {
+    expect(classifyDisconnect(message)).toBe(kind);
+  });
+
+  // The exact strings Firefox reports (NativeMessaging.sys.mjs and the subprocess module).
+  it.each([
+    // No manifest, an unreadable one, or one that leaves this add-on out: one generic message.
+    ['No such native application app.wirecatch.bridge', 'host_missing'],
+    // Registered, but the program it names is gone.
+    [
+      'File at path "/home/u/.local/share/wirecatch/bin/wirecatch-bridge" does not exist, or is not executable',
       'host_missing',
-    );
-    expect(classifyDisconnect('Native host has exited.')).toBe('disconnected');
+    ],
+    [
+      String.raw`File at path "C:\Users\u\AppData\Local\Wirecatch\wirecatch-bridge.exe" does not exist, or is not a normal file`,
+      'host_missing',
+    ],
+    ['Executable not found: wirecatch-bridge', 'host_missing'],
+    // What Firefox logs when the id is not allowed, in case a version passes it on.
+    [
+      'This extension does not have permission to use native manifest /usr/lib/mozilla/native-messaging-hosts/app.wirecatch.bridge.json',
+      'host_untrusted',
+    ],
+    [
+      'This extension does not have permission to use native application app.wirecatch.bridge (or the application is not installed)',
+      'host_untrusted',
+    ],
+  ] as const)('sorts the Firefox message "%s" as %s', (message, kind) => {
+    expect(classifyDisconnect(message)).toBe(kind);
+  });
+
+  it('reads the reason where each browser puts it', () => {
+    const missing = 'No such native application app.wirecatch.bridge';
+    // Firefox: port.error is an Error; runtime.lastError is not set for ports.
+    expect(disconnectMessage(undefined, { error: new Error(missing) })).toBe(missing);
+    // Firefox, host exited: port.error is null.
+    expect(disconnectMessage(undefined, { error: null })).toBeNull();
+    // Chromium: runtime.lastError while the listener runs; the port has no error field.
+    expect(
+      disconnectMessage({ message: 'Access to the specified native messaging host is forbidden.' }, {}),
+    ).toBe('Access to the specified native messaging host is forbidden.');
+    expect(disconnectMessage(null, null)).toBeNull();
+    expect(disconnectMessage({ message: '' }, { error: { message: 42 } })).toBeNull();
+    // Firefox's host exit reaches the popup as a lost connection, never as "not installed".
+    expect(classifyDisconnect(disconnectMessage(undefined, { error: null }))).toBe('disconnected');
+  });
+
+  it('recognizes a missing native host in Firefox and a port closed without a reason', () => {
+    expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe('host_missing');
     expect(classifyDisconnect(null)).toBe('disconnected');
   });
 
+  it('gives each problem its own fix, and never suggests a reinstall that would not help', () => {
+    expect(describeProblem('host_missing')).toEqual({
+      title: 'Wirecatch is not installed, or not set up for this browser.',
+      fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
+    });
+    expect(describeProblem('host_untrusted')).toEqual({
+      title: 'This copy of the extension is not the one Wirecatch trusts.',
+      fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
+    });
+    expect(describeProblem('disconnected').fix).toContain('reconnects by itself');
+    const kinds: ProblemKind[] = [
+      'host_missing',
+      'host_untrusted',
+      'app_unavailable',
+      'version_mismatch',
+      'disconnected',
+    ];
+    for (const kind of kinds) {
+      expect(`${describeProblem(kind).title} ${describeProblem(kind).fix}`).not.toMatch(/reinstall/i);
+    }
+  });
+
   it('explains every problem in plain language without em dashes', () => {
-    const kinds: ProblemKind[] = ['host_missing', 'app_unavailable', 'version_mismatch', 'disconnected'];
+    const kinds: ProblemKind[] = [
+      'host_missing',
+      'host_untrusted',
+      'app_unavailable',
+      'version_mismatch',
+      'disconnected',
+    ];
     for (const kind of kinds) {
       const text = describeProblem(kind);
       expect(text.title.length).toBeGreaterThan(10);
       expect(text.fix.length).toBeGreaterThan(10);
-      expect(`${text.title}${text.fix}`).not.toContain('\u2014');
+      expect(`${text.title}${text.fix}`).not.toContain('—');
     }
   });
 });

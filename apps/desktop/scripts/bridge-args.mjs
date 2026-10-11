@@ -1,14 +1,13 @@
 // The cargo arguments that build the browser bridge for bundling.
 //
-// A development build trusts the unpacked development extension as well (the bridge's
-// `dev-extension` feature); a release build must never: it trusts only the store extensions.
+// No bridge feature changes which extensions it trusts (D22), so debug and release builds differ
+// only in the profile. Its one feature, test-overrides, is for tests and must never ship.
 
 /**
  * @param {boolean} release
  * @returns {string[]}
  */
 export function bridgeCargoArgs(release) {
-  return release
-    ? ['build', '-p', 'wirecatch-bridge', '--release']
-    : ['build', '-p', 'wirecatch-bridge', '--features', 'dev-extension'];
+  const args = ['build', '-p', 'wirecatch-bridge'];
+  return release ? [...args, '--release'] : args;
 }

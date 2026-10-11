@@ -1,8 +1,14 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
 
 export type ProblemKind =
-  /** The browser could not find or start the native helper (the bridge). */
+  /** The browser could not find or start the native helper (the bridge): not installed or not registered. */
   | 'host_missing'
+  /**
+   * The bridge is registered, but its manifest does not list this extension's id, so the browser
+   * refuses to start it. Reinstalling Wirecatch does not help; only the trusted extension or a
+   * Wirecatch that trusts this id does.
+   */
+  | 'host_untrusted'
   /** The bridge runs but could not reach or start the app. */
   | 'app_unavailable'
   /** The app speaks a different protocol version. */
@@ -23,21 +29,64 @@ export type ConnectionStatus =
 
 /**
  * Sorts the browser's disconnect message into a problem the person can act on.
- * Chromium: "Specified native messaging host not found." or "Access to the specified
- * native messaging host is forbidden." Firefox: "No such native application ...".
+ *
+ * Chromium (the constants in extensions/browser/api/messaging/native_message_host.cc):
+ * - "Specified native messaging host not found.": no manifest is registered under the name.
+ * - "Failed to start native messaging host.": a manifest is registered but its program is gone.
+ * - "Access to the specified native messaging host is forbidden.": the manifest's
+ *   `allowed_origins` does not list this extension.
+ * - "Native host has exited." and "Error when communicating with the native messaging host.":
+ *   the bridge started and then stopped (for example because the app closed) or broke the protocol.
+ *
+ * Firefox (toolkit/components/extensions/NativeMessaging.sys.mjs and NativeManifests.sys.mjs,
+ * and toolkit/modules/subprocess), read from `port.error` because Firefox does not set
+ * `runtime.lastError` for ports:
+ * - "No such native application app.wirecatch.bridge": deliberately the same message for no
+ *   manifest, an unreadable manifest, and a manifest whose `allowed_extensions` leaves this add-on
+ *   out (that reason only goes to the browser console). Our Firefox add-on always has the id every
+ *   bridge lists, so for us it means Wirecatch is not installed or not registered.
+ * - 'File at path "..." does not exist, or is not executable' (Linux and macOS), '... or is not
+ *   a normal file' (Windows) and "Executable not found: ...": registered, but the program is gone.
+ * - No error at all (`port.error` null) when the bridge exits, like Chromium's "Native host has
+ *   exited.".
+ * - "This extension does not have permission to use native ...": what Firefox logs when the id is
+ *   not allowed. Current versions keep it in the console, but a fork or an older version that
+ *   passes it on means the same as Chromium's "forbidden".
  */
 export function classifyDisconnect(message: string | null): ProblemKind {
   if (message === null) return 'disconnected';
   const text = message.toLowerCase();
   if (
-    text.includes('not found') ||
+    text.includes('native messaging host is forbidden') ||
+    text.includes('does not have permission to use native')
+  ) {
+    return 'host_untrusted';
+  }
+  if (
+    text.includes('native messaging host not found') ||
     text.includes('no such native application') ||
-    text.includes('is forbidden') ||
-    text.includes('failed to start native messaging host')
+    text.includes('failed to start native messaging host') ||
+    /^file at path ".*" does not exist, or is not /.test(text) ||
+    text.startsWith('executable not found: ')
   ) {
     return 'host_missing';
   }
   return 'disconnected';
+}
+
+/**
+ * Why a native port closed, in the shape each browser reports it: Chromium sets
+ * `runtime.lastError` while the disconnect listener runs, Firefox sets `port.error` (an Error,
+ * or null when the host simply exited). Anything else counts as no reason.
+ */
+export function disconnectMessage(lastError: unknown, port: unknown): string | null {
+  return messageOf(lastError) ?? messageOf((port as { error?: unknown } | null)?.error);
+}
+
+function messageOf(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const message = (value as { message?: unknown }).message;
+  return typeof message === 'string' && message !== '' ? message : null;
 }
 
 export interface ProblemText {
@@ -50,8 +99,13 @@ export function describeProblem(kind: ProblemKind): ProblemText {
   switch (kind) {
     case 'host_missing':
       return {
-        title: 'Wirecatch is not set up for this browser.',
-        fix: 'Reinstall the Wirecatch app, then click Try again.',
+        title: 'Wirecatch is not installed, or not set up for this browser.',
+        fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
+      };
+    case 'host_untrusted':
+      return {
+        title: 'This copy of the extension is not the one Wirecatch trusts.',
+        fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
       };
     case 'app_unavailable':
       return {

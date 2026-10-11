@@ -31,7 +31,7 @@ use crate::bridge::{self, ENDPOINT_VAR, LAUNCH_VAR};
 /// Who the browser says started the bridge.
 #[derive(Debug, Clone)]
 pub enum Caller {
-    /// Chrome with the development extension id.
+    /// Chrome with the extension id every bridge trusts.
     Chrome,
     /// Firefox with the extension's add-on id.
     Firefox,

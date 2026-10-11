@@ -13,3 +13,5 @@ coverage/
 .claude/worktrees/
 .playwright-mcp/
 .cache/
+# Signing keys never belong in the repository (apps/extension/PUBLISHING.md).
+*.pem

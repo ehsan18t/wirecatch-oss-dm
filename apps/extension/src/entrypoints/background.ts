@@ -13,6 +13,7 @@ import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
 import { NativeClient, type NativePort } from '@/lib/native/client';
+import { disconnectMessage } from '@/lib/native/status';
 import { originPattern } from '@/lib/site-access';
 
 const MENU_ID = 'wirecatch-download';
@@ -125,10 +126,7 @@ export default defineBackground(() => {
   const client = new NativeClient({
     transport: {
       connect: (): NativePort => browser.runtime.connectNative(__NATIVE_HOST_NAME__),
-      disconnectReason: (port) => {
-        const firefoxError = (port as { error?: { message?: string } | null }).error?.message;
-        return browser.runtime.lastError?.message ?? firefoxError ?? null;
-      },
+      disconnectReason: (port) => disconnectMessage(browser.runtime.lastError, port),
     },
     hello: async (): Promise<Hello> => ({
       client: 'extension',

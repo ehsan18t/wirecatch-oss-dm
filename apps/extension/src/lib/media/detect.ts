@@ -62,6 +62,14 @@ const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'sub_frame', 'object'
  */
 export const MAX_MEDIA_URL_LENGTH = 8 * 1024;
 
+/**
+ * Direct video and audio files whose known size is below this (100 KiB) are not listed.
+ * Pages play short interface sounds as media (YouTube's voice search sounds `open.mp3`,
+ * `success.mp3`, `failure.mp3` and `no_input.mp3` are about 6 KB each); nobody wants to
+ * download those, and real recordings are far larger. Files of unknown size are kept.
+ */
+export const MIN_DIRECT_MEDIA_BYTES = 100 * 1024;
+
 /** Longest media type kept; RFC 6838 allows 127 characters for each half. */
 const MAX_MIME_LENGTH = 255;
 
@@ -150,7 +158,7 @@ export function isNavigation(response: ObservedResponse): boolean {
  *   generic type) loaded by a media element, a frame or the tab itself.
  * - Never stream segments, error answers, redirects, downloads (attachments, which
  *   the capture flow handles), anything outside a tab, or addresses longer than
- *   `MAX_MEDIA_URL_LENGTH`.
+ *   `MAX_MEDIA_URL_LENGTH`, nor direct files smaller than `MIN_DIRECT_MEDIA_BYTES`.
  */
 export function classifyResponse(response: ObservedResponse): Detection | null {
   if (response.tabId < 0) return null;
@@ -178,19 +186,20 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
   if (mime !== null && SEGMENT_TYPES.has(mime)) return null;
   if (ext !== null && SEGMENT_EXTENSIONS.has(ext)) return null;
 
+  let direct: Detection | null = null;
   if (isMediaMime(mime) && mime !== null) {
-    return {
+    direct = {
       kind: 'direct',
       url: response.url,
       mime,
       size: sizeOf(response),
       audio: mime.startsWith('audio/'),
     };
+  } else if (byUrl?.kind === 'direct' && isGenericMime(mime)) {
+    direct = { kind: 'direct', url: response.url, mime, size: sizeOf(response), audio: byUrl.audio };
   }
-  if (byUrl?.kind === 'direct' && isGenericMime(mime)) {
-    return { kind: 'direct', url: response.url, mime, size: sizeOf(response), audio: byUrl.audio };
-  }
-  return null;
+  if (direct?.size != null && direct.size < MIN_DIRECT_MEDIA_BYTES) return null;
+  return direct;
 }
 
 function isMediaMime(mime: string | null): boolean {

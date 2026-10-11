@@ -302,8 +302,12 @@ describe('popup', () => {
       },
     });
     expect(screen.getByText('Not connected')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Wirecatch is not set up for this browser.' })).toBeTruthy();
-    expect(screen.getByText('Reinstall the Wirecatch app, then click Try again.')).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Wirecatch is not installed, or not set up for this browser.' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Install Wirecatch, or open it once so it can connect to this browser.'),
+    ).toBeTruthy();
     expect(screen.getByText('Details: Specified native messaging host not found.')).toBeTruthy();
     expect(screen.getByText(/Showing your last saved settings/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty('value', 'iso');
@@ -320,6 +324,24 @@ describe('popup', () => {
       expect(isDisabled(screen.getByRole('switch', { name: 'Capture downloads' }))).toBe(false),
     );
     expect(screen.queryByText(/Showing your last saved settings/)).toBeNull();
+  });
+
+  it('says plainly when Wirecatch does not trust this copy of the extension, without asking for a reinstall', async () => {
+    await openPopup({
+      configure: (app) => {
+        app.hostMissing = 'Access to the specified native messaging host is forbidden.';
+      },
+    });
+    expect(
+      screen.getByRole('heading', { name: 'This copy of the extension is not the one Wirecatch trusts.' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Install the extension from the Wirecatch website or store, or update Wirecatch.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Details: Access to the specified native messaging host is forbidden.'),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/reinstall|not installed/i);
   });
 
   it('does not show made-up settings before it has ever been connected', async () => {

@@ -10,6 +10,9 @@
     "dev:firefox": "wxt -b firefox --mv3",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:dev": "wxt build --mode development",
+    "build:store": "wxt zip --mode store",
+    "build:firefox": "wxt build -b firefox --mv3",
+    "sign:firefox": "node scripts/sign-firefox.mjs",
     "zip": "wxt zip && wxt zip -b firefox --mv3",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
@@ -40,6 +43,7 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.1",
     "vitest": "5.0.3",
+    "web-ext": "10.7.0",
     "wxt": "0.21.4"
   }
 }

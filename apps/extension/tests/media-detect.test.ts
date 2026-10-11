@@ -5,6 +5,7 @@ import {
   isNavigation,
   isWebUrl,
   MAX_MEDIA_URL_LENGTH,
+  MIN_DIRECT_MEDIA_BYTES,
   type ObservedResponse,
 } from '../src/lib/media/detect';
 import { pageSiteFor } from '../src/lib/media/page-sites';
@@ -60,14 +61,14 @@ describe('classifyResponse', () => {
         url: 'https://files.example.com/clip.mp4',
         type: 'media',
         contentType: 'video/mp4',
-        headers: { 'Content-Length': '1234' },
+        headers: { 'Content-Length': '1234567' },
       }),
     );
     expect(video).toEqual({
       kind: 'direct',
       url: 'https://files.example.com/clip.mp4',
       mime: 'video/mp4',
-      size: 1234,
+      size: 1234567,
       audio: false,
     });
 
@@ -81,6 +82,64 @@ describe('classifyResponse', () => {
       }),
     );
     expect(audio).toMatchObject({ kind: 'direct', audio: true, size: 987654 });
+  });
+
+  // YouTube's voice search sounds, played as media on every watch page.
+  it.each([
+    ['no_input.mp3', 6_034],
+    ['failure.mp3', 5_888],
+    ['success.mp3', 6_195],
+    ['open.mp3', 5_973],
+  ])('ignores the interface sound %s (%i bytes), as a 200 or a 206 answer', (name, size) => {
+    const url = `https://www.youtube.com/s/search/audio/${name}`;
+    expect(
+      classifyResponse(
+        response({
+          url,
+          type: 'media',
+          contentType: 'audio/mpeg',
+          headers: { 'Content-Length': String(size) },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      classifyResponse(
+        response({
+          url,
+          type: 'media',
+          statusCode: 206,
+          contentType: 'audio/mpeg',
+          headers: { 'Content-Range': `bytes 0-${size - 1}/${size}`, 'Content-Length': String(size) },
+        }),
+      ),
+    ).toBeNull();
+    // A generic type with the .mp3 address is the same sound.
+    expect(
+      classifyResponse(
+        response({
+          url,
+          type: 'media',
+          contentType: 'application/octet-stream',
+          headers: { 'Content-Length': String(size) },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps direct files from 100 KiB up, and files of unknown size', () => {
+    const file = (headers: Record<string, string>) =>
+      classifyResponse(
+        response({
+          url: 'https://files.example.com/talk.mp3',
+          type: 'media',
+          contentType: 'audio/mpeg',
+          headers,
+        }),
+      );
+    expect(MIN_DIRECT_MEDIA_BYTES).toBe(102_400);
+    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES - 1) })).toBeNull();
+    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES) })?.size).toBe(MIN_DIRECT_MEDIA_BYTES);
+    expect(file({})).toMatchObject({ kind: 'direct', size: null });
   });
 
   it('spots a media file opened in a tab by itself, and one with a generic type but a media extension', () => {

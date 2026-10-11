@@ -20,17 +20,10 @@ path = "tests/bridge.rs"
 required-features = ["test-overrides"]
 
 [features]
-## Trust the development build of the Chromium extension, whose fixed id comes
-## from a key published in the repository (see `src/config.rs`). Off by default,
-## so release bridges trust store ids only. For local development, build the
-## bridge with `cargo build -p wirecatch-bridge --features dev-extension` (or
-## `cargo run -p wirecatch-bridge --features dev-extension -- install`). Never
-## enable this in a build that ships.
-dev-extension = []
 ## Test-only environment overrides for the app endpoint and the app launcher
-## (see `src/app.rs`). Never enable this in a build that ships. The end-to-end
-## tests act as the development extension, so this turns on `dev-extension` too.
-test-overrides = ["dev-extension"]
+## (see `src/app.rs`). Never enable this in a build that ships. Which extensions
+## the bridge trusts never depends on a feature (D22).
+test-overrides = []
 
 [dependencies]
 wirecatch-ipc = { path = "../ipc", version = "0.1.0" }

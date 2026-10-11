@@ -3,11 +3,10 @@
 //!
 //! Cargo cannot build another package's binary for an integration test on stable
 //! (artifact dependencies are unstable), so the first test that needs the bridge
-//! runs `cargo build -p wirecatch-bridge --features test-overrides,dev-extension`
-//! (the fake extension calls as the development Chromium build) into the same
+//! runs `cargo build -p wirecatch-bridge --features test-overrides` into the same
 //! target folder the tests were built in. When nothing changed that is a no-op
 //! taking well under a second. Set `WIRECATCH_E2E_BRIDGE` to the path of an
-//! already built bridge (with both features) to skip the build.
+//! already built bridge (with that feature) to skip the build.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -27,10 +26,10 @@ pub const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
 /// The extension identities the bridge was built with, read from the same file.
 const EXTENSION_IDS: &str = include_str!("../../../config/extension-ids.json");
 
-/// The origin Chrome passes for the development build of the extension, for
-/// example `chrome-extension://<id>/`.
+/// The origin Chrome passes for the extension (the one Chromium id every build
+/// trusts), for example `chrome-extension://<id>/`.
 pub fn chrome_origin() -> String {
-    format!("chrome-extension://{}/", extension_id("chromium_dev_id"))
+    format!("chrome-extension://{}/", extension_id("chromium_id"))
 }
 
 /// The add-on id Firefox passes for the extension.
@@ -66,7 +65,7 @@ fn build_bridge() -> PathBuf {
             "-p",
             "wirecatch-bridge",
             "--features",
-            "test-overrides,dev-extension",
+            "test-overrides",
             "--message-format",
             "json-render-diagnostics",
             "--manifest-path",
