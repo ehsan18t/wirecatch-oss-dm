@@ -193,7 +193,9 @@ impl KnownFolders {
         if path.components().any(|c| c == Component::ParentDir) {
             return Err(PathError::ParentReference(raw.to_string()));
         }
-        Ok(path.to_path_buf())
+        // Rebuilt from its parts, so a folder written with `/` (in settings or a profile)
+        // uses the platform's separator throughout, and paths made from it are never mixed.
+        Ok(path.components().collect())
     }
 
     /// In order of preference when two names point at the same folder.
@@ -237,6 +239,19 @@ mod tests {
             folders.resolve(&portable("{Music}/")),
             Ok(home().join("Music"))
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_written_with_slashes_uses_backslashes_on_windows() {
+        let folders = KnownFolders::under_home(home());
+        let resolved = folders.resolve(&portable("D:/Media/Clips/")).unwrap();
+        assert_eq!(resolved.to_str(), Some(r"D:\Media\Clips"));
+        let file = resolved.join("a.mp4");
+        assert!(!file.to_string_lossy().contains('/'), "{}", file.display());
+        // Mixed already: made uniform.
+        let mixed = folders.resolve(&portable(r"D:/Media\Clips")).unwrap();
+        assert_eq!(mixed.to_str(), Some(r"D:\Media\Clips"));
     }
 
     #[test]
