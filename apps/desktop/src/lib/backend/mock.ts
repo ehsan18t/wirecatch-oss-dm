@@ -49,7 +49,7 @@ export function mediaAddon(): AddonInfo {
     state: { type: 'not_installed' },
     installed_version: null,
     latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',
-    size: 138 * 1024 * 1024,
+    size: 131 * 1024 * 1024,
   };
 }
 

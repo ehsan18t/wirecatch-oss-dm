@@ -11,17 +11,20 @@ import {
 describe('add-on wording', () => {
   it('says where the add-on stands in plain words', () => {
     const a = mediaAddon();
-    expect(addonStatus(a)).toBe('Not installed. Download size 138 MB.');
+    expect(addonStatus(a)).toBe('Not installed. Download size 131 MB.');
     expect(addonAction(a)).toBe('install');
 
     a.state = { type: 'installing', data: { done: 48 * 1024 * 1024, total: 96 * 1024 * 1024 } };
     expect(addonStatus(a)).toBe('Installing, 50%.');
     expect(installFraction(a.state)).toBe(0.5);
     expect(addonAction(a)).toBeNull();
+    // All downloaded: the core checks and unpacks before it says installed.
+    a.state = { type: 'installing', data: { done: 96, total: 96 } };
+    expect(addonStatus(a)).toBe('Installing, checking the files.');
 
     a.state = { type: 'installed' };
     a.installed_version = '2026.10.02';
-    expect(addonStatus(a)).toBe('Installed, version 2026.10.02.');
+    expect(addonStatus(a)).toBe('Installed: 2026.10.02.');
     expect(isInstalled(a)).toBe(true);
 
     a.state = { type: 'update_available' };

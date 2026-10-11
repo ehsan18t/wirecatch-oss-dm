@@ -29,12 +29,13 @@ export function addonStatus(addon: AddonInfo): string {
         : `Not installed. Download size ${formatBytes(addon.size)}.`;
     case 'installing': {
       const fraction = installFraction(state);
-      return fraction === null ? 'Installing.' : `Installing, ${Math.floor(fraction * 100)}%.`;
+      if (fraction === null) return 'Installing.';
+      // Everything is downloaded; the files are being checked and unpacked.
+      if (fraction >= 1) return 'Installing, checking the files.';
+      return `Installing, ${Math.floor(fraction * 100)}%.`;
     }
     case 'installed':
-      return addon.installed_version
-        ? `Installed, version ${addon.installed_version}.`
-        : 'Installed.';
+      return addon.installed_version ? `Installed: ${addon.installed_version}.` : 'Installed.';
     case 'update_available':
       return addon.latest_version
         ? `Version ${addon.latest_version} is ready to install.`

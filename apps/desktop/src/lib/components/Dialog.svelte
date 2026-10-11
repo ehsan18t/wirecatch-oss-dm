@@ -46,10 +46,35 @@
   // Browsers turn Escape into a cancel event; handling the key too keeps behavior identical
   // everywhere, including webviews and tests.
   function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Tab') {
+      keepFocusInside(e);
+      return;
+    }
     if (e.key !== 'Escape') return;
     e.preventDefault();
     e.stopPropagation();
     onclose();
+  }
+
+  // A modal dialog makes the page behind it inert, but Tab from its last control still leaves
+  // the page (in a webview, to nowhere). Wrap around instead, both ways.
+  function keepFocusInside(e: KeyboardEvent) {
+    if (!el) return;
+    const focusable = [
+      ...el.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((f) => !f.hasAttribute('disabled') && f.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   }
 
   function onclick(e: MouseEvent) {
