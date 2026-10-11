@@ -41,9 +41,6 @@ pub(crate) fn identify(args: &[OsString], config: &Config) -> Result<Caller, Str
         .ok_or_else(|| "the first argument is not valid text".to_string())?;
 
     if first.starts_with("chrome-extension://") {
-        if let Some(problem) = config.chromium_problem() {
-            return Err(problem.to_string());
-        }
         let id = config
             .chromium_ids
             .iter()
@@ -81,8 +78,10 @@ pub(crate) fn identify(args: &[OsString], config: &Config) -> Result<Caller, Str
 mod tests {
     use super::*;
 
+    /// The configuration every build has, release builds with default features
+    /// included: no cargo feature changes which extensions are trusted.
     fn config() -> Config {
-        Config::with_dev_extension()
+        Config::embedded().unwrap()
     }
 
     fn args(list: &[&str]) -> Vec<OsString> {
@@ -138,25 +137,5 @@ mod tests {
         for list in refused {
             assert!(identify(&args(list), &config()).is_err(), "{list:?}");
         }
-    }
-
-    #[test]
-    fn a_bridge_without_chromium_ids_refuses_chromium_and_says_why() {
-        let mut release = config();
-        release.chromium_ids.clear();
-        let refused = identify(&args(&[CHROME]), &release).unwrap_err();
-        assert!(
-            refused.contains("trusts no Chromium extension"),
-            "{refused}"
-        );
-        assert!(refused.contains("--features dev-extension"), "{refused}");
-        // Firefox still works.
-        assert!(
-            identify(
-                &args(&["manifest.json", "extension@wirecatch.app"]),
-                &release
-            )
-            .is_ok()
-        );
     }
 }

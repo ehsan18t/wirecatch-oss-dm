@@ -1,11 +1,10 @@
 //! Extension identities and the native host name, embedded at compile time from
 //! `config/extension-ids.json` (the file the extension build reads too).
 //!
-//! The development build of the Chromium extension has a fixed id whose private
-//! key is in the repository, so anyone can sign an extension with it. Only bridges
-//! built with the `dev-extension` feature trust it (`cargo build -p
-//! wirecatch-bridge --features dev-extension`); release bridges trust store ids
-//! only. The `test-overrides` feature turns it on for the end-to-end tests.
+//! Every bridge build trusts exactly one Chromium extension id, the one that
+//! follows from the extension's public key, and the Firefox add-on id (D22). The
+//! same id is used by unpacked development builds and by the store, because the
+//! store upload carries the same key.
 
 use anyhow::{Context, bail};
 use serde::Deserialize;
@@ -13,15 +12,9 @@ use serde::Deserialize;
 /// The shared identity file, as it was when the bridge was built.
 const EMBEDDED: &str = include_str!("../../../config/extension-ids.json");
 
-/// Whether this build trusts the development build of the Chromium extension.
-const TRUST_DEV_EXTENSION: bool = cfg!(feature = "dev-extension");
-
-/// Said when a bridge trusts no Chromium extension, at startup and on install.
-pub(crate) const NO_CHROMIUM_IDS: &str = "This bridge trusts no Chromium extension, so Chrome, Edge, Brave and other Chromium browsers cannot use it (Firefox can). It was built without the dev-extension feature and no store id is listed yet. For development, build it with `cargo build -p wirecatch-bridge --features dev-extension`";
-
-/// The file's shape. Unknown fields are an error on purpose: when a store id is
-/// added to the file, this struct (and the allow list built from it) must be
-/// updated too, and the unit test below fails until it is.
+/// The file's shape. Unknown fields are an error on purpose: when an id is added
+/// to the file, this struct (and the allow list built from it) must be updated
+/// too, and the unit test below fails until it is.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExtensionIds {
@@ -49,20 +42,11 @@ pub(crate) struct Config {
 impl Config {
     /// The configuration built into this binary.
     pub(crate) fn embedded() -> anyhow::Result<Self> {
-        Self::parse(EMBEDDED, TRUST_DEV_EXTENSION)
-            .context("The extension id list built into the bridge is invalid")
+        Self::parse(EMBEDDED).context("The extension id list built into the bridge is invalid")
     }
 
-    /// The embedded configuration with the development Chromium id trusted, as a
-    /// `dev-extension` build has it, for tests that need a Chromium caller.
-    #[cfg(test)]
-    pub(crate) fn with_dev_extension() -> Self {
-        Self::parse(EMBEDDED, true).unwrap()
-    }
-
-    /// Reads the identity file. The development Chromium id is always checked,
-    /// but trusted only when `trust_dev_extension` is set.
-    fn parse(raw: &str, trust_dev_extension: bool) -> anyhow::Result<Self> {
+    /// Reads and checks the identity file.
+    fn parse(raw: &str) -> anyhow::Result<Self> {
         let ids: ExtensionIds = serde_json::from_str(raw)?;
         if !is_chromium_id(&ids.chromium_id) {
             bail!("{:?} is not a Chromium extension id", ids.chromium_id);
@@ -75,19 +59,9 @@ impl Config {
         }
         Ok(Self {
             native_host_name: ids.native_host_name,
-            chromium_ids: if trust_dev_extension {
-                vec![ids.chromium_id]
-            } else {
-                Vec::new()
-            },
+            chromium_ids: vec![ids.chromium_id],
             firefox_ids: vec![ids.firefox_id],
         })
-    }
-
-    /// Why Chromium browsers cannot use this bridge, when it trusts no Chromium
-    /// extension at all; None when it trusts at least one.
-    pub(crate) fn chromium_problem(&self) -> Option<&'static str> {
-        self.chromium_ids.is_empty().then_some(NO_CHROMIUM_IDS)
     }
 
     /// The origins Chromium browsers pass for the allowed extensions, in the exact
@@ -137,8 +111,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_embedded_file_is_valid_and_complete() {
-        let config = Config::with_dev_extension();
+    fn every_build_trusts_the_one_chromium_id_and_the_firefox_id() {
+        // No cargo feature changes this: a release bridge built with default
+        // features has exactly this configuration.
+        let config = Config::embedded().unwrap();
         assert_eq!(config.native_host_name, "app.wirecatch.bridge");
         assert_eq!(config.chromium_ids, ["chdgnmpjoipbgfeldicipccjjghmagki"]);
         assert_eq!(config.firefox_ids, ["extension@wirecatch.app"]);
@@ -146,35 +122,18 @@ mod tests {
             config.chromium_origins(),
             ["chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/"]
         );
-        assert_eq!(config.chromium_problem(), None);
     }
 
     #[test]
-    fn only_a_dev_extension_build_trusts_the_development_chromium_id() {
-        let release = Config::parse(EMBEDDED, false).unwrap();
-        assert!(release.chromium_ids.is_empty());
-        assert!(release.chromium_origins().is_empty());
-        assert_eq!(release.firefox_ids, ["extension@wirecatch.app"]);
-        assert_eq!(release.chromium_problem(), Some(NO_CHROMIUM_IDS));
-
-        let embedded = Config::embedded().unwrap();
-        assert_eq!(
-            embedded.chromium_ids.is_empty(),
-            !cfg!(feature = "dev-extension"),
-            "the embedded configuration must follow the dev-extension feature"
-        );
-    }
-
-    #[test]
-    fn a_malformed_development_id_is_an_error_even_when_not_trusted() {
+    fn a_malformed_chromium_id_is_an_error() {
         let raw = EMBEDDED.replace("chdgnmpjoipbgfeldicipccjjghmagki", "not-an-id");
-        assert!(Config::parse(&raw, false).is_err());
+        assert!(Config::parse(&raw).is_err());
     }
 
     #[test]
     fn an_unknown_field_is_an_error_so_new_ids_are_never_ignored() {
         let raw = EMBEDDED.replacen('{', r#"{"chromium_store_id": "x","#, 1);
-        assert!(Config::parse(&raw, true).is_err());
+        assert!(Config::parse(&raw).is_err());
     }
 
     #[test]

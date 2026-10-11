@@ -777,20 +777,14 @@ pub(crate) enum Command {
 /// Runs `install` or `uninstall` for the current user and prints what happened.
 #[allow(clippy::print_stdout)] // a terminal command, not native messaging mode
 pub(crate) fn run(command: Command) -> ExitCode {
-    let planned = Config::embedded().and_then(|config| {
-        let plan = plan(&config, &Layout::current()?)?;
-        Ok((config, plan))
-    });
-    let (config, plan) = match planned {
+    let planned = Config::embedded().and_then(|config| plan(&config, &Layout::current()?));
+    let plan = match planned {
         Ok(planned) => planned,
         Err(e) => {
             crate::log!("{e:#}");
             return ExitCode::FAILURE;
         }
     };
-    if let (Command::Install, Some(problem)) = (command, config.chromium_problem()) {
-        crate::log!("{problem}.");
-    }
     let report = match command {
         Command::Install => install(&plan, &mut RealHost),
         Command::Uninstall => uninstall(&plan, &mut RealHost),
@@ -931,7 +925,7 @@ mod tests {
     }
 
     fn config() -> Config {
-        Config::with_dev_extension()
+        Config::embedded().unwrap()
     }
 
     fn json(path: &Path) -> serde_json::Value {

@@ -20,7 +20,7 @@ use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
 
-/// The development extension's origin, which the bridge allows (`config/extension-ids.json`).
+/// The extension's Chromium origin, which every bridge allows (`config/extension-ids.json`).
 const CHROME_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
 
 /// The bridge's test-only overrides (`crates/bridge/src/app.rs`).

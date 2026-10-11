@@ -11,6 +11,8 @@ pnpm --filter @wirecatch/desktop build:tauri  # debug installers, for checking t
 
 Both first run `scripts/prepare-bridge.mjs`, which builds `wirecatch-bridge` and copies it to `src-tauri/binaries/wirecatch-bridge-<target triple>[.exe]` (ignored by git). Then `tauri build` runs with `src-tauri/tauri.bundle.conf.json` merged in, which lists the bridge as an external binary. The bundler installs it next to the app with its plain name, `wirecatch-bridge(.exe)`, which matters: the bridge starts `wirecatch-app --background` from its own folder, and the app runs `wirecatch-bridge install` from its own folder.
 
+The bridge is built without any cargo feature in both profiles. Which extensions it trusts never depends on how it was built: every build trusts the one Chromium extension id in `config/extension-ids.json` and the Firefox add-on id, and `install` lists that Chromium id in `allowed_origins` for every Chromium browser (D22). Its `test-overrides` feature is for tests only, and `prepare-bridge.mjs` refuses to bundle a bridge built with any feature.
+
 The external binary lives in a separate config file because Tauri's build script refuses to build when a listed external binary is missing, and plain `cargo build` and `cargo test` should not depend on building the bridge first.
 
 | Platform | Output                                                | Notes                                                            |
