@@ -1087,7 +1087,8 @@ export class AppState {
         this.notify(`Found a newer ${media.name.toLowerCase()}. It is being installed now.`);
         break;
       case 'installed':
-        this.notify(`The ${media.name.toLowerCase()} is up to date.`);
+        // A newer release may be waiting until it is two days old; the core says so.
+        this.notify(media.note ?? `The ${media.name.toLowerCase()} is up to date.`);
         break;
       case 'not_installed':
         this.notify(

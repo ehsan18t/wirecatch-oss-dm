@@ -370,7 +370,7 @@ pub fn publish(server: &FileServer, releases: &Releases, prefix: &str) -> MediaA
             }],
             program: exe("deno"),
         },
-        ytdlp_latest_release: None,
+        ytdlp_releases: None,
         ytdlp_asset: ytdlp_asset(),
         ytdlp_checksums_asset: "SHA2-256SUMS".into(),
         ytdlp_signing_key: test_signer().1.clone(),

@@ -176,6 +176,10 @@ pub struct AddonInfo {
     /// Download size of the latest version, when known.
     #[ts(type = "number | null")]
     pub size: Option<u64>,
+    /// A plain sentence about updates to show with the add-on, for example
+    /// that a newer version waits until it is two days old (D21.1).
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

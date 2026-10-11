@@ -51,6 +51,7 @@ export function mediaAddon(): AddonInfo {
     installed_version: null,
     latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',
     size: 131 * 1024 * 1024,
+    note: null,
   };
 }
 
@@ -1008,7 +1009,7 @@ export class MockBackend implements Backend {
   }
 
   /** Set by tests and sample data: what the next update check finds. */
-  nextUpdateCheck: 'up-to-date' | 'newer' | 'unreachable' = 'up-to-date';
+  nextUpdateCheck: 'up-to-date' | 'newer' | 'too-new' | 'unreachable' = 'up-to-date';
 
   async checkAddonUpdates() {
     const addon = this.#addon('media');
@@ -1018,6 +1019,12 @@ export class MockBackend implements Backend {
         'Wirecatch could not check for a newer media add-on (no connection). Check your internet connection, then try again.',
       );
     }
+    // As the core says it (D21.1): a release younger than two days waits.
+    addon.note =
+      installed && this.nextUpdateCheck === 'too-new'
+        ? 'A newer version came out today; Wirecatch installs it once it is two days old.'
+        : null;
+    this.#addonsChanged();
     if (installed && this.nextUpdateCheck === 'newer') {
       addon.state = { type: 'update_available' };
       addon.latest_version = 'yt-dlp 2026.10.30, ffmpeg 9.0.2, Deno 2.9.7';

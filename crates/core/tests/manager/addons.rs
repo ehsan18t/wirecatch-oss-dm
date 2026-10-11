@@ -279,6 +279,52 @@ fn serve_signed(
     published: &str,
     sig: Sig,
 ) {
+    let release = put_release(
+        server,
+        tag,
+        program,
+        listed_size,
+        listed_hash,
+        program_url,
+        published,
+        sig,
+    );
+    server.put("api/releases", serde_json::json!([release]).to_string());
+}
+
+/// Serves several releases `(tag, program, published)`, each signed and
+/// listed correctly, as yt-dlp's list of releases in the order given.
+fn serve_releases(server: &FileServer, releases: &[(&str, &[u8], &str)]) {
+    let list: Vec<serde_json::Value> = releases
+        .iter()
+        .map(|(tag, program, published)| {
+            put_release(
+                server,
+                tag,
+                program,
+                program.len() as u64,
+                &sha256(program),
+                None,
+                published,
+                Sig::Good,
+            )
+        })
+        .collect();
+    server.put("api/releases", serde_json::Value::from(list).to_string());
+}
+
+/// Puts one release's files on the server and returns its description.
+#[allow(clippy::too_many_arguments)]
+fn put_release(
+    server: &FileServer,
+    tag: &str,
+    program: &[u8],
+    listed_size: u64,
+    listed_hash: &str,
+    program_url: Option<String>,
+    published: &str,
+    sig: Sig,
+) -> serde_json::Value {
     let asset = ytdlp_asset();
     server.put(&format!("rel/{tag}/{asset}"), program.to_vec());
     let list = format!(
@@ -301,15 +347,13 @@ fn serve_signed(
         server.put(&format!("rel/{tag}/SHA2-256SUMS.sig"), signature);
         assets.push(serde_json::json!({"name": "SHA2-256SUMS.sig", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS.sig")), "size": 100}));
     }
-    server.put(
-        "api/latest",
-        serde_json::json!({
-            "tag_name": tag,
-            "published_at": published,
-            "assets": assets,
-        })
-        .to_string(),
-    );
+    serde_json::json!({
+        "tag_name": tag,
+        "published_at": published,
+        "draft": false,
+        "prerelease": false,
+        "assets": assets,
+    })
 }
 
 /// Published well before the harness's clock (Monday 12 October 2026).
@@ -318,7 +362,7 @@ const OLD: &str = "2026-10-01T00:00:00Z";
 async fn updatable(prefix: &str) -> (FileServer, crate::common::Harness, Vec<u8>) {
     let server = FileServer::start().await;
     let mut sources = publish(&server, &Releases::fake(), prefix);
-    sources.ytdlp_latest_release = Some(server.url("api/latest"));
+    sources.ytdlp_releases = Some(server.url("api/releases"));
     sources.ytdlp_release_downloads = server.url("rel/");
     let h = harness(sources).await;
     assert_eq!(install(&h).await.state, AddonState::Installed);
@@ -510,9 +554,10 @@ async fn an_update_is_capped_at_its_announced_size() {
     assert!(big.is_empty(), "{big:?}");
 }
 
-/// A release is installed without asking only once it is two days old.
+/// D21.1: a release is installed only once it is two days old, whether by a
+/// quiet update, the Update button, a repair or a reinstall.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_fresh_release_waits_two_days_before_a_quiet_update() {
+async fn a_fresh_release_waits_two_days_on_every_install_path() {
     let (server, h, new_ytdlp) = updatable("fresh").await;
     let size = new_ytdlp.len() as u64;
     let hash = sha256(&new_ytdlp);
@@ -526,13 +571,88 @@ async fn a_fresh_release_waits_two_days_before_a_quiet_update() {
         None,
         "2026-10-12T00:00:00Z",
     );
+    let program = format!("rel/2026.10.12/{}", ytdlp_asset());
+    let waiting = "A newer version came out today; Wirecatch installs it once it is two days old.";
+    // Not installed quietly, and not offered: the add-on stays as it is and
+    // says why.
     let info = check(&h).await;
+    assert_eq!(info.state, AddonState::Installed);
+    assert_eq!(info.note.as_deref(), Some(waiting));
+    assert!(info.latest_version.unwrap().contains("2026.08.19"));
+    // The Update button does not install it either.
+    h.manager.update_addon("media").await.unwrap();
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+    // Nor does a repair (the path a reinstall takes too).
+    let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
+    std::fs::remove_file(&ytdlp).unwrap();
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon("media").await.unwrap();
+    let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+    assert!(
+        info.installed_version.unwrap().contains("2026.08.19"),
+        "the repair installed the new release"
+    );
+    assert!(ytdlp.is_file());
+    assert!(
+        server.requests(&program).is_empty(),
+        "the program was fetched"
+    );
+
+    // A day later it is still waiting.
+    h.clock.advance(chrono::TimeDelta::hours(24));
+    let info = check(&h).await;
+    assert_eq!(info.state, AddonState::Installed);
+    assert_eq!(
+        info.note.as_deref(),
+        Some("A newer version came out yesterday; Wirecatch installs it once it is two days old.")
+    );
+    // Two days old: offered at once, and installed quietly by the next check.
+    h.clock.advance(chrono::TimeDelta::hours(24));
+    let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
-    assert_ne!(installed_ytdlp(&h), new_ytdlp);
-    h.clock.advance(chrono::TimeDelta::hours(60));
+    assert_eq!(info.note, None);
     let info = check(&h).await;
     assert_eq!(info.state, AddonState::Installed);
     assert_eq!(installed_ytdlp(&h), new_ytdlp);
+}
+
+/// While the newest release is younger than two days, the newest one that is
+/// old enough is installed instead, found in the list of releases.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() {
+    let (server, h, older) = updatable("list").await;
+    let newest = [crate::media_support::fake_tool(), b"v3".to_vec()].concat();
+    // Listed oldest first, to show the order the list comes in does not matter.
+    serve_releases(
+        &server,
+        &[
+            ("2026.09.01", &older, "2026-09-01T00:00:00Z"),
+            ("2026.09.30", &older, OLD),
+            ("2026.10.12", &newest, "2026-10-12T00:00:00Z"),
+        ],
+    );
+    let info = check(&h).await;
+    assert_eq!(info.state, AddonState::Installed);
+    assert!(
+        info.installed_version.unwrap().contains("2026.09.30"),
+        "the newest release old enough was not installed"
+    );
+    assert_eq!(installed_ytdlp(&h), older);
+    assert_eq!(
+        info.note.as_deref(),
+        Some("A newer version came out today; Wirecatch installs it once it is two days old.")
+    );
+    assert!(
+        server
+            .requests(&format!("rel/2026.10.12/{}", ytdlp_asset()))
+            .is_empty()
+    );
+    // Once that one is two days old, it follows.
+    h.clock.advance(chrono::TimeDelta::hours(48));
+    let info = check(&h).await;
+    assert!(info.installed_version.unwrap().contains("2026.10.12"));
+    assert_eq!(info.note, None);
+    assert_eq!(installed_ytdlp(&h), newest);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

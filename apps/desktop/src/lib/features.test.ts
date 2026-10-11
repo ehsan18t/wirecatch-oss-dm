@@ -247,6 +247,15 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(note()?.kind).toBe('error');
     expect(note()?.message).toMatch(/^Wirecatch could not check for a newer media add-on/);
 
+    // D21.1: a release younger than two days waits, and the result says so plainly.
+    backend.nextUpdateCheck = 'too-new';
+    await click(button('Check for updates'));
+    const waiting =
+      'A newer version came out today; Wirecatch installs it once it is two days old.';
+    expect(note()).toMatchObject({ kind: 'info', message: waiting });
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(screen.getByText(waiting, { selector: 'p.note' })).toBeInTheDocument();
+
     backend.nextUpdateCheck = 'newer';
     await click(button('Check for updates'));
     expect(note()?.message).toMatch(/^A newer media add-on is ready \(yt-dlp 2026\.10\.30/);

@@ -412,7 +412,7 @@ async fn open(
         .with_stop_timeout(stop_timeout)
         .with_capture_timeout(capture_timeout);
     // Tests never reach the internet: no update check unless a test asks.
-    config.addon_sources.ytdlp_latest_release = None;
+    config.addon_sources.ytdlp_releases = None;
     if let Some(tweak) = tweak {
         config = tweak(config);
     }

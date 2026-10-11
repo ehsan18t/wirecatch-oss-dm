@@ -182,6 +182,12 @@ pub(crate) struct Release {
     /// When it was published (RFC 3339).
     #[serde(default)]
     pub published_at: Option<String>,
+    /// A draft is not published yet.
+    #[serde(default)]
+    pub draft: bool,
+    /// Marked as not ready for everyone.
+    #[serde(default)]
+    pub prerelease: bool,
     #[serde(default)]
     pub assets: Vec<Asset>,
 }

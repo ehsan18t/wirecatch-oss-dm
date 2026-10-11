@@ -67,9 +67,11 @@ pub struct MediaAddonSources {
     /// The Deno JavaScript runtime yt-dlp uses for some sites. Updated only when
     /// this pin changes.
     pub deno: AddonComponent,
-    /// The GitHub API address of yt-dlp's latest release, read at most once a
-    /// day to keep up with sites that change; `None` turns that off.
-    pub ytdlp_latest_release: Option<String>,
+    /// The GitHub API address of yt-dlp's list of releases (newest first),
+    /// read at most once a day to keep up with sites that change; `None` turns
+    /// that off. The list, not just the latest release, so the newest release
+    /// at least two days old can be found while a newer one waits (D21.1).
+    pub ytdlp_releases: Option<String>,
     /// The name of this platform's yt-dlp file in a release, for example
     /// `yt-dlp.exe`.
     pub ytdlp_asset: String,
@@ -134,8 +136,8 @@ impl MediaAddonSources {
             ytdlp: official_ytdlp(),
             ffmpeg: official_ffmpeg(),
             deno: official_deno(),
-            ytdlp_latest_release: Some(
-                "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest".into(),
+            ytdlp_releases: Some(
+                "https://api.github.com/repos/yt-dlp/yt-dlp/releases?per_page=10".into(),
             ),
             ytdlp_asset: ytdlp_asset().into(),
             ytdlp_checksums_asset: "SHA2-256SUMS".into(),
