@@ -221,6 +221,43 @@ pub enum OutputFormat {
     Wav,
 }
 
+impl OutputFormat {
+    /// The audio bit rates, in kbps, a person can pick when saving as this format; the app
+    /// refuses any other [`MediaSelection::audio_kbps`]. Empty when there is no choice: the
+    /// original and the video formats keep the audio or use [`default_kbps`](Self::default_kbps)
+    /// of its codec, and FLAC and WAV are lossless.
+    #[must_use]
+    pub const fn kbps_choices(self) -> &'static [u32] {
+        match self {
+            OutputFormat::Mp3 => &[128, 192, 256, 320],
+            OutputFormat::M4a => &[128, 192, 256],
+            OutputFormat::Opus => &[96, 128, 160, 192],
+            OutputFormat::Original
+            | OutputFormat::Mp4
+            | OutputFormat::Mkv
+            | OutputFormat::Webm
+            | OutputFormat::Flac
+            | OutputFormat::Wav => &[],
+        }
+    }
+
+    /// The audio bit rate, in kbps, used when the audio must be re-encoded for this format
+    /// and none was picked; `None` when the format has no [`kbps_choices`](Self::kbps_choices).
+    #[must_use]
+    pub const fn default_kbps(self) -> Option<u32> {
+        match self {
+            OutputFormat::Mp3 | OutputFormat::M4a => Some(192),
+            OutputFormat::Opus => Some(128),
+            OutputFormat::Original
+            | OutputFormat::Mp4
+            | OutputFormat::Mkv
+            | OutputFormat::Webm
+            | OutputFormat::Flac
+            | OutputFormat::Wav => None,
+        }
+    }
+}
+
 /// How one quality is saved as one [`OutputFormat`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -543,6 +580,23 @@ fn update<T>(slot: &mut T, value: Update<T>) {
     if let Update::Set(value) = value {
         *slot = value;
     }
+}
+
+crate::exported::exported_consts! {
+    /// Highest accepted [`AppSettings::connections_per_download`].
+    pub const MAX_CONNECTIONS_PER_DOWNLOAD: u8 = 32;
+    /// [`AppSettings::connections_per_download`] on a fresh install.
+    pub const DEFAULT_CONNECTIONS_PER_DOWNLOAD: u8 = 8;
+    /// Highest accepted value for any limit on downloads running at once: the app-wide
+    /// [`AppSettings::max_concurrent_downloads`] and each [`Queue::max_concurrent`].
+    pub const MAX_CONCURRENT_DOWNLOADS: u32 = 100;
+    /// [`AppSettings::max_concurrent_downloads`] on a fresh install.
+    pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
+    /// [`Queue::max_concurrent`] of a newly created queue.
+    pub const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
+    /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
+    /// a percent.
+    pub const PER_MILLE_DONE: u16 = 1000;
 }
 
 /// Every user setting. The app is the only store (D5).

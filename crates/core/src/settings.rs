@@ -5,8 +5,9 @@ use std::path::PathBuf;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettings, Category, CategoryRule, MediaDefaults, OutputDefaults, OutputFormat, PortablePath,
-    Queue, Theme,
+    AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD,
+    MediaDefaults, OutputDefaults, OutputFormat, PortablePath, Queue, Theme,
 };
 use wirecatch_protocol::extension::ExtensionSettings;
 
@@ -17,10 +18,6 @@ use crate::schedule;
 /// The queue that always exists and receives downloads by default.
 pub const DEFAULT_QUEUE_ID: QueueId = QueueId(1);
 
-/// Highest accepted value for connections per download.
-pub const MAX_CONNECTIONS: u8 = 32;
-/// Highest accepted value for any concurrency limit.
-pub const MAX_CONCURRENT: u32 = 100;
 const MAX_QUEUE_NAME_CHARS: usize = 60;
 /// Speed limits are stored as signed 64-bit integers.
 const MAX_SPEED_LIMIT: u64 = i64::MAX as u64;
@@ -92,8 +89,8 @@ pub fn default_settings() -> AppSettings {
                 ],
             ),
         ],
-        connections_per_download: 8,
-        max_concurrent_downloads: 5,
+        connections_per_download: DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+        max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
         global_speed_limit: None,
         extension: ExtensionSettings {
             default_queue: DEFAULT_QUEUE_ID,
@@ -126,15 +123,19 @@ pub(crate) fn default_queue() -> Queue {
 
 /// Brings the numbers downloads depend on into the range [`validate`] keeps them in. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
 pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
-    settings.connections_per_download = settings.connections_per_download.clamp(1, MAX_CONNECTIONS);
-    settings.max_concurrent_downloads = settings.max_concurrent_downloads.clamp(1, MAX_CONCURRENT);
+    settings.connections_per_download = settings
+        .connections_per_download
+        .clamp(1, MAX_CONNECTIONS_PER_DOWNLOAD);
+    settings.max_concurrent_downloads = settings
+        .max_concurrent_downloads
+        .clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
     settings
 }
 
 /// [`within_limits`] for a queue.
 pub(crate) fn queue_within_limits(mut queue: Queue) -> Queue {
-    queue.max_concurrent = queue.max_concurrent.clamp(1, MAX_CONCURRENT);
+    queue.max_concurrent = queue.max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS);
     queue.speed_limit = speed_limit_within_limits(queue.speed_limit);
     queue
 }
@@ -163,9 +164,9 @@ pub(crate) fn validate(
         check_folder(&rule.folder, folders)?;
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
-    if !(1..=MAX_CONNECTIONS).contains(&settings.connections_per_download) {
+    if !(1..=MAX_CONNECTIONS_PER_DOWNLOAD).contains(&settings.connections_per_download) {
         return Err(CoreError::Invalid(format!(
-            "Connections per download must be between 1 and {MAX_CONNECTIONS}."
+            "Connections per download must be between 1 and {MAX_CONNECTIONS_PER_DOWNLOAD}."
         )));
     }
     check_concurrency(settings.max_concurrent_downloads, "Downloads at once")?;
@@ -347,11 +348,11 @@ pub(crate) fn folder_for(
 }
 
 fn check_concurrency(value: u32, what: &str) -> Result<()> {
-    if (1..=MAX_CONCURRENT).contains(&value) {
+    if (1..=MAX_CONCURRENT_DOWNLOADS).contains(&value) {
         Ok(())
     } else {
         Err(CoreError::Invalid(format!(
-            "{what} must be between 1 and {MAX_CONCURRENT}."
+            "{what} must be between 1 and {MAX_CONCURRENT_DOWNLOADS}."
         )))
     }
 }

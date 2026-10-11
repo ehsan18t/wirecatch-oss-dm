@@ -9,9 +9,12 @@ use std::io::{self, Read, Write};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// Browsers refuse messages from a native host larger than 1 MiB. The same cap
-/// applies to every local connection so no side can be made to allocate more.
-pub const MAX_FRAME_LEN: usize = 1024 * 1024;
+crate::exported::exported_consts! {
+    /// Largest message body in bytes. Browsers refuse messages from a native host larger
+    /// than 1 MiB; the same cap applies to every local connection so no side can be made to
+    /// allocate more.
+    pub const MAX_FRAME_LEN: usize = 1024 * 1024;
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError {

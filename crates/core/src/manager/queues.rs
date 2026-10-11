@@ -1,16 +1,13 @@
 //! Creating, editing and deleting queues.
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{Queue, UiEvent};
+use wirecatch_protocol::app::{NEW_QUEUE_MAX_CONCURRENT, Queue, UiEvent};
 use wirecatch_protocol::wire::{Event, QueueSummary};
 
 use super::Manager;
 use super::state::{QueueSlot, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::settings;
-
-/// Downloads at once in a newly created queue.
-const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
 
 impl Manager {
     /// Every queue, in sidebar order. The default queue is always there.

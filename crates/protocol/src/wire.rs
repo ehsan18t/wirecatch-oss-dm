@@ -14,9 +14,11 @@ use crate::extension::{
     WithdrawRequest,
 };
 
-/// Request id the app uses for an error it cannot tie to a request (for example an
-/// unreadable frame). Clients start their ids at 1.
-pub const UNKNOWN_REQUEST_ID: u64 = 0;
+crate::exported::exported_consts! {
+    /// Request id the app uses for an error it cannot tie to a request (for example an
+    /// unreadable frame). Clients start their ids at 1.
+    pub const UNKNOWN_REQUEST_ID: u64 = 0;
+}
 
 // Messages are decoded, handled and dropped one at a time, so the size gap
 // between variants costs nothing worth an extra allocation per request.

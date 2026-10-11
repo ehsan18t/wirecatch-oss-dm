@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use wirecatch_protocol::app::{MediaSubtitle, OutputFit, OutputFormat};
+use wirecatch_protocol::app::{MediaSubtitle, OutputFit, OutputFormat, PER_MILLE_DONE};
 use wirecatch_streams::{InputFormat, ffmpeg_input_args};
 
 use super::ytdlp::{Chapter, Format, Info, SubtitleFile};
@@ -149,24 +149,27 @@ impl AudioCodec {
         matches!(self, AudioCodec::Flac | AudioCodec::Alac | AudioCodec::Pcm)
     }
 
+    /// The audio-only format this codec is encoded into. Its bit rates
+    /// ([`OutputFormat::kbps_choices`]) are the codec's wherever it is encoded,
+    /// inside a video too; `None` for codecs Wirecatch never encodes lossy.
+    fn audio_format(self) -> Option<OutputFormat> {
+        match self {
+            AudioCodec::Mp3 => Some(OutputFormat::Mp3),
+            AudioCodec::Aac => Some(OutputFormat::M4a),
+            AudioCodec::Opus => Some(OutputFormat::Opus),
+            _ => None,
+        }
+    }
+
     /// The audio qualities offered when encoding to this codec, in kbps; empty
     /// for lossless codecs.
     pub fn kbps_choices(self) -> &'static [u32] {
-        match self {
-            AudioCodec::Mp3 => &[128, 192, 256, 320],
-            AudioCodec::Aac => &[128, 192, 256],
-            AudioCodec::Opus => &[96, 128, 160, 192],
-            _ => &[],
-        }
+        self.audio_format().map_or(&[], OutputFormat::kbps_choices)
     }
 
     /// The usual quality when encoding to this codec, in kbps.
     pub fn default_kbps(self) -> Option<u32> {
-        match self {
-            AudioCodec::Mp3 | AudioCodec::Aac => Some(192),
-            AudioCodec::Opus => Some(128),
-            _ => None,
-        }
+        self.audio_format().and_then(OutputFormat::default_kbps)
     }
 }
 
@@ -1656,7 +1659,9 @@ pub(crate) fn progress_ms(line: &str) -> Option<u64> {
 /// Tenths of a percent done after `done_ms` of `total_ms`.
 pub(crate) fn per_mille(done_ms: u64, total_ms: Option<u64>) -> Option<u16> {
     let total = total_ms.filter(|t| *t > 0)?;
-    Some((done_ms.saturating_mul(1000) / total).min(1000) as u16)
+    let per_mille = done_ms.saturating_mul(u64::from(PER_MILLE_DONE)) / total;
+    // Past the end (a duration reported short) counts as done.
+    Some(u16::try_from(per_mille).map_or(PER_MILLE_DONE, |p| p.min(PER_MILLE_DONE)))
 }
 
 /// Subtitle languages remembered for next time from the subtitles picked, and

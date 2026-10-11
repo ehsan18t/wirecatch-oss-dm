@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Progress;
-use wirecatch_protocol::app::{MediaSummary, ProcessingProgress, ProcessingStep};
+use wirecatch_protocol::app::{MediaSummary, PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
 
 use output::OutputJob;
@@ -190,8 +190,10 @@ impl MediaProgress {
 
     /// How far the current step is, in tenths of a percent, when known.
     pub fn set_per_mille(&self, done: Option<u16>) {
-        self.per_mille
-            .store(done.map_or(UNKNOWN, |d| d.min(1000)), Ordering::Relaxed);
+        self.per_mille.store(
+            done.map_or(UNKNOWN, |d| d.min(PER_MILLE_DONE)),
+            Ordering::Relaxed,
+        );
     }
 
     fn processing(&self) -> Option<ProcessingProgress> {
