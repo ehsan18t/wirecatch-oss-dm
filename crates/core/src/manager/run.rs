@@ -224,6 +224,8 @@ impl Manager {
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     entry.row.path = path.to_string_lossy().into_owned();
+                    // Reserved by the media job while it put the file in place.
+                    state.claimed.remove(entry.path());
                 }
                 let referrer = headers::referrer(&entry.origin.headers).map(str::to_string);
                 self.mark_downloaded(entry.path(), &entry.row.url, referrer);
