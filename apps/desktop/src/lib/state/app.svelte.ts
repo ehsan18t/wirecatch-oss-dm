@@ -453,6 +453,11 @@ export class AppState {
         if (waiting && isInstalled(media)) {
           this.choiceAwaitingAddon = null;
           void this.chooseMedia(waiting.id, waiting.selection);
+        } else if (waiting && media?.state.type === 'not_installed') {
+          // The install was stopped: nothing will come, so the picker comes back.
+          this.choiceAwaitingAddon = null;
+          if (this.addonRequest?.id === waiting.id) this.closeAddonRequest();
+          this.mediaHidden = false;
         }
         break;
       }

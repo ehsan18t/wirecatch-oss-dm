@@ -188,6 +188,24 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('gives the picker back when the install for a picked quality is stopped', async () => {
+    const { app, backend } = await make();
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[0];
+    const joined = choice?.options.find((o) => o.needs_ffmpeg);
+    await app.chooseMedia(choice?.id ?? 0, {
+      option_id: joined?.id ?? '',
+      file_name: null,
+      folder: null,
+      queue: null,
+    });
+    expect(app.question?.kind).toBe('addon');
+    await app.cancelAddonOperation('media');
+    expect(app.choiceAwaitingAddon).toBeNull();
+    expect(app.question).toEqual({ kind: 'media', choice, waiting: 0 });
+    app.dispose();
+  });
+
   it('says nothing when a question answered here closes', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();
