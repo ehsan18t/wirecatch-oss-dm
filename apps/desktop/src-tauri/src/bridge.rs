@@ -16,19 +16,16 @@ pub const BRIDGE_FILE_NAME: &str = if cfg!(windows) {
     "wirecatch-bridge"
 };
 
-/// Set to `1` to register the bridge from a debug build. Debug builds skip it by default, so
-/// running the app from a source checkout does not point every browser at that checkout.
-pub const REGISTER_VAR: &str = "WIRECATCH_REGISTER_BRIDGE";
-
 /// Pause after a failed accept, so a persistent error cannot spin.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
-/// Starts listening on this user's endpoint. Must run inside the async runtime.
+/// Starts listening on this build's endpoint (see [`crate::host::endpoint`]). Must run inside
+/// the async runtime.
 ///
 /// [`IpcError::AlreadyInUse`] means another Wirecatch already serves this user; this process
 /// must then not open a second manager on the same database.
 pub fn bind() -> Result<Listener, IpcError> {
-    Listener::bind(&wirecatch_ipc::endpoint()?)
+    Listener::bind(&crate::host::endpoint()?)
 }
 
 /// Serves every client that connects (the bridge, later the CLI) until the task is stopped.
@@ -57,9 +54,11 @@ pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
 }
 
-/// Whether this build registers the bridge on start.
+/// Whether this build registers the bridge on start. Debug builds never do: they serve their
+/// own endpoint, which the registered bridge does not use, and registering them would point
+/// every browser at a source checkout instead of the installed app.
 pub fn registers_on_start() -> bool {
-    !cfg!(debug_assertions) || std::env::var(REGISTER_VAR).is_ok_and(|v| v == "1")
+    !crate::host::DEV_BUILD
 }
 
 /// Runs `<bridge> install` on a thread of its own, so startup never waits on it. The command

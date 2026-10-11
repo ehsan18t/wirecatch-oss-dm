@@ -21,7 +21,7 @@ The external binary lives in a separate config file because Tauri's build script
 
 ## Browser registration and uninstall
 
-The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds skip it unless `WIRECATCH_REGISTER_BRIDGE=1` is set, so running from a source checkout does not point your browsers at that checkout.
+The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
 
 Uninstalling removes the registration before the files go:
 

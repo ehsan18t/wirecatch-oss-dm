@@ -62,8 +62,10 @@
 //!   if it was closed to the tray) and passes any links on its command line to the Add dialog.
 //!   With `--background` and no links it does nothing visible.
 //! - `--background` (the bridge and start-with-system pass it) starts with no window.
-//! - On every start the app runs `wirecatch-bridge install` from its own folder (D19). Debug
-//!   builds skip that unless `WIRECATCH_REGISTER_BRIDGE=1`.
+//! - On every start the app runs `wirecatch-bridge install` from its own folder (D19).
+//! - Debug builds are a separate app, "Wirecatch Dev" ([`host::DEV_BUILD`]): their own
+//!   identifier, data folder and endpoint, and they never register the bridge, so they run
+//!   beside an installed Wirecatch without touching it.
 //!
 //! # Updates
 //!
@@ -111,6 +113,16 @@ pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     let launch = Launch::from_args(&args);
 
+    let mut context = tauri::generate_context!();
+    if host::DEV_BUILD {
+        dev_identity(context.config_mut());
+    }
+    let autostart_name = if host::DEV_BUILD {
+        host::DEV_NAME
+    } else {
+        "Wirecatch"
+    };
+
     let app = tauri::Builder::default()
         // First, so a second launch hands over its command line and exits before anything else.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -122,6 +134,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .args([BACKGROUND_FLAG])
+                .app_name(autostart_name)
                 .build(),
         )
         .manage(LaunchLinks::default())
@@ -164,7 +177,7 @@ pub fn run() {
             commands::update_addon,
             commands::remove_addon,
         ])
-        .build(tauri::generate_context!());
+        .build(context);
     match app {
         Ok(app) => app.run(lifecycle::on_run_event),
         Err(err) => {
@@ -219,10 +232,7 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
             None => tracing::warn!("could not find the browser bridge next to the app"),
         }
     } else {
-        tracing::info!(
-            "debug build: not registering the browser bridge (set {}=1 to do it)",
-            bridge::REGISTER_VAR
-        );
+        tracing::info!("debug build: not registering the browser bridge");
     }
     Ok(())
 }
@@ -250,6 +260,16 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
     }
 }
 
+/// Gives a debug build its own identity, so it runs beside an installed Wirecatch: another
+/// identifier (the single-instance guard keys on it) and a title that says which one it is.
+pub fn dev_identity(config: &mut tauri::Config) {
+    config.identifier = host::DEV_IDENTIFIER.to_owned();
+    config.product_name = Some(host::DEV_NAME.to_owned());
+    for window in &mut config.app.windows {
+        window.title = host::DEV_NAME.to_owned();
+    }
+}
+
 /// The updater stays off until `plugins.updater` is configured with endpoints and a public key
 /// (D19: that needs the GitHub organization and a signing key first).
 fn updater_configured(app: &tauri::App) -> bool {
@@ -257,4 +277,22 @@ fn updater_configured(app: &tauri::App) -> bool {
         c.get("pubkey")
             .is_some_and(|k| k.as_str().is_some_and(|k| !k.is_empty()))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_build_gets_its_own_identity() {
+        let mut config: tauri::Config = serde_json::from_value(serde_json::json!({
+            "identifier": "app.wirecatch.desktop",
+            "app": { "windows": [{ "label": "main", "title": "Wirecatch" }] }
+        }))
+        .unwrap();
+        dev_identity(&mut config);
+        assert_eq!(config.identifier, host::DEV_IDENTIFIER);
+        assert_ne!(config.identifier, "app.wirecatch.desktop");
+        assert_eq!(config.app.windows[0].title, host::DEV_NAME);
+    }
 }
