@@ -68,7 +68,13 @@
 //! With ffmpeg, the tracks are copied (never re-encoded) into MP4, or Matroska
 //! when the stream's codecs do not fit MP4 (or MP4 fails). ffmpeg is started
 //! with an argument vector, never a shell, and every path is passed as an
-//! absolute `file:` path. Without ffmpeg, only a stream whose audio and video
+//! absolute `file:` path. ffmpeg never guesses what a downloaded track is:
+//! each track's format is recognized from its first bytes ([`InputFormat`])
+//! and named to ffmpeg, which may read it only with that demuxer and may open
+//! only plain files ([`ffmpeg_input_args`]). A track in any other format is
+//! refused with [`Error::UnknownFormat`] before ffmpeg starts, so a crafted
+//! segment cannot make ffmpeg read other files or addresses into the
+//! result. Without ffmpeg, only a stream whose audio and video
 //! share one track can be saved, as its segments joined end to end (for
 //! example an MPEG-TS `.ts` file); separate tracks fail with
 //! [`Error::NeedsFfmpeg`] before anything is downloaded.
@@ -87,6 +93,7 @@ mod workdir;
 
 pub use download::download;
 pub use error::{Error, Result};
+pub use ffmpeg::{InputFormat, ffmpeg_input_args};
 pub use model::{
     AudioTrack, Choice, Outcome, Stage, StreamInfo, StreamKind, StreamProgress, StreamRequest,
     SubtitleTrack, VideoTrack,

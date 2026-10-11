@@ -82,6 +82,16 @@ pub(crate) enum Role {
     Audio,
 }
 
+impl Role {
+    /// `video` or `audio`, for messages.
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Video => "video",
+            Role::Audio => "audio",
+        }
+    }
+}
+
 /// One track to download and join.
 #[derive(Debug, Clone)]
 pub(crate) struct Track {

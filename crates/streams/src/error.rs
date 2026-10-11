@@ -75,6 +75,18 @@ pub enum Error {
     )]
     Ffmpeg(String),
 
+    /// A downloaded track is not in a format Wirecatch lets ffmpeg read (see
+    /// [`InputFormat`](crate::InputFormat)), so it was not passed to ffmpeg:
+    /// ffmpeg would have to guess what it is, and a crafted file could then
+    /// make it open other files or addresses. The downloaded parts are kept.
+    #[error(
+        "The downloaded {role} is not in a format Wirecatch can join (MPEG-TS, MP4, Matroska, WebM, AAC, MP3 or AC-3), so it was not passed to ffmpeg. The link may not point to a real video; open the video page again to get a fresh one."
+    )]
+    UnknownFormat {
+        /// `video` or `audio`.
+        role: &'static str,
+    },
+
     /// The decryption key could not be used.
     #[error(
         "The decryption key at {url} is not usable: {reason}. The link may have expired; open the video page again to get a fresh one."
