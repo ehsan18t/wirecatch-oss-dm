@@ -122,9 +122,17 @@ Decided by the lead on 2026-10-11 after the cross-component security review.
 3. ffmpeg only ever reads local files of the formats we expect: explicit input format, `-protocol_whitelist file` and a format whitelist on every input. Pinned add-on sources must be long-lived; a remux-only ffmpeg built by our own CI and published with our releases replaces the general build once the GitHub organization exists.
 4. CI keeps actions pinned by SHA and gets Dependabot for actions, Cargo and npm, plus `cargo audit`.
 5. The app's data folder moves to the local (non-roaming) app data folder, so cookies and add-on programs never follow roaming profiles.
-6. Release bridges trust only store extension ids; the development id is a debug-only feature.
+6. Superseded by D22: every bridge build trusts the one Chromium id that follows from our extension key, and the `dev-extension` feature is gone.
 
 Actions only the user can take: reserve the Firefox add-on id `extension@wirecatch.app` on addons.mozilla.org (an unlisted upload is enough) and register the `wirecatch.app` domain, so nobody else can claim them (see D9).
+
+### D22. One Chromium extension id for every build
+Decided by the user on 2026-10-11, after the release build refused the extension with "Access to the specified native messaging host is forbidden" because release bridges listed no Chromium id. The lead agreed after weighing the risk.
+1. `chdgnmpjoipbgfeldicipccjjghmagki`, the id that follows from the public key in `config/extension-ids.json` (`chromium_id`, `chromium_public_key`), is the one Chromium id for development and store builds. Every bridge build trusts exactly that id and the Firefox add-on id; no cargo feature changes this. `install` writes `allowed_origins: ["chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/"]` for every Chromium browser, and the bridge still checks the caller's origin by exact match.
+2. Every Chromium build of the extension carries the public key in its manifest, so an unpacked load gets this id. The package for the Chrome Web Store (`pnpm build:store`) leaves the key out, because the store does not accept it.
+3. The private key is kept by the maintainer in a private place outside the repository, never in the repository or CI. It is used once: on the first Chrome Web Store upload, as `key.pem` at the root of the zip, so the store gives the item this same id. Later uploads never include it (`apps/extension/PUBLISHING.md`).
+4. Residual risk, accepted: no store can give this id to anyone else, and a packed extension with it needs the private key. Another extension can claim the id only by being loaded unpacked in Developer mode, in a browser profile that does not already have ours. Such an extension could do comparable harm with its own permissions anyway, so trusting the id in release bridges adds little risk and makes development and store builds work with any installed Wirecatch.
+5. Other Chromium stores (for example Microsoft Edge Add-ons) give their own ids, which the bridge does not trust; Edge users install from the Chrome Web Store.
 
 ## Assumptions (not yet confirmed)
 
@@ -132,7 +140,7 @@ Actions only the user can take: reserve the Firefox add-on id `extension@wirecat
 - A2. Target user is the mainstream user who wants it to just work, with power features discoverable rather than hidden.
 - A3. License identifier is `GPL-3.0-only` (not "or later"). Easy to change before the first outside contribution.
 - A4. SFTP is not part of "FTP" for v1; it can be added later.
-- A5. Firefox add-on id is `extension@wirecatch.app` and the Chromium development build uses a fixed key so its extension id is stable. Store ids replace these at publication.
+- A5. Firefox add-on id is `extension@wirecatch.app`. The Chromium id is `chdgnmpjoipbgfeldicipccjjghmagki` for every build, development and store alike (D22).
 - A6. Saved site passwords are not exported in v1 (D6 encrypted export comes later).
 - A7. HTTP/3 ships as an experimental option, off by default. For bulk downloads, several TCP connections already fill the link and QUIC costs more CPU; it turns on by default once the benchmark shows it winning. Decided by the lead.
 - A8. The ffmpeg part of the media add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
