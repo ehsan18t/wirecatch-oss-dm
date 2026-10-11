@@ -30,6 +30,9 @@ Registration covers Google Chrome, Chromium, ungoogled-chromium, Microsoft Edge,
 Uninstalling removes the registration before the files go:
 
 - **Windows**: `src-tauri/windows/hooks.nsh` registers for every user after installing (`NSIS_HOOK_POSTINSTALL`) and, on a real uninstall (`NSIS_HOOK_PREUNINSTALL`), runs `"$INSTDIR\wirecatch-bridge.exe" uninstall --all-users`, then a per-user `uninstall` and the start-at-sign-in cleanup for the account running it.
+  - When registering for every user fails, the installer says so and asks to run it again; the bridge's own message is in the install details.
+  - Installing over a copy an earlier build installed for one account (per user, in that account's own folder) removes that copy first, so it no longer registers itself for that account or starts at sign-in beside the new one. Only the account running the installer is reached; another account with such a copy removes it in Settings, Apps.
+  - Each account that turned on starting with Windows has its own entry, and an uninstall removes only the one of the account running it. The others stay behind, pointing at a program that is gone; Windows skips them, and Task Manager lists them under Startup apps, where they can be removed.
 - **Linux packages**: `src-tauri/linux/prerm.sh` is the `.deb` and `.rpm` pre-removal script. On removal (not on upgrade) it runs `/usr/bin/wirecatch-bridge uninstall` as every regular user (uid 1000 to 59999 with an existing home folder), because each user's browsers have their own registration.
 - **AppImage**: there is no uninstaller. Run `~/.local/share/wirecatch/bin/wirecatch-bridge uninstall`, then delete that folder.
 
