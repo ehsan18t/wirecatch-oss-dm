@@ -25,7 +25,7 @@ describe('the add-on prompt', () => {
     expect(live).toHaveAttribute('aria-live', 'polite');
     expect(live.textContent?.trim()).toBe('');
 
-    await userEvent.setup().click(dialog.getByRole('button', { name: 'Install', exact: true }));
+    await userEvent.setup().click(dialog.getByRole('button', { name: /^Install$/ }));
     await settle();
     // The same element, now with the start of the install in it.
     expect(dialog.getByTestId('addon-live')).toBe(live);
