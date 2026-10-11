@@ -103,7 +103,7 @@ When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ pat
 | Workstream | Status |
 |---|---|
 | W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
-| W1 | fixed (all 12, each with a test shown to fail without its fix); independent review running. Also done alongside: per-machine install (D25) |
+| W1 | done and independently reviewed: all 12 fixed, each with a test shown to fail without its fix, and the review's 29 defects (2 high, 7 medium, 20 low) fixed the same way. Also done alongside: per-machine install (D25). What is left of the review moved to later workstreams, listed below |
 | W14 | next, moved ahead of W2 at the maintainer's request (2026-10-12): the recorded ESLint violations and the crates outside the workspace lints are fixed by cause until both suppression files are gone, then reviewed by an agent that did not write the fixes |
 | W2 to W13 | not started |
 
@@ -115,3 +115,11 @@ Parts of W0 findings carried into later workstreams:
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
 - XC-32: `SECURITY.md` needs a security contact address, a product identity value (W2).
+
+Parts of the W1 review carried into later workstreams:
+
+- CORE-1: the start-up notice (a damaged list set aside, downloads hidden) reaches the person only as a system notification, which is lost when notifications are off; the main window should show it too (W12).
+- EXT-1: with an empty display cache, the first browser download is judged against capture-everything, so it may start the app only for the app to decline it; the extension needs the app's default settings, generated from `crates/protocol` (W3).
+- DUI-2: applying an `ExtensionSettingsPatch` is written twice in TypeScript, in the extension (`lib/protocol.ts`) and the desktop mock (`state/settings-changes.svelte.ts`); it belongs once in `@wirecatch/protocol` (W3).
+- EXT-2: the media content script is injected into every frame even with the button off, where it does one storage read and nothing else; registering it only while the setting is on needs the `scripting` permission (W13).
+- ENG-1: `bench_local` varies by about 40 percent between runs on the same machine, too much to show a regression; it should repeat each case and report the median (W7).
