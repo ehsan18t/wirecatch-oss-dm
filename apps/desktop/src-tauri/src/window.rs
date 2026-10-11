@@ -25,7 +25,29 @@ where
         .any(|a| a.as_ref() == BACKGROUND_FLAG)
 }
 
+/// Most links taken from one command line, and kept waiting for the interface at once.
+pub const MAX_LAUNCH_LINKS: usize = 20;
+
+/// Longest link taken from a command line, in bytes.
+pub const MAX_LINK_LEN: usize = 8 * 1024;
+
+/// Schemes a command-line link may use.
+const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];
+
+/// Whether `arg` (already trimmed) is a link the Add dialog may offer: a known scheme with
+/// something after it, no control characters, and not absurdly long.
+fn is_launch_link(arg: &str) -> bool {
+    if arg.len() > MAX_LINK_LEN || arg.chars().any(char::is_control) {
+        return false;
+    }
+    let lower = arg.to_ascii_lowercase();
+    LINK_SCHEMES
+        .iter()
+        .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
+}
+
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
+/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken.
 pub fn links_from_args<I, S>(args: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -34,12 +56,8 @@ where
     args.into_iter()
         .skip(1)
         .map(|a| a.as_ref().trim().to_owned())
-        .filter(|a| {
-            let lower = a.to_ascii_lowercase();
-            ["http://", "https://", "ftp://", "ftps://"]
-                .iter()
-                .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
-        })
+        .filter(|a| is_launch_link(a))
+        .take(MAX_LAUNCH_LINKS)
         .collect()
 }
 
@@ -48,9 +66,11 @@ where
 pub struct LaunchLinks(Mutex<Vec<String>>);
 
 impl LaunchLinks {
-    /// Keeps `links` for the interface.
+    /// Keeps `links` for the interface, at most [`MAX_LAUNCH_LINKS`] waiting at once.
     pub fn push(&self, links: impl IntoIterator<Item = String>) {
-        self.lock().extend(links);
+        let mut waiting = self.lock();
+        let room = MAX_LAUNCH_LINKS.saturating_sub(waiting.len());
+        waiting.extend(links.into_iter().take(room));
     }
 
     /// Hands every waiting link over, once.
@@ -164,6 +184,41 @@ mod tests {
             ]
         );
         assert!(links_from_args(["https://not-the-program-name.example"]).is_empty());
+    }
+
+    #[test]
+    fn odd_or_hostile_arguments_are_not_taken_as_links() {
+        let long = format!("https://example.com/{}", "a".repeat(MAX_LINK_LEN));
+        let found = links_from_args([
+            "app",
+            "  https://example.com/ok  ",
+            "ftpes://files.example.com/x",
+            "https://example.com/a\nb",
+            "https://example.com/\u{7}bell",
+            "file:///C:/Windows/system32/calc.exe",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            long.as_str(),
+        ]);
+        assert_eq!(
+            found,
+            ["https://example.com/ok", "ftpes://files.example.com/x"]
+        );
+    }
+
+    #[test]
+    fn at_most_twenty_links_are_taken_and_kept() {
+        let many: Vec<String> = std::iter::once("app".to_string())
+            .chain((0..50).map(|i| format!("https://example.com/{i}")))
+            .collect();
+        let found = links_from_args(&many);
+        assert_eq!(found.len(), MAX_LAUNCH_LINKS);
+        assert_eq!(found[0], "https://example.com/0");
+
+        let waiting = LaunchLinks::default();
+        waiting.push(found.clone());
+        waiting.push(found);
+        assert_eq!(waiting.take().len(), MAX_LAUNCH_LINKS);
     }
 
     #[test]
