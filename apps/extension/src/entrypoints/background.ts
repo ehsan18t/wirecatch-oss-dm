@@ -8,6 +8,7 @@ import { cookieHeader } from '@/lib/cookies';
 import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
 import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
 import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
+import { MEDIA_BUTTON_KEY } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { POPUP_PORT_NAME } from '@/lib/messages';
@@ -151,6 +152,7 @@ export default defineBackground(() => {
     getTab: tabInfo,
     send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
     store: mediaStore(),
+    ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
     liveTabIds: async () =>
       (await browser.tabs.query({})).flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
   });
@@ -163,6 +165,9 @@ export default defineBackground(() => {
 
   const hub: Hub = new Hub({
     media,
+    mediaButtonSetting: {
+      save: (on) => browser.storage.local.set({ [MEDIA_BUTTON_KEY]: on }),
+    },
     client,
     cache: storageCache(browser.storage.local),
     downloads,

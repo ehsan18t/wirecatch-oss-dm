@@ -82,6 +82,8 @@ export interface HubDeps {
   requestTimeoutMs?: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs?: number;
+  /** Publishes the "Show download button on videos" setting where content scripts read it (`MEDIA_BUTTON_KEY`). */
+  mediaButtonSetting?: { save(on: boolean): Promise<void> };
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
   media?: MediaCommands;
 }
@@ -638,7 +640,23 @@ export class Hub {
   #adoptSettings(settings: ExtensionSettings): void {
     this.#live = settings;
     this.#saveCache();
+    this.#publishButtonSetting(settings.show_media_button);
     this.#publish();
+  }
+
+  #buttonSetting: boolean | null = null;
+
+  #publishButtonSetting(on: boolean): void {
+    if (this.#buttonSetting === on) return;
+    this.#buttonSetting = on;
+    this.#deps.mediaButtonSetting?.save(on).catch(() => {
+      // Not saved: the buttons keep the previous setting until the next change.
+    });
+  }
+
+  /** The app's settings, or the cached copy when the app is not connected; null before either is known. */
+  knownSettings(): ExtensionSettings | null {
+    return this.#live ?? this.#cache?.settings ?? null;
   }
 
   #saveCache(): void {

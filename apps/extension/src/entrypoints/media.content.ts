@@ -5,17 +5,14 @@
  */
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { CACHE_KEY } from '@/lib/cache';
 import { MediaButton } from '@/lib/media/button';
-import { MEDIA_CHECK, MEDIA_DOWNLOAD, type DownloadAnswer } from '@/lib/media/messages';
-
-/** The setting from the display cache the background keeps; on until the app says otherwise. */
-function buttonSetting(cache: unknown): boolean {
-  return (
-    (cache as { settings?: { show_media_button?: unknown } } | undefined)?.settings?.show_media_button !==
-    false
-  );
-}
+import {
+  MEDIA_BUTTON_KEY,
+  MEDIA_CHECK,
+  MEDIA_DOWNLOAD,
+  mediaButtonOn,
+  type DownloadAnswer,
+} from '@/lib/media/messages';
 
 function isAnswer(value: unknown): value is DownloadAnswer {
   const a = value as Partial<DownloadAnswer> | null;
@@ -45,14 +42,14 @@ export default defineContentScript({
     });
     // A reloaded or updated extension starts a fresh copy of this script: remove the old button.
     ctx.onInvalidated(() => button.destroy());
-    browser.storage.local.get(CACHE_KEY).then(
-      (items) => button.setEnabled(buttonSetting(items[CACHE_KEY])),
+    browser.storage.local.get(MEDIA_BUTTON_KEY).then(
+      (items) => button.setEnabled(mediaButtonOn(items[MEDIA_BUTTON_KEY])),
       () => button.setEnabled(true),
     );
     // Turning the setting on or off (in the popup or the app) takes effect at once.
     const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
-      const change = changes[CACHE_KEY];
-      if (area === 'local' && change !== undefined) button.setEnabled(buttonSetting(change.newValue));
+      const change = changes[MEDIA_BUTTON_KEY];
+      if (area === 'local' && change !== undefined) button.setEnabled(mediaButtonOn(change.newValue));
     };
     browser.storage.onChanged.addListener(onChanged);
     ctx.onInvalidated(() => browser.storage.onChanged.removeListener(onChanged));

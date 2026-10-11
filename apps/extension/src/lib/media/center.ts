@@ -7,6 +7,7 @@ import {
   type ContentRequest,
   type DownloadAnswer,
 } from './messages';
+import { matchingSite } from '../sites';
 import type { MediaRegistry, SavedMedia } from './registry';
 
 /** What the background needs to know about a tab (`tabs.get`). */
@@ -78,12 +79,16 @@ export interface MediaCenterDeps {
   /** Hands media to the app (`Hub.sendMedia`). */
   send(request: MediaRequest): Promise<MediaSendResult>;
   store?: MediaStore;
+  /** The "sites to ignore" setting: no media button there. */
+  ignoredSites?(): readonly string[];
   /** Ids of the tabs open now, so saved lists of closed tabs are not restored. */
   liveTabIds?(): Promise<number[]>;
   saveDelayMs?: number;
 }
 
 export const PRIVATE_WINDOW = 'Wirecatch does not take media from private windows.';
+export const IGNORED_SITE =
+  'This site is on your list of sites to ignore. Remove it from that list in the Wirecatch popup to download from it.';
 const NOTHING_FOUND =
   'Wirecatch has not found anything to download here yet. Play the video for a moment, then try again.';
 const TAB_GONE = 'This tab is closed.';
@@ -163,14 +168,25 @@ export class MediaCenter {
     });
   }
 
+  /** True when the page or the frame is on a site the person told Wirecatch to ignore. */
+  #ignored(sender: ContentSender): boolean {
+    const sites = this.#deps.ignoredSites?.() ?? [];
+    if (sites.length === 0) return false;
+    return (
+      matchingSite(sender.tab?.url ?? null, sites) !== null ||
+      matchingSite(sender.url ?? null, sites) !== null
+    );
+  }
+
   #check(request: ContentRequest, sender: ContentSender): Promise<CheckAnswer> {
-    if (sender.tab?.incognito === true) return Promise.resolve({ show: false });
+    if (sender.tab?.incognito === true || this.#ignored(sender)) return Promise.resolve({ show: false });
     return Promise.resolve({ show: this.#targetFor(request, sender) !== null });
   }
 
   async #download(request: ContentRequest, sender: ContentSender): Promise<DownloadAnswer> {
     const tab = sender.tab;
     if (tab?.incognito === true) return { ok: false, message: PRIVATE_WINDOW };
+    if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
     const target = this.#targetFor(request, sender);
     if (tab === undefined || target === null) return { ok: false, message: NOTHING_FOUND };
     const title = request.type === MEDIA_CHECK ? null : request.title;

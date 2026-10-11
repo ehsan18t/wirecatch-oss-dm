@@ -14,7 +14,13 @@ import {
 } from '../src/lib/media/center';
 import { chooseTarget, describeTarget, type ButtonContext } from '../src/lib/media/choose';
 import type { Detection } from '../src/lib/media/detect';
-import { MAX_SRC_LENGTH, MAX_TITLE_LENGTH, MEDIA_CHECK, MEDIA_DOWNLOAD } from '../src/lib/media/messages';
+import {
+  MAX_SRC_LENGTH,
+  MAX_TITLE_LENGTH,
+  MEDIA_CHECK,
+  MEDIA_DOWNLOAD,
+  mediaButtonOn,
+} from '../src/lib/media/messages';
 import { MediaRegistry, type MediaItem, type SavedMedia } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { asPopupRequest } from '../src/lib/messages';
@@ -167,6 +173,7 @@ interface Harness {
   tabs: Map<number, TabInfo>;
   cookieCalls: Array<[string, string | null]>;
   saved: SavedMedia[];
+  buttonSaves: boolean[];
 }
 
 const harnesses: Harness[] = [];
@@ -218,6 +225,7 @@ async function setup(
     ],
   ]);
   const saved: SavedMedia[] = [];
+  const buttonSaves: boolean[] = [];
   const cookieCalls: Array<[string, string | null]> = [];
   const center: MediaCenter = new MediaCenter({
     registry,
@@ -231,6 +239,7 @@ async function setup(
       },
     },
     saveDelayMs: 5,
+    ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
   });
   const hub: Hub = new Hub({
     client,
@@ -244,6 +253,12 @@ async function setup(
     userAgent: 'TestAgent/1.0',
     newHandoverId: () => `h${app.requests.length}`,
     media: center,
+    mediaButtonSetting: {
+      save: (on) => {
+        buttonSaves.push(on);
+        return Promise.resolve();
+      },
+    },
     requestTimeoutMs: 60,
     withdrawTimeoutMs: 60,
     connectWaitMs: 60,
@@ -253,7 +268,7 @@ async function setup(
     await hub.start();
     await flush();
   }
-  const h = { app, hub, client, registry, center, tabs, cookieCalls, saved };
+  const h = { app, hub, client, registry, center, tabs, cookieCalls, saved, buttonSaves };
   harnesses.push(h);
   return h;
 }
@@ -579,6 +594,44 @@ describe('popup media list', () => {
 
     const second = await setup({ saved: JSON.parse(JSON.stringify(saved)) as unknown });
     expect(second.registry.items(1).map((i) => i.url)).toEqual([HLS.url]);
+  });
+});
+
+describe('the media button setting and ignored sites', () => {
+  it('publishes only the button setting, as a boolean, when it is known and when it changes', async () => {
+    const { app, buttonSaves } = await setup();
+    expect(buttonSaves).toEqual([true]);
+    app.changeSettings({ ignored_sites: ['a.example.com'] });
+    await flush();
+    expect(buttonSaves).toEqual([true]);
+    app.changeSettings({ show_media_button: false });
+    await flush();
+    expect(buttonSaves).toEqual([true, false]);
+  });
+
+  it('reads a missing or malformed value as on, and only false as off', () => {
+    expect(mediaButtonOn(undefined)).toBe(true);
+    expect(mediaButtonOn(true)).toBe(true);
+    expect(mediaButtonOn(false)).toBe(false);
+  });
+
+  it('hides the button on ignored sites, for the page or the frame, and refuses to send from there', async () => {
+    const { center, registry, tabs, app } = await setup({
+      configure: (a) => (a.settings = { ...a.settings, ignored_sites: ['example.com'] }),
+    });
+    registry.add(1, HLS);
+    registry.add(4, HLS);
+    const check = (sender: ContentSender) =>
+      center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, sender);
+    expect(await check(fromTab(1, tabs))).toEqual({ show: false });
+    expect(await check(fromTab(4, tabs, 'https://player.example.com/embed/1'))).toEqual({ show: false });
+    expect(await check(fromTab(4, tabs))).toEqual({ show: true });
+    const answer = await center.handleContentMessage(
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
+      fromTab(1, tabs),
+    );
+    expect(answer).toMatchObject({ ok: false });
+    expect(app.calls('add_download')).toEqual([]);
   });
 });
 

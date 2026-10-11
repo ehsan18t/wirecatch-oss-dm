@@ -4,6 +4,18 @@
  */
 
 export const MEDIA_CHECK = 'wirecatch:media-check';
+
+/**
+ * `storage.local` key holding only the "Show download button on videos" setting, as
+ * a boolean. Content scripts read this key alone, never the settings cache with the
+ * list of ignored sites.
+ */
+export const MEDIA_BUTTON_KEY = 'wirecatch.mediaButton.v1';
+
+/** Reads the stored setting: on unless it is explicitly off (the app's default is on). */
+export function mediaButtonOn(stored: unknown): boolean {
+  return stored !== false;
+}
 /** Longest address sent from a page; longer ones are not media worth handing over. */
 export const MAX_SRC_LENGTH = 8192;
 /** Longest title sent from a page. */
