@@ -85,7 +85,7 @@ async fn commands_drive_the_core_and_state_survives_a_restart() {
     assert!(api::download_is_program(&m, program).unwrap());
     let refused = api::file_to_open(&m, program, false).unwrap_err();
     assert!(
-        refused.contains("is a program") && refused.contains("127.0.0.1"),
+        refused.contains("can run code") && refused.contains("127.0.0.1"),
         "{refused}"
     );
     assert!(api::file_to_open(&m, program, true).is_ok());
@@ -94,7 +94,7 @@ async fn commands_drive_the_core_and_state_survives_a_restart() {
     let bad = api::add_download(&m, request("not a link".into(), &saved, true))
         .await
         .unwrap_err();
-    assert!(bad.contains("not a valid web link"), "{bad}");
+    assert!(bad.contains("is not a valid link"), "{bad}");
 
     // Remove, with the file.
     api::remove(&m, &[a], true).await.unwrap();
