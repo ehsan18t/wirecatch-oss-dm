@@ -64,6 +64,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
     let mut changed = Vec::new();
     for stored in snapshot.downloads {
         let mut entry = Entry {
+            media_job: stored.media.and_then(|m| m.job),
             row: stored.summary,
             position: stored.position,
             origin: stored.origin,
@@ -95,7 +96,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
         }
         if matches!(
             entry.row.status,
-            DownloadStatus::Connecting | DownloadStatus::Downloading
+            DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Processing
         ) {
             entry.row.status = DownloadStatus::Queued;
             entry.resume_first = true;
@@ -118,6 +119,8 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
         claimed: Default::default(),
         running: Default::default(),
         pending: BTreeMap::new(),
+        media: BTreeMap::new(),
+        addon: Default::default(),
         handovers: Default::default(),
         dirty: Default::default(),
         last_checked: around.now,
@@ -192,6 +195,7 @@ mod tests {
             position: id * 10,
             origin: Origin::default(),
             naming: NameChoice::settled(),
+            media: None,
         }
     }
 

@@ -87,9 +87,9 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
         return false;
     };
     let row = &mut entry.row;
-    let progress = &run.progress;
+    let reading = run.gauge.read();
     // The engine names the file once the server has answered.
-    if row.status == DownloadStatus::Connecting && progress.file_name().is_none() {
+    if row.status == DownloadStatus::Connecting && !reading.answered {
         return false;
     }
     let before = (
@@ -100,10 +100,14 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
         row.connections,
         row.eta_secs,
     );
-    row.status = DownloadStatus::Downloading;
-    row.done = progress.done();
-    row.total = progress.total();
-    row.connections = u32::try_from(progress.connections()).unwrap_or(u32::MAX);
+    row.status = if reading.processing {
+        DownloadStatus::Processing
+    } else {
+        DownloadStatus::Downloading
+    };
+    row.done = reading.done;
+    row.total = reading.total;
+    row.connections = u32::try_from(reading.connections).unwrap_or(u32::MAX);
     row.speed = run.meter.sample(row.done, now);
     row.eta_secs = speed::eta(row.total, row.done, row.speed);
     before

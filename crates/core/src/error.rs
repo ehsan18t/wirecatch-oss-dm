@@ -23,9 +23,18 @@ pub enum CoreError {
     #[error("That download was already confirmed or dismissed, or the browser took it back.")]
     ConfirmationNotFound(u64),
 
-    /// A link that is not an http or https URL.
-    #[error("\"{0}\" is not a valid web link. Check that it starts with http:// or https://.")]
+    /// A link that is not an http, https, ftp, ftps or ftpes URL.
+    #[error(
+        "\"{0}\" is not a valid link. Check that it starts with http://, https://, ftp:// or ftps://."
+    )]
     InvalidUrl(String),
+
+    /// The choice needs the media add-on, which is not installed. The UI was
+    /// told with `AddonRequired`.
+    #[error(
+        "This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again."
+    )]
+    AddonRequired,
 
     /// A value the user entered is out of range or inconsistent.
     #[error("{0}")]
@@ -132,7 +141,8 @@ impl CoreError {
             | CoreError::DefaultQueue
             | CoreError::Path(_)
             | CoreError::ProfileTooNew { .. }
-            | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
+            | CoreError::InvalidProfile(_)
+            | CoreError::AddonRequired => ErrorCode::InvalidRequest,
             CoreError::DatabaseTooNew { .. }
             | CoreError::Database(_)
             | CoreError::File { .. }
@@ -184,6 +194,7 @@ mod tests {
                 source: io(),
             },
             CoreError::NotStarted("It was removed.".into()),
+            CoreError::AddonRequired,
             CoreError::Closed,
             CoreError::Internal("a bug".into()),
         ];

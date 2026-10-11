@@ -129,6 +129,13 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
     if partial_files(path).iter().any(|p| p.exists()) {
         return None;
     }
+    // A media download still has its work folders until its file is complete.
+    if [crate::media::work_dir(path), crate::media::stream_dir(path)]
+        .iter()
+        .any(|p| p.exists())
+    {
+        return None;
+    }
     std::fs::metadata(path)
         .ok()
         .filter(|m| m.is_file())

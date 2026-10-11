@@ -8,9 +8,12 @@
 
 use wirecatch_engine::Url;
 use wirecatch_protocol::app::{
-    CaptureConfirmation, DownloadSummary, PendingCapture, PortablePath, UiEvent,
+    CaptureConfirmation, Category, DownloadSummary, MediaSummary, PendingCapture, PortablePath,
+    UiEvent,
 };
-use wirecatch_protocol::extension::{AddAction, AddedDownload, NewDownload, WithdrawOutcome};
+use wirecatch_protocol::extension::{
+    AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
+};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use super::Manager;
@@ -18,6 +21,7 @@ use super::downloads::{NewEntry, capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
+use crate::media::StoredMedia;
 use crate::settings;
 use crate::store::Origin;
 use crate::{headers, naming};
@@ -57,6 +61,13 @@ impl Manager {
         if known {
             return self.known_handover(&capture.handover_id).await;
         }
+        if capture
+            .media
+            .as_ref()
+            .is_some_and(|m| m.kind != MediaKind::Direct)
+        {
+            return self.add_media_capture(capture, queue);
+        }
         if ask {
             return self.hold_for_confirmation(capture, url, queue);
         }
@@ -74,6 +85,8 @@ impl Manager {
                     size: capture.size_hint,
                     name: capture.suggested_name.clone(),
                 }),
+                media: direct_media(&capture),
+                category: direct_category(&capture),
                 url,
             })
             .await?;
@@ -202,6 +215,8 @@ impl Manager {
                             state.pending.remove(&pending);
                             self.emit(UiEvent::ConfirmationClosed { id: pending });
                         }
+                    } else {
+                        self.withdraw_media_handover(&mut state, pending, handover_id);
                     }
                     state.handovers.remove(handover_id);
                     return Ok(WithdrawOutcome::Withdrawn);
@@ -380,6 +395,8 @@ impl Manager {
                     size: request.size_hint,
                     name: request.suggested_name.clone(),
                 }),
+                media: direct_media(request),
+                category: direct_category(request),
             })
             .await?;
         match added {
@@ -391,8 +408,40 @@ impl Manager {
     }
 }
 
+/// The row's media details for a direct video or audio file.
+fn direct_media(capture: &NewDownload) -> Option<StoredMedia> {
+    let hint = capture
+        .media
+        .as_ref()
+        .filter(|m| m.kind == MediaKind::Direct)?;
+    Some(StoredMedia {
+        summary: MediaSummary {
+            quality: "Original".into(),
+            source: hint.kind,
+        },
+        job: None,
+    })
+}
+
+/// A direct media file is video, or audio when the browser says so.
+fn direct_category(capture: &NewDownload) -> Option<Category> {
+    capture
+        .media
+        .as_ref()
+        .filter(|m| m.kind == MediaKind::Direct)?;
+    let audio = capture
+        .mime
+        .as_deref()
+        .is_some_and(|m| m.trim().to_ascii_lowercase().starts_with("audio/"));
+    Some(if audio {
+        Category::Audio
+    } else {
+        Category::Video
+    })
+}
+
 /// The headers that make a captured download work outside the browser.
-fn origin_of(capture: &NewDownload) -> Origin {
+pub(super) fn origin_of(capture: &NewDownload) -> Origin {
     Origin {
         user_agent: capture.user_agent.clone(),
         headers: headers::for_capture(

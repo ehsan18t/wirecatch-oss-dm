@@ -1,11 +1,14 @@
 //! The download manager: owns every download, queue and setting, decides what runs,
 //! and tells the UI and socket clients about changes.
 
+mod addons;
 mod captures;
 mod downloads;
 #[cfg(test)]
 mod fake;
 mod handovers;
+mod media;
+mod media_run;
 mod plan;
 mod preferences;
 mod queues;
@@ -33,6 +36,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::UiEvent;
 use wirecatch_protocol::wire::Event;
 
+use crate::addons::manifest::MediaAddonSources;
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
@@ -68,6 +72,11 @@ pub struct ManagerConfig {
     /// the app gives up and the browser keeps the download. Shorter than the
     /// extension's own wait for the app's reply.
     pub capture_timeout: Duration,
+    /// Where the media add-on comes from: the pinned official releases, or a
+    /// local server in tests.
+    pub addon_sources: MediaAddonSources,
+    /// How long the media add-on's yt-dlp may take to read a page.
+    pub media_timeout: Duration,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -75,6 +84,9 @@ pub const DEFAULT_CAPTURE_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// The default [`ManagerConfig::stop_timeout`].
 pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The default [`ManagerConfig::media_timeout`].
+pub const DEFAULT_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
 
 impl ManagerConfig {
     /// A configuration using the real clock.
@@ -85,7 +97,22 @@ impl ManagerConfig {
             clock: Arc::new(SystemClock),
             stop_timeout: DEFAULT_STOP_TIMEOUT,
             capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
+            addon_sources: MediaAddonSources::official(),
+            media_timeout: DEFAULT_MEDIA_TIMEOUT,
         }
+    }
+
+    /// Installs and updates the media add-on from `sources` instead of the
+    /// official releases.
+    pub fn with_addon_sources(mut self, sources: MediaAddonSources) -> Self {
+        self.addon_sources = sources;
+        self
+    }
+
+    /// Uses `timeout` as the [`media_timeout`](Self::media_timeout).
+    pub fn with_media_timeout(mut self, timeout: Duration) -> Self {
+        self.media_timeout = timeout;
+        self
     }
 
     /// Uses `clock` instead of the real clock.
@@ -131,6 +158,12 @@ struct Inner {
     stop_timeout: Duration,
     capture_timeout: Duration,
     folders: KnownFolders,
+    /// The media add-on's folder.
+    addon_dir: PathBuf,
+    addon_sources: MediaAddonSources,
+    /// A private folder for short-lived files (cookies handed to yt-dlp).
+    temp_dir: PathBuf,
+    media_timeout: Duration,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
@@ -166,7 +199,10 @@ impl Manager {
             let _ = failures.send(UiEvent::StorageFailed(user_error::storage_failed(&reason)));
         });
         let dir = config.data_dir.clone();
+        let addon_dir = crate::addons::media_dir(&config.data_dir);
+        let temp_dir = config.data_dir.join("tmp");
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
+        let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
         let (store, restored) = blocking(&runtime, move || {
             let (store, snapshot) = Store::open(&dir, on_failure)?;
@@ -175,7 +211,11 @@ impl Manager {
                 now_millis,
                 finished_size: &naming::finished_size,
             };
-            Ok((store, restore::restore(snapshot, around)))
+            let mut restored = restore::restore(snapshot, around);
+            restored.state.addon = addons::AddonSlot::load(&addons_at);
+            // Cookies files left by a crash: nothing may keep them.
+            let _ = std::fs::remove_dir_all(&temp_at);
+            Ok((store, restored))
         })
         .await?;
         store.save_settings(restored.state.settings.clone());
@@ -191,6 +231,10 @@ impl Manager {
             stop_timeout: config.stop_timeout,
             capture_timeout: config.capture_timeout,
             folders: config.folders,
+            addon_dir,
+            addon_sources: config.addon_sources,
+            temp_dir,
+            media_timeout: config.media_timeout,
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),
@@ -256,11 +300,12 @@ impl Manager {
             self.inner.stopped.clone(),
         ));
         self.spawn(run_scheduler(
-            weak,
+            weak.clone(),
             self.inner.clock.clone(),
             self.inner.queues_changed.clone(),
             self.inner.stopped.clone(),
         ));
+        self.spawn(Manager::run_addon_updates(weak, self.inner.stopped.clone()));
     }
 
     /// Asks a running download to stop, and makes sure it does: a run still going

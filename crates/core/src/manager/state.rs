@@ -14,8 +14,11 @@ use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, QueueId};
 
+use super::addons::AddonSlot;
 use super::handovers::Handovers;
+use super::media::MediaPending;
 use crate::error::{CoreError, Result};
+use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
@@ -33,6 +36,12 @@ pub(super) struct State {
     /// Downloads with a run, so the ticker visits only those.
     pub running: BTreeSet<DownloadId>,
     pub pending: BTreeMap<u64, Pending>,
+    /// Media captures being looked at, waiting for the media add-on, or waiting
+    /// for the user's choice of quality. Their ids come from the same counter as
+    /// `pending`, so the two never share one.
+    pub media: BTreeMap<u64, MediaPending>,
+    /// The media add-on.
+    pub addon: AddonSlot,
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
@@ -127,6 +136,9 @@ pub(super) struct Entry {
     /// Set while its files are moved to another folder (cancelled when done); it is
     /// not started meanwhile.
     pub moving: Option<CancellationToken>,
+    /// For a stream or a page read by yt-dlp: what to download. `None` for every
+    /// other download, including direct media files.
+    pub media_job: Option<MediaJob>,
 }
 
 /// What the browser saw of a captured download, so the app can tell when its own
@@ -148,12 +160,33 @@ pub(super) struct Run {
     pub cancel: CancellationToken,
     /// Cancelled by the run's task once the engine has returned and closed its files.
     pub exited: CancellationToken,
-    pub progress: Arc<Progress>,
+    pub gauge: Gauge,
     /// Why the run is being stopped, once it is.
     pub stop: Option<Stop>,
     pub meter: SpeedMeter,
     /// The run's task, so a run that ignores its stop request can be abandoned.
     pub task: AbortHandle,
+}
+
+/// Where a run's progress is read from.
+pub(super) enum Gauge {
+    Engine(Arc<Progress>),
+    Media(Arc<MediaProgress>),
+}
+
+impl Gauge {
+    pub fn read(&self) -> Reading {
+        match self {
+            Gauge::Engine(p) => Reading {
+                answered: p.file_name().is_some(),
+                done: p.done(),
+                total: p.total(),
+                connections: p.connections(),
+                processing: false,
+            },
+            Gauge::Media(m) => m.read(),
+        }
+    }
 }
 
 /// Why a run was stopped, which decides the status it ends in.
@@ -332,7 +365,21 @@ impl Entry {
             position: self.position,
             origin: self.origin.clone(),
             naming: self.naming.clone(),
+            media: self.row.media.clone().map(|summary| StoredMedia {
+                summary,
+                job: self.media_job.clone(),
+            }),
         }
+    }
+
+    /// The files and folders an unfinished download keeps next to its final path.
+    pub fn partial_paths(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = crate::naming::partial_files(self.path()).to_vec();
+        if self.media_job.is_some() {
+            paths.push(crate::media::work_dir(self.path()));
+            paths.push(crate::media::stream_dir(self.path()));
+        }
+        paths
     }
 
     /// Asks a running download to stop; the run's end decides its new status.
@@ -411,7 +458,7 @@ mod tests {
                 answered: CancellationToken::new(),
                 cancel: CancellationToken::new(),
                 exited: CancellationToken::new(),
-                progress: Arc::new(Progress::default()),
+                gauge: Gauge::Engine(Arc::new(Progress::default())),
                 stop: None,
                 meter: SpeedMeter::default(),
                 task: idle_task(),
@@ -420,6 +467,7 @@ mod tests {
             cleanup: None,
             removing: false,
             moving: None,
+            media_job: None,
         }
     }
 

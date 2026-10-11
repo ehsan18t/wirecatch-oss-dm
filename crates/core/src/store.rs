@@ -16,6 +16,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::error::{CoreError, Result};
+use crate::media::StoredMedia;
 use crate::owner_only;
 
 /// File name of the database inside the data folder.
@@ -63,6 +64,9 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE downloads ADD COLUMN chosen_name TEXT;
     ALTER TABLE downloads ADD COLUMN chosen_folder TEXT;
 "#,
+    r#"
+    ALTER TABLE downloads ADD COLUMN media TEXT;
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -92,6 +96,9 @@ pub(crate) struct StoredDownload {
     pub position: i64,
     pub origin: Origin,
     pub naming: NameChoice,
+    /// For video and audio: what the row shows and, for streams and pages, what
+    /// to download (kept so it continues after a restart).
+    pub media: Option<StoredMedia>,
 }
 
 /// How a download's final name and folder get decided.
@@ -516,7 +523,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
-                added_at, completed_at, origin, settled, chosen_name, chosen_folder
+                added_at, completed_at, origin, settled, chosen_name, chosen_folder, media
          FROM downloads ORDER BY position",
     )?;
     let downloads = stmt
@@ -579,8 +586,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     tx.prepare_cached(
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
-             added_at, completed_at, origin, settled, chosen_name, chosen_folder)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             added_at, completed_at, origin, settled, chosen_name, chosen_folder, media)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
     )?
     .execute(params![
         d.id.0,
@@ -599,6 +606,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.naming.settled,
         row.naming.name,
         row.naming.folder,
+        row.media.as_ref().map(to_json),
     ])?;
     Ok(())
 }
@@ -615,6 +623,9 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
         warn!(id = id.0, "skipping a stored download that cannot be read");
         return Ok(None);
     };
+    let media: Option<StoredMedia> = row
+        .get::<_, Option<String>>(16)?
+        .and_then(|json| from_json(&json, "download media"));
     let file_name = PathBuf::from(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -639,7 +650,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             added_at: row.get(10)?,
             completed_at: row.get(11)?,
             waiting: None,
-            media: None,
+            media: media.as_ref().map(|m| m.summary.clone()),
         },
         position: row.get(4)?,
         origin,
@@ -648,6 +659,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             name: row.get(14)?,
             folder: row.get(15)?,
         },
+        media,
     }))
 }
 
@@ -741,6 +753,7 @@ mod tests {
                 name: Some("chosen.zip".into()),
                 folder: None,
             },
+            media: None,
         }
     }
 
@@ -822,6 +835,31 @@ mod tests {
         store.save_last_ids(LastIds::default());
         store.flush().await;
         assert_eq!(stored_ids(&other), vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn a_media_download_keeps_what_it_downloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut row = download(1);
+        let media = StoredMedia {
+            summary: wirecatch_protocol::app::MediaSummary {
+                quality: "1080p".into(),
+                source: wirecatch_protocol::extension::MediaKind::Page,
+            },
+            job: Some(crate::media::MediaJob::Page {
+                format: "137+140".into(),
+                video: Some("137".into()),
+                audio: Some("140".into()),
+            }),
+        };
+        row.summary.media = Some(media.summary.clone());
+        row.media = Some(media);
+        store.save_downloads(vec![row.clone()]);
+        store.flush().await;
+        drop(store);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.downloads, vec![row]);
     }
 
     #[tokio::test]
