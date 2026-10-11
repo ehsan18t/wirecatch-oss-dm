@@ -81,9 +81,15 @@ impl Manager {
 
     /// Installs an add-on in the background; progress and the result arrive as
     /// `AddonsChanged`. Installing one that is installed and up to date, or
-    /// already being installed, does nothing. A damaged install is repaired.
-    pub fn install_addon(&self, id: &str) -> Result<()> {
+    /// already being installed, does nothing. The files are looked at again
+    /// first, so a damaged install (a program an antivirus took away, say) is
+    /// repaired.
+    pub async fn install_addon(&self, id: &str) -> Result<()> {
         check_id(id)?;
+        if self.lock_open()?.addon.op.is_some() {
+            return Ok(());
+        }
+        self.rescan_addon().await;
         let mut state = self.lock_open()?;
         let plan = self.addon_plan(&state.addon);
         if state.addon.op.is_some() || plan.is_empty() {
@@ -96,15 +102,22 @@ impl Manager {
     /// Brings an installed add-on up to date in the background, the same way as
     /// [`install_addon`](Self::install_addon) (which it is, for one that is not
     /// installed).
-    pub fn update_addon(&self, id: &str) -> Result<()> {
-        self.install_addon(id)
+    pub async fn update_addon(&self, id: &str) -> Result<()> {
+        self.install_addon(id).await
     }
 
     /// Removes an add-on and its files, stopping an install in progress first.
+    /// Refused while a video is being read or downloaded with it. Whatever
+    /// happens, the add-on's state afterwards is what is on disk.
     pub async fn remove_addon(&self, id: &str) -> Result<()> {
         check_id(id)?;
         let ended = {
             let state = self.lock_open()?;
+            if addon_in_use(&state) {
+                return Err(CoreError::WrongState(
+                    "The media add-on is in use by a video that is being read or downloaded. Pause those downloads or wait for them to finish, then remove it.",
+                ));
+            }
             state.addon.op.as_ref().map(|op| {
                 op.cancel.cancel();
                 op.ended.clone()
@@ -114,18 +127,58 @@ impl Manager {
             ended.cancelled().await;
         }
         let dir = self.inner.addon_dir.clone();
-        self.blocking(move || match std::fs::remove_dir_all(&dir) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(CoreError::Invalid(format!(
-                "The media add-on could not be removed ({e}). Close any video that is still being processed, then try again."
-            ))),
-        })
-        .await?;
+        let removed = self
+            .blocking(move || match std::fs::remove_dir_all(&dir) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(CoreError::Invalid(format!(
+                    "The media add-on could not be removed completely ({e}). Close any program that may be using its files, then remove it again."
+                ))),
+            })
+            .await;
+        {
+            let mut state = self.lock();
+            state.addon.failure = None;
+            state.addon.latest_ytdlp = None;
+        }
+        // Part of it may be gone: show what is really left.
+        self.rescan_addon().await;
+        self.emit_addons(&self.lock().addon);
+        removed
+    }
+
+    /// Looks at the add-on's files again, off the async threads, and updates
+    /// what the manager believes is installed. Does nothing while an install
+    /// owns the folder.
+    pub(super) async fn rescan_addon(&self) {
+        let dir = self.inner.addon_dir.clone();
+        let Ok((record, tools)) = self
+            .blocking(move || {
+                let record = Record::load(&dir);
+                let tools = addons::tools(&dir, &record);
+                Ok((record, tools))
+            })
+            .await
+        else {
+            return;
+        };
         let mut state = self.lock();
-        state.addon = AddonSlot::default();
-        self.emit_addons(&state.addon);
-        Ok(())
+        if state.addon.op.is_some() {
+            return;
+        }
+        let changed = state.addon.record != record || state.addon.tools != tools;
+        state.addon.record = record;
+        state.addon.tools = tools;
+        if changed {
+            info!("the media add-on's files changed on disk");
+            self.emit_addons(&state.addon);
+        }
+    }
+
+    /// [`rescan_addon`](Self::rescan_addon) in the background.
+    pub(super) fn spawn_addon_rescan(&self) {
+        let manager = self.clone();
+        self.spawn(async move { manager.rescan_addon().await });
     }
 
     /// Looks for a newer yt-dlp now (sites change often, and an old yt-dlp stops
@@ -552,6 +605,22 @@ impl Manager {
             }
         }
     }
+}
+
+/// Whether a video is being read with yt-dlp or downloaded as media (which may
+/// run yt-dlp or ffmpeg) right now.
+fn addon_in_use(state: &super::state::State) -> bool {
+    let reading = state.media.values().any(|m| {
+        m.source.kind == wirecatch_protocol::extension::MediaKind::Page
+            && matches!(m.stage, super::media::MediaStage::Analysing(_))
+    });
+    let downloading = state.running.iter().any(|id| {
+        state
+            .downloads
+            .get(id)
+            .is_some_and(|e| e.media_job.is_some())
+    });
+    reading || downloading
 }
 
 fn check_id(id: &str) -> Result<()> {

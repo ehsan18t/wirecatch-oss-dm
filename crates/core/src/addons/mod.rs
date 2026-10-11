@@ -13,6 +13,8 @@ pub(crate) mod manifest;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -74,11 +76,35 @@ impl Record {
 }
 
 /// The programs of an installed, intact media add-on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct MediaTools {
     pub ytdlp: PathBuf,
     pub ffmpeg: PathBuf,
     pub deno: PathBuf,
+    /// Set (for every clone) when one of the programs could not be started, for
+    /// example because an antivirus took it away: the manager then looks at the
+    /// files again instead of trusting what it found earlier.
+    broken: Arc<AtomicBool>,
+}
+
+impl PartialEq for MediaTools {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.ytdlp, &self.ffmpeg, &self.deno) == (&other.ytdlp, &other.ffmpeg, &other.deno)
+    }
+}
+
+impl Eq for MediaTools {}
+
+impl MediaTools {
+    /// Records that a program could not be started.
+    pub fn mark_broken(&self) {
+        self.broken.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether a program could not be started since these were found.
+    pub fn is_broken(&self) -> bool {
+        self.broken.load(Ordering::Relaxed)
+    }
 }
 
 /// The add-on's programs if every recorded file is there with its recorded
@@ -101,6 +127,7 @@ pub(crate) fn tools(dir: &Path, record: &Record) -> Option<MediaTools> {
         ytdlp: program("yt-dlp")?,
         ffmpeg: program("ffmpeg")?,
         deno: program("deno")?,
+        broken: Arc::default(),
     })
 }
 

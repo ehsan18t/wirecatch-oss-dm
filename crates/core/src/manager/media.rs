@@ -303,7 +303,13 @@ impl Manager {
         };
         let found = match source.kind {
             MediaKind::Page => match &tools {
-                Some(tools) => self.read_page(&source, tools, &token).await,
+                Some(tools) => {
+                    let found = self.read_page(&source, tools, &token).await;
+                    if tools.is_broken() {
+                        self.rescan_addon().await;
+                    }
+                    found
+                }
                 None => Err(addon_missing()),
             },
             _ => {

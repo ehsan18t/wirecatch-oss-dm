@@ -100,26 +100,27 @@ impl Manager {
         let incoming = profile::parse(&bytes)?;
         let wants_media = incoming.addons.iter().any(|a| a == MEDIA_ADDON_ID);
 
-        let mut state = self.lock_open()?;
-        let current = state.queue_list();
-        let imported = profile::merge(incoming, &current, &self.inner.folders, || {
-            state.ids.queue()
-        })?;
-        self.inner.store.save_last_ids(state.ids.last());
-        for queue in imported.queues {
-            match state.slot_mut(queue.id) {
-                Ok(slot) => apply_to_slot(slot, queue),
-                Err(_) => state.queues.push(QueueSlot::new(queue)),
+        let install = {
+            let mut state = self.lock_open()?;
+            let current = state.queue_list();
+            let imported = profile::merge(incoming, &current, &self.inner.folders, || {
+                state.ids.queue()
+            })?;
+            self.inner.store.save_last_ids(state.ids.last());
+            for queue in imported.queues {
+                match state.slot_mut(queue.id) {
+                    Ok(slot) => apply_to_slot(slot, queue),
+                    Err(_) => state.queues.push(QueueSlot::new(queue)),
+                }
             }
-        }
-        // Queues first: the new settings may name a queue that was just added.
-        self.queues_changed(&mut state);
-        self.apply_settings(&mut state, imported.settings);
-        self.emit(UiEvent::SettingsImported(imported.summary));
-        let install = wants_media && state.addon.tools.is_none();
-        drop(state);
+            // Queues first: the new settings may name a queue that was just added.
+            self.queues_changed(&mut state);
+            self.apply_settings(&mut state, imported.settings);
+            self.emit(UiEvent::SettingsImported(imported.summary));
+            wants_media && state.addon.tools.is_none()
+        };
         if install {
-            self.install_addon(MEDIA_ADDON_ID)?;
+            self.install_addon(MEDIA_ADDON_ID).await?;
         }
         Ok(())
     }

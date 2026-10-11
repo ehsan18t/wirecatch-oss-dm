@@ -74,6 +74,8 @@ impl Manager {
         let mut options = media_options(&entry.origin);
         options.connections = connections.max(1);
         options.rate_limiters = limiters;
+        let tools = state.addon.tools.clone();
+        let manager = Arc::downgrade(&self.inner);
         let work = Job {
             output: entry.path().to_path_buf(),
             url,
@@ -87,7 +89,13 @@ impl Manager {
             let progress = Arc::new(MediaProgress::default());
             let gauge = Gauge::Media(progress.clone());
             (gauge, async move {
-                RunEnd::Media(run(work, job, &progress, &cancel).await)
+                let end = run(work, job, &progress, &cancel).await;
+                if tools.is_some_and(|t| t.is_broken())
+                    && let Some(manager) = Manager::from_weak(&manager)
+                {
+                    manager.spawn_addon_rescan();
+                }
+                RunEnd::Media(end)
             })
         });
     }
@@ -140,10 +148,13 @@ async fn run_stream(
             Ok(MediaDone::Completed { path, bytes })
         }
         Ok(_) | Err(wirecatch_streams::Error::Cancelled) => Ok(MediaDone::Paused),
-        Err(e) => Err(stream_error(
-            &e,
-            job.output.parent().unwrap_or(Path::new("")),
-        )),
+        Err(e) => {
+            note_missing_ffmpeg(job, &e);
+            Err(stream_error(
+                &e,
+                job.output.parent().unwrap_or(Path::new("")),
+            ))
+        }
     }
 }
 
@@ -211,7 +222,6 @@ async fn run_page(
     let file = match files.as_slice() {
         [single] => single.clone(),
         [video, audio] => {
-            let ffmpeg = &tools.ffmpeg;
             let ext = job
                 .output
                 .extension()
@@ -219,7 +229,7 @@ async fn run_page(
                 .unwrap_or("mkv");
             let joined = work.join(format!("joined.{ext}"));
             progress.set_processing(true);
-            let result = merge::join(ffmpeg, video, audio, &joined, cancel).await;
+            let result = merge::join(tools, video, audio, &joined, cancel).await;
             progress.set_processing(false);
             match result? {
                 Joined::Done => joined,
@@ -229,6 +239,13 @@ async fn run_page(
         _ => return Err(addon_missing()),
     };
     finish(&file, &job.output, &work).await
+}
+
+/// An ffmpeg that could not be started means the add-on needs looking at again.
+fn note_missing_ffmpeg(job: &Job, error: &wirecatch_streams::Error) {
+    if let (wirecatch_streams::Error::FfmpegMissing(_), Some(tools)) = (error, &job.tools) {
+        tools.mark_broken();
+    }
 }
 
 /// Runs the part downloads side by side.
@@ -300,7 +317,10 @@ async fn fetch_part(
             match wirecatch_streams::download(request, stream, cancel.clone()).await {
                 Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
                 Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
-                Err(e) => return Err(stream_error(&e, work)),
+                Err(e) => {
+                    note_missing_ffmpeg(job, &e);
+                    return Err(stream_error(&e, work));
+                }
             }
         }
         _ => {

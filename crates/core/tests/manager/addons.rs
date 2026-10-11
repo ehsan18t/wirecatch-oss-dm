@@ -15,7 +15,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() {
     let h = harness(sources).await;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").unwrap();
+    h.manager.install_addon("media").await.unwrap();
     // Progress is reported while it downloads.
     let installing = wait_addon(&mut ui, "installing", |a| {
         matches!(a.state, AddonState::Installing { .. })
@@ -82,7 +82,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() {
 
     // Installing again does nothing: no request, no change.
     let before = server.requests("r1/yt-dlp").len();
-    h.manager.install_addon("media").unwrap();
+    h.manager.install_addon("media").await.unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(server.requests("r1/yt-dlp").len(), before);
@@ -92,7 +92,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() {
     h.restart().await;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 
-    assert!(h.manager.install_addon("something-else").is_err());
+    assert!(h.manager.install_addon("something-else").await.is_err());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -261,7 +261,7 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
     let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_eq!(info.size, Some(new_zip.len() as u64));
-    h.manager.update_addon("media").unwrap();
+    h.manager.update_addon("media").await.unwrap();
     crate::common::wait_until("ffmpeg updated", || {
         let info = h.manager.list_addons().remove(0);
         (info.state == AddonState::Installed).then_some(())
@@ -304,4 +304,158 @@ async fn importing_settings_reinstalls_the_add_on() {
     .await;
     assert_eq!(info.id, "media");
     assert!(addon_dir(&second).join("installed.json").is_file());
+}
+
+/// An antivirus may take a program away; installing again must look at the
+/// disk rather than trust what was found at startup.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_program_taken_away_is_reinstalled() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "gone")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
+    std::fs::remove_file(&ytdlp).unwrap();
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon("media").await.unwrap();
+    let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+    assert_eq!(info.id, "media");
+    assert!(ytdlp.is_file(), "yt-dlp was not put back");
+}
+
+/// When a program cannot be started, the add-on is looked at again, so the UI
+/// offers the repair instead of showing it as installed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_program_that_cannot_start_shows_the_add_on_as_damaged() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "nostart")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    std::fs::remove_file(addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"))).unwrap();
+    h.manager
+        .add_capture(crate::media_support::media_capture(
+            &server.url("watch/1"),
+            wirecatch_protocol::extension::MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let message = crate::common::wait_until("the add-on shown as damaged", || {
+        match h.manager.list_addons().remove(0).state {
+            AddonState::Failed { message } => Some(message),
+            _ => None,
+        }
+    })
+    .await;
+    assert!(message.contains("damaged"), "{message}");
+}
+
+/// A removal that fails half way leaves the add-on shown as it is on disk.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_removal_leaves_a_consistent_state() {
+    let server = FileServer::start().await;
+    let mut h = harness(publish(&server, &Releases::fake(), "stuck")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let dir = addon_dir(&h);
+    // Part of it is already gone, and another part cannot be deleted.
+    std::fs::remove_file(dir.join("yt-dlp").join(exe("yt-dlp"))).unwrap();
+    let lock = Lock::hold(&dir.join("deno"), &exe("deno"));
+    let removed = h.manager.remove_addon("media").await;
+    assert!(removed.is_err(), "the removal should have failed");
+    let shown = h.manager.list_addons().remove(0).state;
+    drop(lock);
+    h.restart().await;
+    assert_eq!(shown, h.manager.list_addons().remove(0).state);
+    assert!(
+        matches!(shown, AddonState::Failed { .. } | AddonState::NotInstalled),
+        "{shown:?}"
+    );
+}
+
+/// Keeps a file from being deleted until dropped.
+struct Lock {
+    #[cfg(windows)]
+    _file: std::fs::File,
+    #[cfg(unix)]
+    dir: std::path::PathBuf,
+}
+
+impl Lock {
+    fn hold(dir: &std::path::Path, name: &str) -> Self {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(dir.join(name))
+                .unwrap();
+            Lock { _file: file }
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = name;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+            Lock {
+                dir: dir.to_path_buf(),
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Lock {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o755));
+    }
+}
+
+/// Removing the add-on while a video is downloaded with it is refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_add_on_is_not_removed_while_in_use() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "busy")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    server.put("fmt/v.mp4", crate::common::test_data(400 * 1024));
+    server.throttle("fmt/v.mp4", Some(50 * 1024));
+    let info = serde_json::json!({"title": "Busy", "formats": [
+        {"format_id": "1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+         "protocol": "https", "url": server.url("fmt/v.mp4")}
+    ]});
+    crate::media_support::tell_tool(&h, "info.json", &info.to_string());
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(crate::media_support::media_capture(
+            &server.url("watch/9"),
+            wirecatch_protocol::extension::MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = next_event(&mut ui, "a choice", |e| match e {
+        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
+        _ => None,
+    })
+    .await;
+    h.manager
+        .choose_media(
+            choice.id,
+            wirecatch_protocol::app::MediaSelection {
+                option_id: "1".into(),
+                folder: None,
+                file_name: None,
+                queue: None,
+            },
+        )
+        .await
+        .unwrap();
+    let id = h.manager.list_downloads()[0].id;
+    h.wait_for(id, "downloading", |r| r.done > 0).await;
+    let refused = h.manager.remove_addon("media").await;
+    assert!(
+        matches!(refused, Err(wirecatch_core::CoreError::WrongState(_))),
+        "{refused:?}"
+    );
+    assert!(addon_dir(&h).join("installed.json").is_file());
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 }

@@ -374,7 +374,7 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
     assert!(addon.size.is_some_and(|s| s > 0));
     assert!(h.manager.pending_media_choices().is_empty());
 
-    h.manager.install_addon("media").unwrap();
+    h.manager.install_addon("media").await.unwrap();
     let choice = choice_requested(&mut ui).await;
     assert_eq!(
         choice.page_url.as_deref(),

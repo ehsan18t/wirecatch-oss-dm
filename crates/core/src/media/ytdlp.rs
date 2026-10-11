@@ -181,7 +181,10 @@ pub(crate) async fn extract(
                 ctx.timeout.as_secs()
             )));
         }
-        Err(RunError::Start(e)) => return Err(cannot_start(&e)),
+        Err(RunError::Start(e)) => {
+            ctx.tools.mark_broken();
+            return Err(cannot_start(&e));
+        }
     };
     if !ran.success {
         return Err(failed(&ran));
@@ -262,7 +265,10 @@ pub(crate) async fn download(
         Err(RunError::TimedOut) => {
             return Err(fix("The media add-on stopped answering. Try again.".into()));
         }
-        Err(RunError::Start(e)) => return Err(cannot_start(&e)),
+        Err(RunError::Start(e)) => {
+            ctx.tools.mark_broken();
+            return Err(cannot_start(&e));
+        }
     };
     if !ran.success {
         return Err(failed(&ran));
