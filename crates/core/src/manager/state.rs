@@ -318,9 +318,11 @@ impl State {
             .downloads
             .values()
             .filter(|e| e.row.status != DownloadStatus::Completed);
-        assert_eq!(
-            unfinished.clone().count(),
-            self.claimed.len(),
+        // More claims than unfinished downloads is fine for a moment: a move to
+        // another folder and the server's answer both reserve the new path before
+        // they release the old one, and the ticker may look in between.
+        assert!(
+            unfinished.clone().count() <= self.claimed.len(),
             "claimed paths out of step"
         );
         assert!(
