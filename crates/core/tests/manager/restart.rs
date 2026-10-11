@@ -122,3 +122,17 @@ async fn downloads_survive_a_restart_and_running_ones_continue() {
     // Nothing that was paused started by itself.
     assert_eq!(h.row(paused.id).status, DownloadStatus::Paused);
 }
+
+/// The desktop app and the end-to-end tests delete or move the data folder right
+/// after shutting down; on Windows that fails while the database file is open.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_data_folder_can_be_deleted_right_after_shutdown() {
+    let server = TestServer::fast(64 * KIB).await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("f.bin")).await;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    h.manager.shutdown().await;
+    let data = h.root.path().join("data");
+    assert!(data.join(wirecatch_core::DATABASE_FILE).is_file());
+    std::fs::remove_dir_all(&data).expect("the data folder is still in use after shutdown");
+}

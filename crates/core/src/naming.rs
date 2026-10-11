@@ -10,29 +10,57 @@ use crate::error::{CoreError, Result};
 
 /// Paths already promised to unfinished downloads, compared the way the file
 /// system compares them.
+///
+/// Besides each unfinished download's own path, a path may be reserved for a
+/// moment while its new owner checks the disk: a move to another folder, the
+/// server's answer choosing a name, a finished video being put in place. Those
+/// are counted apart, so the consistency check can still demand that every
+/// other claim is an unfinished download's path.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct Claimed(HashSet<String>);
+pub(crate) struct Claimed {
+    paths: HashSet<String>,
+    reserved: HashSet<String>,
+}
 
 impl Claimed {
-    /// Marks `path` as taken.
+    /// Marks `path` as taken by a download.
     pub fn insert(&mut self, path: &Path) {
-        self.0.insert(key(path));
+        self.paths.insert(key(path));
     }
 
     /// Marks `path` as free again.
     pub fn remove(&mut self, path: &Path) {
-        self.0.remove(&key(path));
+        let key = key(path);
+        self.paths.remove(&key);
+        self.reserved.remove(&key);
     }
 
-    /// How many paths are taken.
+    /// Takes `path` for a moment, before it becomes a download's path.
+    pub fn reserve(&mut self, path: &Path) {
+        let key = key(path);
+        self.paths.insert(key.clone());
+        self.reserved.insert(key);
+    }
+
+    /// Gives back a path taken with [`reserve`](Self::reserve).
+    pub fn release(&mut self, path: &Path) {
+        self.remove(path);
+    }
+
+    /// A path taken with [`reserve`](Self::reserve) is now a download's own.
+    pub fn settle(&mut self, path: &Path) {
+        self.reserved.remove(&key(path));
+    }
+
+    /// How many paths are taken by downloads, not counting reservations.
     #[cfg(debug_assertions)]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.paths.len() - self.reserved.len()
     }
 
     /// Whether `path` is taken.
     pub fn contains(&self, path: &Path) -> bool {
-        self.0.contains(&key(path))
+        self.paths.contains(&key(path))
     }
 }
 
@@ -127,6 +155,13 @@ pub(crate) fn partial_files(path: &Path) -> [PathBuf; 2] {
 /// and neither its part file nor its resume file is. Touches the file system.
 pub(crate) fn finished_size(path: &Path) -> Option<u64> {
     if partial_files(path).iter().any(|p| p.exists()) {
+        return None;
+    }
+    // A media download still has its work folders until its file is complete.
+    if [crate::media::work_dir(path), crate::media::stream_dir(path)]
+        .iter()
+        .any(|p| p.exists())
+    {
         return None;
     }
     std::fs::metadata(path)

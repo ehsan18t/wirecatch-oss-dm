@@ -943,3 +943,47 @@ fn framed(body: &[u8]) -> Vec<u8> {
     out.extend_from_slice(body);
     out
 }
+
+/// A confirmation dialog must close when its question goes away, whichever way.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_closed_question_is_announced_so_the_dialog_closes() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let mut ui = h.manager.subscribe();
+    async fn closed(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> u64 {
+        loop {
+            if let UiEvent::ConfirmationClosed { id } = ui.recv().await.unwrap() {
+                return id;
+            }
+        }
+    }
+
+    let withdrawn = capture(server.url("withdrawn.bin"));
+    h.manager.add_capture(withdrawn.clone()).await.unwrap();
+    let asked = h.manager.pending_confirmations().remove(0);
+    h.manager
+        .withdraw_capture(&withdrawn.handover_id)
+        .await
+        .unwrap();
+    assert_eq!(closed(&mut ui).await, asked.id);
+
+    h.manager
+        .add_capture(capture(server.url("rejected.bin")))
+        .await
+        .unwrap();
+    let asked = h.manager.pending_confirmations().remove(0);
+    h.manager.reject_capture(asked.id).unwrap();
+    assert_eq!(closed(&mut ui).await, asked.id);
+
+    h.manager
+        .add_capture(capture(server.url("confirmed.bin")))
+        .await
+        .unwrap();
+    let asked = h.manager.pending_confirmations().remove(0);
+    h.manager
+        .confirm_capture(asked.id, CaptureConfirmation::default())
+        .await
+        .unwrap();
+    assert_eq!(closed(&mut ui).await, asked.id);
+}

@@ -270,6 +270,10 @@ pub fn monday(hour: u32, minute: u32) -> NaiveDateTime {
         .unwrap()
 }
 
+/// Changes the manager's configuration, for example to install the media
+/// add-on from a local server.
+pub type Tweak = Arc<dyn Fn(ManagerConfig) -> ManagerConfig + Send + Sync>;
+
 /// A manager in a temporary folder, with its own home folder and a manual clock.
 pub struct Harness {
     pub manager: Manager,
@@ -277,6 +281,7 @@ pub struct Harness {
     pub folders: KnownFolders,
     pub root: TempDir,
     timeouts: (Duration, Duration),
+    tweak: Option<Tweak>,
 }
 
 impl Harness {
@@ -298,12 +303,32 @@ impl Harness {
         Self::build(monday(12, 0), Duration::from_millis(300), timeout).await
     }
 
+    /// A manager whose configuration `tweak` changes, on every start.
+    pub async fn configured(tweak: Tweak) -> Self {
+        Self::build_with(
+            monday(12, 0),
+            DEFAULT_STOP_TIMEOUT,
+            DEFAULT_CAPTURE_TIMEOUT,
+            Some(tweak),
+        )
+        .await
+    }
+
     async fn build(now: NaiveDateTime, stop_timeout: Duration, capture_timeout: Duration) -> Self {
+        Self::build_with(now, stop_timeout, capture_timeout, None).await
+    }
+
+    async fn build_with(
+        now: NaiveDateTime,
+        stop_timeout: Duration,
+        capture_timeout: Duration,
+        tweak: Option<Tweak>,
+    ) -> Self {
         let root = tempfile::tempdir().unwrap();
         let folders = KnownFolders::under_home(root.path().join("home"));
         let clock = Arc::new(ManualClock::new(now));
         let timeouts = (stop_timeout, capture_timeout);
-        let manager = open(&root, &folders, &clock, timeouts).await;
+        let manager = open(&root, &folders, &clock, timeouts, tweak.as_ref()).await;
         // One connection per download keeps request counts easy to reason about.
         tune(&manager, |s| s.connections_per_download = 1);
         Self {
@@ -312,13 +337,26 @@ impl Harness {
             folders,
             root,
             timeouts,
+            tweak,
         }
+    }
+
+    /// The configuration change used on the next [`restart`](Self::restart).
+    pub fn tweak_mut(&mut self) -> &mut Option<Tweak> {
+        &mut self.tweak
     }
 
     /// Shuts the manager down and opens a new one on the same data, like an app restart.
     pub async fn restart(&mut self) {
         self.manager.shutdown().await;
-        self.manager = open(&self.root, &self.folders, &self.clock, self.timeouts).await;
+        self.manager = open(
+            &self.root,
+            &self.folders,
+            &self.clock,
+            self.timeouts,
+            self.tweak.as_ref(),
+        )
+        .await;
     }
 
     pub async fn add(&self, url: &str) -> DownloadSummary {
@@ -367,11 +405,17 @@ async fn open(
     folders: &KnownFolders,
     clock: &Arc<ManualClock>,
     (stop_timeout, capture_timeout): (Duration, Duration),
+    tweak: Option<&Tweak>,
 ) -> Manager {
-    let config = ManagerConfig::new(root.path().join("data"), folders.clone())
+    let mut config = ManagerConfig::new(root.path().join("data"), folders.clone())
         .with_clock(clock.clone())
         .with_stop_timeout(stop_timeout)
         .with_capture_timeout(capture_timeout);
+    // Tests never reach the internet: no update check unless a test asks.
+    config.addon_sources.ytdlp_latest_release = None;
+    if let Some(tweak) = tweak {
+        config = tweak(config);
+    }
     Manager::open(config).await.unwrap()
 }
 

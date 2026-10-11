@@ -142,7 +142,7 @@ impl Manager {
                 } else if state.claimed.contains(&candidate) {
                     continue;
                 } else {
-                    state.claimed.insert(&candidate);
+                    state.claimed.reserve(&candidate);
                     true
                 }
             };
@@ -150,7 +150,7 @@ impl Manager {
                 break (candidate, claimed_here);
             }
             if claimed_here {
-                self.lock().claimed.remove(&candidate);
+                self.lock().claimed.release(&candidate);
             }
         };
 
@@ -159,7 +159,7 @@ impl Manager {
         // The run may have been stopped while the disk was checked.
         if let Err(reason) = current_run(state, id, run_id) {
             if claimed_here {
-                state.claimed.remove(&path);
+                state.claimed.release(&path);
             }
             return Err(reason);
         }
@@ -167,8 +167,10 @@ impl Manager {
             state.claimed.remove(&provisional);
         }
         let Some(entry) = state.downloads.get_mut(&id) else {
+            state.claimed.release(&path);
             return Err(REMOVED.into());
         };
+        state.claimed.settle(&path);
         entry.row.path = path.to_string_lossy().into_owned();
         entry.row.file_name = naming_of(&path);
         entry.row.category = category;

@@ -1,4 +1,5 @@
-//! Running the engine on one download and recording how the run ended.
+//! Running the engine (or, for streams and media pages, a media job) on one
+//! download and recording how the run ended.
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -15,10 +16,9 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::settle::path_resolver;
-use super::state::{Entry, Run, State, Stop};
+use super::state::{Entry, Gauge, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
-use crate::naming::partial_files;
 use crate::speed::SpeedMeter;
 use crate::store::Origin;
 use crate::user_error;
@@ -27,7 +27,31 @@ use crate::user_error;
 pub(super) enum RunEnd {
     /// The engine returned.
     Engine(Result<Outcome, EngineError>),
+    /// A media job returned.
+    Media(Result<MediaDone, UserError>),
     /// The run's task ended without the engine returning: it panicked or was aborted.
+    Vanished,
+}
+
+/// How a media job that did not fail ended.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum MediaDone {
+    /// The file is complete at `path`, which may differ from the planned path
+    /// in its extension.
+    Completed { path: PathBuf, bytes: u64 },
+    /// Stopped; starting it again continues.
+    Paused,
+}
+
+/// A run's end, in the terms that decide the download's new state.
+enum Ended {
+    Completed {
+        bytes: u64,
+        path: Option<PathBuf>,
+    },
+    /// Ended without finishing or failing (cancelled, or an outcome added later).
+    Stopped,
+    Failed(UserError),
     Vanished,
 }
 
@@ -45,10 +69,15 @@ impl Manager {
             .iter()
             .find(|s| s.queue.id == entry.row.queue)
             .map(|s| s.limiter.clone());
-        let limiters = [Some(self.inner.global_limiter.clone()), queue_limiter]
-            .into_iter()
-            .flatten()
-            .collect();
+        let limiters: Vec<Arc<RateLimiter>> =
+            [Some(self.inner.global_limiter.clone()), queue_limiter]
+                .into_iter()
+                .flatten()
+                .collect();
+        if let Some(job) = entry.media_job.clone() {
+            self.start_media_run(state, id, run_id, answered, job, connections, limiters);
+            return;
+        }
         // Until the server has answered once, the path is only a guess: let the
         // server's answer decide it. Afterwards it is fixed.
         let settle = (!entry.naming.settled).then(|| self.settler(id, run_id, answered.clone()));
@@ -60,41 +89,50 @@ impl Manager {
             #[cfg(test)]
             Ok(_) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
-                self.launch(state, id, run_id, answered, move |_, cancel| {
-                    super::fake::run(fake, settle, cancel)
+                self.launch(state, id, run_id, answered, move |cancel| {
+                    let work = super::fake::run(fake, settle, cancel);
+                    (Gauge::Engine(Arc::default()), async move {
+                        RunEnd::Engine(work.await)
+                    })
                 });
             }
-            Ok(request) => self.launch(state, id, run_id, answered, move |progress, cancel| {
-                wirecatch_engine::download(request, progress, cancel)
+            Ok(request) => self.launch(state, id, run_id, answered, move |cancel| {
+                let progress = Arc::new(Progress::default());
+                let work = wirecatch_engine::download(request, progress.clone(), cancel);
+                (Gauge::Engine(progress), async move {
+                    RunEnd::Engine(work.await)
+                })
             }),
-            Err(error) => {
-                if let Some(entry) = state.downloads.get_mut(&id) {
-                    entry.row.status = DownloadStatus::Failed;
-                    entry.row.error = Some(error);
-                }
-                self.save(state, id);
-            }
+            Err(error) => self.fail_to_start(state, id, error),
         }
     }
 
-    /// Runs `engine` as the run of `id`. Kept apart from [`start_run`](Self::start_run)
-    /// so tests can stand in for the engine.
-    fn launch<F, Fut>(
+    /// Records that a download could not even start.
+    pub(super) fn fail_to_start(&self, state: &mut State, id: DownloadId, error: UserError) {
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.row.status = DownloadStatus::Failed;
+            entry.row.error = Some(error);
+        }
+        self.save(state, id);
+    }
+
+    /// Runs `work` as the run of `id`. `work` gets the run's cancellation token
+    /// and returns where its progress is read and the future that does the work.
+    pub(super) fn launch<F, Fut>(
         &self,
         state: &mut State,
         id: DownloadId,
         run_id: u64,
         answered: CancellationToken,
-        engine: F,
+        work: F,
     ) where
-        F: FnOnce(Arc<Progress>, CancellationToken) -> Fut,
-        Fut: Future<Output = Result<Outcome, EngineError>> + Send + 'static,
+        F: FnOnce(CancellationToken) -> (Gauge, Fut),
+        Fut: Future<Output = RunEnd> + Send + 'static,
     {
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
         let (cancel, exited) = (CancellationToken::new(), CancellationToken::new());
-        let progress = Arc::new(Progress::default());
         let guard = RunGuard {
             manager: Arc::downgrade(&self.inner),
             runtime: self.inner.runtime.clone(),
@@ -103,21 +141,22 @@ impl Manager {
             exited: exited.clone(),
             reported: false,
         };
-        let work = engine(progress.clone(), cancel.clone());
+        let (gauge, work) = work(cancel.clone());
         let cleanup = entry.cleanup.take();
         let task = self.spawn(async move {
             if let Some(deleted) = cleanup {
                 deleted.cancelled().await;
             }
-            let result = work.await;
-            guard.report(RunEnd::Engine(result));
+            let end = work.await;
+            guard.report(end);
         });
         entry.run = Some(Run {
             id: run_id,
             answered,
             cancel,
             exited,
-            progress,
+            gauge,
+            marked: false,
             stop: None,
             meter: SpeedMeter::default(),
             task: task.abort_handle(),
@@ -145,16 +184,51 @@ impl Manager {
             return;
         };
         state.running.remove(&id);
-        let started = run.progress.file_name().is_some();
+        let reading = run.gauge.read();
+        let started = reading.answered;
         let worked_before = started || entry.row.done > 0;
         if started {
-            entry.row.done = run.progress.done();
-            entry.row.total = run.progress.total();
+            entry.row.done = reading.done;
+            entry.row.total = reading.total;
         }
         entry.clear_live_fields();
 
-        match (end, run.stop) {
-            (RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })), _) => {
+        let ended = match end {
+            RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
+                Ended::Completed { bytes, path: None }
+            }
+            RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
+            RunEnd::Engine(Err(error)) => {
+                warn!(id = id.0, %error, "download failed");
+                let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
+                Ended::Failed(user_error::describe(&error, &folder, worked_before))
+            }
+            RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
+                bytes,
+                path: Some(path),
+            },
+            RunEnd::Media(Err(error)) => {
+                warn!(id = id.0, error = %error.message, "media download failed");
+                Ended::Failed(error)
+            }
+            RunEnd::Vanished => Ended::Vanished,
+        };
+
+        match (ended, run.stop) {
+            (Ended::Completed { bytes, path }, _) => {
+                // The finished file now holds the name on disk.
+                state.claimed.remove(entry.path());
+                if let Some(path) = path {
+                    entry.row.file_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    entry.row.path = path.to_string_lossy().into_owned();
+                    // Reserved by the media job while it put the file in place.
+                    state.claimed.remove(entry.path());
+                }
+                let referrer = headers::referrer(&entry.origin.headers).map(str::to_string);
+                self.mark_downloaded(entry.path(), &entry.row.url, referrer);
                 entry.row.status = DownloadStatus::Completed;
                 entry.row.total = Some(bytes);
                 entry.row.done = bytes;
@@ -162,17 +236,19 @@ impl Manager {
                 // Cookies and headers were only needed to download it.
                 entry.origin = Origin::default();
                 entry.row.error = None;
-                // The finished file now holds the name on disk.
-                state.claimed.remove(entry.path());
             }
             // A cancelled run that was not asked to stop, or an outcome added to the
             // engine later: keep it paused, so nothing is lost.
-            (_, Some(Stop::Pause | Stop::Remove)) | (RunEnd::Engine(Ok(_)), None) => {
+            (_, Some(Stop::Pause | Stop::Remove)) | (Ended::Stopped, None) => {
                 entry.row.status = DownloadStatus::Paused;
             }
             (_, Some(Stop::Requeue)) => entry.row.status = DownloadStatus::Queued,
             // The status stays as it was, so the next start continues it.
-            (_, Some(Stop::Shutdown)) => {}
+            (_, Some(Stop::Shutdown)) => {
+                if entry.row.status == DownloadStatus::Processing {
+                    entry.row.status = DownloadStatus::Downloading;
+                }
+            }
             (_, Some(Stop::Cancel)) => {
                 mark_cancelled(entry);
                 self.discard_partial(entry);
@@ -182,13 +258,11 @@ impl Manager {
                 self.discard_partial(entry);
                 entry.row.status = DownloadStatus::Queued;
             }
-            (RunEnd::Engine(Err(error)), None) => {
-                warn!(id = id.0, %error, "download failed");
-                let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
+            (Ended::Failed(error), None) => {
                 entry.row.status = DownloadStatus::Failed;
-                entry.row.error = Some(user_error::describe(&error, &folder, worked_before));
+                entry.row.error = Some(error);
             }
-            (RunEnd::Vanished, None) => {
+            (Ended::Vanished, None) => {
                 warn!(id = id.0, "download task ended without a result");
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(user_error::stopped_unexpectedly());
@@ -198,11 +272,20 @@ impl Manager {
         self.reconcile(state);
     }
 
+    /// Marks a finished file as downloaded from the internet (on Windows), in the
+    /// background and best effort.
+    pub(super) fn mark_downloaded(&self, path: &Path, url: &str, referrer: Option<String>) {
+        let (path, url) = (path.to_path_buf(), url.to_string());
+        self.inner.runtime.spawn_blocking(move || {
+            crate::zone::mark(&path, &url, referrer.as_deref());
+        });
+    }
+
     /// Deletes a download's partial files in the background. A run started before
     /// the deletion has finished waits for it, so it never writes into a file that
     /// is being deleted.
     pub(super) fn discard_partial(&self, entry: &mut Entry) {
-        let files = partial_files(entry.path());
+        let files = entry.partial_paths();
         let deleted = CancellationToken::new();
         entry.cleanup = Some(deleted.clone());
         self.inner.runtime.spawn_blocking(move || {
@@ -219,10 +302,15 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.done = 0;
 }
 
-/// Deletes files, ignoring ones already gone. Blocks on the disk.
+/// Deletes files and folders, ignoring ones already gone. Blocks on the disk.
 pub(super) fn delete_files(paths: &[PathBuf]) {
     for path in paths {
-        match std::fs::remove_file(path) {
+        let result = if path.is_dir() {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
+        };
+        match result {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => warn!(path = %path.display(), error = %e, "could not delete file"),
@@ -338,7 +426,7 @@ mod tests {
         (manager, id, dir)
     }
 
-    async fn panicking_engine() -> Result<Outcome, EngineError> {
+    async fn panicking_engine() -> RunEnd {
         panic!("a bug in the engine");
     }
 
@@ -349,7 +437,9 @@ mod tests {
             let mut state = manager.lock();
             let run_id = state.ids.run();
             let answered = CancellationToken::new();
-            manager.launch(&mut state, id, run_id, answered, |_, _| panicking_engine());
+            manager.launch(&mut state, id, run_id, answered, |_| {
+                (Gauge::Engine(Arc::default()), panicking_engine())
+            });
             state.downloads[&id].run.as_ref().unwrap().exited.clone()
         };
         tokio::time::timeout(Duration::from_secs(5), exited.cancelled())

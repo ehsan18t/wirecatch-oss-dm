@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, Url};
-use wirecatch_protocol::app::{AddRequest, DownloadStatus, DownloadSummary, PortablePath, UiEvent};
+use wirecatch_protocol::app::{
+    AddRequest, Category, DownloadStatus, DownloadSummary, PortablePath, UiEvent,
+};
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -14,7 +16,8 @@ use super::handovers::{Handover, Target};
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Expectation, Stop};
 use crate::error::{CoreError, Result};
-use crate::naming::{self, partial_files};
+use crate::media::StoredMedia;
+use crate::naming;
 use crate::store::{NameChoice, Origin};
 use crate::{headers, settings};
 
@@ -35,6 +38,11 @@ pub(super) struct NewEntry {
     pub handover: Option<String>,
     /// What the browser saw of a captured file.
     pub expect: Option<Expectation>,
+    /// Video or audio: what the row shows and, for streams and pages, what to
+    /// download. A media job's path is final from the start.
+    pub media: Option<StoredMedia>,
+    /// The category, when the caller knows better than the file name.
+    pub category: Option<Category>,
 }
 
 /// How a captured download stands right after it was added: started if it is
@@ -62,6 +70,11 @@ impl Manager {
         entries.into_iter().map(|e| e.row.clone()).collect()
     }
 
+    /// One download, as [`list_downloads`](Self::list_downloads) shows it.
+    pub fn get_download(&self, id: DownloadId) -> Result<DownloadSummary> {
+        Ok(self.lock().entry(id)?.row.clone())
+    }
+
     /// Adds a download from the app itself (paste, Add dialog, command palette) and
     /// returns its id. Its row arrives with the next `DownloadsChanged` event and is
     /// in [`list_downloads`](Self::list_downloads) at once.
@@ -86,6 +99,8 @@ impl Manager {
                 origin: Origin::default(),
                 handover: None,
                 expect: None,
+                media: None,
+                category: None,
             })
             .await?;
         match added {
@@ -199,7 +214,7 @@ impl Manager {
                 } else {
                     // An unfinished download has no file of its own at its final
                     // path yet; whatever is there belongs to someone else.
-                    files.extend(partial_files(entry.path()));
+                    files.extend(entry.partial_paths());
                 }
                 removed.push(*id);
             }
@@ -403,7 +418,9 @@ impl Manager {
                 new.file_name.as_deref().or(new.hint_name.as_deref()),
                 &new.url,
             )?;
-            let category = settings::category_of(&state.settings, &name);
+            let category = new
+                .category
+                .unwrap_or_else(|| settings::category_of(&state.settings, &name));
             let dir = match &new.folder {
                 Some(folder) => folder.clone(),
                 None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
@@ -459,11 +476,13 @@ impl Manager {
                 added_at: self.inner.clock.unix_millis(),
                 completed_at: None,
                 waiting: None,
-                media: None,
+                media: new.media.as_ref().map(|m| m.summary.clone()),
             };
-            // The path is a guess until the server answers with its own name.
+            let media_job = new.media.as_ref().and_then(|m| m.job.clone());
+            // The path is a guess until the server answers with its own name; a
+            // media job's is final.
             let naming = NameChoice {
-                settled: false,
+                settled: media_job.is_some(),
                 name: new.file_name.clone(),
                 folder: new
                     .folder
@@ -481,6 +500,7 @@ impl Manager {
                 cleanup: None,
                 removing: false,
                 moving: None,
+                media_job,
             });
             self.save(&mut state, id);
             self.reconcile(&mut state);
@@ -507,13 +527,25 @@ impl Manager {
     }
 }
 
-/// Parses a link, accepting only http and https.
+/// Parses a link, accepting http, https and the FTP family (`ftp`, `ftps` for
+/// implicit TLS, `ftpes` for explicit TLS), which the engine downloads too.
 pub(super) fn parse_url(raw: &str) -> Result<Url> {
     let trimmed = raw.trim();
     Url::parse(trimmed)
         .ok()
-        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .filter(|url| {
+            matches!(url.scheme(), "http" | "https" | "ftp" | "ftps" | "ftpes")
+                && url.host_str().is_some_and(|h| !h.is_empty())
+        })
         .ok_or_else(|| CoreError::InvalidUrl(trimmed.to_string()))
+}
+
+/// Parses a web link (http or https only), for media pages and streams.
+pub(super) fn parse_web_url(raw: &str) -> Result<Url> {
+    parse_url(raw)
+        .ok()
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .ok_or_else(|| CoreError::InvalidUrl(raw.trim().to_string()))
 }
 
 #[cfg(test)]
@@ -521,10 +553,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_web_links_are_accepted() {
+    fn web_and_ftp_links_are_accepted() {
         assert!(parse_url(" https://example.com/a.zip ").is_ok());
         assert!(parse_url("http://example.com").is_ok());
-        for bad in ["ftp://example.com/a", "file:///etc/passwd", "not a url", ""] {
+        for ftp in [
+            "ftp://example.com/a",
+            "ftps://example.com/a",
+            "ftpes://u:p@example.com/a",
+        ] {
+            assert!(parse_url(ftp).is_ok(), "{ftp}");
+            assert!(parse_web_url(ftp).is_err(), "{ftp}");
+        }
+        for bad in [
+            "sftp://example.com/a",
+            "file:///etc/passwd",
+            "not a url",
+            "",
+            "http://",
+        ] {
             assert!(
                 matches!(parse_url(bad), Err(CoreError::InvalidUrl(_))),
                 "{bad}"

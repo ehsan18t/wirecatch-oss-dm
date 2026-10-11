@@ -10,6 +10,7 @@ use wirecatch_protocol::wire::Event;
 use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
+use crate::addons::manifest::MEDIA_ADDON_ID;
 use crate::error::{CoreError, Result};
 use crate::{profile, settings};
 
@@ -65,12 +66,16 @@ impl Manager {
     pub async fn export_settings(&self, path: &Path) -> Result<()> {
         let profile = {
             let state = self.lock();
-            profile::export(
+            let mut profile = profile::export(
                 &state.settings,
                 &state.queue_list(),
                 &self.inner.folders,
                 self.inner.clock.unix_millis(),
-            )
+            );
+            if state.addon.tools.is_some() {
+                profile.addons.push(MEDIA_ADDON_ID.to_string());
+            }
+            profile
         };
         let json =
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
@@ -87,28 +92,39 @@ impl Manager {
     /// Applies a settings profile from `path`. Queues are matched by name, folders
     /// are resolved on this machine, and downloads are left alone. What changed,
     /// including any folder that had to be replaced, is sent to the UI as
-    /// [`UiEvent::SettingsImported`].
+    /// [`UiEvent::SettingsImported`]. Add-ons the profile lists that are not
+    /// installed here are listed there for the UI to offer; nothing is
+    /// downloaded without the person asking.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let path = path.to_path_buf();
         let bytes = self.blocking(move || profile::read_file(&path)).await?;
         let incoming = profile::parse(&bytes)?;
+        let wants_media = incoming.addons.iter().any(|a| a == MEDIA_ADDON_ID);
 
-        let mut state = self.lock_open()?;
-        let current = state.queue_list();
-        let imported = profile::merge(incoming, &current, &self.inner.folders, || {
-            state.ids.queue()
-        })?;
-        self.inner.store.save_last_ids(state.ids.last());
-        for queue in imported.queues {
-            match state.slot_mut(queue.id) {
-                Ok(slot) => apply_to_slot(slot, queue),
-                Err(_) => state.queues.push(QueueSlot::new(queue)),
+        {
+            let mut state = self.lock_open()?;
+            let current = state.queue_list();
+            let mut imported = profile::merge(incoming, &current, &self.inner.folders, || {
+                state.ids.queue()
+            })?;
+            self.inner.store.save_last_ids(state.ids.last());
+            for queue in imported.queues {
+                match state.slot_mut(queue.id) {
+                    Ok(slot) => apply_to_slot(slot, queue),
+                    Err(_) => state.queues.push(QueueSlot::new(queue)),
+                }
             }
+            // Queues first: the new settings may name a queue that was just added.
+            self.queues_changed(&mut state);
+            self.apply_settings(&mut state, imported.settings);
+            if wants_media && state.addon.tools.is_none() {
+                imported
+                    .summary
+                    .addons_to_offer
+                    .push(MEDIA_ADDON_ID.to_string());
+            }
+            self.emit(UiEvent::SettingsImported(imported.summary));
         }
-        // Queues first: the new settings may name a queue that was just added.
-        self.queues_changed(&mut state);
-        self.apply_settings(&mut state, imported.settings);
-        self.emit(UiEvent::SettingsImported(imported.summary));
         Ok(())
     }
 

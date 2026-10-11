@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use common::{Busy, Config, TestServer, test_data};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, Progress, RemoteFile, download,
+    CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, RemoteFile,
+    download,
 };
 
 const KIB: usize = 1024;
@@ -631,4 +632,40 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         "kept only {resumed_from} bytes"
     );
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+}
+
+/// With the local network blocked, a download from a site (127.0.0.1 stands in
+/// for one on the internet: its own origin stays reachable) may not be
+/// redirected to a device at home, and the device is never contacted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
+    let device = TestServer::start(test_data(10 * KIB), Config::default()).await;
+    let site = TestServer::start(
+        test_data(10 * KIB),
+        Config {
+            redirect: Some(("/video.mp4".into(), device.url("secret").to_string())),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = temp_dir("private-redirect");
+
+    // The site's own file still downloads.
+    let mut own = request(&site, "own.bin", &dir, 2);
+    own.options.private_network = PrivateNetwork::Block;
+    assert!(matches!(run(own).await, Outcome::Completed { .. }));
+
+    let mut req = request(&site, "video.mp4", &dir, 2);
+    req.options.private_network = PrivateNetwork::Block;
+    req.options.max_retries = 0;
+    let error = download(req, Arc::new(Progress::default()), CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
+    assert!(device.stats.seen().is_empty(), "the device was contacted");
+
+    // Without blocking (the default), the same redirect is followed.
+    let req = request(&site, "video.mp4", &dir, 2);
+    assert!(matches!(run(req).await, Outcome::Completed { .. }));
+    assert!(!device.stats.seen().is_empty());
 }

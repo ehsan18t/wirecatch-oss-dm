@@ -11,11 +11,13 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{error, warn};
-use wirecatch_protocol::app::{AppSettings, DownloadSummary, Queue};
+use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
 use wirecatch_protocol::extension::Header;
+use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::error::{CoreError, Result};
+use crate::media::StoredMedia;
 use crate::owner_only;
 
 /// File name of the database inside the data folder.
@@ -63,6 +65,9 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE downloads ADD COLUMN chosen_name TEXT;
     ALTER TABLE downloads ADD COLUMN chosen_folder TEXT;
 "#,
+    r#"
+    ALTER TABLE downloads ADD COLUMN media TEXT;
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -92,6 +97,9 @@ pub(crate) struct StoredDownload {
     pub position: i64,
     pub origin: Origin,
     pub naming: NameChoice,
+    /// For video and audio: what the row shows and, for streams and pages, what
+    /// to download (kept so it continues after a restart).
+    pub media: Option<StoredMedia>,
 }
 
 /// How a download's final name and folder get decided.
@@ -149,7 +157,10 @@ enum Op {
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
+    #[cfg_attr(not(test), allow(dead_code))]
     Flush(oneshot::Sender<()>),
+    /// Saves everything sent before it, closes the database and stops the thread.
+    Close(oneshot::Sender<()>),
 }
 
 /// Handle to the database thread. Writes are applied in the order they are sent.
@@ -167,6 +178,7 @@ impl std::fmt::Debug for Op {
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::Flush(_) => "Flush",
+            Op::Close(_) => "Close",
         })
     }
 }
@@ -233,15 +245,29 @@ impl Store {
     }
 
     /// Waits until every write sent so far is on disk.
+    #[cfg(test)]
     pub async fn flush(&self) {
         let (done, wait) = oneshot::channel();
         self.send(Op::Flush(done));
         let _ = wait.await;
     }
 
+    /// Saves every write sent so far, closes the database file and stops the
+    /// database thread, waiting at most `timeout` for it. Afterwards the data folder
+    /// can be deleted or moved at once (Windows refuses while a file in it is open),
+    /// and later writes are dropped.
+    pub async fn close(&self, timeout: Duration) {
+        let (done, wait) = oneshot::channel();
+        self.send(Op::Close(done));
+        if tokio::time::timeout(timeout, wait).await.is_err() {
+            warn!(?timeout, "the database did not close in time");
+        }
+    }
+
     fn send(&self, op: Op) {
         if let Err(mpsc::SendError(op)) = self.ops.send(op) {
-            error!(?op, "the database thread has stopped; change not saved");
+            // After `close` this is expected: the app is shutting down.
+            warn!(?op, "the database is closed; change not saved");
         }
     }
 }
@@ -253,13 +279,30 @@ impl Store {
 /// told why. Writes that still fail are kept, in order, and tried again before
 /// the next writes (or after a while if none come), never dropped: a lost delete
 /// would bring back a removed download.
-fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
+fn run(conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
+    let (conn, closed) = write_until_closed(conn, ops, on_failure);
+    // Closing the connection checkpoints the journal and releases the files.
+    if let Err((_, e)) = conn.close() {
+        warn!(error = %e, "the database did not close cleanly");
+    }
+    if let Some(closed) = closed {
+        let _ = closed.send(());
+    }
+}
+
+/// The body of [`run`]: applies writes until a `Close` arrives or every handle is
+/// gone, and returns the connection with the waiting `Close`, if any.
+fn write_until_closed(
+    mut conn: Connection,
+    ops: mpsc::Receiver<Op>,
+    on_failure: FailureHandler,
+) -> (Connection, Option<oneshot::Sender<()>>) {
     let mut kept: Vec<Op> = Vec::new();
     loop {
         let first = if kept.is_empty() {
             match ops.recv() {
                 Ok(op) => Some(op),
-                Err(mpsc::RecvError) => return,
+                Err(mpsc::RecvError) => return (conn, None),
             }
         } else {
             match ops.recv_timeout(RETRY_KEPT_AFTER) {
@@ -274,16 +317,22 @@ fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler
                             "changes could not be saved before closing"
                         );
                     }
-                    return;
+                    return (conn, None);
                 }
             }
         };
         let mut writes = std::mem::take(&mut kept);
         let retried = writes.len();
         let mut flushed = Vec::new();
+        let mut closing = None;
         for op in first.into_iter().chain(ops.try_iter()) {
             match op {
                 Op::Flush(done) => flushed.push(done),
+                Op::Close(done) => {
+                    // Writes sent after the close are not taken.
+                    closing = Some(done);
+                    break;
+                }
                 write => writes.push(write),
             }
         }
@@ -307,6 +356,18 @@ fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler
         }
         for done in flushed {
             let _ = done.send(());
+        }
+        if let Some(done) = closing {
+            if !kept.is_empty() {
+                let lost = apply_one_by_one(&mut conn, std::mem::take(&mut kept));
+                if !lost.is_empty() {
+                    error!(
+                        writes = lost.len(),
+                        "changes could not be saved before closing"
+                    );
+                }
+            }
+            return (conn, Some(done));
         }
     }
 }
@@ -364,7 +425,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveQueues(_) => Target::Queues,
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
-        Op::Flush(_) => Target::Nothing,
+        Op::Flush(_) | Op::Close(_) => Target::Nothing,
     }
 }
 
@@ -398,7 +459,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveQueues(queues) => save_queues(&tx, queues)?,
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
-            Op::Flush(_) => {}
+            Op::Flush(_) | Op::Close(_) => {}
         }
     }
     tx.commit()
@@ -463,7 +524,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
-                added_at, completed_at, origin, settled, chosen_name, chosen_folder
+                added_at, completed_at, origin, settled, chosen_name, chosen_folder, media
          FROM downloads ORDER BY position",
     )?;
     let downloads = stmt
@@ -526,8 +587,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     tx.prepare_cached(
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
-             added_at, completed_at, origin, settled, chosen_name, chosen_folder)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             added_at, completed_at, origin, settled, chosen_name, chosen_folder, media)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
     )?
     .execute(params![
         d.id.0,
@@ -546,6 +607,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.naming.settled,
         row.naming.name,
         row.naming.folder,
+        row.media.as_ref().map(to_json),
     ])?;
     Ok(())
 }
@@ -561,6 +623,34 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
     let (Some(category), Some(status), Some(origin)) = (category, status, origin) else {
         warn!(id = id.0, "skipping a stored download that cannot be read");
         return Ok(None);
+    };
+    let mut status = status;
+    let mut error = row
+        .get::<_, Option<String>>(9)?
+        .and_then(|json| from_json(&json, "download error"));
+    let media: Option<StoredMedia> = match row.get::<_, Option<String>>(16)? {
+        None => None,
+        Some(json) => match from_json(&json, "download media") {
+            Some(media) => Some(media),
+            // Media whose details are damaged must never run as a plain
+            // download of its link (a page or a playlist).
+            None => {
+                if !matches!(
+                    status,
+                    DownloadStatus::Completed | DownloadStatus::Cancelled
+                ) {
+                    status = DownloadStatus::Failed;
+                    error = Some(crate::media::unreadable());
+                }
+                Some(StoredMedia {
+                    summary: MediaSummary {
+                        quality: "Unknown".into(),
+                        source: MediaKind::Page,
+                    },
+                    job: Some(crate::media::MediaJob::Unreadable),
+                })
+            }
+        },
     };
     let file_name = PathBuf::from(&path)
         .file_name()
@@ -580,13 +670,11 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             speed: 0,
             connections: 0,
             eta_secs: None,
-            error: row
-                .get::<_, Option<String>>(9)?
-                .and_then(|json| from_json(&json, "download error")),
+            error,
             added_at: row.get(10)?,
             completed_at: row.get(11)?,
             waiting: None,
-            media: None,
+            media: media.as_ref().map(|m| m.summary.clone()),
         },
         position: row.get(4)?,
         origin,
@@ -595,6 +683,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             name: row.get(14)?,
             folder: row.get(15)?,
         },
+        media,
     }))
 }
 
@@ -688,6 +777,7 @@ mod tests {
                 name: Some("chosen.zip".into()),
                 folder: None,
             },
+            media: None,
         }
     }
 
@@ -769,6 +859,64 @@ mod tests {
         store.save_last_ids(LastIds::default());
         store.flush().await;
         assert_eq!(stored_ids(&other), vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn a_media_download_keeps_what_it_downloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut row = download(1);
+        let media = StoredMedia {
+            summary: wirecatch_protocol::app::MediaSummary {
+                quality: "1080p".into(),
+                source: wirecatch_protocol::extension::MediaKind::Page,
+            },
+            job: Some(crate::media::MediaJob::Page {
+                format: "137+140".into(),
+                video: Some("137".into()),
+                audio: Some("140".into()),
+            }),
+        };
+        row.summary.media = Some(media.summary.clone());
+        row.media = Some(media);
+        store.save_downloads(vec![row.clone()]);
+        store.flush().await;
+        drop(store);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.downloads, vec![row]);
+    }
+
+    /// A media download whose stored details are damaged must not run as a
+    /// plain download of its page.
+    #[tokio::test]
+    async fn damaged_media_details_become_a_failed_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut row = download(1);
+        row.summary.status = DownloadStatus::Queued;
+        row.summary.error = None;
+        row.media = Some(StoredMedia {
+            summary: MediaSummary {
+                quality: "1080p".into(),
+                source: MediaKind::Page,
+            },
+            job: None,
+        });
+        store.save_downloads(vec![row]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute("UPDATE downloads SET media = '{\"broken'", [])
+            .unwrap();
+        drop(conn);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let loaded = &snapshot.downloads[0];
+        assert_eq!(loaded.summary.status, DownloadStatus::Failed);
+        assert_eq!(loaded.summary.error, Some(crate::media::unreadable()));
+        assert_eq!(
+            loaded.media.as_ref().and_then(|m| m.job.clone()),
+            Some(crate::media::MediaJob::Unreadable)
+        );
     }
 
     #[tokio::test]
