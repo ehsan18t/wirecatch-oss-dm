@@ -56,6 +56,15 @@ const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'ogg', 'oga', 'opus', 'wav', 'fl
  */
 const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'sub_frame', 'object']);
 
+/**
+ * Longest address kept (8 KiB). Real media addresses are far shorter; longer ones
+ * would only fill the session storage the lists are saved to.
+ */
+export const MAX_MEDIA_URL_LENGTH = 8 * 1024;
+
+/** Longest media type kept; RFC 6838 allows 127 characters for each half. */
+const MAX_MIME_LENGTH = 255;
+
 /** True for http and https addresses; false for `blob:`, `data:`, `mediasource:` and anything else. */
 export function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
@@ -99,7 +108,7 @@ function mimeOf(response: ObservedResponse): string | null {
   const raw = header(response, 'content-type');
   if (raw === null) return null;
   const mime = raw.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-  return mime === '' ? null : mime;
+  return mime === '' || mime.length > MAX_MIME_LENGTH ? null : mime;
 }
 
 /** Total size: the part after the slash in `Content-Range` for 206 answers, `Content-Length` for 200. */
@@ -140,13 +149,15 @@ export function isNavigation(response: ObservedResponse): boolean {
  * - Whole video and audio files (`video/*`, `audio/*`, or a media extension with a
  *   generic type) loaded by a media element, a frame or the tab itself.
  * - Never stream segments, error answers, redirects, downloads (attachments, which
- *   the capture flow handles), or anything outside a tab.
+ *   the capture flow handles), anything outside a tab, or addresses longer than
+ *   `MAX_MEDIA_URL_LENGTH`.
  */
 export function classifyResponse(response: ObservedResponse): Detection | null {
   if (response.tabId < 0) return null;
   if (response.documentLifecycle === 'prerender') return null;
   if (response.statusCode < 200 || response.statusCode >= 300) return null;
   if (!isWebUrl(response.url)) return null;
+  if (response.url.length > MAX_MEDIA_URL_LENGTH) return null;
   if (isAttachment(response)) return null;
 
   const mime = mimeOf(response);
