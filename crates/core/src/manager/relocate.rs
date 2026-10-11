@@ -70,6 +70,9 @@ impl Manager {
         };
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
+            if let Ok(new_path) = &moved {
+                state.claimed.release(new_path);
+            }
             return moved.map(|_| ());
         };
         if let Some(done) = entry.moving.take() {
@@ -93,9 +96,11 @@ impl Manager {
                     entry.row.status = DownloadStatus::Queued;
                     entry.row.error = None;
                 }
-                // The new path was claimed while moving; the old one is free now.
+                // The new path was reserved while moving and is the download's
+                // own now; the old one is free.
                 if new_path != old_path {
                     state.claimed.remove(&old_path);
+                    state.claimed.settle(&new_path);
                 }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
@@ -134,7 +139,7 @@ impl Manager {
                 .get(&id)
                 .is_some_and(|e| e.row.status == DownloadStatus::Completed);
             if !completed {
-                state.claimed.insert(&new_path);
+                state.claimed.reserve(&new_path);
             }
             completed
         };
@@ -143,7 +148,7 @@ impl Manager {
             .blocking(move || move_download_files(&from, &to, completed))
             .await;
         if result.is_err() && !completed {
-            self.lock().claimed.remove(&new_path);
+            self.lock().claimed.release(&new_path);
         }
         result.map(|()| new_path)
     }
