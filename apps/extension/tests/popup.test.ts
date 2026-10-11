@@ -97,7 +97,7 @@ describe('popup', () => {
     });
     expect(screen.getByText('Connected')).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty('checked', true);
-    const ask = screen.getByRole('switch', { name: 'Ask before each download' });
+    const ask = screen.getByRole('switch', { name: 'Show a window before each download' });
     expect(ask).toHaveProperty('checked', true);
     expect(ask.getAttribute('aria-describedby')).toBe('ask-before-help');
     expect(screen.getByRole('switch', { name: 'Show download button on videos' })).toHaveProperty(
@@ -119,12 +119,15 @@ describe('popup', () => {
   it('sends a changed setting to the app', async () => {
     const { app } = await openPopup();
     const user = userEvent.setup();
-    await user.click(screen.getByRole('switch', { name: 'Ask before each download' }));
+    await user.click(screen.getByRole('switch', { name: 'Show a window before each download' }));
     await waitFor(() => expect(app.settings.ask_before_download).toBe(true));
     expect(app.calls('update_extension_settings')).toEqual([
       { method: 'update_extension_settings', params: patchOf({ ask_before_download: true }) },
     ]);
-    expect(screen.getByRole('switch', { name: 'Ask before each download' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('switch', { name: 'Show a window before each download' })).toHaveProperty(
+      'checked',
+      true,
+    );
   });
 
   it('updates an open popup when the setting changes in the app', async () => {
@@ -434,7 +437,7 @@ describe('popup accessibility', () => {
     expect(order).toEqual([
       'switch:Capture downloads',
       'button:Ignore this site',
-      'switch:Ask before each download',
+      'switch:Show a window before each download',
       'switch:Show download button on videos',
       'select:Default queue',
       'input:File types to capture',
