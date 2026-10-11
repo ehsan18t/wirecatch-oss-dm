@@ -4,7 +4,8 @@ description = "Fast, resumable HTTP(S) and FTP(S) download engine: parallel conn
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-rust-version.workspace = true
+# The oldest Rust this published crate builds with; CI checks it (the msrv job). Other crates build with rust-toolchain.toml only.
+rust-version = "1.88"
 readme = "README.md"
 keywords = ["download", "downloader", "http", "ftp", "resume"]
 categories = ["network-programming", "web-programming::http-client", "asynchronous"]

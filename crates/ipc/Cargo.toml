@@ -4,7 +4,6 @@ description = "Per-user local socket transport between the Wirecatch app, bridge
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-rust-version.workspace = true
 # Only the engine is published to crates.io.
 publish = false
 

@@ -74,12 +74,16 @@ One repository, two workspaces side by side: a Cargo workspace (`crates/*`, plus
 |---|---|---|
 | `crates/engine` | `wirecatch-engine` | Download engine library. Published to crates.io. |
 | `crates/protocol` | `wirecatch-protocol` | Every message and data type shared across components. |
-| `crates/core` | `wirecatch-core` | Download manager: queues, scheduling, persistence, settings, local socket server. |
+| `crates/core` | `wirecatch-core` | Download manager: queues, scheduling, persistence, settings, media, add-ons. |
+| `crates/streams` | `wirecatch-streams` | HLS and DASH downloads. |
+| `crates/ipc` | `wirecatch-ipc` | Per-user local endpoint between the app, bridge and CLI. |
 | `crates/bridge` | `wirecatch-bridge` | Native messaging host the browser starts. |
 | `crates/cli` | `wirecatch-cli` | The `wirecatch` command-line tool. |
+| `crates/e2e` | `wirecatch-e2e` | End-to-end tests over the real bridge, endpoint and manager. |
 | `apps/desktop` | `@wirecatch/desktop` | Tauri 2 desktop app. |
 | `apps/extension` | `@wirecatch/extension` | Browser extension for Chromium and Firefox. |
 | `packages/protocol` | `@wirecatch/protocol` | TypeScript types generated from `wirecatch-protocol`. |
+| `packages/eslint-config` | `@wirecatch/eslint-config` | The one ESLint configuration. |
 
 ### D13. One app process hosts everything
 The desktop app process hosts `wirecatch-core` and the Engine. Closing the window hides it and leaves the process in the tray, so it opens again at once from the tray (about 40 ms, measured). Destroying it instead freed its memory but made every reopen take 1.5 to 2 seconds behind a blank white window, which the maintainer rejected. While hidden on Windows, the WebView2 is suspended like a sleeping Edge tab and asked to keep its memory low, and core events are not sent to it (it reloads its list when it wakes); measured, its processes hold about 25 MB in RAM once settled, against about 330 MB open. WebKitGTK has no such switch, so on Linux the window is only hidden. A new main window opens hidden and shows itself once its first view is drawn, so it never flashes blank. `--background` starts the process with no window. There is no separate daemon, so there is one source of truth and nothing to keep in sync. A webview crash cannot take downloads down, because WebView2 and WebKitGTK render in separate processes. The CLI stays standalone and uses the Engine directly.

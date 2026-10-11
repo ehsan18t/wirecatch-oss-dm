@@ -4,8 +4,6 @@ description = "Wirecatch desktop app: the Tauri shell that hosts the download ma
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-# Tauri 2.12 needs Rust 1.90; the published engine keeps the workspace minimum (1.88).
-rust-version = "1.90"
 publish = false
 
 # Desktop only: a plain library the binary links to (no mobile static or dynamic libraries).

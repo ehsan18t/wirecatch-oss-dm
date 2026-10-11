@@ -7,7 +7,6 @@ members = ["crates/*", "apps/desktop/src-tauri"]
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
-rust-version = "1.88"
 
 [workspace.dependencies]
 wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
