@@ -24,6 +24,12 @@ function readExtensionIds(): ExtensionIds {
 
 const ids = readExtensionIds();
 
+/**
+ * The WXT mode of `pnpm build:store`: the package uploaded to the Chrome Web Store, the only
+ * Chromium build without the `key` field (see PUBLISHING.md).
+ */
+export const STORE_MODE = 'store';
+
 export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   srcDir: 'src',
@@ -38,9 +44,10 @@ export default defineConfig({
   }),
   manifest: ({ browser, mode }) => {
     const isFirefox = browser === 'firefox';
-    // The development key gives unpacked builds the fixed id the bridge allows. Store builds
-    // must not carry it, so it is only added in development mode (`pnpm dev`, `pnpm build:dev`).
-    const devKey = mode === 'development' ? { key: ids.chromium_public_key } : {};
+    // The public key gives every unpacked Chromium build the one id every bridge trusts (D22).
+    // The Chrome Web Store does not accept a manifest with a key, so the store package leaves it
+    // out; the store gives it the same id because the first upload carried the private key.
+    const key = mode === STORE_MODE ? {} : { key: ids.chromium_public_key };
     return {
       name: 'Wirecatch',
       description: 'Sends your downloads to the Wirecatch download manager.',
@@ -76,7 +83,7 @@ export default defineConfig({
             // Needs storage.session (102), a native messaging port keeping the service worker
             // alive (105) and promise-based extension APIs; 116 is a conservative floor.
             minimum_chrome_version: '116',
-            ...devKey,
+            ...key,
           }),
     };
   },
