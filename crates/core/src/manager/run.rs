@@ -58,6 +58,14 @@ enum Ended {
 impl Manager {
     /// Starts the engine on `id`. The caller has already checked every limit.
     pub(super) fn start_run(&self, state: &mut State, id: DownloadId) {
+        // A sign-in older than a week is never sent, even before the hourly
+        // look at old downloads has got to it.
+        let now = self.inner.clock.unix_millis();
+        if let Some(entry) = state.downloads.get_mut(&id)
+            && super::sign_in::forget_if_old(entry, now)
+        {
+            self.save(state, id);
+        }
         let run_id = state.ids.run();
         let answered = CancellationToken::new();
         let connections = usize::from(state.settings.connections_per_download);
@@ -111,7 +119,7 @@ impl Manager {
     pub(super) fn fail_to_start(&self, state: &mut State, id: DownloadId, error: UserError) {
         if let Some(entry) = state.downloads.get_mut(&id) {
             entry.row.status = DownloadStatus::Failed;
-            entry.row.error = Some(error);
+            entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
         }
         self.save(state, id);
     }
@@ -260,7 +268,7 @@ impl Manager {
             }
             (Ended::Failed(error), None) => {
                 entry.row.status = DownloadStatus::Failed;
-                entry.row.error = Some(error);
+                entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
             }
             (Ended::Vanished, None) => {
                 warn!(id = id.0, "download task ended without a result");

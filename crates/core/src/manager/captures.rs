@@ -449,5 +449,6 @@ pub(super) fn origin_of(capture: &NewDownload) -> Origin {
             capture.cookies.as_deref(),
             &capture.extra_headers,
         ),
+        forgot_sign_in: false,
     }
 }

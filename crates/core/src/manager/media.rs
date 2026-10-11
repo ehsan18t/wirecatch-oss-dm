@@ -561,7 +561,7 @@ impl Manager {
         }
         if let Some(entry) = state.downloads.get_mut(&row.id) {
             entry.row.status = wirecatch_protocol::app::DownloadStatus::Failed;
-            entry.row.error = Some(error);
+            entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
         }
         self.save(&mut state, row.id);
         self.reconcile(&mut state);

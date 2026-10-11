@@ -19,6 +19,7 @@ mod restore;
 mod run;
 mod scheduling;
 mod settle;
+mod sign_in;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -305,6 +306,11 @@ impl Manager {
             weak.clone(),
             self.inner.clock.clone(),
             self.inner.queues_changed.clone(),
+            self.inner.stopped.clone(),
+        ));
+        self.spawn(sign_in::run_sign_in_expiry(
+            weak.clone(),
+            self.inner.clock.clone(),
             self.inner.stopped.clone(),
         ));
         self.spawn(Manager::run_addon_updates(weak, self.inner.stopped.clone()));

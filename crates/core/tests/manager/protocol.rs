@@ -987,3 +987,105 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() {
         .unwrap();
     assert_eq!(closed(&mut ui).await, asked.id);
 }
+
+/// The stored `origin` (cookies and headers) of download `id`, read from the
+/// database the way anyone with the file could.
+fn stored_origin(h: &Harness, id: wirecatch_protocol::DownloadId) -> String {
+    let db = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    let db = rusqlite::Connection::open(db).unwrap();
+    db.query_row("SELECT origin FROM downloads WHERE id = ?1", [id.0], |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+async fn wait_until_stored(
+    h: &Harness,
+    id: wirecatch_protocol::DownloadId,
+    check: impl Fn(&str) -> bool,
+) -> String {
+    crate::common::wait_until("the stored origin", || {
+        Some(stored_origin(h, id)).filter(|o| check(o))
+    })
+    .await
+}
+
+/// D17: a download that has not finished a week after it was added forgets
+/// the browser's sign-in (cookies, credentials, tokens), on disk too. If it
+/// then needs a fresh link, its row says why.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_unfinished_after_a_week_forgets_its_sign_in() {
+    let server = TestServer::fast(1024).await;
+    // The server wants the sign-in for this one.
+    server.configure(|c| c.refuse.push(("/old.pdf".into(), 403)));
+    let h = Harness::new().await;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let mut old = capture(server.url("old.pdf"));
+    old.extra_headers = vec![
+        Header {
+            name: "Authorization".into(),
+            value: "Bearer secret".into(),
+        },
+        Header {
+            name: "X-Session-Token".into(),
+            value: "t0k3n".into(),
+        },
+        Header {
+            name: "Accept-Language".into(),
+            value: "en".into(),
+        },
+    ];
+    let old = h.manager.add_capture(old).await.unwrap().id.unwrap();
+    let stored = wait_until_stored(&h, old, |o| o.contains("session=abc")).await;
+    assert!(stored.contains("Bearer secret"), "{stored}");
+
+    // Six days on, it is all still there.
+    h.clock.advance(chrono::TimeDelta::days(6));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(stored_origin(&h, old).contains("session=abc"));
+
+    // A week on, the sign-in is gone; harmless headers stay.
+    h.clock
+        .advance(chrono::TimeDelta::days(1) + chrono::TimeDelta::minutes(1));
+    let stored = wait_until_stored(&h, old, |o| !o.contains("session=abc")).await;
+    for secret in ["Bearer secret", "t0k3n", "Cookie"] {
+        assert!(!stored.contains(secret), "{secret} kept: {stored}");
+    }
+    assert!(stored.contains("Accept-Language"), "{stored}");
+    assert!(
+        stored.contains("example.com/page"),
+        "the referrer went: {stored}"
+    );
+
+    // A download added now keeps its sign-in.
+    let young = h
+        .manager
+        .add_capture(capture(server.url("young.pdf")))
+        .await
+        .unwrap()
+        .id
+        .unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    let failed = h.wait_status(old, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert_eq!(
+        error.message,
+        "Wirecatch forgot the sign-in for this download after 7 days; get a fresh link."
+    );
+    assert_eq!(
+        error.fix,
+        Some(wirecatch_protocol::app::FixAction::RefreshLink)
+    );
+    h.wait_status(young, DownloadStatus::Completed).await;
+    // Only the young download sent cookies, and none sent credentials.
+    assert_eq!(*server.stats.cookies.lock().unwrap(), vec!["session=abc"]);
+    assert!(server.stats.authorizations.lock().unwrap().is_empty());
+}
