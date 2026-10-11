@@ -394,12 +394,16 @@ impl Server {
         if !self.epsv_refused.load(Ordering::Relaxed) {
             let reply = control.command("EPSV", "EPSV").await?;
             if reply.code == 229 {
-                return control::parse_epsv(&reply.text).ok_or_else(|| unexpected(&reply));
-            }
-            if !reply.is_permanent_failure() {
+                if let Some(port) = control::parse_epsv(&reply.text) {
+                    return Ok(port);
+                }
+                // An answer that cannot be read would be the same next time.
+                debug!(text = %reply.message(), "the FTP server's EPSV answer cannot be read; using PASV");
+            } else if !reply.is_permanent_failure() {
                 return Err(self.target.reply_failure(&reply));
+            } else {
+                debug!("the FTP server does not support EPSV; using PASV");
             }
-            debug!("the FTP server does not support EPSV; using PASV");
             self.epsv_refused.store(true, Ordering::Relaxed);
         }
         let reply = control.command("PASV", "PASV").await?;

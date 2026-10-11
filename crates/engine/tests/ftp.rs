@@ -354,6 +354,29 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
 }
 
 #[tokio::test]
+async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
+    let data = test_data(4 * MIB);
+    let mut config = serving(&data);
+    config.epsv_garbage = true;
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("epsv-garbage");
+
+    let (path, _, _) = completed(
+        run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 3))
+            .await
+            .unwrap(),
+    );
+
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    assert_eq!(server.stats.count("EPSV"), 1, "not asked again");
+    assert!(server.stats.count("PASV") >= 2);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn a_server_without_rest_is_downloaded_over_one_connection() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);

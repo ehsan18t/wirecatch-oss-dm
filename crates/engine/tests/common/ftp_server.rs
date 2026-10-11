@@ -60,6 +60,8 @@ pub struct FtpConfig {
     pub inject_after_auth: bool,
     /// Answers `PROT P` with `534`.
     pub refuse_prot_p: bool,
+    /// Answers `EPSV` with a `229` that names no port.
+    pub epsv_garbage: bool,
 }
 
 impl Default for FtpConfig {
@@ -81,6 +83,7 @@ impl Default for FtpConfig {
             silent_after: None,
             inject_after_auth: false,
             refuse_prot_p: false,
+            epsv_garbage: false,
         }
     }
 }
@@ -365,6 +368,13 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                 }
                 Err(_) => reply(&mut control, "501 REST needs a number.").await?,
             },
+            "EPSV" if config.epsv_garbage => {
+                reply(
+                    &mut control,
+                    "229 Entering Extended Passive Mode (somewhere)",
+                )
+                .await?
+            }
             "EPSV" if config.epsv => {
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let port = listener.local_addr()?.port();
