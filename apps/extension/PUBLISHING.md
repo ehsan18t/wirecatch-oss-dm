@@ -25,4 +25,27 @@ Other Chromium stores, such as Microsoft Edge Add-ons, give their own ids, which
 
 ## Firefox
 
-Firefox builds use the add-on id `extension@wirecatch.app` (`firefox_id`) from `browser_specific_settings.gecko` and never carry a `key`. `pnpm zip` makes the Firefox package and its sources zip for addons.mozilla.org.
+Firefox builds use the add-on id `extension@wirecatch.app` (`firefox_id`) from `browser_specific_settings.gecko` and never carry a `key`. Every bridge lists that id in `allowed_extensions`. `pnpm build:firefox` builds `.output/firefox-mv3`; `pnpm zip` also makes the Firefox package and its sources zip.
+
+### Signing for self-distribution
+
+Release and Beta Firefox only install add-ons signed by Mozilla. Signing on the unlisted channel gives a signed `.xpi` that we host ourselves (for example on the Wirecatch website or GitHub Releases) and that release Firefox installs permanently. It is not shown on addons.mozilla.org.
+
+1. Create an account on [addons.mozilla.org](https://addons.mozilla.org) (a Mozilla account), then make API credentials under Tools, Manage API Keys (<https://addons.mozilla.org/developers/addon/api/key/>). The JWT issuer is the API key and the JWT secret is the API secret. Keep both in a password manager, never in the repository or in a config file.
+2. Run `pnpm sign:firefox` with the credentials in the environment, for example `WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=... pnpm sign:firefox`. It builds the Firefox package and its sources zip, sends both to addons.mozilla.org on the unlisted channel, and saves the signed `.xpi` in `.output/signed`. web-ext reads the credentials from those variables itself, and config file discovery is turned off, so no file can supply them. Automatic signing usually takes a few minutes; Mozilla may still review unlisted versions later.
+3. Raise `version` in `package.json` before each new submission: addons.mozilla.org refuses a version number it has already signed.
+
+The first signing creates the add-on on addons.mozilla.org under `extension@wirecatch.app`, which reserves that id for our account so nobody else can claim it. D21 lists this as an action only the maintainer can take; do it soon, even before the first release.
+
+addons.mozilla.org asks for the source code of bundled add-ons, which is why the sources zip is uploaded. That zip holds only `apps/extension`; the build also needs `config/extension-ids.json`, `packages/protocol` and the workspace lockfile, so if a reviewer asks how to rebuild, point them to the tagged release in the GitHub repository and the build steps in `CONTRIBUTING.md`.
+
+Self-distributed copies do not update by themselves unless the manifest gets an `update_url`; until then people install each new `.xpi` from our download page.
+
+### Listing on addons.mozilla.org later
+
+To list Wirecatch publicly, submit a version on the listed channel from the add-on's page in the Developer Hub, or with `web-ext sign --channel=listed` and an `--amo-metadata` file that has the listing details (name, summary, categories, license). Listed versions are reviewed by Mozilla and then hosted and updated by addons.mozilla.org. The add-on keeps the same id, so the bridge needs no change.
+
+### Testing unsigned builds
+
+- Any Firefox: open `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on, and pick `.output/firefox-mv3/manifest.json` (or run `pnpm dev:firefox`). It keeps the `extension@wirecatch.app` id, so it talks to an installed Wirecatch, and it is removed when Firefox restarts.
+- To keep an unsigned build installed: Firefox Developer Edition, Nightly, ESR or an unbranded build, with `xpinstall.signatures.required` set to `false` in `about:config`, then install the zip from `pnpm zip`. Release and Beta Firefox ignore that setting.
