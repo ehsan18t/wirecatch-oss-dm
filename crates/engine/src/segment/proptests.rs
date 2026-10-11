@@ -115,7 +115,13 @@ impl Model {
 
     fn flush_to(&mut self, index: usize, upto: u64) {
         let before = self.table.segments[index].flushed;
-        self.table.mark_flushed(index, upto);
+        self.table.mark_flushed(
+            index,
+            ByteRange {
+                start: before,
+                end: upto,
+            },
+        );
         let after = self.table.segments[index].flushed;
         assert!(after >= before, "flushed offset went backwards");
         self.written += after - before;

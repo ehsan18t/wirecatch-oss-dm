@@ -146,11 +146,13 @@ impl SegmentTable {
         (allowed, seg.claimed >= seg.end)
     }
 
-    /// Records that everything below `upto` in this segment is written to disk.
-    pub fn mark_flushed(&mut self, index: usize, upto: u64) {
+    /// Records that `written` is on disk for this segment. Only a write that continues from the flushed offset counts: one that starts above it would leave a hole (an earlier write that failed) that resume must never treat as downloaded, so it is ignored and that part is fetched again.
+    pub fn mark_flushed(&mut self, index: usize, written: ByteRange) {
         let seg = &mut self.segments[index];
-        debug_assert!(upto <= seg.claimed);
-        seg.flushed = seg.flushed.max(upto);
+        debug_assert!(written.end <= seg.claimed);
+        if written.start <= seg.flushed {
+            seg.flushed = seg.flushed.max(written.end);
+        }
     }
 
     /// For an unknown-length download: the stream ended, so this is the real end.
@@ -249,6 +251,23 @@ mod tests {
 
     const MIB: u64 = 1024 * 1024;
 
+    fn range(start: u64, end: u64) -> ByteRange {
+        ByteRange { start, end }
+    }
+
+    #[test]
+    fn a_write_above_the_flushed_offset_is_not_counted() {
+        let mut t = SegmentTable::new(Some(4 * MIB), MIB);
+        t.acquire(0).unwrap();
+        t.claim(0, 3 * MIB);
+        // The write of [0, 1 MiB) failed; the next one must not cover for it.
+        t.mark_flushed(0, range(MIB, 2 * MIB));
+        assert_eq!(t.remaining()[0].start, 0);
+        t.mark_flushed(0, range(0, MIB));
+        t.mark_flushed(0, range(MIB, 2 * MIB));
+        assert_eq!(t.remaining()[0].start, 2 * MIB);
+    }
+
     #[test]
     fn first_worker_gets_whole_file_then_others_split() {
         let mut t = SegmentTable::new(Some(64 * MIB), MIB);
@@ -294,7 +313,7 @@ mod tests {
         let mut t = SegmentTable::new(Some(8 * MIB), MIB);
         t.acquire(0).unwrap();
         t.claim(0, 3 * MIB);
-        t.mark_flushed(0, 2 * MIB);
+        t.mark_flushed(0, range(0, 2 * MIB));
         t.release(0);
         let a = t.acquire(5).unwrap();
         assert_eq!((a.index, a.from, a.to), (0, 2 * MIB, 8 * MIB));
@@ -306,7 +325,7 @@ mod tests {
         t.acquire(0).unwrap();
         t.acquire(1).unwrap();
         t.claim(0, 2 * MIB);
-        t.mark_flushed(0, 2 * MIB);
+        t.mark_flushed(0, range(0, 2 * MIB));
         assert_eq!(
             t.remaining(),
             vec![ByteRange {
@@ -316,7 +335,7 @@ mod tests {
         );
         assert!(!t.is_complete());
         t.claim(1, 2 * MIB);
-        t.mark_flushed(1, 4 * MIB);
+        t.mark_flushed(1, range(2 * MIB, 4 * MIB));
         assert!(t.is_complete());
         assert_eq!(t.remaining_bytes(), 0);
     }
@@ -344,7 +363,7 @@ mod tests {
         t.acquire(0).unwrap();
         assert_eq!(t.acquire(1), None);
         t.claim(0, 500);
-        t.mark_flushed(0, 500);
+        t.mark_flushed(0, range(0, 500));
         t.close_unknown(0);
         assert!(t.is_complete());
     }

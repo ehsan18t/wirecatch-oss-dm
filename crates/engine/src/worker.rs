@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
-use crate::segment::{Assignment, SegmentTable, UNKNOWN_END};
+use crate::segment::{Assignment, ByteRange, SegmentTable, UNKNOWN_END};
 use crate::storage;
 use crate::transport::{Body, Connection};
 
@@ -393,12 +393,23 @@ fn jitter() -> Duration {
     Duration::from_millis(ms)
 }
 
-/// A finished write hands back its emptied buffer, the segment and the new flushed offset.
-type WriteJob = JoinHandle<std::io::Result<(Vec<u8>, usize, u64)>>;
+/// What a finished write hands back.
+struct Written {
+    /// The emptied buffer, reused for the next write.
+    buf: Vec<u8>,
+    /// The segment the bytes belong to.
+    index: usize,
+    /// The file range that is now on disk.
+    range: ByteRange,
+}
+
+type WriteJob = JoinHandle<std::io::Result<Written>>;
 
 /// Collects incoming bytes into a large buffer and writes it with one positional
 /// write on the blocking pool, while the next buffer fills (double buffering).
 /// The segment's `flushed` offset only moves once a write has completed.
+///
+/// A failed write poisons the writer for the rest of the segment: the bytes already buffered after the failure are dropped, never written, because writing them would leave a hole below them that the resume state could count as done.
 struct Writer {
     file: Arc<File>,
     capacity: usize,
@@ -408,6 +419,8 @@ struct Writer {
     /// File offset of `buf[0]`.
     offset: u64,
     in_flight: Option<WriteJob>,
+    /// Set when a write of this segment failed; cleared by [`Writer::start`].
+    failed: bool,
 }
 
 impl Writer {
@@ -420,6 +433,7 @@ impl Writer {
             index: 0,
             offset: 0,
             in_flight: None,
+            failed: false,
         }
     }
 
@@ -427,6 +441,7 @@ impl Writer {
         debug_assert!(self.buf.is_empty() && self.in_flight.is_none());
         self.index = index;
         self.offset = offset;
+        self.failed = false;
     }
 
     async fn push(&mut self, mut data: &[u8], table: &Mutex<SegmentTable>) -> Result<()> {
@@ -441,10 +456,10 @@ impl Writer {
         Ok(())
     }
 
-    /// Starts writing the current buffer; waits for the previous write first.
+    /// Starts writing the current buffer; waits for the previous write first. Does nothing once a write has failed.
     async fn flush(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
         self.wait(table).await?;
-        if self.buf.is_empty() {
+        if self.failed || self.buf.is_empty() {
             return Ok(());
         }
         let next = self
@@ -452,24 +467,48 @@ impl Writer {
             .take()
             .unwrap_or_else(|| Vec::with_capacity(self.capacity));
         let mut full = std::mem::replace(&mut self.buf, next);
-        let (file, offset, index) = (self.file.clone(), self.offset, self.index);
-        let end = offset + full.len() as u64;
-        self.offset = end;
+        let (file, index) = (self.file.clone(), self.index);
+        let range = ByteRange {
+            start: self.offset,
+            end: self.offset + full.len() as u64,
+        };
+        self.offset = range.end;
         self.in_flight = Some(tokio::task::spawn_blocking(move || {
-            storage::write_all_at(&file, &full, offset)?;
+            storage::write_all_at(&file, &full, range.start)?;
             full.clear();
-            Ok((full, index, end))
+            Ok(Written {
+                buf: full,
+                index,
+                range,
+            })
         }));
         Ok(())
     }
 
+    /// Waits for the write in flight and records it. On failure the writer drops what it has buffered and stops writing this segment.
     async fn wait(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
-        if let Some(handle) = self.in_flight.take() {
-            let (buf, index, end) = handle.await.map_err(Error::task)??;
-            table.lock().unwrap().mark_flushed(index, end);
-            self.spare = Some(buf);
+        let Some(handle) = self.in_flight.take() else {
+            return Ok(());
+        };
+        match handle
+            .await
+            .map_err(Error::task)
+            .and_then(|r| r.map_err(Error::from))
+        {
+            Ok(written) => {
+                table
+                    .lock()
+                    .unwrap()
+                    .mark_flushed(written.index, written.range);
+                self.spare = Some(written.buf);
+                Ok(())
+            }
+            Err(error) => {
+                self.failed = true;
+                self.buf.clear();
+                Err(error)
+            }
         }
-        Ok(())
     }
 
     /// Writes everything buffered and waits until it is on disk.
@@ -482,6 +521,38 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A write failed while the next buffer was already full. Writing that buffer on the way out used to land it above the hole and count the hole as flushed, so a resumed or finished download could keep a range of zeros.
+    #[tokio::test]
+    async fn a_failed_write_is_never_covered_by_the_next_one() {
+        const CAPACITY: usize = 4;
+        let path = std::env::temp_dir().join(format!("wc-writer-{}", std::process::id()));
+        let file = Arc::new(File::create(&path).unwrap());
+        let table = Mutex::new(SegmentTable::new(Some(16), 1));
+        table.lock().unwrap().acquire(0).unwrap();
+        table.lock().unwrap().claim(0, 8);
+
+        let mut writer = Writer::new(Arc::clone(&file), CAPACITY);
+        writer.start(0, 0);
+        // The first buffer, [0, 4), went out and its write fails.
+        writer.offset = 4;
+        writer.in_flight = Some(tokio::task::spawn_blocking(|| {
+            Err(std::io::Error::other("disk full"))
+        }));
+
+        let pushed = writer.push(b"BBBB", &table).await;
+        assert!(pushed.is_err(), "the failed write is reported");
+        writer.finish(&table).await.unwrap();
+
+        assert_eq!(table.lock().unwrap().remaining()[0].start, 0);
+        assert_eq!(
+            file.metadata().unwrap().len(),
+            0,
+            "nothing lands above the hole"
+        );
+        drop(file);
+        std::fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn backoff_grows_and_caps() {
