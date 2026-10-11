@@ -653,3 +653,21 @@ async fn cancelling_before_the_server_greets_returns_at_once() {
     assert!(files_in(&dir).is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+async fn an_unsupported_scheme_is_reported_without_the_password() {
+    let dir = temp_dir("scheme");
+    let error = run(request("gopher://bob:hunter2@files.example/a.bin", &dir, 1))
+        .await
+        .unwrap_err();
+
+    let Error::InvalidUrl(text) = &error else {
+        panic!("expected InvalidUrl, got {error:?}");
+    };
+    assert!(text.contains("gopher://bob@files.example/a.bin"), "{text}");
+    assert!(
+        !text.contains("hunter2"),
+        "the password is not in the message: {text}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
