@@ -113,6 +113,8 @@ export interface Backend {
   installAddon(id: string): Promise<void>;
   updateAddon(id: string): Promise<void>;
   removeAddon(id: string): Promise<void>;
+  /** Stops an install or update; an update keeps the installed version working. */
+  cancelAddonOperation(id: string): Promise<void>;
 
   /** Every change the core pushes, in order. */
   subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe>;
@@ -168,6 +170,7 @@ export const COMMANDS = {
   installAddon: 'install_addon',
   updateAddon: 'update_addon',
   removeAddon: 'remove_addon',
+  cancelAddonOperation: 'cancel_addon_operation',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */

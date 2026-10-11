@@ -178,6 +178,9 @@ export class TauriBackend implements Backend {
   removeAddon(id: string) {
     return this.#exec(COMMANDS.removeAddon, { id });
   }
+  cancelAddonOperation(id: string) {
+    return this.#exec(COMMANDS.cancelAddonOperation, { id });
+  }
 
   async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {
     return listen<UiEvent>(EVENT_NAME, (e) => listener(e.payload));

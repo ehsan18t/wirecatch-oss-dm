@@ -231,6 +231,25 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.addons?.[0]?.state.type).toBe('not_installed');
   });
 
+  it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
+    const { app, backend, click } = await setup();
+    await click(button(/^Settings/));
+    await click(button('Install'));
+    await click(button('Stop installing the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+
+    await click(button('Install'));
+    backend.tick(4500);
+    await settle();
+    const version = app.addons?.[0]?.installed_version;
+    expect(version).toBeTruthy();
+    await app.updateAddon('media');
+    await settle();
+    await click(button('Stop updating the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(app.addons?.[0]?.installed_version).toBe(version);
+  });
+
   it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {
     const { app, backend, click } = await setup();
     await app.installAddon('media');

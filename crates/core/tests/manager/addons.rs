@@ -159,6 +159,75 @@ async fn remove_deletes_the_add_on() {
     h.manager.remove_addon("media").await.unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stopping_a_first_install_leaves_nothing_behind() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "cx")).await;
+    // Slow enough to still be running when it is stopped.
+    server.throttle("cx/yt-dlp", Some(32 * 1024));
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon("media").await.unwrap();
+    wait_addon(&mut ui, "installing", |a| {
+        matches!(a.state, AddonState::Installing { .. })
+    })
+    .await;
+    h.manager.cancel_addon_operation("media").await.unwrap();
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
+    assert!(!path_exists(addon_dir(&h)), "the partial files are gone");
+    // Nothing in progress: stopping again is fine.
+    h.manager.cancel_addon_operation("media").await.unwrap();
+    assert!(h.manager.cancel_addon_operation("flash").await.is_err());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stopping_an_update_keeps_the_installed_version_working() {
+    let (server, h, new_ytdlp) = updatable("cu").await;
+    let before = installed_ytdlp(&h);
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        new_ytdlp.len() as u64,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    );
+    server.throttle(
+        &format!("rel/2026.09.30/{}", ytdlp_asset()),
+        Some(16 * 1024),
+    );
+    let mut ui = h.manager.subscribe();
+    // A quiet update starts (auto_update_addons is on by default).
+    h.manager.check_addon_updates().await.unwrap();
+    wait_addon(&mut ui, "updating", |a| {
+        matches!(a.state, AddonState::Installing { .. })
+    })
+    .await;
+    h.manager.cancel_addon_operation("media").await.unwrap();
+
+    let info = h.manager.list_addons().remove(0);
+    assert!(
+        matches!(
+            info.state,
+            AddonState::Installed | AddonState::UpdateAvailable
+        ),
+        "{:?}",
+        info.state
+    );
+    assert!(info.installed_version.unwrap().contains("2026.08.19"));
+    assert_eq!(installed_ytdlp(&h), before, "the old yt-dlp is untouched");
+    assert!(
+        !path_exists(addon_dir(&h).join(".work")),
+        "staging discarded"
+    );
+    // Still runnable: the installed Deno answers.
+    let deno = std::process::Command::new(addon_dir(&h).join("deno").join(exe("deno")))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(deno.status.success());
+}
+
 /// Publishes yt-dlp release `tag` the way GitHub describes it: the program at
 /// `rel/<tag>/<asset>` (or at `program_url`), announced as `listed_size`
 /// bytes, a checksum list giving it `listed_hash`, and the description at

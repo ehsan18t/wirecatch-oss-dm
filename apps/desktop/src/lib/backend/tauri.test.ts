@@ -44,6 +44,7 @@ const FIXED = [
   'install_addon',
   'update_addon',
   'remove_addon',
+  'cancel_addon_operation',
 ];
 
 describe('Tauri command names', () => {

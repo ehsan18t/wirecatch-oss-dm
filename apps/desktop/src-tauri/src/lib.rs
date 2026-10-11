@@ -48,6 +48,7 @@
 //! | `install_addon` | `id: String` | nothing; progress and the result arrive as `AddonsChanged` |
 //! | `update_addon` | `id: String` | nothing; like `install_addon` |
 //! | `remove_addon` | `id: String` | nothing |
+//! | `cancel_addon_operation` | `id: String` | nothing; stops an install or update, keeping an installed version working |
 //!
 //! Every command reaches the real core; none is pending. The core checks for add-on updates
 //! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
@@ -207,6 +208,7 @@ pub fn run() {
             commands::install_addon,
             commands::update_addon,
             commands::remove_addon,
+            commands::cancel_addon_operation,
         ])
         .build(context);
     match app {

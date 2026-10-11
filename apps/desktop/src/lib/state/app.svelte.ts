@@ -1069,6 +1069,11 @@ export class AppState {
     await this.#run(() => this.backend.removeAddon(id));
   }
 
+  /** Stops an install or update in progress; an update keeps the installed version. */
+  async cancelAddonOperation(id: string): Promise<void> {
+    await this.#run(() => this.backend.cancelAddonOperation(id));
+  }
+
   /**
    * Closes the add-on prompt. While the add-on installs (or once it is in), a quality that waits
    * for it still downloads by itself; closing the prompt before that (Not now) gives the quality

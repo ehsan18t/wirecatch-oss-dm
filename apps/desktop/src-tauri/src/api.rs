@@ -312,6 +312,12 @@ pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
     m.update_addon(id).await.map_err(plain)
 }
 
+/// Stops an install or update in progress. An update keeps the installed version working; a
+/// first install removes what it put down.
+pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> {
+    m.cancel_addon_operation(id).await.map_err(plain)
+}
+
 /// Removes an add-on and its files, stopping an install in progress first.
 pub async fn remove_addon(m: &Manager, id: &str) -> CommandResult<()> {
     m.remove_addon(id).await.map_err(plain)

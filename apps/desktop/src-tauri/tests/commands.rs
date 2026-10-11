@@ -229,6 +229,9 @@ async fn media_and_addon_commands_reach_the_core() {
     assert!(unknown.contains("no add-on called"), "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
     api::remove_addon(&m, "media").await.unwrap();
+    // Stopping with nothing in progress is fine; an unknown add-on is refused.
+    api::cancel_addon_operation(&m, "media").await.unwrap();
+    assert!(api::cancel_addon_operation(&m, "flash").await.is_err());
     assert_eq!(api::list_addons(&m)[0].state, AddonState::NotInstalled);
 
     // Opening looks the download up in the core by id.

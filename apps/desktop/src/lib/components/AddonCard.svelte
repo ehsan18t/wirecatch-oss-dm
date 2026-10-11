@@ -25,8 +25,8 @@
   }
 
   function main() {
-    // Stopping an install removes what it put in place so far.
-    if (installing) return run(() => app.removeAddon(addon.id));
+    // Stopping never removes a working add-on: an update keeps the installed version.
+    if (installing) return run(() => app.cancelAddonOperation(addon.id));
     return run(() =>
       action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id),
     );
@@ -85,7 +85,9 @@
         class:primary={!installing}
         aria-describedby={describedby}
         aria-disabled={busy}
-        aria-label={installing ? `Stop installing the ${addon.name.toLowerCase()}` : undefined}
+        aria-label={installing
+          ? `Stop ${addon.installed_version ? 'updating' : 'installing'} the ${addon.name.toLowerCase()}`
+          : undefined}
         onclick={main}
       >
         {installing ? 'Stop' : action ? ACTION_LABEL[action] : ''}

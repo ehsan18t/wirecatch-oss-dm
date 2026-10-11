@@ -1001,12 +1001,27 @@ export class MockBackend implements Backend {
   async installAddon(id: string) {
     const addon = this.#addon(id);
     if (addon.state.type === 'installing') return;
+    this.#beforeInstall.set(id, structuredClone(addon.state));
     addon.state = { type: 'installing', data: { done: 0, total: addon.size } };
     this.#addonsChanged();
   }
 
+  /** What each add-on was before its install or update started, for Stop. */
+  readonly #beforeInstall = new Map<string, AddonInfo['state']>();
+
   async updateAddon(id: string) {
     await this.installAddon(id);
+  }
+
+  async cancelAddonOperation(id: string) {
+    const addon = this.#addon(id);
+    if (addon.state.type !== 'installing') return;
+    // Like the core: an update keeps the installed version; a first install leaves nothing.
+    const before = this.#beforeInstall.get(id);
+    const kept = before?.type === 'installed' || before?.type === 'update_available';
+    addon.state = kept && before ? before : { type: 'not_installed' };
+    if (!kept) addon.installed_version = null;
+    this.#addonsChanged();
   }
 
   async removeAddon(id: string) {

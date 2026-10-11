@@ -118,6 +118,44 @@ impl Manager {
         self.install_addon(id).await
     }
 
+    /// Stops an install or update in progress, the person's or a quiet one.
+    /// Nothing in progress is fine. An update leaves the version that was
+    /// installed before in place and working, and discards what it had
+    /// downloaded; a first install (or a repair of a damaged add-on) removes
+    /// everything it put down, so the add-on is not installed afterwards.
+    pub async fn cancel_addon_operation(&self, id: &str) -> Result<()> {
+        check_id(id)?;
+        let (ended, had_tools) = {
+            let state = self.lock_open()?;
+            let Some(op) = &state.addon.op else {
+                return Ok(());
+            };
+            op.cancel.cancel();
+            (op.ended.clone(), state.addon.tools.is_some())
+        };
+        ended.cancelled().await;
+        let dir = self.inner.addon_dir.clone();
+        // A working add-on keeps its files; only the staging folder goes.
+        let target = if had_tools { dir.join(".work") } else { dir };
+        let discarded = self
+            .blocking(move || match std::fs::remove_dir_all(&target) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(CoreError::Invalid(format!(
+                    "The install was stopped, but some of its files could not be deleted ({e}). Remove the media add-on in Settings, Add-ons to clean up."
+                ))),
+            })
+            .await;
+        {
+            let mut state = self.lock();
+            state.addon.failure = None;
+        }
+        // Show what is really on disk now.
+        self.rescan_addon(false).await;
+        self.emit_addons(&self.lock().addon);
+        discarded
+    }
+
     /// Removes an add-on and its files, stopping an install in progress first.
     /// Refused while a video is being read or downloaded with it. Whatever
     /// happens, the add-on's state afterwards is what is on disk.
