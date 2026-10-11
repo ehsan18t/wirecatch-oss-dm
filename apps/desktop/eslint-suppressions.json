@@ -495,9 +495,6 @@
   "src/lib/state/downloads.svelte.ts": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
-    },
-    "complexity": {
-      "count": 1
     }
   },
   "src/lib/state/hints.svelte.ts": {

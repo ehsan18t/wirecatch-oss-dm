@@ -17,10 +17,58 @@ function reactive<T extends object>(value: T): T {
   return proxied;
 }
 
-function sameError(a: DownloadSummary['error'], b: DownloadSummary['error']): boolean {
+type RowField = Exclude<keyof DownloadSummary, 'id'>;
+
+/**
+ * Every field a row update copies. The mapped type makes this list complete by construction: when the protocol adds a field to `DownloadSummary`, this object stops compiling until the field is listed, so an update can never again drop one (as it once dropped `processing` and `media`).
+ */
+const ROW_FIELDS: Readonly<Record<RowField, true>> = {
+  url: true,
+  file_name: true,
+  path: true,
+  queue: true,
+  category: true,
+  status: true,
+  total: true,
+  done: true,
+  speed: true,
+  connections: true,
+  eta_secs: true,
+  error: true,
+  waiting: true,
+  media: true,
+  processing: true,
+  added_at: true,
+  completed_at: true,
+};
+
+const FIELDS = Object.keys(ROW_FIELDS) as readonly RowField[];
+
+/** Fields that decide which rows are shown and in what order; a change to one rebuilds the visible list. */
+const LIST_FIELDS: readonly RowField[] = ['status', 'queue', 'category', 'file_name', 'total'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Structural equality for the plain data in a row, without allocating (it runs on every progress tick). */
+function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (a === null || b === null) return false;
-  return a.message === b.message && a.fix === b.fix;
+  if (!isRecord(a) || !isRecord(b)) return false;
+  for (const key in a) if (!same(a[key], b[key])) return false;
+  for (const key in b) if (!(key in a)) return false;
+  return true;
+}
+
+/** Writes one field only when it changed, so untouched fields do not wake anything up. Returns whether it changed. */
+function update<K extends RowField>(
+  row: Pick<DownloadSummary, K>,
+  next: Pick<DownloadSummary, K>,
+  field: K,
+): boolean {
+  if (same(row[field], next[field])) return false;
+  row[field] = next[field];
+  return true;
 }
 
 export class DownloadStore {
@@ -88,15 +136,7 @@ export class DownloadStore {
         structural = true;
         continue;
       }
-      if (
-        row.status !== s.status ||
-        row.queue !== s.queue ||
-        row.category !== s.category ||
-        row.file_name !== s.file_name ||
-        row.total !== s.total
-      ) {
-        structural = true;
-      }
+      if (LIST_FIELDS.some((field) => !same(row[field], s[field]))) structural = true;
       speedDelta += s.speed - row.speed;
       if (row.queue !== s.queue) {
         addQueue(row.queue, -row.speed);
@@ -104,22 +144,7 @@ export class DownloadStore {
       } else {
         addQueue(s.queue, s.speed - row.speed);
       }
-      // Write only what changed, so untouched fields do not wake anything up.
-      if (row.url !== s.url) row.url = s.url;
-      if (row.file_name !== s.file_name) row.file_name = s.file_name;
-      if (row.path !== s.path) row.path = s.path;
-      if (row.queue !== s.queue) row.queue = s.queue;
-      if (row.category !== s.category) row.category = s.category;
-      if (row.status !== s.status) row.status = s.status;
-      if (row.total !== s.total) row.total = s.total;
-      if (row.done !== s.done) row.done = s.done;
-      if (row.speed !== s.speed) row.speed = s.speed;
-      if (row.connections !== s.connections) row.connections = s.connections;
-      if (row.eta_secs !== s.eta_secs) row.eta_secs = s.eta_secs;
-      if (!sameError(row.error, s.error)) row.error = s.error === null ? null : { ...s.error };
-      if (JSON.stringify(row.waiting) !== JSON.stringify(s.waiting)) row.waiting = s.waiting;
-      if (row.added_at !== s.added_at) row.added_at = s.added_at;
-      if (row.completed_at !== s.completed_at) row.completed_at = s.completed_at;
+      for (const field of FIELDS) update(row, s, field);
     }
     if (speedDelta !== 0) this.totalSpeed += speedDelta;
     for (const [q, d] of queueDelta) this.queueSpeed[q] = (this.queueSpeed[q] ?? 0) + d;

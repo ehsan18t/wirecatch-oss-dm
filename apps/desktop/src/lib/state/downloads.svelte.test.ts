@@ -143,4 +143,33 @@ describe('DownloadStore', () => {
     expect(rebuilds).toBe(before + 1);
     cleanup();
   });
+
+  // The store once copied fields from a hand-written list that missed `processing` and `media`, so
+  // a conversion's step and percent never reached the main window after the row first appeared.
+  it('takes every field of an update', () => {
+    const store = new DownloadStore();
+    store.load([row(1, { status: 'downloading', done: 0, speed: 5 })]);
+    const update: DownloadSummary = {
+      id: 1,
+      url: 'https://example.com/other.mp4',
+      file_name: 'other.mp4',
+      path: 'D:\\v\\other.mp4',
+      queue: 2,
+      category: 'video',
+      status: 'processing',
+      total: 2000,
+      done: 2000,
+      speed: 0,
+      connections: 0,
+      eta_secs: 12,
+      error: { message: 'Something went wrong.', fix: 'retry' },
+      waiting: { type: 'in_line', data: { position: 3 } },
+      media: { quality: '1080p', source: 'hls', video_key: 'abc' },
+      processing: { step: 'converting', per_mille: 450 },
+      added_at: 7,
+      completed_at: 9,
+    };
+    store.apply([update]);
+    expect({ ...store.get(1) }).toEqual(update);
+  });
 });
