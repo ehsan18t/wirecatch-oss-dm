@@ -35,6 +35,7 @@ Notes:
 - Build the desktop frontend once (`pnpm --filter @wirecatch/desktop build`) before any cargo command that touches the desktop crate.
 - The desktop crate's tests run separately because Tauri's build script breaks other crates' doctests when everything links together.
 - `wirecatch-bridge/test-overrides` is for tests only and must never be enabled in a build.
+- Release bridges only trust browser-store extension ids. To try the unpacked development extension with a local build, build the bridge with `--features dev-extension` (`cargo build -p wirecatch-bridge --features dev-extension`); never ship that feature.
 - The stream joining tests use a real ffmpeg when `WIRECATCH_TEST_FFMPEG` points to one; CI sets `WIRECATCH_REQUIRE_FFMPEG=1` so they cannot be skipped there.
 - On Windows or macOS with Docker running, `bash scripts/linux-test.sh` runs clippy and the whole Rust suite on Linux as a normal user (with a real ffmpeg), the same way CI does.
 - Tests never reach the internet. Servers in tests are local (see `crates/engine/tests/common`).
