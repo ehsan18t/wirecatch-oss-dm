@@ -28,7 +28,9 @@ export interface ContentSender {
     incognito?: boolean;
     cookieStoreId?: string;
   };
-  /** Address of the frame the content script runs in. */
+  /**
+   * Address of the frame the content script runs in, as the browser recorded it. In Chromium this is the address the frame had when the content script started: a page that changes its address with the history API (a single-page site such as YouTube) does not change it. Use `currentFrameUrl` for the address shown now.
+   */
   url?: string;
   /** The frame the content script runs in (0 for the tab's page). */
   frameId?: number;
@@ -85,8 +87,10 @@ export interface MediaCenterDeps {
   store?: MediaStore;
   /** The "sites to ignore" setting: no media button there. */
   ignoredSites?(): readonly string[];
-  /** Ids of the tabs open now, so saved lists of closed tabs are not restored. */
-  liveTabIds?(): Promise<number[]>;
+  /**
+   * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
+   */
+  liveTabs?(): Promise<Array<{ id: number; url: string | null }>>;
   saveDelayMs?: number;
 }
 
@@ -104,6 +108,37 @@ const MAX_TITLE = 200;
 function cleanTitle(title: string | null | undefined): string | null {
   const text = title?.replace(/\s+/g, ' ').trim() ?? '';
   return text === '' ? null : text.slice(0, MAX_TITLE);
+}
+
+/** True when both are web addresses on the same origin (opaque origins never match). */
+function sameWebOrigin(a: string, b: string): boolean {
+  try {
+    const first = new URL(a);
+    const second = new URL(b);
+    return /^https?:$/.test(first.protocol) && first.origin === second.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The address the sender's frame shows now, which the media button acts on.
+ *
+ * The browser's `sender.url` is the frame's address when the content script started (Chromium keeps it from then on), so on a single-page site it still names the first video after the page moved on to another one with the history API. The history API cannot change a frame's origin, so a newer address on the same origin is taken from:
+ *
+ * 1. the tab's address (`sender.tab.url`), for the tab's own page (frame 0): the browser keeps it current;
+ * 2. the address the content script reports (`location`), for any frame, such as an embedded player that changes its own address.
+ *
+ * An address on another origin is never taken: a page must not be able to make the button send an address on another site. Without a recorded `sender.url`, only the tab's own address is used for the tab's page, and nothing for a frame.
+ */
+export function currentFrameUrl(sender: ContentSender, location: string | null): string | null {
+  const recorded = sender.url ?? null;
+  const tabUrl = sender.frameId === 0 ? (sender.tab?.url ?? null) : null;
+  if (recorded === null) return tabUrl;
+  for (const candidate of [tabUrl, location]) {
+    if (candidate !== null && sameWebOrigin(candidate, recorded)) return candidate;
+  }
+  return recorded;
 }
 
 /**
@@ -143,9 +178,13 @@ export class MediaCenter {
   async #restore(): Promise<void> {
     const [saved, live] = await Promise.all([
       this.#deps.store?.load().catch(() => null),
-      this.#deps.liveTabIds?.().catch(() => undefined),
+      this.#deps.liveTabs?.().catch(() => undefined),
     ]);
-    if (saved != null) this.#deps.registry.restore(saved, live === undefined ? undefined : new Set(live));
+    // Called even without saved lists, so every open tab's page is known from the start.
+    this.#deps.registry.restore(
+      saved ?? null,
+      live === undefined ? undefined : new Map(live.map((t) => [t.id, t.url])),
+    );
   }
 
   /**
@@ -160,14 +199,16 @@ export class MediaCenter {
     );
   }
 
-  #targetFor(request: ContentRequest, sender: ContentSender): MediaTarget | null {
+  /** What the button sends for an element in the frame that now shows `frameUrl` (`currentFrameUrl`). */
+  #targetFor(request: ContentRequest, sender: ContentSender, frameUrl: string | null): MediaTarget | null {
     const tabId = sender.tab?.id;
     if (tabId === undefined || tabId < 0) return null;
-    return chooseTarget(this.#deps.registry.items(tabId), {
+    const tabUrl = sender.tab?.url ?? null;
+    return chooseTarget(this.#deps.registry.itemsOn(tabId, tabUrl), {
       elementSrc: request.src,
       elementIsAudio: request.audio,
-      frameUrl: sender.url ?? null,
-      tabUrl: sender.tab?.url ?? null,
+      frameUrl,
+      tabUrl,
       frameId: sender.frameId ?? null,
     });
   }
@@ -184,21 +225,23 @@ export class MediaCenter {
 
   #check(request: ContentRequest, sender: ContentSender): Promise<CheckAnswer> {
     if (sender.tab?.incognito === true || this.#ignored(sender)) return Promise.resolve({ show: false });
-    return Promise.resolve({ show: this.#targetFor(request, sender) !== null });
+    const frameUrl = currentFrameUrl(sender, request.location);
+    return Promise.resolve({ show: this.#targetFor(request, sender, frameUrl) !== null });
   }
 
   async #download(request: ContentRequest, sender: ContentSender): Promise<DownloadAnswer> {
     const tab = sender.tab;
     if (tab?.incognito === true) return { ok: false, message: PRIVATE_WINDOW };
     if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
-    const target = this.#targetFor(request, sender);
+    const frameUrl = currentFrameUrl(sender, request.location);
+    const target = this.#targetFor(request, sender, frameUrl);
     if (tab === undefined || target === null) return { ok: false, message: NOTHING_FOUND };
     const title = request.type === MEDIA_CHECK ? null : request.title;
     return this.#deps.send({
       target,
       title: cleanTitle(title) ?? cleanTitle(tab.title),
       pageUrl: tab.url ?? null,
-      referrer: sender.url ?? tab.url ?? null,
+      referrer: frameUrl ?? tab.url ?? null,
       cookieStoreId: tab.cookieStoreId ?? null,
     });
   }
@@ -211,7 +254,7 @@ export class MediaCenter {
       return { tabId, page: 'other', entries: [] };
     }
     if (tab.incognito) return { tabId, page: 'private', entries: [] };
-    const entries = popupTargets(this.#deps.registry.items(tabId), tab.url).map((target) => ({
+    const entries = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).map((target) => ({
       key: target.key,
       kind: target.kind,
       size: target.size,
@@ -247,7 +290,7 @@ export class MediaCenter {
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
     const sender: ContentSender = { tab: { id: tabId, url: tab.url ?? undefined }, frameId: 0 };
     if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
-    const target = chooseTarget(this.#deps.registry.items(tabId), {
+    const target = chooseTarget(this.#deps.registry.itemsOn(tabId, tab.url), {
       elementSrc: null,
       elementIsAudio: false,
       frameUrl: tab.url,
@@ -270,7 +313,9 @@ export class MediaCenter {
     const tab = await this.#deps.getTab(tabId).catch(() => null);
     if (tab === null) return { ok: false, message: TAB_GONE };
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
-    const target = popupTargets(this.#deps.registry.items(tabId), tab.url).find((t) => t.key === key);
+    const target = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).find(
+      (t) => t.key === key,
+    );
     if (target === undefined) return { ok: false, message: ITEM_GONE };
     return this.#deps.send({
       target,

@@ -11,7 +11,9 @@ import {
   asAnnounce,
   MEDIA_CHECK,
   MEDIA_DOWNLOAD,
+  frameLocation,
   mediaButtonOn,
+  type ContentRequest,
   type DownloadAnswer,
 } from '@/lib/media/messages';
 
@@ -29,13 +31,19 @@ export default defineContentScript({
   main(ctx) {
     // Like downloads, media from private windows stays out of Wirecatch.
     if (browser.extension.inIncognitoContext) return;
+    // Every question carries the frame's address as it is now: a single-page site changes it without loading a new page, and the browser keeps reporting the address this script started on.
+    const ask = (request: ContentRequest): Promise<unknown> => browser.runtime.sendMessage(request);
     const button = new MediaButton({
       check: async (info) => {
-        const answer: unknown = await browser.runtime.sendMessage({ type: MEDIA_CHECK, ...info });
+        const answer = await ask({ type: MEDIA_CHECK, ...info, location: frameLocation(location.href) });
         return (answer as { show?: unknown } | null)?.show === true;
       },
       download: async (request) => {
-        const answer: unknown = await browser.runtime.sendMessage({ type: MEDIA_DOWNLOAD, ...request });
+        const answer = await ask({
+          type: MEDIA_DOWNLOAD,
+          ...request,
+          location: frameLocation(location.href),
+        });
         return isAnswer(answer)
           ? answer
           : { ok: false, message: 'Wirecatch could not be reached. Open Wirecatch, then try again.' };

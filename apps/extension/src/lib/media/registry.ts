@@ -12,10 +12,12 @@ export interface MediaItem extends Detection {
   lastActive: number;
 }
 
-/** What `save` produces and `restore` reads back (kept in `storage.session`). */
+/**
+ * What `save` produces and `restore` reads back (kept in `storage.session`): each tab's items, and the page they belong to when it is known.
+ */
 export interface SavedMedia {
   v: 1;
-  tabs: Array<[number, MediaItem[]]>;
+  tabs: Array<[tabId: number, items: MediaItem[], page?: string]>;
 }
 
 /**
@@ -42,6 +44,12 @@ function parts(url: string): { origin: string; path: string } | null {
   } catch {
     return null;
   }
+}
+
+/** A page's address without its fragment: a change of the fragment alone is not a new page. */
+export function pageKey(url: string): string {
+  const hash = url.indexOf('#');
+  return hash < 0 ? url : url.slice(0, hash);
 }
 
 export function itemKey(kind: DetectedKind, url: string): string {
@@ -81,9 +89,13 @@ function isItem(value: unknown): value is SavedItem {
  * that stream's last playlist request. Limits: two players in one frame starting
  * within moments of each other show as one stream, and a player that switches
  * quality after a long quiet stretch adds that variant as another entry.
+ *
+ * Each tab's list also records the page it was detected on, when that is known (`newPage`). `itemsOn` hands out a list only for that page, so a stale list (the tab moved on and the change has not been seen yet, or a list restored from before a change) is never offered on another page.
  */
 export class MediaRegistry {
   readonly #tabs = new Map<number, MediaItem[]>();
+  /** The page (`pageKey`) each tab's list belongs to, where it is known. */
+  readonly #pages = new Map<number, string>();
   readonly #listeners = new Set<(tabId: number) => void>();
   readonly #now: () => number;
 
@@ -99,6 +111,15 @@ export class MediaRegistry {
 
   items(tabId: number): readonly MediaItem[] {
     return this.#tabs.get(tabId) ?? [];
+  }
+
+  /**
+   * The tab's media, when the list belongs to the page at `pageUrl` (the address the tab shows now). Empty when the list was recorded for another page, or when the tab's address is unknown and the list's page is known.
+   */
+  itemsOn(tabId: number, pageUrl: string | null): readonly MediaItem[] {
+    const page = this.#pages.get(tabId);
+    if (page !== undefined && (pageUrl === null || pageKey(pageUrl) !== page)) return [];
+    return this.items(tabId);
   }
 
   /** Records a detection from a frame of the tab; returns true when the tab's list changed. */
@@ -140,8 +161,19 @@ export class MediaRegistry {
     return true;
   }
 
-  /** Forgets a tab's media (it loaded a new page or closed). */
+  /** The tab shows a new page (`pageKey` of its address): forgets its media and records the page the next items belong to. */
+  newPage(tabId: number, page: string): void {
+    this.#pages.set(tabId, page);
+    this.#forget(tabId);
+  }
+
+  /** Forgets a tab's media and its page (the tab closed). */
   clearTab(tabId: number): void {
+    this.#pages.delete(tabId);
+    this.#forget(tabId);
+  }
+
+  #forget(tabId: number): void {
     if (!this.#tabs.has(tabId)) return;
     this.#tabs.delete(tabId);
     this.#emit(tabId);
@@ -153,7 +185,7 @@ export class MediaRegistry {
    */
   save(): SavedMedia {
     let budget = MAX_SAVED_CHARS;
-    const kept: Array<[number, MediaItem[]]> = [];
+    const kept: SavedMedia['tabs'] = [];
     for (const [id, items] of [...this.#tabs.entries()].reverse()) {
       const fit: MediaItem[] = [];
       for (let i = items.length - 1; i >= 0 && budget > 0; i -= 1) {
@@ -168,18 +200,22 @@ export class MediaRegistry {
         budget -= size;
         fit.unshift(item);
       }
-      if (fit.length > 0) kept.unshift([id, fit]);
+      const page = this.#pages.get(id);
+      if (fit.length > 0) kept.unshift(page === undefined ? [id, fit] : [id, fit, page]);
       if (budget <= 0) break;
     }
     return { v: 1, tabs: kept };
   }
 
   /**
-   * Puts back what a previous run of the background script saved. Tabs that already
-   * have media detected since the restart keep it, after the saved items. With
-   * `liveTabs`, tabs that no longer exist are dropped.
+   * Puts back what a previous run of the background script saved. Tabs that already have media detected since the restart keep it, after the saved items.
+   *
+   * With `liveTabs` (each open tab's address now, null when it cannot be read), every open tab's page is recorded first, and a saved list is put back only when it was recorded for exactly that page. So the lists of closed tabs are dropped, and so is a list from a page the tab has since left (the save after that change was lost because the background stopped first), or whose page is unknown. Without `liveTabs`, a saved list is dropped only when the tab already has another page recorded.
    */
-  restore(saved: unknown, liveTabs?: ReadonlySet<number>): void {
+  restore(saved: unknown, liveTabs?: ReadonlyMap<number, string | null>): void {
+    for (const [tabId, url] of liveTabs ?? []) {
+      if (url !== null && !this.#pages.has(tabId)) this.#pages.set(tabId, pageKey(url));
+    }
     if (typeof saved !== 'object' || saved === null) return;
     const { v, tabs } = saved as { v?: unknown; tabs?: unknown };
     if (v !== 1 || !Array.isArray(tabs)) return;
@@ -187,12 +223,17 @@ export class MediaRegistry {
       if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1])) continue;
       const tabId = entry[0];
       if (liveTabs !== undefined && !liveTabs.has(tabId)) continue;
+      const savedPage: unknown = entry[2];
+      const page = typeof savedPage === 'string' ? savedPage : undefined;
+      const known = this.#pages.get(tabId);
+      if (page !== known && (liveTabs !== undefined || known !== undefined)) continue;
       const savedItems = (entry[1] as unknown[])
         .filter(isItem)
         .map((i): MediaItem => ({ ...i, frameId: i.frameId ?? 0, lastActive: i.lastActive ?? i.seenAt }));
       const current = this.#tabs.get(tabId) ?? [];
       const merged = [...savedItems, ...current.filter((c) => !savedItems.some((s) => s.key === c.key))];
       if (merged.length === 0) continue;
+      if (page !== undefined) this.#pages.set(tabId, page);
       this.#set(tabId, merged.slice(-MAX_ITEMS_PER_TAB));
     }
   }

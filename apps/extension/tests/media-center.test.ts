@@ -524,6 +524,168 @@ describe('media button messages', () => {
   });
 });
 
+describe('the address the frame shows now (single-page sites)', () => {
+  const VIDEO_A = 'https://www.youtube.com/watch?v=AAAAAAAAAAA';
+  const VIDEO_B = 'https://www.youtube.com/watch?v=BBBBBBBBBBB';
+
+  /** Tab 4 now shows `tabUrl`; the content script in `frameId` was started on `startedOn`. */
+  function sender(
+    tabs: Map<number, TabInfo>,
+    tabUrl: string,
+    startedOn: string,
+    frameId: number,
+  ): ContentSender {
+    tabs.set(4, { url: tabUrl, title: 'Video B - YouTube', incognito: false, cookieStoreId: null });
+    return {
+      tab: { id: 4, url: tabUrl, title: 'Video B - YouTube', incognito: false },
+      url: startedOn,
+      frameId,
+    };
+  }
+
+  const click = (location: string | null = null) => ({
+    type: MEDIA_DOWNLOAD,
+    src: null,
+    audio: false,
+    title: null,
+    location,
+  });
+
+  it('sends the video the tab shows now after the page moved on with the history API, not the first one', async () => {
+    const { app, center, tabs, cookieContexts } = await setup();
+    // The content script started on video A; YouTube then moved the tab to video B with `history.pushState`.
+    // Chromium keeps reporting A as the frame's address (`sender.url`).
+    const stale = sender(tabs, VIDEO_B, VIDEO_A, 0);
+    expect(await center.handleContentMessage(click(), stale)).toEqual({
+      ok: true,
+      message: 'Sent to Wirecatch.',
+    });
+    expect(lastAdd(app)).toMatchObject({
+      url: VIDEO_B,
+      page_url: VIDEO_B,
+      referrer: VIDEO_B,
+      media: { kind: 'page', title: 'Video B - YouTube' },
+    });
+    expect(cookieContexts.at(-1)).toEqual({ initiator: VIDEO_B, topLevel: VIDEO_B, navigation: true });
+    // The content script's own report agrees, and changes nothing.
+    await center.handleContentMessage(click(VIDEO_B), stale);
+    expect(lastAdd(app)).toMatchObject({ url: VIDEO_B, referrer: VIDEO_B });
+    // Every further click sends the video shown at that moment.
+    const later = 'https://www.youtube.com/watch?v=CCCCCCCCCCC';
+    await center.handleContentMessage(click(later), sender(tabs, later, VIDEO_A, 0));
+    expect(app.calls('add_download').map((c) => (c.method === 'add_download' ? c.params.url : null))).toEqual(
+      [VIDEO_B, VIDEO_B, later],
+    );
+  });
+
+  it("uses the tab's page only when it is on the frame's origin, and otherwise the script's report on that origin", async () => {
+    const { app, center, tabs } = await setup();
+    // The tab already shows another site (the message raced a navigation): its address is not taken.
+    const raced = sender(tabs, 'https://www.dailymotion.com/video/x8abc', VIDEO_A, 0);
+    await center.handleContentMessage(click(VIDEO_B), raced);
+    expect(lastAdd(app)).toMatchObject({ url: VIDEO_B, referrer: VIDEO_B });
+    await center.handleContentMessage(click('https://vimeo.com/123456'), raced);
+    expect(lastAdd(app)).toMatchObject({ url: VIDEO_A, referrer: VIDEO_A });
+  });
+
+  it("takes an embedded player's own new address when it stays on the player's origin", async () => {
+    const { app, center, tabs } = await setup();
+    const embedA = 'https://www.youtube-nocookie.com/embed/AAAAAAAAAAA';
+    const embedB = 'https://www.youtube-nocookie.com/embed/BBBBBBBBBBB';
+    const frame = sender(tabs, 'https://blog.example.com/post', embedA, 3);
+    await center.handleContentMessage(click(embedB), frame);
+    expect(lastAdd(app)).toMatchObject({
+      url: embedB,
+      page_url: 'https://blog.example.com/post',
+      referrer: embedB,
+    });
+    // Without a report, the browser's record of the frame is all there is.
+    await center.handleContentMessage(click(), frame);
+    expect(lastAdd(app)).toMatchObject({ url: embedA, referrer: embedA });
+  });
+
+  it('never takes a frame address on another origin than the browser reports for the frame', async () => {
+    const { app, center, tabs } = await setup();
+    // A frame on an ordinary site claims to be a YouTube video: refused, and the browser's record is used.
+    const ad = sender(tabs, 'https://blog.example.com/post', 'https://ads.example.net/slot', 3);
+    expect(
+      await center.handleContentMessage(
+        { type: MEDIA_CHECK, src: null, audio: false, location: VIDEO_B },
+        ad,
+      ),
+    ).toEqual({
+      show: false,
+    });
+    expect(await center.handleContentMessage(click(VIDEO_B), ad)).toMatchObject({ ok: false });
+    // An embedded player claiming another video site: its own address is sent, not the claim.
+    const embedA = 'https://www.youtube-nocookie.com/embed/AAAAAAAAAAA';
+    const player = sender(tabs, 'https://blog.example.com/post', embedA, 3);
+    await center.handleContentMessage(click('https://vimeo.com/123456'), player);
+    expect(lastAdd(app)).toMatchObject({ url: embedA, referrer: embedA });
+    // The claim is not taken for a frame the browser gives no address for.
+    const unknown: ContentSender = {
+      tab: { id: 4, url: 'https://blog.example.com/post', incognito: false },
+      frameId: 3,
+    };
+    expect(await center.handleContentMessage(click(VIDEO_B), unknown)).toMatchObject({ ok: false });
+    expect(app.calls('add_download')).toHaveLength(1);
+  });
+
+  it('answers the check for the address the frame shows now', async () => {
+    const { center, tabs } = await setup();
+    // A player frame that started on a page that is not one video, then moved to one with the history API.
+    const frame = sender(tabs, 'https://blog.example.com/post', 'https://www.dailymotion.com/player', 3);
+    const check = (location: string | null) =>
+      center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false, location }, frame);
+    expect(await check(null)).toEqual({ show: false });
+    expect(await check('https://www.dailymotion.com/embed/video/x8abc')).toEqual({ show: true });
+    expect(await check('https://www.youtube.com/embed/x8abc')).toEqual({ show: false });
+    // The tab's own page: the tab's address, even when the script reports nothing.
+    expect(
+      await center.handleContentMessage(
+        { type: MEDIA_CHECK, src: null, audio: false, location: null },
+        sender(tabs, VIDEO_B, 'https://www.youtube.com/feed/subscriptions', 0),
+      ),
+    ).toEqual({ show: true });
+  });
+
+  it('refuses a malformed frame address, and reads a missing one as none', async () => {
+    const { center, tabs } = await setup();
+    const top = sender(tabs, VIDEO_B, VIDEO_A, 0);
+    for (const location of [5, 'javascript:alert(1)', `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`]) {
+      expect(
+        center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false, location }, top),
+      ).toBeNull();
+    }
+    expect(await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, top)).toEqual({
+      show: true,
+    });
+  });
+
+  it('never offers media detected on the page the tab has left, even before the change is seen', async () => {
+    const { app, center, registry, tabs } = await setup();
+    // Video A's stream was detected; the tab is on video B, and `tabs.onUpdated` has not been handled yet.
+    registry.newPage(4, VIDEO_A);
+    registry.add(4, HLS);
+    const stale = sender(tabs, VIDEO_B, VIDEO_A, 0);
+    await center.handleContentMessage(click(VIDEO_B), stale);
+    expect(lastAdd(app)).toMatchObject({ url: VIDEO_B, media: { kind: 'page' } });
+    expect((await center.view(4)).entries.map((e) => e.key)).toEqual([`page:${VIDEO_B}`]);
+    expect((await center.download(4, `hls:${HLS.url}`)).ok).toBe(false);
+    expect(await center.downloadBest(4)).toMatchObject({ ok: true });
+    expect(lastAdd(app)).toMatchObject({ url: VIDEO_B, referrer: VIDEO_B });
+    // Back on video A (only the fragment differs): its stream is offered again.
+    tabs.set(4, {
+      url: `${VIDEO_A}#t=30`,
+      title: 'Video A - YouTube',
+      incognito: false,
+      cookieStoreId: null,
+    });
+    expect(await center.downloadBest(4)).toMatchObject({ ok: true });
+    expect(lastAdd(app)).toMatchObject({ url: HLS.url });
+  });
+});
+
 describe('popup media list', () => {
   it("lists the tab's media with labels and sizes, then the page on a well-known site", async () => {
     const { center, registry } = await setup();
@@ -700,9 +862,13 @@ describe('background restart', () => {
     audio: false,
   };
 
+  /** Lists saved while each tab showed https://a.example.com/. */
   function savedWith(...tabs: Array<[number, Detection]>): SavedMedia {
     const before = new MediaRegistry();
-    for (const [tab, d] of tabs) before.add(tab, d);
+    for (const [tab, d] of tabs) {
+      before.newPage(tab, 'https://a.example.com/');
+      before.add(tab, d);
+    }
     return JSON.parse(JSON.stringify(before.save())) as SavedMedia;
   }
 
@@ -768,10 +934,54 @@ describe('background restart', () => {
         load: () => Promise.resolve(savedWith([1, pageA], [9, pageA])),
         save: () => Promise.resolve(),
       },
-      liveTabIds: () => Promise.resolve([1, 2]),
+      liveTabs: () =>
+        Promise.resolve([
+          { id: 1, url: 'https://a.example.com/' },
+          { id: 2, url: null },
+        ]),
     });
     await center.start();
     expect(registry.items(1)).toHaveLength(1);
     expect(registry.items(9)).toEqual([]);
+  });
+
+  it('drops a saved list whose page the tab has left, when the save after that change was lost', async () => {
+    // Saved while tabs 1, 2 and 3 showed video A; the background stopped before saving the change of tab 1 to video B.
+    const before = new MediaRegistry();
+    for (const tab of [1, 2, 3]) {
+      before.newPage(tab, 'https://a.example.com/watch?v=A');
+      before.add(tab, pageA);
+    }
+    // Tab 4's list was detected before its page was known.
+    before.add(4, pageA);
+    const saved = JSON.parse(JSON.stringify(before.save())) as SavedMedia;
+    const registry = new MediaRegistry();
+    const center = new MediaCenter({
+      registry,
+      getTab: () => Promise.resolve(null),
+      send: () => Promise.resolve({ ok: true, message: '' }),
+      store: { load: () => Promise.resolve(saved), save: () => Promise.resolve() },
+      liveTabs: () =>
+        Promise.resolve([
+          { id: 1, url: 'https://a.example.com/watch?v=B' },
+          // Only the fragment changed: still video A.
+          { id: 2, url: 'https://a.example.com/watch?v=A#t=10' },
+          // The address cannot be read, so the list cannot be checked.
+          { id: 3, url: null },
+          { id: 4, url: 'https://a.example.com/watch?v=A' },
+        ]),
+    });
+    await center.start();
+    expect(registry.items(1)).toEqual([]);
+    expect(registry.items(2).map((i) => i.url)).toEqual([pageA.url]);
+    expect(registry.items(3)).toEqual([]);
+    expect(registry.items(4)).toEqual([]);
+    // Every open tab's page is known from the start, so what it detects next is offered only there.
+    registry.add(1, pageA);
+    expect(registry.itemsOn(1, 'https://a.example.com/watch?v=B#top')).toHaveLength(1);
+    expect(registry.itemsOn(1, 'https://a.example.com/watch?v=A')).toEqual([]);
+    // The restored list keeps its page, so it is still offered only there.
+    expect(registry.itemsOn(2, 'https://a.example.com/watch?v=A')).toHaveLength(1);
+    expect(registry.itemsOn(2, 'https://a.example.com/watch?v=B')).toEqual([]);
   });
 });
