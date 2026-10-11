@@ -287,6 +287,12 @@ pub async fn close_download_window(window: WebviewWindow) -> CommandResult<()> {
 }
 
 #[tauri::command]
+pub async fn main_window_ready(window: WebviewWindow) -> CommandResult<()> {
+    crate::window::reveal_main(&window);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn fit_download_window(window: WebviewWindow, height: f64) -> CommandResult<()> {
     if !download_windows::is_download_window(window.label()) {
         return Err("Only a download window fits itself to its content.".into());

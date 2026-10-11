@@ -9,7 +9,17 @@
   setApp(app);
 
   onMount(() => {
-    void app.init();
+    // The shell opens the window hidden and shows it once its first view is drawn (after the
+    // list loaded, two frames later), so it never flashes blank. Without a backend the shell
+    // shows it after a moment anyway.
+    const ready = () => {
+      try {
+        void app.backend.mainWindowReady().catch(() => undefined);
+      } catch {
+        // No backend: nothing to tell.
+      }
+    };
+    void app.init().finally(() => requestAnimationFrame(() => requestAnimationFrame(ready)));
     return () => app.dispose();
   });
 </script>

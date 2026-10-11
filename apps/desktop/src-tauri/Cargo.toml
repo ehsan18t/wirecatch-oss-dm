@@ -45,6 +45,10 @@ winreg = "0.10.1"
 # focus from it (D23).
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
+# The versions Tauri already uses, to put the hidden main window's web view to sleep (D13).
+webview2-com = "0.39.1"
+windows-core = "0.62.2"
+
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 

@@ -1,8 +1,8 @@
 //! Staying alive in the tray and quitting cleanly (D13).
 //!
-//! Closing the main window destroys it, which frees the webview's memory. With `close_to_tray`
-//! on, the process keeps running (Tauri asks to exit when the last window closes; that request
-//! is always refused). With it off, closing the main window quits like the tray's Quit: every
+//! With `close_to_tray` on, closing the main window hides it and puts its web view to sleep
+//! (see [`crate::sleep`]), so it opens again at once from the tray. With it off, closing the
+//! main window quits like the tray's Quit: every
 //! download stops so it can continue on the next start, the database is flushed, then the
 //! process exits. Closing a download window (D23) never quits, even when it is the last one.
 
@@ -16,6 +16,7 @@ use wirecatch_core::Manager;
 
 use crate::download_windows::{self, is_download_window};
 use crate::host::Core;
+use crate::sleep;
 use crate::window::MAIN_WINDOW;
 
 /// The longest a quit waits for downloads to stop before exiting anyway. The manager already
@@ -206,6 +207,19 @@ fn closing_quits_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     closing_quits(label, has_tray, close_to_tray)
 }
 
+fn hides_on_close_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
+    let quitting = app
+        .try_state::<Lifecycle>()
+        .is_some_and(|life| life.quitting.load(Ordering::SeqCst));
+    !quitting && hides_on_close(label) && !closing_quits_now(app, label)
+}
+
+/// Whether closing the window `label` hides it instead (while the app keeps running in the
+/// tray): only the main window, which then opens again at once. A download window closes.
+pub fn hides_on_close(label: &str) -> bool {
+    label == MAIN_WINDOW
+}
+
 /// What closing the window `label` does: only closing the main window can quit (with no tray,
 /// or with `close_to_tray` off). A download window is only a view of one download (D23), so
 /// closing it never quits, even when it was the last window.
@@ -229,6 +243,18 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             // destroyed (below); anything else is a request to exit.
             if code.is_some() {
                 quit(app);
+            }
+        }
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::CloseRequested { api, .. },
+            ..
+        } => {
+            if hides_on_close_now(app, &label)
+                && let Some(window) = app.get_webview_window(&label)
+            {
+                api.prevent_close();
+                sleep::hide_main(&window);
             }
         }
         RunEvent::WindowEvent {
@@ -271,6 +297,13 @@ mod tests {
         assert!(life.relaunch_later(&args));
         assert_eq!(life.take_relaunch(), Some(args));
         assert!(life.take_relaunch().is_none());
+    }
+
+    #[test]
+    fn closing_the_main_window_hides_it_and_a_download_window_closes() {
+        assert!(hides_on_close(MAIN_WINDOW));
+        assert!(!hides_on_close("download-q1"));
+        assert!(!hides_on_close("download-d7"));
     }
 
     #[test]

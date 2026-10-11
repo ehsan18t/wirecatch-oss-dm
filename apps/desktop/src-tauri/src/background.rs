@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, Manager as _, Runtime};
+use tauri::{AppHandle, Emitter, EventTarget, Manager as _, Runtime};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_notification::NotificationExt as _;
 use tokio::sync::broadcast;
@@ -16,7 +16,7 @@ use crate::activity::{Activity, Finished, notification_text};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
-use crate::{EVENT_NAME, RESYNC_EVENT, download_windows, tray};
+use crate::{EVENT_NAME, RESYNC_EVENT, download_windows, sleep, tray};
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
@@ -45,7 +45,9 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     Attention::Ask(id) => download_windows::ask(&app, id),
                     Attention::Closed(id) => download_windows::question_closed(&app, id),
                     Attention::Notify { title, body } => {
-                        if app.get_webview_window(MAIN_WINDOW).is_none() {
+                        let unseen = app.get_webview_window(MAIN_WINDOW).is_none()
+                            || sleep::skips_events(&app, MAIN_WINDOW);
+                        if unseen {
                             show_notification(&app, title, body);
                         }
                     }
@@ -53,7 +55,17 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                 if app.webview_windows().is_empty() {
                     continue;
                 }
-                if let Err(e) = app.emit(EVENT_NAME, &event) {
+                // A main window asleep in the tray gets nothing: it loads everything again
+                // when it wakes.
+                let asleep = sleep::skips_events(&app, crate::window::MAIN_WINDOW);
+                let sent = if asleep {
+                    app.emit_filter(EVENT_NAME, &event, |target| {
+                        !matches!(target, EventTarget::WebviewWindow { label } if label == crate::window::MAIN_WINDOW)
+                    })
+                } else {
+                    app.emit(EVENT_NAME, &event)
+                };
+                if let Err(e) = sent {
                     tracing::warn!("could not send an event to the windows: {e}");
                 }
             }

@@ -119,6 +119,8 @@ export interface Backend {
   showQuestionWindows(): Promise<void>;
   /** Opens (or brings forward) the progress window of a download. */
   showProgressWindow(id: DownloadId): Promise<void>;
+  /** Tells the shell the main window has drawn its first view, so it can be shown without a blank flash. */
+  mainWindowReady(): Promise<void>;
 
   /**
    * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
@@ -217,6 +219,7 @@ export const COMMANDS = {
   showProgressWindow: 'show_progress_window',
   closeDownloadWindow: 'close_download_window',
   fitDownloadWindow: 'fit_download_window',
+  mainWindowReady: 'main_window_ready',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */

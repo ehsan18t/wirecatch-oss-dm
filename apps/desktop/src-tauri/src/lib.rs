@@ -57,6 +57,7 @@
 //! | `show_question_windows` | none | nothing; every open question's window comes to the front or opens again |
 //! | `show_progress_window` | `id: DownloadId` | nothing; opens (or brings forward) that download's window |
 //! | `close_download_window` | none | nothing; closes the download window that calls it |
+//! | `main_window_ready` | none | nothing; shows the main window once its first view is drawn (it opens hidden, so it never flashes blank) |
 //! | `fit_download_window` | `height: f64` | nothing; makes the download window that calls it as tall as its content (`height`, logical pixels), within its screen |
 //!
 //! Every command reaches the real core; none is pending. The core checks for add-on updates
@@ -101,6 +102,7 @@ pub mod download_windows;
 pub mod host;
 pub mod lifecycle;
 pub mod questions;
+pub mod sleep;
 pub mod tray;
 pub mod updates;
 pub mod window;
@@ -181,6 +183,7 @@ pub fn run() {
         )
         .manage(LaunchLinks::default())
         .manage(Lifecycle::default())
+        .manage(sleep::MainAsleep::default())
         .manage(download_windows::DownloadWindows::default())
         .setup(move |app| setup(app, launch))
         .invoke_handler(tauri::generate_handler![
@@ -232,6 +235,7 @@ pub fn run() {
             commands::show_progress_window,
             commands::close_download_window,
             commands::fit_download_window,
+            commands::main_window_ready,
         ])
         .build(context);
     match app {

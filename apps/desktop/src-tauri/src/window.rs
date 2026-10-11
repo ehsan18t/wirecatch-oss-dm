@@ -1,4 +1,4 @@
-//! The main window: created on demand, destroyed when closed to the tray (D13), and the links
+//! The main window: created on demand, hidden and asleep when closed to the tray (D13), and the links
 //! passed on the command line that its Add dialog should offer.
 
 use std::sync::Mutex;
@@ -111,6 +111,7 @@ impl Launch {
 /// Shows the main window, creating it if it was closed to the tray, and brings it to the front.
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        crate::sleep::wake_main(&window);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -126,12 +127,36 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
         tracing::error!("the main window is missing from tauri.conf.json");
         return;
     };
-    match WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()) {
+    // Opened hidden: the page shows it once its first view is drawn (`main_window_ready`), so
+    // it never flashes blank. If the page never says so, it is shown after a moment anyway.
+    let built =
+        WebviewWindowBuilder::from_config(app, config).and_then(|b| b.visible(false).build());
+    match built {
         Ok(window) => {
-            let _ = window.set_focus();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(REVEAL_PATIENCE).await;
+                reveal_main(&window);
+            });
         }
         Err(e) => tracing::error!("could not open the window: {e}"),
     }
+}
+
+/// The longest a new main window stays hidden waiting for its page to draw.
+pub const REVEAL_PATIENCE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Shows a new main window and brings it to the front, unless it is hidden in the tray on
+/// purpose or already showing. Another window calling this changes nothing.
+pub fn reveal_main<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    if window.label() != MAIN_WINDOW || crate::sleep::skips_events(window.app_handle(), MAIN_WINDOW)
+    {
+        return;
+    }
+    if window.is_visible().unwrap_or(true) {
+        return;
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 /// Handles a launch: keeps its links for the interface and shows the window when it should.

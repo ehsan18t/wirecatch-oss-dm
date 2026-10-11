@@ -902,6 +902,10 @@ export class MockBackend implements Backend {
     this.windows.showAll(this.#openQuestions());
   }
 
+  async mainWindowReady() {
+    // A browser tab is already on screen.
+  }
+
   async showProgressWindow(id: DownloadId) {
     this.#row(id);
     this.windows.showDownload(id);
