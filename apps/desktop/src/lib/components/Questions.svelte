@@ -9,7 +9,9 @@
   const app = getApp();
 
   const capture = $derived(app.dialog === null && !app.pendingHidden ? app.pending[0] : undefined);
-  const media = $derived(app.dialog === null && !capture ? app.mediaChoices[0] : undefined);
+  const media = $derived(
+    app.dialog === null && !capture && !app.mediaHidden ? app.mediaChoices[0] : undefined,
+  );
   const addon = $derived(
     app.dialog === null && !capture && !media ? (app.addonRequest ?? undefined) : undefined,
   );

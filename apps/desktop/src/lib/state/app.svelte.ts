@@ -110,6 +110,10 @@ export class AppState {
   pendingHidden = $state(false);
   /** Media found with several qualities, waiting for the person to pick one. */
   mediaChoices = $state<MediaChoice[]>([]);
+  /** The quality picker was put aside; the choices still wait. */
+  mediaHidden = $state(false);
+  /** Saving the download list failed; shown in a banner until dealt with. */
+  storageProblem = $state<string | null>(null);
   /** Add-ons and their state; `null` until loaded. */
   addons = $state<AddonInfo[] | null>(null);
   /** Why the add-ons could not be listed, shown in their settings section. */
@@ -375,6 +379,8 @@ export class AppState {
         if (!this.mediaChoices.some((c) => c.id === event.data.id)) {
           this.mediaChoices = [...this.mediaChoices, event.data];
         }
+        // A new question always shows, even if an earlier one was put aside.
+        this.mediaHidden = false;
         break;
       case 'addons_changed': {
         this.addons = event.data;
@@ -396,7 +402,8 @@ export class AppState {
         this.addonRequest = event.data;
         break;
       case 'storage_failed':
-        this.fail(event.data.message);
+        // Not a passing note: it stays until the person deals with it.
+        this.storageProblem = event.data.message;
         break;
     }
   }
@@ -840,6 +847,32 @@ export class AppState {
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+  }
+
+  /** Brings back the quality picker after it was put aside. */
+  showMediaChoices(): void {
+    this.paletteOpen = false;
+    this.mediaHidden = false;
+  }
+
+  /** Puts the quality picker aside; the choice stays open and a note in the sidebar brings it back. */
+  hideMediaChoices(): void {
+    this.mediaHidden = true;
+  }
+
+  /** Tries saving again after a storage failure: any change is saved, so this saves settings. */
+  async retryStorage(): Promise<void> {
+    if (!this.settings) return;
+    const settings = $state.snapshot(this.settings);
+    const ok = await this.#run(async () => {
+      await this.backend.updateSettings(settings);
+      return true;
+    });
+    if (ok) this.storageProblem = null;
+  }
+
+  dismissStorageProblem(): void {
+    this.storageProblem = null;
   }
 
   /** Brings back the ask-first dialog after it was closed without an answer. */

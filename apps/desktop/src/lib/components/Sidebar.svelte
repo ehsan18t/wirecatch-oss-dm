@@ -80,6 +80,16 @@
       </span>
     </button>
   {/if}
+  {#if app.mediaChoices.length > 0 && app.mediaHidden}
+    <button class="pending" onclick={() => app.showMediaChoices()}>
+      <Bell size={14} aria-hidden="true" />
+      <span>
+        {app.mediaChoices.length === 1
+          ? '1 video waits for you to pick a quality'
+          : `${app.mediaChoices.length} videos wait for you to pick a quality`}
+      </span>
+    </button>
+  {/if}
 
   <button class="palette" onclick={() => (app.paletteOpen = true)}>
     <Command size={14} aria-hidden="true" />

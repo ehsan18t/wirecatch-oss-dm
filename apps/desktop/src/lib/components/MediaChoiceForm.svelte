@@ -51,7 +51,7 @@
   description={waiting > 0
     ? `${choice.title}. ${waiting} more ${waiting === 1 ? 'video is' : 'videos are'} waiting after this one.`
     : choice.title}
-  onclose={() => app.dismissMediaChoice(choice.id)}
+  onclose={() => app.hideMediaChoices()}
   width={540}
 >
   <form

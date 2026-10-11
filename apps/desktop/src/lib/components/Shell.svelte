@@ -10,6 +10,7 @@
   import Questions from './Questions.svelte';
   import Settings from './Settings.svelte';
   import Sidebar from './Sidebar.svelte';
+  import StorageBanner from './StorageBanner.svelte';
   import Toasts from './Toasts.svelte';
   import Toolbar from './Toolbar.svelte';
 
@@ -54,7 +55,7 @@
   const blocked = $derived(
     app.dialog !== null ||
       (app.pending.length > 0 && !app.pendingHidden) ||
-      app.mediaChoices.length > 0 ||
+      (app.mediaChoices.length > 0 && !app.mediaHidden) ||
       app.addonRequest !== null,
   );
 
@@ -124,6 +125,7 @@
       <Settings />
     {:else}
       <Toolbar />
+      <StorageBanner />
       {#if app.loadError}
         <div class="load-error" role="alert">
           <p class="title">Wirecatch cannot reach its download engine.</p>

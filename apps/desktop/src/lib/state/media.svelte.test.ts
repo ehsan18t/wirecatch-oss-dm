@@ -4,6 +4,7 @@ import type { UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
 import type { ShellSignal } from '../backend/types';
+import { buildCommands } from '../commands';
 import { AppState } from './app.svelte';
 
 const NOON = new Date(2026, 9, 10, 12, 0).getTime();
@@ -84,6 +85,24 @@ describe('media and add-ons', () => {
     expect(app.mediaChoices).toHaveLength(1);
     app.dispose();
   });
+
+  it('puts a closed picker aside and brings it back from the palette', async () => {
+    const { app, backend } = await make();
+    backend.simulateMediaChoice();
+    app.hideMediaChoices();
+    // Closing is not an answer: the choice still waits.
+    expect(app.mediaChoices).toHaveLength(1);
+    expect(app.mediaHidden).toBe(true);
+    const pick = buildCommands(app).find((c) => c.id === 'media.pick');
+    expect(pick?.title).toMatch(/Pick a quality/);
+    pick?.run();
+    expect(app.mediaHidden).toBe(false);
+    // A new choice always shows, even after putting one aside.
+    app.hideMediaChoices();
+    backend.simulateMediaChoice();
+    expect(app.mediaHidden).toBe(false);
+    app.dispose();
+  });
 });
 
 describe('questions asked while no window was open', () => {
@@ -147,7 +166,14 @@ describe('shell signals', () => {
     const app = new AppState(backend);
     await app.init();
     push?.({ type: 'storage_failed', data: { message: 'Could not save.', fix: null } });
-    expect(app.toasts.at(-1)).toMatchObject({ kind: 'error', message: 'Could not save.' });
+    // A banner that stays, not a note that fades.
+    expect(app.storageProblem).toBe('Could not save.');
+    expect(app.toasts.some((t) => t.message === 'Could not save.')).toBe(false);
+    await app.retryStorage();
+    expect(app.storageProblem).toBeNull();
+    push?.({ type: 'storage_failed', data: { message: 'Again.', fix: null } });
+    app.dismissStorageProblem();
+    expect(app.storageProblem).toBeNull();
     app.dispose();
   });
 });
