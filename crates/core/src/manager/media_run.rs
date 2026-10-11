@@ -28,7 +28,7 @@ use super::state::{Gauge, State};
 use crate::addons::MediaTools;
 use crate::media::merge::{self, Joined};
 use crate::media::ytdlp::{self, Fetched, Format, Transport};
-use crate::media::{self, MediaJob, MediaProgress, Pick};
+use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::store::Origin;
 use crate::{headers, user_error};
 
@@ -289,14 +289,10 @@ async fn fetch_part(
     {
         options.user_agent = agent;
     }
-    let ext = format
-        .ext
-        .as_deref()
-        .filter(|e| e.chars().all(|c| c.is_ascii_alphanumeric()))
-        .unwrap_or("mp4");
+    let part = work.join(part_name(format, role));
     let file = match format.transport() {
         Transport::Hls => {
-            let mut request = StreamRequest::new(url, work.join(format!("{role}.{ext}")));
+            let mut request = StreamRequest::new(url, part);
             request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
             request.options = options;
             let stream = Arc::new(StreamProgress::default());
@@ -308,7 +304,7 @@ async fn fetch_part(
             }
         }
         _ => {
-            let path = work.join(format!("{role}.{ext}"));
+            let path = part;
             let mut request = DownloadRequest::new(url, work);
             request.exact_path = Some(path.clone());
             request.options = options;
@@ -349,15 +345,11 @@ async fn fetch_part(
 async fn finish(file: &Path, output: &Path, work: &Path) -> Result<MediaDone, UserError> {
     let (file, planned, work) = (file.to_path_buf(), output.to_path_buf(), work.to_path_buf());
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
-        let target = match file.extension() {
-            Some(ext)
-                if !planned
-                    .extension()
-                    .is_some_and(|p| p.eq_ignore_ascii_case(ext)) =>
-            {
-                free_path(&planned.with_extension(ext))
-            }
-            _ => planned,
+        let wanted = final_path(&file, &planned);
+        let target = if wanted == planned {
+            planned
+        } else {
+            free_path(&wanted)
         };
         std::fs::rename(&file, &target)?;
         let bytes = std::fs::metadata(&target)?.len();
@@ -371,6 +363,40 @@ async fn finish(file: &Path, output: &Path, work: &Path) -> Result<MediaDone, Us
     })?;
     let (path, bytes) = moved.map_err(|e| disk(&e, output))?;
     Ok(MediaDone::Completed { path, bytes })
+}
+
+/// The name of a part in the work folder: its role and a media extension,
+/// never one the site chose otherwise.
+fn part_name(format: &Format, role: &str) -> String {
+    let content = if format.has_video() {
+        Content::Video
+    } else {
+        Content::Audio
+    };
+    format!("{role}.{}", safe_ext(format.ext.as_deref(), content))
+}
+
+/// Where a finished file goes: the planned path, with the file's own extension
+/// when that is a different media extension (the container actually written).
+/// An extension that is not a media one is never taken from the file: the
+/// site, not the user, chose it.
+fn final_path(file: &Path, planned: &Path) -> PathBuf {
+    let own = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| media::is_media_ext(e))
+        .map(str::to_ascii_lowercase);
+    match own {
+        Some(ext)
+            if !planned
+                .extension()
+                .and_then(|p| p.to_str())
+                .is_some_and(|p| p.eq_ignore_ascii_case(&ext)) =>
+        {
+            planned.with_extension(ext)
+        }
+        _ => planned.to_path_buf(),
+    }
 }
 
 /// `wanted`, or `name (1).ext` and so on if it is taken. Blocks on the disk.
@@ -499,6 +525,45 @@ pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> U
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parts_get_media_extensions() {
+        let format = |ext: &str, vcodec: &str| -> Format {
+            serde_json::from_value(serde_json::json!({
+                "format_id": "1", "ext": ext, "vcodec": vcodec, "acodec": "mp4a"
+            }))
+            .unwrap()
+        };
+        assert_eq!(part_name(&format("exe", "avc1"), "video"), "video.mp4");
+        assert_eq!(part_name(&format("lnk", "none"), "audio"), "audio.m4a");
+        assert_eq!(part_name(&format("webm", "vp9"), "video"), "video.webm");
+    }
+
+    #[test]
+    fn a_file_keeps_its_extension_only_when_it_is_a_media_one() {
+        let planned = Path::new("/v/Invoice.mp4");
+        assert_eq!(
+            final_path(Path::new("/w/media.webm"), planned),
+            Path::new("/v/Invoice.webm")
+        );
+        assert_eq!(
+            final_path(Path::new("/w/media.MKV"), planned),
+            Path::new("/v/Invoice.mkv")
+        );
+        for bad in [
+            "media.exe",
+            "media.bat",
+            "media.lnk",
+            "media",
+            "media.mp4.scr",
+        ] {
+            assert_eq!(
+                final_path(&Path::new("/w").join(bad), planned),
+                planned,
+                "{bad}"
+            );
+        }
+    }
 
     #[test]
     fn local_addresses_are_recognised() {

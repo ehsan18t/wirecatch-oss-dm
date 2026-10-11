@@ -544,3 +544,84 @@ async fn real_ffmpeg_joins_real_video_and_audio() {
     assert!(text.contains("Video: mpeg4"), "{text}");
     assert!(text.contains("Audio: aac"), "{text}");
 }
+
+/// A site names the extension of what it serves; a program extension must
+/// never reach the disk (yt-dlp's CVE-2024-38519).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_cannot_save_a_program() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    server.put("fmt/payload.exe", b"MZ not a video".to_vec());
+    let info = serde_json::json!({
+        "title": "Invoice",
+        "formats": [
+            {"format_id": "1", "ext": "exe", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+             "protocol": "https", "url": server.url("fmt/payload.exe")},
+            {"format_id": "2", "ext": "bat", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+             "protocol": "http_dash_segments", "url": server.url("x.mpd")},
+        ]
+    });
+    tell_tool(&h, "info.json", &info.to_string());
+    // When yt-dlp downloads by itself, it names the file after the site too.
+    tell_tool(&h, "download-ext", "exe");
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(&server.url("watch/7"), MediaKind::Page, None))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    for option in &choice.options {
+        assert!(
+            !option.label.to_lowercase().contains("exe"),
+            "{}",
+            option.label
+        );
+        assert!(
+            !option.label.to_lowercase().contains("bat"),
+            "{}",
+            option.label
+        );
+    }
+    for (n, option) in ["1", "2"].into_iter().enumerate() {
+        if n == 1 {
+            h.manager
+                .add_capture(media_capture(&server.url("watch/8"), MediaKind::Page, None))
+                .await
+                .unwrap();
+        }
+        let choice = if n == 0 {
+            choice.clone()
+        } else {
+            choice_requested(&mut ui).await
+        };
+        h.manager
+            .choose_media(choice.id, select(option))
+            .await
+            .unwrap();
+        let id = wait_until("the new row", || {
+            h.manager
+                .list_downloads()
+                .into_iter()
+                .find(|r| r.url.ends_with(&format!("watch/{}", 7 + n)))
+        })
+        .await
+        .id;
+        let done = h.wait_status(id, DownloadStatus::Completed).await;
+        let saved = Path::new(&done.path);
+        assert_eq!(
+            saved.extension().and_then(|e| e.to_str()),
+            Some("mp4"),
+            "{}",
+            done.path
+        );
+        let folder = saved.parent().unwrap();
+        let programs: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".exe") || n.ends_with(".bat"))
+            .collect();
+        assert!(programs.is_empty(), "{programs:?}");
+    }
+}

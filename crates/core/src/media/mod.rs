@@ -191,8 +191,50 @@ impl MediaProgress {
     }
 }
 
-/// A file name for media called `title`, with extension `ext`.
+/// Extensions a media file may get. A site, through yt-dlp, names the extension
+/// of what it serves; taking that as is would let a page save `Invoice.exe`
+/// (yt-dlp's CVE-2024-38519), so anything else is replaced.
+const MEDIA_EXTENSIONS: [&str; 16] = [
+    "mp4", "m4a", "webm", "mkv", "mka", "mp3", "opus", "ogg", "aac", "flac", "wav", "mov", "ts",
+    "3gp", "m4v", "flv",
+];
+
+/// Whether `ext` (without the dot, any case) is a media extension.
+pub(crate) fn is_media_ext(ext: &str) -> bool {
+    MEDIA_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+/// What a media file holds, which decides the extension used instead of one
+/// that is not allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Content {
+    Video,
+    Audio,
+    /// Not known, or video and audio joined from different containers.
+    Unknown,
+}
+
+/// `ext` in lower case if it is a media extension, otherwise `mp4` for video,
+/// `m4a` for audio and `mkv` when unknown.
+pub(crate) fn safe_ext(ext: Option<&str>, content: Content) -> String {
+    let lower = ext
+        .map(|e| e.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    if MEDIA_EXTENSIONS.contains(&lower.as_str()) {
+        return lower;
+    }
+    match content {
+        Content::Video => "mp4",
+        Content::Audio => "m4a",
+        Content::Unknown => "mkv",
+    }
+    .to_string()
+}
+
+/// A file name for media called `title`, with extension `ext` (replaced by
+/// `mkv` if it is not a media extension).
 pub(crate) fn file_name(title: &str, ext: &str) -> String {
+    let ext = safe_ext(Some(ext), Content::Unknown);
     let title = title.trim();
     let title = if title.is_empty() { "video" } else { title };
     // Leave room for " (1)" and the extension within common name limits.
@@ -205,6 +247,25 @@ pub(crate) fn file_name(title: &str, ext: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_media_extensions_are_kept() {
+        for (given, content, kept) in [
+            (Some("MP4"), Content::Video, "mp4"),
+            (Some("webm"), Content::Unknown, "webm"),
+            (Some("exe"), Content::Video, "mp4"),
+            (Some("bat"), Content::Audio, "m4a"),
+            (Some("lnk"), Content::Unknown, "mkv"),
+            (Some(""), Content::Video, "mp4"),
+            (None, Content::Audio, "m4a"),
+            (Some("mp4.exe"), Content::Video, "mp4"),
+            (Some("../mp4"), Content::Video, "mp4"),
+            (Some("scr"), Content::Video, "mp4"),
+        ] {
+            assert_eq!(safe_ext(given, content), kept, "{given:?}");
+        }
+        assert_eq!(file_name("Invoice", "exe"), "Invoice.mkv");
+    }
 
     #[test]
     fn titles_become_safe_file_names() {

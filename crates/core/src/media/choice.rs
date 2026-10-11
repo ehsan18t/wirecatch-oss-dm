@@ -7,7 +7,7 @@ use wirecatch_protocol::app::{FixAction, MediaOption, UserError};
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
 use super::ytdlp::{Format, Info};
-use super::{MediaJob, Pick};
+use super::{Content, MediaJob, Pick, safe_ext};
 
 /// Most options offered for one video.
 const MAX_OPTIONS: usize = 12;
@@ -74,10 +74,13 @@ pub(crate) fn from_stream(info: &StreamInfo, ffmpeg: bool) -> Result<Vec<Offer>,
     for (n, video) in videos.iter().enumerate() {
         let needs_ffmpeg = audio.is_some();
         let audio_pick = audio.map_or(Choice::Skip, |a| Choice::Track(a.id.clone()));
-        let ext = info.extension(
-            &Choice::Track(video.id.clone()),
-            &audio_pick,
-            ffmpeg || needs_ffmpeg,
+        let ext = safe_ext(
+            Some(info.extension(
+                &Choice::Track(video.id.clone()),
+                &audio_pick,
+                ffmpeg || needs_ffmpeg,
+            )),
+            Content::Video,
         );
         let quality = match video.height {
             Some(h) => format!("{h}p"),
@@ -89,7 +92,7 @@ pub(crate) fn from_stream(info: &StreamInfo, ffmpeg: bool) -> Result<Vec<Offer>,
                 video: Pick::Track(video.id.clone()),
                 audio: audio.map_or(Pick::Skip, |a| Pick::Track(a.id.clone())),
             },
-            ext: ext.to_string(),
+            ext: ext.clone(),
             quality: quality.clone(),
             audio_only: false,
             needs_ffmpeg,
@@ -118,13 +121,16 @@ fn audio_only_stream(
     ffmpeg: bool,
     seconds: Option<f64>,
 ) -> Offer {
-    let ext = info.extension(&Choice::Skip, &Choice::Track(audio.id.clone()), ffmpeg);
+    let ext = safe_ext(
+        Some(info.extension(&Choice::Skip, &Choice::Track(audio.id.clone()), ffmpeg)),
+        Content::Audio,
+    );
     let plan = Plan {
         job: MediaJob::Stream {
             video: Pick::Skip,
             audio: Pick::Track(audio.id.clone()),
         },
-        ext: ext.to_string(),
+        ext: ext.clone(),
         quality: "Audio only".into(),
         audio_only: true,
         needs_ffmpeg: false,
@@ -231,9 +237,18 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
             None => "Best quality".to_string(),
         };
         let (job, ext, needs_ffmpeg, size) = if let Some((v, a)) = pair {
-            let ext = match (v.ext.as_deref(), a.ext.as_deref()) {
-                (Some("mp4"), Some("m4a" | "mp4")) => "mp4",
-                (Some("webm"), Some("webm")) => "webm",
+            let (v_ext, a_ext) = (
+                safe_ext(v.ext.as_deref(), Content::Video),
+                safe_ext(a.ext.as_deref(), Content::Audio),
+            );
+            // Matroska holds anything, so it is the choice when either side
+            // named something that is not a media extension.
+            let named = [&v.ext, &a.ext]
+                .iter()
+                .all(|e| e.as_deref().is_some_and(super::is_media_ext));
+            let ext = match (v_ext.as_str(), a_ext.as_str()) {
+                ("mp4", "m4a" | "mp4") if named => "mp4",
+                ("webm", "webm") if named => "webm",
                 _ => "mkv",
             };
             (
@@ -253,7 +268,14 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
                     video: Some(f.format_id.clone()),
                     audio: None,
                 },
-                f.ext.clone().unwrap_or_else(|| "mp4".into()),
+                safe_ext(
+                    f.ext.as_deref(),
+                    if f.has_video() {
+                        Content::Video
+                    } else {
+                        Content::Audio
+                    },
+                ),
                 false,
                 f.size(),
             )
@@ -280,7 +302,7 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         ));
     }
     if let Some(audio) = best_audio(Some("m4a")) {
-        let ext = audio.ext.clone().unwrap_or_else(|| "m4a".into());
+        let ext = safe_ext(audio.ext.as_deref(), Content::Audio);
         offers.push(offer(
             audio.format_id.clone(),
             format!("Audio only, {}", ext.to_ascii_uppercase()),
@@ -367,6 +389,46 @@ mod tests {
         let (option, plan) = &offers[3];
         assert!(option.audio_only && plan.audio_only);
         assert_eq!(option.id, "140");
+    }
+
+    #[test]
+    fn a_site_cannot_choose_a_program_extension() {
+        let offers = from_page(&info(
+            r#"{"title":"Invoice","formats":[
+            {"format_id":"1","ext":"exe","vcodec":"avc1","acodec":"mp4a","height":720,"url":"u"},
+            {"format_id":"2","ext":"bat","vcodec":"avc1","acodec":"none","height":480,"url":"u"},
+            {"format_id":"3","ext":"lnk","vcodec":"none","acodec":"mp4a","url":"u"},
+            {"format_id":"4","ext":"","vcodec":"avc1","acodec":"mp4a","height":360,"url":"u"},
+            {"format_id":"5","ext":"m4a.exe","vcodec":"none","acodec":"opus","abr":1,"url":"u"}
+        ]}"#,
+        ))
+        .unwrap();
+        for (option, plan) in &offers {
+            for bad in ["exe", "bat", "lnk"] {
+                assert!(!plan.ext.contains(bad), "{} -> {}", option.id, plan.ext);
+                assert!(
+                    !option.label.to_lowercase().contains(bad),
+                    "{}",
+                    option.label
+                );
+            }
+            assert!(!plan.ext.is_empty());
+        }
+        let ext = |id: &str| {
+            offers
+                .iter()
+                .find(|(o, _)| o.id == id)
+                .map(|(_, p)| p.ext.clone())
+                .unwrap()
+        };
+        assert_eq!(ext("1"), "mp4");
+        let paired = offers
+            .iter()
+            .find(|(o, _)| o.height == Some(480))
+            .map(|(_, p)| p.ext.clone());
+        assert_eq!(paired.as_deref(), Some("mkv"));
+        assert_eq!(ext("4"), "mp4");
+        assert!(offers.iter().any(|(o, p)| o.audio_only && p.ext == "m4a"));
     }
 
     #[test]

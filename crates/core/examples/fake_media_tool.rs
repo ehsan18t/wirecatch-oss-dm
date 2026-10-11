@@ -9,7 +9,8 @@
 //!   cookies file's text and Unix mode at that moment). With `-J` it prints
 //!   `info.json`, or fails with the text of `fail.txt` if that exists, after
 //!   waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads":
-//!   writes a file at its `-o` template (extension `mp4`), prints two progress
+//!   writes a file at its `-o` template (extension `mp4`, or the text of
+//!   `download-ext`), prints two progress
 //!   lines in the format Wirecatch asks for, and prints the file's path.
 //! - `ffmpeg`: checks every `-i file:<path>` input exists, waits
 //!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
@@ -111,7 +112,8 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let format = after(args, "-f").unwrap_or("best");
-    let out = template.replace("%(ext)s", "mp4");
+    let ext = std::fs::read_to_string(dir.join("download-ext")).unwrap_or_else(|_| "mp4".into());
+    let out = template.replace("%(ext)s", ext.trim());
     println!("wcprogress 10 20 NA");
     println!("wcprogress 20 20 NA");
     if std::fs::write(&out, format!("downloaded by fake yt-dlp: {format}")).is_err() {
