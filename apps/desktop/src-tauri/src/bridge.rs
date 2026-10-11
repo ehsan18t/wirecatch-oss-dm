@@ -49,6 +49,61 @@ pub async fn serve(mut listener: Listener, manager: Manager) {
     }
 }
 
+/// Serves clients while the download manager could not open: every request is answered with
+/// `reason`, so the extension tells the person what is wrong instead of waiting in silence.
+pub async fn serve_unavailable(mut listener: Listener, reason: String) {
+    loop {
+        match listener.accept().await {
+            Ok(connection) => {
+                let reason = reason.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = answer_unavailable(connection, &reason).await {
+                        tracing::debug!("a browser connection ended: {e}");
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!("refused a browser connection: {e}");
+                tokio::time::sleep(ACCEPT_BACKOFF).await;
+            }
+        }
+    }
+}
+
+/// Answers every request on `stream` with an "app unavailable" error carrying `reason`, until
+/// the client hangs up.
+pub async fn answer_unavailable<S>(mut stream: S, reason: &str) -> std::io::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use wirecatch_protocol::frame;
+    use wirecatch_protocol::wire::{ErrorCode, Message, Outcome, ProtocolError};
+
+    let message = format!(
+        "Wirecatch is running but could not open its download list: {reason} Restart Wirecatch; if that does not help, see its tray icon for details."
+    );
+    loop {
+        let request: Option<Message> = frame::read_async(&mut stream)
+            .await
+            .map_err(std::io::Error::other)?;
+        let id = match request {
+            None => return Ok(()),
+            Some(Message::Request { id, .. }) => id,
+            Some(_) => continue,
+        };
+        let answer = Message::Response {
+            id,
+            outcome: Outcome::Err(ProtocolError {
+                code: ErrorCode::AppUnavailable,
+                message: message.clone(),
+            }),
+        };
+        frame::write_async(&mut stream, &answer)
+            .await
+            .map_err(std::io::Error::other)?;
+    }
+}
+
 /// Where the bridge is: next to the app executable.
 pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
@@ -190,6 +245,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(chosen, private.join(BRIDGE_FILE_NAME));
+    }
+
+    #[tokio::test]
+    async fn without_a_manager_every_request_gets_a_clear_error() {
+        use wirecatch_protocol::frame;
+        use wirecatch_protocol::wire::{
+            Call, ClientKind, ErrorCode, Hello, Message, Outcome, ProtocolError,
+        };
+
+        let (mut client, server) = tokio::io::duplex(64 * 1024);
+        let serving =
+            tokio::spawn(async move { answer_unavailable(server, "The disk is full.").await });
+        let hello = Message::Request {
+            id: 7,
+            call: Call::Hello(Hello {
+                client: ClientKind::Extension,
+                client_version: "1".into(),
+                protocol_version: wirecatch_protocol::PROTOCOL_VERSION,
+                browser: None,
+            }),
+        };
+        frame::write_async(&mut client, &hello).await.unwrap();
+        let answer: Option<Message> = frame::read_async(&mut client).await.unwrap();
+        match answer {
+            Some(Message::Response {
+                id: 7,
+                outcome: Outcome::Err(ProtocolError { code, message }),
+            }) => {
+                assert_eq!(code, ErrorCode::AppUnavailable);
+                assert!(message.contains("The disk is full."), "{message}");
+            }
+            other => panic!("expected an error, got {other:?}"),
+        }
+        drop(client);
+        serving.await.unwrap().unwrap();
     }
 
     #[test]

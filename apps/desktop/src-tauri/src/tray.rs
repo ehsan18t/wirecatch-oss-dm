@@ -138,6 +138,20 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Longest tooltip every platform shows in full (Windows cuts tray tooltips at 127 characters).
+pub const MAX_TOOLTIP_CHARS: usize = 127;
+
+/// The tooltip when something keeps Wirecatch from working, cut to fit.
+pub fn problem_tooltip(reason: &str) -> String {
+    let text = format!("Wirecatch could not start: {reason}");
+    if text.chars().count() <= MAX_TOOLTIP_CHARS {
+        return text;
+    }
+    let mut cut: String = text.chars().take(MAX_TOOLTIP_CHARS - 3).collect();
+    cut.push_str("...");
+    cut
+}
+
 /// Changes the tooltip.
 pub fn set_tooltip<R: Runtime>(app: &AppHandle<R>, text: &str) {
     if let Some(tray) = app.tray_by_id(TRAY_ID)
@@ -178,6 +192,17 @@ mod tests {
             TrayAction::ALL.map(TrayAction::label),
             ["Open Wirecatch", "Pause all", "Resume all", "Quit"]
         );
+    }
+
+    #[test]
+    fn a_problem_fits_in_the_tooltip() {
+        assert_eq!(
+            problem_tooltip("the disk is full."),
+            "Wirecatch could not start: the disk is full."
+        );
+        let long = problem_tooltip(&"x".repeat(500));
+        assert_eq!(long.chars().count(), MAX_TOOLTIP_CHARS);
+        assert!(long.ends_with("..."));
     }
 
     #[test]

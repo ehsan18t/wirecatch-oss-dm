@@ -255,9 +255,12 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
 /// Opens the manager, then starts the work that runs alongside it.
 async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>) {
     let core = app.state::<Core>();
-    let Ok(manager) = core.manager().await.cloned() else {
-        // The interface shows the reason on its first command.
-        return;
+    let manager = match core.manager().await.cloned() {
+        Ok(manager) => manager,
+        Err(reason) => {
+            unavailable(&app, listener, reason);
+            return;
+        }
     };
     let life = app.state::<Lifecycle>();
     life.keep(tauri::async_runtime::spawn(background::forward_events(
@@ -282,6 +285,26 @@ pub fn dev_identity(config: &mut tauri::Config) {
     config.product_name = Some(host::DEV_NAME.to_owned());
     for window in &mut config.app.windows {
         window.title = host::DEV_NAME.to_owned();
+    }
+}
+
+/// The manager could not open (for example a database from a newer Wirecatch, or a data folder
+/// that cannot be written). The app keeps running rather than quitting: quitting would leave the
+/// person with nothing to read, and the bridge would start it again on the next browser
+/// download. Instead the reason is shown in a notification and in the tray tooltip, the window
+/// shows it on its first command, and the extension gets it as a clear error on every request.
+fn unavailable(app: &tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>, reason: String) {
+    background::show_notification(
+        app,
+        "Wirecatch could not open its download list".to_owned(),
+        reason.clone(),
+    );
+    tray::set_tooltip(app, &tray::problem_tooltip(&reason));
+    if let Some(listener) = listener {
+        app.state::<Lifecycle>()
+            .keep(tauri::async_runtime::spawn(bridge::serve_unavailable(
+                listener, reason,
+            )));
     }
 }
 
