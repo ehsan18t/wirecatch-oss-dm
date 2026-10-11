@@ -13,6 +13,19 @@
 //!   `NativeMessagingHosts` folder (honoring `XDG_CONFIG_HOME` the way Chromium
 //!   browsers do) and Firefox's `~/.mozilla/native-messaging-hosts`.
 //!
+//! Many browsers read another browser's location instead of their own (see
+//! [`BROWSERS`]), so one manifest or key often serves several browsers. A
+//! location is only written when a browser really reads it.
+//!
+//! Sandboxed Linux browsers: a Flatpak or Snap browser reads manifests inside its
+//! sandbox, but the bridge they name is installed outside it, where the sandbox
+//! cannot start it, so no manifest is written there. Firefox as a Snap (Ubuntu's
+//! default) and as a Flatpak can still reach the bridge through the
+//! WebExtensions portal (`xdg-desktop-portal`), which reads the host's own
+//! `~/.mozilla/native-messaging-hosts` and asks the person once; this needs
+//! portal support in the distribution. Chromium-based Flatpaks and Snaps cannot
+//! start a host outside their sandbox; use a packaged (.deb, .rpm) browser.
+//!
 //! `uninstall` removes a manifest only if it still holds exactly what `install`
 //! would write from this copy of the bridge, and a registry key only if it points
 //! to such a manifest (or to one that no longer exists). Every copy installed for
@@ -52,14 +65,21 @@ enum Engine {
 struct Browser {
     name: &'static str,
     engine: Engine,
-    /// Windows: the key under HKCU that holds `NativeMessagingHosts`.
-    windows_root: &'static str,
-    /// Linux: where the browser's folder lives.
-    linux_base: LinuxBase,
-    /// Linux: the browser's folder below that base, as path components.
-    linux_dir: &'static [&'static str],
-    /// Linux: the name of the hosts folder inside it.
-    linux_hosts: &'static str,
+    /// Windows: the key under HKCU whose `NativeMessagingHosts` subkey the
+    /// browser reads; None when it has no Windows version.
+    windows_root: Option<&'static str>,
+    /// Linux: the per-user hosts folder it reads; None when it has no Linux
+    /// version.
+    linux: Option<LinuxHosts>,
+}
+
+/// A per-user hosts folder on Linux.
+struct LinuxHosts {
+    /// Where the browser's folder lives.
+    base: LinuxBase,
+    /// The folder below that base, as path components, ending with the hosts
+    /// folder itself.
+    dir: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,68 +90,168 @@ enum LinuxBase {
     Home,
 }
 
-/// The browsers `install` registers with.
-///
-/// Opera on Windows reads Google Chrome's registry key, so its entry is the same
-/// key as Chrome's and is written once.
+/// Google Chrome's key. Upstream Chromium reads only this one, except builds
+/// with Chromium branding, which read [`CHROMIUM_KEY`] first and fall back to it
+/// (`chrome/browser/extensions/api/messaging/launch_context_win.cc`,
+/// `GetManifestPathWithFlags`). Forks that do not change that file (Brave,
+/// Vivaldi, Opera, Arc, Thorium, ungoogled-chromium) read it too.
+const CHROME_KEY: &str = r"Software\Google\Chrome";
+/// Read first by builds with Chromium branding (Chromium, Brave, Thorium,
+/// ungoogled-chromium), before [`CHROME_KEY`].
+const CHROMIUM_KEY: &str = r"Software\Chromium";
+/// Firefox's key (`REGPATH` in
+/// `toolkit/components/extensions/NativeManifests.sys.mjs`). The Firefox forks
+/// below keep it unchanged.
+const MOZILLA_KEY: &str = r"Software\Mozilla";
+
+/// Chromium's per-user hosts folder on Linux: `NativeMessagingHosts` inside the
+/// browser's user data folder (`chrome::DIR_USER_NATIVE_MESSAGING`).
+const fn chromium_linux(dir: &'static [&'static str]) -> Option<LinuxHosts> {
+    Some(LinuxHosts {
+        base: LinuxBase::ConfigHome,
+        dir,
+    })
+}
+
+/// Firefox's per-user hosts folder on Linux: `~/.mozilla/native-messaging-hosts`
+/// (`XRE_USER_NATIVE_MANIFESTS` in `toolkit/xre/nsXREDirProvider.cpp`, which keeps
+/// this legacy path even for profiles in the XDG folders).
+const MOZILLA_LINUX: Option<LinuxHosts> = Some(LinuxHosts {
+    base: LinuxBase::Home,
+    dir: &[".mozilla", "native-messaging-hosts"],
+});
+
+/// The browsers `install` registers with, and where each one really looks.
+/// Entries that share a key or folder are written once.
 const BROWSERS: &[Browser] = &[
     Browser {
         name: "Google Chrome",
         engine: Engine::Chromium,
-        windows_root: r"Software\Google\Chrome",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["google-chrome"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(CHROME_KEY),
+        linux: chromium_linux(&["google-chrome", "NativeMessagingHosts"]),
     },
     Browser {
         name: "Chromium",
         engine: Engine::Chromium,
-        windows_root: r"Software\Chromium",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["chromium"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(CHROMIUM_KEY),
+        linux: chromium_linux(&["chromium", "NativeMessagingHosts"]),
     },
+    // Edge reads its own key first, then Chromium's and Chrome's: "Native
+    // messaging", Microsoft Edge developer documentation (learn.microsoft.com).
     Browser {
         name: "Microsoft Edge",
         engine: Engine::Chromium,
-        windows_root: r"Software\Microsoft\Edge",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["microsoft-edge"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(r"Software\Microsoft\Edge"),
+        linux: chromium_linux(&["microsoft-edge", "NativeMessagingHosts"]),
     },
+    // Brave does not change the Windows lookup, so it reads Chromium's and
+    // Chrome's keys; on Linux it keeps its own user data folder
+    // (brave-core `app/brave_main_delegate.cc`, `PreSandboxStartup`).
     Browser {
         name: "Brave",
         engine: Engine::Chromium,
-        windows_root: r"Software\BraveSoftware\Brave-Browser",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["BraveSoftware", "Brave-Browser"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(CHROME_KEY),
+        linux: chromium_linux(&["BraveSoftware", "Brave-Browser", "NativeMessagingHosts"]),
     },
+    // Vivaldi reads Chrome's key on Windows (KeePassXC moved its Vivaldi entry
+    // there in commit 2ad8036: "Vivaldi uses Chrome's registry settings").
     Browser {
         name: "Vivaldi",
         engine: Engine::Chromium,
-        windows_root: r"Software\Vivaldi",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["vivaldi"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(CHROME_KEY),
+        linux: chromium_linux(&["vivaldi", "NativeMessagingHosts"]),
     },
     Browser {
         name: "Opera",
         engine: Engine::Chromium,
-        windows_root: r"Software\Google\Chrome",
-        linux_base: LinuxBase::ConfigHome,
-        linux_dir: &["opera"],
-        linux_hosts: "NativeMessagingHosts",
+        windows_root: Some(CHROME_KEY),
+        linux: chromium_linux(&["opera", "NativeMessagingHosts"]),
+    },
+    // Opera GX and Arc have no Linux version.
+    Browser {
+        name: "Opera GX",
+        engine: Engine::Chromium,
+        windows_root: Some(CHROME_KEY),
+        linux: None,
+    },
+    Browser {
+        name: "Arc",
+        engine: Engine::Chromium,
+        windows_root: Some(CHROME_KEY),
+        linux: None,
+    },
+    // Thorium's Linux user data folder is `thorium`
+    // (Alex313031/thorium `src/chrome/common/chrome_paths_linux.cc`).
+    Browser {
+        name: "Thorium",
+        engine: Engine::Chromium,
+        windows_root: Some(CHROME_KEY),
+        linux: chromium_linux(&["thorium", "NativeMessagingHosts"]),
+    },
+    // ungoogled-chromium keeps Chromium's names everywhere.
+    Browser {
+        name: "ungoogled-chromium",
+        engine: Engine::Chromium,
+        windows_root: Some(CHROMIUM_KEY),
+        linux: chromium_linux(&["chromium", "NativeMessagingHosts"]),
+    },
+    // Yandex Browser on Linux: `yandex-browser` (browserpass-native's
+    // `hosts-yandex-user` target, Video DownloadHelper's companion app). Its
+    // closed Windows build could not be checked, so no key is written for it
+    // there beyond the ones above.
+    Browser {
+        name: "Yandex Browser",
+        engine: Engine::Chromium,
+        windows_root: None,
+        linux: chromium_linux(&["yandex-browser", "NativeMessagingHosts"]),
     },
     Browser {
         name: "Mozilla Firefox",
         engine: Engine::Firefox,
-        windows_root: r"Software\Mozilla",
-        linux_base: LinuxBase::Home,
-        linux_dir: &[".mozilla"],
-        linux_hosts: "native-messaging-hosts",
+        windows_root: Some(MOZILLA_KEY),
+        linux: MOZILLA_LINUX,
+    },
+    // LibreWolf reads `~/.librewolf/native-messaging-hosts` and then Firefox's
+    // folder, and keeps Firefox's key (librewolf/source `patches/mozilla_dirs.patch`).
+    Browser {
+        name: "LibreWolf",
+        engine: Engine::Firefox,
+        windows_root: Some(MOZILLA_KEY),
+        linux: MOZILLA_LINUX,
+    },
+    // Waterfox reads `~/.waterfox/native-messaging-hosts` and then Firefox's
+    // folder (`COMPAT_DIR_NAMES` in its `NativeManifests.sys.mjs`), and keeps
+    // Firefox's key.
+    Browser {
+        name: "Waterfox",
+        engine: Engine::Firefox,
+        windows_root: Some(MOZILLA_KEY),
+        linux: MOZILLA_LINUX,
+    },
+    // Zen changes where profiles live, not where native manifests are read
+    // (zen-browser/desktop `src/toolkit/xre/nsXREDirProvider-cpp.patch`).
+    Browser {
+        name: "Zen",
+        engine: Engine::Firefox,
+        windows_root: Some(MOZILLA_KEY),
+        linux: MOZILLA_LINUX,
+    },
+    // Floorp maps its own folder names back to Mozilla's
+    // (Floorp `tools/patches/modules-NativeManifests.sys.patch`).
+    Browser {
+        name: "Floorp",
+        engine: Engine::Firefox,
+        windows_root: Some(MOZILLA_KEY),
+        linux: MOZILLA_LINUX,
     },
 ];
+
+/// Keys earlier versions wrote for browsers that never read them (Brave and
+/// Vivaldi read Chrome's key, see [`BROWSERS`]). `install` and `uninstall` remove
+/// them, by the same rule as every other key, when they point to this copy's
+/// Chromium manifest.
+const RETIRED_WINDOWS_ROOTS: &[&str] =
+    &[r"Software\BraveSoftware\Brave-Browser", r"Software\Vivaldi"];
 
 /// Where things go on this machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +345,8 @@ pub(crate) struct RegistryEntry {
 pub(crate) struct Plan {
     pub(crate) files: Vec<ManifestFile>,
     pub(crate) keys: Vec<RegistryEntry>,
+    /// Keys earlier versions wrote that no browser reads; removed, never written.
+    pub(crate) retired_keys: Vec<RegistryEntry>,
 }
 
 #[derive(Serialize)]
@@ -285,6 +407,7 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
     let mut plan = Plan {
         files: Vec::new(),
         keys: Vec::new(),
+        retired_keys: Vec::new(),
     };
     match layout {
         Layout::Windows { local_app_data, .. } => {
@@ -309,10 +432,13 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
                     hosts_dir: dir.clone(),
                 });
                 for browser in BROWSERS.iter().filter(|b| b.engine == engine) {
+                    let Some(root) = browser.windows_root else {
+                        continue;
+                    };
                     if let Some(file) = plan.files.last_mut() {
                         file.browsers.push(browser.name);
                     }
-                    let hosts_key = format!(r"{}\NativeMessagingHosts", browser.windows_root);
+                    let hosts_key = format!(r"{root}\NativeMessagingHosts");
                     let key = format!(r"{hosts_key}\{host}");
                     if let Some(entry) = plan.keys.iter_mut().find(|e| e.key == key) {
                         entry.browsers.push(browser.name);
@@ -326,21 +452,40 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
                         hosts_key,
                     });
                 }
+                if engine == Engine::Chromium {
+                    for root in RETIRED_WINDOWS_ROOTS {
+                        let hosts_key = format!(r"{root}\NativeMessagingHosts");
+                        plan.retired_keys.push(RegistryEntry {
+                            key: format!(r"{hosts_key}\{host}"),
+                            value: value.clone(),
+                            manifest_contents: contents.clone(),
+                            browsers: Vec::new(),
+                            hosts_key,
+                        });
+                    }
+                }
             }
         }
         Layout::Linux {
             home, config_home, ..
         } => {
             for browser in BROWSERS {
-                let base = match browser.linux_base {
+                let Some(linux) = &browser.linux else {
+                    continue;
+                };
+                let base = match linux.base {
                     LinuxBase::ConfigHome => config_home,
                     LinuxBase::Home => home,
                 };
                 let mut dir = base.clone();
-                dir.extend(browser.linux_dir);
-                dir.push(browser.linux_hosts);
+                dir.extend(linux.dir);
+                let path = dir.join(format!("{host}.json"));
+                if let Some(file) = plan.files.iter_mut().find(|f| f.path == path) {
+                    file.browsers.push(browser.name);
+                    continue;
+                }
                 plan.files.push(ManifestFile {
-                    path: dir.join(format!("{host}.json")),
+                    path,
                     contents: manifest(config, exe_text, browser.engine)?,
                     browsers: vec![browser.name],
                     hosts_dir: dir,
@@ -687,6 +832,11 @@ pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
             )),
         }
     }
+    // After the manifests, so a key an earlier version wrote is recognized as
+    // this copy's by the manifest just written.
+    for entry in &plan.retired_keys {
+        remove_key(entry, host, &mut report);
+    }
     report
 }
 
@@ -695,50 +845,8 @@ pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
 pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
     let mut report = Report::default();
     // Keys first, while the manifests they point to can still be compared.
-    for entry in &plan.keys {
-        let name = format!(r"HKEY_CURRENT_USER\{}", entry.key);
-        let value = match host.registry_value(&entry.key) {
-            Ok(None) => continue,
-            Ok(Some(value)) => value,
-            Err(e) => {
-                report.fail(format!("Could not read {name}: {e}"));
-                continue;
-            }
-        };
-        if value != entry.value {
-            report.ok(format!(
-                "Left {name} in place: it points to {value}, which this copy did not write"
-            ));
-            continue;
-        }
-        // Every copy for this user writes the same manifest path, so the path
-        // alone does not say whose registration this is; the manifest does.
-        match host.read_file(Path::new(&entry.value)) {
-            Ok(None) => {}
-            Ok(Some(bytes)) if bytes == entry.manifest_contents.as_bytes() => {}
-            Ok(Some(_)) => {
-                report.ok(format!(
-                    "Left {name} in place: the manifest it points to belongs to another copy of Wirecatch"
-                ));
-                continue;
-            }
-            Err(e) => {
-                report.fail(format!("Could not read {}: {e}", entry.value));
-                continue;
-            }
-        }
-        match host.delete_registry_key(&entry.key) {
-            Ok(()) => {
-                report.ok(format!("Removed {name}"));
-                if let Err(e) = host.delete_registry_key_if_empty(&entry.hosts_key) {
-                    report.fail(format!(
-                        r"Could not tidy HKEY_CURRENT_USER\{}: {e}",
-                        entry.hosts_key
-                    ));
-                }
-            }
-            Err(e) => report.fail(format!("Could not remove {name}: {e}")),
-        }
+    for entry in plan.keys.iter().chain(&plan.retired_keys) {
+        remove_key(entry, host, &mut report);
     }
     for file in &plan.files {
         let shown = file.path.display();
@@ -763,6 +871,54 @@ pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
         }
     }
     report
+}
+
+/// Removes a registry key if it is this copy's: it points to this copy's
+/// manifest path, and that manifest holds what this copy writes or is gone.
+fn remove_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
+    let name = format!(r"HKEY_CURRENT_USER\{}", entry.key);
+    let value = match host.registry_value(&entry.key) {
+        Ok(None) => return,
+        Ok(Some(value)) => value,
+        Err(e) => {
+            report.fail(format!("Could not read {name}: {e}"));
+            return;
+        }
+    };
+    if value != entry.value {
+        report.ok(format!(
+            "Left {name} in place: it points to {value}, which this copy did not write"
+        ));
+        return;
+    }
+    // Every copy for this user writes the same manifest path, so the path
+    // alone does not say whose registration this is; the manifest does.
+    match host.read_file(Path::new(&entry.value)) {
+        Ok(None) => {}
+        Ok(Some(bytes)) if bytes == entry.manifest_contents.as_bytes() => {}
+        Ok(Some(_)) => {
+            report.ok(format!(
+                "Left {name} in place: the manifest it points to belongs to another copy of Wirecatch"
+            ));
+            return;
+        }
+        Err(e) => {
+            report.fail(format!("Could not read {}: {e}", entry.value));
+            return;
+        }
+    }
+    match host.delete_registry_key(&entry.key) {
+        Ok(()) => {
+            report.ok(format!("Removed {name}"));
+            if let Err(e) = host.delete_registry_key_if_empty(&entry.hosts_key) {
+                report.fail(format!(
+                    r"Could not tidy HKEY_CURRENT_USER\{}: {e}",
+                    entry.hosts_key
+                ));
+            }
+        }
+        Err(e) => report.fail(format!("Could not remove {name}: {e}")),
+    }
 }
 
 /// Which command to run.
@@ -1004,14 +1160,6 @@ mod tests {
                 chromium_path,
             ),
             (
-                r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge",
-                chromium_path,
-            ),
-            (
-                r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge",
-                chromium_path,
-            ),
-            (
                 r"Software\Mozilla\NativeMessagingHosts\app.wirecatch.bridge",
                 firefox.to_str().unwrap(),
             ),
@@ -1023,12 +1171,52 @@ mod tests {
                 "{key}"
             );
         }
-        // Every browser is covered (Opera shares Chrome's key).
+        // Every browser with a Windows version is covered by the key it reads.
+        let readers = |key: &str| -> Vec<&str> {
+            plan.keys
+                .iter()
+                .find(|k| k.key.starts_with(key))
+                .map(|k| k.browsers.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            readers(r"Software\Google\Chrome\"),
+            [
+                "Google Chrome",
+                "Brave",
+                "Vivaldi",
+                "Opera",
+                "Opera GX",
+                "Arc",
+                "Thorium"
+            ]
+        );
+        assert_eq!(
+            readers(r"Software\Chromium\"),
+            ["Chromium", "ungoogled-chromium"]
+        );
+        assert_eq!(readers(r"Software\Microsoft\Edge\"), ["Microsoft Edge"]);
+        assert_eq!(
+            readers(r"Software\Mozilla\"),
+            ["Mozilla Firefox", "LibreWolf", "Waterfox", "Zen", "Floorp"]
+        );
         let covered: Vec<&str> = plan.keys.iter().flat_map(|k| k.browsers.clone()).collect();
         for browser in BROWSERS {
-            assert!(covered.contains(&browser.name), "{}", browser.name);
+            assert_eq!(
+                covered.contains(&browser.name),
+                browser.windows_root.is_some(),
+                "{}",
+                browser.name
+            );
         }
+        // Only keys a browser reads: none of Brave's or Vivaldi's own.
         assert_eq!(plan.keys.len(), expected.len());
+        for retired in [
+            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge",
+            r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge",
+        ] {
+            assert_eq!(host.registry_value(retired).unwrap(), None, "{retired}");
+        }
 
         // Installing again changes nothing.
         let files_installed = tree(&temp.0);
@@ -1052,6 +1240,63 @@ mod tests {
         assert_eq!(uninstall(&plan, &mut host).failures, 0);
         assert_eq!(tree(&temp.0), files_before);
         assert_eq!(host.snapshot(), registry_after);
+    }
+
+    #[test]
+    fn keys_earlier_versions_wrote_for_brave_and_vivaldi_are_removed_when_they_are_ours() {
+        let temp = TempDir::new();
+        let local = temp.0.join("LocalAppData");
+        let layout = Layout::Windows {
+            exe: temp.0.join("Wirecatch").join("wirecatch-bridge.exe"),
+            local_app_data: local.clone(),
+        };
+        let plan = plan(&config(), &layout).unwrap();
+        let manifest_path = local
+            .join("Wirecatch")
+            .join("NativeMessagingHosts")
+            .join("app.wirecatch.bridge.chromium.json");
+        let ours = manifest_path.to_str().unwrap();
+        let brave =
+            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge";
+        let vivaldi = r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge";
+        let mut host = FakeHost::default();
+        // What an earlier version left: its own manifest (an older allow list)
+        // and a Brave key pointing to it; a Vivaldi key someone else points elsewhere.
+        fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
+        fs::write(&manifest_path, br#"{"allowed_origins": []}"#).unwrap();
+        host.set_registry_value(brave, ours).unwrap();
+        host.set_registry_value(vivaldi, r"C:\Other\host.json")
+            .unwrap();
+        assert_eq!(
+            plan.retired_keys
+                .iter()
+                .map(|k| k.key.as_str())
+                .collect::<Vec<_>>(),
+            [brave, vivaldi]
+        );
+
+        // Install rewrites the manifest, so the Brave key is recognized as ours and
+        // removed with its empty hosts key; the Vivaldi key is left alone.
+        let report = install(&plan, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert_eq!(host.registry_value(brave).unwrap(), None);
+        assert!(
+            !host
+                .snapshot()
+                .contains_key(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts")
+        );
+        assert_eq!(
+            host.registry_value(vivaldi).unwrap().as_deref(),
+            Some(r"C:\Other\host.json")
+        );
+        assert!(plan.keys.iter().all(|k| k.key != brave && k.key != vivaldi));
+
+        // Uninstall removes one that came back, and still leaves the other.
+        host.set_registry_value(brave, ours).unwrap();
+        let report = uninstall(&plan, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert_eq!(host.registry_value(brave).unwrap(), None);
+        assert!(host.registry_value(vivaldi).unwrap().is_some());
     }
 
     /// `after` holds everything `before` did, unchanged, plus only empty entries
@@ -1122,13 +1367,16 @@ mod tests {
         assert!(plan.keys.is_empty(), "no registry on Linux");
 
         let config_dir = home.join(".config");
-        let chromium_dirs: [&[&str]; 6] = [
+        let chromium_dirs: [&[&str]; 8] = [
             &["google-chrome"],
+            // Chromium and ungoogled-chromium.
             &["chromium"],
             &["microsoft-edge"],
             &["BraveSoftware", "Brave-Browser"],
             &["vivaldi"],
             &["opera"],
+            &["thorium"],
+            &["yandex-browser"],
         ];
         for parts in chromium_dirs {
             let mut dir = config_dir.clone();
@@ -1153,7 +1401,43 @@ mod tests {
             firefox["allowed_extensions"],
             serde_json::json!(["extension@wirecatch.app"])
         );
-        assert_eq!(plan.files.len(), BROWSERS.len());
+        // One file per folder: 8 Chromium folders and Firefox's, which LibreWolf,
+        // Waterfox, Zen and Floorp read too. No Flatpak or Snap folder is written.
+        assert_eq!(plan.files.len(), chromium_dirs.len() + 1);
+        let firefox_file = plan
+            .files
+            .iter()
+            .find(|f| f.path.starts_with(home.join(".mozilla")))
+            .unwrap();
+        assert_eq!(
+            firefox_file.browsers,
+            ["Mozilla Firefox", "LibreWolf", "Waterfox", "Zen", "Floorp"]
+        );
+        assert!(
+            plan.files
+                .iter()
+                .all(|f| !f.path.starts_with(home.join(".var"))
+                    && !f.path.starts_with(home.join("snap"))
+                    && !f.path.starts_with(home.join(".librewolf"))
+                    && !f.path.starts_with(home.join(".waterfox")))
+        );
+        let linux_browsers: Vec<&str> =
+            plan.files.iter().flat_map(|f| f.browsers.clone()).collect();
+        for browser in BROWSERS {
+            assert_eq!(
+                linux_browsers.contains(&browser.name),
+                browser.linux.is_some(),
+                "{}",
+                browser.name
+            );
+        }
+        for name in ["Thorium", "Yandex Browser", "ungoogled-chromium"] {
+            assert!(
+                report.lines.iter().any(|l| l.contains(name)),
+                "{name}: {:?}",
+                report.lines
+            );
+        }
 
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);

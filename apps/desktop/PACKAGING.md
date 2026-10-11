@@ -25,6 +25,8 @@ The external binary lives in a separate config file because Tauri's build script
 
 The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
 
+Registration covers Google Chrome, Chromium, ungoogled-chromium, Microsoft Edge, Brave, Vivaldi, Opera, Opera GX and Arc (Windows), Thorium, Yandex Browser (Linux), and Firefox with LibreWolf, Waterfox, Zen and Floorp. Many of them read another browser's location (on Windows most Chromium browsers read Google Chrome's key, and the Firefox forks read Mozilla's key and `~/.mozilla/native-messaging-hosts`), so the bridge writes only the locations browsers really read; `crates/bridge/src/install.rs` lists each one with its source. Flatpak and Snap browsers cannot start a program outside their sandbox, so nothing is written inside them: Firefox as a Snap or Flatpak reaches the bridge through the WebExtensions portal where the distribution provides it, and Chromium-based Flatpaks and Snaps are not supported.
+
 Uninstalling removes the registration before the files go:
 
 - **Windows**: `src-tauri/windows/hooks.nsh` (the `NSIS_HOOK_PREUNINSTALL` macro) runs `"$INSTDIR\wirecatch-bridge.exe" uninstall`. The installer is per user, so this runs as the user whose registration it removes.
