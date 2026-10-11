@@ -450,15 +450,74 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
     let dropped = Arc::new(AtomicBool::new(false));
     let this = window.clone();
     window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Focused(focused) = event {
-            if *focused {
-                had_focus.store(true, Ordering::SeqCst);
-            } else if had_focus.load(Ordering::SeqCst) && !dropped.swap(true, Ordering::SeqCst) {
-                let _ = this.set_always_on_top(false);
-            }
+        let tauri::WindowEvent::Focused(focused) = event else {
+            return;
+        };
+        if *focused {
+            had_focus.store(true, Ordering::SeqCst);
+            return;
         }
+        if !had_focus.load(Ordering::SeqCst) || dropped.load(Ordering::SeqCst) {
+            return;
+        }
+        // On Windows the window also reports losing the focus when its own page takes it, so
+        // look again once things settle: only another window having it counts.
+        let (this, dropped) = (this.clone(), dropped.clone());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(FOCUS_SETTLE).await;
+            if this.is_focused().unwrap_or(true) {
+                return;
+            }
+            if !dropped.swap(true, Ordering::SeqCst) {
+                drop_always_on_top(&this);
+            }
+        });
     });
 }
+
+/// Makes a download window a normal window again, behind the window that took the focus.
+fn drop_always_on_top<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let _ = window.set_always_on_top(false);
+    // Windows puts a window that stops being always on top above every normal window, so it
+    // would jump over the browser the person just went back to. Put it right behind that one.
+    #[cfg(windows)]
+    {
+        let this = window.clone();
+        let _ = window.run_on_main_thread(move || behind_foreground(&this));
+    }
+}
+
+#[cfg(windows)]
+fn behind_foreground<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+    };
+    let Ok(handle) = window.hwnd() else {
+        return;
+    };
+    let ours = handle.0 as HWND;
+    // SAFETY: both calls take window handles by value and only fail on a stale one; nothing
+    // is read or written through them.
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.is_null() || front == ours {
+            return;
+        }
+        SetWindowPos(
+            ours,
+            front,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// How long after a lost focus a download window checks whether another window has it.
+const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
 
 #[cfg(test)]
 mod tests {
