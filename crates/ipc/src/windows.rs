@@ -23,12 +23,14 @@ use windows_sys::Win32::Security::Authorization::{
 use windows_sys::Win32::Security::{
     CopySid, GetLengthSid, GetTokenInformation, IsValidSid, OWNER_SECURITY_INFORMATION,
     PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, SID_AND_ATTRIBUTES, TOKEN_ELEVATION,
-    TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenIntegrityLevel, TokenUser,
+    TOKEN_ELEVATION_TYPE, TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenElevationType,
+    TokenElevationTypeDefault as SINGLE_TOKEN, TokenElevationTypeFull as FULL_TOKEN,
+    TokenElevationTypeLimited as LIMITED_TOKEN, TokenIntegrityLevel, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-use crate::{Connection, Endpoint, Inner, IpcError, paths};
+use crate::{Connection, Elevation, Endpoint, Inner, IpcError, paths};
 
 /// How long `connect` keeps retrying while every pipe instance is busy. The
 /// listener always keeps one instance waiting, so this only covers the short gap
@@ -191,19 +193,50 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
     unsafe { Sid::copy_from(entry.Sid) }
 }
 
-/// Whether the current process runs elevated ("Run as administrator").
-pub(crate) fn is_elevated() -> io::Result<bool> {
+/// How the current process holds administrator rights.
+pub(crate) fn elevation() -> io::Result<Elevation> {
     let token = process_token()?;
-    let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
-    let size = u32::try_from(mem::size_of::<TOKEN_ELEVATION>()).unwrap_or(u32::MAX);
+    let mut kind: TOKEN_ELEVATION_TYPE = 0;
+    // SAFETY: TokenElevationType fills a TOKEN_ELEVATION_TYPE.
+    unsafe { read_token_value(&token, TokenElevationType, &mut kind) }?;
+    let mut elevated = TOKEN_ELEVATION { TokenIsElevated: 0 };
+    // SAFETY: TokenElevation fills a TOKEN_ELEVATION.
+    unsafe { read_token_value(&token, TokenElevation, &mut elevated) }?;
+    classify_elevation(kind, elevated.TokenIsElevated != 0)
+}
+
+/// Tells an elevation the person chose apart from an account that is always elevated. `TokenIsElevated` alone is set in both cases; only a token that user account control split in two has a full and a limited half.
+fn classify_elevation(kind: TOKEN_ELEVATION_TYPE, elevated: bool) -> io::Result<Elevation> {
+    match kind {
+        FULL_TOKEN => Ok(Elevation::Elevated),
+        LIMITED_TOKEN => Ok(Elevation::Standard),
+        SINGLE_TOKEN if elevated => Ok(Elevation::AlwaysAdministrator),
+        SINGLE_TOKEN => Ok(Elevation::Standard),
+        other => Err(io::Error::other(format!(
+            "Windows reported an unknown elevation type {other}"
+        ))),
+    }
+}
+
+/// Reads a fixed-size token information class into `out`.
+///
+/// # Safety
+///
+/// `T` must be the structure Windows fills for `class`.
+unsafe fn read_token_value<T>(
+    token: &OwnedHandle,
+    class: TOKEN_INFORMATION_CLASS,
+    out: &mut T,
+) -> io::Result<()> {
+    let size = u32::try_from(mem::size_of::<T>()).unwrap_or(u32::MAX);
     let mut returned = 0u32;
-    // SAFETY: `elevation` is a TOKEN_ELEVATION, writable for `size` bytes, which is
-    // exactly what TokenElevation fills.
+    // SAFETY: `out` is writable for `size` bytes, and the caller guarantees it is the
+    // structure `class` fills.
     if unsafe {
         GetTokenInformation(
             token.as_raw_handle() as HANDLE,
-            TokenElevation,
-            ptr::addr_of_mut!(elevation).cast(),
+            class,
+            ptr::from_mut(out).cast(),
             size,
             &mut returned,
         )
@@ -211,7 +244,7 @@ pub(crate) fn is_elevated() -> io::Result<bool> {
     {
         return Err(io::Error::last_os_error());
     }
-    Ok(elevation.TokenIsElevated != 0)
+    Ok(())
 }
 
 /// Frees a block that Windows allocated with LocalAlloc.
@@ -363,9 +396,13 @@ pub(crate) struct PipeListener {
 
 impl PipeListener {
     pub(crate) fn bind(endpoint: &Endpoint) -> Result<Self, IpcError> {
+        Self::bind_labelled(endpoint, &Sid::current_integrity()?)
+    }
+
+    /// Listens with the pipe labelled at `integrity`, which is always the process's own outside tests.
+    fn bind_labelled(endpoint: &Endpoint, integrity: &Sid) -> Result<Self, IpcError> {
         let user = Sid::current_user()?;
-        let integrity = Sid::current_integrity()?;
-        let descriptor = OwnerOnlyDescriptor::new(&user, &integrity).map_err(|e| {
+        let descriptor = OwnerOnlyDescriptor::new(&user, integrity).map_err(|e| {
             IpcError::io("Could not prepare the access rules for the connection", e)
         })?;
         let next = match create_instance(endpoint, &descriptor, true) {
@@ -984,6 +1021,22 @@ mod tests {
         OwnerOnlyDescriptor::from_sddl(&sddl).expect("Windows accepts the descriptor");
     }
 
+    // The label must follow the integrity it is given, not a fixed level: an elevated app used to label its pipe medium. A test process cannot label above its own level, so a lower one proves the same.
+    #[tokio::test]
+    async fn a_listener_labels_its_pipe_at_the_given_integrity() {
+        let low = Sid::parse("S-1-16-4096").unwrap();
+        let listener = PipeListener::bind_labelled(&unique_endpoint(), &low).unwrap();
+        let security = read_security(listener.waiting_instance()).unwrap();
+        assert_eq!(
+            security
+                .label
+                .iter()
+                .map(|ace| &ace.sid)
+                .collect::<Vec<_>>(),
+            [&low]
+        );
+    }
+
     #[test]
     fn the_process_integrity_matches_its_elevation() {
         let integrity = Sid::current_integrity().unwrap().to_string_form().unwrap();
@@ -993,6 +1046,29 @@ mod tests {
             integrity.as_str(),
             "S-1-16-4096" | "S-1-16-8192" | "S-1-16-8448"
         );
-        assert_eq!(is_elevated().unwrap(), high, "{integrity}");
+        assert_eq!(
+            elevation().unwrap() != Elevation::Standard,
+            high,
+            "{integrity}"
+        );
+    }
+
+    // TokenIsElevated is also set when user account control is off or for the built-in Administrator, where the browser runs elevated too. Only a split token's full half is a start the person chose.
+    #[test]
+    fn only_a_chosen_elevation_counts_as_elevated() {
+        let cases = [
+            (FULL_TOKEN, true, Elevation::Elevated),
+            (LIMITED_TOKEN, false, Elevation::Standard),
+            (SINGLE_TOKEN, false, Elevation::Standard),
+            (SINGLE_TOKEN, true, Elevation::AlwaysAdministrator),
+        ];
+        for (kind, elevated, expected) in cases {
+            assert_eq!(
+                classify_elevation(kind, elevated).unwrap(),
+                expected,
+                "{kind}"
+            );
+        }
+        assert!(classify_elevation(0, false).is_err());
     }
 }

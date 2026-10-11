@@ -182,21 +182,32 @@ pub fn endpoint() -> Result<Endpoint, IpcError> {
     }
 }
 
-/// Whether the current process runs elevated ("Run as administrator" on Windows).
+/// How the current process holds administrator rights.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Elevation {
+    /// No administrator rights: a standard account, or an administrator's normal start. Every process a Linux user starts.
+    Standard,
+    /// Started with "Run as administrator": a step the person took for this one program, while the browser and everything else run without those rights.
+    Elevated,
+    /// The account has administrator rights in every process, because user account control is turned off or it is the built-in Administrator. The browser runs the same way, so there is no normal start to ask for.
+    AlwaysAdministrator,
+}
+
+/// How the current process holds administrator rights.
 ///
-/// The app must not serve its endpoint elevated: every program of the user could then drive a process with administrator rights. The listener already keeps unelevated programs out of an elevated server's pipe; the app also refuses to start elevated, since the browser extension could not reach it either. On Linux an elevated process (root) is another user, whose socket the user's programs cannot open, so this is always `false` there.
+/// The app must not serve its endpoint from an [`Elevation::Elevated`] start: it would hold rights that the programs talking to it do not. The listener already keeps unelevated programs out of an elevated server's pipe; the app also refuses such a start, since the browser extension could not reach it either. On Linux an elevated process (root) is another user, whose socket the user's programs cannot open, so this is always [`Elevation::Standard`] there.
 ///
 /// # Errors
 ///
 /// Fails when Windows cannot report the process's token.
-pub fn is_elevated() -> io::Result<bool> {
+pub fn elevation() -> io::Result<Elevation> {
     #[cfg(windows)]
     {
-        windows::is_elevated()
+        windows::elevation()
     }
     #[cfg(unix)]
     {
-        Ok(false)
+        Ok(Elevation::Standard)
     }
 }
 

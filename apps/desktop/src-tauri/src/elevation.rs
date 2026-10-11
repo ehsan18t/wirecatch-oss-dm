@@ -1,6 +1,8 @@
-//! Refuses to run with administrator rights. An elevated app could be driven by any program of the same user through its endpoint, and the browser extension, which runs unelevated, could not reach it anyway (docs/audit/ipc-bridge.md, IPB-1).
+//! Refuses a start with "Run as administrator". The app would hold rights the programs talking to it do not, and the browser extension, which runs without them, could not reach it anyway (docs/audit/ipc-bridge.md, IPB-1). An account that is always elevated (user account control off, or the built-in Administrator) is not refused: its browser runs elevated too, and there is no normal start to ask for.
 
 use std::io;
+
+use wirecatch_ipc::Elevation;
 
 /// Shown when Wirecatch is started with administrator rights.
 pub const ELEVATED_TITLE: &str = "Wirecatch does not need administrator rights";
@@ -16,11 +18,15 @@ pub enum Start {
     Refuse,
 }
 
-/// Decides from [`wirecatch_ipc::is_elevated`]. When Windows cannot say, the app starts: its endpoint is labelled at its own integrity level, so unelevated programs stay out even if the process were elevated.
-pub fn decide(elevated: io::Result<bool>) -> Start {
-    match elevated {
-        Ok(true) => Start::Refuse,
-        Ok(false) => Start::Continue,
+/// Decides from [`wirecatch_ipc::elevation`]. When Windows cannot say, the app starts: its endpoint is labelled at its own integrity level, so unelevated programs stay out even if the process were elevated.
+pub fn decide(elevation: io::Result<Elevation>) -> Start {
+    match elevation {
+        Ok(Elevation::Elevated) => Start::Refuse,
+        Ok(Elevation::Standard) => Start::Continue,
+        Ok(Elevation::AlwaysAdministrator) => {
+            tracing::info!("this account always runs with administrator rights");
+            Start::Continue
+        }
         Err(e) => {
             tracing::warn!("could not tell whether Wirecatch runs as administrator: {e}");
             Start::Continue
@@ -62,8 +68,14 @@ mod tests {
 
     #[test]
     fn an_elevated_start_is_refused() {
-        assert_eq!(decide(Ok(true)), Start::Refuse);
-        assert_eq!(decide(Ok(false)), Start::Continue);
+        assert_eq!(decide(Ok(Elevation::Elevated)), Start::Refuse);
+        assert_eq!(decide(Ok(Elevation::Standard)), Start::Continue);
+    }
+
+    // With user account control off, or as the built-in Administrator, every start is elevated, so refusing would lock the person out.
+    #[test]
+    fn an_account_that_is_always_elevated_still_starts() {
+        assert_eq!(decide(Ok(Elevation::AlwaysAdministrator)), Start::Continue);
     }
 
     #[test]

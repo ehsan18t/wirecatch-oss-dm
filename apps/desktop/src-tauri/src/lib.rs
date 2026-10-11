@@ -153,7 +153,7 @@ fn init_logging() {
 /// Starts the app.
 pub fn run() {
     init_logging();
-    if elevation::decide(wirecatch_ipc::is_elevated()) == elevation::Start::Refuse {
+    if elevation::decide(wirecatch_ipc::elevation()) == elevation::Start::Refuse {
         // Developers often work in an elevated terminal, and a debug build has its own endpoint, still labelled at its integrity level.
         if host::DEV_BUILD {
             tracing::warn!("running as administrator; a release build would refuse to start");
