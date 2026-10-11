@@ -156,7 +156,11 @@ async fn resumes_after_cancel_without_downloading_again() {
     );
     let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
 
-    server.configure(|c| c.data_bps = None);
+    // Keep the server throttled: unthrottled, a local server fills megabytes of
+    // socket buffers (several per connection with Linux autotuning) before an
+    // early-closed data connection is dropped, which counts as sent but is never
+    // read and would hide real waste.
+    server.configure(|c| c.data_bps = Some(8 * MIB as u64));
     let (path, bytes, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
     assert_eq!(bytes, data.len() as u64);
     assert!(resumed_from >= 2 * MIB as u64, "kept {resumed_from} bytes");
@@ -165,9 +169,10 @@ async fn resumes_after_cancel_without_downloading_again() {
         "downloaded bytes differ"
     );
     let sent_after = server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before;
+    let needed = data.len() as u64 - resumed_from;
     assert!(
-        sent_after < data.len() as u64,
-        "the second run fetched only what was missing ({sent_after} bytes)"
+        sent_after < needed + data.len() as u64 / 4,
+        "the second run fetched {sent_after} bytes to fill {needed}"
     );
     assert!(
         server

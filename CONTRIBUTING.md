@@ -36,6 +36,7 @@ Notes:
 - The desktop crate's tests run separately because Tauri's build script breaks other crates' doctests when everything links together.
 - `wirecatch-bridge/test-overrides` is for tests only and must never be enabled in a build.
 - The stream joining tests use a real ffmpeg when `WIRECATCH_TEST_FFMPEG` points to one; CI sets `WIRECATCH_REQUIRE_FFMPEG=1` so they cannot be skipped there.
+- On Windows or macOS with Docker running, `bash scripts/linux-test.sh` runs clippy and the whole Rust suite on Linux as a normal user (with a real ffmpeg), the same way CI does.
 - Tests never reach the internet. Servers in tests are local (see `crates/engine/tests/common`).
 
 ## Conventions
