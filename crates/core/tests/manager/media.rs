@@ -661,3 +661,45 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() {
     assert!(server.requests("fmt/video.mp4").is_empty());
     assert!(server.requests("fmt/audio.m4a").is_empty());
 }
+
+/// Stopping yt-dlp stops everything it started too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stopping_yt_dlp_stops_what_it_started() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    tell_tool(&h, "spawn-child", "1");
+    tell_tool(&h, "delay-ms", "30000");
+    let capture = media_capture(&server.url("watch/10"), MediaKind::Page, None);
+    h.manager.add_capture(capture.clone()).await.unwrap();
+    let heartbeat = crate::media_support::tool_dir(&h).join("heartbeat");
+    let beat = || {
+        std::fs::read_to_string(&heartbeat)
+            .ok()
+            .and_then(|t| t.trim().parse::<u32>().ok())
+    };
+    wait_until("the started program beats", || beat().filter(|b| *b > 2)).await;
+    // The browser takes the capture back while yt-dlp is still reading.
+    h.manager
+        .withdraw_capture(&capture.handover_id)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let before = beat();
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert_eq!(
+        beat(),
+        before,
+        "the program yt-dlp started is still running"
+    );
+
+    // yt-dlp ran in Wirecatch's own folder, without plugins.
+    let call = ytdlp_calls(&h).remove(0);
+    assert!(args(&call).contains(&"--no-plugin-dirs".to_string()));
+    let cwd = call["cwd"].as_str().unwrap().to_string();
+    assert!(
+        Path::new(&cwd).starts_with(h.root.path().join("data")),
+        "{cwd}"
+    );
+}

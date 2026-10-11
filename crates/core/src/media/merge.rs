@@ -44,6 +44,11 @@ pub(crate) fn arguments(video: &Path, audio: &Path, output: &Path) -> Vec<OsStri
     args
 }
 
+/// The folder ffmpeg runs in: the one it writes into.
+fn work_dir(output: &Path) -> &Path {
+    output.parent().unwrap_or(Path::new("."))
+}
+
 fn file_arg(path: &Path) -> OsString {
     let absolute: PathBuf = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let mut arg = OsString::from("file:");
@@ -60,7 +65,17 @@ pub(crate) async fn join(
     cancel: &CancellationToken,
 ) -> Result<Joined, UserError> {
     let args = arguments(video, audio, output);
-    match process::run(&tools.ffmpeg, &args, false, None, cancel, |_| {}).await {
+    match process::run(
+        &tools.ffmpeg,
+        &args,
+        work_dir(output),
+        false,
+        None,
+        cancel,
+        |_| {},
+    )
+    .await
+    {
         Ok(ran) if ran.success && output.is_file() => Ok(Joined::Done),
         Ok(ran) => Err(UserError {
             message: format!(

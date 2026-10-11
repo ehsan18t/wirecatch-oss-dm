@@ -6486,6 +6486,7 @@ dependencies = [
  "chrono",
  "dirs 7.0.0",
  "futures-util",
+ "libc",
  "lzma-rust2",
  "rusqlite",
  "serde",

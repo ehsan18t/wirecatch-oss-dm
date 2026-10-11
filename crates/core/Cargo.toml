@@ -26,9 +26,13 @@ tokio = { workspace = true, features = ["io-util", "process"] }
 tracing.workspace = true
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_System_JobObjects",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_System_Threading",
