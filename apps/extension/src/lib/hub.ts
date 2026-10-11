@@ -236,8 +236,9 @@ export class Hub {
         // One list per popup: the active tab's.
         stopWatching?.();
         stopWatching =
-          this.#deps.media?.watch(command.tabId, (view) => this.#post(channel, { type: 'media', view })) ??
-          null;
+          this.#deps.media?.watch(command.tabId, (view) =>
+            this.#post(channel, { type: 'media', view }),
+          ) ?? null;
         this.#post(channel, { type: 'result', id: request.id, ok: true });
         return;
       }
@@ -250,10 +251,17 @@ export class Hub {
               : { type: 'result', id: request.id, ok: true, message },
           ),
         (error: unknown) =>
-          this.#post(channel, { type: 'result', id: request.id, ok: false, message: describeError(error) }),
+          this.#post(channel, {
+            type: 'result',
+            id: request.id,
+            ok: false,
+            message: describeError(error),
+          }),
       );
     });
-    void this.#ready.then(() => this.#post(channel, { type: 'snapshot', snapshot: this.snapshot() }));
+    void this.#ready.then(() =>
+      this.#post(channel, { type: 'snapshot', snapshot: this.snapshot() }),
+    );
   }
 
   /**
@@ -338,7 +346,10 @@ export class Hub {
       );
     }
     if (!(await this.#siteAccess(url))) {
-      return this.#browserFallback(url, `The browser is downloading ${name} instead. ${NO_SITE_ACCESS}`);
+      return this.#browserFallback(
+        url,
+        `The browser is downloading ${name} instead. ${NO_SITE_ACCESS}`,
+      );
     }
     await this.#ready;
     const handoverId = this.#newHandoverId();
@@ -454,7 +465,8 @@ export class Hub {
     } catch {
       this.#setNotice({
         tone: 'error',
-        message: 'This item could not be downloaded. Try the browser\'s own "Save as" option instead.',
+        message:
+          'This item could not be downloaded. Try the browser\'s own "Save as" option instead.',
         at: this.#now(),
       });
       return 'failed';
@@ -680,7 +692,11 @@ export class Hub {
 
   #saveCache(): void {
     if (this.#live === null) return;
-    const value: CachedSettings = { settings: this.#live, queues: this.#queues, savedAt: this.#now() };
+    const value: CachedSettings = {
+      settings: this.#live,
+      queues: this.#queues,
+      savedAt: this.#now(),
+    };
     this.#cache = value;
     this.#deps.cache.save(value).catch(() => {
       // The cache is only for display; a failed write changes nothing else.
@@ -708,7 +724,11 @@ export class Hub {
       });
       return;
     }
-    if (result.uncertain && result.handoverId !== null && this.#markUncertain(result.handoverId, name)) {
+    if (
+      result.uncertain &&
+      result.handoverId !== null &&
+      this.#markUncertain(result.handoverId, name)
+    ) {
       return;
     }
     if (

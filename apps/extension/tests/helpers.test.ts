@@ -111,13 +111,19 @@ describe('protocol helpers', () => {
     expect(next.ignored_sites).toEqual(['a.com', 'c.com']);
     const replaced = applyPatch(
       start,
-      patchOf({ ignored_sites: ['x.com'], add_ignored_sites: ['y.com'], remove_ignored_sites: ['x.com'] }),
+      patchOf({
+        ignored_sites: ['x.com'],
+        add_ignored_sites: ['y.com'],
+        remove_ignored_sites: ['x.com'],
+      }),
     );
     expect(replaced.ignored_sites).toEqual(['y.com']);
   });
 
   it('turns an address into the site permission pattern', () => {
-    expect(originPattern('https://cdn.example.com:8443/a/b.zip?x=1')).toBe('https://cdn.example.com/*');
+    expect(originPattern('https://cdn.example.com:8443/a/b.zip?x=1')).toBe(
+      'https://cdn.example.com/*',
+    );
     expect(originPattern('http://example.com')).toBe('http://example.com/*');
     expect(originPattern('blob:https://example.com/1')).toBeNull();
     expect(originPattern('nonsense')).toBeNull();
@@ -178,7 +184,10 @@ describe('connection problems', () => {
     expect(disconnectMessage(undefined, { error: null })).toBeNull();
     // Chromium: runtime.lastError while the listener runs; the port has no error field.
     expect(
-      disconnectMessage({ message: 'Access to the specified native messaging host is forbidden.' }, {}),
+      disconnectMessage(
+        { message: 'Access to the specified native messaging host is forbidden.' },
+        {},
+      ),
     ).toBe('Access to the specified native messaging host is forbidden.');
     expect(disconnectMessage(null, null)).toBeNull();
     expect(disconnectMessage({ message: '' }, { error: { message: 42 } })).toBeNull();
@@ -187,7 +196,9 @@ describe('connection problems', () => {
   });
 
   it('recognizes a missing native host in Firefox and a port closed without a reason', () => {
-    expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe('host_missing');
+    expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe(
+      'host_missing',
+    );
     expect(classifyDisconnect(null)).toBe('disconnected');
   });
 
@@ -209,7 +220,9 @@ describe('connection problems', () => {
       'disconnected',
     ];
     for (const kind of kinds) {
-      expect(`${describeProblem(kind).title} ${describeProblem(kind).fix}`).not.toMatch(/reinstall/i);
+      expect(`${describeProblem(kind).title} ${describeProblem(kind).fix}`).not.toMatch(
+        /reinstall/i,
+      );
     }
   });
 
@@ -225,7 +238,7 @@ describe('connection problems', () => {
       const text = describeProblem(kind);
       expect(text.title.length).toBeGreaterThan(10);
       expect(text.fix.length).toBeGreaterThan(10);
-      expect(`${text.title}${text.fix}`).not.toContain('—');
+      expect(`${text.title}${text.fix}`).not.toContain('\u2014');
     }
   });
 });
@@ -261,9 +274,13 @@ describe('browser detection', () => {
   });
 
   it('falls back to the user agent', () => {
-    const ua = 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36 OPR/124.0';
+    const ua =
+      'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36 OPR/124.0';
     expect(detectBrowser({ userAgent: ua })).toEqual({ name: 'opera', version: '124.0' });
-    expect(detectBrowser({ userAgent: 'Something/1.0' })).toEqual({ name: 'unknown', version: null });
+    expect(detectBrowser({ userAgent: 'Something/1.0' })).toEqual({
+      name: 'unknown',
+      version: null,
+    });
   });
 });
 
@@ -301,7 +318,9 @@ describe('settings cache', () => {
     expect(await cache.load()).toEqual(value);
     expect(asCachedSettings({ settings: { capture_enabled: 'yes' }, savedAt: 1 })).toBeNull();
     expect(asCachedSettings('nope')).toBeNull();
-    expect(asCachedSettings({ settings: DEFAULT_SETTINGS, savedAt: 1, queues: [{ id: 'x' }] })).toEqual({
+    expect(
+      asCachedSettings({ settings: DEFAULT_SETTINGS, savedAt: 1, queues: [{ id: 'x' }] }),
+    ).toEqual({
       settings: DEFAULT_SETTINGS,
       queues: [],
       savedAt: 1,

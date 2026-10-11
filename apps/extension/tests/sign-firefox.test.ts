@@ -40,7 +40,9 @@ describe('signing the Firefox package', () => {
     expect(missingCredentials({ WEB_EXT_API_KEY: 'user:1:2', WEB_EXT_API_SECRET: ' ' })).toEqual([
       'WEB_EXT_API_SECRET',
     ]);
-    expect(missingCredentials({ WEB_EXT_API_KEY: 'user:1:2', WEB_EXT_API_SECRET: 'abc' })).toEqual([]);
+    expect(missingCredentials({ WEB_EXT_API_KEY: 'user:1:2', WEB_EXT_API_SECRET: 'abc' })).toEqual(
+      [],
+    );
   });
 
   it('stops before building, with the fix, when the credentials are not set', () => {

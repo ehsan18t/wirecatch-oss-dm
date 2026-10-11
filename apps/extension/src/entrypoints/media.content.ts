@@ -35,7 +35,11 @@ export default defineContentScript({
     const ask = (request: ContentRequest): Promise<unknown> => browser.runtime.sendMessage(request);
     const button = new MediaButton({
       check: async (info) => {
-        const answer = await ask({ type: MEDIA_CHECK, ...info, location: frameLocation(location.href) });
+        const answer = await ask({
+          type: MEDIA_CHECK,
+          ...info,
+          location: frameLocation(location.href),
+        });
         return (answer as { show?: unknown } | null)?.show === true;
       },
       download: async (request) => {
@@ -46,7 +50,10 @@ export default defineContentScript({
         });
         return isAnswer(answer)
           ? answer
-          : { ok: false, message: 'Wirecatch could not be reached. Open Wirecatch, then try again.' };
+          : {
+              ok: false,
+              message: 'Wirecatch could not be reached. Open Wirecatch, then try again.',
+            };
       },
     });
     // A reloaded or updated extension starts a fresh copy of this script: remove the old button.
@@ -58,7 +65,8 @@ export default defineContentScript({
     // Turning the setting on or off (in the popup or the app) takes effect at once.
     const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
       const change = changes[MEDIA_BUTTON_KEY];
-      if (area === 'local' && change !== undefined) button.setEnabled(mediaButtonOn(change.newValue));
+      if (area === 'local' && change !== undefined)
+        button.setEnabled(mediaButtonOn(change.newValue));
     };
     browser.storage.onChanged.addListener(onChanged);
     ctx.onInvalidated(() => browser.storage.onChanged.removeListener(onChanged));

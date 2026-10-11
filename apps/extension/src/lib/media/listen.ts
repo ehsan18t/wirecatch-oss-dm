@@ -21,7 +21,11 @@ interface Event<L> {
 /** The parts of the extension APIs this module uses. */
 export interface MediaEventApi {
   onResponseStarted: {
-    addListener(listener: (details: ObservedResponse) => void, filter: RequestFilter, extra: string[]): void;
+    addListener(
+      listener: (details: ObservedResponse) => void,
+      filter: RequestFilter,
+      extra: string[],
+    ): void;
   };
   onTabRemoved: Event<(tabId: number) => void>;
   onTabUpdated: {

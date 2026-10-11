@@ -54,7 +54,14 @@ export default defineConfig({
       // webRequest: observe responses (never block or change them) to spot video and audio,
       // that is HLS and DASH manifests and media files, so the media button and the popup can
       // offer them. No blocking, declarativeNetRequest or webRequestBlocking permission is asked for.
-      permissions: ['downloads', 'nativeMessaging', 'cookies', 'contextMenus', 'storage', 'webRequest'],
+      permissions: [
+        'downloads',
+        'nativeMessaging',
+        'cookies',
+        'contextMenus',
+        'storage',
+        'webRequest',
+      ],
       // Needed by the cookies API to read the cookies of the site a download comes from,
       // to read the address of the current tab for "Ignore this site", for webRequest to
       // see media responses, and for the media button's content script.

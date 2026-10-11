@@ -191,7 +191,10 @@ export class MediaCenter {
    * Answers a message from the media button. Returns null for messages that are not
    * for media (so other listeners can answer them).
    */
-  handleContentMessage(raw: unknown, sender: ContentSender): Promise<CheckAnswer | DownloadAnswer> | null {
+  handleContentMessage(
+    raw: unknown,
+    sender: ContentSender,
+  ): Promise<CheckAnswer | DownloadAnswer> | null {
     const request = asContentRequest(raw);
     if (request === null) return null;
     return this.#ready.then((): Promise<CheckAnswer | DownloadAnswer> =>
@@ -200,7 +203,11 @@ export class MediaCenter {
   }
 
   /** What the button sends for an element in the frame that now shows `frameUrl` (`currentFrameUrl`). */
-  #targetFor(request: ContentRequest, sender: ContentSender, frameUrl: string | null): MediaTarget | null {
+  #targetFor(
+    request: ContentRequest,
+    sender: ContentSender,
+    frameUrl: string | null,
+  ): MediaTarget | null {
     const tabId = sender.tab?.id;
     if (tabId === undefined || tabId < 0) return null;
     const tabUrl = sender.tab?.url ?? null;
@@ -224,7 +231,8 @@ export class MediaCenter {
   }
 
   #check(request: ContentRequest, sender: ContentSender): Promise<CheckAnswer> {
-    if (sender.tab?.incognito === true || this.#ignored(sender)) return Promise.resolve({ show: false });
+    if (sender.tab?.incognito === true || this.#ignored(sender))
+      return Promise.resolve({ show: false });
     const frameUrl = currentFrameUrl(sender, request.location);
     return Promise.resolve({ show: this.#targetFor(request, sender, frameUrl) !== null });
   }
@@ -254,12 +262,14 @@ export class MediaCenter {
       return { tabId, page: 'other', entries: [] };
     }
     if (tab.incognito) return { tabId, page: 'private', entries: [] };
-    const entries = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).map((target) => ({
-      key: target.key,
-      kind: target.kind,
-      size: target.size,
-      ...describeTarget(target),
-    }));
+    const entries = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).map(
+      (target) => ({
+        key: target.key,
+        kind: target.kind,
+        size: target.size,
+        ...describeTarget(target),
+      }),
+    );
     return { tabId, page: 'web', entries };
   }
 

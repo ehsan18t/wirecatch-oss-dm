@@ -25,7 +25,10 @@ export function patchOf(changes: SettingsChange): ExtensionSettingsPatch {
  * Applies a patch the same way the app does (`ExtensionSettings::apply`): the
  * whole list first, then additions (skipping ones already there), then removals.
  */
-export function applyPatch(settings: ExtensionSettings, patch: ExtensionSettingsPatch): ExtensionSettings {
+export function applyPatch(
+  settings: ExtensionSettings,
+  patch: ExtensionSettingsPatch,
+): ExtensionSettings {
   let sites = patch.ignored_sites ?? settings.ignored_sites;
   for (const host of patch.add_ignored_sites ?? []) {
     if (!sites.includes(host)) sites = [...sites, host];

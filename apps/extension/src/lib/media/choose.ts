@@ -71,7 +71,10 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
  *
  * Null means nothing downloadable is known, so the button is not shown.
  */
-export function chooseTarget(items: readonly MediaItem[], context: ButtonContext): MediaTarget | null {
+export function chooseTarget(
+  items: readonly MediaItem[],
+  context: ButtonContext,
+): MediaTarget | null {
   const src = context.elementSrc;
   if (src !== null) {
     const loaded = items.find((i) => i.url === src);

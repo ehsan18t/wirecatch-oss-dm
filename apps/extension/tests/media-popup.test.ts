@@ -16,9 +16,20 @@ import { PopupModel } from '../src/lib/popup/model.svelte';
 import { FakeApp, FakeDownloads, MemoryCache, channelPair, flush } from './fakes';
 
 const TABS = new Map<number, TabInfo>([
-  [1, { url: 'https://example.com/watch', title: 'A video', incognito: false, cookieStoreId: null }],
+  [
+    1,
+    { url: 'https://example.com/watch', title: 'A video', incognito: false, cookieStoreId: null },
+  ],
   [2, { url: 'https://example.com/secret', title: 'Secret', incognito: true, cookieStoreId: null }],
-  [4, { url: 'https://www.youtube.com/watch?v=abc', title: 'A talk', incognito: false, cookieStoreId: null }],
+  [
+    4,
+    {
+      url: 'https://www.youtube.com/watch?v=abc',
+      title: 'A talk',
+      incognito: false,
+      cookieStoreId: null,
+    },
+  ],
 ]);
 
 interface Opened {
@@ -38,7 +49,10 @@ afterEach(() => {
 
 async function openPopup(
   tabId: number,
-  options: { configure?: (app: FakeApp, registry: MediaRegistry) => void; shortcut?: string | null } = {},
+  options: {
+    configure?: (app: FakeApp, registry: MediaRegistry) => void;
+    shortcut?: string | null;
+  } = {},
 ): Promise<Opened> {
   const app = new FakeApp();
   const registry = new MediaRegistry();
@@ -46,7 +60,12 @@ async function openPopup(
   const client = new NativeClient({
     transport: app,
     hello: () =>
-      Promise.resolve({ client: 'extension', client_version: '0.1.0', protocol_version: 1, browser: null }),
+      Promise.resolve({
+        client: 'extension',
+        client_version: '0.1.0',
+        protocol_version: 1,
+        browser: null,
+      }),
     backoffMs: [60_000],
   });
   const media: MediaCenter = new MediaCenter({
@@ -74,7 +93,11 @@ async function openPopup(
   model.watchMedia(tabId);
   await flush();
   const { container } = render(App, {
-    props: { model, currentUrl: TABS.get(tabId)?.url ?? null, mediaShortcut: options.shortcut ?? null },
+    props: {
+      model,
+      currentUrl: TABS.get(tabId)?.url ?? null,
+      mediaShortcut: options.shortcut ?? null,
+    },
   });
   const result = { app, client, registry, model, container };
   opened.push(result);
@@ -95,11 +118,15 @@ describe('Media on this page', () => {
     const { app, model } = await openPopup(1);
     const region = section();
     expect(within(region).getByText(/No video or audio found on this page yet/)).toBeTruthy();
-    expect(within(region).getByText(/Turn it off with "Show download button on videos" below/)).toBeTruthy();
+    expect(
+      within(region).getByText(/Turn it off with "Show download button on videos" below/),
+    ).toBeTruthy();
 
     await model.update({ show_media_button: false });
     await waitFor(() =>
-      expect(within(section()).getByText(/Turn on "Show download button on videos" below/)).toBeTruthy(),
+      expect(
+        within(section()).getByText(/Turn on "Show download button on videos" below/),
+      ).toBeTruthy(),
     );
     expect(app.settings.show_media_button).toBe(false);
   });
@@ -143,7 +170,9 @@ describe('Media on this page', () => {
     expect(
       within(region).getByRole('button', { name: 'Download Video stream (HLS): cdn.example.com' }),
     ).toBeTruthy();
-    expect(within(region).getByRole('button', { name: 'Download Audio file: song.mp3' })).toBeTruthy();
+    expect(
+      within(region).getByRole('button', { name: 'Download Audio file: song.mp3' }),
+    ).toBeTruthy();
   });
 
   it('sends an item with the keyboard alone and says it was sent', async () => {
@@ -157,15 +186,22 @@ describe('Media on this page', () => {
           audio: false,
         }),
     });
-    const button = await within(section()).findByRole('button', { name: /^Download Video stream \(DASH\)/ });
+    const button = await within(section()).findByRole('button', {
+      name: /^Download Video stream \(DASH\)/,
+    });
     const user = userEvent.setup();
     // Reach the button with Tab from the top of the popup.
     for (let i = 0; i < 10 && document.activeElement !== button; i += 1) await user.tab();
     expect(document.activeElement).toBe(button);
     await user.keyboard('{Enter}');
-    await waitFor(() => expect(within(section()).getByRole('status').textContent).toBe('Sent to Wirecatch.'));
+    await waitFor(() =>
+      expect(within(section()).getByRole('status').textContent).toBe('Sent to Wirecatch.'),
+    );
     const call = app.calls('add_download')[0];
-    expect(call?.method === 'add_download' && call.params.media).toEqual({ kind: 'dash', title: 'A video' });
+    expect(call?.method === 'add_download' && call.params.media).toEqual({
+      kind: 'dash',
+      title: 'A video',
+    });
     expect(call?.method === 'add_download' && call.params.source).toBe('media_button');
   });
 

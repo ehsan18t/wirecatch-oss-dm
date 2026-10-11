@@ -48,13 +48,20 @@ describe('sites', () => {
 
   it('tells same-site from cross-site requests', () => {
     const url = 'https://cdn.example.com/file.zip';
-    expect(isCrossSite(url, { initiator: 'https://www.example.com/page', navigation: true })).toBe(false);
+    expect(isCrossSite(url, { initiator: 'https://www.example.com/page', navigation: true })).toBe(
+      false,
+    );
     expect(isCrossSite(url, { initiator: 'https://evil.test/page', navigation: true })).toBe(true);
     // Scheme counts, as in Chromium.
-    expect(isCrossSite(url, { initiator: 'http://www.example.com/page', navigation: true })).toBe(true);
+    expect(isCrossSite(url, { initiator: 'http://www.example.com/page', navigation: true })).toBe(
+      true,
+    );
     // Neighbours on shared hosting are different sites.
     expect(
-      isCrossSite('https://alice.github.io/f.zip', { initiator: 'https://bob.github.io/', navigation: true }),
+      isCrossSite('https://alice.github.io/f.zip', {
+        initiator: 'https://bob.github.io/',
+        navigation: true,
+      }),
     ).toBe(true);
     // Unknown starting page: treated as cross-site.
     expect(isCrossSite(url, { initiator: null, navigation: true })).toBe(true);
@@ -82,7 +89,12 @@ describe('cookiesToSend', () => {
 
   it('sends every cookie for a same-site request', () => {
     const context: CookieContext = { initiator: 'https://example.com/account', navigation: true };
-    expect(names(cookiesToSend(JAR, url, context))).toEqual(['none', 'lax', 'strict', 'unspecified']);
+    expect(names(cookiesToSend(JAR, url, context))).toEqual([
+      'none',
+      'lax',
+      'strict',
+      'unspecified',
+    ]);
   });
 
   it('never sends SameSite=Strict cookies across sites, but sends Lax for a top-level navigation', () => {
@@ -109,9 +121,9 @@ describe('cookiesToSend', () => {
 
   it('keeps cookies whose SameSite state the browser does not report', () => {
     const cookies = [{ name: 'old', value: '1' }];
-    expect(cookiesToSend(cookies, url, { initiator: 'https://other.test/', navigation: false })).toEqual(
-      cookies,
-    );
+    expect(
+      cookiesToSend(cookies, url, { initiator: 'https://other.test/', navigation: false }),
+    ).toEqual(cookies);
   });
 });
 
@@ -142,7 +154,11 @@ describe('cookieQueries', () => {
       }),
     ).toEqual([
       { url, partitionKey: { topLevelSite: 'https://example.co.uk' } },
-      { url, partitionKey: { topLevelSite: 'https://example.co.uk' }, firstPartyDomain: 'example.co.uk' },
+      {
+        url,
+        partitionKey: { topLevelSite: 'https://example.co.uk' },
+        firstPartyDomain: 'example.co.uk',
+      },
       { url },
       { url, firstPartyDomain: 'example.co.uk' },
     ]);

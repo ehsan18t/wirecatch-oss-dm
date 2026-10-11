@@ -97,7 +97,10 @@ function isInternal(url: string | null): boolean {
  * 8. A file type list is set and the file does not match it (or its type is unknown): keep.
  * 9. The size is known and below the minimum: keep. An unknown size is captured.
  */
-export function shouldCapture(item: CaptureCandidate, settings: ExtensionSettings): CaptureDecision {
+export function shouldCapture(
+  item: CaptureCandidate,
+  settings: ExtensionSettings,
+): CaptureDecision {
   if (!settings.capture_enabled) return skip('capture_off');
   if (!item.inProgress) return skip('not_in_progress');
   if (item.startedByExtension) return skip('started_by_extension');

@@ -47,7 +47,17 @@ const SEGMENT_TYPES = new Set(['video/mp2t', 'video/iso.segment', 'audio/iso.seg
 const SEGMENT_EXTENSIONS = new Set(['ts', 'm4s', 'm4f', 'm4v-seg', 'cmfv', 'cmfa', 'aac-seg']);
 
 const VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', 'avi', 'flv', '3gp']);
-const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'ogg', 'oga', 'opus', 'wav', 'flac', 'aac', 'weba']);
+const AUDIO_EXTENSIONS = new Set([
+  'mp3',
+  'm4a',
+  'ogg',
+  'oga',
+  'opus',
+  'wav',
+  'flac',
+  'aac',
+  'weba',
+]);
 
 /**
  * Resource types whose video or audio responses are whole files. Media fetched by
@@ -177,7 +187,8 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
   }
   if (
     (mime !== null && DASH_TYPES.has(mime)) ||
-    (byUrl?.kind === 'dash' && (isPlainText(mime) || mime === 'application/xml' || mime === 'text/xml'))
+    (byUrl?.kind === 'dash' &&
+      (isPlainText(mime) || mime === 'application/xml' || mime === 'text/xml'))
   ) {
     return { kind: 'dash', url: response.url, mime, size: null, audio: false };
   }
@@ -196,7 +207,13 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
       audio: mime.startsWith('audio/'),
     };
   } else if (byUrl?.kind === 'direct' && isGenericMime(mime)) {
-    direct = { kind: 'direct', url: response.url, mime, size: sizeOf(response), audio: byUrl.audio };
+    direct = {
+      kind: 'direct',
+      url: response.url,
+      mime,
+      size: sizeOf(response),
+      audio: byUrl.audio,
+    };
   }
   if (direct?.size != null && direct.size < MIN_DIRECT_MEDIA_BYTES) return null;
   return direct;

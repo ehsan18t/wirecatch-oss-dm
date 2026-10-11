@@ -31,7 +31,9 @@ function isSettings(value: unknown): value is ExtensionSettings {
 function isQueue(value: unknown): value is QueueSummary {
   if (typeof value !== 'object' || value === null) return false;
   const q = value as Record<string, unknown>;
-  return typeof q.id === 'number' && typeof q.name === 'string' && typeof q.is_default === 'boolean';
+  return (
+    typeof q.id === 'number' && typeof q.name === 'string' && typeof q.is_default === 'boolean'
+  );
 }
 
 /** Reads a cache entry back, or null if it is missing or written by an incompatible version. */

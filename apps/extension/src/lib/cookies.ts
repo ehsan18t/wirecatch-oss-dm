@@ -172,7 +172,11 @@ export function cookiesToSend<T extends CookieLike>(
  * query without `firstPartyDomain`, so a second query adds it; browsers too old
  * to know `partitionKey` reject it, so the last queries leave it out.
  */
-export function cookieQueries(url: string, storeId: string | null, context: CookieContext): CookieQuery[] {
+export function cookieQueries(
+  url: string,
+  storeId: string | null,
+  context: CookieContext,
+): CookieQuery[] {
   const base: CookieQuery = storeId === null ? { url } : { url, storeId };
   const topLevel = context.navigation ? null : siteOf(context.topLevel);
   const firstParty = topLevel ?? siteOf(url);

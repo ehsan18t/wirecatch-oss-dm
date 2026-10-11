@@ -21,7 +21,13 @@
     mediaShortcut?: string | null;
   }
 
-  let { model, currentUrl, siteAccess = true, requestSiteAccess, mediaShortcut = null }: Props = $props();
+  let {
+    model,
+    currentUrl,
+    siteAccess = true,
+    requestSiteAccess,
+    mediaShortcut = null,
+  }: Props = $props();
 
   let accessGranted = $state<boolean | null>(null);
   const hasSiteAccess = $derived(accessGranted ?? siteAccess);
@@ -46,7 +52,9 @@
   const settings = $derived(model.settings ?? EMPTY);
   const queues = $derived(snapshot?.queues ?? []);
   /** The default queue was deleted in the app (or renamed away): say so instead of quietly showing another. */
-  const queueMissing = $derived(queues.length > 0 && !queues.some((q) => q.id === settings.default_queue));
+  const queueMissing = $derived(
+    queues.length > 0 && !queues.some((q) => q.id === settings.default_queue),
+  );
   const editable = $derived(model.editable);
   const status = $derived(snapshot?.status ?? { state: 'connecting' as const });
   const problem = $derived(status.state === 'unavailable' ? status.problem : null);
@@ -73,7 +81,8 @@
 
   const cachedNote = $derived.by(() => {
     if (snapshot === null || !snapshot.settingsFromCache) return null;
-    const when = snapshot.cachedAt === null ? '' : ` from ${new Date(snapshot.cachedAt).toLocaleString()}`;
+    const when =
+      snapshot.cachedAt === null ? '' : ` from ${new Date(snapshot.cachedAt).toLocaleString()}`;
     return `Showing your last saved settings${when}. They can be changed again once Wirecatch is connected.`;
   });
 
@@ -159,7 +168,9 @@
     {#if snapshot?.notice}
       <section class="panel panel-{snapshot.notice.tone}" aria-label="Message">
         <p>{snapshot.notice.message}</p>
-        <button type="button" class="link-button" onclick={() => model.dismissNotice()}>Dismiss</button>
+        <button type="button" class="link-button" onclick={() => model.dismissNotice()}
+          >Dismiss</button
+        >
       </section>
     {/if}
 
@@ -261,7 +272,9 @@
 
         <div class="field">
           <label class="field-label" for="file-types">File types to capture</label>
-          <p class="help" id="file-types-help">For example: zip, exe, mp4. Leave empty for every type.</p>
+          <p class="help" id="file-types-help">
+            For example: zip, exe, mp4. Leave empty for every type.
+          </p>
           <input
             id="file-types"
             type="text"
@@ -282,7 +295,9 @@
 
         <div class="field">
           <label class="field-label" for="min-size">Minimum file size</label>
-          <p class="help" id="min-size-help">Smaller files stay in the browser. 0 means every size.</p>
+          <p class="help" id="min-size-help">
+            Smaller files stay in the browser. 0 means every size.
+          </p>
           <div class="size">
             <input
               bind:this={sizeInput}
@@ -300,7 +315,12 @@
               }}
             />
             <label for="min-size-unit" class="visually-hidden">Size unit</label>
-            <select bind:this={unitSelect} id="min-size-unit" value={size.unit} onchange={commitSizeFields}>
+            <select
+              bind:this={unitSelect}
+              id="min-size-unit"
+              value={size.unit}
+              onchange={commitSizeFields}
+            >
               {#each SIZE_UNITS as u (u.unit)}
                 <option value={u.unit}>{u.unit}</option>
               {/each}
@@ -323,10 +343,20 @@
 
   <footer class="footer">
     <div class="actions">
-      <button type="button" class="button" disabled={!model.connected} onclick={() => model.pauseAll()}>
+      <button
+        type="button"
+        class="button"
+        disabled={!model.connected}
+        onclick={() => model.pauseAll()}
+      >
         Pause all
       </button>
-      <button type="button" class="button" disabled={!model.connected} onclick={() => model.resumeAll()}>
+      <button
+        type="button"
+        class="button"
+        disabled={!model.connected}
+        onclick={() => model.resumeAll()}
+      >
         Resume all
       </button>
     </div>
@@ -455,10 +485,10 @@
     background:
       linear-gradient(var(--bg) 30%, transparent) center top / 100% 24px no-repeat local,
       linear-gradient(transparent, var(--bg) 70%) center bottom / 100% 24px no-repeat local,
-      radial-gradient(farthest-side at 50% 0, var(--scroll-shadow), transparent) center top / 100% 10px
-        no-repeat scroll,
-      radial-gradient(farthest-side at 50% 100%, var(--scroll-shadow), transparent) center bottom / 100% 10px
-        no-repeat scroll,
+      radial-gradient(farthest-side at 50% 0, var(--scroll-shadow), transparent) center top / 100%
+        10px no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, var(--scroll-shadow), transparent) center bottom /
+        100% 10px no-repeat scroll,
       var(--bg);
   }
 

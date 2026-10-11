@@ -26,7 +26,9 @@ function box(left: number, top: number, width: number, height: number): Box {
 
 describe('placeButton', () => {
   it('puts the button in the top right corner of a video, inside it', () => {
-    expect(placeButton(box(100, 50, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE)).toEqual({
+    expect(
+      placeButton(box(100, 50, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
+    ).toEqual({
       top: 58,
       left: 620,
     });
@@ -38,29 +40,45 @@ describe('placeButton', () => {
       placeButton(box(100, -290, 640, 360), { audio: false, controls: true }, VIEWPORT, SIZE),
     ).toBeNull();
     // Without native controls the same sliver has room.
-    expect(placeButton(box(100, -290, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE)).toEqual({
+    expect(
+      placeButton(box(100, -290, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE),
+    ).toEqual({
       top: 8,
       left: 620,
     });
   });
 
   it('puts the button just above an audio player, or below it at the top of the page', () => {
-    expect(placeButton(box(40, 200, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE)).toEqual({
+    expect(
+      placeButton(box(40, 200, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
+    ).toEqual({
       top: 164,
       left: 228,
     });
-    expect(placeButton(box(40, 10, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE)).toEqual({
+    expect(
+      placeButton(box(40, 10, 300, 54), { audio: true, controls: true }, VIEWPORT, SIZE),
+    ).toEqual({
       top: 68,
       left: 228,
     });
   });
 
   it('shows nothing for small, hidden or off-screen elements, and stays inside the viewport', () => {
-    expect(placeButton(box(0, 0, 120, 68), { audio: false, controls: false }, VIEWPORT, SIZE)).toBeNull();
-    expect(placeButton(box(0, 0, 0, 0), { audio: true, controls: true }, VIEWPORT, SIZE)).toBeNull();
-    expect(placeButton(box(0, 900, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE)).toBeNull();
-    expect(placeButton(box(-700, 0, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE)).toBeNull();
-    expect(placeButton(box(600, 100, 800, 400), { audio: false, controls: false }, VIEWPORT, SIZE)).toEqual({
+    expect(
+      placeButton(box(0, 0, 120, 68), { audio: false, controls: false }, VIEWPORT, SIZE),
+    ).toBeNull();
+    expect(
+      placeButton(box(0, 0, 0, 0), { audio: true, controls: true }, VIEWPORT, SIZE),
+    ).toBeNull();
+    expect(
+      placeButton(box(0, 900, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE),
+    ).toBeNull();
+    expect(
+      placeButton(box(-700, 0, 640, 360), { audio: false, controls: false }, VIEWPORT, SIZE),
+    ).toBeNull();
+    expect(
+      placeButton(box(600, 100, 800, 400), { audio: false, controls: false }, VIEWPORT, SIZE),
+    ).toEqual({
       top: 108,
       left: 904,
     });
@@ -88,7 +106,9 @@ function fakeDeps(): Fake {
       },
       download: (request) => {
         fake.downloads.push(request);
-        return fake.answer instanceof Error ? Promise.reject(fake.answer) : Promise.resolve(fake.answer);
+        return fake.answer instanceof Error
+          ? Promise.reject(fake.answer)
+          : Promise.resolve(fake.answer);
       },
       // jsdom marks every event as untrusted; the real check is tested on its own below.
       isTrusted: () => true,
@@ -97,7 +117,11 @@ function fakeDeps(): Fake {
   return fake;
 }
 
-function media(tag: 'video' | 'audio', rect: Box, attrs: Record<string, string> = {}): HTMLMediaElement {
+function media(
+  tag: 'video' | 'audio',
+  rect: Box,
+  attrs: Record<string, string> = {},
+): HTMLMediaElement {
   const el = document.createElement(tag);
   for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, value);
   el.getBoundingClientRect = () => ({ ...rect, x: rect.left, y: rect.top, toJSON: () => rect });
@@ -191,12 +215,18 @@ describe('MediaButton', () => {
 
   it('ignores decorative background videos, playing or hovered', async () => {
     const fake = fakeDeps();
-    const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/bg.mp4', muted: '', loop: '' });
+    const video = media('video', box(0, 0, 640, 360), {
+      src: 'https://e.com/bg.mp4',
+      muted: '',
+      loop: '',
+    });
     const b = start(fake);
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(b.state).toBe('none');
-    video.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }));
+    video.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }),
+    );
     await settle();
     expect(b.state).toBe('none');
     video.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
@@ -210,11 +240,15 @@ describe('MediaButton', () => {
     const overlay = document.createElement('div');
     document.body.append(overlay);
     const b = start(fake);
-    overlay.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }));
+    overlay.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }),
+    );
     await settle();
     expect(b.state).toBe('shown');
 
-    overlay.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 900, clientY: 700 }));
+    overlay.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 900, clientY: 700 }),
+    );
     await settle();
     expect(b.state).toBe('none');
   });
@@ -248,7 +282,9 @@ describe('MediaButton', () => {
     expect(host).not.toContain('pointer-events:auto');
     expect(/\.w\{[^}]*pointer-events:none/.test(SHADOW_CSS)).toBe(true);
     expect(/\.b\{[^}]*pointer-events:auto/.test(SHADOW_CSS)).toBe(true);
-    expect(/\.w\.idle \.b:not\(:focus-visible\)\{[^}]*pointer-events:none/.test(SHADOW_CSS)).toBe(true);
+    expect(/\.w\.idle \.b:not\(:focus-visible\)\{[^}]*pointer-events:none/.test(SHADOW_CSS)).toBe(
+      true,
+    );
   });
 
   it('comes back when the pointer moves over the button, and stays while it is on it', async () => {
@@ -260,17 +296,26 @@ describe('MediaButton', () => {
     clock += ACTIVE_MS + 10;
     b.setEnabled(true);
     expect(b.state).toBe('idle');
-    b.host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 580, clientY: 20 }));
+    b.host.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 580, clientY: 20 }),
+    );
     await settle();
     expect(b.state).toBe('shown');
 
     // An audio player's button sits outside the element: being on it keeps it shown.
     video.dispatchEvent(new Event('pause'));
-    const audio = media('audio', box(40, 300, 300, 54), { src: 'https://e.com/b.mp3', controls: '' });
-    audio.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 100, clientY: 320 }));
+    const audio = media('audio', box(40, 300, 300, 54), {
+      src: 'https://e.com/b.mp3',
+      controls: '',
+    });
+    audio.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 100, clientY: 320 }),
+    );
     await settle();
     expect(b.state).toBe('shown');
-    b.host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 280 }));
+    b.host.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 280 }),
+    );
     await settle();
     expect(b.state).toBe('shown');
   });
@@ -295,7 +340,12 @@ describe('MediaButton', () => {
     document.body.append(player);
     const video = document.createElement('video');
     video.src = 'https://e.com/a.mp4';
-    video.getBoundingClientRect = () => ({ ...box(0, 0, 640, 360), x: 0, y: 0, toJSON: () => null });
+    video.getBoundingClientRect = () => ({
+      ...box(0, 0, 640, 360),
+      x: 0,
+      y: 0,
+      toJSON: () => null,
+    });
     player.attachShadow({ mode: 'open' }).append(video);
     const b = start(fake);
     // Media events are not composed: only a listener on the element itself hears this.
@@ -312,7 +362,12 @@ describe('MediaButton', () => {
     const video = document.createElement('video');
     video.src = 'https://e.com/a.mp4';
     video.controls = true;
-    video.getBoundingClientRect = () => ({ ...box(0, 0, 640, 360), x: 0, y: 0, toJSON: () => null });
+    video.getBoundingClientRect = () => ({
+      ...box(0, 0, 640, 360),
+      x: 0,
+      y: 0,
+      toJSON: () => null,
+    });
     player.attachShadow({ mode: 'open' }).append(video);
     video.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
     await settle();
@@ -357,7 +412,12 @@ describe('MediaButton', () => {
       await settle();
     }
     expect(writes).toEqual([]);
-    video.getBoundingClientRect = () => ({ ...box(0, 100, 640, 360), x: 0, y: 100, toJSON: () => null });
+    video.getBoundingClientRect = () => ({
+      ...box(0, 100, 640, 360),
+      x: 0,
+      y: 100,
+      toJSON: () => null,
+    });
     document.dispatchEvent(new Event('scroll'));
     await settle();
     observer.disconnect();
@@ -420,10 +480,20 @@ describe('MediaButton', () => {
       const b = start(fakeDeps());
       const player = document.createElement('div');
       player.tabIndex = 0;
-      player.getBoundingClientRect = () => ({ ...box(0, 0, 640, 400), x: 0, y: 0, toJSON: () => null });
+      player.getBoundingClientRect = () => ({
+        ...box(0, 0, 640, 400),
+        x: 0,
+        y: 0,
+        toJSON: () => null,
+      });
       const page = document.createElement('main');
       page.tabIndex = -1;
-      page.getBoundingClientRect = () => ({ ...box(0, 0, 1024, 3000), x: 0, y: 0, toJSON: () => null });
+      page.getBoundingClientRect = () => ({
+        ...box(0, 0, 1024, 3000),
+        x: 0,
+        y: 0,
+        toJSON: () => null,
+      });
       document.body.append(page);
       page.append(player);
       const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
@@ -446,7 +516,10 @@ describe('MediaButton', () => {
 
   it('keeps its message readable after the video stops being in use, until it expires', async () => {
     const fake = fakeDeps();
-    fake.answer = { ok: false, message: 'Wirecatch could not be reached. Open Wirecatch, then try again.' };
+    fake.answer = {
+      ok: false,
+      message: 'Wirecatch could not be reached. Open Wirecatch, then try again.',
+    };
     const saved = { ...MESSAGE_MS };
     MESSAGE_MS.error = 150;
     try {
@@ -501,7 +574,10 @@ describe('MediaButton', () => {
   it('only offers audio that shows its own player, placed above it', async () => {
     const fake = fakeDeps();
     const hidden = media('audio', box(40, 300, 300, 54), { src: 'https://e.com/a.mp3' });
-    const shownAudio = media('audio', box(40, 200, 300, 54), { src: 'https://e.com/b.mp3', controls: '' });
+    const shownAudio = media('audio', box(40, 200, 300, 54), {
+      src: 'https://e.com/b.mp3',
+      controls: '',
+    });
     const b = start(fake);
     hidden.dispatchEvent(new Event('play'));
     await settle();
@@ -528,15 +604,22 @@ describe('MediaButton', () => {
     expect(b.status.textContent).toBe('Sent to Wirecatch.');
     expect(b.button.textContent).toBe('Download');
 
-    fake.answer = { ok: false, message: 'Wirecatch could not be reached. Open Wirecatch, then try again.' };
+    fake.answer = {
+      ok: false,
+      message: 'Wirecatch could not be reached. Open Wirecatch, then try again.',
+    };
     b.button.click();
     await settle();
-    expect(b.status.textContent).toBe('Wirecatch could not be reached. Open Wirecatch, then try again.');
+    expect(b.status.textContent).toBe(
+      'Wirecatch could not be reached. Open Wirecatch, then try again.',
+    );
 
     fake.answer = new Error('Extension context invalidated.');
     b.button.click();
     await settle();
-    expect(b.status.textContent).toBe('Wirecatch could not be reached. Reload this page, then try again.');
+    expect(b.status.textContent).toBe(
+      'Wirecatch could not be reached. Reload this page, then try again.',
+    );
   });
 
   it('ignores clicks a page script made up', async () => {
@@ -562,7 +645,9 @@ describe('MediaButton', () => {
     video.dispatchEvent(new Event('play'));
     await settle();
     b.button.click();
-    b.button.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, composed: true }));
+    b.button.dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', bubbles: true, composed: true }),
+    );
     await settle();
     expect(seen).not.toHaveBeenCalled();
     document.removeEventListener('click', seen);

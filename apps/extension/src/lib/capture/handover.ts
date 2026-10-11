@@ -65,13 +65,20 @@ export async function submit(download: NewDownload, deps: SubmitDeps): Promise<S
   try {
     added = await deps.addDownload(download);
   } catch (error) {
-    const lost = error instanceof RequestError && (error.kind === 'timeout' || error.kind === 'disconnected');
-    if (!lost) return { taken: false, reason: 'refused', detail: messageOf(error), uncertain: false };
+    const lost =
+      error instanceof RequestError && (error.kind === 'timeout' || error.kind === 'disconnected');
+    if (!lost)
+      return { taken: false, reason: 'refused', detail: messageOf(error), uncertain: false };
     let outcome: WithdrawOutcome;
     try {
       outcome = await deps.withdraw(download.handover_id);
     } catch (withdrawError) {
-      return { taken: false, reason: 'no_answer', detail: messageOf(withdrawError), uncertain: true };
+      return {
+        taken: false,
+        reason: 'no_answer',
+        detail: messageOf(withdrawError),
+        uncertain: true,
+      };
     }
     if (outcome === 'already_started') return { taken: true, action: 'started', via: 'withdraw' };
     return { taken: false, reason: 'no_answer', detail: messageOf(error), uncertain: false };
@@ -246,7 +253,10 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
 }
 
 /** Resumes a paused browser download; if that fails, finds out whether it is still waiting or already gone. */
-export async function resumeBrowserCopy(downloads: DownloadControl, id: number): Promise<BrowserCopy> {
+export async function resumeBrowserCopy(
+  downloads: DownloadControl,
+  id: number,
+): Promise<BrowserCopy> {
   try {
     await downloads.resume(id);
     return 'resumed';

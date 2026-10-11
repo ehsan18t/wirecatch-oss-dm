@@ -245,7 +245,7 @@ describe('a video whose server refused it for now', () => {
     };
     const detail = statusDetail(full, 'Main');
     expect(detail).toContain('tries again by itself at 20:51');
-    expect(detail).not.toContain('—');
+    expect(detail).not.toContain('\u2014');
   });
 
   it('shows no stale refusal once the download moved on', () => {

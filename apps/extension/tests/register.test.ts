@@ -4,7 +4,11 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
-import { registerCapture, type CaptureHandler, type DownloadEvents } from '../src/lib/capture/register';
+import {
+  registerCapture,
+  type CaptureHandler,
+  type DownloadEvents,
+} from '../src/lib/capture/register';
 import { Hub } from '../src/lib/hub';
 import { NativeClient } from '../src/lib/native/client';
 import { FakeApp, FakeDownloads, MemoryCache, downloadItem, flush } from './fakes';
@@ -13,7 +17,10 @@ type Determining = (item: DownloadItemLike, suggest: () => void) => boolean | un
 
 function chromiumEvents(): {
   events: DownloadEvents;
-  fire: (item: DownloadItemLike) => { suggest: ReturnType<typeof vi.fn>; returned: boolean | undefined };
+  fire: (item: DownloadItemLike) => {
+    suggest: ReturnType<typeof vi.fn>;
+    returned: boolean | undefined;
+  };
 } {
   let listener: Determining | null = null;
   const events: DownloadEvents = {
@@ -54,7 +61,12 @@ async function realHub(
   const client = new NativeClient({
     transport: app,
     hello: () =>
-      Promise.resolve({ client: 'extension', client_version: '0.1.0', protocol_version: 1, browser: null }),
+      Promise.resolve({
+        client: 'extension',
+        client_version: '0.1.0',
+        protocol_version: 1,
+        browser: null,
+      }),
     backoffMs: [60_000],
   });
   stopped.push(client);
@@ -74,7 +86,9 @@ async function realHub(
 describe('registerCapture on Chromium', () => {
   it('uses onDeterminingFilename and tells Chromium to wait for suggest', async () => {
     const { events, fire } = chromiumEvents();
-    expect(registerCapture(events, { onDownload: () => Promise.resolve(null) })).toBe('determining_filename');
+    expect(registerCapture(events, { onDownload: () => Promise.resolve(null) })).toBe(
+      'determining_filename',
+    );
     const { suggest, returned } = fire(downloadItem());
     expect(returned).toBe(true);
     await flush();

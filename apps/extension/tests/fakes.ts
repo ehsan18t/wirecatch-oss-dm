@@ -15,7 +15,12 @@ import type {
 } from '@wirecatch/protocol';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
 import type { DownloadState } from '../src/lib/capture/handover';
-import type { BrowserDownloads, CachedSettings, InFlightStore, SettingsCache } from '../src/lib/hub';
+import type {
+  BrowserDownloads,
+  CachedSettings,
+  InFlightStore,
+  SettingsCache,
+} from '../src/lib/hub';
 import type { Channel } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 import { applyPatch } from '../src/lib/protocol';
@@ -54,8 +59,12 @@ export class FakeNativePort implements NativePort {
 
   constructor(private readonly app: FakeApp) {}
 
-  onMessage = { addListener: (listener: Listener<unknown>) => void this.#messageListeners.push(listener) };
-  onDisconnect = { addListener: (listener: () => void) => void this.#disconnectListeners.push(listener) };
+  onMessage = {
+    addListener: (listener: Listener<unknown>) => void this.#messageListeners.push(listener),
+  };
+  onDisconnect = {
+    addListener: (listener: () => void) => void this.#disconnectListeners.push(listener),
+  };
 
   postMessage(message: Message): void {
     if (this.closed) throw new Error('Attempting to use a disconnected port object');
@@ -85,7 +94,8 @@ export class FakeNativePort implements NativePort {
   }
 }
 
-export type AddBehavior = AddAction | { error: ProtocolError } | 'hang' | 'disconnect' | 'unexpected_action';
+export type AddBehavior =
+  AddAction | { error: ProtocolError } | 'hang' | 'disconnect' | 'unexpected_action';
 
 /** The bridge plus the app, answering the protocol like the real ones would. */
 export class FakeApp implements NativeTransport {

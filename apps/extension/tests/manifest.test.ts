@@ -11,14 +11,17 @@ import { describe, expect, it } from 'vitest';
 import type { ConfigEnv, UserManifest } from 'wxt';
 import config, { STORE_MODE } from '../wxt.config';
 
-const ids = JSON.parse(readFileSync(resolve(__dirname, '../../../config/extension-ids.json'), 'utf8')) as {
+const ids = JSON.parse(
+  readFileSync(resolve(__dirname, '../../../config/extension-ids.json'), 'utf8'),
+) as {
   chromium_public_key: string;
   firefox_id: string;
 };
 
 async function manifest(env: Omit<ConfigEnv, 'manifestVersion'>): Promise<UserManifest> {
   const fn = config.manifest;
-  if (typeof fn !== 'function') throw new Error('wxt.config.ts should build the manifest in a function');
+  if (typeof fn !== 'function')
+    throw new Error('wxt.config.ts should build the manifest in a function');
   return await fn({ ...env, manifestVersion: 3 });
 }
 

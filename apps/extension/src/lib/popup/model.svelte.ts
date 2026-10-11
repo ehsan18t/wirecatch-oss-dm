@@ -106,7 +106,10 @@ export class PopupModel {
   async downloadMedia(key: string): Promise<void> {
     const view = this.media;
     if (view === null || this.mediaStatus[key]?.tone === 'busy') return;
-    this.mediaStatus = { ...this.mediaStatus, [key]: { tone: 'busy', text: 'Sending to Wirecatch…' } };
+    this.mediaStatus = {
+      ...this.mediaStatus,
+      [key]: { tone: 'busy', text: 'Sending to Wirecatch…' },
+    };
     const result = await this.#send({ type: 'download_media', tabId: view.tabId, key });
     this.mediaStatus = {
       ...this.mediaStatus,
@@ -118,7 +121,9 @@ export class PopupModel {
 
   async #simple(command: PopupCommand, success: string): Promise<void> {
     const result = await this.#send(command);
-    this.feedback = result.ok ? { tone: 'success', text: success } : { tone: 'error', text: result.message };
+    this.feedback = result.ok
+      ? { tone: 'success', text: success }
+      : { tone: 'error', text: result.message };
   }
 
   #send(command: PopupCommand): Promise<Result> {

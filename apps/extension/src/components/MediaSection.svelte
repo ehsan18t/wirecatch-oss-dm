@@ -23,7 +23,12 @@
       : `On a page, press ${shortcut} to send its video or audio to Wirecatch, or use the Download buttons in this list.`,
   );
 
-  const BADGES: Record<MediaKind, string> = { hls: 'HLS', dash: 'DASH', direct: 'File', page: 'Page' };
+  const BADGES: Record<MediaKind, string> = {
+    hls: 'HLS',
+    dash: 'DASH',
+    direct: 'File',
+    page: 'Page',
+  };
 
   const buttonHint = $derived.by(() => {
     if (buttonOn === true) {

@@ -52,7 +52,8 @@ export function placeButton(
   size: { width: number; height: number },
 ): { top: number; left: number } | null {
   if (target.width <= 0 || target.height <= 0) return null;
-  if (!kind.audio && (target.width < MIN_VIDEO.width || target.height < MIN_VIDEO.height)) return null;
+  if (!kind.audio && (target.width < MIN_VIDEO.width || target.height < MIN_VIDEO.height))
+    return null;
   if (
     target.bottom <= 0 ||
     target.right <= 0 ||
@@ -69,7 +70,8 @@ export function placeButton(
     left = target.right - size.width;
   } else {
     top = Math.max(target.top, 0) + INSET;
-    const room = Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : INSET);
+    const room =
+      Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : INSET);
     if (top + size.height > room) return null;
     left = Math.min(target.right, viewport.width) - size.width - INSET;
   }
@@ -229,7 +231,10 @@ export class MediaButton {
   readonly #doc: Document;
   readonly #now: () => number;
   readonly #tracked = new Set<HTMLMediaElement>();
-  readonly #checks = new WeakMap<HTMLMediaElement, { src: string | null; show: boolean; at: number }>();
+  readonly #checks = new WeakMap<
+    HTMLMediaElement,
+    { src: string | null; show: boolean; at: number }
+  >();
   readonly #asking = new WeakSet<HTMLMediaElement>();
   readonly #cleanups: Array<() => void> = [];
   #enabled = false;
@@ -370,7 +375,8 @@ export class MediaButton {
       if (typeof root.elementsFromPoint !== 'function') return;
       for (const el of root.elementsFromPoint(x, y)) {
         if (el instanceof HTMLMediaElement) this.#track(el);
-        else if (el.shadowRoot !== null && !queue.includes(el.shadowRoot)) queue.push(el.shadowRoot);
+        else if (el.shadowRoot !== null && !queue.includes(el.shadowRoot))
+          queue.push(el.shadowRoot);
       }
     }
   }
@@ -419,7 +425,11 @@ export class MediaButton {
    * main area, say) is not a player, so focus there does not count.
    */
   #mediaFor(target: EventTarget | null): HTMLMediaElement | null {
-    if (!(target instanceof Element) || target === this.#doc.body || target === this.#doc.documentElement) {
+    if (
+      !(target instanceof Element) ||
+      target === this.#doc.body ||
+      target === this.#doc.documentElement
+    ) {
       return null;
     }
     const usable = (el: HTMLMediaElement): boolean => isCandidate(el) && !isDecorative(el);
@@ -442,7 +452,8 @@ export class MediaButton {
    * browser carry on from there, so the button sits right after the player.
    */
   #onKey(event: KeyboardEvent): void {
-    if (event.key !== 'Tab' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key !== 'Tab' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey)
+      return;
     const focused = event.composedPath()[0] ?? event.target;
     const reachable = this.#state === 'shown' || this.#state === 'idle';
     if (!reachable || this.#target === null || this.#mediaFor(focused) !== this.#target) return;
@@ -509,7 +520,11 @@ export class MediaButton {
   #allowed(el: HTMLMediaElement): boolean {
     const { src } = elementInfo(el);
     const known = this.#checks.get(el);
-    if (known !== undefined && known.src === src && (known.show || this.#now() - known.at < RECHECK_MS)) {
+    if (
+      known !== undefined &&
+      known.src === src &&
+      (known.show || this.#now() - known.at < RECHECK_MS)
+    ) {
       return known.show;
     }
     if (!this.#asking.has(el)) {
@@ -624,10 +639,16 @@ export class MediaButton {
     this.#say('', false);
     let answer: DownloadAnswer;
     try {
-      answer = await this.#deps.download({ ...elementInfo(target), title: mediaTitle(target, this.#doc) });
+      answer = await this.#deps.download({
+        ...elementInfo(target),
+        title: mediaTitle(target, this.#doc),
+      });
     } catch {
       // The extension was updated or reloaded since this page loaded.
-      answer = { ok: false, message: 'Wirecatch could not be reached. Reload this page, then try again.' };
+      answer = {
+        ok: false,
+        message: 'Wirecatch could not be reached. Reload this page, then try again.',
+      };
     }
     this.#busy = false;
     this.button.removeAttribute('aria-busy');

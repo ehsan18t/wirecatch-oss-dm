@@ -72,15 +72,16 @@ describe('shouldCapture', () => {
   });
 
   describe('addresses', () => {
-    it.each(['blob:https://example.com/0b8f1c2e', 'data:text/plain;base64,aGVsbG8=', 'BLOB:https://x.org/1'])(
-      'never captures %s',
-      (url) => {
-        expect(shouldCapture(candidate({ url }), settings())).toEqual({
-          capture: false,
-          reason: 'blob_or_data_url',
-        });
-      },
-    );
+    it.each([
+      'blob:https://example.com/0b8f1c2e',
+      'data:text/plain;base64,aGVsbG8=',
+      'BLOB:https://x.org/1',
+    ])('never captures %s', (url) => {
+      expect(shouldCapture(candidate({ url }), settings())).toEqual({
+        capture: false,
+        reason: 'blob_or_data_url',
+      });
+    });
 
     it.each([
       'chrome://settings/',
@@ -136,7 +137,9 @@ describe('shouldCapture', () => {
 
     it('does not cover look-alike hosts', () => {
       const s = settings({ ignored_sites: ['example.net'] });
-      expect(shouldCapture(candidate({ url: 'https://badexample.net/x.zip' }), s)).toEqual({ capture: true });
+      expect(shouldCapture(candidate({ url: 'https://badexample.net/x.zip' }), s)).toEqual({
+        capture: true,
+      });
     });
 
     it('keeps downloads started on an ignored page even when the file comes from elsewhere', () => {
@@ -154,8 +157,15 @@ describe('shouldCapture', () => {
     });
 
     it('matches entries written loosely (case, scheme, wildcard, trailing slash)', () => {
-      for (const entry of ['CDN.Example.NET', 'https://cdn.example.net/', '*.example.net', 'example.net.']) {
-        expect(shouldCapture(candidate({ referrer: null }), settings({ ignored_sites: [entry] }))).toEqual({
+      for (const entry of [
+        'CDN.Example.NET',
+        'https://cdn.example.net/',
+        '*.example.net',
+        'example.net.',
+      ]) {
+        expect(
+          shouldCapture(candidate({ referrer: null }), settings({ ignored_sites: [entry] })),
+        ).toEqual({
           capture: false,
           reason: 'ignored_site',
         });
@@ -164,7 +174,9 @@ describe('shouldCapture', () => {
 
     it('ignores the port when matching', () => {
       const s = settings({ ignored_sites: ['localhost'] });
-      expect(shouldCapture(candidate({ url: 'http://localhost:8080/a.zip', referrer: null }), s)).toEqual({
+      expect(
+        shouldCapture(candidate({ url: 'http://localhost:8080/a.zip', referrer: null }), s),
+      ).toEqual({
         capture: false,
         reason: 'ignored_site',
       });
@@ -178,7 +190,9 @@ describe('shouldCapture', () => {
 
   describe('file types', () => {
     it('captures every type when the list is empty', () => {
-      expect(shouldCapture(candidate({ fileName: 'anything.weird' }), settings())).toEqual({ capture: true });
+      expect(shouldCapture(candidate({ fileName: 'anything.weird' }), settings())).toEqual({
+        capture: true,
+      });
     });
 
     it('captures a listed type', () => {
@@ -250,15 +264,21 @@ describe('shouldCapture', () => {
       expect(shouldCapture(candidate({ danger: null }), settings())).toEqual({ capture: true });
     });
 
-    it.each(['file', 'url', 'content', 'uncommon', 'host', 'unwanted', 'asyncScanning', 'blockedTooLarge'])(
-      'never captures a download the browser flags as %s, so its warning applies',
-      (danger) => {
-        expect(shouldCapture(candidate({ danger }), settings())).toEqual({
-          capture: false,
-          reason: 'browser_flagged',
-        });
-      },
-    );
+    it.each([
+      'file',
+      'url',
+      'content',
+      'uncommon',
+      'host',
+      'unwanted',
+      'asyncScanning',
+      'blockedTooLarge',
+    ])('never captures a download the browser flags as %s, so its warning applies', (danger) => {
+      expect(shouldCapture(candidate({ danger }), settings())).toEqual({
+        capture: false,
+        reason: 'browser_flagged',
+      });
+    });
 
     it.each([
       'setup.exe',
@@ -316,7 +336,9 @@ describe('shouldCapture', () => {
     it.each(['setup.exe.zip', 'notes.txt', 'movie.mp4', 'exe', 'program.exe.pdf', 'disk.iso'])(
       'captures %s, which is not a program',
       (fileName) => {
-        expect(shouldCapture(candidate({ fileName, mime: null }), settings())).toEqual({ capture: true });
+        expect(shouldCapture(candidate({ fileName, mime: null }), settings())).toEqual({
+          capture: true,
+        });
       },
     );
   });

@@ -32,7 +32,9 @@
 
 <section class="sites" aria-labelledby="sites-title">
   <h2 id="sites-title" class="field-label">Sites to ignore</h2>
-  <p id="sites-help" class="help">Downloads from these sites (and their subdomains) stay in the browser.</p>
+  <p id="sites-help" class="help">
+    Downloads from these sites (and their subdomains) stay in the browser.
+  </p>
 
   {#if sites.length === 0}
     <p class="empty">No sites ignored.</p>

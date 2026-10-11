@@ -4,7 +4,9 @@ import type { DownloadItemLike } from './candidate';
 export interface DownloadEvents {
   /** Chromium only; Firefox does not have it, whatever the shared typings say. */
   onDeterminingFilename?: {
-    addListener(listener: (item: DownloadItemLike, suggest: () => void) => boolean | undefined): void;
+    addListener(
+      listener: (item: DownloadItemLike, suggest: () => void) => boolean | undefined,
+    ): void;
   };
   onCreated: { addListener(listener: (item: DownloadItemLike) => void): void };
 }

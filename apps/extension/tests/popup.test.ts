@@ -38,7 +38,12 @@ async function openPopup(
   const client = new NativeClient({
     transport: app,
     hello: () =>
-      Promise.resolve({ client: 'extension', client_version: '0.1.0', protocol_version: 1, browser: null }),
+      Promise.resolve({
+        client: 'extension',
+        client_version: '0.1.0',
+        protocol_version: 1,
+        browser: null,
+      }),
     backoffMs: [60_000],
   });
   const hub = new Hub({
@@ -58,7 +63,8 @@ async function openPopup(
   const { container } = render(App, {
     props: {
       model,
-      currentUrl: options.currentUrl === undefined ? 'https://www.example.com/page' : options.currentUrl,
+      currentUrl:
+        options.currentUrl === undefined ? 'https://www.example.com/page' : options.currentUrl,
       siteAccess: options.siteAccess ?? true,
       requestSiteAccess: options.requestSiteAccess,
     },
@@ -96,7 +102,10 @@ describe('popup', () => {
       },
     });
     expect(screen.getByText('Connected')).toBeTruthy();
-    expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty(
+      'checked',
+      true,
+    );
     const ask = screen.getByRole('switch', { name: 'Show a window before each download' });
     expect(ask).toHaveProperty('checked', true);
     expect(ask.getAttribute('aria-describedby')).toBe('ask-before-help');
@@ -109,7 +118,10 @@ describe('popup', () => {
       'value',
       'zip, iso',
     );
-    expect(screen.getByRole('spinbutton', { name: 'Minimum file size' })).toHaveProperty('value', '5');
+    expect(screen.getByRole('spinbutton', { name: 'Minimum file size' })).toHaveProperty(
+      'value',
+      '5',
+    );
     expect(screen.getByRole('combobox', { name: 'Size unit' })).toHaveProperty('value', 'MB');
     expect(screen.getByText('ads.example.org')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Ignore this site' })).toBeTruthy();
@@ -124,10 +136,9 @@ describe('popup', () => {
     expect(app.calls('update_extension_settings')).toEqual([
       { method: 'update_extension_settings', params: patchOf({ ask_before_download: true }) },
     ]);
-    expect(screen.getByRole('switch', { name: 'Show a window before each download' })).toHaveProperty(
-      'checked',
-      true,
-    );
+    expect(
+      screen.getByRole('switch', { name: 'Show a window before each download' }),
+    ).toHaveProperty('checked', true);
   });
 
   it('updates an open popup when the setting changes in the app', async () => {
@@ -140,7 +151,10 @@ describe('popup', () => {
       ignored_sites: ['new.example'],
     });
     await waitFor(() => expect(capture).toHaveProperty('checked', false));
-    expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty('value', 'mp4');
+    expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty(
+      'value',
+      'mp4',
+    );
     expect(screen.getByText('new.example')).toBeTruthy();
     // Same element: the popup was updated in place, not reopened.
     expect(screen.getByRole('switch', { name: 'Capture downloads' })).toBe(capture);
@@ -157,8 +171,14 @@ describe('popup', () => {
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
     // One site added and removed, never the whole list.
     expect(app.calls('update_extension_settings')).toEqual([
-      { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: ['example.com'] }) },
-      { method: 'update_extension_settings', params: patchOf({ remove_ignored_sites: ['example.com'] }) },
+      {
+        method: 'update_extension_settings',
+        params: patchOf({ add_ignored_sites: ['example.com'] }),
+      },
+      {
+        method: 'update_extension_settings',
+        params: patchOf({ remove_ignored_sites: ['example.com'] }),
+      },
     ]);
   });
 
@@ -167,7 +187,9 @@ describe('popup', () => {
     // Another browser adds a site; this popup has not heard about it yet.
     app.settings = { ...app.settings, ignored_sites: ['other.example'] };
     await userEvent.setup().click(screen.getByRole('button', { name: 'Ignore this site' }));
-    await waitFor(() => expect(app.settings.ignored_sites).toEqual(['other.example', 'example.com']));
+    await waitFor(() =>
+      expect(app.settings.ignored_sites).toEqual(['other.example', 'example.com']),
+    );
   });
 
   it('cannot ignore a browser page', async () => {
@@ -198,7 +220,9 @@ describe('popup', () => {
     const site = screen.getByRole('textbox', { name: 'Site to ignore' });
     await user.type(site, 'https://Tracker.example.net/x{Enter}');
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['tracker.example.net']));
-    await user.click(await screen.findByRole('button', { name: 'Stop ignoring tracker.example.net' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Stop ignoring tracker.example.net' }),
+    );
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
     expect(app.calls('update_extension_settings').slice(-2)).toEqual([
       {
@@ -220,7 +244,10 @@ describe('popup', () => {
     await user.keyboard('zip, ex');
     app.changeSettings({ capture_enabled: false });
     await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty('checked', false),
+      expect(screen.getByRole('switch', { name: 'Capture downloads' })).toHaveProperty(
+        'checked',
+        false,
+      ),
     );
     expect(types).toHaveProperty('value', 'zip, ex');
     await user.keyboard('e{Enter}');
@@ -239,7 +266,9 @@ describe('popup', () => {
     expect(select).toHaveProperty('value', '9');
     expect(screen.getByRole('option', { name: 'Missing queue (choose another)' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Main (default)' })).toBeTruthy();
-    expect(screen.getByText('This queue no longer exists in Wirecatch. Choose another one.')).toBeTruthy();
+    expect(
+      screen.getByText('This queue no longer exists in Wirecatch. Choose another one.'),
+    ).toBeTruthy();
     expect(select.getAttribute('aria-invalid')).toBe('true');
     await userEvent.setup().selectOptions(select, 'Main (default)');
     await waitFor(() => expect(app.settings.default_queue).toBe(1));
@@ -255,7 +284,9 @@ describe('popup', () => {
         return Promise.resolve(true);
       },
     });
-    expect(screen.getByRole('heading', { name: 'Wirecatch cannot read website cookies.' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Wirecatch cannot read website cookies.' }),
+    ).toBeTruthy();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Allow access' }));
     expect(asked).toBe(1);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Allow access' })).toBeNull());
@@ -266,7 +297,9 @@ describe('popup', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(screen.getByRole('alert').textContent).toContain('Type a site such as example.com.');
-    expect(screen.getByRole('textbox', { name: 'Site to ignore' }).getAttribute('aria-invalid')).toBe('true');
+    expect(
+      screen.getByRole('textbox', { name: 'Site to ignore' }).getAttribute('aria-invalid'),
+    ).toBe('true');
     expect(app.calls('update_extension_settings')).toHaveLength(0);
   });
 
@@ -274,9 +307,13 @@ describe('popup', () => {
     const { app } = await openPopup();
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Pause all' }));
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('All downloads are paused.'));
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('All downloads are paused.'),
+    );
     await user.click(screen.getByRole('button', { name: 'Resume all' }));
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('All downloads are resuming.'));
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('All downloads are resuming.'),
+    );
     expect(app.calls('pause_all')).toHaveLength(1);
     expect(app.calls('resume_all')).toHaveLength(1);
   });
@@ -306,14 +343,19 @@ describe('popup', () => {
     });
     expect(screen.getByText('Not connected')).toBeTruthy();
     expect(
-      screen.getByRole('heading', { name: 'Wirecatch is not installed, or not set up for this browser.' }),
+      screen.getByRole('heading', {
+        name: 'Wirecatch is not installed, or not set up for this browser.',
+      }),
     ).toBeTruthy();
     expect(
       screen.getByText('Install Wirecatch, or open it once so it can connect to this browser.'),
     ).toBeTruthy();
     expect(screen.getByText('Details: Specified native messaging host not found.')).toBeTruthy();
     expect(screen.getByText(/Showing your last saved settings/)).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty('value', 'iso');
+    expect(screen.getByRole('textbox', { name: 'File types to capture' })).toHaveProperty(
+      'value',
+      'iso',
+    );
     expect(isDisabled(screen.getByRole('switch', { name: 'Capture downloads' }))).toBe(true);
     expect(isDisabled(screen.getByRole('textbox', { name: 'File types to capture' }))).toBe(true);
     expect(isDisabled(screen.getByRole('button', { name: 'Ignore this site' }))).toBe(true);
@@ -336,10 +378,14 @@ describe('popup', () => {
       },
     });
     expect(
-      screen.getByRole('heading', { name: 'This copy of the extension is not the one Wirecatch trusts.' }),
+      screen.getByRole('heading', {
+        name: 'This copy of the extension is not the one Wirecatch trusts.',
+      }),
     ).toBeTruthy();
     expect(
-      screen.getByText('Install the extension from the Wirecatch website or store, or update Wirecatch.'),
+      screen.getByText(
+        'Install the extension from the Wirecatch website or store, or update Wirecatch.',
+      ),
     ).toBeTruthy();
     expect(
       screen.getByText('Details: Access to the specified native messaging host is forbidden.'),
@@ -376,7 +422,9 @@ describe('popup', () => {
         app.helloError = { code: 'app_unavailable', message: 'Could not start Wirecatch.' };
       },
     });
-    expect(screen.getByRole('heading', { name: 'The Wirecatch app could not be started.' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'The Wirecatch app could not be started.' }),
+    ).toBeTruthy();
     expect(screen.getByText('Open the Wirecatch app yourself, then click Try again.')).toBeTruthy();
   });
 
@@ -414,7 +462,11 @@ describe('popup accessibility', () => {
   it('has no axe violations when the app is unreachable', async () => {
     const { container } = await openPopup({
       configure: (app, cache) => {
-        cache.value = { settings: { ...app.settings, ignored_sites: ['a.example'] }, queues: [], savedAt: 1 };
+        cache.value = {
+          settings: { ...app.settings, ignored_sites: ['a.example'] },
+          queues: [],
+          savedAt: 1,
+        };
         app.hostMissing = 'Specified native messaging host not found.';
       },
     });

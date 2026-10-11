@@ -58,7 +58,10 @@ export function itemKey(kind: DetectedKind, url: string): string {
 }
 
 /** A saved item; `frameId` and `lastActive` may be missing in lists saved by an earlier version. */
-type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & { frameId?: number; lastActive?: number };
+type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & {
+  frameId?: number;
+  lastActive?: number;
+};
 
 function isItem(value: unknown): value is SavedItem {
   if (typeof value !== 'object' || value === null) return false;
@@ -140,7 +143,8 @@ export class MediaRegistry {
         mime: detection.mime ?? old.mime,
         size: detection.size ?? old.size,
       };
-      if (merged.url === old.url && merged.mime === old.mime && merged.size === old.size) return false;
+      if (merged.url === old.url && merged.mime === old.mime && merged.size === old.size)
+        return false;
       const next = [...list];
       next[index] = merged;
       this.#set(tabId, next);
@@ -148,7 +152,8 @@ export class MediaRegistry {
     }
     if (detection.kind === 'hls') {
       const stream = list.find(
-        (i) => i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
+        (i) =>
+          i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
       );
       if (stream !== undefined) {
         // A variant of a listed stream: not listed, but it keeps the stream's window open.
@@ -156,7 +161,8 @@ export class MediaRegistry {
         return false;
       }
     }
-    const kept = list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
+    const kept =
+      list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
     this.#set(tabId, [...kept, { ...detection, key, seenAt: now, frameId, lastActive: now }]);
     return true;
   }
@@ -220,18 +226,24 @@ export class MediaRegistry {
     const { v, tabs } = saved as { v?: unknown; tabs?: unknown };
     if (v !== 1 || !Array.isArray(tabs)) return;
     for (const entry of tabs as unknown[]) {
-      if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1])) continue;
+      if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1]))
+        continue;
       const tabId = entry[0];
       if (liveTabs !== undefined && !liveTabs.has(tabId)) continue;
       const savedPage: unknown = entry[2];
       const page = typeof savedPage === 'string' ? savedPage : undefined;
       const known = this.#pages.get(tabId);
       if (page !== known && (liveTabs !== undefined || known !== undefined)) continue;
-      const savedItems = (entry[1] as unknown[])
-        .filter(isItem)
-        .map((i): MediaItem => ({ ...i, frameId: i.frameId ?? 0, lastActive: i.lastActive ?? i.seenAt }));
+      const savedItems = (entry[1] as unknown[]).filter(isItem).map((i): MediaItem => ({
+        ...i,
+        frameId: i.frameId ?? 0,
+        lastActive: i.lastActive ?? i.seenAt,
+      }));
       const current = this.#tabs.get(tabId) ?? [];
-      const merged = [...savedItems, ...current.filter((c) => !savedItems.some((s) => s.key === c.key))];
+      const merged = [
+        ...savedItems,
+        ...current.filter((c) => !savedItems.some((s) => s.key === c.key)),
+      ];
       if (merged.length === 0) continue;
       if (page !== undefined) this.#pages.set(tabId, page);
       this.#set(tabId, merged.slice(-MAX_ITEMS_PER_TAB));

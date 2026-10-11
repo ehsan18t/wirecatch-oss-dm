@@ -101,7 +101,10 @@ describe('NativeClient', () => {
     const port = app.openPort;
     const huge = 'x'.repeat(MAX_MESSAGE_BYTES);
     const error = await client
-      .request({ method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) }, 1_000)
+      .request(
+        { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) },
+        1_000,
+      )
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ kind: 'too_large' });
     expect((error as RequestError).message).toContain('too large');
@@ -118,7 +121,10 @@ describe('NativeClient', () => {
     // About 0.4 M characters, but each is 3 bytes in UTF-8: over 1 MiB.
     const wide = '€'.repeat(400_000);
     const error = await client
-      .request({ method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [wide] }) }, 1_000)
+      .request(
+        { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [wide] }) },
+        1_000,
+      )
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ kind: 'too_large' });
   });
@@ -232,7 +238,10 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.openPort?.browserDisconnect('Native host has exited.');
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'disconnected' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'disconnected' },
+    });
     await vi.advanceTimersByTimeAsync(1_000);
     expect(client.status.state).toBe('connected');
     app.openPort?.browserDisconnect('Native host has exited.');
@@ -263,7 +272,10 @@ describe('NativeClient', () => {
       .request({ method: 'update_extension_settings', params: {} as never }, 1_000)
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'app_unavailable' } });
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'app_unavailable' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'app_unavailable' },
+    });
     // The extension itself closes the port: the bridge never reconnects to the app within one port.
     expect(first.closedByExtension).toBe(true);
     expect(app.ports).toHaveLength(1);
@@ -305,11 +317,17 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
     await flush();
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'version_mismatch' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'version_mismatch' },
+    });
     app.protocolVersion = 1;
     app.helloError = { code: 'unsupported_version', message: 'Protocol 1 is not supported.' };
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'version_mismatch' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'version_mismatch' },
+    });
   });
 
   it('gives up on a hello that never gets an answer and tries again', async () => {
@@ -317,7 +335,10 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'disconnected' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'disconnected' },
+    });
     app.answers = true;
     await vi.advanceTimersByTimeAsync(1_000);
     expect(client.status.state).toBe('connected');
@@ -377,6 +398,9 @@ describe('NativeClient', () => {
     });
     client.start();
     await flush();
-    expect(client.status).toMatchObject({ state: 'unavailable', problem: { kind: 'disconnected' } });
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'disconnected' },
+    });
   });
 });

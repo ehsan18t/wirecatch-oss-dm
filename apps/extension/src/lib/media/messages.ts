@@ -19,7 +19,8 @@ export interface AnnounceMessage {
 
 export function asAnnounce(raw: unknown): AnnounceMessage | null {
   const m = raw as Partial<AnnounceMessage> | null;
-  if (m?.type !== MEDIA_ANNOUNCE || typeof m.ok !== 'boolean' || typeof m.message !== 'string') return null;
+  if (m?.type !== MEDIA_ANNOUNCE || typeof m.ok !== 'boolean' || typeof m.message !== 'string')
+    return null;
   return { type: MEDIA_ANNOUNCE, ok: m.ok, message: m.message.slice(0, MAX_TITLE_LENGTH) };
 }
 
@@ -97,6 +98,7 @@ export function asContentRequest(raw: unknown): ContentRequest | null {
   if (location !== null && !(typeof location === 'string' && isWebSrc(location))) return null;
   const info = { src, audio, location };
   if (m.type === MEDIA_CHECK) return { type: MEDIA_CHECK, ...info };
-  if (!(title === null || (typeof title === 'string' && title.length <= MAX_TITLE_LENGTH))) return null;
+  if (!(title === null || (typeof title === 'string' && title.length <= MAX_TITLE_LENGTH)))
+    return null;
   return { type: MEDIA_DOWNLOAD, title, ...info };
 }

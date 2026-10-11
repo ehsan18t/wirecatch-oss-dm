@@ -12,13 +12,15 @@ describe('refererFor (strict-origin-when-cross-origin)', () => {
   });
 
   it('sends only the origin to another origin, including another subdomain or port', () => {
-    expect(refererFor('https://cdn.example.com/a.zip', 'https://example.com/account?token=abc')).toBe(
-      'https://example.com/',
-    );
+    expect(
+      refererFor('https://cdn.example.com/a.zip', 'https://example.com/account?token=abc'),
+    ).toBe('https://example.com/');
     expect(refererFor('https://example.com:8443/a.zip', 'https://example.com/account')).toBe(
       'https://example.com/',
     );
-    expect(refererFor('https://example.com/a.zip', 'http://example.com/page')).toBe('http://example.com/');
+    expect(refererFor('https://example.com/a.zip', 'http://example.com/page')).toBe(
+      'http://example.com/',
+    );
   });
 
   it('sends nothing from https to http', () => {

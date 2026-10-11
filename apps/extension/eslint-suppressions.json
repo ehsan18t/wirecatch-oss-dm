@@ -1,0 +1,195 @@
+{
+  "scripts/make-icons.mjs": {
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "src/components/App.svelte": {
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/entrypoints/background.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    },
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/lib/browser-info.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    }
+  },
+  "src/lib/capture/handover.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/capture/should-capture.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/cookies.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 4
+    },
+    "eqeqeq": {
+      "count": 3
+    }
+  },
+  "src/lib/hub.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 6
+    },
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/lib/media/button.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 8
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    },
+    "no-param-reassign": {
+      "count": 1
+    }
+  },
+  "src/lib/media/center.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 1
+    }
+  },
+  "src/lib/media/detect.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 9
+    },
+    "complexity": {
+      "count": 1
+    },
+    "eqeqeq": {
+      "count": 2
+    }
+  },
+  "src/lib/media/messages.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/media/page-sites.ts": {
+    "eqeqeq": {
+      "count": 1
+    }
+  },
+  "src/lib/media/registry.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 4
+    },
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/lib/messages.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/native/client.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 10
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/popup/model.svelte.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "src/lib/referrer.ts": {
+    "eqeqeq": {
+      "count": 1
+    }
+  },
+  "src/lib/sites.ts": {
+    "eqeqeq": {
+      "count": 1
+    }
+  },
+  "src/lib/size.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 14
+    }
+  },
+  "tests/fakes.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 6
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "tests/handover.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    }
+  },
+  "tests/media-button.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "tests/media-center.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 4
+    }
+  },
+  "tests/media-listen.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 5
+    }
+  },
+  "tests/native-client.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  }
+}

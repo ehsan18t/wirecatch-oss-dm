@@ -5,8 +5,19 @@ import { detectBrowser, type Brand } from '@/lib/browser-info';
 import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '@/lib/cookies';
-import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
-import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
+import {
+  Hub,
+  type Badge,
+  type BrowserDownloads,
+  type InFlightStore,
+  type MenuTab,
+} from '@/lib/hub';
+import {
+  MediaCenter,
+  type MediaSendResult,
+  type MediaStore,
+  type TabInfo,
+} from '@/lib/media/center';
 import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
 import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
@@ -100,7 +111,12 @@ async function tabInfo(tabId: number): Promise<TabInfo | null> {
     const tab = await browser.tabs.get(tabId);
     // Firefox adds `cookieStoreId` to tabs; Chromium tabs use the default cookie store.
     const cookieStoreId = (tab as { cookieStoreId?: string }).cookieStoreId ?? null;
-    return { url: tab.url ?? null, title: tab.title ?? null, incognito: tab.incognito, cookieStoreId };
+    return {
+      url: tab.url ?? null,
+      title: tab.title ?? null,
+      incognito: tab.incognito,
+      cookieStoreId,
+    };
   } catch {
     return null;
   }
@@ -145,7 +161,9 @@ export default defineBackground(() => {
     },
     state: async (id) => {
       const [item] = await browser.downloads.search({ id });
-      return item === undefined ? null : { state: item.state, paused: item.paused, danger: item.danger };
+      return item === undefined
+        ? null
+        : { state: item.state, paused: item.paused, danger: item.danger };
     },
     start: async (url) => {
       await browser.downloads.download({ url });
@@ -215,7 +233,8 @@ export default defineBackground(() => {
       onMessage: browser.runtime.onMessage,
       onCommand: browser.commands.onCommand,
       extensionId: browser.runtime.id,
-      firefox: typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function',
+      firefox:
+        typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function',
     },
     {
       watcher,
@@ -223,7 +242,11 @@ export default defineBackground(() => {
       announce: (tabId, result) => {
         // The page's top frame shows it next to where the person is looking; pages without
         // the content script (browser pages, other extensions) get it in the popup instead.
-        const message: AnnounceMessage = { type: MEDIA_ANNOUNCE, ok: result.ok, message: result.message };
+        const message: AnnounceMessage = {
+          type: MEDIA_ANNOUNCE,
+          ok: result.ok,
+          message: result.message,
+        };
         browser.tabs.sendMessage(tabId, message, { frameId: 0 }).catch(() => {
           hub.notify(result.ok ? 'warning' : 'error', result.message);
         });

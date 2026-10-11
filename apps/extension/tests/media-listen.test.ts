@@ -32,7 +32,10 @@ function fakeApi(firefox = false) {
     extra: string[];
   }> = [];
   const removed: Array<(tabId: number) => void> = [];
-  const updated: Array<{ listener: (tabId: number, change: { url?: string }) => void; filter: unknown }> = [];
+  const updated: Array<{
+    listener: (tabId: number, change: { url?: string }) => void;
+    filter: unknown;
+  }> = [];
   const messages: MessageListener[] = [];
   const commands: Array<(command: string, tab?: { id?: number }) => void> = [];
   const api: MediaEventApi = {
@@ -64,7 +67,12 @@ function setup(firefox = false) {
       Promise.resolve(
         id === 99
           ? null
-          : { url: 'https://example.com/watch', title: 'A video', incognito: false, cookieStoreId: null },
+          : {
+              url: 'https://example.com/watch',
+              title: 'A video',
+              incognito: false,
+              cookieStoreId: null,
+            },
       ),
     send: (request) => {
       sent.push(request.target.url);
@@ -225,13 +233,20 @@ describe('acceptsPopupPort', () => {
     ).toBe(false);
     expect(
       acceptsPopupPort(
-        { name: POPUP_PORT_NAME, sender: { id: 'other', url: 'chrome-extension://other/popup.html' } },
+        {
+          name: POPUP_PORT_NAME,
+          sender: { id: 'other', url: 'chrome-extension://other/popup.html' },
+        },
         'wirecatch-id',
         base,
       ),
     ).toBe(false);
     expect(
-      acceptsPopupPort({ name: POPUP_PORT_NAME, sender: { id: 'wirecatch-id' } }, 'wirecatch-id', base),
+      acceptsPopupPort(
+        { name: POPUP_PORT_NAME, sender: { id: 'wirecatch-id' } },
+        'wirecatch-id',
+        base,
+      ),
     ).toBe(false);
     expect(acceptsPopupPort({ name: POPUP_PORT_NAME }, 'wirecatch-id', base)).toBe(false);
     expect(

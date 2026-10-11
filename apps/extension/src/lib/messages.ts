@@ -21,7 +21,11 @@ export interface PortInfo {
  * script also belongs to this extension and can use the name, but runs on a web page,
  * so it cannot change settings or send downloads through the popup's commands.
  */
-export function acceptsPopupPort(port: PortInfo, extensionId: string, extensionBaseUrl: string): boolean {
+export function acceptsPopupPort(
+  port: PortInfo,
+  extensionId: string,
+  extensionBaseUrl: string,
+): boolean {
   return (
     port.name === POPUP_PORT_NAME &&
     port.sender?.id === extensionId &&

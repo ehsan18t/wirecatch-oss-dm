@@ -48,7 +48,12 @@ async function setup(options: Options = {}): Promise<Setup> {
   const client = new NativeClient({
     transport: app,
     hello: () =>
-      Promise.resolve({ client: 'extension', client_version: '0.1.0', protocol_version: 1, browser: null }),
+      Promise.resolve({
+        client: 'extension',
+        client_version: '0.1.0',
+        protocol_version: 1,
+        browser: null,
+      }),
     backoffMs: [60_000],
   });
   let next = 0;
@@ -78,7 +83,9 @@ async function setup(options: Options = {}): Promise<Setup> {
 }
 
 function addDownloadCalls(app: FakeApp): NewDownload[] {
-  return app.calls('add_download').map((c) => (c.method === 'add_download' ? c.params : (null as never)));
+  return app
+    .calls('add_download')
+    .map((c) => (c.method === 'add_download' ? c.params : (null as never)));
 }
 
 let s: Setup;
@@ -140,7 +147,11 @@ describe('handover', () => {
     downloads.browserState = { state: 'in_progress', paused: true, danger: 'url' };
     s = await setup({ downloads });
     const result = await s.hub.onDownload(downloadItem({ id: 7, danger: 'safe' }));
-    expect(result).toMatchObject({ kind: 'kept', reason: 'browser_flagged', browserCopy: 'resumed' });
+    expect(result).toMatchObject({
+      kind: 'kept',
+      reason: 'browser_flagged',
+      browserCopy: 'resumed',
+    });
     expect(downloads.log).toEqual(['pause:7', 'resume:7']);
     expect(s.app.calls('add_download')).toHaveLength(0);
   });
@@ -160,7 +171,10 @@ describe('handover', () => {
   it('reads cookies as for a navigation started by the page the download came from', async () => {
     s = await setup();
     await s.hub.onDownload(
-      downloadItem({ url: 'https://example.com/get?id=1', finalUrl: 'https://files.example.com/big.zip' }),
+      downloadItem({
+        url: 'https://example.com/get?id=1',
+        finalUrl: 'https://files.example.com/big.zip',
+      }),
     );
     expect(s.cookieContexts).toEqual([
       {
@@ -195,7 +209,9 @@ describe('handover', () => {
   it('resumes the browser download when the app answers with an error, without withdrawing', async () => {
     s = await setup({
       configure: (app) => {
-        app.addBehavior = { error: { code: 'invalid_url', message: 'That address cannot be downloaded.' } };
+        app.addBehavior = {
+          error: { code: 'invalid_url', message: 'That address cannot be downloaded.' },
+        };
       },
     });
     const result = await s.hub.onDownload(downloadItem());
@@ -228,7 +244,9 @@ describe('handover', () => {
   it('fails one oversized request on its own and keeps the connection', async () => {
     s = await setup();
     const hugeCookieSite = 'https://example.com/' + 'x'.repeat(1024 * 1024);
-    const result = await s.hub.onDownload(downloadItem({ url: hugeCookieSite, finalUrl: hugeCookieSite }));
+    const result = await s.hub.onDownload(
+      downloadItem({ url: hugeCookieSite, finalUrl: hugeCookieSite }),
+    );
     expect(result).toMatchObject({ kind: 'kept', reason: 'app_refused', browserCopy: 'resumed' });
     if (result?.kind === 'kept') expect(result.detail).toContain('too large');
     expect(s.app.calls('add_download')).toHaveLength(0);
@@ -406,14 +424,22 @@ describe('handover', () => {
       });
       const result = await s.hub.onDownload(downloadItem());
       expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
-      expect(result).toMatchObject({ kind: 'kept', reason: 'app_unreachable', browserCopy: 'resumed' });
+      expect(result).toMatchObject({
+        kind: 'kept',
+        reason: 'app_unreachable',
+        browserCopy: 'resumed',
+      });
       expect(s.app.calls('add_download')).toHaveLength(0);
     });
 
     it('does not even pause a download the cached settings exclude', async () => {
       s = await setup({
         configure: (app, cache) => {
-          cache.value = { settings: { ...DEFAULT_SETTINGS, capture_enabled: false }, queues: [], savedAt: 1 };
+          cache.value = {
+            settings: { ...DEFAULT_SETTINGS, capture_enabled: false },
+            queues: [],
+            savedAt: 1,
+          };
           app.hostMissing = 'Specified native messaging host not found.';
         },
       });
@@ -487,7 +513,11 @@ describe('handover', () => {
     s.downloads.failing.add('pause');
     const result = await s.hub.onDownload(downloadItem());
     expect(s.downloads.log).toEqual(['pause:1']);
-    expect(result).toMatchObject({ kind: 'kept', reason: 'pause_failed', browserCopy: 'untouched' });
+    expect(result).toMatchObject({
+      kind: 'kept',
+      reason: 'pause_failed',
+      browserCopy: 'untouched',
+    });
     expect(s.app.calls('add_download')).toHaveLength(0);
   });
 
@@ -503,7 +533,8 @@ describe('handover', () => {
     expect(result).toMatchObject({ kind: 'kept', browserCopy: 'stuck_paused' });
     expect(s.hub.snapshot().notice).toMatchObject({
       tone: 'error',
-      message: "big.zip is paused in the browser. Open the browser's downloads page and click Resume.",
+      message:
+        "big.zip is paused in the browser. Open the browser's downloads page and click Resume.",
     });
   });
 
@@ -553,7 +584,9 @@ describe('handover', () => {
       },
     });
     expect(await s.hub.onDownload(downloadItem())).toBeNull();
-    expect(await s.hub.onDownload(downloadItem({ url: 'blob:https://x.org/1', finalUrl: '' }))).toBeNull();
+    expect(
+      await s.hub.onDownload(downloadItem({ url: 'blob:https://x.org/1', finalUrl: '' })),
+    ).toBeNull();
     expect(s.downloads.log).toEqual([]);
   });
 
@@ -674,7 +707,10 @@ describe('context menu', () => {
 
   it('skips private windows', async () => {
     s = await setup();
-    const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, { incognito: true });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true },
+    );
     expect(result).toBe('private_window');
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.downloads.log).toEqual([]);
@@ -730,7 +766,10 @@ describe('context menu', () => {
 
   it('lets the browser download programs, so its own checks run', async () => {
     s = await setup();
-    const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/get/Setup.EXE' }, undefined);
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/get/Setup.EXE' },
+      undefined,
+    );
     expect(result).toBe('browser');
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.downloads.log).toEqual(['start:https://example.com/get/Setup.EXE']);

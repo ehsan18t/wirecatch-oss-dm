@@ -56,7 +56,8 @@ function draw(size) {
       const alpha = rect / total;
       const white = rect === 0 ? 0 : stroke / rect;
       const i = (py * size + px) * 4;
-      for (let c = 0; c < 3; c += 1) pixels[i + c] = Math.round(BLUE[c] * (1 - white) + WHITE[c] * white);
+      for (let c = 0; c < 3; c += 1)
+        pixels[i + c] = Math.round(BLUE[c] * (1 - white) + WHITE[c] * white);
       pixels[i + 3] = Math.round(alpha * 255);
     }
   }

@@ -33,7 +33,11 @@ export const PAGE_SITES: readonly PageSite[] = [
   { name: 'Twitch', hosts: ['twitch.tv'], path: /^\/(videos\/\d+|[^/]+\/(clip|v|video)\/)/ },
   { name: 'Twitch', hosts: ['clips.twitch.tv'] },
   { name: 'X', hosts: ['x.com', 'twitter.com'], path: /^\/[^/]+\/status\/\d+/ },
-  { name: 'Facebook', hosts: ['facebook.com'], path: /^\/(watch|reel\/|[^/]+\/videos\/|share\/[rv]\/)/ },
+  {
+    name: 'Facebook',
+    hosts: ['facebook.com'],
+    path: /^\/(watch|reel\/|[^/]+\/videos\/|share\/[rv]\/)/,
+  },
   { name: 'Facebook', hosts: ['fb.watch'] },
   { name: 'Instagram', hosts: ['instagram.com'], path: /^\/([^/]+\/)?(p|reel|reels|tv)\/[^/]+/ },
   { name: 'TikTok', hosts: ['tiktok.com'], path: /^\/@[^/]+\/video\/\d+/ },

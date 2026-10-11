@@ -40,20 +40,28 @@ describe('classifyResponse', () => {
     ['audio/mpegurl', 'hls'],
     ['application/dash+xml', 'dash'],
     ['application/dash+xml; charset=utf-8', 'dash'],
-  ])('spots a stream manifest by its content type %s, whatever the address', (contentType, kind) => {
-    const hit = classifyResponse(response({ url: 'https://cdn.example.com/play?id=9', contentType }));
-    expect(hit?.kind).toBe(kind);
-    expect(hit?.size).toBeNull();
-  });
+  ])(
+    'spots a stream manifest by its content type %s, whatever the address',
+    (contentType, kind) => {
+      const hit = classifyResponse(
+        response({ url: 'https://cdn.example.com/play?id=9', contentType }),
+      );
+      expect(hit?.kind).toBe(kind);
+      expect(hit?.size).toBeNull();
+    },
+  );
 
   it.each([
     ['https://cdn.example.com/a/master.m3u8?token=1', 'text/plain', 'hls'],
     ['https://cdn.example.com/a/manifest.mpd', 'application/octet-stream', 'dash'],
     ['https://cdn.example.com/a/stream.M3U8', undefined, 'hls'],
     ['https://cdn.example.com/a/manifest.mpd', 'application/xml', 'dash'],
-  ])('spots a manifest by its extension when the type is generic (%s)', (url, contentType, kind) => {
-    expect(classifyResponse(response({ url, contentType }))?.kind).toBe(kind);
-  });
+  ])(
+    'spots a manifest by its extension when the type is generic (%s)',
+    (url, contentType, kind) => {
+      expect(classifyResponse(response({ url, contentType }))?.kind).toBe(kind);
+    },
+  );
 
   it('spots whole video and audio files loaded by a media element, with their size', () => {
     const video = classifyResponse(
@@ -109,7 +117,10 @@ describe('classifyResponse', () => {
           type: 'media',
           statusCode: 206,
           contentType: 'audio/mpeg',
-          headers: { 'Content-Range': `bytes 0-${size - 1}/${size}`, 'Content-Length': String(size) },
+          headers: {
+            'Content-Range': `bytes 0-${size - 1}/${size}`,
+            'Content-Length': String(size),
+          },
         }),
       ),
     ).toBeNull();
@@ -138,7 +149,9 @@ describe('classifyResponse', () => {
       );
     expect(MIN_DIRECT_MEDIA_BYTES).toBe(102_400);
     expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES - 1) })).toBeNull();
-    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES) })?.size).toBe(MIN_DIRECT_MEDIA_BYTES);
+    expect(file({ 'Content-Length': String(MIN_DIRECT_MEDIA_BYTES) })?.size).toBe(
+      MIN_DIRECT_MEDIA_BYTES,
+    );
     expect(file({})).toMatchObject({ kind: 'direct', size: null });
   });
 
@@ -150,7 +163,11 @@ describe('classifyResponse', () => {
     ).toBe('direct');
     expect(
       classifyResponse(
-        response({ url: 'https://e.com/a.mp3', type: 'media', contentType: 'application/octet-stream' }),
+        response({
+          url: 'https://e.com/a.mp3',
+          type: 'media',
+          contentType: 'application/octet-stream',
+        }),
       ),
     ).toMatchObject({ kind: 'direct', audio: true });
   });
@@ -158,7 +175,11 @@ describe('classifyResponse', () => {
   it('ignores media fetched by scripts, which is a slice fed to a player rather than a whole file', () => {
     expect(
       classifyResponse(
-        response({ url: 'https://e.com/v/seg.mp4', type: 'xmlhttprequest', contentType: 'video/mp4' }),
+        response({
+          url: 'https://e.com/v/seg.mp4',
+          type: 'xmlhttprequest',
+          contentType: 'video/mp4',
+        }),
       ),
     ).toBeNull();
   });
@@ -191,10 +212,14 @@ describe('classifyResponse', () => {
 
   it('ignores ordinary pages, images and scripts', () => {
     expect(
-      classifyResponse(response({ url: 'https://e.com/', type: 'main_frame', contentType: 'text/html' })),
+      classifyResponse(
+        response({ url: 'https://e.com/', type: 'main_frame', contentType: 'text/html' }),
+      ),
     ).toBeNull();
     expect(
-      classifyResponse(response({ url: 'https://e.com/a.png', type: 'image', contentType: 'image/png' })),
+      classifyResponse(
+        response({ url: 'https://e.com/a.png', type: 'image', contentType: 'image/png' }),
+      ),
     ).toBeNull();
     expect(
       classifyResponse(
@@ -216,8 +241,12 @@ describe('size limits', () => {
     expect(MAX_MEDIA_URL_LENGTH).toBe(8192);
     const ok = urlOf(MAX_MEDIA_URL_LENGTH);
     const long = urlOf(MAX_MEDIA_URL_LENGTH + 1);
-    expect(classifyResponse(response({ url: ok, type: 'media', contentType: 'video/mp4' }))?.url).toBe(ok);
-    expect(classifyResponse(response({ url: long, type: 'media', contentType: 'video/mp4' }))).toBeNull();
+    expect(
+      classifyResponse(response({ url: ok, type: 'media', contentType: 'video/mp4' }))?.url,
+    ).toBe(ok);
+    expect(
+      classifyResponse(response({ url: long, type: 'media', contentType: 'video/mp4' })),
+    ).toBeNull();
     const registry = new MediaRegistry();
     const detection = { kind: 'direct' as const, url: long, mime: null, size: null, audio: false };
     expect(registry.add(1, detection)).toBe(false);
@@ -246,7 +275,10 @@ describe('size limits', () => {
       audio: false,
       seenAt: 1,
     });
-    registry.restore({ v: 1, tabs: [[3, [item(urlOf(MAX_MEDIA_URL_LENGTH + 1)), item(urlOf(100))]]] });
+    registry.restore({
+      v: 1,
+      tabs: [[3, [item(urlOf(MAX_MEDIA_URL_LENGTH + 1)), item(urlOf(100))]]],
+    });
     expect(registry.items(3).map((i) => i.url)).toEqual([urlOf(100)]);
   });
 
@@ -257,13 +289,19 @@ describe('size limits', () => {
     for (let tab = 1; tab <= 200; tab += 1) {
       for (let n = 0; n < MAX_ITEMS_PER_TAB; n += 1) {
         const url = urlOf(MAX_MEDIA_URL_LENGTH - 8).replace('/v/', `/${String(tab)}/${String(n)}/`);
-        expect(registry.add(tab, { kind: 'direct', url, mime: 'video/mp4', size: null, audio: false })).toBe(
-          true,
-        );
+        expect(
+          registry.add(tab, { kind: 'direct', url, mime: 'video/mp4', size: null, audio: false }),
+        ).toBe(true);
       }
     }
     // Tab 5 changes last, so it is kept first.
-    registry.add(5, { kind: 'direct', url: 'https://e.com/new.mp4', mime: null, size: null, audio: false });
+    registry.add(5, {
+      kind: 'direct',
+      url: 'https://e.com/new.mp4',
+      mime: null,
+      size: null,
+      audio: false,
+    });
 
     const saved = registry.save();
     expect(JSON.stringify(saved).length).toBeLessThanOrEqual(MAX_SAVED_CHARS);
@@ -281,8 +319,20 @@ describe('size limits', () => {
 
   it('saves everything when it fits', () => {
     const registry = new MediaRegistry();
-    registry.add(1, { kind: 'direct', url: 'https://e.com/a.mp4', mime: null, size: null, audio: false });
-    registry.add(2, { kind: 'direct', url: 'https://e.com/b.mp4', mime: null, size: null, audio: false });
+    registry.add(1, {
+      kind: 'direct',
+      url: 'https://e.com/a.mp4',
+      mime: null,
+      size: null,
+      audio: false,
+    });
+    registry.add(2, {
+      kind: 'direct',
+      url: 'https://e.com/b.mp4',
+      mime: null,
+      size: null,
+      audio: false,
+    });
     expect(registry.save().tabs.map(([id, items]) => [id, items.length])).toEqual([
       [1, 1],
       [2, 1],
@@ -313,7 +363,9 @@ describe('addresses', () => {
       expect(classifyUrl(src)).toBeNull();
     }
     expect(
-      classifyResponse(response({ url: 'blob:https://e.com/1', type: 'media', contentType: 'video/mp4' })),
+      classifyResponse(
+        response({ url: 'blob:https://e.com/1', type: 'media', contentType: 'video/mp4' }),
+      ),
     ).toBeNull();
   });
 
@@ -331,13 +383,21 @@ describe('addresses', () => {
     expect(isNavigation(response({ type: 'sub_frame', contentType: 'text/html' }))).toBe(false);
     expect(isNavigation(response({ type: 'main_frame', statusCode: 500 }))).toBe(false);
     expect(
-      isNavigation(response({ type: 'main_frame', headers: { 'content-disposition': 'attachment' } })),
+      isNavigation(
+        response({ type: 'main_frame', headers: { 'content-disposition': 'attachment' } }),
+      ),
     ).toBe(false);
   });
 });
 
 describe('MediaRegistry', () => {
-  const hls = (url: string) => ({ kind: 'hls' as const, url, mime: null, size: null, audio: false });
+  const hls = (url: string) => ({
+    kind: 'hls' as const,
+    url,
+    mime: null,
+    size: null,
+    audio: false,
+  });
   const file = (url: string, size: number | null = null) => ({
     kind: 'direct' as const,
     url,
@@ -403,7 +463,8 @@ describe('MediaRegistry', () => {
 
   it('keeps at most a fixed number of items per tab, dropping the oldest to make room for new media', () => {
     const registry = new MediaRegistry();
-    for (let i = 0; i < MAX_ITEMS_PER_TAB + 5; i += 1) registry.add(1, file(`https://e.com/${i}.mp4`));
+    for (let i = 0; i < MAX_ITEMS_PER_TAB + 5; i += 1)
+      registry.add(1, file(`https://e.com/${i}.mp4`));
     expect(registry.items(1)).toHaveLength(MAX_ITEMS_PER_TAB);
     expect(registry.items(1)[0]?.url).toBe('https://e.com/5.mp4');
     expect(registry.items(1).at(-1)?.url).toBe(`https://e.com/${MAX_ITEMS_PER_TAB + 4}.mp4`);
@@ -482,7 +543,9 @@ describe('MediaWatcher', () => {
   it('records media per tab and asks whether a tab is private only once', async () => {
     const { registry, watcher, lookups } = setup();
     await watcher.onResponse(hlsResponse());
-    await watcher.onResponse(hlsResponse({ url: 'https://cdn.example.com/other/master.m3u8', frameId: 3 }));
+    await watcher.onResponse(
+      hlsResponse({ url: 'https://cdn.example.com/other/master.m3u8', frameId: 3 }),
+    );
     expect(registry.items(4).map((i) => i.frameId)).toEqual([0, 3]);
     expect(lookups).toEqual([4]);
   });
@@ -503,7 +566,11 @@ describe('MediaWatcher', () => {
   it('clears a tab whose address changes without a new page (history API, back-forward cache)', async () => {
     const { registry, watcher } = setup();
     await watcher.onResponse(
-      response({ url: 'https://example.com/watch?v=1', type: 'main_frame', contentType: 'text/html' }),
+      response({
+        url: 'https://example.com/watch?v=1',
+        type: 'main_frame',
+        contentType: 'text/html',
+      }),
     );
     await watcher.onResponse(hlsResponse());
     // The address the page loaded with, reported again: nothing changes.

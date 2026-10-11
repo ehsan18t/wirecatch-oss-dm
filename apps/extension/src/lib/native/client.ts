@@ -198,7 +198,9 @@ export class NativeClient {
 
   #waitUntilConnected(timeoutMs: number): Promise<void> {
     if (this.#stopped) {
-      return Promise.reject(new RequestError('disconnected', 'The connection to Wirecatch was closed.'));
+      return Promise.reject(
+        new RequestError('disconnected', 'The connection to Wirecatch was closed.'),
+      );
     }
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -249,10 +251,14 @@ export class NativeClient {
     try {
       const hello = await this.#options.hello();
       if (generation !== this.#generation) return;
-      reply = await this.#send({ method: 'hello', params: hello }, this.#options.helloTimeoutMs ?? 10_000);
+      reply = await this.#send(
+        { method: 'hello', params: hello },
+        this.#options.helloTimeoutMs ?? 10_000,
+      );
     } catch (error) {
       if (generation !== this.#generation) return;
-      const failure = error instanceof RequestError ? error : new RequestError('disconnected', String(error));
+      const failure =
+        error instanceof RequestError ? error : new RequestError('disconnected', String(error));
       this.#fail(problemFromHelloError(failure));
       return;
     }

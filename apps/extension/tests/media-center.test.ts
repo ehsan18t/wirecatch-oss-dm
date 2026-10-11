@@ -116,7 +116,10 @@ describe('chooseTarget (what the media button sends)', () => {
     registry.add(1, DASH, 3);
     registry.add(1, HLS, 0);
     const sender = { ...fromTab(1, tabs, 'https://player.example.net/embed/1'), frameId: 3 };
-    await center.handleContentMessage({ type: MEDIA_DOWNLOAD, src: null, audio: false, title: null }, sender);
+    await center.handleContentMessage(
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
+      sender,
+    );
     expect(lastAdd(app).url).toBe(DASH.url);
   });
 
@@ -128,7 +131,10 @@ describe('chooseTarget (what the media button sends)', () => {
         tabUrl: 'https://blog.example.com/post',
       }),
     );
-    expect(target).toMatchObject({ kind: 'page', url: 'https://www.youtube-nocookie.com/embed/abc' });
+    expect(target).toMatchObject({
+      kind: 'page',
+      url: 'https://www.youtube-nocookie.com/embed/abc',
+    });
   });
 
   it("sends the element's own file only when the browser loaded exactly that address as media", () => {
@@ -143,22 +149,33 @@ describe('chooseTarget (what the media button sends)', () => {
     ).toMatchObject({
       url: HLS.url,
     });
-    expect(chooseTarget([], context({ elementSrc: 'https://example.com/account/export' }))).toBeNull();
-    expect(chooseTarget(items(FILE), context({ elementSrc: `${FILE.url}?other=1` }))).toMatchObject({
-      url: FILE.url,
-    });
+    expect(
+      chooseTarget([], context({ elementSrc: 'https://example.com/account/export' })),
+    ).toBeNull();
+    expect(chooseTarget(items(FILE), context({ elementSrc: `${FILE.url}?other=1` }))).toMatchObject(
+      {
+        url: FILE.url,
+      },
+    );
   });
 
   it('shows nothing where nothing downloadable was found', () => {
     expect(chooseTarget([], context())).toBeNull();
-    expect(chooseTarget([], context({ elementSrc: 'mediasource:https://example.com/1' }))).toBeNull();
     expect(
-      chooseTarget([], context({ elementSrc: null, tabUrl: 'https://www.youtube.com/', frameUrl: null })),
+      chooseTarget([], context({ elementSrc: 'mediasource:https://example.com/1' })),
+    ).toBeNull();
+    expect(
+      chooseTarget(
+        [],
+        context({ elementSrc: null, tabUrl: 'https://www.youtube.com/', frameUrl: null }),
+      ),
     ).toBeNull();
   });
 
   it('names each kind in plain words', () => {
-    const [hls, file, song] = items(HLS, FILE, SONG).map((i) => describeTarget({ ...i, site: null }));
+    const [hls, file, song] = items(HLS, FILE, SONG).map((i) =>
+      describeTarget({ ...i, site: null }),
+    );
     expect(hls).toEqual({ title: 'Video stream (HLS)', detail: 'cdn.example.com' });
     expect(file).toEqual({ title: 'Video file', detail: 'clip.mp4' });
     expect(song).toEqual({ title: 'Audio file', detail: 'song.mp3' });
@@ -197,14 +214,24 @@ async function setup(
   const client = new NativeClient({
     transport: app,
     hello: () =>
-      Promise.resolve({ client: 'extension', client_version: '0.1.0', protocol_version: 1, browser: null }),
+      Promise.resolve({
+        client: 'extension',
+        client_version: '0.1.0',
+        protocol_version: 1,
+        browser: null,
+      }),
     backoffMs: [60_000],
   });
   const registry = new MediaRegistry();
   const tabs = new Map<number, TabInfo>([
     [
       1,
-      { url: 'https://example.com/watch', title: '  A   nice video ', incognito: false, cookieStoreId: null },
+      {
+        url: 'https://example.com/watch',
+        title: '  A   nice video ',
+        incognito: false,
+        cookieStoreId: null,
+      },
     ],
     [
       2,
@@ -272,7 +299,18 @@ async function setup(
     await hub.start();
     await flush();
   }
-  const h = { app, hub, client, registry, center, tabs, cookieCalls, cookieContexts, saved, buttonSaves };
+  const h = {
+    app,
+    hub,
+    client,
+    registry,
+    center,
+    tabs,
+    cookieCalls,
+    cookieContexts,
+    saved,
+    buttonSaves,
+  };
   harnesses.push(h);
   return h;
 }
@@ -307,7 +345,9 @@ describe('media button messages', () => {
       'javascript:alert(1)',
       `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`,
     ]) {
-      expect(center.handleContentMessage({ type: MEDIA_CHECK, src, audio: false }, sender)).toBeNull();
+      expect(
+        center.handleContentMessage({ type: MEDIA_CHECK, src, audio: false }, sender),
+      ).toBeNull();
     }
     expect(
       center.handleContentMessage(
@@ -316,7 +356,10 @@ describe('media button messages', () => {
       ),
     ).toBeNull();
     expect(
-      center.handleContentMessage({ type: MEDIA_CHECK, src: 'https://e.com/a.mp4', audio: false }, sender),
+      center.handleContentMessage(
+        { type: MEDIA_CHECK, src: 'https://e.com/a.mp4', audio: false },
+        sender,
+      ),
     ).not.toBeNull();
   });
 
@@ -327,7 +370,10 @@ describe('media button messages', () => {
       center.handleContentMessage({ type: MEDIA_CHECK, src: 5, audio: false }, fromTab(1, tabs)),
     ).toBeNull();
     expect(
-      center.handleContentMessage({ type: MEDIA_DOWNLOAD, src: null, audio: false }, fromTab(1, tabs)),
+      center.handleContentMessage(
+        { type: MEDIA_DOWNLOAD, src: null, audio: false },
+        fromTab(1, tabs),
+      ),
     ).toBeNull();
   });
 
@@ -344,7 +390,9 @@ describe('media button messages', () => {
     // Never in private windows, even with a playable address.
     registry.add(2, HLS);
     expect(await check(2, 'https://e.com/a.mp4')).toEqual({ show: false });
-    expect(await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, {})).toEqual({
+    expect(
+      await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, {}),
+    ).toEqual({
       show: false,
     });
   });
@@ -414,7 +462,9 @@ describe('media button messages', () => {
   });
 
   it('withdraws a handover whose answer never came, and says nothing was added', async () => {
-    const { app, center, registry, tabs } = await setup({ configure: (a) => (a.addBehavior = 'hang') });
+    const { app, center, registry, tabs } = await setup({
+      configure: (a) => (a.addBehavior = 'hang'),
+    });
     registry.add(1, HLS);
     const answer = await center.handleContentMessage(
       { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
@@ -422,7 +472,8 @@ describe('media button messages', () => {
     );
     expect(answer).toEqual({
       ok: false,
-      message: 'Wirecatch did not answer in time, so nothing was added. Open Wirecatch, then try again.',
+      message:
+        'Wirecatch did not answer in time, so nothing was added. Open Wirecatch, then try again.',
     });
     const withdraw = app.calls('withdraw_download')[0];
     expect(withdraw?.method === 'withdraw_download' && withdraw.params.handover_id).toBe(
@@ -459,7 +510,8 @@ describe('media button messages', () => {
     );
     expect(answer).toEqual({
       ok: false,
-      message: 'Wirecatch did not answer in time. Open Wirecatch and check its list before trying again.',
+      message:
+        'Wirecatch did not answer in time. Open Wirecatch and check its list before trying again.',
     });
   });
 
@@ -476,7 +528,10 @@ describe('media button messages', () => {
         { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
         fromTab(1, refused.tabs),
       ),
-    ).toEqual({ ok: false, message: 'Wirecatch did not take it. This address cannot be downloaded.' });
+    ).toEqual({
+      ok: false,
+      message: 'Wirecatch did not take it. This address cannot be downloaded.',
+    });
 
     const asks = await setup({ configure: (a) => (a.addBehavior = 'awaiting_confirmation') });
     asks.registry.add(1, FILE);
@@ -566,16 +621,20 @@ describe('the address the frame shows now (single-page sites)', () => {
       referrer: VIDEO_B,
       media: { kind: 'page', title: 'Video B - YouTube' },
     });
-    expect(cookieContexts.at(-1)).toEqual({ initiator: VIDEO_B, topLevel: VIDEO_B, navigation: true });
+    expect(cookieContexts.at(-1)).toEqual({
+      initiator: VIDEO_B,
+      topLevel: VIDEO_B,
+      navigation: true,
+    });
     // The content script's own report agrees, and changes nothing.
     await center.handleContentMessage(click(VIDEO_B), stale);
     expect(lastAdd(app)).toMatchObject({ url: VIDEO_B, referrer: VIDEO_B });
     // Every further click sends the video shown at that moment.
     const later = 'https://www.youtube.com/watch?v=CCCCCCCCCCC';
     await center.handleContentMessage(click(later), sender(tabs, later, VIDEO_A, 0));
-    expect(app.calls('add_download').map((c) => (c.method === 'add_download' ? c.params.url : null))).toEqual(
-      [VIDEO_B, VIDEO_B, later],
-    );
+    expect(
+      app.calls('add_download').map((c) => (c.method === 'add_download' ? c.params.url : null)),
+    ).toEqual([VIDEO_B, VIDEO_B, later]);
   });
 
   it("uses the tab's page only when it is on the frame's origin, and otherwise the script's report on that origin", async () => {
@@ -634,7 +693,12 @@ describe('the address the frame shows now (single-page sites)', () => {
   it('answers the check for the address the frame shows now', async () => {
     const { center, tabs } = await setup();
     // A player frame that started on a page that is not one video, then moved to one with the history API.
-    const frame = sender(tabs, 'https://blog.example.com/post', 'https://www.dailymotion.com/player', 3);
+    const frame = sender(
+      tabs,
+      'https://blog.example.com/post',
+      'https://www.dailymotion.com/player',
+      3,
+    );
     const check = (location: string | null) =>
       center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false, location }, frame);
     expect(await check(null)).toEqual({ show: false });
@@ -652,12 +716,18 @@ describe('the address the frame shows now (single-page sites)', () => {
   it('refuses a malformed frame address, and reads a missing one as none', async () => {
     const { center, tabs } = await setup();
     const top = sender(tabs, VIDEO_B, VIDEO_A, 0);
-    for (const location of [5, 'javascript:alert(1)', `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`]) {
+    for (const location of [
+      5,
+      'javascript:alert(1)',
+      `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`,
+    ]) {
       expect(
         center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false, location }, top),
       ).toBeNull();
     }
-    expect(await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, top)).toEqual({
+    expect(
+      await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, top),
+    ).toEqual({
       show: true,
     });
   });
@@ -790,7 +860,10 @@ describe('popup media list', () => {
     });
     expect((await center.download(1, 'direct:https://gone.example.com/x.mp4')).ok).toBe(false);
     expect(await center.download(2, 'anything')).toEqual({ ok: false, message: PRIVATE_WINDOW });
-    expect(await center.download(99, 'anything')).toEqual({ ok: false, message: 'This tab is closed.' });
+    expect(await center.download(99, 'anything')).toEqual({
+      ok: false,
+      message: 'This tab is closed.',
+    });
   });
 
   it('saves the lists for a restarted background script and reads them back', async () => {
@@ -832,7 +905,9 @@ describe('the media button setting and ignored sites', () => {
     const check = (sender: ContentSender) =>
       center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, sender);
     expect(await check(fromTab(1, tabs))).toEqual({ show: false });
-    expect(await check(fromTab(4, tabs, 'https://player.example.com/embed/1'))).toEqual({ show: false });
+    expect(await check(fromTab(4, tabs, 'https://player.example.com/embed/1'))).toEqual({
+      show: false,
+    });
     expect(await check(fromTab(4, tabs))).toEqual({ show: true });
     const answer = await center.handleContentMessage(
       { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
@@ -846,7 +921,9 @@ describe('the media button setting and ignored sites', () => {
 describe('popup media commands', () => {
   it('accepts well-formed media commands only', () => {
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: 3 } })).not.toBeNull();
-    expect(asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3, key: 'k' } })).not.toBeNull();
+    expect(
+      asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3, key: 'k' } }),
+    ).not.toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: -1 } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: '3' } })).toBeNull();
     expect(asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3 } })).toBeNull();
@@ -879,7 +956,10 @@ describe('background restart', () => {
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
-      store: { load: () => new Promise((resolve) => (release = resolve)), save: () => Promise.resolve() },
+      store: {
+        load: () => new Promise((resolve) => (release = resolve)),
+        save: () => Promise.resolve(),
+      },
     });
     const restored = center.start();
     const watcher = new MediaWatcher(registry, {
@@ -913,7 +993,10 @@ describe('background restart', () => {
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
-      store: { load: () => new Promise((resolve) => (release = resolve)), save: () => Promise.resolve() },
+      store: {
+        load: () => new Promise((resolve) => (release = resolve)),
+        save: () => Promise.resolve(),
+      },
     });
     void center.start();
     const answer = center.handleContentMessage(

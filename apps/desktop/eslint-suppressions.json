@@ -1,0 +1,659 @@
+{
+  "e2e/a11y.spec.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    }
+  },
+  "e2e/performance.spec.ts": {
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "e2e/profile.spec.ts": {
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 1
+    },
+    "no-console": {
+      "count": 1
+    }
+  },
+  "src/lib/addons.test.ts": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/addons.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 4
+    }
+  },
+  "src/lib/backend/mock-data.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 60
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/lib/backend/mock.test.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 3
+    }
+  },
+  "src/lib/backend/mock.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 94
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 3
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 1
+    },
+    "@typescript-eslint/require-await": {
+      "count": 51
+    },
+    "@typescript-eslint/switch-exhaustiveness-check": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 3
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/lib/backend/tauri.test.ts": {
+    "@typescript-eslint/no-unnecessary-type-assertion": {
+      "count": 1
+    },
+    "@typescript-eslint/only-throw-error": {
+      "count": 1
+    },
+    "@typescript-eslint/require-await": {
+      "count": 2
+    }
+  },
+  "src/lib/backend/types.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "src/lib/commands.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 5
+    },
+    "@typescript-eslint/prefer-string-starts-ends-with": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
+    }
+  },
+  "src/lib/components/AddDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    }
+  },
+  "src/lib/components/AddonCard.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 2
+    },
+    "@typescript-eslint/no-meaningless-void-operator": {
+      "count": 1
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 3
+    }
+  },
+  "src/lib/components/CancelDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/CategoryIcon.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    }
+  },
+  "src/lib/components/ContextMenu.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 5
+    }
+  },
+  "src/lib/components/DetailPanel.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 16
+    },
+    "@typescript-eslint/no-unnecessary-type-assertion": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 17
+    }
+  },
+  "src/lib/components/Dialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 1
+    }
+  },
+  "src/lib/components/Dialog.test.ts": {
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 2
+    }
+  },
+  "src/lib/components/Dialogs.svelte": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    }
+  },
+  "src/lib/components/DownloadList.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    },
+    "@typescript-eslint/no-meaningless-void-operator": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 1
+    }
+  },
+  "src/lib/components/EmptyState.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 2
+    },
+    "svelte/button-has-type": {
+      "count": 6
+    }
+  },
+  "src/lib/components/ErrorFix.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/ListEditor.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    }
+  },
+  "src/lib/components/OpenProgramDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/OpenProgramDialog.test.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    }
+  },
+  "src/lib/components/PaletteBody.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    }
+  },
+  "src/lib/components/QueueDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 8
+    },
+    "@typescript-eslint/no-unnecessary-type-conversion": {
+      "count": 2
+    },
+    "@typescript-eslint/prefer-optional-chain": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    },
+    "eqeqeq": {
+      "count": 2
+    }
+  },
+  "src/lib/components/RefreshDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    }
+  },
+  "src/lib/components/RemoveAddonDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/RemoveDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/Settings.svelte": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-confusing-void-expression": {
+      "count": 1
+    },
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 14
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unsafe-assignment": {
+      "count": 14
+    },
+    "@typescript-eslint/no-unsafe-call": {
+      "count": 10
+    },
+    "@typescript-eslint/no-unsafe-member-access": {
+      "count": 10
+    },
+    "@typescript-eslint/no-unsafe-return": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 7
+    }
+  },
+  "src/lib/components/Shell.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 1
+    }
+  },
+  "src/lib/components/ShortcutsDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 1
+    }
+  },
+  "src/lib/components/Sidebar.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 14
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 12
+    }
+  },
+  "src/lib/components/StorageBanner.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 2
+    }
+  },
+  "src/lib/components/ToastItem.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 2
+    },
+    "svelte/button-has-type": {
+      "count": 4
+    }
+  },
+  "src/lib/components/Toolbar.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 9
+    },
+    "svelte/button-has-type": {
+      "count": 8
+    }
+  },
+  "src/lib/components/TransferDialog.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 4
+    },
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 5
+    }
+  },
+  "src/lib/contrast.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 4
+    }
+  },
+  "src/lib/features.test.ts": {
+    "@typescript-eslint/no-floating-promises": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    }
+  },
+  "src/lib/format.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 41
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 2
+    }
+  },
+  "src/lib/keyboard.test.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 3
+    }
+  },
+  "src/lib/media-output.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 12
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/review-fixes.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-empty-function": {
+      "count": 2
+    },
+    "@typescript-eslint/no-floating-promises": {
+      "count": 5
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 3
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 4
+    },
+    "@typescript-eslint/prefer-includes": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/settings-schema.test.ts": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/settings-schema.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "src/lib/state/app.svelte.test.ts": {
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 11
+    },
+    "no-restricted-imports": {
+      "count": 2
+    }
+  },
+  "src/lib/state/app.svelte.ts": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 2
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 2
+    },
+    "@typescript-eslint/require-await": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/state/downloads.svelte.test.ts": {
+    "@typescript-eslint/no-meaningless-void-operator": {
+      "count": 1
+    }
+  },
+  "src/lib/state/downloads.svelte.ts": {
+    "@typescript-eslint/no-meaningless-void-operator": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/lib/state/hints.svelte.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    }
+  },
+  "src/lib/state/open.svelte.test.ts": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/state/questions.svelte.test.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 2
+    },
+    "@typescript-eslint/require-await": {
+      "count": 2
+    },
+    "no-restricted-imports": {
+      "count": 2
+    }
+  },
+  "src/lib/state/view.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/lib/testing/setup.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/AddonView.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    },
+    "@typescript-eslint/no-meaningless-void-operator": {
+      "count": 1
+    }
+  },
+  "src/lib/window/AddonView.test.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 2
+    }
+  },
+  "src/lib/window/DownloadWindow.test.ts": {
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    },
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 2
+    },
+    "@typescript-eslint/restrict-plus-operands": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/FileQuestion.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 1
+    }
+  },
+  "src/lib/window/MediaQuestion.svelte": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/lib/window/MediaQuestion.test.ts": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/MockWindow.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 3
+    },
+    "no-restricted-imports": {
+      "count": 1
+    },
+    "svelte/button-has-type": {
+      "count": 1
+    }
+  },
+  "src/lib/window/MockWindows.svelte": {
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/ProgressView.svelte": {
+    "@typescript-eslint/no-magic-numbers": {
+      "count": 5
+    },
+    "@typescript-eslint/no-unsafe-argument": {
+      "count": 1
+    }
+  },
+  "src/lib/window/WindowFrame.svelte": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 3
+    }
+  },
+  "src/lib/window/download-window.svelte.test.ts": {
+    "@typescript-eslint/non-nullable-type-assertion-style": {
+      "count": 2
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/download-window.svelte.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 1
+    },
+    "@typescript-eslint/switch-exhaustiveness-check": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 2
+    },
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/lib/window/fit.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "src/routes/window/download/+page.svelte": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "vite.config.ts": {
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    }
+  },
+  "vitest-setup.ts": {
+    "@typescript-eslint/no-empty-function": {
+      "count": 8
+    },
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 3
+    }
+  }
+}

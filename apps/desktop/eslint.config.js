@@ -1,36 +1,30 @@
-import js from '@eslint/js';
-import prettier from 'eslint-config-prettier';
-import svelte from 'eslint-plugin-svelte';
-import globals from 'globals';
-import ts from 'typescript-eslint';
+import { globals, wirecatch } from '@wirecatch/eslint-config';
 import svelteConfig from './svelte.config.js';
 
-export default ts.config(
-  {
-    ignores: ['build/', '.svelte-kit/', 'src-tauri/', 'test-results/', 'playwright-report/'],
-  },
-  js.configs.recommended,
-  ...ts.configs.strict,
-  ...svelte.configs.recommended,
-  prettier,
-  ...svelte.configs.prettier,
-  {
-    languageOptions: { globals: { ...globals.browser, ...globals.node } },
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      'no-undef': 'off',
-    },
-  },
-  {
-    files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        extraFileExtensions: ['.svelte'],
-        parser: ts.parser,
-        svelteConfig,
+export default wirecatch({
+  tsconfigRootDir: import.meta.dirname,
+  globals: { ...globals.browser },
+  ignores: ['build/', '.svelte-kit/', 'src-tauri/', 'test-results/', 'playwright-report/'],
+  svelteConfig,
+  layers: [
+    {
+      // Only the backend layer talks to Tauri; everything else goes through `$lib/backend`, so the mock backend can stand in for it.
+      files: ['src/**'],
+      ignores: ['src/lib/backend/**'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['@tauri-apps/*'], message: 'Call Tauri through `$lib/backend` only.' },
+              {
+                group: ['$lib/backend/*', '**/backend/*'],
+                message: 'Import the backend from `$lib/backend`, not from one implementation.',
+              },
+            ],
+          },
+        ],
       },
     },
-  },
-);
+  ],
+});
