@@ -1,7 +1,8 @@
 // Every setting, in plain words, with a one-line explanation. The settings screen, its search
 // and the command palette all read this one list.
 
-export type SectionId = 'general' | 'files' | 'browser' | 'speed' | 'transfer' | 'advanced';
+export type SectionId =
+  'general' | 'files' | 'browser' | 'addons' | 'speed' | 'transfer' | 'advanced';
 
 export const SECTIONS: ReadonlyArray<{ id: SectionId; title: string; blurb: string }> = [
   { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
@@ -10,6 +11,11 @@ export const SECTIONS: ReadonlyArray<{ id: SectionId; title: string; blurb: stri
     id: 'browser',
     title: 'Browser',
     blurb: 'What the browser extension catches. The extension popup changes these same settings.',
+  },
+  {
+    id: 'addons',
+    title: 'Add-ons',
+    blurb: 'Optional extras. Wirecatch works without them and installs them only when you ask.',
   },
   { id: 'speed', title: 'Speed', blurb: 'Keep downloads from slowing everything else down.' },
   {
@@ -29,6 +35,7 @@ export type SettingId =
   | 'start_with_system'
   | 'close_to_tray'
   | 'notify_on_complete'
+  | 'media_addon'
   | 'auto_update_addons'
   | 'default_folder'
   | 'categories'
@@ -82,13 +89,6 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Notify me when a download finishes',
     help: 'Shows a system notification for each finished file.',
     keywords: 'notification alert done complete sound',
-  },
-  {
-    id: 'auto_update_addons',
-    section: 'general',
-    label: 'Keep add-ons up to date',
-    help: 'Quietly installs new versions of ffmpeg and the media add-on when they come out.',
-    keywords: 'addon add-on update ffmpeg yt-dlp media automatic',
   },
   {
     id: 'default_folder',
@@ -152,6 +152,20 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Queue for browser downloads',
     help: 'Downloads caught from the browser join this queue.',
     keywords: 'queue default capture',
+  },
+  {
+    id: 'media_addon',
+    section: 'addons',
+    label: 'Media add-on',
+    help: 'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
+    keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
+  },
+  {
+    id: 'auto_update_addons',
+    section: 'addons',
+    label: 'Keep add-ons up to date',
+    help: 'Quietly installs new versions of the media add-on when they come out.',
+    keywords: 'addon add-on update ffmpeg yt-dlp media automatic',
   },
   {
     id: 'global_speed_limit',

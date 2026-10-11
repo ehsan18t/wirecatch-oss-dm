@@ -2,6 +2,7 @@
   import { getApp } from '$lib/state/app.svelte';
   import AddDialog from './AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
+  import OpenProgramDialog from './OpenProgramDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
   import RemoveDialog from './RemoveDialog.svelte';
@@ -28,6 +29,8 @@
       <TransferDialog mode={d.kind} />
     {:else if d.kind === 'shortcuts'}
       <ShortcutsDialog />
+    {:else if d.kind === 'open-program'}
+      <OpenProgramDialog id={d.id} />
     {/if}
   {/key}
 {/if}

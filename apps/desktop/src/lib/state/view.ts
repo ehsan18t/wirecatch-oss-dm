@@ -129,6 +129,8 @@ export function visibleIds(
 
 export interface Counts {
   all: number;
+  /** Of the active ones, how many are joining video and audio rather than downloading. */
+  joining: number;
   status: Record<StatusGroup, number>;
   category: Record<Category, number>;
   queue: Map<QueueId, { total: number; running: number; waiting: number; paused: number }>;
@@ -141,6 +143,7 @@ export function countRows(
 ): Counts {
   const counts: Counts = {
     all: 0,
+    joining: 0,
     status: { active: 0, waiting: 0, paused: 0, finished: 0, failed: 0, cancelled: 0 },
     category: { video: 0, audio: 0, archive: 0, document: 0, program: 0, image: 0, other: 0 },
     queue: new Map(),
@@ -149,6 +152,7 @@ export function countRows(
     const row = get(id);
     if (!row) continue;
     counts.all += 1;
+    if (row.status === 'processing') counts.joining += 1;
     const group = groupOf(row.status);
     counts.status[group] += 1;
     counts.category[row.category] += 1;

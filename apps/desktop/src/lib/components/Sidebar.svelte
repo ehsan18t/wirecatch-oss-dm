@@ -23,6 +23,11 @@
   const speed = $derived(formatSpeed(app.downloads.totalSpeed));
   const active = $derived(app.counts.status.active);
   const waiting = $derived(app.counts.status.waiting);
+  const joining = $derived(app.counts.joining);
+  /** What the readout says when nothing is moving bytes. */
+  const headline = $derived(
+    active === 0 ? 'Idle' : joining === active ? 'Joining video and audio' : 'Starting',
+  );
 
   function current(view: View): boolean {
     return app.screen === 'downloads' && sameView(app.view, view);
@@ -58,14 +63,20 @@
       </svg>
       Wirecatch
     </p>
-    <p class="speed num" title="Total download speed">
-      {speed || (active > 0 ? 'Starting' : 'Idle')}
+    <p class="speed num" class:word={!speed && headline.length > 8} title="Total download speed">
+      {speed || headline}
     </p>
     <p class="sub num">
       {#if active + waiting === 0}
         Nothing running
       {:else}
-        {active} downloading{waiting > 0 ? `, ${waiting} waiting` : ''}
+        {[
+          active - joining > 0 || joining === 0 ? `${active - joining} downloading` : '',
+          joining > 0 ? `${joining} joining video and audio` : '',
+          waiting > 0 ? `${waiting} waiting` : '',
+        ]
+          .filter(Boolean)
+          .join(', ')}
       {/if}
     </p>
   </header>
@@ -77,6 +88,16 @@
         {app.pending.length === 1
           ? '1 browser download waits for your answer'
           : `${app.pending.length} browser downloads wait for your answer`}
+      </span>
+    </button>
+  {/if}
+  {#if app.mediaChoices.length > 0 && app.mediaHidden}
+    <button class="pending" onclick={() => app.showMediaChoices()}>
+      <Bell size={14} aria-hidden="true" />
+      <span>
+        {app.mediaChoices.length === 1
+          ? '1 video waits for you to pick a quality'
+          : `${app.mediaChoices.length} videos wait for you to pick a quality`}
       </span>
     </button>
   {/if}
@@ -281,6 +302,12 @@
     font-variation-settings: 'wdth' 78;
     line-height: 1.05;
     letter-spacing: -0.01em;
+  }
+
+  /* A phrase instead of a number fits the column at a smaller size. */
+  .speed.word {
+    font-size: var(--text-lg);
+    line-height: 1.3;
   }
 
   .sub {

@@ -1,6 +1,6 @@
 // Screenshots of the main states for review, in both themes. Saved to docs/screenshots.
 
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { open, row } from './helpers';
 
 const dir = 'docs/screenshots';
@@ -98,6 +98,58 @@ for (const theme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: /^Overnight/ }).click();
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${dir}/${theme}-14-paused-queue-and-start-now.png` });
+    });
+
+    test('quality picker', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.keyboard.press('Control+K');
+      await page.keyboard.type('several qualities');
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-15-quality-picker.png` });
+    });
+
+    test('add-on prompt and install progress', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.keyboard.press('Control+K');
+      await page.keyboard.type('needs the media add-on');
+      await page.keyboard.press('Enter');
+      await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-16-addon-prompt.png` });
+      await page.getByRole('button', { name: 'Install', exact: true }).click();
+      await page.getByRole('progressbar').waitFor();
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: `${dir}/${theme}-17-addon-installing.png` });
+      // Once installed, the page that asked for it continues with the quality picker.
+      await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor({ timeout: 15_000 });
+    });
+
+    test('add-ons in settings', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.getByRole('button', { name: /^Settings/ }).click();
+      await page.getByRole('searchbox', { name: 'Search settings' }).fill('add-on');
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-18-addons-settings.png` });
+    });
+
+    test('joining video and audio', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      // Room in the queue, so the video starts at once.
+      await page.getByRole('button', { name: 'Pause all' }).click();
+      await page.keyboard.press('Control+K');
+      await page.keyboard.type('several qualities');
+      await page.keyboard.press('Enter');
+      // 1080p comes as separate video and audio, so it is joined after downloading.
+      await page.getByRole('radio', { name: /1080p/ }).check();
+      await page.getByRole('button', { name: 'Download', exact: true }).click();
+      await page.getByRole('searchbox', { name: 'Search downloads' }).fill('Northern lights');
+      await row(page, 'Northern lights').click();
+      await expect(row(page, 'Northern lights')).toContainText('Joining video and audio', {
+        timeout: 60_000,
+      });
+      await page.screenshot({ path: `${dir}/${theme}-19-joining.png` });
     });
 
     test('first run', async ({ page }) => {

@@ -60,6 +60,27 @@ for (const theme of ['light', 'dark'] as const) {
       .waitFor();
     await audit(page, 'capture toast');
   });
+
+  test(`media and add-on screens pass axe, ${theme} theme`, async ({ page }) => {
+    await open(page, 'capture=0', { theme });
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('several qualities');
+    await page.keyboard.press('Enter');
+    await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor();
+    await audit(page, 'quality picker');
+    await page.getByRole('button', { name: "Don't download" }).click();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('needs the media add-on');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
+    await audit(page, 'add-on prompt');
+    await page.getByRole('button', { name: 'Not now' }).click();
+
+    await page.getByRole('button', { name: /^Settings/ }).click();
+    await page.getByRole('searchbox', { name: 'Search settings' }).fill('add-on');
+    await audit(page, 'add-ons settings');
+  });
 }
 
 test('keyboard only: every stop shows a visible focus ring', async ({ page }) => {

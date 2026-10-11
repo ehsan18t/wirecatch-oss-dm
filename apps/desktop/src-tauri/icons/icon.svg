@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Wirecatch placeholder mark: a signal wire that turns down and is caught. Regenerate the
+       icon set with `pnpm tauri icon src-tauri/icons/icon.svg`. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e8086"/>
+      <stop offset="1" stop-color="#075458"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#tile)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 170 410 H 280 L 345 285 L 430 545 L 495 410 H 560 Q 650 410 650 500 V 700"
+          stroke="#ffffff" stroke-width="66"/>
+    <path d="M 535 600 L 650 715 L 765 600" stroke="#ffffff" stroke-width="66"/>
+    <path d="M 500 835 H 800" stroke="#8ff0e6" stroke-width="66"/>
+  </g>
+</svg>

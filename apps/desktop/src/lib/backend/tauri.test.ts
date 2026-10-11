@@ -34,6 +34,17 @@ const FIXED = [
   'open_file',
   'open_folder',
   'set_download_folder',
+  'is_program',
+  'take_launch_links',
+  // Pending until the core has media and add-ons (WP11); the names and types are final.
+  'choose_media',
+  'dismiss_media_choice',
+  'pending_media_choices',
+  'take_addon_request',
+  'list_addons',
+  'install_addon',
+  'update_addon',
+  'remove_addon',
 ];
 
 describe('Tauri command names', () => {
@@ -47,7 +58,8 @@ describe('Tauri command names', () => {
     const handler = /generate_handler!\[([\s\S]*?)\]/.exec(lib)?.[1] ?? '';
     const registered = handler
       .split(',')
-      .map((s) => s.trim())
+      // Registered as `commands::name`.
+      .map((s) => s.trim().replace(/^commands::/, ''))
       .filter(Boolean);
     expect(registered.sort()).toEqual([...FIXED].sort());
   });
@@ -68,6 +80,8 @@ describe('TauriBackend', () => {
     });
     await b.confirmCapture(9, { folder: null, file_name: 'a', queue: null });
     await b.pauseAll();
+    await b.chooseMedia(4, { option_id: 'hd', folder: null, file_name: null, queue: null });
+    await b.installAddon('media');
     expect(invoke.mock.calls).toEqual([
       ['remove', { ids: [1, 2], deleteFile: true }],
       ['reorder', { queue: 3, idsInOrder: [2, 1] }],
@@ -77,6 +91,11 @@ describe('TauriBackend', () => {
       ],
       ['confirm_capture', { id: 9, confirmation: { folder: null, file_name: 'a', queue: null } }],
       ['pause_all', undefined],
+      [
+        'choose_media',
+        { id: 4, selection: { option_id: 'hd', folder: null, file_name: null, queue: null } },
+      ],
+      ['install_addon', { id: 'media' }],
     ]);
   });
 

@@ -4,6 +4,7 @@ import type {
   Category,
   DownloadStatus,
   FixAction,
+  MediaKind,
   Schedule,
   TimeOfDay,
   WaitReason,
@@ -90,6 +91,14 @@ export const STATUS_LABEL: Record<DownloadStatus, string> = {
   failed: 'Needs attention',
   cancelled: 'Cancelled',
   processing: 'Joining video and audio',
+};
+
+/** Where a media download came from, in plain words. */
+export const MEDIA_SOURCE_LABEL: Record<MediaKind, string> = {
+  hls: 'from a video stream',
+  dash: 'from a video stream',
+  direct: 'a media file',
+  page: 'from a video page',
 };
 
 export const CATEGORY_LABEL: Record<Category, string> = {

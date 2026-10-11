@@ -2,12 +2,15 @@
 // call these methods; nothing else talks to the backend.
 
 import type {
+  AddonInfo,
   AddRequest,
   AppSettings,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
   FixAction,
+  MediaChoice,
+  MediaSelection,
   PendingCapture,
   Queue,
   QueueId,
@@ -32,7 +35,8 @@ export type Dialog =
   | { kind: 'refresh'; id: DownloadId }
   | { kind: 'export' }
   | { kind: 'import' }
-  | { kind: 'shortcuts' };
+  | { kind: 'shortcuts' }
+  | { kind: 'open-program'; id: DownloadId };
 
 export interface Toast {
   id: number;
@@ -104,6 +108,18 @@ export class AppState {
   pending = $state<PendingCapture[]>([]);
   /** The ask-first dialog was closed without an answer; the downloads still wait. */
   pendingHidden = $state(false);
+  /** Media found with several qualities, waiting for the person to pick one. */
+  mediaChoices = $state<MediaChoice[]>([]);
+  /** The quality picker was put aside; the choices still wait. */
+  mediaHidden = $state(false);
+  /** Saving the download list failed; shown in a banner until dealt with. */
+  storageProblem = $state<string | null>(null);
+  /** Add-ons and their state; `null` until loaded. */
+  addons = $state<AddonInfo[] | null>(null);
+  /** Why the add-ons could not be listed, shown in their settings section. */
+  addonsError = $state<string | null>(null);
+  /** A capture that needs an add-on; the prompt offers to install it. */
+  addonRequest = $state<{ addon: AddonInfo; url: string } | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
   /** Refreshed every half minute so schedule labels stay true. */
@@ -213,10 +229,20 @@ export class AppState {
       // Replaced whole, never mutated, so a plain Date is enough.
       // eslint-disable-next-line svelte/prefer-svelte-reactivity
       this.now = new Date(this.#clockSource());
-      unsubscribe = await backend.subscribe((e) => {
+      const stopEvents = await backend.subscribe((e) => {
         if (loading) buffered.push(e);
         else this.handle(e);
       });
+      const stopSignals = await backend.onShellSignal((signal) => {
+        if (generation !== this.#generation) return;
+        // Events were missed: load everything again rather than show a stale list.
+        if (signal === 'resync') void this.init();
+        else void this.#takeLaunchLinks();
+      });
+      unsubscribe = () => {
+        stopEvents();
+        stopSignals();
+      };
     } catch (err) {
       if (generation === this.#generation) {
         this.loadError = message(err);
@@ -254,6 +280,54 @@ export class AppState {
     if (generation !== this.#generation) return;
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     this.#clock = setInterval(() => (this.now = new Date(this.#clockSource())), 30_000);
+    // Neither is needed for the list, so neither holds it up.
+    void this.loadAddons();
+    void this.#takeLaunchLinks();
+    void this.#restoreQuestions();
+  }
+
+  /**
+   * Questions asked while no window was open, or before a reload: open media choices and a
+   * waiting add-on prompt. Confirmations come back with the main load.
+   */
+  async #restoreQuestions(): Promise<void> {
+    try {
+      const choices = await this.backend.pendingMediaChoices();
+      const fresh = choices.filter((c) => !this.mediaChoices.some((k) => k.id === c.id));
+      if (fresh.length > 0) this.mediaChoices = [...this.mediaChoices, ...fresh];
+    } catch {
+      // Not offered (yet): the events still bring new choices.
+    }
+    try {
+      const request = await this.backend.takeAddonRequest();
+      if (request) this.addonRequest = request;
+    } catch {
+      // Same: the event still brings a new prompt.
+    }
+  }
+
+  /** Lists the add-ons. A failure is shown in their settings section, not as an error note. */
+  async loadAddons(): Promise<void> {
+    try {
+      this.addons = await this.backend.listAddons();
+      this.addonsError = null;
+    } catch (err) {
+      this.addonsError = message(err);
+    }
+  }
+
+  /** Links from the command line (`wirecatch-app https://...`) open the Add dialog. */
+  async #takeLaunchLinks(): Promise<void> {
+    let links: string[];
+    try {
+      links = await this.backend.takeLaunchLinks();
+    } catch {
+      return;
+    }
+    if (links.length === 0) return;
+    const open = this.dialog;
+    const urls = open?.kind === 'add' ? [...open.urls, ...links] : links;
+    this.openDialog({ kind: 'add', urls });
   }
 
   #teardown(): void {
@@ -299,6 +373,36 @@ export class AppState {
         }
         // A new question always shows, even if an earlier one was put aside.
         this.pendingHidden = false;
+        break;
+      case 'media_choice_requested':
+        if (!this.mediaChoices.some((c) => c.id === event.data.id)) {
+          this.mediaChoices = [...this.mediaChoices, event.data];
+        }
+        // A new question always shows, even if an earlier one was put aside.
+        this.mediaHidden = false;
+        break;
+      case 'addons_changed': {
+        this.addons = event.data;
+        this.addonsError = null;
+        const asked = this.addonRequest;
+        const fresh = asked && event.data.find((a) => a.id === asked.addon.id);
+        if (asked && fresh) {
+          // Once installed, the waiting download carries on by itself; the prompt has done its job.
+          if (fresh.state.type === 'installed') {
+            this.addonRequest = null;
+            this.notify(`${fresh.name} installed. Your download continues.`);
+          } else {
+            this.addonRequest = { ...asked, addon: fresh };
+          }
+        }
+        break;
+      }
+      case 'addon_required':
+        this.addonRequest = event.data;
+        break;
+      case 'storage_failed':
+        // Not a passing note: it stays until the person deals with it.
+        this.storageProblem = event.data.message;
         break;
     }
   }
@@ -481,7 +585,11 @@ export class AppState {
   async togglePause(ids: DownloadId[] = this.selectedIds): Promise<void> {
     const rows = ids.flatMap((id) => this.downloads.get(id) ?? []);
     const running = rows.some(
-      (r) => r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued',
+      (r) =>
+        r.status === 'downloading' ||
+        r.status === 'connecting' ||
+        r.status === 'queued' ||
+        r.status === 'processing',
     );
     if (running) {
       await this.pause(ids);
@@ -525,8 +633,21 @@ export class AppState {
     return ok === true;
   }
 
+  /** Opens a finished file; a program asks first whether the person trusts where it came from. */
   async openFile(id: DownloadId): Promise<void> {
+    const program = await this.#run(() => this.backend.isProgram(id));
+    if (program === undefined) return;
+    if (program) {
+      this.openDialog({ kind: 'open-program', id });
+      return;
+    }
     await this.#run(() => this.backend.openFile(id));
+  }
+
+  /** Opens a program the person confirmed they trust. */
+  async openProgram(id: DownloadId): Promise<void> {
+    this.closeDialog();
+    await this.#run(() => this.backend.openFile(id, true));
   }
 
   async openFolder(id: DownloadId): Promise<void> {
@@ -731,6 +852,32 @@ export class AppState {
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
   }
 
+  /** Brings back the quality picker after it was put aside. */
+  showMediaChoices(): void {
+    this.paletteOpen = false;
+    this.mediaHidden = false;
+  }
+
+  /** Puts the quality picker aside; the choice stays open and a note in the sidebar brings it back. */
+  hideMediaChoices(): void {
+    this.mediaHidden = true;
+  }
+
+  /** Tries saving again after a storage failure: any change is saved, so this saves settings. */
+  async retryStorage(): Promise<void> {
+    if (!this.settings) return;
+    const settings = $state.snapshot(this.settings);
+    const ok = await this.#run(async () => {
+      await this.backend.updateSettings(settings);
+      return true;
+    });
+    if (ok) this.storageProblem = null;
+  }
+
+  dismissStorageProblem(): void {
+    this.storageProblem = null;
+  }
+
   /** Brings back the ask-first dialog after it was closed without an answer. */
   showPending(): void {
     this.paletteOpen = false;
@@ -743,6 +890,44 @@ export class AppState {
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+  }
+
+  // ---- Media and add-ons ----
+
+  /** Downloads the picked quality; the choice goes away once the core accepts it. */
+  async chooseMedia(id: number, selection: MediaSelection): Promise<boolean> {
+    const ok = await this.#run(async () => {
+      await this.backend.chooseMedia(id, selection);
+      return true;
+    });
+    if (ok) this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    return ok === true;
+  }
+
+  async dismissMediaChoice(id: number): Promise<void> {
+    // Gone from view at once; the core forgets it in the background.
+    this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    await this.#run(() => this.backend.dismissMediaChoice(id));
+  }
+
+  async installAddon(id: string): Promise<boolean> {
+    const ok = await this.#run(async () => {
+      await this.backend.installAddon(id);
+      return true;
+    });
+    return ok === true;
+  }
+
+  async updateAddon(id: string): Promise<void> {
+    await this.#run(() => this.backend.updateAddon(id));
+  }
+
+  async removeAddon(id: string): Promise<void> {
+    await this.#run(() => this.backend.removeAddon(id));
+  }
+
+  closeAddonRequest(): void {
+    this.addonRequest = null;
   }
 
   async setAskBeforeDownload(ask: boolean): Promise<void> {

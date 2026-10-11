@@ -15,6 +15,7 @@
     formatSize,
     formatSpeed,
     folderOf,
+    MEDIA_SOURCE_LABEL,
     progressFraction,
     STATUS_LABEL,
     waitLong,
@@ -32,7 +33,12 @@
   const one = $derived(rows.length === 1 ? rows[0] : undefined);
 
   function isRunning(r: DownloadSummary) {
-    return r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued';
+    return (
+      r.status === 'downloading' ||
+      r.status === 'connecting' ||
+      r.status === 'queued' ||
+      r.status === 'processing'
+    );
   }
 
   const anyRunning = $derived(rows.some(isRunning));
@@ -84,6 +90,15 @@
 
     {#if one.status === 'failed' && one.error}
       <ErrorFix row={one} />
+    {/if}
+
+    {#if one.media}
+      <p class="waiting">
+        {one.media.quality}, {MEDIA_SOURCE_LABEL[one.media.source]}.
+        {#if one.status === 'processing'}
+          The video and audio are downloaded; Wirecatch is joining them into one file.
+        {/if}
+      </p>
     {/if}
 
     <section class="progress" aria-label="Progress">
@@ -187,7 +202,7 @@
           </button>
         </dd>
       </div>
-      {#if one.status !== 'completed' && one.status !== 'failed' && one.status !== 'cancelled'}
+      {#if !['completed', 'failed', 'cancelled', 'processing'].includes(one.status)}
         <div>
           <dt>Link expired?</dt>
           <dd>

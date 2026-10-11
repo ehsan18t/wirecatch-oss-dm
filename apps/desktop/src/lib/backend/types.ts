@@ -2,11 +2,14 @@
 // `TauriBackend` talks to the Rust side; `MockBackend` simulates it in memory.
 
 import type {
+  AddonInfo,
   AddRequest,
   AppSettings,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  MediaChoice,
+  MediaSelection,
   PendingCapture,
   Queue,
   QueueId,
@@ -14,6 +17,19 @@ import type {
 } from '@wirecatch/protocol';
 
 export type Unsubscribe = () => void;
+
+/** A capture that needs an add-on, as `UiEvent::AddonRequired` carries it. */
+export interface AddonRequest {
+  addon: AddonInfo;
+  url: string;
+}
+
+/**
+ * Signals from the desktop shell that are not core events. `resync`: some events were missed,
+ * so everything must be loaded again. `links`: links arrived from the command line (a second
+ * launch, `wirecatch-app https://...`); fetch them with `takeLaunchLinks`.
+ */
+export type ShellSignal = 'resync' | 'links';
 
 /** Only the mock backend has this: palette actions that pretend the browser sent a download. */
 export interface SampleData {
@@ -61,13 +77,39 @@ export interface Backend {
   confirmCapture(id: number, confirmation: CaptureConfirmation): Promise<void>;
   rejectCapture(id: number): Promise<void>;
 
-  openFile(id: DownloadId): Promise<void>;
+  /**
+   * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
+   * `allowProgram` is set, after the person said they trust where it came from.
+   */
+  openFile(id: DownloadId, allowProgram?: boolean): Promise<void>;
+  /** Whether opening the file would run code, so the interface asks first. */
+  isProgram(id: DownloadId): Promise<boolean>;
   openFolder(id: DownloadId): Promise<void>;
   /** Moves a download, running or not, to another folder. */
   setDownloadFolder(id: DownloadId, folder: string): Promise<void>;
 
+  /** Links passed on the command line that the interface has not shown yet, handed over once. */
+  takeLaunchLinks(): Promise<string[]>;
+
+  /** Downloads the chosen quality of a media choice. */
+  chooseMedia(id: number, selection: MediaSelection): Promise<void>;
+  /** Drops a media choice the person did not want. */
+  dismissMediaChoice(id: number): Promise<void>;
+  /** Media choices still open, so a new or reloaded window asks them again. */
+  pendingMediaChoices(): Promise<MediaChoice[]>;
+  /** An add-on prompt that arrived while no window was open, handed over once. */
+  takeAddonRequest(): Promise<AddonRequest | null>;
+
+  /** Optional components (D2, D20): one media add-on with yt-dlp, ffmpeg and Deno. */
+  listAddons(): Promise<AddonInfo[]>;
+  installAddon(id: string): Promise<void>;
+  updateAddon(id: string): Promise<void>;
+  removeAddon(id: string): Promise<void>;
+
   /** Every change the core pushes, in order. */
   subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe>;
+  /** Signals from the desktop shell (see `ShellSignal`). */
+  onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe>;
 
   /** System pickers. They resolve to `null` when the person cancels. */
   pickFolder(current?: string): Promise<string | null>;
@@ -106,12 +148,28 @@ export const COMMANDS = {
   confirmCapture: 'confirm_capture',
   rejectCapture: 'reject_capture',
   openFile: 'open_file',
+  isProgram: 'is_program',
   openFolder: 'open_folder',
   setDownloadFolder: 'set_download_folder',
+  takeLaunchLinks: 'take_launch_links',
+  chooseMedia: 'choose_media',
+  dismissMediaChoice: 'dismiss_media_choice',
+  pendingMediaChoices: 'pending_media_choices',
+  takeAddonRequest: 'take_addon_request',
+  listAddons: 'list_addons',
+  installAddon: 'install_addon',
+  updateAddon: 'update_addon',
+  removeAddon: 'remove_addon',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */
 export const EVENT_NAME = 'wirecatch://event';
+
+/** Shell signals, as Tauri events with no payload. */
+export const SIGNAL_EVENTS: Record<ShellSignal, string> = {
+  resync: 'wirecatch://resync',
+  links: 'wirecatch://links',
+};
 
 /** An error from the backend, with a message written for a person. */
 export class BackendError extends Error {

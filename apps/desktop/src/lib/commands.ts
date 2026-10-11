@@ -368,6 +368,19 @@ export function buildCommands(app: AppState): Command[] {
     });
   }
 
+  if (app.mediaChoices.length > 0) {
+    out.push({
+      id: 'media.pick',
+      group: 'Downloads',
+      title:
+        app.mediaChoices.length === 1
+          ? 'Pick a quality for the video that is waiting'
+          : `Pick a quality for the ${app.mediaChoices.length} videos that are waiting`,
+      keywords: 'media video quality resolution stream pending',
+      run: () => app.showMediaChoices(),
+    });
+  }
+
   // Only the mock backend has sample-data actions; they live in the mock module, so none of
   // their text ships in a production build.
   const sample = app.ready ? app.backend.sampleData : undefined;

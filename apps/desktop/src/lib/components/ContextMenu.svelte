@@ -24,7 +24,11 @@
     const out: Item[] = [];
     if (
       rows.some(
-        (r) => r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued',
+        (r) =>
+          r.status === 'downloading' ||
+          r.status === 'connecting' ||
+          r.status === 'queued' ||
+          r.status === 'processing',
       )
     ) {
       out.push({ label: 'Pause', run: () => app.pause(ids) });
