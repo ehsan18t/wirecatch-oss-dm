@@ -9,6 +9,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "cargo test -p wirecatch-protocol --quiet && node scripts/write-index.mjs"
+    "generate": "node scripts/clean.mjs && cargo test -p wirecatch-protocol --quiet && node scripts/write-index.mjs"
   }
 }
