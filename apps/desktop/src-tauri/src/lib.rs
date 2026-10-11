@@ -100,6 +100,10 @@ use crate::window::{Launch, LaunchLinks};
 /// The one Tauri event that carries every `UiEvent` to the webview.
 pub const EVENT_NAME: &str = "wirecatch://event";
 
+/// Name of the start-at-sign-in entry (the `Run` registry value on Windows). The NSIS uninstall
+/// hook removes the value by this name.
+pub const RELEASE_AUTOSTART_NAME: &str = "Wirecatch";
+
 /// Tells the webview it missed events and must reload everything.
 pub const RESYNC_EVENT: &str = "wirecatch://resync";
 
@@ -125,7 +129,7 @@ pub fn run() {
     let autostart_name = if host::DEV_BUILD {
         host::DEV_NAME
     } else {
-        "Wirecatch"
+        RELEASE_AUTOSTART_NAME
     };
 
     let app = tauri::Builder::default()
@@ -293,6 +297,20 @@ fn updater_configured(app: &tauri::App) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The NSIS uninstall hook cannot run in a test, so this checks it keeps its promises.
+    #[test]
+    fn the_uninstall_hook_spares_updates_and_removes_start_at_sign_in() {
+        let hook = include_str!("../windows/hooks.nsh");
+        let guarded = hook
+            .split("${If} $UpdateMode <> 1")
+            .nth(1)
+            .expect("the hook must skip update mode");
+        assert!(guarded.contains("wirecatch-bridge.exe\" uninstall"));
+        assert!(guarded.contains("Pop $0"), "the nsExec result is popped");
+        let run_value = format!(r#"CurrentVersion\Run" "{RELEASE_AUTOSTART_NAME}""#);
+        assert!(guarded.contains(&run_value), "removes the Run value");
+    }
 
     #[test]
     fn a_debug_build_gets_its_own_identity() {
