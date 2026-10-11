@@ -101,9 +101,9 @@ const SEARCH_BUDGET = 20_000;
  * The video and audio elements under `root`, including inside open shadow roots
  * (closed ones cannot be seen). Stops after `SEARCH_BUDGET` elements on huge pages.
  */
-export function findMedia(root: Document | ShadowRoot): HTMLMediaElement[] {
+export function findMedia(root: ParentNode): HTMLMediaElement[] {
   const found: HTMLMediaElement[] = [];
-  const roots: Array<Document | ShadowRoot> = [root];
+  const roots: ParentNode[] = [root];
   let seen = 0;
   for (let next = roots.shift(); next !== undefined && seen < SEARCH_BUDGET; next = roots.shift()) {
     for (const el of next.querySelectorAll('*')) {
@@ -237,6 +237,8 @@ export class MediaButton {
   #pointer: { x: number; y: number } | null = null;
   /** True while the pointer is on the button itself, which may sit outside the element (audio). */
   #overButton = false;
+  /** Where focus came from when Tab moved it to the button, and goes back to. */
+  #returnTo: HTMLElement | null = null;
   /** The position last written to the host, so an unchanged one is not written again. */
   #style = '';
   #timer: ReturnType<typeof setTimeout> | null = null;
@@ -272,6 +274,7 @@ export class MediaButton {
     });
     this.button.addEventListener('focus', () => this.#update());
     this.button.addEventListener('blur', () => this.#update());
+    this.button.addEventListener('keydown', (e) => this.#onButtonKey(e));
 
     for (const el of findMedia(doc)) this.#track(el);
     this.#listen(doc, 'play', (e) => this.#onPlay(e), true);
@@ -284,6 +287,8 @@ export class MediaButton {
     });
     // `composedPath()[0]` is the element itself, also inside a page's open shadow root.
     this.#listen(doc, 'focusin', (e) => this.#onFocus(e.composedPath()[0] ?? e.target), true);
+    // Not passive: it may cancel Tab to move focus to the button.
+    this.#listen(doc, 'keydown', (e) => this.#onKey(e as KeyboardEvent), true, false);
     this.#listen(doc, 'scroll', () => this.#schedule(), true);
     this.#listen(doc, 'fullscreenchange', () => this.#update());
     const view = doc.defaultView;
@@ -309,8 +314,14 @@ export class MediaButton {
     this.host.remove();
   }
 
-  #listen(target: EventTarget, type: string, listener: (event: Event) => void, capture = false): void {
-    const options = { capture, passive: true };
+  #listen(
+    target: EventTarget,
+    type: string,
+    listener: (event: Event) => void,
+    capture = false,
+    passive = true,
+  ): void {
+    const options = { capture, passive };
     target.addEventListener(type, listener, options);
     this.#cleanups.push(() => target.removeEventListener(type, listener, options));
   }
@@ -369,12 +380,61 @@ export class MediaButton {
   }
 
   #onFocus(target: EventTarget | null): void {
-    if (target instanceof HTMLMediaElement && isCandidate(target) && !isDecorative(target)) {
-      this.#track(target);
-      this.#hovered = target;
+    const el = this.#mediaFor(target);
+    if (el !== null) {
+      this.#hovered = el;
       this.#lastActive = this.#now();
       this.#update();
     }
+  }
+
+  /**
+   * The media element a focused element stands for: the element itself, or the one
+   * inside a focused player container about its size. A large container (the page's
+   * main area, say) is not a player, so focus there does not count.
+   */
+  #mediaFor(target: EventTarget | null): HTMLMediaElement | null {
+    if (!(target instanceof Element) || target === this.#doc.body || target === this.#doc.documentElement) {
+      return null;
+    }
+    const usable = (el: HTMLMediaElement): boolean => isCandidate(el) && !isDecorative(el);
+    if (target instanceof HTMLMediaElement) return usable(target) ? this.#track(target) : null;
+    const box = target.getBoundingClientRect();
+    // A player's media may not have been seen yet (added without any event reaching the page).
+    if (box.width * box.height > 0) for (const el of findMedia(target)) this.#track(el);
+    for (const el of this.#tracked) {
+      if (!usable(el) || !containsDeep(target, el)) continue;
+      const r = el.getBoundingClientRect();
+      if (box.width * box.height <= 1.5 * r.width * r.height) return el;
+    }
+    return null;
+  }
+
+  /**
+   * The button sits outside the page's body, so it would come last with Tab. Tab on
+   * the media element (or its player) moves to the button instead, and Shift+Tab or
+   * Escape on the button goes back; Tab on the button goes back too and lets the
+   * browser carry on from there, so the button sits right after the player.
+   */
+  #onKey(event: KeyboardEvent): void {
+    if (event.key !== 'Tab' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const focused = event.composedPath()[0] ?? event.target;
+    if (this.#state === 'none' || this.#target === null || this.#mediaFor(focused) !== this.#target) return;
+    if (!(focused instanceof HTMLElement)) return;
+    event.preventDefault();
+    this.#returnTo = focused;
+    this.button.focus();
+  }
+
+  #onButtonKey(event: KeyboardEvent): void {
+    const back = event.key === 'Escape' || (event.key === 'Tab' && event.shiftKey);
+    const onward = event.key === 'Tab' && !event.shiftKey;
+    const to = this.#returnTo;
+    if ((!back && !onward) || to === null || !to.isConnected) return;
+    // Onward: focus the player again without cancelling the key, so the browser moves on from it.
+    if (back) event.preventDefault();
+    this.#returnTo = null;
+    to.focus();
   }
 
   /** Runs `#update` once in the next frame, however many events come in before it. */

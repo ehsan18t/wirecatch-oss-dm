@@ -364,6 +364,85 @@ describe('MediaButton', () => {
     expect(b.host.style.getPropertyValue('top')).toBe('108px');
   });
 
+  describe('keyboard order', () => {
+    const tab = (target: Element, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+
+    it('moves from the focused video to the button with Tab, and back with Shift+Tab or Escape', async () => {
+      const b = start(fakeDeps());
+      const video = media('video', box(0, 0, 640, 360), {
+        src: 'https://e.com/a.mp4',
+        controls: '',
+        tabindex: '0',
+      });
+      video.focus();
+      await settle();
+      expect(b.state).toBe('shown');
+
+      expect(tab(video).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(b.host);
+      const shiftTab = new KeyboardEvent('keydown', {
+        key: 'Tab',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      b.button.dispatchEvent(shiftTab);
+      expect(shiftTab.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(video);
+
+      tab(video);
+      expect(document.activeElement).toBe(b.host);
+      b.button.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      expect(document.activeElement).toBe(video);
+
+      // Tab on the button goes back to the video without cancelling, so the browser moves on from there.
+      tab(video);
+      const onward = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      b.button.dispatchEvent(onward);
+      expect(onward.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(video);
+    });
+
+    it("also from a focused player container about the video's size, but not from a large page area", async () => {
+      const b = start(fakeDeps());
+      const player = document.createElement('div');
+      player.tabIndex = 0;
+      player.getBoundingClientRect = () => ({ ...box(0, 0, 640, 400), x: 0, y: 0, toJSON: () => null });
+      const page = document.createElement('main');
+      page.tabIndex = -1;
+      page.getBoundingClientRect = () => ({ ...box(0, 0, 1024, 3000), x: 0, y: 0, toJSON: () => null });
+      document.body.append(page);
+      page.append(player);
+      const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+      player.append(video);
+      player.focus();
+      await settle();
+      expect(b.state).toBe('shown');
+      tab(player);
+      expect(document.activeElement).toBe(b.host);
+      b.button.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+      expect(document.activeElement).toBe(player);
+
+      page.focus();
+      expect(tab(page).defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(page);
+    });
+  });
+
   it('is a real, labelled button that keyboard users can reach', () => {
     const b = start(fakeDeps());
     expect(b.button.tagName).toBe('BUTTON');
