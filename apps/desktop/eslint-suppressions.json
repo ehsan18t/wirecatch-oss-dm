@@ -409,9 +409,6 @@
     }
   },
   "src/lib/window/download-window.svelte.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/switch-exhaustiveness-check": {
       "count": 1
     },

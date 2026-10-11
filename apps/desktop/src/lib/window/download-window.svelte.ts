@@ -212,7 +212,11 @@ export class DownloadWindowState {
           void this.backend
             .earlierDownload(event.data.id)
             .then((row) => (this.earlier = row))
-            .catch(() => {});
+            .catch(() => {
+              // Only a note, and the question works without it; but one read for the
+              // question before may no longer hold, so none is shown.
+              this.earlier = null;
+            });
         }
         return;
       case 'addon_required':

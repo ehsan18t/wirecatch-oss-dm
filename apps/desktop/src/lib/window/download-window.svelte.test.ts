@@ -186,6 +186,36 @@ describe('a video', () => {
     }
   });
 
+  it('drops the note about an earlier download when it cannot be read again', async () => {
+    const b = backend();
+    const earlierId = await b.addDownload({
+      url: 'https://example.com/a.zip',
+      queue: null,
+      folder: null,
+      file_name: null,
+      start: false,
+    });
+    const earlier = await b.getDownload(earlierId);
+    vi.spyOn(b, 'earlierDownload')
+      .mockResolvedValueOnce(earlier)
+      .mockRejectedValueOnce(new Error('The list could not be read.'));
+    vi.useFakeTimers();
+    try {
+      b.simulateSlowReading();
+      const id = b.windows.windows[0]?.shows.id ?? -1;
+      const win = new DownloadWindowState(b, { question: id }, { close: vi.fn() });
+      await win.init();
+      expect(win.earlier?.id).toBe(earlierId);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(win.question?.kind).toBe('choice');
+      // A note that could not be checked again is not shown as if it still held.
+      expect(win.earlier).toBeNull();
+      win.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a reading that ends without a list says why it went', async () => {
     const b = backend();
     vi.useFakeTimers();
