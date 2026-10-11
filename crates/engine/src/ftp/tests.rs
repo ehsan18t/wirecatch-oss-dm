@@ -40,6 +40,27 @@ fn the_scheme_and_port_pick_the_encryption() {
 }
 
 #[test]
+fn international_server_names_are_sent_in_their_ascii_form() {
+    for scheme in ["ftp", "ftps", "ftpes"] {
+        let t = target(&format!("{scheme}://b\u{fc}cher.example/a.iso")).unwrap();
+        assert_eq!(
+            t.host,
+            Host::Domain("xn--bcher-kva.example".to_string()),
+            "{scheme}"
+        );
+        if let Some(tls) = &t.tls {
+            assert_eq!(
+                tls.server_name,
+                rustls::pki_types::ServerName::try_from("xn--bcher-kva.example").unwrap()
+            );
+        }
+    }
+    // An address written in a secure link is an address, not a name.
+    let t = target("ftps://127.0.0.1/a.iso").unwrap();
+    assert_eq!(t.host, Host::<String>::Ipv4([127, 0, 0, 1].into()));
+}
+
+#[test]
 fn paths_and_credentials_come_from_the_url() {
     let t = target("ftp://files.example/pub/a%20b.iso").unwrap();
     assert_eq!(t.path, "pub/a b.iso", "relative to the login folder");

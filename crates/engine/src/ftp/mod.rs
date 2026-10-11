@@ -106,10 +106,19 @@ impl Target {
         let invalid = |why: &str| Error::InvalidUrl(format!("{} {why}", without_password(url)));
         let (security, port) =
             security_and_port(url).ok_or_else(|| invalid("is not an FTP link"))?;
-        let host = url
-            .host()
-            .map(|h| h.to_owned())
-            .ok_or_else(|| invalid("has no server name"))?;
+        let host = match url.host() {
+            None => return Err(invalid("has no server name")),
+            // `url` turns international names into their ASCII form (IDNA)
+            // only for the schemes it knows, which include `ftp` but not
+            // `ftps` or `ftpes`; there the name arrives percent-encoded.
+            Some(Host::Domain(name)) => {
+                let name = percent_decode_str(name)
+                    .decode_utf8()
+                    .map_err(|_| invalid("has a server name that is not valid UTF-8"))?;
+                Host::parse(&name).map_err(|_| invalid("has a server name that cannot be used"))?
+            }
+            Some(other) => other.to_owned(),
+        };
 
         let decode = |text: &str| {
             percent_decode_str(text)
