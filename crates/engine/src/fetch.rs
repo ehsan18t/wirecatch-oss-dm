@@ -92,6 +92,25 @@ const SAVE_BUFFER: usize = 256 * 1024;
 ///   NAT64 (`64:ff9b::10.0.0.1`) and 6to4 (`2002:0a00:0001::`).
 ///
 /// The origin the fetcher was created for is always allowed.
+///
+/// # With a proxy
+///
+/// When a proxy is set in the environment (`HTTP_PROXY`, `HTTPS_PROXY` or
+/// `ALL_PROXY`, in upper or lower case), requests go through it, and the
+/// proxy, not Wirecatch, looks up each name and connects. The guard then
+/// still refuses, before every request and redirect hop, a target written as a
+/// local address and a target whose name resolves only to local addresses on
+/// this computer. It cannot see how the proxy resolves a name, so a name that
+/// the proxy resolves to a local address (because it changed after the check,
+/// or because only the proxy knows it, such as an intranet host) is not
+/// caught. The proxy itself is trusted, since the user or their administrator
+/// set it, not a website: its own address may be local.
+///
+/// Requests are not refused outright while a proxy is set, because on
+/// networks that need one, every stream would then fail; such a proxy is the
+/// network's own gateway and applies its own rules. Use
+/// [`PrivateNetwork::Allow`] if those rules should decide alone, or unset the
+/// proxy for full protection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PrivateNetwork {
@@ -710,8 +729,47 @@ pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -
         resolver: Arc::new(FilteringResolver {
             exempt: url.host_str().map(str::to_string),
             pinned: pinned_addresses(start_addrs),
+            proxies: proxy_hosts(&|name| std::env::var_os(name)),
         }),
     }
+}
+
+/// The variables the HTTP client takes a proxy from.
+const PROXY_VARIABLES: &[&str] = &[
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+];
+
+/// The host names of the proxies set in the environment, as `env` reads it.
+/// The HTTP client connects to these itself, so their names reach the
+/// resolver; a proxy given as an IP address needs no entry.
+fn proxy_hosts(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<String> {
+    let mut hosts = Vec::new();
+    for name in PROXY_VARIABLES {
+        let Some(value) = env(name) else { continue };
+        let value = value.to_string_lossy();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        // Like the HTTP client, a value without a scheme is an http proxy.
+        let parsed = if value.contains("://") {
+            Url::parse(value)
+        } else {
+            Url::parse(&format!("http://{value}"))
+        };
+        if let Ok(url) = parsed
+            && let Some(Host::Domain(host)) = url.host()
+            && !hosts.iter().any(|h| h == host)
+        {
+            hosts.push(host.to_string());
+        }
+    }
+    hosts
 }
 
 /// Refuses requests to the local network, before they are sent; checked for
@@ -785,11 +843,16 @@ pub(crate) struct FilteringResolver {
     /// the only local addresses it may use. Empty when it started public, so a
     /// later switch to a local address is filtered (DNS rebinding).
     pinned: Vec<IpAddr>,
+    /// The proxies the user set (see [`proxy_hosts`]), resolved without the
+    /// filter: the connection to a proxy is the user's choice, and a request
+    /// that names one as its target is still checked by the [`NetworkGuard`].
+    proxies: Vec<String>,
 }
 
 impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
+        let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
         let pinned = if self.exempt.as_deref() == Some(host.as_str()) {
             self.pinned.clone()
         } else {
@@ -798,7 +861,7 @@ impl Resolve for FilteringResolver {
         Box::pin(async move {
             let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
                 .await?
-                .filter(|a| !is_private(a.ip()) || pinned.contains(&a.ip()))
+                .filter(|a| trusted || !is_private(a.ip()) || pinned.contains(&a.ip()))
                 .collect();
             if addrs.is_empty() {
                 return Err(format!(
@@ -969,6 +1032,7 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("own-host.invalid".into()),
             pinned: Vec::new(),
+            proxies: Vec::new(),
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
@@ -986,6 +1050,7 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("localhost".into()),
             pinned: start.clone(),
+            proxies: Vec::new(),
         };
         let addrs: Vec<_> = resolver
             .resolve(Name::from_str("localhost").unwrap())
@@ -1059,12 +1124,51 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("localhost".into()),
             pinned: Vec::new(),
+            proxies: Vec::new(),
         };
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
             Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
             Err(error) => error,
         };
         assert!(error.to_string().contains("blocks for safety"), "{error}");
+    }
+
+    #[test]
+    fn proxy_host_names_come_from_the_environment() {
+        let env = |values: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                values
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, v)| std::ffi::OsString::from(v))
+            }
+        };
+        let hosts = proxy_hosts(&env(&[
+            ("HTTPS_PROXY", "http://user:secret@Proxy.Corp.example:8080"),
+            ("http_proxy", "proxy.corp.example:3128"),
+            ("ALL_PROXY", "socks5://socks.lan:1080"),
+            ("all_proxy", "http://10.0.0.5:8080"),
+            ("HTTP_PROXY", "  "),
+            ("https_proxy", "http://[::1]:8080"),
+        ]));
+        assert_eq!(hosts, ["socks.lan", "proxy.corp.example"]);
+        assert!(proxy_hosts(&env(&[("NO_PROXY", "localhost")])).is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_proxy_the_user_set_may_be_local() {
+        use std::str::FromStr;
+        let resolver = FilteringResolver {
+            exempt: Some("own-host.invalid".into()),
+            pinned: Vec::new(),
+            proxies: vec!["localhost".into()],
+        };
+        let addrs: Vec<_> = resolver
+            .resolve(Name::from_str("localhost").unwrap())
+            .await
+            .unwrap()
+            .collect();
+        assert!(!addrs.is_empty() && addrs.iter().all(|a| a.ip().is_loopback()));
     }
 
     #[test]
