@@ -174,7 +174,12 @@
 //! engine logs in as `anonymous`. They are only ever sent to that server, are
 //! never logged, and are left out of [`RemoteFile::final_url`], errors and the
 //! resume file. The path is relative to the folder the server logs in to, as
-//! RFC 1738 says; start it with `%2F` for an absolute path.
+//! RFC 1738 says; start it with `%2F` for an absolute path. Paths are sent as
+//! UTF-8 (`OPTS UTF8 ON` is sent after logging in).
+//!
+//! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
+//! set, an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
+//! going around the proxy.
 //!
 //! Each connection logs in once and then downloads range after range: it
 //! asks for a passive data connection, sends `REST` with the offset and
