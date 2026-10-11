@@ -14,7 +14,7 @@ import {
 } from '../src/lib/media/center';
 import { chooseTarget, describeTarget, type ButtonContext } from '../src/lib/media/choose';
 import type { Detection } from '../src/lib/media/detect';
-import { MEDIA_CHECK, MEDIA_DOWNLOAD } from '../src/lib/media/messages';
+import { MAX_SRC_LENGTH, MAX_TITLE_LENGTH, MEDIA_CHECK, MEDIA_DOWNLOAD } from '../src/lib/media/messages';
 import { MediaRegistry, type MediaItem, type SavedMedia } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { asPopupRequest } from '../src/lib/messages';
@@ -279,6 +279,28 @@ function lastAdd(app: FakeApp): NewDownload {
 }
 
 describe('media button messages', () => {
+  it('refuses sources that are not short web addresses, and overlong titles', async () => {
+    const { center, tabs } = await setup();
+    const sender = fromTab(1, tabs);
+    for (const src of [
+      'blob:https://example.com/1',
+      'data:video/mp4;base64,AAAA',
+      'javascript:alert(1)',
+      `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`,
+    ]) {
+      expect(center.handleContentMessage({ type: MEDIA_CHECK, src, audio: false }, sender)).toBeNull();
+    }
+    expect(
+      center.handleContentMessage(
+        { type: MEDIA_DOWNLOAD, src: null, audio: false, title: 'x'.repeat(MAX_TITLE_LENGTH + 1) },
+        sender,
+      ),
+    ).toBeNull();
+    expect(
+      center.handleContentMessage({ type: MEDIA_CHECK, src: 'https://e.com/a.mp4', audio: false }, sender),
+    ).not.toBeNull();
+  });
+
   it('answers only media messages, and checks their shape', async () => {
     const { center, tabs } = await setup();
     expect(center.handleContentMessage({ type: 'something_else' }, fromTab(1, tabs))).toBeNull();
@@ -292,7 +314,7 @@ describe('media button messages', () => {
 
   it('shows the button only where something downloadable was detected, or on a well-known video site', async () => {
     const { center, registry, tabs } = await setup();
-    const check = (tabId: number, src: string | null = 'blob:https://example.com/1') =>
+    const check = (tabId: number, src: string | null = null) =>
       center.handleContentMessage({ type: MEDIA_CHECK, src, audio: false }, fromTab(tabId, tabs));
     expect(await check(1)).toEqual({ show: false });
     registry.add(1, HLS);
@@ -313,7 +335,7 @@ describe('media button messages', () => {
     registry.add(1, FILE);
     registry.add(1, HLS);
     const answer = await center.handleContentMessage(
-      { type: MEDIA_DOWNLOAD, src: 'blob:https://example.com/1', audio: false, title: null },
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
       fromTab(1, tabs, 'https://player.example.net/embed/7'),
     );
     expect(answer).toEqual({ ok: true, message: 'Sent to Wirecatch.' });
@@ -338,7 +360,7 @@ describe('media button messages', () => {
   it('sends the page itself on a well-known video site, for the media add-on', async () => {
     const { app, center, tabs } = await setup();
     const answer = await center.handleContentMessage(
-      { type: MEDIA_DOWNLOAD, src: 'blob:https://www.youtube.com/1', audio: false, title: 'Some talk' },
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: 'Some talk' },
       fromTab(4, tabs),
     );
     expect(answer).toMatchObject({ ok: true });

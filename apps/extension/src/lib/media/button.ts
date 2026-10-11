@@ -4,7 +4,7 @@
  * page styles cannot reach inside, and its styles cannot leak out. Everything it
  * needs to know about the tab comes from the background script through `deps`.
  */
-import type { DownloadAnswer, ElementInfo } from './messages';
+import { MAX_TITLE_LENGTH, isWebSrc, type DownloadAnswer, type ElementInfo } from './messages';
 
 export interface ButtonDeps {
   /** Whether anything downloadable is known for this element (asked before showing). */
@@ -90,7 +90,8 @@ export function isCandidate(el: HTMLMediaElement): boolean {
 
 export function elementInfo(el: HTMLMediaElement): ElementInfo {
   const src = el.currentSrc || el.src || el.querySelector('source')?.src || '';
-  return { src: src === '' ? null : src, audio: el.tagName === 'AUDIO' };
+  // `blob:`, `data:` and `mediasource:` addresses mean nothing outside the page: not sent.
+  return { src: isWebSrc(src) ? src : null, audio: el.tagName === 'AUDIO' };
 }
 
 /** Most elements looked at when searching a page, its open shadow roots included, for media. */
@@ -129,7 +130,7 @@ function containsDeep(container: Node, el: Node): boolean {
 export function mediaTitle(el: HTMLMediaElement, doc: Document): string | null {
   const own = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? '';
   const title = own.trim() || doc.title.trim();
-  return title === '' ? null : title;
+  return title === '' ? null : title.slice(0, MAX_TITLE_LENGTH);
 }
 
 /**

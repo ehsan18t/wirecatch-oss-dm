@@ -308,6 +308,29 @@ describe('MediaButton', () => {
     expect(fake.checks.at(-1)).toEqual({ src: 'https://e.com/a.mp4', audio: false });
   });
 
+  it('sends only web addresses and a bounded title to the background', async () => {
+    const fake = fakeDeps();
+    const b = start(fake);
+    for (const src of [
+      'blob:https://e.com/1',
+      'data:video/mp4;base64,AAAA',
+      `https://e.com/${'a'.repeat(9000)}.mp4`,
+    ]) {
+      const video = media('video', box(0, 0, 640, 360), { src });
+      video.dispatchEvent(new Event('play'));
+      await settle();
+      video.remove();
+    }
+    expect(fake.checks.map((c) => c.src)).toEqual([null, null, null]);
+    document.title = 'T'.repeat(5000);
+    const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    b.button.click();
+    await settle();
+    expect(fake.downloads[0]?.title?.length).toBe(1024);
+  });
+
   it('is a real, labelled button that keyboard users can reach', () => {
     const b = start(fakeDeps());
     expect(b.button.tagName).toBe('BUTTON');
