@@ -46,7 +46,7 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser",
+        "installMode": "perMachine",
         "installerIcon": "icons/icon.ico",
         "startMenuFolder": "Wirecatch",
         "installerHooks": "windows/hooks.nsh"

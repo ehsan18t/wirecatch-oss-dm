@@ -111,7 +111,7 @@ A change is done only when all of these hold:
 
 ### D19. Packaging, browser registration and updates
 Decided by the lead while the user was away; easy to revisit before the first release.
-- Windows: per-user NSIS installer from the Tauri bundler (no administrator rights needed).
+- Windows: per-user NSIS installer from the Tauri bundler (no administrator rights needed). Replaced by D25: per-machine, in Program Files.
 - Linux: `.deb`, `.rpm` and AppImage from the Tauri bundler. Flatpak waits, because sandboxed browsers and native messaging do not mix well yet.
 - Browser registration: the app runs the Bridge's per-user `install` on every start (it is idempotent), so installers, AppImages and portable copies all register themselves and repair a broken registration. Uninstall runs `uninstall`.
 - Updates: `tauri-plugin-updater` with signed update manifests on GitHub Releases, switched on once the GitHub organization and signing key exist. Until then the updater is compiled in but disabled.
@@ -160,6 +160,14 @@ Decided by the maintainer on 2026-10-11, so a video can be saved in the format a
 6. Every ffmpeg input, including subtitles, the metadata file and the picture, is a local file read only as its named format (`-protocol_whitelist file`, a format whitelist, one absolute `file:` path); text from the site goes into the metadata file, escaped, never into ffmpeg's options.
 7. Conversion runs after the download, in the `.wcmedia` work folder, as its own "Converting" step with progress read from ffmpeg's `-progress` against the video's length; the file appears only when complete. Pause and Cancel kill ffmpeg, and a paused or failed conversion starts again from the downloaded parts without reading the page or downloading anything. When converting fails, the download is kept and the error offers Try again (converts again) and Keep the original, which saves the downloaded streams as they came.
 8. The window starts from the last choices, kept separately for videos and for audio only (format, audio quality, subtitle languages and whether auto-generated ones are wanted, subtitle files, chapters). They are in Settings, Media, and in the settings profile; older settings and profiles read as Original, so the profile format version is unchanged.
+
+### D25. Installed for every user, never run as administrator
+Decided by the maintainer on 2026-10-12, replacing D19's per-user Windows installer.
+1. Windows installs per machine, in Program Files, like other desktop download managers. Installing takes one administrator prompt, and so does each update, since it replaces files there; starting, signing in and booting never do. Silent updates through an update service may come later.
+2. The installer registers the browser bridge for every user of the computer: `wirecatch-bridge install --all-users` writes the manifests next to the bridge in Program Files (only administrators can change them) and the keys under `HKEY_LOCAL_MACHINE`. The uninstaller removes them. The app's own per-user registration on each start (D19) steps aside when that machine registration already covers its bridge, because an uninstall can only clean up the account that runs it; portable copies and Linux keep registering per user.
+3. What belongs to a person stays per user: the download list, settings and cookies in each user's `%LOCALAPPDATA%`, and start at sign-in. One user's cookies are never readable by another.
+4. Wirecatch never runs as administrator. A release build started that way says it does not need administrator rights and exits, because an elevated app could be driven by any program of the same user, and the unelevated browser extension could not reach it anyway. Whatever starts it, its endpoint is labelled at its own integrity level, so unelevated programs cannot open an elevated app's pipe. The installer starts the app after installing as the signed-in user, not elevated.
+5. Linux is unchanged: `.deb` and `.rpm` already install system-wide, and the AppImage is per user by nature.
 
 ## Assumptions (not yet confirmed)
 

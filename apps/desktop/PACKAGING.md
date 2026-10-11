@@ -15,21 +15,21 @@ The bridge is built without any cargo feature in both profiles. Which extensions
 
 The external binary lives in a separate config file because Tauri's build script refuses to build when a listed external binary is missing, and plain `cargo build` and `cargo test` should not depend on building the bridge first.
 
-| Platform | Output                                                | Notes                                                            |
-| -------- | ----------------------------------------------------- | ---------------------------------------------------------------- |
-| Windows  | NSIS installer, per user (`installMode: currentUser`) | No administrator rights. Installs to `%LOCALAPPDATA%\Wirecatch`. |
-| Linux    | `.deb`, `.rpm`                                        | App and bridge in `/usr/bin`.                                    |
-| Linux    | AppImage                                              | See "AppImage" below.                                            |
+| Platform | Output                                                  | Notes                                                                                                                          |
+| -------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Windows  | NSIS installer, per machine (`installMode: perMachine`) | Installs to Program Files for every user (D25). Installing and updating ask for administrator rights once; running never does. |
+| Linux    | `.deb`, `.rpm`                                          | App and bridge in `/usr/bin`.                                                                                                  |
+| Linux    | AppImage                                                | See "AppImage" below.                                                                                                          |
 
 ## Browser registration and uninstall
 
-The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
+The Windows installer registers the bridge for every user (`wirecatch-bridge install --all-users`, D25). The app also runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19), which does nothing for a bridge the machine registration already covers. It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
 
 Registration covers Google Chrome, Chromium, ungoogled-chromium, Microsoft Edge, Brave, Vivaldi, Opera, Opera GX and Arc (Windows), Thorium, Yandex Browser (Linux), and Firefox with LibreWolf, Waterfox, Zen and Floorp. Many of them read another browser's location (on Windows most Chromium browsers read Google Chrome's key, and the Firefox forks read Mozilla's key and `~/.mozilla/native-messaging-hosts`), so the bridge writes only the locations browsers really read; `crates/bridge/src/install.rs` lists each one with its source. Flatpak and Snap browsers cannot start a program outside their sandbox, so nothing is written inside them: Firefox as a Snap or Flatpak reaches the bridge through the WebExtensions portal where the distribution provides it, and Chromium-based Flatpaks and Snaps are not supported.
 
 Uninstalling removes the registration before the files go:
 
-- **Windows**: `src-tauri/windows/hooks.nsh` (the `NSIS_HOOK_PREUNINSTALL` macro) runs `"$INSTDIR\wirecatch-bridge.exe" uninstall`. The installer is per user, so this runs as the user whose registration it removes.
+- **Windows**: `src-tauri/windows/hooks.nsh` registers for every user after installing (`NSIS_HOOK_POSTINSTALL`) and, on a real uninstall (`NSIS_HOOK_PREUNINSTALL`), runs `"$INSTDIR\wirecatch-bridge.exe" uninstall --all-users`, then a per-user `uninstall` and the start-at-sign-in cleanup for the account running it.
 - **Linux packages**: `src-tauri/linux/prerm.sh` is the `.deb` and `.rpm` pre-removal script. On removal (not on upgrade) it runs `/usr/bin/wirecatch-bridge uninstall` as every regular user (uid 1000 to 59999 with an existing home folder), because each user's browsers have their own registration.
 - **AppImage**: there is no uninstaller. Run `~/.local/share/wirecatch/bin/wirecatch-bridge uninstall`, then delete that folder.
 
