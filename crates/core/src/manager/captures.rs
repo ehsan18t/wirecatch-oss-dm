@@ -200,6 +200,7 @@ impl Manager {
                         waiting.handovers.retain(|h| h != handover_id);
                         if waiting.handovers.is_empty() {
                             state.pending.remove(&pending);
+                            self.emit(UiEvent::ConfirmationClosed { id: pending });
                         }
                     }
                     state.handovers.remove(handover_id);
@@ -251,6 +252,7 @@ impl Manager {
                         .handovers
                         .retarget(handover, Target::Confirmed(row.id));
                 }
+                self.emit(UiEvent::ConfirmationClosed { id });
                 Ok(())
             }
             Err(e) => {
@@ -273,6 +275,7 @@ impl Manager {
         for handover in &pending.handovers {
             state.handovers.retarget(handover, Target::Dismissed);
         }
+        self.emit(UiEvent::ConfirmationClosed { id });
         Ok(())
     }
 

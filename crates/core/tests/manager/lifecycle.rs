@@ -525,3 +525,40 @@ async fn pause_all_and_resume_all() {
     h.wait_status(a, DownloadStatus::Completed).await;
     h.wait_status(b, DownloadStatus::Completed).await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_download_can_be_read_by_its_id() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("one.bin")).await;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(h.manager.get_download(row.id).unwrap(), done);
+    assert!(matches!(
+        h.manager.get_download(DownloadId(999)),
+        Err(CoreError::DownloadNotFound(_))
+    ));
+}
+
+/// Files downloaded with Wirecatch carry the Mark of the Web, as a browser's do,
+/// so SmartScreen and Office Protected View still look at them.
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_download_is_marked_as_from_the_internet() {
+    let server = TestServer::fast(1024).await;
+    let h = Harness::new().await;
+    let url = server
+        .url("setup.exe")
+        .replace("http://", "http://user:pw@");
+    let row = h.add(&url).await;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    let stream = format!("{}:Zone.Identifier", done.path);
+    let text = wait_until("the mark is written", || {
+        std::fs::read_to_string(&stream).ok()
+    })
+    .await;
+    let host = server.url("setup.exe");
+    assert_eq!(
+        text,
+        format!("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl={host}\r\n")
+    );
+}

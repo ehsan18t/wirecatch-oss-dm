@@ -62,6 +62,11 @@ impl Manager {
         entries.into_iter().map(|e| e.row.clone()).collect()
     }
 
+    /// One download, as [`list_downloads`](Self::list_downloads) shows it.
+    pub fn get_download(&self, id: DownloadId) -> Result<DownloadSummary> {
+        Ok(self.lock().entry(id)?.row.clone())
+    }
+
     /// Adds a download from the app itself (paste, Add dialog, command palette) and
     /// returns its id. Its row arrives with the next `DownloadsChanged` event and is
     /// in [`list_downloads`](Self::list_downloads) at once.
