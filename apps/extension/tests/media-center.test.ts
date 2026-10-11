@@ -563,6 +563,39 @@ describe('popup media list', () => {
     expect(await center.view(99)).toEqual({ tabId: 99, page: 'other', entries: [] });
   });
 
+  it("lists only the page on YouTube, not YouTube's own interface sounds", async () => {
+    const { center, registry } = await setup();
+    const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
+    const sounds: Array<[string, number]> = [
+      ['no_input.mp3', 6_034],
+      ['failure.mp3', 5_888],
+      ['success.mp3', 6_195],
+      ['open.mp3', 5_973],
+    ];
+    for (const [name, size] of sounds) {
+      await watcher.onResponse({
+        url: `https://www.youtube.com/s/search/audio/${name}`,
+        tabId: 4,
+        type: 'media',
+        statusCode: 200,
+        responseHeaders: [
+          { name: 'content-type', value: 'audio/mpeg' },
+          { name: 'content-length', value: String(size) },
+        ],
+      });
+    }
+    expect(registry.items(4)).toEqual([]);
+    expect((await center.view(4)).entries).toEqual([
+      {
+        key: 'page:https://www.youtube.com/watch?v=abc',
+        kind: 'page',
+        title: 'This YouTube page',
+        detail: 'Wirecatch reads it with its media add-on.',
+        size: null,
+      },
+    ]);
+  });
+
   it('keeps a watching popup current, and stops when it is closed', async () => {
     const { center, registry } = await setup();
     const views: MediaView[] = [];
