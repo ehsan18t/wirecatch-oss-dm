@@ -3928,7 +3928,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -7560,7 +7560,7 @@ name = "wirecatch-engine"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "futures-util",
  "h3",

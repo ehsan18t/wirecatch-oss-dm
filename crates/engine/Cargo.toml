@@ -13,7 +13,7 @@ categories = ["network-programming", "web-programming::http-client", "asynchrono
 [dependencies]
 bytes.workspace = true
 futures-util.workspace = true
-base64 = "0.22.1"
+base64 = "0.23.1"
 httpdate = "1.0.3"
 percent-encoding.workspace = true
 # Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
