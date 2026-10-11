@@ -131,7 +131,7 @@ describe('media and add-ons', () => {
     // No error note on top of the prompt: the prompt explains.
     expect(app.toasts.filter((t) => t.kind === 'error')).toHaveLength(0);
     expect(app.question?.kind).toBe('addon');
-    app.closeAddonRequest();
+    app.declineAddonRequest();
     expect(app.choiceAwaitingAddon).toBeNull();
     expect(app.question).toEqual({ kind: 'media', choice, waiting: 0 });
     const [addon] = await backend.listAddons();
@@ -168,22 +168,41 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
-  it('drops the pages that wait for the add-on when it is declined', async () => {
+  it('Not now drops only the page its prompt is about', async () => {
     const { app, backend } = await make();
     backend.simulateAddonRequired();
-    // The prompt learns the waiting page's id from the core's list.
-    await vi.waitFor(() => expect(app.addonRequest?.id).not.toBeNull());
-    app.closeAddonRequest();
+    const [first] = await backend.pendingAddonRequests();
+    backend.simulateAddonRequired();
+    // The event carries the page's id: the prompt is about the second page.
+    const [, second] = await backend.pendingAddonRequests();
+    expect(app.addonRequest?.id).toBe(second?.id);
+    app.declineAddonRequest();
     expect(app.question).toBeNull();
-    await vi.waitFor(async () => expect(await backend.pendingAddonRequests()).toHaveLength(0));
+    await vi.waitFor(async () =>
+      expect((await backend.pendingAddonRequests()).map((p) => p.id)).toEqual([first?.id]),
+    );
     expect(app.toasts).toHaveLength(0);
+    app.dispose();
+  });
+
+  it('Escape only puts the add-on prompt aside; the sidebar note brings it back', async () => {
+    const { app, backend } = await make();
+    backend.simulateAddonRequired();
+    const asked = app.addonRequest;
+    app.hideAddonRequest();
+    expect(app.question).toBeNull();
+    // Nothing was answered: the page still waits, and the palette offers the prompt.
+    expect(await backend.pendingAddonRequests()).toHaveLength(1);
+    const show = buildCommands(app).find((c) => c.id === 'addon.prompt');
+    expect(show?.title).toMatch(/waits for the media add-on/);
+    show?.run();
+    expect(app.question).toEqual({ kind: 'addon', request: asked });
     app.dispose();
   });
 
   it('closes the add-on prompt when its page goes away, and says so', async () => {
     const { app, backend } = await make();
     backend.simulateAddonRequired();
-    await vi.waitFor(() => expect(app.addonRequest?.id).not.toBeNull());
     backend.simulateAnsweredElsewhere();
     expect(app.addonRequest).toBeNull();
     expect(app.toasts.at(-1)?.message).toBe(

@@ -97,7 +97,8 @@ mod tests {
         assert_eq!(
             attention(&UiEvent::AddonRequired {
                 addon: addon(AddonState::NotInstalled),
-                url: "https://youtube.com/x".into()
+                url: "https://youtube.com/x".into(),
+                id: 1,
             }),
             Attention::OpenWindow
         );

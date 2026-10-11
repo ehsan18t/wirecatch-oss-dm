@@ -382,6 +382,16 @@ export function buildCommands(app: AppState): Command[] {
     });
   }
 
+  if (app.addonRequest && app.addonHidden) {
+    out.push({
+      id: 'addon.prompt',
+      group: 'Downloads',
+      title: 'Show the video that waits for the media add-on',
+      keywords: 'addon add-on install waiting video pending',
+      run: () => app.showAddonRequest(),
+    });
+  }
+
   // The add-on's own actions, so it can be installed or removed without visiting Settings.
   for (const addon of app.addons ?? []) {
     const name = addon.name.toLowerCase();

@@ -381,6 +381,12 @@ pub enum UiEvent {
     AddonRequired {
         addon: AddonInfo,
         url: String,
+        /// The media that waits: a page waiting for the add-on (dismiss it with
+        /// `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
+        /// needs it. Shares the id space of [`ConfirmationClosed`](Self::ConfirmationClosed).
+        #[serde(default)]
+        #[ts(type = "number")]
+        id: u64,
     },
     /// A question the UI may be showing is no longer open, so its dialog should close:
     /// a [`PendingCapture`] or [`MediaChoice`] with this id was answered (perhaps in

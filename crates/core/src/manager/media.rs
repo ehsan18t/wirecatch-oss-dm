@@ -167,6 +167,7 @@ impl Manager {
             self.emit(UiEvent::AddonRequired {
                 addon,
                 url: url.to_string(),
+                id,
             });
         } else {
             self.spawn_analysis(id, token);
@@ -217,6 +218,7 @@ impl Manager {
                 self.emit(UiEvent::AddonRequired {
                     addon,
                     url: choice_url,
+                    id,
                 });
                 return Err(CoreError::AddonRequired);
             }

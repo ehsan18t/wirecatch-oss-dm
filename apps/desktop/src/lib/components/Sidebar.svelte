@@ -92,13 +92,16 @@
       </span>
     </button>
   {/if}
-  {#if app.choiceAwaitingAddon && !app.addonRequest}
-    <button class="pending" onclick={() => app.openSettings('media_addon')}>
+  {#if app.addonRequest && app.addonHidden}
+    {@const state = app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type}
+    <button class="pending" onclick={() => app.showAddonRequest()}>
       <Bell size={14} aria-hidden="true" />
       <span>
-        {app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type === 'failed'
-          ? 'The media add-on did not install. Your video waits for it'
-          : 'Your video downloads once the media add-on is installed'}
+        {state === 'failed'
+          ? 'The media add-on did not install. A video waits for it'
+          : state === 'installing'
+            ? 'A video downloads once the media add-on is installed'
+            : 'A video waits for the media add-on'}
       </span>
     </button>
   {/if}

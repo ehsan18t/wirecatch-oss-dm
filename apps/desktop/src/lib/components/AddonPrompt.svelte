@@ -40,7 +40,7 @@
     : url
       ? `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`
       : `This video needs the ${addon.name.toLowerCase()}`}
-  onclose={() => app.closeAddonRequest()}
+  onclose={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
   width={460}
 >
   <div class="body" bind:this={body}>
@@ -77,11 +77,11 @@
         type="button"
         class="btn primary"
         data-autofocus
-        onclick={() => app.closeAddonRequest()}
+        onclick={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
         >{installed ? 'Done' : 'Close and keep installing'}</button
       >
     {:else}
-      <button type="button" class="btn" onclick={() => app.closeAddonRequest()}>Not now</button>
+      <button type="button" class="btn" onclick={() => app.declineAddonRequest()}>Not now</button>
       <button
         type="button"
         class="btn primary"

@@ -920,8 +920,9 @@ export class MockBackend implements Backend {
       this.simulateMediaChoice(page);
       return;
     }
-    this.#waitingForAddon.push({ id: this.#nextPendingId++, url: page });
-    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page } });
+    const id = this.#nextPendingId++;
+    this.#waitingForAddon.push({ id, url: page });
+    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page, id } });
   }
 
   async pendingMediaChoices() {
@@ -947,7 +948,7 @@ export class MockBackend implements Backend {
     if (option.needs_ffmpeg && !ready) {
       // Like the core: ask for the add-on and keep the choice open.
       const url = choice.page_url ?? choice.title;
-      this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url } });
+      this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url, id } });
       throw new BackendError(ADDON_REQUIRED);
     }
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);

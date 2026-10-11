@@ -152,11 +152,13 @@ async fn joining_separate_audio_needs_the_add_on() {
         .await
         .unwrap_err();
     assert!(matches!(error, CoreError::AddonRequired), "{error}");
-    let (addon, url) = next_event(&mut ui, "AddonRequired", |e| match e {
-        UiEvent::AddonRequired { addon, url } => Some((addon.clone(), url.clone())),
+    let (addon, url, id) = next_event(&mut ui, "AddonRequired", |e| match e {
+        UiEvent::AddonRequired { addon, url, id } => Some((addon.clone(), url.clone(), *id)),
         _ => None,
     })
     .await;
+    assert_eq!(id, choice.id, "the choice that waits for the add-on");
+
     assert_eq!(addon.state, AddonState::NotInstalled);
     assert!(url.ends_with("master.m3u8"));
     // The choice is still there to make again.
@@ -365,11 +367,14 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
         .await
         .unwrap();
     assert_eq!(reply.action, AddAction::AwaitingConfirmation);
-    let (addon, url) = next_event(&mut ui, "AddonRequired", |e| match e {
-        UiEvent::AddonRequired { addon, url } => Some((addon.clone(), url.clone())),
+    let (addon, url, id) = next_event(&mut ui, "AddonRequired", |e| match e {
+        UiEvent::AddonRequired { addon, url, id } => Some((addon.clone(), url.clone(), *id)),
         _ => None,
     })
     .await;
+    // The id is the waiting page's, so the prompt can drop exactly that page.
+    assert_eq!(h.manager.pending_addon_requests()[0].id, id);
+
     assert_eq!((addon.id.as_str(), url.as_str()), ("media", page.as_str()));
     assert!(addon.size.is_some_and(|s| s > 0));
     assert!(h.manager.pending_media_choices().is_empty());
