@@ -14,11 +14,11 @@
 
   let name = $state(original?.name ?? '');
   let maxConcurrent = $state(original?.max_concurrent ?? 2);
-  let limitOn = $state(original?.speed_limit != null);
+  let limitOn = $state(original !== undefined && original.speed_limit !== null);
   const initialLimit = original?.speed_limit ?? 2 * MB;
   let limitUnit = $state<'kb' | 'mb'>(initialLimit < MB ? 'kb' : 'mb');
   let limitValue = $state(Math.round((initialLimit / (initialLimit < MB ? KB : MB)) * 10) / 10);
-  let scheduleOn = $state(original?.schedule != null);
+  let scheduleOn = $state(original !== undefined && original.schedule !== null);
   let start = $state(formatTime(original?.schedule?.start ?? { hour: 1, minute: 0 }));
   let stopOn = $state(original?.schedule ? original.schedule.stop !== null : true);
   let stop = $state(formatTime(original?.schedule?.stop ?? { hour: 7, minute: 0 }));
@@ -42,15 +42,14 @@
 
   function build(base: Queue): Queue | string {
     if (!name.trim()) return 'Give the queue a name.';
-    const max = Math.round(Number(maxConcurrent));
+    const max = Math.round(maxConcurrent);
     if (!Number.isFinite(max) || max < 1 || max > 32)
       return 'Downloads at the same time must be between 1 and 32.';
     let speed_limit: number | null = null;
     if (limitOn) {
-      const v = Number(limitValue);
-      if (!Number.isFinite(v) || v <= 0)
+      if (!Number.isFinite(limitValue) || limitValue <= 0)
         return 'Enter a speed limit above zero, or turn the limit off.';
-      speed_limit = Math.round(v * (limitUnit === 'kb' ? KB : MB));
+      speed_limit = Math.round(limitValue * (limitUnit === 'kb' ? KB : MB));
     }
     let schedule: Queue['schedule'] = null;
     if (scheduleOn) {
@@ -58,7 +57,7 @@
       const e = stopOn ? parseTime(stop) : null;
       if (!s) return 'Enter a start time like 01:00.';
       if (stopOn && !e) return 'Enter a stop time like 07:00.';
-      if (e && e.hour === s.hour && e.minute === s.minute)
+      if (e?.hour === s.hour && e.minute === s.minute)
         return 'The start and stop times are the same. Pick a different stop time.';
       // Seven ticked days is the same as every day.
       schedule = {

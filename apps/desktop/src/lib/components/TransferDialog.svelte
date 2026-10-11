@@ -129,7 +129,7 @@
       <h3>Folders</h3>
       <ul>
         {#each preview.folders as folder (folder.setting)}
-          <li class="folder" class:flagged={folder.reason || folder.outside_user_folders}>
+          <li class="folder" class:flagged={folder.reason !== null || folder.outside_user_folders}>
             <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
             {#if folder.reason}
               <span class="was">{folder.reason} Downloads go to the folder above instead.</span>

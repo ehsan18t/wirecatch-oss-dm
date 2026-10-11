@@ -4,7 +4,7 @@
 export type SectionId =
   'general' | 'files' | 'browser' | 'media' | 'addons' | 'speed' | 'transfer' | 'advanced';
 
-export const SECTIONS: ReadonlyArray<{ id: SectionId; title: string; blurb: string }> = [
+export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
   { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
   { id: 'files', title: 'Saving files', blurb: 'Where finished files go.' },
   {

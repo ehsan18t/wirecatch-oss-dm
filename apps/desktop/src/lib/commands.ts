@@ -19,7 +19,7 @@ export interface Command {
   run: () => unknown;
 }
 
-export const SHORTCUTS: ReadonlyArray<{ keys: string; what: string }> = [
+export const SHORTCUTS: readonly { keys: string; what: string }[] = [
   { keys: 'Ctrl+K', what: 'Find any action or setting' },
   { keys: 'Ctrl+V', what: 'Download the link you copied' },
   { keys: 'Ctrl+N', what: 'Add a download' },
@@ -469,7 +469,8 @@ export function fuzzyScore(query: string, text: string): number {
     for (const w of available) {
       if (w === q) best = Math.max(best, 12);
       else if (w.startsWith(q)) best = Math.max(best, 8 + q.length / w.length);
-      else if (q.length >= 2 && w[0] === q[0] && isSubsequence(q, w)) best = Math.max(best, 3);
+      else if (q.length >= 2 && w.startsWith(q.charAt(0)) && isSubsequence(q, w))
+        best = Math.max(best, 3);
     }
     if (best < 0) return -1;
     score += best;
@@ -481,7 +482,7 @@ export function fuzzyScore(query: string, text: string): number {
 
 export function searchCommands(commands: readonly Command[], query: string): Command[] {
   if (!query.trim()) return [...commands];
-  const scored: Array<{ c: Command; s: number }> = [];
+  const scored: { c: Command; s: number }[] = [];
   for (const c of commands) {
     const titleScore = fuzzyScore(query, c.title);
     // Keywords count for less than the title, but let "bandwidth" find the speed limit.

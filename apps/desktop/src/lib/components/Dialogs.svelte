@@ -32,7 +32,7 @@
       <ShortcutsDialog />
     {:else if d.kind === 'open-program'}
       <OpenProgramDialog id={d.id} />
-    {:else if d.kind === 'remove-addon'}
+    {:else}
       <RemoveAddonDialog id={d.id} />
     {/if}
   {/key}

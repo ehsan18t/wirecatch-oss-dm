@@ -60,7 +60,7 @@
   }
 
   function move(e: Event & { currentTarget: HTMLSelectElement }) {
-    const queue = Number(e.currentTarget.value) as QueueId;
+    const queue: QueueId = Number(e.currentTarget.value);
     void app.moveToQueue(app.selectedIds, queue);
   }
 

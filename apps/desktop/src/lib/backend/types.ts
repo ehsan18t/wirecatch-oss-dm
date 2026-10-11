@@ -61,7 +61,7 @@ export type ShellSignal = 'resync' | 'links';
 
 /** Only the mock backend has this: palette actions that pretend the browser sent a download. */
 export interface SampleData {
-  commands: ReadonlyArray<{ id: string; title: string; keywords: string; run: () => void }>;
+  commands: readonly { id: string; title: string; keywords: string; run: () => void }[];
   /** The sample clock, so schedule labels agree with the simulation. */
   now: () => number;
   /** The download windows, which the sample page shows inside itself. */

@@ -3,7 +3,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { defineConfig } from 'vite';
 
-const host = process.env.TAURI_DEV_HOST;
+/** Set by `tauri dev` to serve a device on the network; unset or empty means this machine only. */
+const host = process.env.TAURI_DEV_HOST ?? '';
 
 export default defineConfig({
   plugins: [sveltekit(), svelteTesting()],
@@ -12,8 +13,8 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host ? { protocol: 'ws', host, port: 1421 } : undefined,
+    host: host === '' ? false : host,
+    hmr: host === '' ? undefined : { protocol: 'ws', host, port: 1421 },
     watch: { ignored: ['**/src-tauri/**'] },
   },
   test: {

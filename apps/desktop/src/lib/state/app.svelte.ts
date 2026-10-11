@@ -159,7 +159,7 @@ export class AppState {
       this.#loadBackend = backend;
     } else {
       this.#backend = backend;
-      this.#loadBackend = async () => backend;
+      this.#loadBackend = () => Promise.resolve(backend);
     }
   }
 
@@ -769,9 +769,11 @@ export class AppState {
     const queue = this.view.id;
     const current = this.downloads.idsInQueue(queue);
     const chosen = current.filter((id) => this.selection.has(id));
-    if (chosen.length === 0) return;
-    const first = current.indexOf(chosen[0] as DownloadId);
-    const last = current.indexOf(chosen[chosen.length - 1] as DownloadId);
+    const firstChosen = chosen.at(0);
+    const lastChosen = chosen.at(-1);
+    if (firstChosen === undefined || lastChosen === undefined) return;
+    const first = current.indexOf(firstChosen);
+    const last = current.indexOf(lastChosen);
     const rest = current.filter((id) => !this.selection.has(id));
     let before: DownloadId | null;
     if (delta < 0) {

@@ -9,18 +9,7 @@
       "count": 2
     }
   },
-  "src/lib/backend/types.ts": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    }
-  },
   "src/lib/commands.ts": {
-    "@typescript-eslint/array-type": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-string-starts-ends-with": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -41,9 +30,6 @@
   },
   "src/lib/components/AddonCard.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     },
     "svelte/button-has-type": {
@@ -72,9 +58,6 @@
     }
   },
   "src/lib/components/DetailPanel.svelte": {
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
     },
@@ -93,11 +76,6 @@
       "count": 1
     },
     "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/Dialogs.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     }
   },
@@ -150,17 +128,8 @@
     }
   },
   "src/lib/components/QueueDialog.svelte": {
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
-    },
-    "eqeqeq": {
-      "count": 2
     },
     "wirecatch/no-magic-numbers": {
       "count": 6
@@ -188,13 +157,7 @@
     }
   },
   "src/lib/components/Settings.svelte": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    },
     "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
     "@typescript-eslint/no-unsafe-assignment": {
@@ -220,9 +183,6 @@
     }
   },
   "src/lib/components/Shell.svelte": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },
@@ -274,9 +234,6 @@
     }
   },
   "src/lib/components/TransferDialog.svelte": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 5
     },
@@ -300,18 +257,7 @@
       "count": 1
     }
   },
-  "src/lib/settings-schema.ts": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    }
-  },
   "src/lib/state/app.svelte.ts": {
-    "@typescript-eslint/non-nullable-type-assertion-style": {
-      "count": 2
-    },
-    "@typescript-eslint/require-await": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     },
@@ -335,18 +281,8 @@
       "count": 1
     }
   },
-  "src/lib/state/hints.svelte.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    }
-  },
   "src/lib/state/view.ts": {
     "max-params": {
-      "count": 1
-    }
-  },
-  "src/lib/testing/setup.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     }
   },
@@ -403,11 +339,6 @@
       "count": 5
     }
   },
-  "src/lib/window/WindowFrame.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    }
-  },
   "src/lib/window/download-window.svelte.ts": {
     "@typescript-eslint/switch-exhaustiveness-check": {
       "count": 1
@@ -421,11 +352,6 @@
   },
   "src/routes/window/download/+page.svelte": {
     "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "vite.config.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   }

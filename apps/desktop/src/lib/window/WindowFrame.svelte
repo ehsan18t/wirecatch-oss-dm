@@ -30,22 +30,23 @@
   // Measures again whenever the title, the content or the buttons change size (a view that
   // switches from asking to progress, an error that appears, a longer file name).
   $effect(() => {
-    if (fit === null || !head || !body || !content) return;
+    // The parts this effect measures, read once: a change to any of them runs the effect again.
+    const [headPart, bodyPart, contentPart, footPart] = [head, body, content, foot];
+    if (fit === null || !headPart || !bodyPart || !contentPart) return;
     const report = fitReporter(fit);
     const measure = () => {
-      if (!head || !body || !content) return;
-      const style = getComputedStyle(body);
+      const style = getComputedStyle(bodyPart);
       report(
         neededHeight({
-          head: head.getBoundingClientRect().height,
-          content: content.getBoundingClientRect().height,
+          head: headPart.getBoundingClientRect().height,
+          content: contentPart.getBoundingClientRect().height,
           padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
-          foot: foot?.getBoundingClientRect().height ?? 0,
+          foot: footPart?.getBoundingClientRect().height ?? 0,
         }),
       );
     };
     const observer = new ResizeObserver(measure);
-    for (const part of [head, content, foot]) if (part) observer.observe(part);
+    for (const part of [headPart, contentPart, footPart]) if (part) observer.observe(part);
     measure();
     return () => observer.disconnect();
   });

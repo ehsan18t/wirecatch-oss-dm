@@ -49,7 +49,7 @@ export async function downloadWindow(): Promise<HTMLElement> {
 }
 
 export function rowByName(name: string): HTMLElement {
-  const el = screen.getAllByRole('row').find((o) => o.textContent?.includes(name));
+  const el = screen.getAllByRole('row').find((o) => o.textContent.includes(name));
   if (!el) throw new Error(`no row named ${name}`);
   return el;
 }

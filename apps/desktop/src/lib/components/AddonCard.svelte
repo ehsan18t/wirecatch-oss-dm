@@ -82,7 +82,7 @@
   <div class="buttons">
     <!-- One button for install, update, try again and stop, so the keyboard focus stays on it
          as the state changes. -->
-    {#if action || installing}
+    {#if action !== null || installing}
       <button
         class="btn small"
         class:primary={!installing}

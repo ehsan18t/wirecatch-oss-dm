@@ -114,8 +114,9 @@
   function ondrop(e: DragEvent) {
     if (blocked || !isLinkDrag(e)) return;
     e.preventDefault();
-    const text =
-      e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
+    // `getData` gives an empty string for a type the drag does not carry.
+    const links = e.dataTransfer?.getData('text/uri-list') ?? '';
+    const text = links === '' ? (e.dataTransfer?.getData('text/plain') ?? '') : links;
     if (text) app.pasteText(text);
   }
 </script>

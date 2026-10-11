@@ -16,13 +16,20 @@ export const HINT_TEXT: Record<HintId, string> = {
 
 const KEY = 'wirecatch.hints.dismissed';
 
+/** The webview's storage, or null where there is none (tests, and pages without a window). */
+function storage(): Storage | null {
+  return 'localStorage' in globalThis ? globalThis.localStorage : null;
+}
+
+function isHintId(value: unknown): value is HintId {
+  return typeof value === 'string' && Object.hasOwn(HINT_TEXT, value);
+}
+
 function load(): Set<HintId> {
   try {
-    const raw = globalThis.localStorage?.getItem(KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return new Set(
-      Array.isArray(parsed) ? (parsed.filter((x) => typeof x === 'string') as HintId[]) : [],
-    );
+    const raw = storage()?.getItem(KEY) ?? null;
+    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter(isHintId) : []);
   } catch {
     return new Set();
   }
@@ -40,7 +47,7 @@ export class Hints {
     next.add(id);
     this.dismissed = next;
     try {
-      globalThis.localStorage?.setItem(KEY, JSON.stringify([...next]));
+      storage()?.setItem(KEY, JSON.stringify([...next]));
     } catch {
       // Storage can be unavailable; the hint just shows again next time.
     }

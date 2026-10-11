@@ -56,7 +56,7 @@
   const VIDEO_FORMATS: OutputFormat[] = ['original', 'mp4', 'mkv', 'webm'];
   const AUDIO_FORMATS: OutputFormat[] = ['original', 'mp3', 'm4a', 'opus', 'flac', 'wav'];
 
-  const THEMES: Array<{ value: Theme; label: string }> = [
+  const THEMES: { value: Theme; label: string }[] = [
     { value: 'system', label: 'Match system' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
@@ -509,7 +509,7 @@
             }}
           />
           <span class="unit num">{s.connections_per_download}</span>
-        {:else if def.id === 'max_concurrent_downloads'}
+        {:else}
           <input
             class="field narrow"
             type="number"
