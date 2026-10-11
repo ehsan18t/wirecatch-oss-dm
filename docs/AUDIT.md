@@ -103,8 +103,9 @@ When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ pat
 | Workstream | Status |
 |---|---|
 | W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
-| W1 | in progress: STR-1, ENG-1, ENG-2, DUI-1 and CORE-1 fixed |
-| W2 to W14 | not started |
+| W1 | in progress: STR-1, ENG-1, ENG-2, DUI-1, CORE-1, IPB-1, XC-16, DUI-2, STR-2 and EXT-1 fixed; STR-3 and EXT-2 left |
+| W14 | next, moved ahead of W2 at the maintainer's request (2026-10-12): the recorded ESLint violations and the crates outside the workspace lints are fixed by cause until both suppression files are gone, then reviewed by an agent that did not write the fixes |
+| W2 to W13 | not started |
 
 Parts of W0 findings carried into later workstreams:
 
