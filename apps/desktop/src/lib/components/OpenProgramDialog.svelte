@@ -12,8 +12,10 @@
   const site = $derived(row ? hostOf(row.url) : 'where it came from');
   // The type the system goes by, so a name dressed up as something else is called what it is.
   const type = $derived(row ? fileType(row.file_name) : null);
-  // Isolated, so characters in the name cannot reorder the text around it.
-  const name = $derived(`⁨${row?.file_name ?? 'this file'}⁩`);
+  // Wrapped in a first strong isolate and its pop, so characters in the name cannot reorder the
+  // title around it. Built from code points so no invisible character sits in this source.
+  const [isolate, pop] = [String.fromCodePoint(0x2068), String.fromCodePoint(0x2069)];
+  const name = $derived(`${isolate}${row?.file_name ?? 'this file'}${pop}`);
 
   async function showInFolder() {
     app.closeDialog();

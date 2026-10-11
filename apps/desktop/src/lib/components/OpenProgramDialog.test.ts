@@ -36,6 +36,11 @@ describe('opening a file that can run code', () => {
   it('says which type it is', async () => {
     const dialog = await askToOpen('https://example.com/files/report.pdf.exe');
     expect(dialog.getByText(/This is a/).textContent).toMatch(/This is a \.exe file/);
+    // The name in the title is isolated (U+2068 ... U+2069).
+    const title = dialog.getByRole('heading').textContent ?? '';
+    expect(title).toBe(
+      `Open "${String.fromCodePoint(0x2068)}report.pdf.exe${String.fromCodePoint(0x2069)}"?`,
+    );
   });
 
   it('says so when the name has no type', async () => {
