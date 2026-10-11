@@ -39,6 +39,10 @@ export interface MediaRequest {
   target: MediaTarget;
   title: string | null;
   pageUrl: string | null;
+  /**
+   * The full address of the frame the media is in. The hub trims it to what the
+   * browser would send as `Referer` (`refererFor`) before it leaves the extension.
+   */
   referrer: string | null;
   cookieStoreId: string | null;
 }

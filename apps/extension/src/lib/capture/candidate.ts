@@ -21,6 +21,8 @@ export interface DownloadItemLike {
   byExtensionId?: string;
   state?: string;
   cookieStoreId?: string;
+  /** Chromium: the browser's safety verdict (`safe`, `accepted`, `file`, `url` and so on). */
+  danger?: string;
 }
 
 function nonEmpty(value: string | undefined): string | null {
@@ -49,5 +51,6 @@ export function candidateFromItem(item: DownloadItemLike): CaptureCandidate {
     startedByExtension: nonEmpty(item.byExtensionId) !== null,
     // Chromium reports `in_progress` while a download runs; Firefox does too.
     inProgress: item.state === undefined || item.state === 'in_progress',
+    danger: nonEmpty(item.danger),
   };
 }

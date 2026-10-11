@@ -3,10 +3,11 @@
 //!
 //! Cargo cannot build another package's binary for an integration test on stable
 //! (artifact dependencies are unstable), so the first test that needs the bridge
-//! runs `cargo build -p wirecatch-bridge --features test-overrides` into the same
+//! runs `cargo build -p wirecatch-bridge --features test-overrides,dev-extension`
+//! (the fake extension calls as the development Chromium build) into the same
 //! target folder the tests were built in. When nothing changed that is a no-op
 //! taking well under a second. Set `WIRECATCH_E2E_BRIDGE` to the path of an
-//! already built bridge (with the feature) to skip the build.
+//! already built bridge (with both features) to skip the build.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -65,7 +66,7 @@ fn build_bridge() -> PathBuf {
             "-p",
             "wirecatch-bridge",
             "--features",
-            "test-overrides",
+            "test-overrides,dev-extension",
             "--message-format",
             "json-render-diagnostics",
             "--manifest-path",

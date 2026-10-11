@@ -73,6 +73,9 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Some(problem) = config.chromium_problem() {
+        log!("{problem}.");
+    }
     if let Err(reason) = caller::identify(args, &config) {
         log!(
             "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `wirecatch-bridge --help` for the commands you can use."

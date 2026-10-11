@@ -4,6 +4,7 @@
  */
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { CookieContext } from '../src/lib/cookies';
 import { Hub, MEDIA_UNREACHABLE } from '../src/lib/hub';
 import {
   MediaCenter,
@@ -172,6 +173,7 @@ interface Harness {
   center: MediaCenter;
   tabs: Map<number, TabInfo>;
   cookieCalls: Array<[string, string | null]>;
+  cookieContexts: CookieContext[];
   saved: SavedMedia[];
   buttonSaves: boolean[];
 }
@@ -227,6 +229,7 @@ async function setup(
   const saved: SavedMedia[] = [];
   const buttonSaves: boolean[] = [];
   const cookieCalls: Array<[string, string | null]> = [];
+  const cookieContexts: CookieContext[] = [];
   const center: MediaCenter = new MediaCenter({
     registry,
     getTab: (id) => Promise.resolve(tabs.get(id) ?? null),
@@ -245,8 +248,9 @@ async function setup(
     client,
     cache: new MemoryCache(),
     downloads: new FakeDownloads(),
-    cookieHeader: (url, store) => {
+    cookieHeader: (url, store, context) => {
       cookieCalls.push([url, store]);
+      cookieContexts.push(context);
       return Promise.resolve('session=1');
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
@@ -268,7 +272,7 @@ async function setup(
     await hub.start();
     await flush();
   }
-  const h = { app, hub, client, registry, center, tabs, cookieCalls, saved, buttonSaves };
+  const h = { app, hub, client, registry, center, tabs, cookieCalls, cookieContexts, saved, buttonSaves };
   harnesses.push(h);
   return h;
 }
@@ -346,7 +350,7 @@ describe('media button messages', () => {
   });
 
   it('hands the best hint to the app, with the media kind, the title, cookies and the page', async () => {
-    const { app, center, registry, tabs, cookieCalls } = await setup();
+    const { app, center, registry, tabs, cookieCalls, cookieContexts } = await setup();
     registry.add(1, FILE);
     registry.add(1, HLS);
     const answer = await center.handleContentMessage(
@@ -357,7 +361,8 @@ describe('media button messages', () => {
     expect(lastAdd(app)).toEqual({
       handover_id: expect.any(String) as string,
       url: HLS.url,
-      referrer: 'https://player.example.net/embed/7',
+      // Another origin: only the frame's origin, as the browser sends it.
+      referrer: 'https://player.example.net/',
       page_url: 'https://example.com/watch',
       suggested_name: null,
       mime: null,
@@ -370,6 +375,14 @@ describe('media button messages', () => {
       media: { kind: 'hls', title: 'A nice video' },
     });
     expect(cookieCalls).toEqual([[HLS.url, null]]);
+    // Loaded by the player frame inside the tab's page, not a navigation.
+    expect(cookieContexts).toEqual([
+      {
+        initiator: 'https://player.example.net/embed/7',
+        topLevel: 'https://example.com/watch',
+        navigation: false,
+      },
+    ]);
   });
 
   it('sends the page itself on a well-known video site, for the media add-on', async () => {
@@ -575,7 +588,7 @@ describe('popup media list', () => {
     });
     expect(lastAdd(app)).toMatchObject({
       url: FILE.url,
-      referrer: 'https://example.com/watch',
+      referrer: 'https://example.com/',
       mime: 'video/mp4',
       size_hint: 5_242_880,
       media: { kind: 'direct', title: 'A nice video' },

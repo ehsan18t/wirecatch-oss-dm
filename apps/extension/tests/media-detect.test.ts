@@ -4,10 +4,16 @@ import {
   classifyUrl,
   isNavigation,
   isWebUrl,
+  MAX_MEDIA_URL_LENGTH,
   type ObservedResponse,
 } from '../src/lib/media/detect';
 import { pageSiteFor } from '../src/lib/media/page-sites';
-import { HLS_STREAM_WINDOW_MS, MAX_ITEMS_PER_TAB, MediaRegistry } from '../src/lib/media/registry';
+import {
+  HLS_STREAM_WINDOW_MS,
+  MAX_ITEMS_PER_TAB,
+  MAX_SAVED_CHARS,
+  MediaRegistry,
+} from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { flush } from './fakes';
 
@@ -136,6 +142,92 @@ describe('classifyResponse', () => {
         response({ url: 'https://e.com/app.js', type: 'script', contentType: 'text/javascript' }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('size limits', () => {
+  /** A media address exactly `length` characters long. */
+  const urlOf = (length: number): string => {
+    const head = 'https://cdn.example.com/v/';
+    const tail = '.mp4';
+    return head + 'a'.repeat(length - head.length - tail.length) + tail;
+  };
+
+  it('ignores media addresses longer than 8 KiB', () => {
+    expect(MAX_MEDIA_URL_LENGTH).toBe(8192);
+    const ok = urlOf(MAX_MEDIA_URL_LENGTH);
+    const long = urlOf(MAX_MEDIA_URL_LENGTH + 1);
+    expect(classifyResponse(response({ url: ok, type: 'media', contentType: 'video/mp4' }))?.url).toBe(ok);
+    expect(classifyResponse(response({ url: long, type: 'media', contentType: 'video/mp4' }))).toBeNull();
+    const registry = new MediaRegistry();
+    const detection = { kind: 'direct' as const, url: long, mime: null, size: null, audio: false };
+    expect(registry.add(1, detection)).toBe(false);
+    expect(registry.items(1)).toEqual([]);
+  });
+
+  it('ignores an overlong media type', () => {
+    const hit = classifyResponse(
+      response({
+        url: 'https://cdn.example.com/v.mp4',
+        type: 'media',
+        contentType: `video/${'x'.repeat(300)}`,
+      }),
+    );
+    expect(hit?.mime).toBeNull();
+  });
+
+  it('never reads back oversized addresses from saved lists', () => {
+    const registry = new MediaRegistry();
+    const item = (url: string) => ({
+      kind: 'direct',
+      url,
+      key: `direct:${url}`,
+      mime: null,
+      size: null,
+      audio: false,
+      seenAt: 1,
+    });
+    registry.restore({ v: 1, tabs: [[3, [item(urlOf(MAX_MEDIA_URL_LENGTH + 1)), item(urlOf(100))]]] });
+    expect(registry.items(3).map((i) => i.url)).toEqual([urlOf(100)]);
+  });
+
+  it('keeps what it saves under the total size cap, newest tabs and items first', () => {
+    let clock = 0;
+    const registry = new MediaRegistry({ now: () => (clock += 1) });
+    // 200 tabs of 30 near-limit addresses is about 48 MB: far over the cap and the browser's quota.
+    for (let tab = 1; tab <= 200; tab += 1) {
+      for (let n = 0; n < MAX_ITEMS_PER_TAB; n += 1) {
+        const url = urlOf(MAX_MEDIA_URL_LENGTH - 8).replace('/v/', `/${String(tab)}/${String(n)}/`);
+        expect(registry.add(tab, { kind: 'direct', url, mime: 'video/mp4', size: null, audio: false })).toBe(
+          true,
+        );
+      }
+    }
+    // Tab 5 changes last, so it is kept first.
+    registry.add(5, { kind: 'direct', url: 'https://e.com/new.mp4', mime: null, size: null, audio: false });
+
+    const saved = registry.save();
+    expect(JSON.stringify(saved).length).toBeLessThanOrEqual(MAX_SAVED_CHARS);
+    expect(saved.tabs[saved.tabs.length - 1]?.[0]).toBe(5);
+    const tab5 = saved.tabs[saved.tabs.length - 1]?.[1] ?? [];
+    expect(tab5[tab5.length - 1]?.url).toBe('https://e.com/new.mp4');
+    // Tab 200 changed just before it; the first tabs no longer fit.
+    expect(saved.tabs.map(([id]) => id)).toContain(200);
+    expect(saved.tabs.map(([id]) => id)).not.toContain(1);
+
+    const copy = new MediaRegistry();
+    copy.restore(JSON.parse(JSON.stringify(saved)));
+    expect(copy.items(5).at(-1)?.url).toBe('https://e.com/new.mp4');
+  });
+
+  it('saves everything when it fits', () => {
+    const registry = new MediaRegistry();
+    registry.add(1, { kind: 'direct', url: 'https://e.com/a.mp4', mime: null, size: null, audio: false });
+    registry.add(2, { kind: 'direct', url: 'https://e.com/b.mp4', mime: null, size: null, audio: false });
+    expect(registry.save().tabs.map(([id, items]) => [id, items.length])).toEqual([
+      [1, 1],
+      [2, 1],
+    ]);
   });
 });
 

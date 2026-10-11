@@ -4,6 +4,7 @@
  */
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CookieContext } from '../src/lib/cookies';
 import { Hub, type CachedSettings, type SettingsCache } from '../src/lib/hub';
 import { NativeClient } from '../src/lib/native/client';
 import {
@@ -32,6 +33,7 @@ interface Setup {
   hub: Hub;
   inFlight: MemoryInFlight;
   cookieCalls: Array<[string, string | null]>;
+  cookieContexts: CookieContext[];
   started: Promise<void>;
 }
 
@@ -42,6 +44,7 @@ async function setup(options: Options = {}): Promise<Setup> {
   const downloads = options.downloads ?? new FakeDownloads();
   const inFlight = options.inFlight ?? new MemoryInFlight();
   const cookieCalls: Array<[string, string | null]> = [];
+  const cookieContexts: CookieContext[] = [];
   const client = new NativeClient({
     transport: app,
     hello: () =>
@@ -53,8 +56,9 @@ async function setup(options: Options = {}): Promise<Setup> {
     client,
     cache: options.cache ?? memory,
     downloads,
-    cookieHeader: (url, storeId) => {
+    cookieHeader: (url, storeId, context) => {
       cookieCalls.push([url, storeId]);
+      cookieContexts.push(context);
       return Promise.resolve(url.includes('example.com') ? 'session=abc' : null);
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
@@ -70,7 +74,7 @@ async function setup(options: Options = {}): Promise<Setup> {
     await started;
     await flush();
   }
-  return { app, downloads, client, hub, inFlight, cookieCalls, started };
+  return { app, downloads, client, hub, inFlight, cookieCalls, cookieContexts, started };
 }
 
 function addDownloadCalls(app: FakeApp): NewDownload[] {
@@ -120,6 +124,49 @@ describe('handover', () => {
         extra_headers: [],
         source: 'browser_download',
         queue: 1,
+      },
+    ]);
+  });
+
+  it('leaves a download the browser flags untouched', async () => {
+    s = await setup();
+    expect(await s.hub.onDownload(downloadItem({ id: 7, danger: 'file' }))).toBeNull();
+    expect(s.downloads.log).toEqual([]);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('keeps a download the browser flags while it is paused, and resumes it', async () => {
+    const downloads = new FakeDownloads();
+    downloads.browserState = { state: 'in_progress', paused: true, danger: 'url' };
+    s = await setup({ downloads });
+    const result = await s.hub.onDownload(downloadItem({ id: 7, danger: 'safe' }));
+    expect(result).toMatchObject({ kind: 'kept', reason: 'browser_flagged', browserCopy: 'resumed' });
+    expect(downloads.log).toEqual(['pause:7', 'resume:7']);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('leaves programs in the browser untouched, so its own checks run', async () => {
+    s = await setup();
+    const item = downloadItem({
+      id: 8,
+      filename: '/home/me/Downloads/setup.exe',
+      mime: 'application/octet-stream',
+    });
+    expect(await s.hub.onDownload(item)).toBeNull();
+    expect(s.downloads.log).toEqual([]);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('reads cookies as for a navigation started by the page the download came from', async () => {
+    s = await setup();
+    await s.hub.onDownload(
+      downloadItem({ url: 'https://example.com/get?id=1', finalUrl: 'https://files.example.com/big.zip' }),
+    );
+    expect(s.cookieContexts).toEqual([
+      {
+        initiator: 'https://example.com/downloads',
+        originalUrl: 'https://example.com/get?id=1',
+        navigation: true,
       },
     ]);
   });
@@ -594,6 +641,28 @@ describe('context menu', () => {
       queue: 1,
     });
     expect(s.cookieCalls).toEqual([['https://example.com/file.iso', 'firefox-container-2']]);
+    expect(s.cookieContexts).toEqual([{ initiator: 'https://example.com/page', navigation: true }]);
+  });
+
+  it('sends the referrer the browser would: the origin only to another origin, nothing from https to http', async () => {
+    s = await setup();
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://cdn.example.com/a.zip', pageUrl: 'https://example.com/account?id=7' },
+      undefined,
+    );
+    await s.hub.onMenuClick(
+      { linkUrl: 'http://mirror.example.com/a.zip', pageUrl: 'https://example.com/account?id=7' },
+      undefined,
+    );
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip', pageUrl: 'https://example.com/account?id=7#files' },
+      undefined,
+    );
+    expect(addDownloadCalls(s.app).map((d) => d.referrer)).toEqual([
+      'https://example.com/',
+      null,
+      'https://example.com/account?id=7',
+    ]);
     expect(s.downloads.log).toEqual([]);
   });
 
@@ -657,6 +726,15 @@ describe('context menu', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await pending).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/file.iso']);
+  });
+
+  it('lets the browser download programs, so its own checks run', async () => {
+    s = await setup();
+    const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/get/Setup.EXE' }, undefined);
+    expect(result).toBe('browser');
+    expect(s.app.calls('add_download')).toHaveLength(0);
+    expect(s.downloads.log).toEqual(['start:https://example.com/get/Setup.EXE']);
+    expect(s.hub.snapshot().notice?.message).toContain('is a program');
   });
 
   it('lets the browser download it when site access was revoked', async () => {

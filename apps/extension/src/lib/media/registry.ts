@@ -1,4 +1,4 @@
-import type { DetectedKind, Detection } from './detect';
+import { MAX_MEDIA_URL_LENGTH, type DetectedKind, type Detection } from './detect';
 
 /** Media detected in a tab, in the order it was first seen. */
 export interface MediaItem extends Detection {
@@ -28,6 +28,13 @@ export const HLS_STREAM_WINDOW_MS = 10_000;
 /** Most items kept per tab; the oldest is dropped to make room, since the newest is what plays now. */
 export const MAX_ITEMS_PER_TAB = 30;
 
+/**
+ * Most characters of media lists written to `storage.session` at once (1 MiB), well
+ * inside its quota (10 MB in Chromium), which the in-flight download list shares.
+ * The lists of the tabs that changed last are kept first.
+ */
+export const MAX_SAVED_CHARS = 1024 * 1024;
+
 function parts(url: string): { origin: string; path: string } | null {
   try {
     const u = new URL(url);
@@ -51,7 +58,9 @@ function isItem(value: unknown): value is SavedItem {
   return (
     (i.kind === 'hls' || i.kind === 'dash' || i.kind === 'direct') &&
     typeof i.url === 'string' &&
+    i.url.length <= MAX_MEDIA_URL_LENGTH &&
     typeof i.key === 'string' &&
+    i.key.length <= MAX_MEDIA_URL_LENGTH + 16 &&
     typeof i.seenAt === 'number' &&
     typeof i.audio === 'boolean' &&
     (i.mime === null || typeof i.mime === 'string') &&
@@ -94,6 +103,7 @@ export class MediaRegistry {
 
   /** Records a detection from a frame of the tab; returns true when the tab's list changed. */
   add(tabId: number, detection: Detection, frameId = 0): boolean {
+    if (detection.url.length > MAX_MEDIA_URL_LENGTH) return false;
     const now = this.#now();
     const list = this.#tabs.get(tabId) ?? [];
     const key = itemKey(detection.kind, detection.url);
@@ -137,8 +147,31 @@ export class MediaRegistry {
     this.#emit(tabId);
   }
 
+  /**
+   * The lists to keep in `storage.session`, at most `MAX_SAVED_CHARS` of JSON: the
+   * tabs that changed last come first, and within a tab the newest items.
+   */
   save(): SavedMedia {
-    return { v: 1, tabs: [...this.#tabs.entries()].map(([id, items]) => [id, [...items]]) };
+    let budget = MAX_SAVED_CHARS;
+    const kept: Array<[number, MediaItem[]]> = [];
+    for (const [id, items] of [...this.#tabs.entries()].reverse()) {
+      const fit: MediaItem[] = [];
+      for (let i = items.length - 1; i >= 0 && budget > 0; i -= 1) {
+        const item = items[i];
+        if (item === undefined) continue;
+        // The item, its comma, and its tab's share of the wrapping.
+        const size = JSON.stringify(item).length + 16;
+        if (size > budget) {
+          budget = 0;
+          break;
+        }
+        budget -= size;
+        fit.unshift(item);
+      }
+      if (fit.length > 0) kept.unshift([id, fit]);
+      if (budget <= 0) break;
+    }
+    return { v: 1, tabs: kept };
   }
 
   /**
@@ -165,6 +198,8 @@ export class MediaRegistry {
   }
 
   #set(tabId: number, items: MediaItem[]): void {
+    // Re-inserted, so the map runs from the least to the most recently changed tab.
+    this.#tabs.delete(tabId);
     this.#tabs.set(tabId, items);
     this.#emit(tabId);
   }
