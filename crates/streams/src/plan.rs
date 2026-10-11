@@ -211,10 +211,9 @@ impl Source {
                     video: master
                         .variants
                         .iter()
-                        .enumerate()
-                        .filter(|(_, v)| !v.audio_only())
-                        .map(|(i, v)| VideoTrack {
-                            id: format!("v{i}"),
+                        .filter(|v| !v.audio_only())
+                        .map(|v| VideoTrack {
+                            id: track_id::variant(v),
                             width: v.resolution.map(|r| r.0),
                             height: v.resolution.map(|r| r.1),
                             bandwidth: v.bandwidth,
@@ -227,10 +226,9 @@ impl Source {
                     subtitles: master
                         .renditions
                         .iter()
-                        .enumerate()
-                        .filter(|(_, r)| r.kind == RenditionKind::Subtitles)
-                        .map(|(i, r)| SubtitleTrack {
-                            id: format!("r{i}"),
+                        .filter(|r| r.kind == RenditionKind::Subtitles)
+                        .map(|r| SubtitleTrack {
+                            id: track_id::rendition(r),
                             language: r.language.clone(),
                             name: r.name.clone(),
                         })
@@ -243,7 +241,7 @@ impl Source {
                 duration: seconds(media.duration),
                 live: !media.ended,
                 video: vec![VideoTrack {
-                    id: "v0".into(),
+                    id: track_id::SINGLE.into(),
                     width: None,
                     height: None,
                     bandwidth: None,
@@ -262,10 +260,9 @@ impl Source {
                 video: mpd
                     .reps
                     .iter()
-                    .enumerate()
-                    .filter(|(_, r)| r.kind == Kind::Video)
-                    .map(|(i, r)| VideoTrack {
-                        id: format!("d{i}"),
+                    .filter(|r| r.kind == Kind::Video)
+                    .map(|r| VideoTrack {
+                        id: track_id::representation(r),
                         width: r.width,
                         height: r.height,
                         bandwidth: r.bandwidth,
@@ -277,10 +274,9 @@ impl Source {
                 audio: mpd
                     .reps
                     .iter()
-                    .enumerate()
-                    .filter(|(_, r)| r.kind == Kind::Audio)
-                    .map(|(i, r)| AudioTrack {
-                        id: format!("d{i}"),
+                    .filter(|r| r.kind == Kind::Audio)
+                    .map(|r| AudioTrack {
+                        id: track_id::representation(r),
                         language: r.language.clone(),
                         name: r.label.clone(),
                         bandwidth: r.bandwidth,
@@ -293,10 +289,9 @@ impl Source {
                 subtitles: mpd
                     .reps
                     .iter()
-                    .enumerate()
-                    .filter(|(_, r)| r.kind == Kind::Text)
-                    .map(|(i, r)| SubtitleTrack {
-                        id: format!("d{i}"),
+                    .filter(|r| r.kind == Kind::Text)
+                    .map(|r| SubtitleTrack {
+                        id: track_id::representation(r),
                         language: r.language.clone(),
                         name: r.label.clone(),
                     })
@@ -314,7 +309,9 @@ impl Source {
                 let tracks = match video {
                     Choice::Skip => Vec::new(),
                     Choice::Auto => vec![hls_track(Role::Video, None, media)?],
-                    Choice::Track(id) if id == "v0" => vec![hls_track(Role::Video, None, media)?],
+                    Choice::Track(id) if id == track_id::SINGLE => {
+                        vec![hls_track(Role::Video, None, media)?]
+                    }
                     Choice::Track(id) => {
                         return Err(Error::NoSuchTrack {
                             kind: "video",
@@ -401,10 +398,9 @@ fn hls_audio(master: &Master, format: &'static str) -> Vec<AudioTrack> {
     let renditions = master
         .renditions
         .iter()
-        .enumerate()
-        .filter(|(_, r)| r.kind == RenditionKind::Audio && r.url.is_some())
-        .map(|(i, r)| AudioTrack {
-            id: format!("r{i}"),
+        .filter(|r| r.kind == RenditionKind::Audio && r.url.is_some())
+        .map(|r| AudioTrack {
+            id: track_id::rendition(r),
             language: r.language.clone(),
             name: r.name.clone(),
             bandwidth: None,
@@ -416,10 +412,9 @@ fn hls_audio(master: &Master, format: &'static str) -> Vec<AudioTrack> {
     let variants = master
         .variants
         .iter()
-        .enumerate()
-        .filter(|(_, v)| v.audio_only())
-        .map(|(i, v)| AudioTrack {
-            id: format!("v{i}"),
+        .filter(|v| v.audio_only())
+        .map(|v| AudioTrack {
+            id: track_id::variant(v),
             language: None,
             name: None,
             bandwidth: v.bandwidth,
@@ -447,9 +442,70 @@ fn best_variant(master: &Master, keep: impl Fn(&hls::Variant) -> bool) -> Option
         .map(|(i, _)| i)
 }
 
-/// Parses `id` as `<prefix><index>`.
-fn index_of(id: &str, prefix: char) -> Option<usize> {
-    id.strip_prefix(prefix)?.parse().ok()
+/// Track ids derived from what a track is, not where it is listed. Core keeps the chosen id to continue a download after a restart, and the playlist is read again then; a refreshed or rebalanced playlist may list its tracks in another order, and a position would then name another quality or language.
+mod track_id {
+    use super::{Fnv, dash, hls};
+
+    /// The one track of a media playlist that is not part of a master playlist.
+    pub(super) const SINGLE: &str = "v-playlist";
+
+    fn hashed(prefix: &str, parts: &[&str]) -> String {
+        let mut hash = Fnv::default();
+        for part in parts {
+            hash.write(part.as_bytes());
+            hash.write(&[0xFF]);
+        }
+        format!("{prefix}-{:016x}", hash.0)
+    }
+
+    /// A variant: its playlist's path (never the host, which CDNs change, or the query, where signed links keep a token), bandwidth, picture size and codecs.
+    pub(super) fn variant(variant: &hls::Variant) -> String {
+        let bandwidth = variant.bandwidth.map(|b| b.to_string()).unwrap_or_default();
+        let size = variant
+            .resolution
+            .map(|(w, h)| format!("{w}x{h}"))
+            .unwrap_or_default();
+        hashed(
+            "v",
+            &[
+                variant.url.path(),
+                &bandwidth,
+                &size,
+                variant.codecs.as_deref().unwrap_or_default(),
+            ],
+        )
+    }
+
+    /// A rendition: its kind, group, language and name, which the master playlist uses to tell renditions apart.
+    pub(super) fn rendition(rendition: &hls::Rendition) -> String {
+        let kind = format!("{:?}", rendition.kind);
+        hashed(
+            "r",
+            &[
+                &kind,
+                &rendition.group,
+                rendition.language.as_deref().unwrap_or_default(),
+                rendition.name.as_deref().unwrap_or_default(),
+            ],
+        )
+    }
+
+    /// A DASH representation: its `id`, which the standard requires to be unique and which manifests keep stable; its attributes when a manifest leaves the id out.
+    pub(super) fn representation(rep: &dash::Rep) -> String {
+        if rep.id.is_empty() {
+            let bandwidth = rep.bandwidth.map(|b| b.to_string()).unwrap_or_default();
+            hashed(
+                "d",
+                &[
+                    &bandwidth,
+                    rep.codecs.as_deref().unwrap_or_default(),
+                    rep.language.as_deref().unwrap_or_default(),
+                ],
+            )
+        } else {
+            format!("d-{}", rep.id)
+        }
+    }
 }
 
 async fn plan_hls(
@@ -475,8 +531,10 @@ async fn plan_hls(
                 .ok_or(Error::NothingChosen)?,
         ),
         Choice::Track(id) => Some(
-            index_of(id, 'v')
-                .filter(|i| master.variants.get(*i).is_some_and(|v| !v.audio_only()))
+            master
+                .variants
+                .iter()
+                .position(|v| !v.audio_only() && track_id::variant(v) == *id)
                 .ok_or_else(|| no_video(id))?,
         ),
     };
@@ -485,16 +543,17 @@ async fn plan_hls(
     let audio_url: Option<(Url, Option<String>)> = match audio {
         Choice::Skip => None,
         Choice::Track(id) => {
-            if let Some(i) = index_of(id, 'r') {
-                let rendition = master
-                    .renditions
-                    .get(i)
-                    .filter(|r| r.kind == RenditionKind::Audio)
-                    .ok_or_else(|| no_audio(id))?;
+            let rendition = master
+                .renditions
+                .iter()
+                .find(|r| r.kind == RenditionKind::Audio && track_id::rendition(r) == *id);
+            if let Some(rendition) = rendition {
                 Some((rendition.url.clone().ok_or_else(|| no_audio(id))?, None))
             } else {
-                let i = index_of(id, 'v')
-                    .filter(|i| master.variants.get(*i).is_some_and(|v| v.audio_only()))
+                let i = master
+                    .variants
+                    .iter()
+                    .position(|v| v.audio_only() && track_id::variant(v) == *id)
                     .ok_or_else(|| no_audio(id))?;
                 Some((
                     master.variants[i].url.clone(),
@@ -618,8 +677,10 @@ async fn plan_dash(fetcher: &Fetcher, mpd: Mpd, video: &Choice, audio: &Choice) 
         match choice {
             Choice::Skip => Ok(None),
             Choice::Auto => Ok(best(kind)),
-            Choice::Track(id) => index_of(id, 'd')
-                .filter(|i| mpd.reps.get(*i).is_some_and(|r| r.kind == kind))
+            Choice::Track(id) => mpd
+                .reps
+                .iter()
+                .position(|r| r.kind == kind && track_id::representation(r) == *id)
                 .map(Some)
                 .ok_or_else(|| Error::NoSuchTrack {
                     kind: name,

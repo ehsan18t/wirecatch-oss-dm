@@ -78,6 +78,48 @@ fn master(server: &Server) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     (low, high)
 }
 
+/// Track ids were list positions, and core keeps the chosen id to continue after a restart. A refreshed master playlist that lists its variants in another order then silently gave another quality.
+#[tokio::test]
+async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_order() {
+    let server = Server::start().await;
+    let (low, _high) = master(&server);
+    let info = inspect(
+        &server.url("master.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let chosen = info
+        .video
+        .iter()
+        .find(|v| v.height == Some(360))
+        .unwrap()
+        .id
+        .clone();
+
+    // The refreshed playlist lists the qualities the other way round.
+    server.put_typed(
+        "master.m3u8",
+        "#EXTM3U\n\
+         #EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\"\n\
+         high/index.m3u8\n\
+         #EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360,CODECS=\"avc1.4d401e,mp4a.40.2\",FRAME-RATE=25\n\
+         low/index.m3u8\n",
+        MPEGURL,
+    );
+    let dir = temp_dir("hls-reordered");
+    let mut req = request(&server, "master.m3u8", &dir.join("v.mp4"));
+    req.video = Choice::Track(chosen);
+    let (path, _) = completed(run(req).await.unwrap());
+
+    assert_eq!(
+        std::fs::read(path).unwrap(),
+        low.concat(),
+        "still the 360p quality"
+    );
+}
+
 #[tokio::test]
 async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     let server = Server::start().await;

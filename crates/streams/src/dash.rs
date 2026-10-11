@@ -39,6 +39,8 @@ pub(crate) enum Kind {
 /// One representation.
 #[derive(Debug)]
 pub(crate) struct Rep {
+    /// `Representation@id`, unique within its period; empty when the manifest leaves it out.
+    pub id: String,
     pub kind: Kind,
     pub bandwidth: Option<u64>,
     pub width: Option<u32>,
@@ -368,6 +370,7 @@ pub(crate) fn parse(text: &str, base: &Url) -> Result<Mpd, String> {
                 period_length,
             )?;
             reps.push(Rep {
+                id: id.clone(),
                 kind,
                 bandwidth,
                 width: get("width").and_then(|w| w.trim().parse().ok()),
