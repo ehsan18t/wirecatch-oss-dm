@@ -440,4 +440,32 @@ pub struct ImportedFolder {
     pub used: PortablePath,
     /// Where `used` is on this machine.
     pub resolved: String,
+    /// Why `requested` was not used, in plain words, when it was not: for
+    /// example it is not on this computer, or it is a system or startup folder
+    /// where a downloaded file could run by itself.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// `resolved` is outside the home folder and the usual folders (Downloads,
+    /// Documents, Videos, Music, Pictures), so the person should look at it
+    /// before importing.
+    #[serde(default)]
+    pub outside_user_folders: bool,
+}
+
+/// What importing a settings profile would change, shown before anything is
+/// applied, so the person can decide.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ImportPreview {
+    /// Every folder setting in the profile and the folder it would become on
+    /// this machine.
+    pub folders: Vec<ImportedFolder>,
+    /// Names of the queues the import would add.
+    pub queues_added: Vec<String>,
+    /// Names of the queues here the import would change (the default queue is
+    /// always matched with the profile's).
+    pub queues_updated: Vec<String>,
+    /// Ids of add-ons the profile lists that are not installed here, to offer
+    /// after the import. Nothing is downloaded on import.
+    pub addons_to_offer: Vec<String>,
 }

@@ -31,6 +31,7 @@
 //! | `get_settings` | none | `AppSettings` |
 //! | `update_settings` | `settings: AppSettings` | nothing |
 //! | `export_settings` | `path: String` | nothing |
+//! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
 //! | `import_settings` | `path: String` | nothing |
 //! | `pending_confirmations` | none | `Vec<PendingCapture>` |
 //! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | nothing |
@@ -192,6 +193,7 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::export_settings,
+            commands::preview_import,
             commands::import_settings,
             commands::pending_confirmations,
             commands::confirm_capture,

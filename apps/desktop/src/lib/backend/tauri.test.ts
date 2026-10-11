@@ -27,6 +27,7 @@ const FIXED = [
   'get_settings',
   'update_settings',
   'export_settings',
+  'preview_import',
   'import_settings',
   'pending_confirmations',
   'confirm_capture',

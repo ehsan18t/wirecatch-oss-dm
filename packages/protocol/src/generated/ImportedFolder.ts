@@ -21,4 +21,16 @@ used: PortablePath,
 /**
  * Where `used` is on this machine.
  */
-resolved: string, };
+resolved: string, 
+/**
+ * Why `requested` was not used, in plain words, when it was not: for
+ * example it is not on this computer, or it is a system or startup folder
+ * where a downloaded file could run by itself.
+ */
+reason: string | null, 
+/**
+ * `resolved` is outside the home folder and the usual folders (Downloads,
+ * Documents, Videos, Music, Pictures), so the person should look at it
+ * before importing.
+ */
+outside_user_folders: boolean, };

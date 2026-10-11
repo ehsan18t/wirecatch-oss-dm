@@ -9,6 +9,7 @@ import type {
   DownloadId,
   DownloadSummary,
   FixAction,
+  ImportPreview,
   ImportSummary,
   MediaChoice,
   MediaSelection,
@@ -150,6 +151,11 @@ export class AppState {
   choiceAwaitingAddon = $state<{ id: number; selection: MediaSelection } | null>(null);
   /** What the last settings import changed, shown in the import dialog. */
   lastImport = $state<ImportSummary | null>(null);
+  /**
+   * A settings file chosen for import and what importing it would change. The import dialog
+   * shows this and applies the file only when the person says so.
+   */
+  importPreview = $state<{ path: string; preview: ImportPreview } | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
   /** Refreshed every half minute so schedule labels stay true. */
@@ -560,6 +566,8 @@ export class AppState {
 
   closeDialog(): void {
     this.dialog = null;
+    // A settings file previewed but not imported is left as it was.
+    this.importPreview = null;
   }
 
   /** Pasted text: open the Add dialog with every link in it. */
@@ -905,8 +913,27 @@ export class AppState {
     return ok ? path : null;
   }
 
-  async importSettings(): Promise<string | null> {
+  /**
+   * Asks for a settings file and reads what importing it would change, without changing
+   * anything yet: folders as they would be here, queues, add-ons. `importSettings` applies it.
+   */
+  async previewImport(): Promise<ImportPreview | null> {
     const path = await this.#run(() => this.backend.pickOpenFile());
+    if (!path) return null;
+    const preview = await this.#run(() => this.backend.previewImport(path));
+    if (!preview) return null;
+    this.importPreview = { path, preview };
+    return preview;
+  }
+
+  /** Leaves the previewed settings file unimported. */
+  cancelImport(): void {
+    this.importPreview = null;
+  }
+
+  /** Applies the settings file previewed with `previewImport`; returns its path once done. */
+  async importSettings(): Promise<string | null> {
+    const path = this.importPreview?.path;
     if (!path) return null;
     // The core reports what changed with `settings_imported`.
     this.lastImport = null;
@@ -914,6 +941,7 @@ export class AppState {
       await this.backend.importSettings(path);
       return true;
     });
+    this.importPreview = null;
     if (!ok) return null;
     // The core also sends change events; reading back makes sure nothing is missed.
     const [settings, queues] = await Promise.all([

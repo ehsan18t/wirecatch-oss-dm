@@ -3,7 +3,8 @@
 
 use std::path::Path;
 
-use wirecatch_protocol::app::{AppSettings, UiEvent};
+use wirecatch_protocol::QueueId;
+use wirecatch_protocol::app::{AppSettings, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use wirecatch_protocol::wire::Event;
 
@@ -96,17 +97,16 @@ impl Manager {
     /// installed here are listed there for the UI to offer; nothing is
     /// downloaded without the person asking.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
-        let path = path.to_path_buf();
-        let bytes = self.blocking(move || profile::read_file(&path)).await?;
-        let incoming = profile::parse(&bytes)?;
-        let wants_media = incoming.addons.iter().any(|a| a == MEDIA_ADDON_ID);
+        let localized = self.read_profile(path).await?;
+        let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);
 
         {
             let mut state = self.lock_open()?;
             let current = state.queue_list();
-            let mut imported = profile::merge(incoming, &current, &self.inner.folders, || {
-                state.ids.queue()
-            })?;
+            let mut imported =
+                profile::merge_localized(localized, &current, &self.inner.folders, || {
+                    state.ids.queue()
+                })?;
             self.inner.store.save_last_ids(state.ids.last());
             for queue in imported.queues {
                 match state.slot_mut(queue.id) {
@@ -126,6 +126,47 @@ impl Manager {
             self.emit(UiEvent::SettingsImported(imported.summary));
         }
         Ok(())
+    }
+
+    /// What [`import_settings`](Self::import_settings) would change with the
+    /// profile at `path`, without changing anything: every folder as it would
+    /// resolve here (startup and system folders refused and replaced, folders
+    /// outside the person's own folders flagged), the queues it would add and
+    /// update, and the add-ons it would offer. The UI shows this and asks before
+    /// importing.
+    pub async fn preview_import(&self, path: &Path) -> Result<ImportPreview> {
+        let localized = self.read_profile(path).await?;
+        let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);
+        let state = self.lock_open()?;
+        let current = state.queue_list();
+        // Ids for queues that would be added; they are never used.
+        let mut next = current.iter().map(|q| q.id.0).max().unwrap_or(0);
+        let imported = profile::merge_localized(localized, &current, &self.inner.folders, || {
+            next += 1;
+            QueueId(next)
+        })?;
+        let mut addons_to_offer = Vec::new();
+        if wants_media && state.addon.tools.is_none() {
+            addons_to_offer.push(MEDIA_ADDON_ID.to_string());
+        }
+        Ok(ImportPreview {
+            folders: imported.summary.folders,
+            queues_added: imported.added,
+            queues_updated: imported.updated,
+            addons_to_offer,
+        })
+    }
+
+    /// Reads and checks the profile at `path` and resolves its folders here,
+    /// off the async threads.
+    async fn read_profile(&self, path: &Path) -> Result<profile::Localized> {
+        let path = path.to_path_buf();
+        let folders = self.inner.folders.clone();
+        self.blocking(move || {
+            let bytes = profile::read_file(&path)?;
+            Ok(profile::localize(profile::parse(&bytes)?, &folders))
+        })
+        .await
     }
 
     /// Stores checked settings and tells the UI and, if their part changed, every

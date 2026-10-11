@@ -4,8 +4,8 @@
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::app::{
-    AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, MediaChoice,
-    MediaSelection, PendingCapture, Queue,
+    AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, ImportPreview,
+    MediaChoice, MediaSelection, PendingCapture, Queue,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -132,6 +132,11 @@ pub async fn update_settings(core: CoreState<'_>, settings: AppSettings) -> Comm
 #[tauri::command]
 pub async fn export_settings(core: CoreState<'_>, path: String) -> CommandResult<()> {
     api::export_settings(core.manager().await?, &path).await
+}
+
+#[tauri::command]
+pub async fn preview_import(core: CoreState<'_>, path: String) -> CommandResult<ImportPreview> {
+    api::preview_import(core.manager().await?, &path).await
 }
 
 #[tauri::command]

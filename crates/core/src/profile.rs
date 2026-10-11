@@ -71,6 +71,29 @@ pub(crate) struct Imported {
     pub settings: AppSettings,
     pub queues: Vec<Queue>,
     pub summary: ImportSummary,
+    /// Names of the queues added and of those updated, for a preview.
+    pub added: Vec<String>,
+    pub updated: Vec<String>,
+}
+
+/// A profile whose folders were resolved on this machine, with the report of
+/// where each one ended up. Resolving looks at the disk (to refuse startup and
+/// system folders whatever they are called), so it is done off the async
+/// threads, before the merge.
+#[derive(Debug)]
+pub(crate) struct Localized {
+    pub profile: SettingsProfile,
+    pub folders: Vec<ImportedFolder>,
+}
+
+/// Resolves `profile`'s folders on this machine; see [`Localized`]. Blocks on
+/// the disk.
+pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> Localized {
+    let report = localize_folders(&mut profile.settings, folders);
+    Localized {
+        profile,
+        folders: report,
+    }
 }
 
 /// Reads a profile file, refusing one larger than any real profile could be
@@ -94,25 +117,41 @@ pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Merges `profile` into the current queues and checks the result.
+/// [`localize`] then [`merge_localized`], for tests.
+#[cfg(test)]
+pub(crate) fn merge(
+    profile: SettingsProfile,
+    current: &[Queue],
+    folders: &KnownFolders,
+    next_queue_id: impl FnMut() -> QueueId,
+) -> Result<Imported> {
+    merge_localized(localize(profile, folders), current, folders, next_queue_id)
+}
+
+/// Merges a profile whose folders were resolved here into the current queues
+/// and checks the result.
 ///
 /// Queue ids from another machine mean nothing here, so queues are matched by
 /// name: the profile's default queue updates this default queue, a queue with a
 /// known name updates that queue, and the rest are added. Queues missing from the
 /// profile are kept, because downloads may still be in them. A folder that does not
-/// exist on this machine (an absolute path from another system) falls back to the
-/// default folder.
-pub(crate) fn merge(
-    profile: SettingsProfile,
+/// exist on this machine (an absolute path from another system), or that is a
+/// startup or system folder, falls back to the default folder.
+pub(crate) fn merge_localized(
+    localized: Localized,
     current: &[Queue],
     folders: &KnownFolders,
     mut next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
+    let Localized {
+        profile,
+        folders: folder_report,
+    } = localized;
     // Checked before the merge so a huge file costs nothing.
     settings::check_queue_count(profile.queues.len())?;
     let mut queues = current.to_vec();
     let mut ids = HashMap::new();
-    let (mut added, mut updated) = (0, 0);
+    let (mut added, mut updated) = (Vec::new(), Vec::new());
     for incoming in profile.queues {
         let incoming = settings::validate_queue(incoming)?;
         let target = if incoming.is_default {
@@ -125,6 +164,7 @@ pub(crate) fn merge(
         let local_id = match target {
             Some(i) => {
                 let existing = &mut queues[i];
+                updated.push(existing.name.clone());
                 *existing = Queue {
                     id: existing.id,
                     is_default: existing.is_default,
@@ -132,11 +172,10 @@ pub(crate) fn merge(
                     running_outside_schedule: existing.running_outside_schedule,
                     ..incoming.clone()
                 };
-                updated += 1;
                 existing.id
             }
             None => {
-                added += 1;
+                added.push(incoming.name.clone());
                 let id = next_queue_id();
                 queues.push(Queue {
                     id,
@@ -156,40 +195,49 @@ pub(crate) fn merge(
         .get(&settings.extension.default_queue)
         .copied()
         .unwrap_or(DEFAULT_QUEUE_ID);
-    let folder_report = localize_folders(&mut settings, folders);
     settings::check_queue_count(queues.len())?;
     let settings = settings::validate(settings, &queues, folders)?;
+    let count = |names: &[String]| u32::try_from(names.len()).unwrap_or(u32::MAX);
     Ok(Imported {
         settings,
         queues,
         summary: ImportSummary {
             folders: folder_report,
-            queues_added: added,
-            queues_updated: updated,
+            queues_added: count(&added),
+            queues_updated: count(&updated),
             addons_to_offer: Vec::new(),
         },
+        added,
+        updated,
     })
 }
 
-/// Replaces folders that do not exist on this machine with a fallback, and reports
-/// every folder setting with where it ended up.
+/// Replaces folders that do not exist on this machine, or that are startup or
+/// system folders, with a fallback, and reports every folder setting with where
+/// it ended up and why. Blocks on the disk.
 fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) -> Vec<ImportedFolder> {
     let mut report = Vec::with_capacity(settings.categories.len() + 1);
     let mut place = |setting: String, folder: &mut PortablePath, fallback: &PortablePath| {
         let requested = folder.clone();
-        // A file from elsewhere may not point downloads at a network folder.
-        let resolved = match folders.resolve_local(folder) {
-            Ok(path) => path,
-            Err(_) => {
+        // A file from elsewhere may not point downloads at a network folder, or
+        // at a folder where a downloaded file could run by itself.
+        let (resolved, reason) = match folders.resolve_local(folder) {
+            Ok(path) => (path, None),
+            Err(e) => {
                 *folder = fallback.clone();
-                folders.resolve(folder).unwrap_or_default()
+                (
+                    folders.resolve(folder).unwrap_or_default(),
+                    Some(e.to_string()),
+                )
             }
         };
         report.push(ImportedFolder {
             setting,
             requested,
             used: folder.clone(),
+            outside_user_folders: folders.is_outside_user_folders(&resolved),
             resolved: resolved.to_string_lossy().into_owned(),
+            reason,
         });
     };
     let downloads = PortablePath("{Downloads}".into());
@@ -429,5 +477,47 @@ mod tests {
             imported.settings.categories[0].folder,
             PortablePath("{Downloads}".into())
         );
+    }
+
+    /// A settings file may not send downloads into a startup or system folder,
+    /// where a file could run by itself: such a folder falls back like a
+    /// missing one, and the report says why. A folder outside the person's own
+    /// folders is used but flagged.
+    #[test]
+    fn startup_folders_from_a_file_fall_back_and_outside_folders_are_flagged() {
+        let startup = if cfg!(windows) {
+            "{Home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+        } else {
+            "{Home}/.config/autostart"
+        };
+        let system = if cfg!(windows) { r"C:\Windows" } else { "/etc" };
+        let outside = std::env::temp_dir().join("wc-profile-elsewhere");
+        let mut settings = default_settings();
+        settings.default_folder = PortablePath(startup.into());
+        settings.categories[0].folder = PortablePath(system.into());
+        settings.categories[1].folder = PortablePath(outside.to_string_lossy().into_owned());
+        let profile = SettingsProfile {
+            format_version: 1,
+            app_version: "0.1.0".into(),
+            exported_at: 0,
+            settings,
+            queues: vec![],
+            addons: vec![],
+        };
+        let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
+        let downloads = PortablePath("{Downloads}".into());
+        assert_eq!(imported.settings.default_folder, downloads);
+        assert_eq!(imported.settings.categories[0].folder, downloads);
+        let report = &imported.summary.folders;
+        for entry in &report[..2] {
+            assert_eq!(entry.used, downloads);
+            let reason = entry.reason.as_deref().unwrap_or_default();
+            assert!(reason.contains("system or startup folder"), "{reason}");
+            assert!(!entry.outside_user_folders);
+        }
+        let flagged = &report[2];
+        assert_eq!(flagged.used, flagged.requested);
+        assert_eq!(flagged.reason, None);
+        assert!(flagged.outside_user_folders);
     }
 }

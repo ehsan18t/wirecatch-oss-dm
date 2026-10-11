@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use wirecatch_core::{AddonRequestItem, CoreError, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    MediaChoice, MediaSelection, PendingCapture, Queue,
+    ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -123,6 +123,12 @@ pub fn update_settings(m: &Manager, settings: AppSettings) -> CommandResult<()> 
 /// Writes the settings profile to `path`.
 pub async fn export_settings(m: &Manager, path: &str) -> CommandResult<()> {
     m.export_settings(Path::new(path)).await.map_err(plain)
+}
+
+/// What importing the settings profile at `path` would change, without
+/// changing anything.
+pub async fn preview_import(m: &Manager, path: &str) -> CommandResult<ImportPreview> {
+    m.preview_import(Path::new(path)).await.map_err(plain)
 }
 
 /// Reads a settings profile from `path` and applies it.

@@ -136,7 +136,15 @@ describe('AppState', () => {
     const { app } = await make();
     expect(await app.exportSettings()).toMatch(/wirecatch-settings\.json$/);
     await app.updateSettings((d) => void (d.connections_per_download = 2));
+    // Nothing is imported without a preview first.
+    expect(await app.importSettings()).toBeNull();
+    expect(app.settings?.connections_per_download).toBe(2);
+    const preview = await app.previewImport();
+    expect(preview?.folders[0]?.setting).toBe('Default folder');
+    // The preview changes nothing.
+    expect(app.settings?.connections_per_download).toBe(2);
     expect(await app.importSettings()).toMatch(/wirecatch-settings\.json$/);
+    expect(app.importPreview).toBeNull();
     expect(app.settings?.connections_per_download).toBe(8);
     // What changed, as the core reports it, for the import dialog to show.
     expect(app.lastImport?.queues_updated).toBeGreaterThan(0);
@@ -151,6 +159,7 @@ describe('AppState', () => {
     backend.tick(4500);
     expect(await app.exportSettings()).toBeTruthy();
     await app.removeAddon('media');
+    expect((await app.previewImport())?.addons_to_offer).toEqual(['media']);
     await app.importSettings();
     expect(app.lastImport?.addons_to_offer).toEqual(['media']);
     const [addon] = await backend.listAddons();
