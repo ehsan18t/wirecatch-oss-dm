@@ -6,7 +6,7 @@
 import type { UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
-import type { ShellSignal } from '../backend/types';
+import type { ShellSignal } from '../backend';
 import { buildCommands } from '../commands';
 import { AppState } from './app.svelte';
 

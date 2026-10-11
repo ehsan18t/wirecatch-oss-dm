@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
-import { BackendError } from '../backend/types';
+import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
 import { AppState } from './app.svelte';
 
