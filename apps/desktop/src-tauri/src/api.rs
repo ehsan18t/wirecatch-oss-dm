@@ -164,14 +164,20 @@ fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
 /// files with macros and many more), so opening it needs the person's confirmation. An
 /// allowlist fails safe: a type nobody thought of asks first.
 ///
-/// In order: video, audio, subtitles, images, documents (Office files with macros, such as
-/// `docm`, are left out on purpose), archives.
+/// In order: video, audio, subtitles, images, documents, archives. Left out on purpose among
+/// documents: Office files with macros (`docm` and friends), `rtf` (embedded objects), the
+/// OpenDocument formats (macros) and `csv` (formulas that run when a spreadsheet opens it).
+/// `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
+/// which carry the mark of the web, in Protected View.
+///
+/// The interface keeps a copy (`apps/desktop/src/lib/filetypes.ts`) for wording and the sample
+/// backend; a test checks the two lists are the same.
 pub const SAFE_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "3gp",
     "ogv", "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "mka", "srt",
     "vtt", "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif",
-    "pdf", "txt", "md", "rtf", "odt", "ods", "odp", "docx", "xlsx", "pptx", "csv", "epub", "zip",
-    "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst",
+    "pdf", "txt", "md", "docx", "xlsx", "pptx", "epub", "zip", "7z", "rar", "tar", "gz", "tgz",
+    "bz2", "xz", "zst",
 ];
 
 /// The type of `name` as the system sees it: trailing dots and spaces dropped (Windows ignores
@@ -378,6 +384,11 @@ mod tests {
             "macros.docm",
             "macros.xlsm",
             "macros.pptm",
+            "letter.rtf",
+            "sheet.ods",
+            "text.odt",
+            "slides.odp",
+            "data.csv",
             "page.html",
             "drawing.svg",
             "Wirecatch.AppImage",

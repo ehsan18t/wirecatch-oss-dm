@@ -18,6 +18,7 @@ import type {
   UiEvent,
   WaitReason,
 } from '@wirecatch/protocol';
+import { isProgramName } from '../filetypes';
 import { fileNameFromUrl, folderOf, hostOf, scheduleAllows } from '../format';
 import {
   bulkItem,
@@ -66,30 +67,6 @@ const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' 
     source: 'hls',
   },
 ];
-
-/**
- * The mock's copy of the desktop's `SAFE_EXTENSIONS` (`src-tauri/src/api.rs`): the only types
- * that open without asking. Every other type, and a name without one, might run code.
- */
-const SAFE_TYPES = new Set(
-  [
-    'mp4 m4v mkv webm mov avi wmv flv mpg mpeg ts m2ts 3gp ogv',
-    'mp3 m4a aac flac wav ogg oga opus wma aiff mka srt vtt',
-    'jpg jpeg png gif webp bmp tif tiff heic heif avif',
-    'pdf txt md rtf odt ods odp docx xlsx pptx csv epub',
-    'zip 7z rar tar gz tgz bz2 xz zst',
-  ]
-    .join(' ')
-    .split(' '),
-);
-
-/** Whether opening a file of this name might run code, read the way the desktop reads it. */
-export function isProgramName(name: string): boolean {
-  const trimmed = name.replace(/[. ]+$/, '');
-  const dot = trimmed.lastIndexOf('.');
-  if (dot < 0) return true;
-  return !SAFE_TYPES.has(trimmed.slice(dot + 1).toLowerCase());
-}
 
 /** The core's answer for a question that is no longer open. */
 const ALREADY_ANSWERED =
