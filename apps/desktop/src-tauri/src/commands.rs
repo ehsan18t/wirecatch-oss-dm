@@ -265,3 +265,8 @@ pub async fn remove_addon(core: CoreState<'_>, id: String) -> CommandResult<()> 
 pub async fn cancel_addon_operation(core: CoreState<'_>, id: String) -> CommandResult<()> {
     api::cancel_addon_operation(core.manager().await?, &id).await
 }
+
+#[tauri::command]
+pub async fn check_addon_updates(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
+    api::check_addon_updates(core.manager().await?).await
+}

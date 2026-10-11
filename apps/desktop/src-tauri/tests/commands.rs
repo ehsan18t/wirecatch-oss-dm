@@ -232,6 +232,9 @@ async fn media_and_addon_commands_reach_the_core() {
     // Stopping with nothing in progress is fine; an unknown add-on is refused.
     api::cancel_addon_operation(&m, "media").await.unwrap();
     assert!(api::cancel_addon_operation(&m, "flash").await.is_err());
+    // Nothing installed: the check has nothing to look at and says the add-on is not installed.
+    let checked = api::check_addon_updates(&m).await.unwrap();
+    assert_eq!(checked[0].state, AddonState::NotInstalled);
     assert_eq!(api::list_addons(&m)[0].state, AddonState::NotInstalled);
 
     // Opening looks the download up in the core by id.

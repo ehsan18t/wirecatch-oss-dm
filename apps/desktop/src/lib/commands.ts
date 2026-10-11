@@ -412,6 +412,13 @@ export function buildCommands(app: AppState): Command[] {
     }
     if (isInstalled(addon)) {
       out.push({
+        id: `addon.check.${addon.id}`,
+        group: 'Settings',
+        title: `Check for ${name} updates`,
+        keywords: `${keywords} update newer version check`,
+        run: () => app.checkAddonUpdates(),
+      });
+      out.push({
         id: `addon.remove.${addon.id}`,
         group: 'Settings',
         title: `Remove the ${name}`,

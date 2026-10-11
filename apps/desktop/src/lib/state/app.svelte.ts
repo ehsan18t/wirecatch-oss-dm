@@ -1070,6 +1070,36 @@ export class AppState {
     await this.#run(() => this.backend.removeAddon(id));
   }
 
+  /** Looks for a newer media add-on now and says what was found, in plain words. */
+  async checkAddonUpdates(): Promise<void> {
+    const addons = await this.#run(() => this.backend.checkAddonUpdates());
+    if (!addons) return;
+    this.addons = addons;
+    const media = addons.find((a) => a.id === MEDIA_ADDON);
+    if (!media) return;
+    switch (media.state.type) {
+      case 'update_available':
+        this.notify(
+          `A newer ${media.name.toLowerCase()} is ready (${media.latest_version ?? 'a new version'}). Choose Update in Settings, Add-ons to install it.`,
+        );
+        break;
+      case 'installing':
+        this.notify(`Found a newer ${media.name.toLowerCase()}. It is being installed now.`);
+        break;
+      case 'installed':
+        this.notify(`The ${media.name.toLowerCase()} is up to date.`);
+        break;
+      case 'not_installed':
+        this.notify(
+          `The ${media.name.toLowerCase()} is not installed, so there is nothing to update.`,
+        );
+        break;
+      case 'failed':
+        this.fail(media.state.data.message);
+        break;
+    }
+  }
+
   /** Stops an install or update in progress; an update keeps the installed version. */
   async cancelAddonOperation(id: string): Promise<void> {
     await this.#run(() => this.backend.cancelAddonOperation(id));

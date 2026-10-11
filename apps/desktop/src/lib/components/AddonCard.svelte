@@ -97,6 +97,11 @@
       <button
         class="btn small"
         aria-disabled={busy}
+        onclick={() => run(() => app.checkAddonUpdates())}>Check for updates</button
+      >
+      <button
+        class="btn small"
+        aria-disabled={busy}
         aria-label="Remove the {addon.name.toLowerCase()}"
         onclick={() => run(() => app.removeAddon(addon.id))}>Remove</button
       >

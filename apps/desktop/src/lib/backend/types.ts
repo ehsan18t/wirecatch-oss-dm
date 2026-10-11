@@ -115,6 +115,8 @@ export interface Backend {
   removeAddon(id: string): Promise<void>;
   /** Stops an install or update; an update keeps the installed version working. */
   cancelAddonOperation(id: string): Promise<void>;
+  /** Looks for a newer media add-on now; the add-ons as they stand afterwards. */
+  checkAddonUpdates(): Promise<AddonInfo[]>;
 
   /** Every change the core pushes, in order. */
   subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe>;
@@ -171,6 +173,7 @@ export const COMMANDS = {
   updateAddon: 'update_addon',
   removeAddon: 'remove_addon',
   cancelAddonOperation: 'cancel_addon_operation',
+  checkAddonUpdates: 'check_addon_updates',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */

@@ -293,6 +293,21 @@ fn installed_ytdlp(h: &crate::common::Harness) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_check_that_cannot_reach_the_releases_says_so() {
+    // Nothing is served at the release address.
+    let (_server, h, _) = updatable("nr").await;
+    let error = h.manager.check_addon_updates().await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .starts_with("Wirecatch could not check for a newer media add-on"),
+        "{error}"
+    );
+    // The add-on itself is fine.
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() {
     let (server, h, new_ytdlp) = updatable("up").await;
     let ffmpeg_requests = server.requests("up/ffmpeg.zip").len();

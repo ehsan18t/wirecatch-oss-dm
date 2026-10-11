@@ -1007,6 +1007,25 @@ export class MockBackend implements Backend {
     await this.installAddon(id);
   }
 
+  /** Set by tests and sample data: what the next update check finds. */
+  nextUpdateCheck: 'up-to-date' | 'newer' | 'unreachable' = 'up-to-date';
+
+  async checkAddonUpdates() {
+    const addon = this.#addon('media');
+    const installed = addon.state.type === 'installed' || addon.state.type === 'update_available';
+    if (installed && this.nextUpdateCheck === 'unreachable') {
+      throw new BackendError(
+        'Wirecatch could not check for a newer media add-on (no connection). Check your internet connection, then try again.',
+      );
+    }
+    if (installed && this.nextUpdateCheck === 'newer') {
+      addon.state = { type: 'update_available' };
+      addon.latest_version = 'yt-dlp 2026.10.30, ffmpeg 9.0.2, Deno 2.9.7';
+      this.#addonsChanged();
+    }
+    return structuredClone(this.#addons);
+  }
+
   async cancelAddonOperation(id: string) {
     const addon = this.#addon(id);
     if (addon.state.type !== 'installing') return;

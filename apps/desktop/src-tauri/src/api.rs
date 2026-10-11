@@ -326,6 +326,13 @@ pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
     m.update_addon(id).await.map_err(plain)
 }
 
+/// Looks for a newer media add-on now, as the person asked, and answers with the add-ons as
+/// they stand afterwards (up to date, an update offered, or one already installing quietly).
+pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
+    m.check_addon_updates().await.map_err(plain)?;
+    Ok(m.list_addons())
+}
+
 /// Stops an install or update in progress. An update keeps the installed version working; a
 /// first install removes what it put down.
 pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> {

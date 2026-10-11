@@ -49,6 +49,7 @@
 //! | `update_addon` | `id: String` | nothing; like `install_addon` |
 //! | `remove_addon` | `id: String` | nothing |
 //! | `cancel_addon_operation` | `id: String` | nothing; stops an install or update, keeping an installed version working |
+//! | `check_addon_updates` | none | `Vec<AddonInfo>` after looking for a newer media add-on now; fails when the releases cannot be reached |
 //!
 //! Every command reaches the real core; none is pending. The core checks for add-on updates
 //! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
@@ -209,6 +210,7 @@ pub fn run() {
             commands::update_addon,
             commands::remove_addon,
             commands::cancel_addon_operation,
+            commands::check_addon_updates,
         ])
         .build(context);
     match app {

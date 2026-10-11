@@ -231,6 +231,28 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.addons?.[0]?.state.type).toBe('not_installed');
   });
 
+  it('check for add-on updates: Settings, then Check for updates, 2 clicks; the result in words', async () => {
+    const { app, backend, click, palette } = await setup();
+    await app.installAddon('media');
+    backend.tick(4500);
+    await click(button(/^Settings/));
+    expect(palette('addon.check.media')).toBe(true);
+    const note = () => app.toasts.at(-1);
+
+    await click(button('Check for updates'));
+    expect(note()).toMatchObject({ kind: 'info', message: 'The media add-on is up to date.' });
+
+    backend.nextUpdateCheck = 'unreachable';
+    await click(button('Check for updates'));
+    expect(note()?.kind).toBe('error');
+    expect(note()?.message).toMatch(/^Wirecatch could not check for a newer media add-on/);
+
+    backend.nextUpdateCheck = 'newer';
+    await click(button('Check for updates'));
+    expect(note()?.message).toMatch(/^A newer media add-on is ready \(yt-dlp 2026\.10\.30/);
+    expect(button('Update')).toBeInTheDocument();
+  });
+
   it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
     const { app, backend, click } = await setup();
     await click(button(/^Settings/));
@@ -273,8 +295,8 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(stop).toHaveFocus();
     backend.tick(4500);
     await settle();
-    // Installed: Stop is gone, and the focus moves to Remove rather than being lost.
-    expect(offer.getByRole('button', { name: 'Remove the media add-on' })).toHaveFocus();
+    // Installed: Stop is gone, and the focus moves to the card's next button rather than being lost.
+    expect(offer.getByRole('button', { name: 'Check for updates' })).toHaveFocus();
   });
 
   it('quality picker: appears on its own; put aside, the sidebar note brings it back, 1 click', async () => {
