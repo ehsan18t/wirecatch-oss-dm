@@ -7,7 +7,6 @@
   import DetailPanel from './DetailPanel.svelte';
   import Dialogs from './Dialogs.svelte';
   import DownloadList from './DownloadList.svelte';
-  import Questions from './Questions.svelte';
   import Settings from './Settings.svelte';
   import Sidebar from './Sidebar.svelte';
   import StorageBanner from './StorageBanner.svelte';
@@ -55,10 +54,16 @@
     return el instanceof HTMLSelectElement;
   }
 
-  // A visible dialog or question takes the keyboard.
-  const blocked = $derived(app.dialog !== null || app.question !== null);
+  // A visible dialog takes the keyboard. Questions have their own windows (D23).
+  const blocked = $derived(app.dialog !== null);
+
+  /** A key typed in one of the sample app's download windows, which float in this page. */
+  function inDownloadWindow(e: Event): boolean {
+    return e.target instanceof Element && e.target.closest('[data-download-window]') !== null;
+  }
 
   function onkeydown(e: KeyboardEvent) {
+    if (inDownloadWindow(e)) return;
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && e.key.toLowerCase() === 'k') {
       e.preventDefault();
@@ -86,6 +91,7 @@
   }
 
   function onpaste(e: ClipboardEvent) {
+    if (inDownloadWindow(e)) return;
     if (app.paletteOpen || blocked || isEditable(e.target)) return;
     const text = e.clipboardData?.getData('text/plain') ?? '';
     if (!text) return;
@@ -147,7 +153,13 @@
 </div>
 
 <Dialogs />
-<Questions />
+{#if app.sampleData && app.backend.sampleData}
+  {@const sample = app.backend.sampleData}
+  <!-- The sample app's download windows float in the page; the real app opens real windows. -->
+  {#await import('$lib/window/MockWindows.svelte') then { default: MockWindows }}
+    <MockWindows backend={app.backend} registry={sample.windows} />
+  {/await}
+{/if}
 <CommandPalette />
 <Toasts />
 

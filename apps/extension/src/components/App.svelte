@@ -219,7 +219,7 @@
 
         <SwitchRow
           id="ask-before"
-          label="Ask before each download"
+          label="Show a window before each download"
           description="Choose where each file goes before it starts."
           checked={settings.ask_before_download}
           onchange={(checked: boolean) => model.update({ ask_before_download: checked })}

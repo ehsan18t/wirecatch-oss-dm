@@ -34,6 +34,10 @@ async fn manager_with(
         .with_stop_timeout(stop_timeout)
         .with_capture_timeout(capture_timeout);
     let manager = Manager::open(config).await.unwrap();
+    // These captures start at once, without the window a fresh install shows first (D23).
+    let mut settings = manager.get_settings();
+    settings.extension.ask_before_download = false;
+    manager.update_settings(settings).unwrap();
     let engine: FakeEngine = Arc::new(engine);
     manager.use_fake_engine(engine);
     (manager, dir)

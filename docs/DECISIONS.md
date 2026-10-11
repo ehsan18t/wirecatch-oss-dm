@@ -32,13 +32,13 @@ The core App ships without yt-dlp, Deno or ffmpeg. The core handles normal files
 7. Teach in context (empty states, one-time hints), no tours.
 
 ### D4. Handoff behavior
-Default: start immediately and show a non-blocking toast with destination, Change and Open folder. "Ask before each download" is a setting, reachable from the toast, the Extension popup and the App settings.
+Superseded in part by D23: a captured download now opens its own window first by default. With that window turned off ("Start downloads without asking"), a file starts immediately and shows a non-blocking toast with destination, Change and Open folder, as decided here. The setting is reachable from the download window, the toast, the Extension popup and the App settings.
 
 ### D5. Settings live in the App; the Extension edits them remotely
 - The App is the only store. The Extension reads and writes settings through the Bridge; nothing is kept in browser storage except a cache for display.
 - A change made in the Extension appears in the App immediately, and the reverse. Because every browser talks to the same App, a change made in Chrome also shows up in Firefox.
 - The Bridge starts the Engine when needed, so the Extension does not have an "App not running" state in normal use.
-- Settings exposed in the Extension popup (the relevant subset): capture on/off, ask before each download, show the media download button on videos, sites to ignore, file types to capture, minimum file size to capture, default queue, pause/resume all.
+- Settings exposed in the Extension popup (the relevant subset): capture on/off, show a window before each download (D23), show the media download button on videos, sites to ignore, file types to capture, minimum file size to capture, default queue, pause/resume all.
 - Everything else (queues, schedules, connection tuning, folders, Add-ons) is App-only.
 
 ### D6. Settings import and export
@@ -133,6 +133,18 @@ Decided by the user on 2026-10-11, after the release build refused the extension
 3. The private key is kept by the maintainer in a private place outside the repository, never in the repository or CI. It is used once: on the first Chrome Web Store upload, as `key.pem` at the root of the zip, so the store gives the item this same id. Later uploads never include it (`apps/extension/PUBLISHING.md`).
 4. Residual risk, accepted: no store can give this id to anyone else, and a packed extension with it needs the private key. Another extension can claim the id only by being loaded unpacked in Developer mode, in a browser profile that does not already have ours. Such an extension could do comparable harm with its own permissions anyway, so trusting the id in release bridges adds little risk and makes development and store builds work with any installed Wirecatch.
 5. Other Chromium stores (for example Microsoft Edge Add-ons) give their own ids, which the bridge does not trust; Edge users install from the Chrome Web Store.
+
+### D23. A window for each download
+Decided by the maintainer on 2026-10-11, after a question about a browser download (confirm a file, pick a video quality) was drawn inside the main window, which was never brought forward, so it sat behind the browser and nothing seemed to happen. It works like IDM now, and replaces D4's "start immediately with a toast" default.
+1. A download caught from the browser opens its own small window, in front of the browser and focused, whether the main window is open, hidden in the tray or closed. The main window is not brought forward. Windows open always on top and drop it the first time they lose the focus after having had it, so they then behave like normal windows (some Wayland compositors ignore always on top; that is accepted).
+2. A file's window shows its name (editable), size or "Size not known yet", Save to with Change, Queue, the site it came from, and Download now (main button), Download later and Cancel. A video's window shows that the video is being read, then its qualities, name, folder and queue in the same window; when the media add-on is missing, its install offer shows there and the download continues after the install.
+3. "Start downloads without asking" in the file window turns the window off for files; it is `ask_before_download`, inverted. Its default is now on, and a database migration switches a stored setting on once, because the default changed before the first release while stored settings still held the old default nobody chose. Videos always ask for a quality.
+4. After Download now the same window becomes the download's progress window: name, status and why it waits, progress, done and total, speed, time left, connections in use, any error with its fix, media stages, Pause or Resume, Cancel (asks first, then removes the download and its partial file) and Hide (closes the window; the download continues). Once finished it offers Open and Show in folder and closes by itself after about five seconds unless the pointer is over it or it has the keyboard focus. "Close this window when downloads start" sets `show_progress_windows` (default on: the window stays), also in Settings, the settings profile and the command palette.
+5. One window per download, each about 28 px down and right of the previous open one. At most five windows ask a question at once; later questions open as earlier windows close or start showing progress. A progress window is the same window continuing, so it keeps its place.
+6. The main window never asks these questions itself. Its sidebar shows "Waiting for you" with how many downloads wait for an answer, and clicking it (or the command palette action) reopens their windows. Closing a question window with its X or Escape does not discard the download, since the browser has already let go of it: it stays waiting and counted. Only Cancel discards it. A question answered anywhere never comes back when a window opens or reloads, and one put aside does not open again by itself.
+7. Download later adds the download to its queue paused; Resume (or Resume all) starts it.
+8. Downloads added inside the app (Add download, paste, drop) open no window. Every row offers "Show progress window".
+9. When the download being asked about is already in the list (the same address; for a video the same page, or the same video read from another link to it), the window says so in one line, for example "You downloaded this today at 18:38.", without blocking anything. Two captures of one video are asked about once.
 
 ## Assumptions (not yet confirmed)
 

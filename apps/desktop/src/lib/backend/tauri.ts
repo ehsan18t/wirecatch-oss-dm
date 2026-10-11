@@ -26,6 +26,7 @@ import {
   SIGNAL_EVENTS,
   type AddonRequestItem,
   type Backend,
+  type Question,
   type ShellSignal,
   type Unsubscribe,
 } from './types';
@@ -137,10 +138,29 @@ export class TauriBackend implements Backend {
     return this.#call<PendingCapture[]>(COMMANDS.pendingConfirmations);
   }
   confirmCapture(id: number, confirmation: CaptureConfirmation) {
-    return this.#exec(COMMANDS.confirmCapture, { id, confirmation });
+    return this.#call<DownloadId>(COMMANDS.confirmCapture, { id, confirmation });
   }
   rejectCapture(id: number) {
     return this.#exec(COMMANDS.rejectCapture, { id });
+  }
+  getQuestion(id: number) {
+    return this.#call<Question | null>(COMMANDS.getQuestion, { id });
+  }
+  getDownload(id: DownloadId) {
+    return this.#call<DownloadSummary>(COMMANDS.getDownload, { id });
+  }
+  earlierDownload(id: number) {
+    return this.#call<DownloadSummary | null>(COMMANDS.earlierDownload, { id });
+  }
+  showQuestionWindows() {
+    return this.#exec(COMMANDS.showQuestionWindows);
+  }
+  showProgressWindow(id: DownloadId) {
+    return this.#exec(COMMANDS.showProgressWindow, { id });
+  }
+  /** Closes the download window this page runs in (only a download window can). */
+  closeDownloadWindow() {
+    return this.#exec(COMMANDS.closeDownloadWindow);
   }
   openFile(id: DownloadId, allowProgram = false) {
     return this.#exec(COMMANDS.openFile, { id, allowProgram });
@@ -159,7 +179,7 @@ export class TauriBackend implements Backend {
     return this.#call<string[]>(COMMANDS.takeLaunchLinks);
   }
   chooseMedia(id: number, selection: MediaSelection) {
-    return this.#exec(COMMANDS.chooseMedia, { id, selection });
+    return this.#call<DownloadId>(COMMANDS.chooseMedia, { id, selection });
   }
   dismissMediaChoice(id: number) {
     return this.#exec(COMMANDS.dismissMediaChoice, { id });

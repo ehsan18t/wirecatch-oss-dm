@@ -23,6 +23,7 @@ fn select(option: &str) -> MediaSelection {
         folder: None,
         file_name: None,
         queue: None,
+        later: false,
     }
 }
 

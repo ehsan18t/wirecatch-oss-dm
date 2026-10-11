@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppWindow from '@lucide/svelte/icons/app-window';
   import Copy from '@lucide/svelte/icons/copy';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Pause from '@lucide/svelte/icons/pause';
@@ -90,7 +91,11 @@
     {/if}
 
     {#if one.status === 'failed' && one.error}
-      <ErrorFix row={one} />
+      <ErrorFix
+        row={one}
+        onfix={(fix) => app.fix(one.id, fix)}
+        onretry={() => app.retry([one.id])}
+      />
     {/if}
 
     {#if one.media}
@@ -153,6 +158,9 @@
       {/if}
       <button class="btn" onclick={() => app.openFolder(one.id)}
         ><FolderOpen size={14} aria-hidden="true" /> Show in folder</button
+      >
+      <button class="btn" onclick={() => app.showProgressWindow(one.id)}
+        ><AppWindow size={14} aria-hidden="true" /> Show progress window</button
       >
       <button class="btn" onclick={() => app.openDialog({ kind: 'remove', ids: [one.id] })}>
         <Trash size={14} aria-hidden="true" /> Remove

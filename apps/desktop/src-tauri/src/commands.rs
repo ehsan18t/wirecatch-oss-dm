@@ -1,7 +1,7 @@
 //! The Tauri commands. Each finds the manager and calls the matching function in [`crate::api`];
 //! see the contract table in the crate documentation.
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager as _, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, ImportPreview,
@@ -10,7 +10,9 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::api::{self, CommandResult, Reveal};
+use crate::download_windows;
 use crate::host::Core;
+use crate::questions::Question;
 use wirecatch_core::AddonRequestItem;
 
 use crate::window::LaunchLinks;
@@ -151,11 +153,15 @@ pub async fn pending_confirmations(core: CoreState<'_>) -> CommandResult<Vec<Pen
 
 #[tauri::command]
 pub async fn confirm_capture(
+    window: WebviewWindow,
     core: CoreState<'_>,
     id: u64,
     confirmation: CaptureConfirmation,
-) -> CommandResult<()> {
-    api::confirm_capture(core.manager().await?, id, confirmation).await
+) -> CommandResult<DownloadId> {
+    let download = api::confirm_capture(core.manager().await?, id, confirmation).await?;
+    // Answered in its own window: that window shows the download from now on.
+    download_windows::became_download(window.app_handle(), window.label(), download);
+    Ok(download)
 }
 
 #[tauri::command]
@@ -224,11 +230,60 @@ pub fn take_launch_links(links: State<'_, LaunchLinks>) -> Vec<String> {
 
 #[tauri::command]
 pub async fn choose_media(
+    window: WebviewWindow,
     core: CoreState<'_>,
     id: u64,
     selection: MediaSelection,
+) -> CommandResult<DownloadId> {
+    let download = api::choose_media(core.manager().await?, id, selection).await?;
+    download_windows::became_download(window.app_handle(), window.label(), download);
+    Ok(download)
+}
+
+#[tauri::command]
+pub async fn get_question(core: CoreState<'_>, id: u64) -> CommandResult<Option<Question>> {
+    Ok(api::question(core.manager().await?, id))
+}
+
+#[tauri::command]
+pub async fn get_download(core: CoreState<'_>, id: DownloadId) -> CommandResult<DownloadSummary> {
+    api::get_download(core.manager().await?, id)
+}
+
+#[tauri::command]
+pub async fn earlier_download(
+    core: CoreState<'_>,
+    id: u64,
+) -> CommandResult<Option<DownloadSummary>> {
+    Ok(api::earlier_download(core.manager().await?, id))
+}
+
+#[tauri::command]
+pub async fn show_question_windows(app: AppHandle, core: CoreState<'_>) -> CommandResult<()> {
+    download_windows::show_all(&app, core.manager().await?);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_progress_window(
+    app: AppHandle,
+    core: CoreState<'_>,
+    id: DownloadId,
 ) -> CommandResult<()> {
-    api::choose_media(core.manager().await?, id, selection).await
+    // Only for a download that exists, so a stale id opens nothing.
+    api::get_download(core.manager().await?, id)?;
+    download_windows::show_download(&app, id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn close_download_window(window: WebviewWindow) -> CommandResult<()> {
+    if !download_windows::is_download_window(window.label()) {
+        return Err("Only a download window closes this way.".into());
+    }
+    window
+        .close()
+        .map_err(|e| format!("Could not close the window ({e}). Close it with its X button."))
 }
 
 #[tauri::command]

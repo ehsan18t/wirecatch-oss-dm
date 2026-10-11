@@ -1,0 +1,723 @@
+//! A window for each download (D23).
+//!
+//! Every question the core asks about a browser download (confirm a file, the video being read,
+//! pick a quality, install the media add-on) opens its own small window in front, whatever the
+//! main window is doing. After Download now the same window becomes that download's progress
+//! window. "Show progress window" in the main list opens one for any download.
+//!
+//! - **Labels**: `download-q<question id>` for a window opened for a question and
+//!   `download-d<download id>` for one opened for a download, so the two id spaces never meet. A
+//!   question window keeps its label when it starts showing its download; the [`Registry`]
+//!   knows what each window shows now.
+//! - **Limit**: at most [`MAX_QUESTION_WINDOWS`] windows ask a question at once; later
+//!   questions wait and open, oldest first, as those windows close or start showing progress.
+//! - **Placement**: each window takes the lowest free slot, and slot `n` sits [`CASCADE_STEP`]
+//!   logical pixels down and right of slot `n - 1`, on the screen under the pointer.
+//! - **Front**: windows open always on top and focused, and drop always-on-top the first time
+//!   they lose focus after having had it, so they behave like normal windows from then on.
+//! - **Closing**: closing a question window does not answer it. The question stays open in the
+//!   core and is counted in the main window's sidebar; it is not opened again by itself (only an
+//!   event that moves it on, or the person, opens it again).
+//!
+//! Windows are created on the main thread ([`AppHandle::run_on_main_thread`]), never from an
+//! async task or a command directly, so nothing blocks and nothing deadlocks on Windows.
+
+use std::collections::{BTreeSet, VecDeque};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
+use wirecatch_core::Manager;
+use wirecatch_protocol::DownloadId;
+
+use crate::host::Core;
+use crate::questions::open_question_ids;
+
+/// Every download window's label starts with this. The capability in
+/// `capabilities/download-windows.json` matches it as `download-*`.
+pub const LABEL_PREFIX: &str = "download-";
+
+/// Most windows asking a question at once.
+pub const MAX_QUESTION_WINDOWS: usize = 5;
+
+/// How far each window sits down and right of the one before, in logical pixels.
+pub const CASCADE_STEP: f64 = 28.0;
+
+/// A download window's size when it opens, in logical pixels.
+pub const WINDOW_SIZE: (f64, f64) = (460.0, 600.0);
+
+/// The smallest a download window can be made, in logical pixels.
+pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, 320.0);
+
+/// Whether `label` is a download window's.
+pub fn is_download_window(label: &str) -> bool {
+    label.starts_with(LABEL_PREFIX)
+}
+
+/// What a download window shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shows {
+    /// An open question, by its id in the core.
+    Question(u64),
+    /// A download's progress.
+    Download(DownloadId),
+}
+
+impl Shows {
+    /// The label of a window opened for this.
+    pub fn label(self) -> String {
+        match self {
+            Self::Question(id) => format!("{LABEL_PREFIX}q{id}"),
+            Self::Download(id) => format!("{LABEL_PREFIX}d{}", id.0),
+        }
+    }
+
+    /// The interface's page for this, relative to the app's address.
+    pub fn route(self) -> String {
+        match self {
+            Self::Question(id) => format!("window/download?question={id}"),
+            Self::Download(id) => format!("window/download?download={}", id.0),
+        }
+    }
+}
+
+/// An open download window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenWindow {
+    /// Its label.
+    pub label: String,
+    /// What it shows now.
+    pub shows: Shows,
+    /// Its place in the cascade (see [`place`]).
+    pub slot: usize,
+}
+
+/// What to do with the windows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// Create this window.
+    Open(OpenWindow),
+    /// Bring the window with this label to the front.
+    Focus(String),
+}
+
+/// Which download windows are open, which questions wait for a window, and which ones the
+/// person put aside by closing their window. Pure bookkeeping: [`Step`]s say what to do.
+#[derive(Debug, Default)]
+pub struct Registry {
+    windows: Vec<OpenWindow>,
+    waiting: VecDeque<u64>,
+    put_aside: BTreeSet<u64>,
+}
+
+impl Registry {
+    /// The open windows, in the order they opened.
+    pub fn windows(&self) -> &[OpenWindow] {
+        &self.windows
+    }
+
+    /// Questions waiting for room to open their window, oldest first.
+    pub fn waiting(&self) -> impl Iterator<Item = u64> + '_ {
+        self.waiting.iter().copied()
+    }
+
+    fn asking(&self) -> usize {
+        self.windows
+            .iter()
+            .filter(|w| matches!(w.shows, Shows::Question(_)))
+            .count()
+    }
+
+    fn free_slot(&self) -> usize {
+        (0..)
+            .find(|slot| !self.windows.iter().any(|w| w.slot == *slot))
+            .unwrap_or(0)
+    }
+
+    fn window_showing(&self, shows: Shows) -> Option<&OpenWindow> {
+        self.windows.iter().find(|w| w.shows == shows)
+    }
+
+    fn place_question(&mut self, id: u64) -> Option<Step> {
+        if self.window_showing(Shows::Question(id)).is_some() || self.waiting.contains(&id) {
+            return None;
+        }
+        if self.asking() >= MAX_QUESTION_WINDOWS {
+            self.waiting.push_back(id);
+            return None;
+        }
+        let shows = Shows::Question(id);
+        let window = OpenWindow {
+            label: shows.label(),
+            shows,
+            slot: self.free_slot(),
+        };
+        self.windows.push(window.clone());
+        Some(Step::Open(window))
+    }
+
+    /// The core asked question `id`, or moved it on (the video was read, the add-on is
+    /// needed): its window opens, or waits for room, unless it is already open or waiting.
+    pub fn ask(&mut self, id: u64) -> Option<Step> {
+        self.put_aside.remove(&id);
+        self.place_question(id)
+    }
+
+    /// Questions found open in the core (`open`, oldest first) at start or after missed
+    /// events: windows for those that have none, except the ones the person put aside.
+    pub fn restore(&mut self, open: &[u64]) -> Vec<Step> {
+        self.put_aside.retain(|id| open.contains(id));
+        self.waiting.retain(|id| open.contains(id));
+        let mut steps = Vec::new();
+        for id in open {
+            if !self.put_aside.contains(id) {
+                steps.extend(self.place_question(*id));
+            }
+        }
+        steps
+    }
+
+    /// The person asked to see every open question (`open`, oldest first): open windows come
+    /// to the front, closed ones open again.
+    pub fn show_all(&mut self, open: &[u64]) -> Vec<Step> {
+        self.waiting.retain(|id| open.contains(id));
+        let mut steps = Vec::new();
+        for id in open {
+            self.put_aside.remove(id);
+            match self.window_showing(Shows::Question(*id)) {
+                Some(window) => steps.push(Step::Focus(window.label.clone())),
+                None => steps.extend(self.place_question(*id)),
+            }
+        }
+        steps
+    }
+
+    /// Question `id` is no longer open in the core. Its window, if any, says so itself.
+    pub fn closed(&mut self, id: u64) {
+        self.waiting.retain(|w| *w != id);
+        self.put_aside.remove(&id);
+    }
+
+    /// The window `label` now shows download `id` (its question was answered there): it no
+    /// longer counts as asking, so a waiting question may open.
+    pub fn became_download(&mut self, label: &str, id: DownloadId) -> Vec<Step> {
+        if let Some(window) = self.windows.iter_mut().find(|w| w.label == label) {
+            window.shows = Shows::Download(id);
+        }
+        self.fill()
+    }
+
+    /// The window `label` is gone. A question it showed was put aside by the person (closing
+    /// is not an answer), so it does not open again by itself. Waiting questions may open.
+    pub fn gone(&mut self, label: &str) -> Vec<Step> {
+        if let Some(at) = self.windows.iter().position(|w| w.label == label) {
+            let window = self.windows.remove(at);
+            if let Shows::Question(id) = window.shows {
+                self.put_aside.insert(id);
+            }
+        }
+        self.fill()
+    }
+
+    /// The window `label` could not be created: forget it, without putting its question aside.
+    pub fn failed(&mut self, label: &str) -> Vec<Step> {
+        self.windows.retain(|w| w.label != label);
+        self.fill()
+    }
+
+    /// "Show progress window" for download `id`: the window already showing it comes to the
+    /// front, or a new one opens. Not limited: the person asked for it.
+    pub fn show_download(&mut self, id: DownloadId) -> Step {
+        if let Some(window) = self.window_showing(Shows::Download(id)) {
+            return Step::Focus(window.label.clone());
+        }
+        let shows = Shows::Download(id);
+        let window = OpenWindow {
+            label: shows.label(),
+            shows,
+            slot: self.free_slot(),
+        };
+        self.windows.push(window.clone());
+        Step::Open(window)
+    }
+
+    fn fill(&mut self) -> Vec<Step> {
+        let mut steps = Vec::new();
+        while self.asking() < MAX_QUESTION_WINDOWS {
+            let Some(id) = self.waiting.pop_front() else {
+                break;
+            };
+            steps.extend(self.place_question(id));
+        }
+        steps
+    }
+}
+
+/// A screen's usable area, in logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Area {
+    /// Left edge.
+    pub x: f64,
+    /// Top edge.
+    pub y: f64,
+    /// Width.
+    pub width: f64,
+    /// Height.
+    pub height: f64,
+}
+
+/// Where the window in `slot` goes on `area`, for a window of `size` (all logical pixels). The
+/// first windows spread around the middle of the screen, each [`CASCADE_STEP`] down and right
+/// of the one before; slots that would leave the screen start again at the top left of the
+/// cascade. A window larger than the screen goes to its top left corner.
+pub fn place(slot: usize, area: Area, size: (f64, f64)) -> (f64, f64) {
+    let room_x = (area.width - size.0).max(0.0);
+    let room_y = (area.height - size.1).max(0.0);
+    // The first few windows centre on the screen together.
+    let lead = (MAX_QUESTION_WINDOWS - 1) as f64 * CASCADE_STEP / 2.0;
+    let start_x = (room_x / 2.0 - lead).max(0.0);
+    let start_y = (room_y / 2.0 - lead).max(0.0);
+    let steps = |start: f64, room: f64| ((room - start) / CASCADE_STEP).floor().max(0.0) as usize;
+    let fit = steps(start_x, room_x).min(steps(start_y, room_y)) + 1;
+    let n = (slot % fit) as f64;
+    (
+        area.x + start_x + n * CASCADE_STEP,
+        area.y + start_y + n * CASCADE_STEP,
+    )
+}
+
+/// The download windows, kept by the app.
+#[derive(Default)]
+pub struct DownloadWindows(Mutex<Registry>);
+
+impl DownloadWindows {
+    fn with<T>(&self, change: impl FnOnce(&mut Registry) -> T) -> T {
+        change(&mut self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// What is open now, for tests.
+    pub fn snapshot(&self) -> Vec<OpenWindow> {
+        self.with(|r| r.windows().to_vec())
+    }
+}
+
+fn update<R: Runtime>(app: &AppHandle<R>, change: impl FnOnce(&mut Registry) -> Vec<Step>) {
+    let Some(windows) = app.try_state::<DownloadWindows>() else {
+        return;
+    };
+    let steps = windows.with(change);
+    for step in steps {
+        apply(app, step);
+    }
+}
+
+/// The core asked question `id` (or moved it on): its window opens if it is not open.
+pub fn ask<R: Runtime>(app: &AppHandle<R>, id: u64) {
+    update(app, |r| r.ask(id).into_iter().collect());
+}
+
+/// Question `id` closed in the core.
+pub fn question_closed<R: Runtime>(app: &AppHandle<R>, id: u64) {
+    update(app, |r| {
+        r.closed(id);
+        Vec::new()
+    });
+}
+
+/// Every question open in the core right now, oldest first.
+pub fn open_questions(manager: &Manager) -> Vec<u64> {
+    open_question_ids(
+        &manager.pending_confirmations(),
+        &manager.pending_media_choices(),
+        &manager.pending_addon_requests(),
+        &manager.media_being_read(),
+    )
+}
+
+/// Opens windows for the questions already open in the core (at start, or after events were
+/// missed), except those the person put aside. Does nothing while the manager is not open.
+pub fn restore<R: Runtime>(app: &AppHandle<R>) {
+    let Some(open) = app
+        .try_state::<Core>()
+        .and_then(|core| core.get().map(open_questions))
+    else {
+        return;
+    };
+    update(app, |r| r.restore(&open));
+}
+
+/// Brings every open question's window to the front, opening the closed ones again.
+pub fn show_all<R: Runtime>(app: &AppHandle<R>, manager: &Manager) {
+    let open = open_questions(manager);
+    update(app, |r| r.show_all(&open));
+}
+
+/// The window `label` now shows download `id`.
+pub fn became_download<R: Runtime>(app: &AppHandle<R>, label: &str, id: DownloadId) {
+    update(app, |r| r.became_download(label, id));
+}
+
+/// The window `label` was destroyed.
+pub fn window_gone<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    update(app, |r| r.gone(label));
+}
+
+/// Opens (or brings forward) the progress window of download `id`.
+pub fn show_download<R: Runtime>(app: &AppHandle<R>, id: DownloadId) {
+    update(app, |r| vec![r.show_download(id)]);
+}
+
+fn apply<R: Runtime>(app: &AppHandle<R>, step: Step) {
+    let handle = app.clone();
+    let run = app.run_on_main_thread(move || match step {
+        Step::Open(window) => create(&handle, &window),
+        Step::Focus(label) => {
+            if let Some(window) = handle.get_webview_window(&label) {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+    });
+    if let Err(e) = run {
+        tracing::warn!("could not reach the window thread: {e}");
+    }
+}
+
+/// The screen a new window goes on: the one under the pointer (where the browser most likely
+/// is), else the main screen. `None` when the system does not say.
+fn screen_area<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<Area> {
+    let monitor = window
+        .cursor_position()
+        .ok()
+        .and_then(|at| window.monitor_from_point(at.x, at.y).ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten())?;
+    let scale = monitor.scale_factor();
+    let work = monitor.work_area();
+    Some(Area {
+        x: f64::from(work.position.x) / scale,
+        y: f64::from(work.position.y) / scale,
+        width: f64::from(work.size.width) / scale,
+        height: f64::from(work.size.height) / scale,
+    })
+}
+
+fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
+    if let Some(existing) = app.get_webview_window(&open.label) {
+        // Still closing from before: show it rather than fail on the label.
+        let _ = existing.set_focus();
+        return;
+    }
+    let title = app
+        .config()
+        .product_name
+        .clone()
+        .unwrap_or_else(|| "Wirecatch".to_owned());
+    let built =
+        WebviewWindowBuilder::new(app, &open.label, WebviewUrl::App(open.shows.route().into()))
+            .title(title)
+            .inner_size(WINDOW_SIZE.0, WINDOW_SIZE.1)
+            .min_inner_size(MIN_WINDOW_SIZE.0, MIN_WINDOW_SIZE.1)
+            .resizable(true)
+            .maximizable(false)
+            .always_on_top(true)
+            .focused(true)
+            .visible(false)
+            .disable_drag_drop_handler()
+            .build();
+    let window = match built {
+        Ok(window) => window,
+        Err(e) => {
+            tracing::error!("could not open a download window: {e}");
+            update(app, |r| r.failed(&open.label));
+            return;
+        }
+    };
+    match screen_area(&window) {
+        Some(area) => {
+            let (x, y) = place(open.slot, area, WINDOW_SIZE);
+            let _ = window.set_position(LogicalPosition::new(x, y));
+        }
+        None => {
+            let _ = window.center();
+        }
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+    // On top until it has had the focus and lost it, then a normal window.
+    let had_focus = Arc::new(AtomicBool::new(false));
+    let dropped = Arc::new(AtomicBool::new(false));
+    let this = window.clone();
+    window.on_window_event(move |event| {
+        let tauri::WindowEvent::Focused(focused) = event else {
+            return;
+        };
+        if *focused {
+            had_focus.store(true, Ordering::SeqCst);
+            return;
+        }
+        if !had_focus.load(Ordering::SeqCst) || dropped.load(Ordering::SeqCst) {
+            return;
+        }
+        // On Windows the window also reports losing the focus when its own page takes it, so
+        // look again once things settle: only another window having it counts.
+        let (this, dropped) = (this.clone(), dropped.clone());
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(FOCUS_SETTLE).await;
+            if this.is_focused().unwrap_or(true) {
+                return;
+            }
+            if !dropped.swap(true, Ordering::SeqCst) {
+                drop_always_on_top(&this);
+            }
+        });
+    });
+}
+
+/// Makes a download window a normal window again, behind the window that took the focus.
+fn drop_always_on_top<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let _ = window.set_always_on_top(false);
+    // Windows puts a window that stops being always on top above every normal window, so it
+    // would jump over the browser the person just went back to. Put it right behind that one.
+    #[cfg(windows)]
+    {
+        let this = window.clone();
+        let _ = window.run_on_main_thread(move || behind_foreground(&this));
+    }
+}
+
+#[cfg(windows)]
+fn behind_foreground<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+    };
+    let Ok(handle) = window.hwnd() else {
+        return;
+    };
+    let ours = handle.0 as HWND;
+    // SAFETY: both calls take window handles by value and only fail on a stale one; nothing
+    // is read or written through them.
+    unsafe {
+        let front = GetForegroundWindow();
+        if front.is_null() || front == ours {
+            return;
+        }
+        SetWindowPos(
+            ours,
+            front,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
+
+/// How long after a lost focus a download window checks whether another window has it.
+const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opened(step: Option<Step>) -> OpenWindow {
+        match step {
+            Some(Step::Open(window)) => window,
+            other => panic!("expected a window to open, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn labels_never_mix_questions_and_downloads() {
+        assert_eq!(Shows::Question(7).label(), "download-q7");
+        assert_eq!(Shows::Download(DownloadId(7)).label(), "download-d7");
+        assert!(is_download_window("download-q7"));
+        assert!(!is_download_window("main"));
+        assert_eq!(Shows::Question(7).route(), "window/download?question=7");
+        assert_eq!(
+            Shows::Download(DownloadId(3)).route(),
+            "window/download?download=3"
+        );
+    }
+
+    /// Tauri gives a window permissions by its label: without this capability a download
+    /// window could not listen to events or pick a folder.
+    #[test]
+    fn the_capability_covers_every_download_window() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/download-windows.json")).unwrap();
+        let windows = capability["windows"].as_array().unwrap();
+        assert_eq!(windows, &[serde_json::json!(format!("{LABEL_PREFIX}*"))]);
+        let permissions = capability["permissions"].to_string();
+        assert!(permissions.contains("core:event:allow-listen"));
+        assert!(permissions.contains("dialog:allow-open"));
+    }
+
+    #[test]
+    fn at_most_five_questions_ask_at_once_and_the_rest_wait_their_turn() {
+        let mut r = Registry::default();
+        let slots: Vec<usize> = (1..=5).map(|id| opened(r.ask(id)).slot).collect();
+        assert_eq!(slots, [0, 1, 2, 3, 4]);
+        assert_eq!(r.ask(6), None);
+        assert_eq!(r.ask(7), None);
+        assert_eq!(r.waiting().collect::<Vec<_>>(), [6, 7]);
+        // Asking again (the video was read) opens nothing twice.
+        assert_eq!(r.ask(3), None);
+        assert_eq!(r.ask(6), None);
+
+        // A window that starts showing its download makes room; it keeps its place.
+        let steps = r.became_download("download-q2", DownloadId(40));
+        let [Step::Open(next)] = steps.as_slice() else {
+            panic!("{steps:?}")
+        };
+        assert_eq!((next.shows, next.slot), (Shows::Question(6), 5));
+        assert!(r.windows().iter().any(|w| w.label == "download-q2"
+            && w.shows == Shows::Download(DownloadId(40))
+            && w.slot == 1));
+
+        // A closed window makes room too, and its slot is used again.
+        let steps = r.gone("download-q1");
+        let [Step::Open(next)] = steps.as_slice() else {
+            panic!("{steps:?}")
+        };
+        assert_eq!((next.shows, next.slot), (Shows::Question(7), 0));
+    }
+
+    #[test]
+    fn a_question_closed_while_waiting_never_opens() {
+        let mut r = Registry::default();
+        for id in 1..=6 {
+            r.ask(id);
+        }
+        r.closed(6);
+        assert!(r.gone("download-q1").is_empty());
+    }
+
+    #[test]
+    fn a_window_closed_by_the_person_stays_closed_until_asked_for() {
+        let mut r = Registry::default();
+        opened(r.ask(1));
+        opened(r.ask(2));
+        assert!(r.gone("download-q1").is_empty());
+        // At start or after missed events, a put-aside question does not pop up again, and
+        // one still open is not opened twice.
+        assert!(r.restore(&[1, 2]).is_empty());
+        // The person asks for the waiting questions: the open one comes forward, the closed
+        // one opens again.
+        let steps = r.show_all(&[1, 2]);
+        assert_eq!(steps.len(), 2);
+        assert!(steps.contains(&Step::Focus("download-q2".into())));
+        assert!(
+            steps
+                .iter()
+                .any(|s| matches!(s, Step::Open(w) if w.shows == Shows::Question(1)))
+        );
+        // The core moving a put-aside question on (its quality list is ready) opens it.
+        assert!(r.gone("download-q1").is_empty());
+        opened(r.ask(1));
+    }
+
+    #[test]
+    fn restore_opens_only_what_is_open_in_the_core_and_has_no_window() {
+        let mut r = Registry::default();
+        opened(r.ask(3));
+        let steps = r.restore(&[2, 3, 4]);
+        let shown: Vec<Shows> = steps
+            .iter()
+            .map(|s| match s {
+                Step::Open(w) => w.shows,
+                Step::Focus(l) => panic!("focused {l}"),
+            })
+            .collect();
+        assert_eq!(shown, [Shows::Question(2), Shows::Question(4)]);
+        // Answered questions are not in the core's lists, so nothing opens for them.
+        assert!(r.restore(&[2, 3, 4]).is_empty());
+    }
+
+    #[test]
+    fn a_progress_window_is_opened_once_and_is_not_limited() {
+        let mut r = Registry::default();
+        for id in 1..=5 {
+            r.ask(id);
+        }
+        let Step::Open(window) = r.show_download(DownloadId(9)) else {
+            panic!("expected a new window")
+        };
+        assert_eq!(window.label, "download-d9");
+        assert_eq!(window.slot, 5);
+        assert_eq!(
+            r.show_download(DownloadId(9)),
+            Step::Focus("download-d9".into())
+        );
+        // A question window that became download 9's is the one shown.
+        r.became_download("download-q1", DownloadId(10));
+        assert_eq!(
+            r.show_download(DownloadId(10)),
+            Step::Focus("download-q1".into())
+        );
+        // A window that could not be made is forgotten without being put aside.
+        r.failed("download-q2");
+        assert!(r.restore(&[2]).len() == 1);
+    }
+
+    const SCREEN: Area = Area {
+        x: 0.0,
+        y: 0.0,
+        width: 1920.0,
+        height: 1040.0,
+    };
+
+    #[test]
+    fn each_window_sits_one_step_down_and_right_of_the_last() {
+        let first = place(0, SCREEN, WINDOW_SIZE);
+        let second = place(1, SCREEN, WINDOW_SIZE);
+        assert_eq!(second.0 - first.0, CASCADE_STEP);
+        assert_eq!(second.1 - first.1, CASCADE_STEP);
+        // The first five spread around the middle of the screen.
+        let fifth = place(4, SCREEN, WINDOW_SIZE);
+        let middle = (
+            (first.0 + fifth.0 + WINDOW_SIZE.0) / 2.0,
+            (first.1 + fifth.1 + WINDOW_SIZE.1) / 2.0,
+        );
+        assert_eq!(middle, (960.0, 520.0));
+    }
+
+    #[test]
+    fn windows_stay_on_their_screen() {
+        let second_screen = Area {
+            x: 1920.0,
+            y: -200.0,
+            width: 1280.0,
+            height: 680.0,
+        };
+        for slot in 0..40 {
+            let (x, y) = place(slot, second_screen, WINDOW_SIZE);
+            assert!(x >= second_screen.x && y >= second_screen.y, "slot {slot}");
+            assert!(
+                x + WINDOW_SIZE.0 <= second_screen.x + second_screen.width,
+                "slot {slot}"
+            );
+            assert!(
+                y + WINDOW_SIZE.1 <= second_screen.y + second_screen.height,
+                "slot {slot}"
+            );
+        }
+        // Slots past the room start the cascade again.
+        assert_eq!(
+            place(0, second_screen, WINDOW_SIZE),
+            place(3, second_screen, WINDOW_SIZE)
+        );
+        // A screen smaller than the window: its top left corner.
+        let tiny = Area {
+            x: 10.0,
+            y: 20.0,
+            width: 300.0,
+            height: 300.0,
+        };
+        assert_eq!(place(0, tiny, WINDOW_SIZE), (10.0, 20.0));
+        assert_eq!(place(7, tiny, WINDOW_SIZE), (10.0, 20.0));
+    }
+}

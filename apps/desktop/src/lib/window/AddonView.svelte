@@ -1,12 +1,20 @@
 <script lang="ts">
+  // The media add-on offer, in the window of the video that needs it: a video page that cannot
+  // be read without it, or a quality picked here whose video and audio must be joined. The
+  // download goes on by itself once the add-on is installed.
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
   import { formatBytes, hostOf } from '$lib/format';
-  import { getApp } from '$lib/state/app.svelte';
-  import Dialog from './Dialog.svelte';
+  import type { DownloadWindowState } from './download-window.svelte';
+  import WindowFrame from './WindowFrame.svelte';
 
-  let { addon, url }: { addon: AddonInfo; url: string } = $props();
-  const app = getApp();
+  /** `forQuality`: a quality picked in this window waits for it, rather than a page. */
+  let {
+    win,
+    addon,
+    url,
+    forQuality = false,
+  }: { win: DownloadWindowState; addon: AddonInfo; url: string; forQuality?: boolean } = $props();
 
   const installing = $derived(addon.state.type === 'installing');
   const installed = $derived(isInstalled(addon));
@@ -17,36 +25,34 @@
   async function install() {
     if (busy) return;
     busy = true;
-    await app.installAddon(addon.id);
+    await win.installAddon();
     busy = false;
   }
 
-  // The footer's buttons change with the install (Install becomes Close, then Done). When the
-  // focused one goes away, the new main button takes the focus instead of nothing.
+  // The buttons change with the install. When the focused one goes away, the new main button
+  // takes the focus instead of nothing.
   let body = $state<HTMLDivElement>();
   $effect(() => {
     void addon.state.type;
-    const dialog = body?.closest('dialog');
+    const frame = body?.closest('[role="group"]');
     const active = document.activeElement;
-    if (dialog && (!active || active === document.body)) {
-      dialog.querySelector<HTMLElement>('footer [data-autofocus]')?.focus();
+    if (frame && (!active || active === document.body)) {
+      frame.querySelector<HTMLElement>('.foot [data-autofocus]')?.focus();
     }
   });
 </script>
 
-<Dialog
+<WindowFrame
   title={installed
     ? `${addon.name} is installed`
     : url
       ? `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`
       : `This video needs the ${addon.name.toLowerCase()}`}
-  onclose={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
-  width={460}
 >
   <div class="body" bind:this={body}>
     <p>{addon.description}</p>
     <!-- Always mounted, so a screen reader hears the start, the progress and the end (or the
-         failure) of the install, not only what happens while it runs. -->
+         failure) of the install. -->
     <p class="visually-hidden" aria-live="polite" data-testid="addon-live">
       {addonAnnouncement(addon)}
     </p>
@@ -64,28 +70,36 @@
       >
         <span class="fill" style:transform="scaleX({fraction ?? 0.05})"></span>
       </div>
-      <p class="muted">Your download starts as soon as it is ready. You can close this.</p>
+      <p class="muted">
+        {forQuality
+          ? 'Your download starts here as soon as it is ready. Keep this window open.'
+          : 'The video is read as soon as it is ready, and you pick its quality here. You can hide this window meanwhile.'}
+      </p>
     {:else if failed}
       <p class="error">{addonStatus(addon)}</p>
     {:else}
       <p class="muted">
         One click installs it{addon.size === null ? '' : ` (${formatBytes(addon.size)})`}, then your
-        download starts on its own.
+        download continues on its own.
       </p>
     {/if}
+    {#if win.error}<p class="error" role="alert">{win.error}</p>{/if}
   </div>
 
   {#snippet footer()}
-    {#if installed || installing}
-      <button
-        type="button"
-        class="btn primary"
-        data-autofocus
-        onclick={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
-        >{installed ? 'Done' : 'Close and keep installing'}</button
+    {#if installing || installed}
+      {#if installing}
+        <button type="button" class="btn" onclick={() => win.stopAddonInstall()}
+          >Stop installing</button
+        >
+      {/if}
+      <button type="button" class="btn primary" data-autofocus onclick={() => win.close()}
+        >Hide</button
       >
-    {:else}
-      <button type="button" class="btn" onclick={() => app.declineAddonRequest()}>Not now</button>
+    {:else if !installed}
+      <button type="button" class="btn" onclick={() => win.declineAddon()}
+        >{forQuality ? 'Pick another quality' : 'Cancel'}</button
+      >
       <button
         type="button"
         class="btn primary"
@@ -95,7 +109,7 @@
       >
     {/if}
   {/snippet}
-</Dialog>
+</WindowFrame>
 
 <style>
   .body {

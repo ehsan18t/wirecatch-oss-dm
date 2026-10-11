@@ -41,6 +41,7 @@ export type SettingId =
   | 'categories'
   | 'capture_enabled'
   | 'ask_before_download'
+  | 'show_progress_windows'
   | 'show_media_button'
   | 'ignored_sites'
   | 'capture_extensions'
@@ -114,9 +115,16 @@ export const SETTINGS: readonly SettingDef[] = [
   {
     id: 'ask_before_download',
     section: 'browser',
-    label: 'Ask before each download',
-    help: 'Shows the file name and folder first, so you can change them before it starts.',
-    keywords: 'confirm prompt dialog question',
+    label: 'Show a window before each download',
+    help: 'Each file from the browser opens its own window first, so you can change its name, folder and queue, or download it later. Videos always ask for a quality.',
+    keywords: 'confirm prompt dialog question ask window start without asking',
+  },
+  {
+    id: 'show_progress_windows',
+    section: 'browser',
+    label: 'Keep the window open to show progress',
+    help: 'After Download now, the download’s window stays and shows its progress. Off: the window closes when the download starts.',
+    keywords: 'progress window close speed popup',
   },
   {
     id: 'show_media_button',

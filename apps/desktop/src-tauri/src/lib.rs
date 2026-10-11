@@ -34,14 +34,14 @@
 //! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
 //! | `import_settings` | `path: String` | nothing |
 //! | `pending_confirmations` | none | `Vec<PendingCapture>` |
-//! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | nothing |
+//! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | `DownloadId` of the new download; a download window that asked becomes its progress window |
 //! | `reject_capture` | `id: u64` | nothing |
 //! | `open_file` | `id: DownloadId`, `allow_program: Option<bool>` | nothing; a program is refused unless `allow_program` |
 //! | `is_program` | `id: DownloadId` | `bool`: opening it would run code, so ask first |
 //! | `open_folder` | `id: DownloadId` | nothing |
 //! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
 //! | `take_launch_links` | none | `Vec<String>`: links passed on the command line, handed over once |
-//! | `choose_media` | `id: u64`, `selection: MediaSelection` | nothing; fails while an option that needs the media add-on lacks it (the core then sends `AddonRequired` and keeps the choice) |
+//! | `choose_media` | `id: u64`, `selection: MediaSelection` | `DownloadId`, like `confirm_capture`; fails while an option that needs the media add-on lacks it (the core then sends `AddonRequired` and keeps the choice) |
 //! | `dismiss_media_choice` | `id: u64` | nothing |
 //! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open |
 //! | `pending_addon_requests` | none | `Vec<{ id: u64, addon: AddonInfo, url: String }>`: pages waiting for the add-on, oldest first; `dismiss_media_choice(id)` drops one |
@@ -51,6 +51,12 @@
 //! | `remove_addon` | `id: String` | nothing |
 //! | `cancel_addon_operation` | `id: String` | nothing; stops an install or update, keeping an installed version working |
 //! | `check_addon_updates` | none | `Vec<AddonInfo>` after looking for a newer media add-on now; fails when the releases cannot be reached |
+//! | `get_question` | `id: u64` | `Option<Question>` (see [`questions::Question`]): the open question a download window shows |
+//! | `get_download` | `id: DownloadId` | `DownloadSummary` of one download, for its progress window |
+//! | `earlier_download` | `id: u64` | `Option<DownloadSummary>`: the download in the list that question `id` is about again |
+//! | `show_question_windows` | none | nothing; every open question's window comes to the front or opens again |
+//! | `show_progress_window` | `id: DownloadId` | nothing; opens (or brings forward) that download's window |
+//! | `close_download_window` | none | nothing; closes the download window that calls it |
 //!
 //! Every command reaches the real core; none is pending. The core checks for add-on updates
 //! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
@@ -61,6 +67,9 @@
 //! - [`RESYNC_EVENT`] (no payload): events were missed; reload everything.
 //! - [`window::LINKS_EVENT`] (no payload): links arrived from a second launch; fetch them with
 //!   `take_launch_links`.
+//!
+//! Both events reach every window: the main window and the download windows (D23, see
+//! [`download_windows`]), which each keep only what concerns their download.
 //!
 //! # Starting
 //!
@@ -87,6 +96,7 @@ pub mod autostart;
 pub mod background;
 pub mod bridge;
 mod commands;
+pub mod download_windows;
 pub mod host;
 pub mod lifecycle;
 pub mod questions;
@@ -170,6 +180,7 @@ pub fn run() {
         )
         .manage(LaunchLinks::default())
         .manage(Lifecycle::default())
+        .manage(download_windows::DownloadWindows::default())
         .setup(move |app| setup(app, launch))
         .invoke_handler(tauri::generate_handler![
             commands::list_downloads,
@@ -213,6 +224,12 @@ pub fn run() {
             commands::remove_addon,
             commands::cancel_addon_operation,
             commands::check_addon_updates,
+            commands::get_question,
+            commands::get_download,
+            commands::earlier_download,
+            commands::show_question_windows,
+            commands::show_progress_window,
+            commands::close_download_window,
         ])
         .build(context);
     match app {
@@ -306,10 +323,14 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
         }
     };
     let life = app.state::<Lifecycle>();
-    life.keep(tauri::async_runtime::spawn(background::forward_events(
+    // Subscribed before looking at open questions, so none falls between the two.
+    let events = manager.subscribe();
+    life.keep(tauri::async_runtime::spawn(background::forward(
         app.clone(),
-        manager.clone(),
+        events,
     )));
+    // A browser download that arrived while the download list was opening gets its window.
+    download_windows::restore(&app);
     life.keep(tauri::async_runtime::spawn(background::watch(
         app.clone(),
         manager.clone(),

@@ -184,6 +184,13 @@ impl App {
             .with_capture_timeout(CAPTURE_TIMEOUT)
             .with_stop_timeout(STOP_TIMEOUT);
         let manager = Manager::open(config).await?;
+        // These tests drive captures that start at once; a fresh install shows a window first
+        // (D23), so they switch that off. The test of the window switches it back on.
+        let mut settings = manager.get_settings();
+        if settings.extension.ask_before_download {
+            settings.extension.ask_before_download = false;
+            manager.update_settings(settings)?;
+        }
         let listener = Listener::bind(endpoint)?;
         let accepted = Arc::new(AtomicUsize::new(0));
         let (ended_tx, ended) = watch::channel(0);

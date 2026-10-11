@@ -23,8 +23,8 @@ async function setup() {
 
 describe('dialogs', () => {
   it('wrap Tab and Shift+Tab around their own buttons', async () => {
-    const { backend } = await setup();
-    backend.simulateMediaChoice();
+    const { app } = await setup();
+    app.openDialog({ kind: 'add', urls: [] });
     await settle();
     const dialog = screen.getByRole('dialog');
     const buttons = within(dialog).getAllByRole('button');

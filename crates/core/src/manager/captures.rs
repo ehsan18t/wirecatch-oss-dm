@@ -1,5 +1,5 @@
 //! Downloads handed over by the browser extension, and the confirmation flow for
-//! `ask_before_download` (D4).
+//! `ask_before_download` (D4, D23).
 //!
 //! Every handover carries an id chosen by the extension. A repeated add with the
 //! same id gets the first answer and adds nothing, and a withdrawal undoes a
@@ -251,9 +251,14 @@ impl Manager {
             .collect()
     }
 
-    /// Accepts a waiting capture, with the user's changes, and starts it. The new
-    /// download arrives with the next `DownloadsChanged` event.
-    pub async fn confirm_capture(&self, id: u64, answer: CaptureConfirmation) -> Result<()> {
+    /// Accepts a waiting capture, with the user's changes, and starts it, or with
+    /// `answer.later` adds it to its queue paused. Returns the new download's id; its
+    /// row also arrives with the next `DownloadsChanged` event.
+    pub async fn confirm_capture(
+        &self,
+        id: u64,
+        answer: CaptureConfirmation,
+    ) -> Result<DownloadId> {
         let pending = self
             .lock_open()?
             .pending
@@ -268,7 +273,7 @@ impl Manager {
                         .retarget(handover, Target::Confirmed(row.id));
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
-                Ok(())
+                Ok(row.id)
             }
             Err(e) => {
                 // Keep it so the user can fix the problem (another folder, say) and confirm again.
@@ -292,6 +297,32 @@ impl Manager {
         }
         self.emit(UiEvent::ConfirmationClosed { id });
         Ok(())
+    }
+
+    /// The newest download in the list that the open question `id` (a waiting
+    /// capture or media choice) is about again, so the question can say so: the
+    /// same address, or for a video the same page, or the same video read from
+    /// another link to it. `None` when there is none, or no such question.
+    pub fn earlier_download(&self, id: u64) -> Option<DownloadSummary> {
+        let state = self.lock();
+        let (links, video) = if let Some(waiting) = state.pending.get(&id) {
+            (vec![waiting.capture.url.clone()], None)
+        } else {
+            let media = state.media.get(&id)?;
+            let mut links = vec![media.source.url.to_string()];
+            links.extend(media.source.page_url.clone());
+            (links, media.video.clone())
+        };
+        state
+            .visible()
+            .filter(|entry| {
+                let row = &entry.row;
+                let same_video = video.is_some()
+                    && row.media.as_ref().and_then(|m| m.video_key.as_ref()) == video.as_ref();
+                same_video || links.iter().any(|link| same_address(link, &row.url))
+            })
+            .max_by_key(|entry| (entry.row.added_at, entry.row.id))
+            .map(|entry| entry.summary())
     }
 
     fn hold_for_confirmation(
@@ -390,7 +421,7 @@ impl Manager {
                 hint_name: Some(proposal.file_name.clone()),
                 folder,
                 queue: answer.queue.unwrap_or(proposal.queue),
-                start: true,
+                start: !answer.later,
                 origin: origin_of(request),
                 handover: None,
                 expect: Some(Expectation {
@@ -410,6 +441,21 @@ impl Manager {
     }
 }
 
+/// Whether two links are the same address, ignoring a `#fragment` (which never
+/// reaches the server).
+fn same_address(a: &str, b: &str) -> bool {
+    let strip = |link: &str| -> String {
+        match Url::parse(link.trim()) {
+            Ok(mut url) => {
+                url.set_fragment(None);
+                url.to_string()
+            }
+            Err(_) => link.trim().to_string(),
+        }
+    };
+    strip(a) == strip(b)
+}
+
 /// The row's media details for a direct video or audio file.
 fn direct_media(capture: &NewDownload) -> Option<StoredMedia> {
     let hint = capture
@@ -420,6 +466,7 @@ fn direct_media(capture: &NewDownload) -> Option<StoredMedia> {
         summary: MediaSummary {
             quality: "Original".into(),
             source: hint.kind,
+            video_key: None,
         },
         job: None,
     })
@@ -462,5 +509,30 @@ pub(super) fn origin_of(capture: &NewDownload) -> Origin {
             &capture.extra_headers,
         ),
         forgot_sign_in: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_address;
+
+    #[test]
+    fn the_same_address_ignores_only_the_fragment() {
+        assert!(same_address(
+            "https://example.com/a.zip#part",
+            "https://example.com/a.zip"
+        ));
+        assert!(same_address(
+            "https://EXAMPLE.com/a.zip",
+            "https://example.com/a.zip"
+        ));
+        assert!(!same_address(
+            "https://example.com/a.zip?v=2",
+            "https://example.com/a.zip"
+        ));
+        assert!(!same_address(
+            "https://example.com/a.zip",
+            "https://example.com/b.zip"
+        ));
     }
 }

@@ -1,5 +1,7 @@
+import type { DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  earlierNote,
   extractUrls,
   fileNameFromUrl,
   folderOf,
@@ -14,6 +16,8 @@ import {
   linkForDisplay,
   parseTime,
   scheduleAllows,
+  statusDetail,
+  statusShort,
 } from './format';
 
 describe('formatBytes', () => {
@@ -126,5 +130,64 @@ describe('links', () => {
     expect(fileNameFromUrl('https://example.com/')).toBe('example.com');
     expect(folderOf('C:\\Users\\you\\Downloads\\a.zip')).toBe('C:\\Users\\you\\Downloads');
     expect(folderOf('/home/you/a.zip')).toBe('/home/you');
+  });
+});
+
+describe('a download already in the list (D23)', () => {
+  const now = new Date(2026, 9, 10, 20, 0);
+  const row = (change: Partial<DownloadSummary>): DownloadSummary => ({
+    id: 1,
+    url: 'https://example.com/a.zip',
+    file_name: 'a.zip',
+    path: 'C:/Downloads/a.zip',
+    queue: 1,
+    category: 'archive',
+    status: 'completed',
+    total: 10,
+    done: 10,
+    speed: 0,
+    connections: 0,
+    eta_secs: null,
+    error: null,
+    waiting: null,
+    media: null,
+    added_at: new Date(2026, 9, 10, 18, 30).getTime(),
+    completed_at: new Date(2026, 9, 10, 18, 38).getTime(),
+    ...change,
+  });
+
+  it('says when it was downloaded, or what it is doing, in one line', () => {
+    expect(earlierNote(row({}), now)).toBe('You downloaded this today at 18:38.');
+    expect(earlierNote(row({ completed_at: new Date(2026, 9, 9, 7, 5).getTime() }), now)).toBe(
+      'You downloaded this yesterday at 07:05.',
+    );
+    expect(earlierNote(row({ completed_at: new Date(2026, 8, 3, 9, 0).getTime() }), now)).toBe(
+      'You downloaded this on 3 Sept 2026.',
+    );
+    expect(earlierNote(row({ status: 'downloading' }), now)).toBe('This is already downloading.');
+    expect(earlierNote(row({ status: 'processing' }), now)).toBe('This is already downloading.');
+    expect(earlierNote(row({ status: 'paused' }), now)).toBe(
+      'This is already in your list, paused.',
+    );
+    expect(earlierNote(row({ status: 'cancelled' }), now)).toBe(
+      'You started this today at 18:30 and cancelled it.',
+    );
+    for (const status of ['queued', 'failed', 'connecting'] as const) {
+      expect(earlierNote(row({ status }), now)).not.toContain(String.fromCharCode(0x2014));
+    }
+  });
+
+  it('describes the status as the list does', () => {
+    const waiting = row({
+      status: 'queued',
+      waiting: { type: 'queue_full', data: { running: 2, limit: 2 } },
+    });
+    expect(statusShort(waiting)).toBe('Queue full');
+    expect(statusDetail(waiting, 'Main')).toBe(
+      'Main is running 2 of 2. This starts when one of them finishes.',
+    );
+    expect(statusShort(row({ status: 'processing' }))).toBe('Joining video and audio');
+    expect(statusDetail(row({ status: 'processing' }), 'Main')).toMatch(/joining them/);
+    expect(statusDetail(row({}), 'Main')).toBeNull();
   });
 });

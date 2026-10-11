@@ -1,0 +1,250 @@
+// The main window and questions (D23): it counts the downloads waiting for an answer and never
+// asks them itself, so a question answered anywhere never comes back when a window opens or
+// reloads. Also the media add-on list, joining video and audio, and shell signals, against the
+// mock backend.
+
+import type { UiEvent } from '@wirecatch/protocol';
+import { describe, expect, it, vi } from 'vitest';
+import { MockBackend } from '../backend/mock';
+import type { ShellSignal } from '../backend/types';
+import { buildCommands } from '../commands';
+import { AppState } from './app.svelte';
+
+const NOON = new Date(2026, 9, 10, 12, 0).getTime();
+
+function backend() {
+  return new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+}
+
+async function make(b = backend()) {
+  const app = new AppState(b);
+  await app.init();
+  // The add-ons load in the background after the list.
+  await vi.waitFor(() => expect(app.addons).not.toBeNull());
+  return { app, backend: b };
+}
+
+const select = (option: string, later = false) => ({
+  option_id: option,
+  folder: null,
+  file_name: null,
+  queue: null,
+  later,
+});
+
+describe('media and add-ons', () => {
+  it('lists one media add-on with plain words and its size', async () => {
+    const { app } = await make();
+    expect(app.addons).toHaveLength(1);
+    const addon = app.addons?.[0];
+    expect(addon?.id).toBe('media');
+    expect(addon?.name).toBe('Media add-on');
+    expect(addon?.description).toMatch(/YouTube \(yt-dlp\)/);
+    expect(addon?.size).toBeGreaterThan(0);
+    app.dispose();
+  });
+
+  it('says it is joining, and a stuck join can be paused', async () => {
+    const { app, backend } = await make();
+    await app.installAddon('media');
+    backend.tick(4500);
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[0];
+    const joined = choice?.options.find((o) => o.needs_ffmpeg);
+    const id = await backend.chooseMedia(choice?.id ?? 0, select(joined?.id ?? ''));
+    for (let i = 0; i < 400 && app.downloads.get(id)?.status !== 'processing'; i++) {
+      backend.tick(250);
+    }
+    expect(app.downloads.get(id)?.status).toBe('processing');
+    expect(app.counts.joining).toBe(1);
+    expect(app.counts.status.active).toBe(1);
+
+    await app.togglePause([id]);
+    expect(app.downloads.get(id)?.status).toBe('paused');
+    expect(app.counts.joining).toBe(0);
+    app.dispose();
+  });
+});
+
+describe('the main window only counts questions', () => {
+  it('counts every kind of waiting download once and shows none as a dialog', async () => {
+    const { app, backend } = await make();
+    backend.simulateConfirmation();
+    backend.simulateMediaChoice();
+    backend.simulateAddonRequired();
+    expect(app.waitingCount).toBe(3);
+    expect(app.dialog).toBeNull();
+    // Each one opened its own window instead.
+    expect(backend.windows.windows.map((w) => w.shows.kind)).toEqual([
+      'question',
+      'question',
+      'question',
+    ]);
+    // A quality picked that needs the add-on is still the one question.
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[1];
+    await expect(backend.chooseMedia(choice?.id ?? 0, select('2160'))).rejects.toThrow();
+    expect(app.waitingCount).toBe(4);
+
+    // Answered or taken back anywhere: no longer counted.
+    await backend.rejectCapture(app.pending[0]?.id ?? -1);
+    backend.simulateAnsweredElsewhere();
+    expect(app.waitingCount).toBe(2);
+    app.dispose();
+  });
+
+  it('offers the waiting windows from the sidebar entry and the palette', async () => {
+    const { app, backend } = await make();
+    backend.simulateConfirmation();
+    const [window] = backend.windows.windows;
+    backend.windows.gone(window?.label ?? '');
+    expect(backend.windows.windows).toHaveLength(0);
+    const show = buildCommands(app).find((c) => c.id === 'questions.show');
+    expect(show?.title).toBe('Show the download that is waiting for you');
+    await show?.run();
+    expect(backend.windows.windows.map((w) => w.label)).toEqual([window?.label]);
+    app.dispose();
+  });
+
+  it('opens a progress window for any download, once', async () => {
+    const { app, backend } = await make();
+    const id = await backend.addDownload({
+      url: 'https://example.com/a.zip',
+      queue: null,
+      folder: null,
+      file_name: null,
+      start: true,
+    });
+    // Added from inside the app: no window of its own.
+    expect(backend.windows.windows).toHaveLength(0);
+    await app.showProgressWindow(id);
+    await app.showProgressWindow(id);
+    expect(backend.windows.windows.map((w) => w.shows)).toEqual([{ kind: 'download', id }]);
+    app.dispose();
+  });
+});
+
+describe('a question answered anywhere never comes back', () => {
+  // The maintainer saw the same "Pick a quality" each time the main window was opened again.
+  it('a picked quality is not asked again by a window opened later', async () => {
+    const b = backend();
+    const first = await make(b);
+    b.simulateMediaChoice();
+    const choice = first.app.mediaChoices[0];
+    await b.chooseMedia(choice?.id ?? 0, select('720'));
+    first.app.dispose();
+
+    // The main window is closed and opened again: a fresh state loads from the core.
+    const again = await make(b);
+    await vi.waitFor(() => expect(again.app.ready).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(again.app.mediaChoices).toEqual([]);
+    expect(again.app.waitingCount).toBe(0);
+    expect(again.app.dialog).toBeNull();
+    expect(await b.getQuestion(choice?.id ?? 0)).toBeNull();
+    again.app.dispose();
+  });
+
+  it('a confirmed file is not asked again by a window opened later', async () => {
+    const b = backend();
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    await b.confirmCapture(asked?.id ?? -1, {
+      folder: null,
+      file_name: null,
+      queue: null,
+      later: false,
+    });
+    const { app } = await make(b);
+    expect(app.pending).toEqual([]);
+    expect(app.waitingCount).toBe(0);
+    expect(app.dialog).toBeNull();
+    app.dispose();
+  });
+
+  it('a question put aside is counted, never shown, and not opened again by itself', async () => {
+    const b = backend();
+    b.simulateConfirmation();
+    const [window] = b.windows.windows;
+    // The person closes its window: put aside, not answered.
+    b.windows.gone(window?.label ?? '');
+    const { app } = await make(b);
+    expect(app.waitingCount).toBe(1);
+    expect(app.dialog).toBeNull();
+    // Loading the main window opens no question window.
+    expect(b.windows.windows).toHaveLength(0);
+    // A reload counts it once, not twice.
+    await app.init();
+    await vi.waitFor(() => expect(app.waitingCount).toBe(1));
+    app.dispose();
+  });
+});
+
+describe('questions asked while no window was open', () => {
+  it('are counted in a new window, without doubling on reload', async () => {
+    const b = backend();
+    // Asked while closed to the tray: nobody is listening.
+    b.simulateMediaChoice();
+    b.simulateAddonRequired();
+
+    const { app } = await make(b);
+    await vi.waitFor(() => expect(app.waitingCount).toBe(2));
+    await app.init();
+    await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
+    expect(app.waitingCount).toBe(2);
+    app.dispose();
+  });
+});
+
+describe('shell signals', () => {
+  it('opens the Add dialog with links from a second launch, and reloads after missed events', async () => {
+    const b = backend();
+    let signal: ((s: ShellSignal) => void) | undefined;
+    vi.spyOn(b, 'onShellSignal').mockImplementation(async (listener) => {
+      signal = listener;
+      return () => {};
+    });
+    const links = vi
+      .spyOn(b, 'takeLaunchLinks')
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(['https://example.com/a.zip', 'https://example.com/b.zip']);
+    const app = new AppState(b);
+    await app.init();
+    await vi.waitFor(() => expect(links).toHaveBeenCalledTimes(1));
+    expect(app.dialog).toBeNull();
+
+    signal?.('links');
+    await vi.waitFor(() =>
+      expect(app.dialog).toEqual({
+        kind: 'add',
+        urls: ['https://example.com/a.zip', 'https://example.com/b.zip'],
+      }),
+    );
+
+    const list = vi.spyOn(b, 'listDownloads');
+    signal?.('resync');
+    await vi.waitFor(() => expect(list).toHaveBeenCalled());
+    app.dispose();
+  });
+
+  it('shows a storage failure from the core', async () => {
+    const b = backend();
+    let push: ((e: UiEvent) => void) | undefined;
+    vi.spyOn(b, 'subscribe').mockImplementation(async (listener) => {
+      push = listener;
+      return () => {};
+    });
+    const app = new AppState(b);
+    await app.init();
+    push?.({ type: 'storage_failed', data: { message: 'Could not save.', fix: null } });
+    // A banner that stays, not a note that fades.
+    expect(app.storageProblem).toBe('Could not save.');
+    expect(app.toasts.some((t) => t.message === 'Could not save.')).toBe(false);
+    await app.retryStorage();
+    expect(app.storageProblem).toBeNull();
+    push?.({ type: 'storage_failed', data: { message: 'Again.', fix: null } });
+    app.dismissStorageProblem();
+    expect(app.storageProblem).toBeNull();
+    app.dispose();
+  });
+});

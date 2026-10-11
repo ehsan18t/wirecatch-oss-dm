@@ -118,6 +118,10 @@ pub struct MediaSummary {
     /// For example "1080p" or "Audio only".
     pub quality: String,
     pub source: crate::extension::MediaKind,
+    /// The site and id of a video read from its page, for example `Youtube:dQw4w9WgXcQ`, so
+    /// another link to the same video is recognised. `None` for streams and media files.
+    #[serde(default)]
+    pub video_key: Option<String>,
 }
 
 /// The app found several qualities and asks the user to pick one.
@@ -159,6 +163,9 @@ pub struct MediaSelection {
     pub folder: Option<String>,
     pub file_name: Option<String>,
     pub queue: Option<QueueId>,
+    /// Download later: add it to its queue paused instead of starting it (D23).
+    #[serde(default)]
+    pub later: bool,
 }
 
 /// An optional component (D2): ffmpeg, the yt-dlp media add-on.
@@ -295,6 +302,10 @@ pub struct AppSettings {
     /// Keep installed add-ons up to date without asking.
     #[serde(default = "default_true")]
     pub auto_update_addons: bool,
+    /// After Download now, a browser download's window stays open and shows its progress
+    /// (D23). Off: the window closes when the download starts.
+    #[serde(default = "default_true")]
+    pub show_progress_windows: bool,
 }
 
 fn default_true() -> bool {
@@ -356,6 +367,9 @@ pub struct CaptureConfirmation {
     pub folder: Option<String>,
     pub file_name: Option<String>,
     pub queue: Option<QueueId>,
+    /// Download later: add it to its queue paused instead of starting it (D23).
+    #[serde(default)]
+    pub later: bool,
 }
 
 /// Everything the core pushes to the desktop UI. The desktop app forwards these

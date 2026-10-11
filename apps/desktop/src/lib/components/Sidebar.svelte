@@ -10,16 +10,8 @@
   import Plus from '@lucide/svelte/icons/plus';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import type { Queue } from '@wirecatch/protocol';
-  import { MEDIA_ADDON } from '$lib/addons';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
-  import {
-    CATEGORIES,
-    CATEGORY_LABEL,
-    formatRate,
-    formatSchedule,
-    formatSpeed,
-    hostOf,
-  } from '$lib/format';
+  import { CATEGORIES, CATEGORY_LABEL, formatRate, formatSchedule, formatSpeed } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -89,43 +81,20 @@
     </p>
   </header>
 
-  {#if app.pending.length > 0 && app.pendingHidden}
-    <button class="pending" onclick={() => app.showPending()}>
+  {#if app.waitingCount > 0}
+    <!-- Each waiting download has its own window (D23); this brings them all back. -->
+    <button
+      class="pending"
+      title="Show the windows of the downloads that wait for your answer"
+      onclick={() => app.showQuestionWindows()}
+    >
       <Bell size={14} aria-hidden="true" />
-      <span>
-        {app.pending.length === 1
-          ? '1 browser download waits for your answer'
-          : `${app.pending.length} browser downloads wait for your answer`}
-      </span>
-    </button>
-  {/if}
-  {#each app.analysing as reading (reading.id)}
-    <p class="reading" role="status">
-      <span class="spinner" aria-hidden="true"></span>
-      <span>Reading the video on {hostOf(reading.url)}</span>
-    </p>
-  {/each}
-  {#if app.addonRequest && app.addonHidden}
-    {@const state = app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type}
-    <button class="pending" onclick={() => app.showAddonRequest()}>
-      <Bell size={14} aria-hidden="true" />
-      <span>
-        {state === 'failed'
-          ? 'The media add-on did not install. A video waits for it'
-          : state === 'installing'
-            ? 'A video downloads once the media add-on is installed'
-            : 'A video waits for the media add-on'}
-      </span>
-    </button>
-  {/if}
-  {#if app.openMediaChoices.length > 0 && app.mediaHidden}
-    <button class="pending" onclick={() => app.showMediaChoices()}>
-      <Bell size={14} aria-hidden="true" />
-      <span>
-        {app.openMediaChoices.length === 1
-          ? '1 video waits for you to pick a quality'
-          : `${app.openMediaChoices.length} videos wait for you to pick a quality`}
-      </span>
+      <span class="waiting-label">Waiting for you</span>
+      <span
+        class="count num"
+        aria-label="{app.waitingCount} {app.waitingCount === 1 ? 'download' : 'downloads'}"
+        >{app.waitingCount}</span
+      >
     </button>
   {/if}
 
@@ -589,37 +558,19 @@
     cursor: pointer;
   }
 
-  .reading {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 10px 8px;
-    padding: 7px 10px;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    overflow-wrap: anywhere;
+  .waiting-label {
+    flex: 1;
   }
 
-  .spinner {
-    flex: none;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--wire-track);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.9s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
+  .count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: var(--text-xs);
+    line-height: 18px;
+    text-align: center;
   }
 
   .pending :global(svg) {

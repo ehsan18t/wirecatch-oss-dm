@@ -16,7 +16,7 @@ use crate::activity::{Activity, Finished, notification_text};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
-use crate::{EVENT_NAME, RESYNC_EVENT, tray, window};
+use crate::{EVENT_NAME, RESYNC_EVENT, download_windows, tray};
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
@@ -24,10 +24,13 @@ pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
 /// Downloads finishing within this long of the first one share one notification.
 pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
-/// Sends every core event to the webview on [`EVENT_NAME`]. While no window exists, a question
-/// opens one and a storage failure becomes a system notification (see [`crate::questions`]);
-/// other events are skipped, since the interface loads everything fresh when it opens. If this
-/// falls behind and misses events, the interface is told to reload on [`RESYNC_EVENT`].
+/// Sends every core event to every open window (the main window and the download windows) on
+/// [`EVENT_NAME`], and opens a download window for each question the core asks (see
+/// [`crate::questions`] and [`crate::download_windows`]), whatever the main window is doing. A
+/// storage failure with no main window to show it becomes a system notification. With no
+/// window open at all, events are not sent: a window loads everything fresh when it opens. If
+/// this falls behind and misses events, the windows are told to reload on [`RESYNC_EVENT`] and
+/// questions that missed their window get one.
 pub async fn forward_events<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     forward(app, manager.subscribe()).await;
 }
@@ -37,21 +40,27 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
     loop {
         match events.recv().await {
             Ok(event) => {
-                if app.get_webview_window(MAIN_WINDOW).is_none() {
-                    match attention(&event) {
-                        Attention::None => {}
-                        Attention::OpenWindow => window::show_main_window(&app),
-                        Attention::Notify { title, body } => show_notification(&app, title, body),
+                match attention(&event) {
+                    Attention::None => {}
+                    Attention::Ask(id) => download_windows::ask(&app, id),
+                    Attention::Closed(id) => download_windows::question_closed(&app, id),
+                    Attention::Notify { title, body } => {
+                        if app.get_webview_window(MAIN_WINDOW).is_none() {
+                            show_notification(&app, title, body);
+                        }
                     }
+                }
+                if app.webview_windows().is_empty() {
                     continue;
                 }
                 if let Err(e) = app.emit(EVENT_NAME, &event) {
-                    tracing::warn!("could not send an event to the window: {e}");
+                    tracing::warn!("could not send an event to the windows: {e}");
                 }
             }
             Err(RecvError::Lagged(missed)) => {
-                tracing::warn!("the window missed {missed} events; asking it to reload");
+                tracing::warn!("the windows missed {missed} events; asking them to reload");
                 let _ = app.emit(RESYNC_EVENT, ());
+                download_windows::restore(&app);
             }
             Err(RecvError::Closed) => return,
         }

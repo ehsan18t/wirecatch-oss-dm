@@ -68,6 +68,15 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE downloads ADD COLUMN media TEXT;
 "#,
+    // D23 (2026-10-11): every browser download now opens its own window before it starts, so
+    // `ask_before_download` is on by default. That default changed before the first release,
+    // while stored settings still held the old one (off) that nobody chose on purpose, so the
+    // setting is switched on once, here. Turning it off afterwards is kept: this runs once.
+    r#"
+    UPDATE settings
+    SET value = json_set(value, '$.extension.ask_before_download', json('true'))
+    WHERE key = 'app' AND json_valid(value);
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -650,6 +659,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
                     summary: MediaSummary {
                         quality: "Unknown".into(),
                         source: MediaKind::Page,
+                        video_key: None,
                     },
                     job: Some(crate::media::MediaJob::Unreadable),
                 })
@@ -875,6 +885,7 @@ mod tests {
             summary: wirecatch_protocol::app::MediaSummary {
                 quality: "1080p".into(),
                 source: wirecatch_protocol::extension::MediaKind::Page,
+                video_key: None,
             },
             job: Some(crate::media::MediaJob::Page {
                 format: "137+140".into(),
@@ -904,6 +915,7 @@ mod tests {
             summary: MediaSummary {
                 quality: "1080p".into(),
                 source: MediaKind::Page,
+                video_key: None,
             },
             job: None,
         });
@@ -1043,6 +1055,60 @@ mod tests {
         assert_eq!(old.summary.file_name, "a.zip");
         // Its path was chosen before paths waited for the server: it is final.
         assert_eq!(old.naming, NameChoice::settled());
+    }
+
+    /// Stored settings as a database at `version` holds them, with `ask` for the window setting.
+    fn database_with_settings(dir: &Path, version: usize, ask: bool) {
+        let conn = Connection::open(dir.join(DATABASE_FILE)).unwrap();
+        for sql in &MIGRATIONS[..version] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", version as u32)
+            .unwrap();
+        let mut settings = crate::settings::default_settings();
+        settings.extension.ask_before_download = ask;
+        settings.notify_on_complete = false;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params![SETTINGS_KEY, to_json(&settings)],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_window_before_each_download_is_switched_on_once() {
+        let dir = tempfile::tempdir().unwrap();
+        // Saved by a version from before D23, with the old default.
+        database_with_settings(dir.path(), 4, false);
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert!(settings.extension.ask_before_download, "switched on");
+        assert!(!settings.notify_on_complete, "nothing else changes");
+        assert!(
+            settings.show_progress_windows,
+            "a new setting takes its default"
+        );
+
+        // Turned off afterwards: that choice is kept from then on.
+        let mut chosen = settings;
+        chosen.extension.ask_before_download = false;
+        store.save_settings(chosen);
+        store.flush().await;
+        drop(store);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(!snapshot.settings.unwrap().extension.ask_before_download);
+    }
+
+    #[test]
+    fn a_fresh_database_has_no_settings_for_the_migration_to_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(snapshot.settings.is_none());
+        assert!(
+            crate::settings::default_settings()
+                .extension
+                .ask_before_download
+        );
     }
 
     #[test]

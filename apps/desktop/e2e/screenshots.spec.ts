@@ -105,7 +105,7 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('Control+K');
       await page.keyboard.type('several qualities');
       await page.keyboard.press('Enter');
-      await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor();
+      await page.getByRole('heading', { name: 'Pick a quality' }).waitFor();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-15-quality-picker.png` });
     });
@@ -122,8 +122,8 @@ for (const theme of ['light', 'dark'] as const) {
       await page.getByRole('progressbar').waitFor();
       await page.waitForTimeout(1200);
       await page.screenshot({ path: `${dir}/${theme}-17-addon-installing.png` });
-      // Once installed, the page that asked for it continues with the quality picker.
-      await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor({ timeout: 15_000 });
+      // Once installed, the page that asked for it continues with the quality list, in its window.
+      await page.getByRole('heading', { name: 'Pick a quality' }).waitFor({ timeout: 15_000 });
     });
 
     test('add-ons in settings', async ({ page }) => {

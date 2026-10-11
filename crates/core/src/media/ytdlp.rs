@@ -27,6 +27,12 @@ use crate::addons::MediaTools;
 pub(crate) struct Info {
     #[serde(default)]
     pub title: Option<String>,
+    /// The video's id on its site, so two links to one video are known to be the same.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// The extractor that read the page, for example `Youtube`; ids are unique per extractor.
+    #[serde(default)]
+    pub extractor_key: Option<String>,
     #[serde(default)]
     pub is_live: Option<bool>,
     #[serde(default)]

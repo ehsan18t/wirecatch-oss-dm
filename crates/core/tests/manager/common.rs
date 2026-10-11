@@ -329,8 +329,13 @@ impl Harness {
         let clock = Arc::new(ManualClock::new(now));
         let timeouts = (stop_timeout, capture_timeout);
         let manager = open(&root, &folders, &clock, timeouts, tweak.as_ref()).await;
-        // One connection per download keeps request counts easy to reason about.
-        tune(&manager, |s| s.connections_per_download = 1);
+        // One connection per download keeps request counts easy to reason about. Browser
+        // downloads start without a window first (D23 turns it on by default); the tests of
+        // the window turn it back on.
+        tune(&manager, |s| {
+            s.connections_per_download = 1;
+            s.extension.ask_before_download = false;
+        });
         Self {
             manager,
             clock,

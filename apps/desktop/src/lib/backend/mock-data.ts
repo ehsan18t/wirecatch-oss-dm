@@ -60,7 +60,7 @@ export function defaultSettings(): AppSettings {
     global_speed_limit: null,
     extension: {
       capture_enabled: true,
-      ask_before_download: false,
+      ask_before_download: true,
       show_media_button: true,
       ignored_sites: ['mail.example.com'],
       capture_extensions: [],
@@ -72,6 +72,7 @@ export function defaultSettings(): AppSettings {
     close_to_tray: true,
     notify_on_complete: true,
     auto_update_addons: true,
+    show_progress_windows: true,
   };
 }
 

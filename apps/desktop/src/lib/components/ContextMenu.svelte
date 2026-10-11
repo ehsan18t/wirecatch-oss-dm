@@ -43,6 +43,7 @@
     if (one) {
       out.push(
         { label: 'Show in folder', run: () => app.openFolder(one.id) },
+        { label: 'Show progress window', run: () => app.showProgressWindow(one.id) },
         {
           label: 'Copy link',
           run: async () => {
