@@ -105,6 +105,9 @@ pub const EVENT_NAME: &str = "wirecatch://event";
 /// hook removes the value by this name.
 pub const RELEASE_AUTOSTART_NAME: &str = "Wirecatch";
 
+/// Shown by a copy of Wirecatch that finds another one already serving this user.
+pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
+
 /// The start-at-sign-in entry's name for this build.
 pub fn autostart_name() -> &'static str {
     if host::DEV_BUILD {
@@ -224,7 +227,17 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
             tracing::error!(
                 "another copy of Wirecatch is already running (it owns {endpoint}); this one exits"
             );
-            std::process::exit(0);
+            // Say so instead of vanishing. The message shows once the event loop runs; this
+            // copy opens nothing else and exits when it is closed.
+            use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
+            let closing = handle.clone();
+            handle
+                .dialog()
+                .message(ALREADY_RUNNING)
+                .title("Wirecatch")
+                .kind(MessageDialogKind::Info)
+                .show(move |_| closing.exit(0));
+            return Ok(());
         }
         Err(e) => {
             tracing::error!("browser downloads cannot reach Wirecatch: {e}");
@@ -351,6 +364,12 @@ mod tests {
         assert!(guarded.contains("Pop $0"), "the nsExec result is popped");
         let run_value = format!(r#"CurrentVersion\Run" "{RELEASE_AUTOSTART_NAME}""#);
         assert!(guarded.contains(&run_value), "removes the Run value");
+    }
+
+    #[test]
+    fn the_already_running_message_is_plain() {
+        assert!(ALREADY_RUNNING.contains("already running"));
+        assert!(!ALREADY_RUNNING.contains('\u{2014}'));
     }
 
     #[test]
