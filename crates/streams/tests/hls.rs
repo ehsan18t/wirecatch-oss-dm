@@ -346,6 +346,59 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     assert_eq!(unique.len(), again.len());
 }
 
+/// Signed links carry a fresh token in every segment query. Refreshing the link, which the errors for an expired link ask for, used to change the plan's fingerprint and delete every segment already downloaded.
+#[tokio::test]
+async fn resuming_with_a_refreshed_link_keeps_the_segments() {
+    let server = Server::start().await;
+    let segments = media_playlist(&server, "t", 30, 5);
+    for i in 0..30 {
+        server.delay(&format!("t/seg{i}.ts"), Duration::from_millis(40));
+    }
+    let signed = |token: &str| {
+        let mut text = String::from("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n");
+        for i in 0..30 {
+            text.push_str(&format!("#EXTINF:4.0,\nseg{i}.ts?token={token}\n"));
+        }
+        text.push_str("#EXT-X-ENDLIST\n");
+        text
+    };
+    server.put_typed("t/index.m3u8", signed("first"), MPEGURL);
+    let dir = temp_dir("hls-refreshed");
+    let output = dir.join("v.mp4");
+    let mut req = request(&server, "t/index.m3u8", &output);
+    req.options.connections = 2;
+
+    let progress = Arc::new(StreamProgress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
+    while progress.segments_done() < 10 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    cancel.cancel();
+    let left = match task.await.unwrap().unwrap() {
+        Outcome::Paused { segments_left, .. } => segments_left,
+        other => panic!("{other:?}"),
+    };
+    let before = server.seen().len();
+
+    // The person refreshes the link: every segment now carries another token.
+    server.put_typed("t/index.m3u8", signed("second"), MPEGURL);
+    let outcome = download(
+        req,
+        Arc::new(StreamProgress::default()),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let (path, _) = completed(outcome);
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    let fetched = server.seen()[before..]
+        .iter()
+        .filter(|s| s.path.ends_with(".ts"))
+        .count();
+    assert_eq!(fetched, left, "only the missing segments are fetched again");
+}
+
 #[tokio::test]
 async fn resuming_checks_segment_sizes() {
     let server = Server::start().await;

@@ -1,6 +1,7 @@
 //! From a link to a plan: load the playlist or manifest, describe what it
 //! offers, and turn a choice of tracks into the list of pieces to fetch.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -108,21 +109,29 @@ pub(crate) struct Plan {
 
 impl Plan {
     /// Identifies the plan across runs, to tell whether segments on disk
-    /// belong to it. Paths and query strings count: services often tell
-    /// segments (or versions of a video) apart only by a query parameter, and
-    /// joining segments of two different versions would corrupt the video.
-    /// Hosts are left out, because one video is often served by whichever CDN
-    /// host is closest at the time.
+    /// belong to it. Paths count, and so do ranges, keys and the number of
+    /// pieces. A query string counts only where a track's paths alone do not
+    /// tell its pieces apart (`seg?n=1`, `seg?n=2`): signed links put a fresh
+    /// token in every segment query, and refreshing such a link must keep the
+    /// segments already downloaded. Hosts are left out, because one video is
+    /// often served by whichever CDN host is closest at the time.
     pub fn fingerprint(&self) -> u64 {
         let mut hash = Fnv::default();
         hash.write(&(self.tracks.len() as u64).to_le_bytes());
         for track in &self.tracks {
             hash.write(&[track.role as u8]);
             hash.write(&(track.pieces.len() as u64).to_le_bytes());
+            let mut paths = HashMap::with_capacity(track.pieces.len());
             for piece in &track.pieces {
-                hash.write(piece.url.path().as_bytes());
+                *paths.entry(piece.url.path()).or_insert(0_usize) += 1;
+            }
+            for piece in &track.pieces {
+                let path = piece.url.path();
+                hash.write(path.as_bytes());
                 hash.write(&[0xFE]);
-                hash.write(piece.url.query().unwrap_or_default().as_bytes());
+                if paths.get(path).copied().unwrap_or_default() > 1 {
+                    hash.write(piece.url.query().unwrap_or_default().as_bytes());
+                }
                 if let Some(range) = &piece.range {
                     hash.write(&range.start.to_le_bytes());
                     hash.write(&range.end.to_le_bytes());
@@ -737,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprints_follow_paths_and_queries_but_not_hosts() {
+    fn fingerprints_follow_paths_not_hosts_or_signing_tokens() {
         let piece = |u: &str| Piece::plain(Url::parse(u).unwrap(), None);
         let plan = |urls: &[&str]| Plan {
             tracks: vec![Track {
@@ -769,7 +778,8 @@ mod tests {
             "https://cdn1.example/seg?n=3",
         ]);
         assert_eq!(a.fingerprint(), same_on_another_host.fingerprint());
-        assert_ne!(a.fingerprint(), b.fingerprint());
+        // A refreshed signed link: same segments, new tokens.
+        assert_eq!(a.fingerprint(), b.fingerprint());
         assert_ne!(a.fingerprint(), c.fingerprint());
         assert_ne!(d.fingerprint(), e.fingerprint());
     }
