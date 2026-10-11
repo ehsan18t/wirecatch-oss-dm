@@ -35,7 +35,8 @@
 //! | `pending_confirmations` | none | `Vec<PendingCapture>` |
 //! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | nothing |
 //! | `reject_capture` | `id: u64` | nothing |
-//! | `open_file` | `id: DownloadId` | nothing |
+//! | `open_file` | `id: DownloadId`, `allow_program: Option<bool>` | nothing; a program is refused unless `allow_program` |
+//! | `is_program` | `id: DownloadId` | `bool`: opening it would run code, so ask first |
 //! | `open_folder` | `id: DownloadId` | nothing |
 //! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
 //! | `take_launch_links` | none | `Vec<String>`: links passed on the command line, handed over once |
@@ -168,6 +169,7 @@ pub fn run() {
             commands::confirm_capture,
             commands::reject_capture,
             commands::open_file,
+            commands::is_program,
             commands::open_folder,
             commands::set_download_folder,
             commands::take_launch_links,

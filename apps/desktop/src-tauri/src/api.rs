@@ -164,8 +164,109 @@ fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
         .ok_or_else(|| plain(CoreError::DownloadNotFound(id)))
 }
 
-/// The finished file to open for `open_file`.
-pub fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<PathBuf> {
+/// File types that run code when opened: programs, installers, scripts, shortcuts and
+/// packages. Opening one of these needs the person's confirmation first.
+pub const PROGRAM_EXTENSIONS: &[&str] = &[
+    "exe",
+    "msi",
+    "msix",
+    "msixbundle",
+    "appx",
+    "appxbundle",
+    "msp",
+    "mst",
+    "bat",
+    "cmd",
+    "com",
+    "scr",
+    "pif",
+    "cpl",
+    "ps1",
+    "psm1",
+    "psd1",
+    "vbs",
+    "vbe",
+    "js",
+    "jse",
+    "wsf",
+    "wsh",
+    "ws",
+    "hta",
+    "lnk",
+    "url",
+    "scf",
+    "reg",
+    "inf",
+    "chm",
+    "application",
+    "gadget",
+    "jar",
+    "appimage",
+    "sh",
+    "bash",
+    "zsh",
+    "csh",
+    "ksh",
+    "run",
+    "bin",
+    "command",
+    "desktop",
+    "deb",
+    "rpm",
+    "apk",
+    "flatpakref",
+    "snap",
+    "py",
+    "pyw",
+    "pl",
+    "rb",
+    "dmg",
+    "pkg",
+    "app",
+];
+
+/// Whether opening `path` would run code: a program type by its extension (any case), or on
+/// Linux a file without an extension that is marked executable.
+pub fn is_program(path: &Path) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => PROGRAM_EXTENSIONS
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case(ext)),
+        None => is_marked_executable(path),
+    }
+}
+
+#[cfg(unix)]
+fn is_marked_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_marked_executable(_path: &Path) -> bool {
+    false
+}
+
+/// Whether the download `id` is a program (see [`is_program`]), for the interface to ask first.
+pub fn download_is_program(m: &Manager, id: DownloadId) -> CommandResult<bool> {
+    Ok(is_program(Path::new(&find(m, id)?.path)))
+}
+
+/// The site a download came from, for "only open it if you trust example.com".
+fn site_of(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
+    if host.is_empty() {
+        "where it came from".to_owned()
+    } else {
+        host.to_owned()
+    }
+}
+
+/// The finished file to open for `open_file`. A program is only opened when `allow_program` is
+/// set, after the person confirmed they trust where it came from.
+pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> CommandResult<PathBuf> {
     let row = find(m, id)?;
     if row.status != DownloadStatus::Completed {
         return Err("The file is not finished yet. It opens once the download completes.".into());
@@ -175,6 +276,13 @@ pub fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<PathBuf> {
         return Err(format!(
             "{} is no longer at {}. It may have been moved or deleted. Download it again with Retry, or look for it in another folder.",
             row.file_name, row.path
+        ));
+    }
+    if is_program(&path) && !allow_program {
+        return Err(format!(
+            "{} is a program. Only open it if you trust {}. Use Show in folder to open it yourself.",
+            row.file_name,
+            site_of(&row.url)
         ));
     }
     Ok(path)
@@ -248,5 +356,61 @@ mod tests {
     fn the_pending_answer_is_plain() {
         assert!(!NEXT_UPDATE.contains('\u{2014}'), "no em dashes");
         assert!(NEXT_UPDATE.starts_with("This arrives in the next update"));
+    }
+
+    #[test]
+    fn programs_and_scripts_are_recognized_in_any_case() {
+        for name in [
+            "setup.exe",
+            "SETUP.EXE",
+            "Installer.Msi",
+            "run.bat",
+            "x.cmd",
+            "x.ps1",
+            "x.vbs",
+            "x.js",
+            "x.hta",
+            "x.lnk",
+            "x.reg",
+            "x.jar",
+            "Wirecatch.AppImage",
+            "install.sh",
+            "x.run",
+            "x.bin",
+            "x.deb",
+            "x.rpm",
+        ] {
+            assert!(is_program(Path::new(name)), "{name} should need trust");
+        }
+        for name in [
+            "movie.mp4",
+            "report.pdf",
+            "archive.zip",
+            "photo.JPG",
+            "notes.txt",
+        ] {
+            assert!(!is_program(Path::new(name)), "{name} is not a program");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_without_an_extension_marked_executable_is_a_program() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("tool");
+        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+        assert!(!is_program(&file));
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(is_program(&file));
+    }
+
+    #[test]
+    fn the_source_site_is_named_plainly() {
+        assert_eq!(
+            site_of("https://user:pw@dl.example.com:8080/a.exe?x=1"),
+            "dl.example.com:8080"
+        );
+        assert_eq!(site_of("http://example.com"), "example.com");
     }
 }

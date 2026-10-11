@@ -70,7 +70,13 @@ export interface Backend {
   confirmCapture(id: number, confirmation: CaptureConfirmation): Promise<void>;
   rejectCapture(id: number): Promise<void>;
 
-  openFile(id: DownloadId): Promise<void>;
+  /**
+   * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
+   * `allowProgram` is set, after the person said they trust where it came from.
+   */
+  openFile(id: DownloadId, allowProgram?: boolean): Promise<void>;
+  /** Whether opening the file would run code, so the interface asks first. */
+  isProgram(id: DownloadId): Promise<boolean>;
   openFolder(id: DownloadId): Promise<void>;
   /** Moves a download, running or not, to another folder. */
   setDownloadFolder(id: DownloadId, folder: string): Promise<void>;
@@ -131,6 +137,7 @@ export const COMMANDS = {
   confirmCapture: 'confirm_capture',
   rejectCapture: 'reject_capture',
   openFile: 'open_file',
+  isProgram: 'is_program',
   openFolder: 'open_folder',
   setDownloadFolder: 'set_download_folder',
   takeLaunchLinks: 'take_launch_links',

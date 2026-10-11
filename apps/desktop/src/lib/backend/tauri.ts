@@ -136,8 +136,11 @@ export class TauriBackend implements Backend {
   rejectCapture(id: number) {
     return this.#exec(COMMANDS.rejectCapture, { id });
   }
-  openFile(id: DownloadId) {
-    return this.#exec(COMMANDS.openFile, { id });
+  openFile(id: DownloadId, allowProgram = false) {
+    return this.#exec(COMMANDS.openFile, { id, allowProgram });
+  }
+  isProgram(id: DownloadId) {
+    return this.#call<boolean>(COMMANDS.isProgram, { id });
   }
   openFolder(id: DownloadId) {
     return this.#exec(COMMANDS.openFolder, { id });

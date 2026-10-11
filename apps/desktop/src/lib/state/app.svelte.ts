@@ -35,7 +35,8 @@ export type Dialog =
   | { kind: 'refresh'; id: DownloadId }
   | { kind: 'export' }
   | { kind: 'import' }
-  | { kind: 'shortcuts' };
+  | { kind: 'shortcuts' }
+  | { kind: 'open-program'; id: DownloadId };
 
 export interface Toast {
   id: number;
@@ -600,8 +601,21 @@ export class AppState {
     return ok === true;
   }
 
+  /** Opens a finished file; a program asks first whether the person trusts where it came from. */
   async openFile(id: DownloadId): Promise<void> {
+    const program = await this.#run(() => this.backend.isProgram(id));
+    if (program === undefined) return;
+    if (program) {
+      this.openDialog({ kind: 'open-program', id });
+      return;
+    }
     await this.#run(() => this.backend.openFile(id));
+  }
+
+  /** Opens a program the person confirmed they trust. */
+  async openProgram(id: DownloadId): Promise<void> {
+    this.closeDialog();
+    await this.#run(() => this.backend.openFile(id, true));
   }
 
   async openFolder(id: DownloadId): Promise<void> {

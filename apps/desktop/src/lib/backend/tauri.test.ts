@@ -34,6 +34,7 @@ const FIXED = [
   'open_file',
   'open_folder',
   'set_download_folder',
+  'is_program',
   'take_launch_links',
   // Pending until the core has media and add-ons (WP11); the names and types are final.
   'choose_media',

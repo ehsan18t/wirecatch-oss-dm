@@ -157,8 +157,13 @@ pub async fn reject_capture(core: CoreState<'_>, id: u64) -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub async fn open_file(app: AppHandle, core: CoreState<'_>, id: DownloadId) -> CommandResult<()> {
-    let path = api::file_to_open(core.manager().await?, id)?;
+pub async fn open_file(
+    app: AppHandle,
+    core: CoreState<'_>,
+    id: DownloadId,
+    allow_program: Option<bool>,
+) -> CommandResult<()> {
+    let path = api::file_to_open(core.manager().await?, id, allow_program.unwrap_or(false))?;
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| {
@@ -167,6 +172,11 @@ pub async fn open_file(app: AppHandle, core: CoreState<'_>, id: DownloadId) -> C
                 path.display()
             )
         })
+}
+
+#[tauri::command]
+pub async fn is_program(core: CoreState<'_>, id: DownloadId) -> CommandResult<bool> {
+    api::download_is_program(core.manager().await?, id)
 }
 
 #[tauri::command]

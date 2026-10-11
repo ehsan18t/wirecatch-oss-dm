@@ -18,7 +18,7 @@ import type {
   UiEvent,
   WaitReason,
 } from '@wirecatch/protocol';
-import { fileNameFromUrl, folderOf, scheduleAllows } from '../format';
+import { fileNameFromUrl, folderOf, hostOf, scheduleAllows } from '../format';
 import {
   bulkItem,
   categoryFor,
@@ -64,6 +64,18 @@ const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' 
     source: 'hls',
   },
 ];
+
+/** The mock's stand-in for the core's list of file types that run code when opened. */
+const PROGRAM_TYPES = new Set(
+  'exe msi msix appx bat cmd com scr pif cpl ps1 vbs vbe js jse wsf wsh hta lnk url reg jar appimage sh run bin deb rpm apk py'.split(
+    ' ',
+  ),
+);
+
+export function isProgramName(name: string): boolean {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 && PROGRAM_TYPES.has(name.slice(dot + 1).toLowerCase());
+}
 
 /** How long the mock spends joining video and audio after a media download. */
 const PROCESSING_MS = 2500;
@@ -952,11 +964,24 @@ export class MockBackend implements Backend {
 
   // ---- Files and pickers ----
 
-  async openFile(id: DownloadId) {
+  /** Files opened, for tests: the mock opens nothing for real. */
+  readonly opened: DownloadId[] = [];
+
+  async openFile(id: DownloadId, allowProgram = false) {
     const row = this.#row(id);
     if (row.status !== 'completed') {
       throw new BackendError('The file is not finished yet. It opens once the download completes.');
     }
+    if (isProgramName(row.file_name) && !allowProgram) {
+      throw new BackendError(
+        `${row.file_name} is a program. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
+      );
+    }
+    this.opened.push(id);
+  }
+
+  async isProgram(id: DownloadId) {
+    return isProgramName(this.#row(id).file_name);
   }
 
   async openFolder(id: DownloadId) {

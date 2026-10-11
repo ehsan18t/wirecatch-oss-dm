@@ -68,12 +68,26 @@ async fn commands_drive_the_core_and_state_survives_a_restart() {
         .await
         .unwrap();
     let done = wait_status(&m, d, DownloadStatus::Completed).await;
-    let file = api::file_to_open(&m, d).unwrap();
+    let file = api::file_to_open(&m, d, false).unwrap();
+    assert!(!api::download_is_program(&m, d).unwrap());
     assert_eq!(std::fs::read(&file).unwrap(), fast.data);
     assert_eq!(file, std::path::PathBuf::from(&done.path));
     assert_eq!(api::item_to_reveal(&m, d).unwrap(), Reveal::File(file));
-    let not_done = api::file_to_open(&m, b).unwrap_err();
+    let not_done = api::file_to_open(&m, b, false).unwrap_err();
     assert!(not_done.contains("not finished"), "{not_done}");
+
+    // A downloaded program only opens once the person said they trust its site.
+    let program = api::add_download(&m, request(fast.url("Setup.EXE"), &saved, true))
+        .await
+        .unwrap();
+    wait_status(&m, program, DownloadStatus::Completed).await;
+    assert!(api::download_is_program(&m, program).unwrap());
+    let refused = api::file_to_open(&m, program, false).unwrap_err();
+    assert!(
+        refused.contains("is a program") && refused.contains("127.0.0.1"),
+        "{refused}"
+    );
+    assert!(api::file_to_open(&m, program, true).is_ok());
 
     // Errors reach the interface as the core's plain words.
     let bad = api::add_download(&m, request("not a link".into(), &saved, true))
