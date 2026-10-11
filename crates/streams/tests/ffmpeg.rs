@@ -140,8 +140,20 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
             "-loglevel",
             "error",
             "-y",
+            "-protocol_whitelist",
+            "file",
+            "-format_whitelist",
+            "mpegts",
+            "-f",
+            "mpegts",
             "-i",
             &file(work.join("track0")),
+            "-protocol_whitelist",
+            "file",
+            "-format_whitelist",
+            "mpegts",
+            "-f",
+            "mpegts",
             "-i",
             &file(work.join("track1")),
             "-map",
@@ -340,4 +352,92 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
         report.contains("Video: mpeg4") && report.contains("Audio: aac"),
         "{report}"
     );
+}
+
+/// A one-segment HLS stream whose only segment is `payload`.
+fn one_segment(server: &Server, payload: impl Into<bytes::Bytes>) {
+    server.put("0.m4s", payload);
+    server.put_typed(
+        "index.m3u8",
+        "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:1,\n0.m4s\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+}
+
+#[tokio::test]
+async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
+    let Some(ffmpeg) = fake_ffmpeg() else { return };
+    let server = Server::start().await;
+    // An ffconcat script would make ffmpeg read whatever files it names.
+    one_segment(&server, "ffconcat version 1.0\nfile secret.mp4\n");
+    let dir = temp_dir("ffmpeg-unknown");
+    let output = dir.join("clip.mp4");
+    let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
+    request.options = options();
+    request.ffmpeg = Some(ffmpeg);
+    let error = run(request).await.unwrap_err();
+    assert!(
+        matches!(error, Error::UnknownFormat { role: "video" }),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .starts_with("The downloaded video is not in a format Wirecatch can join"),
+        "{error}"
+    );
+    // The fake ffmpeg would have written the output had it been started.
+    assert!(!output.exists());
+    assert!(dir.join("clip.mp4.wcstream").join("track0").is_file());
+}
+
+#[tokio::test]
+async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
+    let Some(ffmpeg) = real_ffmpeg() else { return };
+    // A file elsewhere on the computer that the "segment" tries to pull in.
+    let elsewhere = temp_dir("real-ffmpeg-elsewhere");
+    let secret = elsewhere.join("secret.mp4");
+    let status = Command::new(&ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
+        .args([
+            "-i",
+            "testsrc=duration=1:size=64x48:rate=5",
+            "-c:v",
+            "mpeg4",
+        ])
+        .arg(&secret)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "ffmpeg could not generate the secret file"
+    );
+    // A DASH manifest naming that file. The leading comment puts `free` at
+    // bytes 4 to 8, so the segment looks like MP4 and passes the format check;
+    // ffmpeg left to guess would read it as DASH and copy the file in.
+    let target = secret.to_string_lossy().replace('\\', "/");
+    let payload = format!(
+        "<!--free--><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
+         profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\" type=\"static\" \
+         mediaPresentationDuration=\"PT1S\" minBufferTime=\"PT1S\"><Period>\
+         <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\
+         <Representation id=\"1\" bandwidth=\"1000\" mimeType=\"video/mp4\" codecs=\"mp4v.20.9\">\
+         <BaseURL>file:{target}</BaseURL><SegmentBase/></Representation>\
+         </AdaptationSet></Period></MPD>\n"
+    );
+    let server = Server::start().await;
+    one_segment(&server, payload);
+    let dir = temp_dir("real-ffmpeg-disguised");
+    let output = dir.join("clip.mp4");
+    let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
+    request.options = options();
+    request.ffmpeg = Some(ffmpeg);
+    let result = run(request).await;
+    assert!(
+        matches!(result, Err(Error::Ffmpeg(_))),
+        "ffmpeg must refuse the segment: {result:?}"
+    );
+    for name in ["clip.mp4", "clip.mkv"] {
+        assert!(!dir.join(name).exists(), "{name} was written");
+    }
 }

@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Read};
+use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -16,7 +16,7 @@ use wirecatch_engine::{Fetcher, naming};
 
 use crate::crypto;
 use crate::error::{Error, Result};
-use crate::ffmpeg::{self, Container};
+use crate::ffmpeg::{self, Container, InputFormat};
 use crate::model::{Outcome, Stage, StreamProgress, StreamRequest, with_extension};
 use crate::plan::{Piece, Plan, Role, Source, mp4_compatible};
 use crate::workdir::WorkDir;
@@ -335,14 +335,32 @@ async fn join(
                 Container::Mp4 => &[Container::Mp4, Container::Matroska],
                 Container::Matroska => &[Container::Matroska],
             };
-            let inputs: Vec<(PathBuf, Role)> = plan
+            let tracks: Vec<(PathBuf, Role)> = plan
                 .tracks
                 .iter()
                 .enumerate()
                 .map(|(i, t)| (work.track_path(i), t.role))
                 .collect();
-            let inputs: Vec<(&Path, Role)> =
-                inputs.iter().map(|(p, r)| (p.as_path(), *r)).collect();
+            // ffmpeg is told each track's format instead of guessing it from
+            // bytes a website chose; an unknown one is never handed over.
+            let inputs = blocking(move || {
+                tracks
+                    .into_iter()
+                    .map(|(path, role)| {
+                        let format = InputFormat::detect(&path)?;
+                        Ok((path, role, format))
+                    })
+                    .collect::<io::Result<Vec<_>>>()
+            })
+            .await?;
+            let mut known = Vec::with_capacity(inputs.len());
+            for (path, role, format) in &inputs {
+                let Some(format) = format else {
+                    return Err(Error::UnknownFormat { role: role.name() });
+                };
+                known.push((path.as_path(), *role, *format));
+            }
+            let inputs = known;
             let mut saved = None;
             // What ffmpeg said for each container tried, in order.
             let mut failures: Vec<(Container, String)> = Vec::new();
@@ -380,7 +398,10 @@ async fn join(
         None => {
             let (from, output) = (work.track_path(0), output.to_path_buf());
             blocking(move || {
-                let target = free_target(&output, sniff(&from)?)?;
+                // Saved as is, never read by ffmpeg: an unknown format only
+                // needs an extension, and `.ts` is the most likely one.
+                let extension = InputFormat::detect(&from)?.map_or("ts", InputFormat::extension);
+                let target = free_target(&output, extension)?;
                 fs::rename(&from, &target)?;
                 Ok(target)
             })
@@ -478,40 +499,6 @@ fn concat(
     Ok(true)
 }
 
-/// The extension for a track saved as is, from its first bytes.
-fn sniff(path: &Path) -> io::Result<&'static str> {
-    let mut head = [0u8; 512];
-    let mut file = File::open(path)?;
-    let mut len = 0;
-    while len < head.len() {
-        match file.read(&mut head[len..])? {
-            0 => break,
-            n => len += n,
-        }
-    }
-    let head = &head[..len];
-    Ok(if head.first() == Some(&0x47) {
-        "ts"
-    } else if head
-        .get(4..8)
-        .is_some_and(|b| matches!(b, b"ftyp" | b"styp" | b"moov" | b"moof" | b"sidx" | b"free"))
-    {
-        "mp4"
-    } else if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
-        if head.windows(4).any(|w| w == b"webm") {
-            "webm"
-        } else {
-            "mkv"
-        }
-    } else if head.starts_with(b"ID3")
-        || (head.len() > 1 && head[0] == 0xFF && head[1] & 0xF6 == 0xF0)
-    {
-        "aac"
-    } else {
-        "ts"
-    })
-}
-
 /// Runs file system work off the async threads.
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> io::Result<T> + Send + 'static,
@@ -574,29 +561,5 @@ mod tests {
             "as MP4: codec not currently supported in container; as Matroska: something else"
         );
         assert_eq!(failure_summary(&[(Container::Matroska, "x".into())]), "x");
-    }
-
-    #[test]
-    fn sniffing_names_the_format() {
-        let dir = std::env::temp_dir().join(format!("wirecatch-sniff-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        for (bytes, ext) in [
-            (&[0x47u8, 0x40, 0x11][..], "ts"),
-            (b"\0\0\0\x18ftypisom", "mp4"),
-            (
-                &[
-                    0x1A, 0x45, 0xDF, 0xA3, 0x42, 0x82, 0x84, b'w', b'e', b'b', b'm',
-                ],
-                "webm",
-            ),
-            (b"ID3\x04", "aac"),
-            (&[0xFF, 0xF1, 0x50], "aac"),
-            (b"", "ts"),
-        ] {
-            let path = dir.join("track");
-            fs::write(&path, bytes).unwrap();
-            assert_eq!(sniff(&path).unwrap(), ext, "{bytes:?}");
-        }
-        let _ = fs::remove_dir_all(&dir);
     }
 }
