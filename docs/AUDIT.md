@@ -96,6 +96,8 @@ EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16
 
 The W0 baseline found 1,477 clippy warnings and 787 ESLint errors. Each package is brought to zero while its workstream is open, and the gates then hold it there.
 
+When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ path = "std::thread::sleep", ... }]` to `clippy.toml`. A `clippy.toml` setting applies to every crate at once, so it cannot follow the per-crate opt-in; today it would flag fixed sleeps in core, e2e and the desktop tests (W6).
+
 ## Status
 
 | Workstream | Status |
