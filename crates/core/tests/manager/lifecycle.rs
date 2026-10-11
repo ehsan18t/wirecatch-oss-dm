@@ -316,7 +316,7 @@ async fn names_are_unique_and_folders_follow_categories() {
     let err = h
         .manager
         .add_download(wirecatch_protocol::app::AddRequest {
-            url: "ftp://example.com/x".into(),
+            url: "sftp://example.com/x".into(),
             queue: None,
             folder: None,
             file_name: None,

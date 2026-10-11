@@ -31,6 +31,8 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 const CHECK_EVERY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 /// How often the background task looks whether a check is due.
 const LOOK_EVERY: Duration = Duration::from_secs(60 * 60);
+/// Why a part did not finish when the install was stopped.
+const STOPPED: &str = "It was stopped.";
 /// Largest GitHub release description or checksum list read.
 const MAX_METADATA: u64 = 4 * 1024 * 1024;
 
@@ -328,10 +330,12 @@ impl Manager {
             plan.iter().map(|c| c.size).collect(),
             cancel.clone(),
         ));
+        // One part failing stops the others, without counting as a stop asked for.
+        let parts_cancel = cancel.child_token();
         let mut tasks = Vec::new();
         for (component, progress) in plan.iter().cloned().zip(progress) {
             let manager = self.clone();
-            let (work, cancel) = (work.clone(), cancel.clone());
+            let (work, cancel) = (work.clone(), parts_cancel.clone());
             tasks.push(self.spawn(async move {
                 let result = manager
                     .fetch_part(&component, &work, progress, cancel.clone())
@@ -348,6 +352,8 @@ impl Manager {
         for task in tasks {
             match task.await {
                 Ok(Ok(part)) => staged.push(part),
+                // A part stopped because another failed says less than that failure.
+                Ok(Err(reason)) if reason == STOPPED => {}
                 Ok(Err(reason)) => {
                     failure.get_or_insert(reason);
                 }
@@ -360,8 +366,8 @@ impl Manager {
         if let Some(reason) = failure {
             return Err(reason);
         }
-        if cancel.is_cancelled() {
-            return Err("It was stopped.".into());
+        if cancel.is_cancelled() || staged.len() != plan.len() {
+            return Err(STOPPED.into());
         }
         let base = self.lock().addon.record.clone();
         self.blocking(move || Ok(swap_in(&dir, &work, base, staged)))
@@ -400,7 +406,7 @@ impl Manager {
             match wirecatch_engine::download(request, progress, cancel).await {
                 Ok(Outcome::Completed { .. }) => {}
                 Ok(_) | Err(wirecatch_engine::Error::Cancelled) => {
-                    return Err("It was stopped.".into());
+                    return Err(STOPPED.into());
                 }
                 Err(e) => {
                     return Err(format!(
