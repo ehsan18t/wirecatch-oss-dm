@@ -12,6 +12,9 @@ rust-version = "1.88"
 [workspace.dependencies]
 wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
 wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
+wirecatch-core = { path = "crates/core", version = "0.1.0" }
+wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
+wirecatch-streams = { path = "crates/streams", version = "0.1.0" }
 ts-rs = { version = "11", features = ["serde-compat"] }
 anyhow = "1"
 bytes = "1"
@@ -20,7 +23,6 @@ futures-util = "0.3"
 indicatif = "0.17"
 libc = "0.2"
 percent-encoding = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -29,6 +31,7 @@ tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
+tempfile = "3.27.0"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl"] }
 axum = "0.8"
 

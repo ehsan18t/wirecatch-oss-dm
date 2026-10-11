@@ -29,8 +29,8 @@ tauri-plugin-opener = "2.7.1"
 tauri-plugin-single-instance = "2.4.5"
 # Compiled in but only switched on when `plugins.updater` is configured (D19).
 tauri-plugin-updater = "2.12.0"
-wirecatch-core = { path = "../../../crates/core" }
-wirecatch-ipc = { path = "../../../crates/ipc" }
+wirecatch-core.workspace = true
+wirecatch-ipc.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -56,7 +56,7 @@ libc = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }
 futures-util = { workspace = true }
-tempfile = "3.27.0"
+tempfile.workspace = true
 # The mock runtime, to test the tray, quitting and event forwarding without a real window.
 tauri = { version = "2.12.3", features = ["tray-icon", "test"] }
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }

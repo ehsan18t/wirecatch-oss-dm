@@ -16,12 +16,12 @@ path = "src/bin/wirecatch-e2e-app.rs"
 test = false
 
 [dependencies]
-wirecatch-core = { path = "../core" }
-wirecatch-ipc = { path = "../ipc" }
+wirecatch-core.workspace = true
+wirecatch-ipc.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 anyhow.workspace = true
 axum.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
-tempfile = "3.27.0"
+tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process"] }

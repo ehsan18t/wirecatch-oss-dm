@@ -249,6 +249,7 @@ const CHECKS = {
   commits: commitRange,
   'tauri-pairs': tauriPairs,
   deny: () => cargo('deny', '--locked', 'check'),
+  'unused-deps': () => cargo('machete'),
 };
 
 const GROUPS = {
@@ -256,7 +257,7 @@ const GROUPS = {
   js: ['protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'tauri-pairs'],
   release: ['engine-package'],
-  'supply-chain': ['deny'],
+  'supply-chain': ['unused-deps', 'deny'],
 };
 
 /** What `node scripts/gate.mjs` runs with no arguments: everything a change must pass before it is reported done. */

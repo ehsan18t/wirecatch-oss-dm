@@ -62,7 +62,6 @@ hyper = { version = "1.4.0", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"] }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
-tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
 
 [target.'cfg(windows)'.dev-dependencies]

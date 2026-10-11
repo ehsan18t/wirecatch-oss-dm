@@ -10,7 +10,7 @@ publish = false
 [dependencies]
 wirecatch-engine.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
-wirecatch-streams = { path = "../streams", version = "0.1.0" }
+wirecatch-streams.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 dirs = "7.0.0"
 # Reading the media add-on's archives: .xz (pure Rust) inside .tar, and .zip.
@@ -50,6 +50,6 @@ bytes.workspace = true
 futures-util.workspace = true
 # Making throwaway signing keys for the signature tests (the version pgp uses).
 rand = "0.8.6"
-tempfile = "3.27.0"
+tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 tracing-subscriber.workspace = true
