@@ -126,7 +126,8 @@ pub enum WithdrawOutcome {
 pub struct ExtensionSettings {
     /// Master switch: take over browser downloads at all.
     pub capture_enabled: bool,
-    /// Show the confirmation dialog for every captured download (D4; off by default).
+    /// Show a window for every captured file before it starts (D23; on by default). Videos
+    /// always ask for a quality, whatever this says.
     pub ask_before_download: bool,
     /// Show a download button over video and audio on web pages.
     pub show_media_button: bool,
@@ -144,7 +145,7 @@ impl Default for ExtensionSettings {
     fn default() -> Self {
         Self {
             capture_enabled: true,
-            ask_before_download: false,
+            ask_before_download: true,
             show_media_button: true,
             ignored_sites: Vec::new(),
             capture_extensions: Vec::new(),
@@ -227,11 +228,15 @@ mod tests {
     #[test]
     fn patch_changes_only_given_fields() {
         let mut s = ExtensionSettings::default();
+        assert!(
+            s.ask_before_download,
+            "a window shows first by default (D23)"
+        );
         s.apply(ExtensionSettingsPatch {
-            ask_before_download: Some(true),
+            ask_before_download: Some(false),
             ..Default::default()
         });
-        assert!(s.ask_before_download);
+        assert!(!s.ask_before_download);
         assert!(s.capture_enabled);
     }
 

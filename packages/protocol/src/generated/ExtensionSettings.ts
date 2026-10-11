@@ -11,7 +11,8 @@ export type ExtensionSettings = {
  */
 capture_enabled: boolean, 
 /**
- * Show the confirmation dialog for every captured download (D4; off by default).
+ * Show a window for every captured file before it starts (D23; on by default). Videos
+ * always ask for a quality, whatever this says.
  */
 ask_before_download: boolean, 
 /**
