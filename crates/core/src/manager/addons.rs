@@ -773,21 +773,24 @@ fn verify_and_unpack(
     stage: &Path,
     cap: u64,
 ) -> std::result::Result<(PathBuf, archive::Installed), String> {
+    let unreadable =
+        |e: std::io::Error| format!("The downloaded {} could not be read ({e}).", component.name);
+    // One open file is checked and unpacked, so nothing can swap it in between.
+    let mut file = archive::open_release(release).map_err(unreadable)?;
     // Never hash (or unpack) more than was announced.
-    let len = std::fs::metadata(release)
-        .map_err(|e| format!("The downloaded {} could not be read ({e}).", component.name))?
-        .len();
+    let len = file.metadata().map_err(unreadable)?.len();
     if len > cap {
+        drop(file);
         let _ = std::fs::remove_file(release);
         return Err(format!(
             "The downloaded {} is larger than its release says, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.name
         ));
     }
-    let actual = archive::sha256_file(release)
-        .map_err(|e| format!("The downloaded {} could not be read ({e}).", component.name))?;
+    let actual = archive::sha256_of(&mut file).map_err(unreadable)?;
     if actual != component.sha256 {
         warn!(component = %component.name, expected = %component.sha256, %actual, "checksum mismatch");
+        drop(file);
         let _ = std::fs::remove_file(release);
         return Err(format!(
             "The downloaded {} did not match its published checksum, so it was not installed. Try again later; if it keeps happening, please report it.",
@@ -805,7 +808,7 @@ fn verify_and_unpack(
     }
     std::fs::create_dir_all(stage)
         .map_err(|e| format!("The add-on's work folder could not be created ({e})."))?;
-    let installed = archive::unpack(component, release, stage).inspect_err(|_| {
+    let installed = archive::unpack(component, &mut file, stage).inspect_err(|_| {
         let _ = std::fs::remove_dir_all(stage);
     })?;
     Ok((stage.to_path_buf(), installed))
