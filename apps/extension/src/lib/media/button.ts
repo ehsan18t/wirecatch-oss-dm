@@ -93,6 +93,38 @@ export function elementInfo(el: HTMLMediaElement): ElementInfo {
   return { src: src === '' ? null : src, audio: el.tagName === 'AUDIO' };
 }
 
+/** Most elements looked at when searching a page, its open shadow roots included, for media. */
+const SEARCH_BUDGET = 20_000;
+
+/**
+ * The video and audio elements under `root`, including inside open shadow roots
+ * (closed ones cannot be seen). Stops after `SEARCH_BUDGET` elements on huge pages.
+ */
+export function findMedia(root: Document | ShadowRoot): HTMLMediaElement[] {
+  const found: HTMLMediaElement[] = [];
+  const roots: Array<Document | ShadowRoot> = [root];
+  let seen = 0;
+  for (let next = roots.shift(); next !== undefined && seen < SEARCH_BUDGET; next = roots.shift()) {
+    for (const el of next.querySelectorAll('*')) {
+      seen += 1;
+      if (el instanceof HTMLMediaElement) found.push(el);
+      if (el.shadowRoot !== null) roots.push(el.shadowRoot);
+      if (seen >= SEARCH_BUDGET) break;
+    }
+  }
+  return found;
+}
+
+/** Like `container.contains(el)`, but also through shadow roots. */
+function containsDeep(container: Node, el: Node): boolean {
+  for (let node: Node | null = el; node !== null;) {
+    if (container.contains(node)) return true;
+    const root = node.getRootNode();
+    node = root instanceof ShadowRoot ? root.host : null;
+  }
+  return false;
+}
+
 /** The element's own label, or the page title. */
 export function mediaTitle(el: HTMLMediaElement, doc: Document): string | null {
   const own = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? '';
@@ -238,7 +270,7 @@ export class MediaButton {
     this.button.addEventListener('focus', () => this.#update());
     this.button.addEventListener('blur', () => this.#update());
 
-    for (const el of doc.querySelectorAll<HTMLMediaElement>('video, audio')) this.#tracked.add(el);
+    for (const el of findMedia(doc)) this.#track(el);
     this.#listen(doc, 'play', (e) => this.#onPlay(e), true);
     this.#listen(doc, 'pause', (e) => this.#onStop(e), true);
     this.#listen(doc, 'ended', (e) => this.#onStop(e), true);
@@ -247,7 +279,8 @@ export class MediaButton {
     this.#listen(doc, 'pointerout', (e) => {
       if ((e as PointerEvent).relatedTarget === null) this.#onPointerGone();
     });
-    this.#listen(doc, 'focusin', (e) => this.#onFocus(e.target), true);
+    // `composedPath()[0]` is the element itself, also inside a page's open shadow root.
+    this.#listen(doc, 'focusin', (e) => this.#onFocus(e.composedPath()[0] ?? e.target), true);
     this.#listen(doc, 'scroll', () => this.#schedule(), true);
     this.#listen(doc, 'fullscreenchange', () => this.#update());
     const view = doc.defaultView;
@@ -281,8 +314,26 @@ export class MediaButton {
 
   #track(target: EventTarget | null): HTMLMediaElement | null {
     if (!(target instanceof HTMLMediaElement)) return null;
+    if (!this.#tracked.has(target) && target.getRootNode() !== this.#doc) {
+      // Media events do not leave a shadow root, so listen on the element itself.
+      this.#listen(target, 'play', (e) => this.#onPlay(e));
+      this.#listen(target, 'pause', (e) => this.#onStop(e));
+      this.#listen(target, 'ended', (e) => this.#onStop(e));
+    }
     this.#tracked.add(target);
     return target;
+  }
+
+  /** Media under the pointer inside open shadow roots, which the page-level search may not have seen yet. */
+  #findAt(x: number, y: number): void {
+    const queue: Array<Document | ShadowRoot> = [this.#doc];
+    for (let i = 0, root = queue[0]; root !== undefined && i < 20; i += 1, root = queue[i]) {
+      if (typeof root.elementsFromPoint !== 'function') return;
+      for (const el of root.elementsFromPoint(x, y)) {
+        if (el instanceof HTMLMediaElement) this.#track(el);
+        else if (el.shadowRoot !== null && !queue.includes(el.shadowRoot)) queue.push(el.shadowRoot);
+      }
+    }
   }
 
   #onPlay(event: Event): void {
@@ -340,6 +391,17 @@ export class MediaButton {
     const p = this.#pointer;
     // On the button, the element it belongs to stays the one in use.
     if (p === null || this.#overButton) return;
+    let hit = this.#trackedAt(p.x, p.y);
+    if (hit === null) {
+      // Only when no known element is there: look inside open shadow roots under the pointer.
+      this.#findAt(p.x, p.y);
+      hit = this.#trackedAt(p.x, p.y);
+    }
+    if (hit !== null) this.#lastActive = this.#now();
+    this.#hovered = hit;
+  }
+
+  #trackedAt(x: number, y: number): HTMLMediaElement | null {
     let hit: HTMLMediaElement | null = null;
     for (const el of this.#tracked) {
       if (!el.isConnected) {
@@ -348,10 +410,9 @@ export class MediaButton {
       }
       if (!isCandidate(el)) continue;
       const r = el.getBoundingClientRect();
-      if (p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom) hit = el;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = el;
     }
-    if (hit !== null) this.#lastActive = this.#now();
-    if (hit !== this.#hovered) this.#hovered = hit;
+    return hit;
   }
 
   /** Whether the background knows something to download for this element; asks when it does not know yet. */
@@ -411,7 +472,11 @@ export class MediaButton {
     const fullscreen = this.#doc.fullscreenElement;
     // A media element shown full screen by itself cannot have anything drawn over it;
     // a player container shown full screen can, if the button moves inside it.
-    if (target !== null && fullscreen !== null && (fullscreen === target || !fullscreen.contains(target))) {
+    if (
+      target !== null &&
+      fullscreen !== null &&
+      (fullscreen === target || !containsDeep(fullscreen, target))
+    ) {
       state = 'none';
     }
     const place = (el: HTMLMediaElement): { top: number; left: number } | null => {

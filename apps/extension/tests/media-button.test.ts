@@ -8,6 +8,7 @@ import {
   ACTIVE_MS,
   MediaButton,
   SHADOW_CSS,
+  findMedia,
   placeButton,
   type Box,
   type ButtonDeps,
@@ -260,6 +261,51 @@ describe('MediaButton', () => {
     b.host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 280 }));
     await settle();
     expect(b.state).toBe('shown');
+  });
+
+  it("finds media inside a page's open shadow roots, but not closed ones", () => {
+    const outer = document.createElement('div');
+    const inner = document.createElement('div');
+    const closed = document.createElement('div');
+    document.body.append(outer, closed);
+    const outerRoot = outer.attachShadow({ mode: 'open' });
+    outerRoot.append(inner);
+    const deep = document.createElement('video');
+    inner.attachShadow({ mode: 'open' }).append(deep);
+    closed.attachShadow({ mode: 'closed' }).append(document.createElement('video'));
+    const light = media('video', box(0, 0, 640, 360));
+    expect(findMedia(document)).toEqual([light, deep]);
+  });
+
+  it('shows over a video playing inside an open shadow root, whose events never reach the page', async () => {
+    const fake = fakeDeps();
+    const player = document.createElement('fancy-player');
+    document.body.append(player);
+    const video = document.createElement('video');
+    video.src = 'https://e.com/a.mp4';
+    video.getBoundingClientRect = () => ({ ...box(0, 0, 640, 360), x: 0, y: 0, toJSON: () => null });
+    player.attachShadow({ mode: 'open' }).append(video);
+    const b = start(fake);
+    // Media events are not composed: only a listener on the element itself hears this.
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    expect(b.state).toBe('shown');
+  });
+
+  it('notices a video in a shadow root added later, when it gets focus', async () => {
+    const fake = fakeDeps();
+    const b = start(fake);
+    const player = document.createElement('fancy-player');
+    document.body.append(player);
+    const video = document.createElement('video');
+    video.src = 'https://e.com/a.mp4';
+    video.controls = true;
+    video.getBoundingClientRect = () => ({ ...box(0, 0, 640, 360), x: 0, y: 0, toJSON: () => null });
+    player.attachShadow({ mode: 'open' }).append(video);
+    video.dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    await settle();
+    expect(b.state).toBe('shown');
+    expect(fake.checks.at(-1)).toEqual({ src: 'https://e.com/a.mp4', audio: false });
   });
 
   it('is a real, labelled button that keyboard users can reach', () => {
