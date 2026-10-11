@@ -1,0 +1,10 @@
+# cargo audit configuration. Every ignored advisory needs a reason.
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071, rsa "Marvin" timing side channel. It concerns operations
+    # with an RSA private key (decryption and signing). Wirecatch only verifies
+    # yt-dlp's release signature with its public key (the pgp crate pulls in rsa
+    # for that), so no private key ever exists in the process. Revisit if rsa
+    # ships a fix or if Wirecatch ever handles private keys.
+    "RUSTSEC-2023-0071",
+]
