@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use tempfile::TempDir;
 use tokio::sync::{broadcast::error::RecvError, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use wirecatch_core::{KnownFolders, Manager, ManagerConfig, serve_connection};
@@ -26,10 +25,32 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// A temporary folder for one test: the app's data folder, a home folder whose
 /// `Downloads` receives the files, and a private endpoint nobody else uses.
+///
+/// Clones share the folder, which is deleted when the last clone is dropped.
+#[derive(Clone)]
 pub struct Sandbox {
-    root: TempDir,
+    root: Arc<Root>,
     /// Where the test app listens and the bridge connects.
     pub endpoint: Endpoint,
+}
+
+/// The sandbox folder, deleted on drop.
+struct Root(PathBuf);
+
+impl Drop for Root {
+    fn drop(&mut self) {
+        // The manager's database thread closes the file a moment after the last
+        // manager handle is gone, and Windows does not delete open files, so
+        // retry briefly instead of leaving the folder behind.
+        for _ in 0..100 {
+            match std::fs::remove_dir_all(&self.0) {
+                Ok(()) => return,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+        eprintln!("could not delete {}", self.0.display());
+    }
 }
 
 impl Sandbox {
@@ -39,19 +60,23 @@ impl Sandbox {
         let root = tempfile::Builder::new()
             .prefix("wirecatch-e2e-")
             .tempdir()
-            .expect("could not make a temporary folder");
+            .expect("could not make a temporary folder")
+            .keep();
         let tag = format!(
             "{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         );
-        let endpoint = private_endpoint(root.path(), &tag);
-        Self { root, endpoint }
+        let endpoint = private_endpoint(&root, &tag);
+        Self {
+            root: Arc::new(Root(root)),
+            endpoint,
+        }
     }
 
     /// The sandbox folder.
     pub fn path(&self) -> &Path {
-        self.root.path()
+        &self.root.0
     }
 
     /// The app's data folder (database).
@@ -89,6 +114,27 @@ impl Default for Sandbox {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Runs one end-to-end test on a runtime of its own, with a new sandbox.
+///
+/// The sandbox is deleted only after the runtime has stopped: until then the
+/// manager's tasks may still hold its database open, and Windows does not delete
+/// open files.
+pub fn run<F, Fut>(test: F)
+where
+    F: FnOnce(Sandbox) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let sandbox = Sandbox::new();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("could not start a runtime");
+    runtime.block_on(test(sandbox.clone()));
+    drop(runtime);
+    drop(sandbox);
 }
 
 #[cfg(windows)]
