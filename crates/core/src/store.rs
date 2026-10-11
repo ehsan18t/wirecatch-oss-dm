@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use rusqlite::config::DbConfig;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -153,12 +154,11 @@ pub(crate) struct Snapshot {
 /// A repair made while opening the download list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Recovery {
-    /// The database file was damaged. It was moved to `kept_at`, untouched, and a new, empty list was started.
+    /// The database file was damaged. It was moved to `kept_at`, with its journal files next to it under the names SQLite pairs with it, and a new, empty list was started.
     Damaged {
         /// Where the damaged file now is.
         kept_at: PathBuf,
     },
-    /// This many downloads could not be read and were deleted, since their rows may still hold cookies.
     /// This many downloads could not be read (a newer version may have saved them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
     UnreadableKept(usize),
 }
@@ -169,6 +169,8 @@ const DAMAGED_SUFFIX: &str = ".damaged-";
 const BACKUP_SUFFIX: &str = ".bak-v";
 /// SQLite's own files next to the database, which belong to it and move with it.
 const SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
+/// How long a damaged list set aside, or a copy taken before an upgrade, is kept. Both hold every download's cookies, which a live download forgets after a week (D17); a month leaves time to recover a list by hand.
+const KEEP_COPIES_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 /// Told why saving failed after every retry.
 pub(crate) type FailureHandler = Box<dyn Fn(String) + Send>;
@@ -234,16 +236,19 @@ impl Store {
         // The folder first, so the database and its journal files inherit its access.
         restrict_to_owner(dir);
         let path = dir.join(DATABASE_FILE);
-        let (conn, damaged) = match open_database(&path) {
-            Ok(conn) => (conn, None),
+        remove_old_copies(&path);
+        // Damage can also show while reading the rows, after the file opened.
+        let opened = open_database(&path).and_then(|conn| Ok((load(&conn)?, conn)));
+        let (mut snapshot, conn, damaged) = match opened {
+            Ok((snapshot, conn)) => (snapshot, conn, None),
             Err(CoreError::Database(e)) if is_damage(&e) => {
                 error!(error = %e, "the download list is damaged; setting it aside and starting a new one");
                 let kept_at = set_aside(&path)?;
-                (open_database(&path)?, Some(Recovery::Damaged { kept_at }))
+                let conn = open_database(&path)?;
+                (load(&conn)?, conn, Some(Recovery::Damaged { kept_at }))
             }
             Err(e) => return Err(e),
         };
-        let mut snapshot = load(&conn)?;
         snapshot.recovery = damaged.or(snapshot.recovery);
 
         let (ops, rx) = mpsc::channel();
@@ -521,15 +526,18 @@ fn open_database(path: &Path) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     restrict_to_owner(path);
     conn.busy_timeout(BUSY_TIMEOUT)?;
-    configure(&conn)?;
+    // Until the file is known to be intact, closing the connection must not fold the journal into it: a damaged list is set aside with its journal as it was found. The check also comes before `configure`, which writes to the file to switch its journal mode.
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true)?;
     check_integrity(&conn)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, false)?;
+    configure(&conn)?;
     migrate(&mut conn, path)?;
     Ok(conn)
 }
 
-/// SQLite's quick structural check. A damaged file can open and answer the first queries, then fail later, so this runs before anything is read.
+/// SQLite's full check, stopping at the first problem. A damaged file can open and answer the first queries, then fail later, so this runs before anything is read; unlike `quick_check` it also compares the indexes with the rows. The list is small, so it costs little.
 fn check_integrity(conn: &Connection) -> rusqlite::Result<()> {
-    let verdict: String = conn.pragma_query_value(None, "quick_check", |row| row.get(0))?;
+    let verdict: String = conn.query_row("PRAGMA integrity_check(1)", [], |row| row.get(0))?;
     if verdict == "ok" {
         Ok(())
     } else {
@@ -548,51 +556,101 @@ fn is_damage(error: &rusqlite::Error) -> bool {
     )
 }
 
-/// Moves a damaged database and its side files to `<name>.damaged-<unix ms>`, keeping them for anyone who wants to recover them. Returns where the database went.
+/// `path` with `suffix` added to its file name.
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Moves a damaged database to `<name>.damaged-<unix ms>` and its side files next to it as `<that name>-wal` and `-shm`, the names SQLite pairs with it, so the kept list opens with what was still in its journal. Either everything moves or nothing does: when one move fails (a sync tool holding a file, say), the ones before it are undone, and the next start tries again. Returns where the database went.
 fn set_aside(path: &Path) -> Result<PathBuf> {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_millis());
-    let moved = |from: &Path| -> Result<PathBuf> {
-        let mut name = from.as_os_str().to_owned();
-        name.push(format!("{DAMAGED_SUFFIX}{stamp}"));
-        let to = PathBuf::from(name);
-        std::fs::rename(from, &to).map_err(|source| CoreError::File {
-            path: from.display().to_string(),
-            source,
-        })?;
-        Ok(to)
-    };
-    let kept_at = moved(path)?;
+    let kept_at = with_suffix(path, &format!("{DAMAGED_SUFFIX}{stamp}"));
+    let mut moves = vec![(path.to_path_buf(), kept_at.clone())];
     for side in SIDE_FILES {
-        let mut name = path.as_os_str().to_owned();
-        name.push(side);
-        let side = PathBuf::from(name);
-        if side.exists() {
-            moved(&side)?;
+        let from = with_suffix(path, side);
+        if from.exists() {
+            moves.push((from, with_suffix(&kept_at, side)));
+        }
+    }
+    for (done, (from, to)) in moves.iter().enumerate() {
+        if let Err(source) = std::fs::rename(from, to) {
+            for (back_from, back_to) in moves[..done].iter().rev() {
+                if let Err(e) = std::fs::rename(back_to, back_from) {
+                    error!(error = %e, file = %back_to.display(), "could not move a file of the damaged list back");
+                }
+            }
+            return Err(CoreError::File {
+                path: from.display().to_string(),
+                source,
+            });
         }
     }
     Ok(kept_at)
 }
 
-/// Copies the database to `<name>.bak-v<version>` before its schema changes, so a failed or faulty upgrade can be undone by hand. `VACUUM INTO` writes a consistent copy, including what is still in the write-ahead log.
-fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) -> Result<()> {
-    let mut name = path.as_os_str().to_owned();
-    name.push(format!("{BACKUP_SUFFIX}{version}"));
-    let backup = PathBuf::from(name);
-    match std::fs::remove_file(&backup) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(CoreError::File {
-                path: backup.display().to_string(),
-                source,
-            });
+/// Deletes damaged lists set aside and copies taken before an upgrade once they are older than [`KEEP_COPIES_FOR`], with their side files. Failures are only logged: an old copy left behind never stops a start.
+fn remove_old_copies(path: &Path) {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let copy_prefixes = [
+        format!("{name}{DAMAGED_SUFFIX}"),
+        format!("{name}{BACKUP_SUFFIX}"),
+    ];
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        if !copy_prefixes
+            .iter()
+            .any(|prefix| file_name.starts_with(prefix))
+        {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age > KEEP_COPIES_FOR);
+        if old && let Err(e) = std::fs::remove_file(entry.path()) {
+            warn!(error = %e, file = file_name, "could not delete an old copy of the download list");
         }
     }
-    conn.execute("VACUUM INTO ?1", [backup.to_string_lossy()])?;
-    restrict_to_owner(&backup);
-    Ok(())
+}
+
+/// Copies the database to `<name>.bak-v<version>` before its schema changes, so a faulty upgrade can be undone by hand. `VACUUM INTO` writes a consistent copy, including what is still in the write-ahead log.
+///
+/// Best effort: when the copy cannot be made (a nearly full disk has no room for a second list, say), the upgrade goes ahead without it, logged, and what was partly written is removed. Each upgrade step runs in a transaction, so a failing one leaves the list as it was; the copy only guards against a step that succeeds but is wrong, and refusing to start would cost the person more than that.
+fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) {
+    let backup = with_suffix(path, &format!("{BACKUP_SUFFIX}{version}"));
+    let remove = |what: &str| match std::fs::remove_file(&backup) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => {
+            warn!(error = %e, file = %backup.display(), "could not remove {what}");
+            false
+        }
+    };
+    if !remove("an earlier copy of the download list") {
+        warn!("upgrading the download list without a copy");
+        return;
+    }
+    match conn.execute("VACUUM INTO ?1", [backup.to_string_lossy()]) {
+        Ok(_) => restrict_to_owner(&backup),
+        Err(e) => {
+            warn!(error = %e, "could not copy the download list before upgrading it; upgrading without a copy");
+            remove("a partial copy of the download list");
+        }
+    }
 }
 
 fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
@@ -603,7 +661,7 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     }
     // A new, empty database has nothing worth a copy.
     if found > 0 && found < supported {
-        back_up_before_upgrade(conn, path, found)?;
+        back_up_before_upgrade(conn, path, found);
     }
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(found as usize) {
         let tx = conn.transaction()?;
@@ -1226,6 +1284,172 @@ mod tests {
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
 
         assert_set_aside(dir.path(), &snapshot, cut);
+    }
+
+    // The kept journal was renamed to `wirecatch.db-wal.damaged-<t>`, a name SQLite never pairs with
+    // `wirecatch.db.damaged-<t>`, and closing the connection that found the damage folded the journal
+    // into the damaged file first: whatever was still in it was lost to anyone recovering the list.
+    #[test]
+    fn a_damaged_list_keeps_its_journal_under_the_name_sqlite_pairs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE);
+        // A list in WAL mode: older pages in the file, the newest still in its journal.
+        let source = tempfile::tempdir().unwrap();
+        let source_path = source.path().join(DATABASE_FILE);
+        let conn = Connection::open(&source_path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+        conn.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        conn.execute_batch("CREATE TABLE filler (data BLOB); CREATE TABLE recent (n INTEGER);")
+            .unwrap();
+        for _ in 0..16 {
+            conn.execute("INSERT INTO filler VALUES (zeroblob(4096))", [])
+                .unwrap();
+        }
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .unwrap();
+        conn.execute("INSERT INTO recent VALUES (1)", []).unwrap();
+        let journal = std::fs::read(with_suffix(&source_path, "-wal")).unwrap();
+        assert!(!journal.is_empty());
+        // Damage to pages in the file itself, past its header.
+        let mut damaged = std::fs::read(&source_path).unwrap();
+        let page = 4096;
+        for start in (2 * page..damaged.len()).step_by(page) {
+            damaged[start..start + 16].fill(0xFF);
+        }
+        std::fs::write(&path, &damaged).unwrap();
+        std::fs::write(with_suffix(&path, "-wal"), &journal).unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+
+        let Some(Recovery::Damaged { kept_at }) = snapshot.recovery else {
+            panic!(
+                "expected the list to be set aside, got {:?}",
+                snapshot.recovery
+            );
+        };
+        let kept = std::fs::read(with_suffix(&kept_at, "-wal")).unwrap();
+        assert!(
+            kept == journal,
+            "the journal is kept as it was, next to the list"
+        );
+    }
+
+    // When renaming the journal failed after the list itself had moved, the start failed, and the
+    // list and its journal were left apart.
+    #[cfg(windows)]
+    #[test]
+    fn a_damaged_list_that_cannot_move_whole_stays_where_it_is() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE);
+        let garbage = b"not a database".repeat(100);
+        std::fs::write(&path, &garbage).unwrap();
+        let journal = with_suffix(&path, "-wal");
+        std::fs::write(&journal, b"journal").unwrap();
+        // Held open without sharing, like a sync tool can, so it cannot be renamed.
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&journal)
+            .unwrap();
+
+        assert!(Store::open(dir.path(), ignore_failures()).is_err());
+
+        drop(held);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            garbage,
+            "the list moved back"
+        );
+        assert!(journal.exists());
+    }
+
+    // An upgrade that fails part way leaves the list as it was, in place: it is not damage.
+    #[test]
+    fn a_failed_upgrade_leaves_the_list_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE);
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        // The second step adds this column, so it fails half way.
+        conn.execute_batch("ALTER TABLE queues ADD COLUMN paused INTEGER")
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        drop(conn);
+
+        assert!(Store::open(dir.path(), ignore_failures()).is_err());
+
+        let conn = Connection::open(&path).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+        let columns: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('queues') WHERE name = 'running_outside_schedule'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 0, "the failed step changed nothing");
+    }
+
+    // The copy before an upgrade was required: when it could not be made (no room for a second
+    // list on a nearly full disk), the app did not start.
+    #[test]
+    fn an_upgrade_goes_ahead_when_no_copy_can_be_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        drop(conn);
+        // A folder where the copy goes: neither removing nor writing it can work.
+        let backup = dir.path().join(format!("{DATABASE_FILE}{BACKUP_SUFFIX}1"));
+        std::fs::create_dir(&backup).unwrap();
+        std::fs::write(backup.join("keep"), b"").unwrap();
+
+        Store::open(dir.path(), ignore_failures()).unwrap();
+
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let version: u32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version as usize, MIGRATIONS.len());
+    }
+
+    // Copies set aside or taken before an upgrade hold every download's cookies and were kept for
+    // good.
+    #[test]
+    fn old_copies_of_the_list_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = std::time::SystemTime::now() - KEEP_COPIES_FOR - Duration::from_secs(60);
+        let copy = |suffix: &str, modified: Option<std::time::SystemTime>| {
+            let path = dir.path().join(format!("{DATABASE_FILE}{suffix}"));
+            let file = std::fs::File::create(&path).unwrap();
+            if let Some(modified) = modified {
+                file.set_modified(modified).unwrap();
+            }
+            path
+        };
+        let old_damaged = copy(&format!("{DAMAGED_SUFFIX}1"), Some(old));
+        let old_journal = copy(&format!("{DAMAGED_SUFFIX}1-wal"), Some(old));
+        let old_backup = copy(&format!("{BACKUP_SUFFIX}1"), Some(old));
+        let recent = copy(&format!("{DAMAGED_SUFFIX}2"), None);
+        let unrelated = dir.path().join("notes.txt");
+        std::fs::File::create(&unrelated)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+
+        Store::open(dir.path(), ignore_failures()).unwrap();
+
+        for gone in [old_damaged, old_journal, old_backup] {
+            assert!(!gone.exists(), "{}", gone.display());
+        }
+        assert!(recent.exists());
+        assert!(unrelated.exists());
     }
 
     #[test]
