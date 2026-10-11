@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { AddonInfo } from '@wirecatch/protocol';
-  import { addonAction, addonStatus, installFraction, isInstalled } from '$lib/addons';
+  import {
+    addonAction,
+    addonAnnouncement,
+    addonStatus,
+    installFraction,
+    isInstalled,
+  } from '$lib/addons';
   import { getApp } from '$lib/state/app.svelte';
 
   let { addon, describedby }: { addon: AddonInfo; describedby?: string } = $props();
@@ -21,9 +27,10 @@
 </script>
 
 <div class="addon">
-  <p class="status" class:failed={addon.state.type === 'failed'} aria-live="polite">
+  <p class="status" class:failed={addon.state.type === 'failed'}>
     {addonStatus(addon)}
   </p>
+  <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
   {#if installing}
     <div
       class="wire"

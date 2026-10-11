@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { AddonInfo } from '@wirecatch/protocol';
-  import { addonStatus, installFraction, isInstalled } from '$lib/addons';
+  import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
   import { formatBytes, hostOf } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import Dialog from './Dialog.svelte';
@@ -33,7 +33,8 @@
     {#if installed}
       <p>Your download continues on its own.</p>
     {:else if installing}
-      <p aria-live="polite">{addonStatus(addon)}</p>
+      <p>{addonStatus(addon)}</p>
+      <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
       <div
         class="wire"
         role="progressbar"

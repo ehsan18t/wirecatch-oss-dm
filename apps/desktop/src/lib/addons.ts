@@ -44,6 +44,30 @@ export function addonStatus(addon: AddonInfo): string {
   }
 }
 
+/**
+ * What a screen reader hears about the add-on. It changes only at the start of an install, at
+ * every quarter, and at the end, so a live region reading it does not call out every percent.
+ */
+export function addonAnnouncement(addon: AddonInfo): string {
+  const state = addon.state;
+  switch (state.type) {
+    case 'not_installed':
+    case 'update_available':
+      return '';
+    case 'installing': {
+      const fraction = installFraction(state);
+      const quarter = fraction === null ? 0 : Math.floor(fraction * 4) * 25;
+      return quarter === 0 || quarter === 100
+        ? `Installing the ${addon.name.toLowerCase()}.`
+        : `${addon.name}: ${quarter}% installed.`;
+    }
+    case 'installed':
+      return `${addon.name} installed.`;
+    case 'failed':
+      return addonStatus(addon);
+  }
+}
+
 /** The main button for the add-on's state, or `null` while it installs. */
 export function addonAction(addon: AddonInfo): 'install' | 'update' | 'retry' | null {
   switch (addon.state.type) {

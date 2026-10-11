@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { mediaAddon } from './backend/mock';
-import { addonAction, addonStatus, installFraction, isInstalled } from './addons';
+import {
+  addonAction,
+  addonAnnouncement,
+  addonStatus,
+  installFraction,
+  isInstalled,
+} from './addons';
 
 describe('add-on wording', () => {
   it('says where the add-on stands in plain words', () => {
@@ -25,6 +31,23 @@ describe('add-on wording', () => {
     a.state = { type: 'failed', data: { message: 'The download was interrupted.' } };
     expect(addonStatus(a)).toBe('Could not install: The download was interrupted.');
     expect(addonAction(a)).toBe('retry');
+  });
+
+  it('announces the start, every quarter and the end, not every percent', () => {
+    const a = mediaAddon();
+    const at = (done: number) => {
+      a.state = { type: 'installing', data: { done, total: 100 } };
+      return addonAnnouncement(a);
+    };
+    const heard = new Set([0, 1, 10, 24, 25, 26, 49, 50, 74, 75, 99].map(at));
+    expect([...heard]).toEqual([
+      'Installing the media add-on.',
+      'Media add-on: 25% installed.',
+      'Media add-on: 50% installed.',
+      'Media add-on: 75% installed.',
+    ]);
+    a.state = { type: 'installed' };
+    expect(addonAnnouncement(a)).toBe('Media add-on installed.');
   });
 
   it('does not invent a percentage when the size is unknown', () => {
