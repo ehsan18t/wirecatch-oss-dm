@@ -33,7 +33,12 @@
   const one = $derived(rows.length === 1 ? rows[0] : undefined);
 
   function isRunning(r: DownloadSummary) {
-    return r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued';
+    return (
+      r.status === 'downloading' ||
+      r.status === 'connecting' ||
+      r.status === 'queued' ||
+      r.status === 'processing'
+    );
   }
 
   const anyRunning = $derived(rows.some(isRunning));
@@ -220,7 +225,7 @@
         </div>
       {/if}
     </dl>
-    {#if !['completed', 'cancelled', 'processing'].includes(one.status)}
+    {#if one.status !== 'completed' && one.status !== 'cancelled'}
       <button
         class="btn ghost small cancel"
         onclick={() => app.openDialog({ kind: 'cancel', ids: [one.id] })}

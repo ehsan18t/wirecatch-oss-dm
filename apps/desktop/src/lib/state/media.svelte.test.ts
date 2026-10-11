@@ -76,6 +76,31 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('says it is joining, and a stuck join can be paused', async () => {
+    const { app, backend } = await make();
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[0];
+    const joined = choice?.options.find((o) => o.needs_ffmpeg);
+    await app.chooseMedia(choice?.id ?? 0, {
+      option_id: joined?.id ?? '',
+      file_name: null,
+      folder: null,
+      queue: null,
+    });
+    const id = app.downloads.order[0] ?? 0;
+    for (let i = 0; i < 400 && app.downloads.get(id)?.status !== 'processing'; i++) {
+      backend.tick(250);
+    }
+    expect(app.downloads.get(id)?.status).toBe('processing');
+    expect(app.counts.joining).toBe(1);
+    expect(app.counts.status.active).toBe(1);
+
+    await app.togglePause([id]);
+    expect(app.downloads.get(id)?.status).toBe('paused');
+    expect(app.counts.joining).toBe(0);
+    app.dispose();
+  });
+
   it('drops a dismissed choice at once', async () => {
     const { app, backend } = await make();
     backend.simulateMediaChoice();

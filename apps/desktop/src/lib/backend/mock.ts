@@ -44,7 +44,7 @@ export function mediaAddon(): AddonInfo {
     id: 'media',
     name: 'Media add-on',
     description:
-      'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp and ffmpeg.',
+      'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
     state: { type: 'not_installed' },
     installed_version: null,
     latest_version: '2026.10.02',

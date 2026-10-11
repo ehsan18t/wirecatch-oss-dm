@@ -586,7 +586,11 @@ export class AppState {
   async togglePause(ids: DownloadId[] = this.selectedIds): Promise<void> {
     const rows = ids.flatMap((id) => this.downloads.get(id) ?? []);
     const running = rows.some(
-      (r) => r.status === 'downloading' || r.status === 'connecting' || r.status === 'queued',
+      (r) =>
+        r.status === 'downloading' ||
+        r.status === 'connecting' ||
+        r.status === 'queued' ||
+        r.status === 'processing',
     );
     if (running) {
       await this.pause(ids);

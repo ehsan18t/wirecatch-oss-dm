@@ -157,7 +157,7 @@ export const SETTINGS: readonly SettingDef[] = [
     id: 'media_addon',
     section: 'addons',
     label: 'Media add-on',
-    help: 'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp and ffmpeg.',
+    help: 'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
     keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
   },
   {
