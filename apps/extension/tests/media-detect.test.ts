@@ -7,7 +7,7 @@ import {
   type ObservedResponse,
 } from '../src/lib/media/detect';
 import { pageSiteFor } from '../src/lib/media/page-sites';
-import { MAX_ITEMS_PER_TAB, MediaRegistry } from '../src/lib/media/registry';
+import { HLS_STREAM_WINDOW_MS, MAX_ITEMS_PER_TAB, MediaRegistry } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { flush } from './fakes';
 
@@ -197,6 +197,8 @@ describe('MediaRegistry', () => {
         audio: false,
         key: 'direct:https://e.com/a.mp4',
         seenAt: 5,
+        frameId: 0,
+        lastActive: 5,
       },
     ]);
     // Another tab has its own list.
@@ -204,20 +206,36 @@ describe('MediaRegistry', () => {
     expect(registry.items(2)).toHaveLength(1);
   });
 
-  it('lists only the first playlist of an HLS stream, which is normally the master playlist', () => {
-    const registry = new MediaRegistry();
-    registry.add(1, hls('https://cdn.e.com/v/abc/master.m3u8'));
-    expect(registry.add(1, hls('https://cdn.e.com/v/abc/720p/index.m3u8'))).toBe(false);
-    expect(registry.add(1, hls('https://cdn.e.com/v/abc/index_480.m3u8'))).toBe(false);
+  it('lists only the first playlist of an HLS stream, wherever its variants live', () => {
+    let clock = 0;
+    const registry = new MediaRegistry({ now: () => clock });
+    registry.add(1, hls('https://cdn.e.com/v/abc/master.m3u8'), 0);
+    clock = 800;
+    expect(registry.add(1, hls('https://cdn.e.com/v/abc/720p/index.m3u8'), 0)).toBe(false);
+    // Variants in another folder or on another server are still the same stream.
+    clock = 1_500;
+    expect(registry.add(1, hls('https://edge2.e.net/x/y/480.m3u8'), 0)).toBe(false);
+    // A live stream keeps requesting its variants, which keeps the stream open.
+    for (let i = 0; i < 5; i += 1) {
+      clock += HLS_STREAM_WINDOW_MS - 1;
+      expect(registry.add(1, hls('https://cdn.e.com/v/abc/720p/index.m3u8'), 0)).toBe(false);
+    }
     expect(registry.items(1).map((i) => i.url)).toEqual(['https://cdn.e.com/v/abc/master.m3u8']);
   });
 
-  it('keeps separate HLS streams in separate folders or on other servers', () => {
-    const registry = new MediaRegistry();
-    registry.add(1, hls('https://cdn.e.com/v/abc/master.m3u8'));
-    expect(registry.add(1, hls('https://cdn.e.com/v/def/master.m3u8'))).toBe(true);
-    expect(registry.add(1, hls('https://other.e.com/v/abc/master.m3u8'))).toBe(true);
-    expect(registry.items(1)).toHaveLength(3);
+  it('keeps streams from other frames, or that start after a quiet stretch, as separate entries', () => {
+    let clock = 0;
+    const registry = new MediaRegistry({ now: () => clock });
+    // A master at the root of a server must not swallow another player's stream there.
+    registry.add(1, hls('https://cdn.e.com/master.m3u8'), 0);
+    expect(registry.add(1, hls('https://cdn.e.com/v/def/master.m3u8'), 7)).toBe(true);
+    clock = HLS_STREAM_WINDOW_MS + 1;
+    expect(registry.add(1, hls('https://cdn.e.com/v/ghi/master.m3u8'), 0)).toBe(true);
+    expect(registry.items(1).map((i) => [i.url, i.frameId])).toEqual([
+      ['https://cdn.e.com/master.m3u8', 0],
+      ['https://cdn.e.com/v/def/master.m3u8', 7],
+      ['https://cdn.e.com/v/ghi/master.m3u8', 0],
+    ]);
   });
 
   it('keeps at most a fixed number of items per tab, dropping the oldest to make room for new media', () => {
@@ -267,8 +285,8 @@ describe('MediaWatcher', () => {
   it('records media per tab and asks whether a tab is private only once', async () => {
     const { registry, watcher, lookups } = setup();
     await watcher.onResponse(hlsResponse());
-    await watcher.onResponse(hlsResponse({ url: 'https://cdn.example.com/other/master.m3u8' }));
-    expect(registry.items(4)).toHaveLength(2);
+    await watcher.onResponse(hlsResponse({ url: 'https://cdn.example.com/other/master.m3u8', frameId: 3 }));
+    expect(registry.items(4).map((i) => i.frameId)).toEqual([0, 3]);
     expect(lookups).toEqual([4]);
   });
 

@@ -6,6 +6,10 @@ export interface MediaItem extends Detection {
   key: string;
   /** When it was first seen (milliseconds since the epoch). */
   seenAt: number;
+  /** The frame that loaded it (0 for the tab's page). */
+  frameId: number;
+  /** When it, or for HLS a playlist of the same stream, was last requested. */
+  lastActive: number;
 }
 
 /** What `save` produces and `restore` reads back (kept in `storage.session`). */
@@ -13,6 +17,13 @@ export interface SavedMedia {
   v: 1;
   tabs: Array<[number, MediaItem[]]>;
 }
+
+/**
+ * How close together HLS playlists from one frame must come to count as one stream.
+ * A player requests the master playlist and then the variant playlists it needs
+ * within moments, and a live stream keeps requesting them, which keeps the window open.
+ */
+export const HLS_STREAM_WINDOW_MS = 10_000;
 
 /** Most items kept per tab; the oldest is dropped to make room, since the newest is what plays now. */
 export const MAX_ITEMS_PER_TAB = 30;
@@ -26,31 +37,15 @@ function parts(url: string): { origin: string; path: string } | null {
   }
 }
 
-function directory(path: string): string {
-  return path.slice(0, path.lastIndexOf('/') + 1);
-}
-
-/**
- * True when two HLS playlists look like parts of one stream: same server, and one
- * sits in the other's folder or below it (for example `video/master.m3u8` and
- * `video/720p/index.m3u8`). The app reads the master playlist and offers every
- * quality, so only the first playlist of a stream is listed.
- */
-function sameStream(a: string, b: string): boolean {
-  const pa = parts(a);
-  const pb = parts(b);
-  if (pa === null || pb === null || pa.origin !== pb.origin) return false;
-  const da = directory(pa.path);
-  const db = directory(pb.path);
-  return da.startsWith(db) || db.startsWith(da);
-}
-
 export function itemKey(kind: DetectedKind, url: string): string {
   const p = parts(url);
   return `${kind}:${p === null ? url : p.origin + p.path}`;
 }
 
-function isItem(value: unknown): value is MediaItem {
+/** A saved item; `frameId` and `lastActive` may be missing in lists saved by an earlier version. */
+type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & { frameId?: number; lastActive?: number };
+
+function isItem(value: unknown): value is SavedItem {
   if (typeof value !== 'object' || value === null) return false;
   const i = value as Record<string, unknown>;
   return (
@@ -60,7 +55,9 @@ function isItem(value: unknown): value is MediaItem {
     typeof i.seenAt === 'number' &&
     typeof i.audio === 'boolean' &&
     (i.mime === null || typeof i.mime === 'string') &&
-    (i.size === null || typeof i.size === 'number')
+    (i.size === null || typeof i.size === 'number') &&
+    (i.frameId === undefined || typeof i.frameId === 'number') &&
+    (i.lastActive === undefined || typeof i.lastActive === 'number')
   );
 }
 
@@ -68,6 +65,13 @@ function isItem(value: unknown): value is MediaItem {
  * Media detected per tab. Dedupes repeated requests, lists only the first playlist of
  * an HLS stream (normally the master playlist), and forgets a tab's media when the
  * tab loads a new page or closes.
+ *
+ * HLS playlists cannot be told apart by address (variants live in any folder, on any
+ * server), and their content is not read. A playlist counts as part of an already
+ * listed stream when the same frame requested it within `HLS_STREAM_WINDOW_MS` of
+ * that stream's last playlist request. Limits: two players in one frame starting
+ * within moments of each other show as one stream, and a player that switches
+ * quality after a long quiet stretch adds that variant as another entry.
  */
 export class MediaRegistry {
   readonly #tabs = new Map<number, MediaItem[]>();
@@ -88,14 +92,16 @@ export class MediaRegistry {
     return this.#tabs.get(tabId) ?? [];
   }
 
-  /** Records a detection; returns true when the tab's list changed. */
-  add(tabId: number, detection: Detection): boolean {
+  /** Records a detection from a frame of the tab; returns true when the tab's list changed. */
+  add(tabId: number, detection: Detection, frameId = 0): boolean {
+    const now = this.#now();
     const list = this.#tabs.get(tabId) ?? [];
     const key = itemKey(detection.kind, detection.url);
     const index = list.findIndex((i) => i.key === key);
     if (index >= 0) {
       const old = list[index];
       if (old === undefined) return false;
+      old.lastActive = now;
       // The same file again: keep the newest address (its query may carry a fresher token).
       const merged: MediaItem = {
         ...old,
@@ -109,11 +115,18 @@ export class MediaRegistry {
       this.#set(tabId, next);
       return true;
     }
-    if (detection.kind === 'hls' && list.some((i) => i.kind === 'hls' && sameStream(i.url, detection.url))) {
-      return false;
+    if (detection.kind === 'hls') {
+      const stream = list.find(
+        (i) => i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
+      );
+      if (stream !== undefined) {
+        // A variant of a listed stream: not listed, but it keeps the stream's window open.
+        stream.lastActive = now;
+        return false;
+      }
     }
     const kept = list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
-    this.#set(tabId, [...kept, { ...detection, key, seenAt: this.#now() }]);
+    this.#set(tabId, [...kept, { ...detection, key, seenAt: now, frameId, lastActive: now }]);
     return true;
   }
 
@@ -141,7 +154,9 @@ export class MediaRegistry {
       if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1])) continue;
       const tabId = entry[0];
       if (liveTabs !== undefined && !liveTabs.has(tabId)) continue;
-      const savedItems = (entry[1] as unknown[]).filter(isItem);
+      const savedItems = (entry[1] as unknown[])
+        .filter(isItem)
+        .map((i): MediaItem => ({ ...i, frameId: i.frameId ?? 0, lastActive: i.lastActive ?? i.seenAt }));
       const current = this.#tabs.get(tabId) ?? [];
       const merged = [...savedItems, ...current.filter((c) => !savedItems.some((s) => s.key === c.key))];
       if (merged.length === 0) continue;

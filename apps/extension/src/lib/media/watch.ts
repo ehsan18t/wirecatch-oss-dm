@@ -73,7 +73,7 @@ export class MediaWatcher {
       if (await this.#isPrivate(tabId)) return;
       if ((this.#generation.get(tabId) ?? 0) !== generation) return;
     }
-    this.#registry.add(tabId, detection);
+    this.#registry.add(tabId, detection, response.frameId ?? 0);
   }
 
   /**

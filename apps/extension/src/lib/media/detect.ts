@@ -19,6 +19,8 @@ export interface ObservedResponse {
   incognito?: boolean;
   /** Chromium only: `prerender` for pages loading in the background before anyone opens them. */
   documentLifecycle?: string;
+  /** The frame that made the request: 0 for the tab's page, another number for a frame inside it. */
+  frameId?: number;
 }
 
 /** Media found in one response. */
