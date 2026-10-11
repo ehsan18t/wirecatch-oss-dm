@@ -11,6 +11,7 @@
    row being its own reactive object, which is what keeps updates proportional to what changed. */
 
 import type { DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
+import { track } from './reactivity';
 import { LIST_FIELDS } from './view';
 
 function reactive<T extends object>(value: T): T {
@@ -94,7 +95,7 @@ export class DownloadStore {
 
   /** All ids in queue order. Reading this subscribes to `version`. */
   get order(): readonly DownloadId[] {
-    void this.version;
+    track(this.version);
     return this.#order;
   }
 

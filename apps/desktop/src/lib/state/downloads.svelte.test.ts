@@ -2,6 +2,7 @@ import type { DownloadSummary } from '@wirecatch/protocol';
 import { flushSync, untrack } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { DownloadStore } from './downloads.svelte';
+import { track } from './reactivity';
 import { visibleIds } from './view';
 
 function row(id: number, patch: Partial<DownloadSummary> = {}): DownloadSummary {
@@ -81,7 +82,7 @@ describe('DownloadStore', () => {
     const cleanup = $effect.root(() => {
       for (const id of [1, 2, 3]) {
         $effect(() => {
-          void store.get(id)?.done;
+          track(store.get(id)?.done);
           untrack(() => runs.set(id, (runs.get(id) ?? 0) + 1));
         });
       }

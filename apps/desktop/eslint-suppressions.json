@@ -29,9 +29,6 @@
     }
   },
   "src/lib/components/AddonCard.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 3
     },
@@ -77,9 +74,6 @@
     }
   },
   "src/lib/components/DownloadList.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },
@@ -256,25 +250,12 @@
       "count": 2
     }
   },
-  "src/lib/state/downloads.svelte.test.ts": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
-  "src/lib/state/downloads.svelte.ts": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
   "src/lib/state/view.ts": {
     "max-params": {
       "count": 1
     }
   },
   "src/lib/window/AddonView.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
     "wirecatch/no-magic-numbers": {
       "count": 3
     }

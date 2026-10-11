@@ -5,6 +5,7 @@
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
   import { hostOf } from '$lib/format';
+  import { track } from '$lib/state/reactivity';
   import { formatBytes } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
   import WindowFrame from './WindowFrame.svelte';
@@ -34,7 +35,7 @@
   // takes the focus instead of nothing.
   let body = $state<HTMLDivElement>();
   $effect(() => {
-    void addon.state.type;
+    track(addon.state.type);
     const frame = body?.closest('[role="group"]');
     const active = document.activeElement;
     if (frame && (!active || active === document.body)) {

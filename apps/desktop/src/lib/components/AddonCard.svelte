@@ -8,6 +8,7 @@
     isInstalled,
   } from '$lib/addons';
   import { getApp } from '$lib/state/app.svelte';
+  import { track } from '$lib/state/reactivity';
 
   let { addon, describedby }: { addon: AddonInfo; describedby?: string } = $props();
   const app = getApp();
@@ -37,7 +38,7 @@
   let card = $state<HTMLDivElement>();
   let hadFocus = false;
   $effect(() => {
-    void addon.state.type;
+    track(addon.state.type);
     const active = document.activeElement;
     if (hadFocus && card && (!active || active === document.body)) {
       card.querySelector<HTMLElement>('button')?.focus();

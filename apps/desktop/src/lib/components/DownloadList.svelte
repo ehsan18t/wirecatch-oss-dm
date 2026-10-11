@@ -4,6 +4,7 @@
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
   import { HINT_TEXT, type HintId } from '$lib/state/hints.svelte';
+  import { track } from '$lib/state/reactivity';
   import ContextMenu from './ContextMenu.svelte';
   import DownloadRow from './DownloadRow.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -58,8 +59,7 @@
 
   // A new view starts at the top.
   $effect(() => {
-    void app.view;
-    void app.search;
+    track(app.view, app.search);
     if (viewport) viewport.scrollTop = 0;
   });
 
