@@ -234,6 +234,7 @@ async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() {
         folder: None,
         file_name: None,
         queue: None,
+        later: false,
     };
     h.manager.confirm_capture(waiting.id, answer).await.unwrap();
     let row = h.manager.list_downloads().remove(0);

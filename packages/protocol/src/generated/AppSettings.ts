@@ -27,4 +27,9 @@ close_to_tray: boolean, notify_on_complete: boolean,
 /**
  * Keep installed add-ons up to date without asking.
  */
-auto_update_addons: boolean, };
+auto_update_addons: boolean, 
+/**
+ * After Download now, a browser download's window stays open and shows its progress
+ * (D23). Off: the window closes when the download starts.
+ */
+show_progress_windows: boolean, };

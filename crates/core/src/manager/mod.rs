@@ -9,7 +9,7 @@ mod fake;
 mod handovers;
 mod media;
 
-pub use media::AddonRequestItem;
+pub use media::{AddonRequestItem, MediaReading};
 mod media_run;
 mod plan;
 mod preferences;

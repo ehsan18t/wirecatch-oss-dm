@@ -4,4 +4,8 @@ import type { QueueId } from "./QueueId";
 /**
  * The user's answer to a [`PendingCapture`]; absent fields keep the proposal.
  */
-export type CaptureConfirmation = { folder: string | null, file_name: string | null, queue: QueueId | null, };
+export type CaptureConfirmation = { folder: string | null, file_name: string | null, queue: QueueId | null, 
+/**
+ * Download later: add it to its queue paused instead of starting it (D23).
+ */
+later: boolean, };

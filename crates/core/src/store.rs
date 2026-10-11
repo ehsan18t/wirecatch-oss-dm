@@ -650,6 +650,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
                     summary: MediaSummary {
                         quality: "Unknown".into(),
                         source: MediaKind::Page,
+                        video_key: None,
                     },
                     job: Some(crate::media::MediaJob::Unreadable),
                 })
@@ -875,6 +876,7 @@ mod tests {
             summary: wirecatch_protocol::app::MediaSummary {
                 quality: "1080p".into(),
                 source: wirecatch_protocol::extension::MediaKind::Page,
+                video_key: None,
             },
             job: Some(crate::media::MediaJob::Page {
                 format: "137+140".into(),
@@ -904,6 +906,7 @@ mod tests {
             summary: MediaSummary {
                 quality: "1080p".into(),
                 source: MediaKind::Page,
+                video_key: None,
             },
             job: None,
         });

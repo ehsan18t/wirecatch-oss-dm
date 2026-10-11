@@ -36,7 +36,7 @@ pub use error::{CoreError, Result};
 pub use folders::{KnownFolders, PathError};
 pub use manager::{
     AddonRequestItem, DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_TIMEOUT, DEFAULT_STOP_TIMEOUT,
-    Manager, ManagerConfig,
+    Manager, ManagerConfig, MediaReading,
 };
 pub use profile::PROFILE_FORMAT_VERSION;
 pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};

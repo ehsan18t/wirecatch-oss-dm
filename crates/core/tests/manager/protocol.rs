@@ -382,6 +382,7 @@ async fn ask_before_download_waits_for_the_user() {
                 folder: Some(folder.to_string_lossy().into_owned()),
                 file_name: Some("mine.pdf".into()),
                 queue: None,
+                later: false,
             },
         )
         .await
@@ -480,6 +481,7 @@ async fn a_shared_confirmation_tracks_every_handover() {
         folder: None,
         file_name: None,
         queue: None,
+        later: false,
     };
     h.manager
         .confirm_capture(proposal.id, answer.clone())

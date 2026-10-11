@@ -8,4 +8,9 @@ export type MediaSummary = {
 /**
  * For example "1080p" or "Audio only".
  */
-quality: string, source: MediaKind, };
+quality: string, source: MediaKind, 
+/**
+ * The site and id of a video read from its page, for example `Youtube:dQw4w9WgXcQ`, so
+ * another link to the same video is recognised. `None` for streams and media files.
+ */
+video_key: string | null, };

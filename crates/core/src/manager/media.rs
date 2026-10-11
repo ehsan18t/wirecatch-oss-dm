@@ -52,6 +52,17 @@ pub struct AddonRequestItem {
     pub url: String,
 }
 
+/// A captured stream or page still being read for its qualities, as
+/// [`Manager::media_being_read`] lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct MediaReading {
+    /// The id its quality choice will have; [`Manager::dismiss_media_choice`]
+    /// with it stops the reading.
+    pub id: u64,
+    /// The stream or page, without any password in it.
+    pub url: String,
+}
+
 /// Where a media capture came from.
 #[derive(Debug, Clone)]
 pub(super) struct MediaSource {
@@ -72,6 +83,27 @@ pub(super) struct MediaPending {
     /// The extension's handover ids for it.
     pub handovers: Vec<String>,
     pub stage: MediaStage,
+    /// The site and id of the video, once its page was read (see
+    /// [`video_key`]); another capture of the same video joins this one.
+    pub video: Option<String>,
+}
+
+/// What reading a stream or page found: its title, the qualities offered and,
+/// for a page, which video it is.
+pub(super) struct Found {
+    pub title: Option<String>,
+    pub offers: Vec<Offer>,
+    pub video: Option<String>,
+}
+
+/// Which video a page is, as yt-dlp names it: the extractor and the video's id
+/// there, for example `Youtube:dQw4w9WgXcQ`. `None` when yt-dlp did not say.
+/// Two links that differ only in extra parameters (`&t=30s`, `&pp=...`) give
+/// the same key.
+pub(super) fn video_key(extractor: Option<&str>, id: Option<&str>) -> Option<String> {
+    let extractor = extractor.map(str::trim).filter(|e| !e.is_empty())?;
+    let id = id.map(str::trim).filter(|i| !i.is_empty())?;
+    Some(format!("{extractor}:{id}"))
 }
 
 pub(super) enum MediaStage {
@@ -160,6 +192,7 @@ impl Manager {
                 queue,
                 handovers: vec![capture.handover_id.clone()],
                 stage,
+                video: None,
             },
         );
         if needs_addon {
@@ -190,13 +223,34 @@ impl Manager {
             .collect()
     }
 
+    /// Captured streams and pages being read for their qualities right now, oldest
+    /// first, so a window opened later can say so. Each ends with a
+    /// `MediaChoiceRequested` or a `ConfirmationClosed` with its id.
+    pub fn media_being_read(&self) -> Vec<MediaReading> {
+        self.lock()
+            .media
+            .iter()
+            .filter(|(_, m)| matches!(m.stage, MediaStage::Analysing(_)))
+            .map(|(id, m)| MediaReading {
+                id: *id,
+                url: crate::redact::url_for_display(m.source.url.as_str()),
+            })
+            .collect()
+    }
+
     /// Downloads the option the user chose for a [`MediaChoice`], with the
-    /// user's changes. The new download arrives with the next `DownloadsChanged`.
+    /// user's changes, or with `selection.later` adds it to its queue paused.
+    /// Returns the new download's id; its row also arrives with the next
+    /// `DownloadsChanged`.
     ///
     /// An option whose video and audio must be joined needs the media add-on;
     /// without it this fails with [`CoreError::AddonRequired`], tells the UI with
     /// `AddonRequired`, and keeps the choice so it can be made again.
-    pub async fn choose_media(&self, id: u64, selection: MediaSelection) -> Result<()> {
+    pub async fn choose_media(
+        &self,
+        id: u64,
+        selection: MediaSelection,
+    ) -> Result<wirecatch_protocol::DownloadId> {
         let (pending, plan, choice) = {
             let mut state = self.lock_open()?;
             let Some(MediaPending {
@@ -238,7 +292,7 @@ impl Manager {
                     state.handovers.retarget(handover, Target::Confirmed(row));
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
-                Ok(())
+                Ok(row)
             }
             Err(e) => {
                 // Kept, so the user can fix the problem and choose again.
@@ -425,7 +479,7 @@ impl Manager {
     fn offer(
         &self,
         id: u64,
-        found: std::result::Result<(Option<String>, Vec<Offer>), UserError>,
+        found: std::result::Result<Found, UserError>,
     ) -> Option<(MediaPending, UserError)> {
         let mut state = self.lock();
         let pending = state.media.get(&id)?;
@@ -433,7 +487,17 @@ impl Manager {
             return None;
         }
         match found {
-            Ok((title, offers)) => {
+            Ok(Found {
+                title,
+                offers,
+                video,
+            }) => {
+                if let Some(video) = &video
+                    && self.join_same_video(&mut state, id, video)
+                {
+                    return None;
+                }
+                let pending = state.media.get(&id)?;
                 let title = title
                     .or_else(|| pending.source.title.clone())
                     .filter(|t| !t.trim().is_empty())
@@ -463,6 +527,7 @@ impl Manager {
                         choice: choice.clone(),
                         plans,
                     };
+                    pending.video = video;
                 }
                 self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
                 None
@@ -477,13 +542,17 @@ impl Manager {
         ffmpeg: bool,
         connections: usize,
         token: &CancellationToken,
-    ) -> std::result::Result<(Option<String>, Vec<Offer>), UserError> {
+    ) -> std::result::Result<Found, UserError> {
         let mut options = media_options(&source.origin);
         options.connections = connections.max(1);
         let info = wirecatch_streams::inspect(&source.url, &options, token.clone())
             .await
             .map_err(|e| super::media_run::stream_error(&e, &self.inner.folders.downloads))?;
-        Ok((None, choice::from_stream(&info, ffmpeg)?))
+        Ok(Found {
+            title: None,
+            offers: choice::from_stream(&info, ffmpeg)?,
+            video: None,
+        })
     }
 
     async fn read_page(
@@ -491,7 +560,7 @@ impl Manager {
         source: &MediaSource,
         tools: &MediaTools,
         token: &CancellationToken,
-    ) -> std::result::Result<(Option<String>, Vec<Offer>), UserError> {
+    ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.origin);
         let ctx = ytdlp::Context {
             tools,
@@ -502,7 +571,46 @@ impl Manager {
             timeout: self.inner.media_timeout,
         };
         let info = ytdlp::extract(&ctx, token).await?;
-        Ok((info.title.clone(), choice::from_page(&info)?))
+        Ok(Found {
+            title: info.title.clone(),
+            offers: choice::from_page(&info)?,
+            video: video_key(info.extractor_key.as_deref(), info.id.as_deref()),
+        })
+    }
+
+    /// Folds media `id`, just read and found to be `video`, into another
+    /// question about the same video, so one video is never asked about twice
+    /// (two links to one video, say `watch?v=ID` and `watch?v=ID&t=30s`). Its
+    /// browser captures join the other question and `id` closes. Returns
+    /// whether it was folded.
+    fn join_same_video(&self, state: &mut State, id: u64, video: &str) -> bool {
+        let Some(&other) = state
+            .media
+            .iter()
+            .find(|(other, m)| **other != id && m.video.as_deref() == Some(video))
+            .map(|(other, _)| other)
+        else {
+            return false;
+        };
+        let room = state
+            .media
+            .get(&other)
+            .map_or(0, |m| MAX_HANDOVERS.saturating_sub(m.handovers.len()));
+        let joining = state.media.get(&id).map_or(0, |m| m.handovers.len());
+        if joining > room {
+            return false;
+        }
+        let Some(pending) = state.media.remove(&id) else {
+            return false;
+        };
+        for handover in &pending.handovers {
+            state.handovers.retarget(handover, Target::Pending(other));
+        }
+        if let Some(existing) = state.media.get_mut(&other) {
+            existing.handovers.extend(pending.handovers);
+        }
+        self.emit(UiEvent::ConfirmationClosed { id });
+        true
     }
 
     /// Media that cannot be offered becomes a failed download, so the reason is
@@ -539,6 +647,7 @@ impl Manager {
                     summary: MediaSummary {
                         quality: "Best available".into(),
                         source: source.kind,
+                        video_key: pending.video.clone(),
                     },
                     job: Some(job),
                 }),
@@ -589,7 +698,7 @@ impl Manager {
                 hint_name: None,
                 folder: Some(folder),
                 queue: selection.queue.unwrap_or(choice.queue),
-                start: true,
+                start: !selection.later,
                 origin: pending.source.origin.clone(),
                 handover: None,
                 expect: None,
@@ -597,6 +706,7 @@ impl Manager {
                     summary: MediaSummary {
                         quality: plan.quality.clone(),
                         source: pending.source.kind,
+                        video_key: pending.video.clone(),
                     },
                     job: Some(plan.job.clone()),
                 }),

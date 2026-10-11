@@ -101,6 +101,7 @@ pub fn default_settings() -> AppSettings {
         close_to_tray: true,
         notify_on_complete: true,
         auto_update_addons: true,
+        show_progress_windows: true,
     }
 }
 

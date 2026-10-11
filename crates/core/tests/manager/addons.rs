@@ -895,6 +895,7 @@ async fn the_add_on_is_not_removed_while_in_use() {
                 folder: None,
                 file_name: None,
                 queue: None,
+                later: false,
             },
         )
         .await

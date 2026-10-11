@@ -4,4 +4,8 @@ import type { QueueId } from "./QueueId";
 /**
  * The user's pick for a [`MediaChoice`]; absent fields keep the proposal.
  */
-export type MediaSelection = { option_id: string, folder: string | null, file_name: string | null, queue: QueueId | null, };
+export type MediaSelection = { option_id: string, folder: string | null, file_name: string | null, queue: QueueId | null, 
+/**
+ * Download later: add it to its queue paused instead of starting it (D23).
+ */
+later: boolean, };
