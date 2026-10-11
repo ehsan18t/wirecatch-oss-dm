@@ -1,6 +1,8 @@
 //! Where the media add-on's parts come from: pinned releases with their SHA-256
 //! checksums (D20, A8). Nothing is run unless it matched these.
 
+pub use super::signature::PinnedKey;
+
 /// The add-on id used by the UI and in settings profiles.
 pub const MEDIA_ADDON_ID: &str = "media";
 
@@ -71,8 +73,12 @@ pub struct MediaAddonSources {
     /// The name of this platform's yt-dlp file in a release, for example
     /// `yt-dlp.exe`.
     pub ytdlp_asset: String,
-    /// The name of the checksum list in a yt-dlp release.
+    /// The name of the checksum list in a yt-dlp release. Its detached OpenPGP
+    /// signature is the file of the same name with `.sig` added.
     pub ytdlp_checksums_asset: String,
+    /// The key the checksum list of a newer yt-dlp must be signed with; a
+    /// release whose signature does not verify is never installed.
+    pub ytdlp_signing_key: PinnedKey,
     /// Where yt-dlp's release files must come from: a newer release's files
     /// are only taken from `<this><tag>/<file name>`, whatever the release
     /// description says.
@@ -133,6 +139,7 @@ impl MediaAddonSources {
             ),
             ytdlp_asset: ytdlp_asset().into(),
             ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+            ytdlp_signing_key: PinnedKey::ytdlp(),
             ytdlp_release_downloads: "https://github.com/yt-dlp/yt-dlp/releases/download/".into(),
         }
     }

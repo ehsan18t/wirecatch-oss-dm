@@ -5,7 +5,7 @@ use wirecatch_protocol::app::{AddonState, UiEvent};
 
 use crate::media_support::{
     FileServer, Releases, addon_dir, exe, harness, install, next_event, path_exists, publish,
-    sha256, tar_xz, wait_addon, ytdlp_asset,
+    sha256, sign, tar_xz, wait_addon, ytdlp_asset,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -241,24 +241,72 @@ fn serve_release(
     program_url: Option<String>,
     published: &str,
 ) {
+    serve_signed(
+        server,
+        tag,
+        program,
+        listed_size,
+        listed_hash,
+        program_url,
+        published,
+        Sig::Good,
+    );
+}
+
+/// How the checksum list of a served release is signed.
+#[derive(Clone, Copy, Debug)]
+enum Sig {
+    /// By the key the test sources trust.
+    Good,
+    /// By the trusted key, but over a different list.
+    OtherData,
+    /// By a key that is not trusted.
+    WrongKey,
+    /// Not at all: the release has no signature file.
+    Missing,
+    /// A signature file that is not a signature.
+    Garbage,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn serve_signed(
+    server: &FileServer,
+    tag: &str,
+    program: &[u8],
+    listed_size: u64,
+    listed_hash: &str,
+    program_url: Option<String>,
+    published: &str,
+    sig: Sig,
+) {
     let asset = ytdlp_asset();
     server.put(&format!("rel/{tag}/{asset}"), program.to_vec());
-    server.put(
-        &format!("rel/{tag}/SHA2-256SUMS"),
-        format!(
-            "0000000000000000000000000000000000000000000000000000000000000000  yt-dlp_other\n{listed_hash}  {asset}\n"
-        ),
+    let list = format!(
+        "0000000000000000000000000000000000000000000000000000000000000000  yt-dlp_other\n{listed_hash}  {asset}\n"
     );
+    let signature = match sig {
+        Sig::Good => Some(sign(list.as_bytes(), true)),
+        Sig::OtherData => Some(sign(b"another list", true)),
+        Sig::WrongKey => Some(sign(list.as_bytes(), false)),
+        Sig::Missing => None,
+        Sig::Garbage => Some(b"not a signature".to_vec()),
+    };
+    server.put(&format!("rel/{tag}/SHA2-256SUMS"), list);
     let program_url = program_url.unwrap_or_else(|| server.url(&format!("rel/{tag}/{asset}")));
+    let mut assets = vec![
+        serde_json::json!({"name": asset, "browser_download_url": program_url, "size": listed_size}),
+        serde_json::json!({"name": "SHA2-256SUMS", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS")), "size": 100}),
+    ];
+    if let Some(signature) = signature {
+        server.put(&format!("rel/{tag}/SHA2-256SUMS.sig"), signature);
+        assets.push(serde_json::json!({"name": "SHA2-256SUMS.sig", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS.sig")), "size": 100}));
+    }
     server.put(
         "api/latest",
         serde_json::json!({
             "tag_name": tag,
             "published_at": published,
-            "assets": [
-                {"name": asset, "browser_download_url": program_url, "size": listed_size},
-                {"name": "SHA2-256SUMS", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS")), "size": 100},
-            ]
+            "assets": assets,
         })
         .to_string(),
     );
@@ -348,6 +396,53 @@ async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() {
     assert_eq!(installed_ytdlp(&h), new_ytdlp);
     // ffmpeg and Deno were not downloaded again.
     assert_eq!(server.requests("up/ffmpeg.zip").len(), ffmpeg_requests);
+}
+
+/// D21.1: a newer yt-dlp is installed only when its checksum list carries a
+/// valid signature by the pinned key; otherwise nothing is downloaded and a
+/// person who asked hears why.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_update_whose_checksum_list_is_not_signed_by_yt_dlp_is_refused() {
+    let (server, h, new_ytdlp) = updatable("sig").await;
+    let size = new_ytdlp.len() as u64;
+    let hash = sha256(&new_ytdlp);
+    let program = format!("rel/2026.09.30/{}", ytdlp_asset());
+    for sig in [Sig::Missing, Sig::Garbage, Sig::WrongKey, Sig::OtherData] {
+        serve_signed(
+            &server,
+            "2026.09.30",
+            &new_ytdlp,
+            size,
+            &hash,
+            None,
+            OLD,
+            sig,
+        );
+        let error = h.manager.check_addon_updates().await.unwrap_err();
+        assert!(
+            error.to_string().starts_with(
+                "yt-dlp 2026.09.30 was not installed because its checksum list does not carry a valid signature from yt-dlp's developers"
+            ),
+            "{sig:?}: {error}"
+        );
+        let info = h.manager.list_addons().remove(0);
+        assert_eq!(info.state, AddonState::Installed, "{sig:?}");
+        assert!(info.latest_version.unwrap().contains("2026.08.19"));
+        // Not even offered to the Update button.
+        h.manager.update_addon("media").await.unwrap();
+        assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+    }
+    assert!(
+        server.requests(&program).is_empty(),
+        "the program was fetched"
+    );
+    assert_ne!(installed_ytdlp(&h), new_ytdlp);
+
+    // Signed by the pinned key: installed.
+    serve_release(&server, "2026.09.30", &new_ytdlp, size, &hash, None, OLD);
+    let info = check(&h).await;
+    assert_eq!(info.state, AddonState::Installed);
+    assert_eq!(installed_ytdlp(&h), new_ytdlp);
 }
 
 /// The release description may not send the download anywhere but yt-dlp's

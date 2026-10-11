@@ -22,7 +22,7 @@ use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
 use crate::addons::manifest::{self, AddonComponent, MEDIA_ADDON_ID};
-use crate::addons::{self, MediaTools, Record, archive};
+use crate::addons::{self, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
 use crate::user_error;
 
@@ -44,6 +44,8 @@ const MAX_UPDATE_SIZE: u64 = 200 * 1024 * 1024;
 const QUIET_UPDATE_AGE_MILLIS: i64 = 48 * 60 * 60 * 1000;
 /// Largest GitHub release description or checksum list read.
 const MAX_METADATA: u64 = 4 * 1024 * 1024;
+/// Largest signature file read (yt-dlp's is under 1 KB).
+const MAX_SIGNATURE: u64 = 64 * 1024;
 
 /// Why looking up the newest yt-dlp gave nothing.
 enum Lookup {
@@ -51,6 +53,9 @@ enum Lookup {
     Unreachable(String),
     /// It was fetched, but the release does not meet the rules and is not offered.
     Refused(String),
+    /// The release's checksum list is not signed by yt-dlp's pinned key, so it
+    /// is not offered; the reason is worded for a person.
+    Unsigned(String),
 }
 
 /// The add-on as the manager tracks it.
@@ -243,9 +248,10 @@ impl Manager {
     /// working with them). With `auto_update_addons` on, anything out of date is
     /// then updated quietly. Does nothing when the add-on is not installed.
     ///
-    /// When the release could not be looked up, the check still counts (so the
-    /// daily check does not retry at once) and this fails with the reason, for
-    /// a person who asked to check.
+    /// When the release could not be looked up, or its checksum list is not
+    /// signed by yt-dlp's developers, the check still counts (so the daily
+    /// check does not retry at once) and this fails with the reason, for a
+    /// person who asked to check.
     pub async fn check_addon_updates(&self) -> Result<()> {
         let (installed, record) = {
             let state = self.lock_open()?;
@@ -254,7 +260,7 @@ impl Manager {
         if !installed {
             return Ok(());
         }
-        let mut unreachable = None;
+        let mut problem = None;
         let latest = match self.latest_ytdlp().await {
             Ok(latest) => latest,
             // A release that does not meet the rules is not offered; nothing to report.
@@ -262,9 +268,17 @@ impl Manager {
                 warn!(%reason, "a newer yt-dlp was refused");
                 None
             }
+            // Refused too, but a person who asked should know why nothing came.
+            Err(Lookup::Unsigned(message)) => {
+                warn!(%message, "a newer yt-dlp was refused");
+                problem = Some(message);
+                None
+            }
             Err(Lookup::Unreachable(reason)) => {
                 warn!(%reason, "could not check for a newer yt-dlp");
-                unreachable = Some(reason);
+                problem = Some(format!(
+                    "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
+                ));
                 None
             }
         };
@@ -299,11 +313,9 @@ impl Manager {
         } else {
             self.emit_addons(&state.addon);
         }
-        match unreachable {
+        match problem {
             None => Ok(()),
-            Some(reason) => Err(CoreError::Invalid(format!(
-                "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
-            ))),
+            Some(message) => Err(CoreError::Invalid(message)),
         }
     }
 
@@ -639,8 +651,8 @@ impl Manager {
     ///
     /// Only yt-dlp's own release folder is trusted for the files, the file's
     /// size must be known and reasonable, and its checksum comes from the
-    /// release's checksum list. Checking the list's OpenPGP signature as well is
-    /// left for the final security review (it needs a sizable OpenPGP library).
+    /// release's checksum list, which must carry a valid OpenPGP signature by
+    /// yt-dlp's pinned release key (D21.1).
     async fn latest_ytdlp(
         &self,
     ) -> std::result::Result<Option<(AddonComponent, Option<i64>)>, Lookup> {
@@ -707,6 +719,32 @@ impl Manager {
             .await
             .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .body;
+        // The checksum list counts only with yt-dlp's signature on it.
+        let unsigned = |why: &str| {
+            Lookup::Unsigned(format!(
+                "yt-dlp {version} was not installed because its checksum list does not carry a valid signature from yt-dlp's developers ({why}). The installed version keeps working; if this keeps happening, please report it."
+            ))
+        };
+        let sig_name = format!("{}.sig", sources.ytdlp_checksums_asset);
+        let sig = asset(&sig_name).ok_or_else(|| unsigned("the release has no signature file"))?;
+        if sig.browser_download_url != format!("{folder}{}", sig.name) {
+            return Err(unsigned(
+                "the signature file is not in yt-dlp's release folder",
+            ));
+        }
+        let sig_url =
+            Url::parse(&sig.browser_download_url).map_err(|e| Lookup::Refused(e.to_string()))?;
+        let signature = fetcher
+            .get(&sig_url, None, MAX_SIGNATURE)
+            .await
+            .map_err(|e| Lookup::Unreachable(e.to_string()))?
+            .body;
+        let key = sources.ytdlp_signing_key.clone();
+        let signed = list.clone();
+        self.blocking(move || Ok(signature::verify_detached(&key, &signed, &signature)))
+            .await
+            .map_err(|e| Lookup::Refused(e.to_string()))?
+            .map_err(|why| unsigned(&why))?;
         let list = String::from_utf8_lossy(&list);
         let sha256 = addons::checksum_for(&list, &sources.ytdlp_asset).ok_or_else(|| {
             Lookup::Refused(format!(

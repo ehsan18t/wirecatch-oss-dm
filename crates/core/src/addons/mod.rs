@@ -10,6 +10,7 @@
 
 pub(crate) mod archive;
 pub(crate) mod manifest;
+pub(crate) mod signature;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
