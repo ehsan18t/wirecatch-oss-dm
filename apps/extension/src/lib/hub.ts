@@ -20,7 +20,7 @@ import {
   type JudgingSettings,
 } from './capture/handover';
 import { shouldCapture } from './capture/should-capture';
-import { fileNameFromUrl } from './file-types';
+import { fileNameFromUrl, isProgramFile } from './file-types';
 import type { MediaRequest, MediaSendResult, MediaView } from './media/center';
 import {
   asPopupRequest,
@@ -326,6 +326,12 @@ export class Hub {
       return this.#browserFallback(
         url,
         `Wirecatch can only take web links, so the browser is downloading ${name} instead.`,
+      );
+    }
+    if (isProgramFile(fileNameFromUrl(url), null)) {
+      return this.#browserFallback(
+        url,
+        `${name} is a program, so the browser is downloading it instead and can check it for harmful software.`,
       );
     }
     if (!(await this.#siteAccess(url))) {

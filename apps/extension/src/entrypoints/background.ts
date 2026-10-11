@@ -139,7 +139,7 @@ export default defineBackground(() => {
     },
     state: async (id) => {
       const [item] = await browser.downloads.search({ id });
-      return item === undefined ? null : { state: item.state, paused: item.paused };
+      return item === undefined ? null : { state: item.state, paused: item.paused, danger: item.danger };
     },
     start: async (url) => {
       await browser.downloads.download({ url });

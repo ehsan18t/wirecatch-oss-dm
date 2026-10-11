@@ -13,6 +13,8 @@ import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-
 export interface DownloadState {
   state: string;
   paused: boolean;
+  /** Chromium: the browser's safety verdict now (see `CaptureCandidate.danger`). */
+  danger?: string;
 }
 
 /** The browser download controls the handover needs (`browser.downloads`). */
@@ -186,7 +188,13 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
 
   const judging = await deps.liveSettings();
   if (judging === null) return keep(null, 'app_unreachable', null);
-  const decision = shouldCapture(candidate, judging.settings);
+  // The browser may have flagged the file since it was first seen; its latest verdict counts.
+  const latest = await deps.downloads.state(downloadId).catch(() => null);
+  const judged =
+    latest?.danger === undefined || latest.danger === ''
+      ? candidate
+      : { ...candidate, danger: latest.danger };
+  const decision = shouldCapture(judged, judging.settings);
   if (!decision.capture) return keep(null, decision.reason, null);
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
 

@@ -124,6 +124,35 @@ describe('handover', () => {
     ]);
   });
 
+  it('leaves a download the browser flags untouched', async () => {
+    s = await setup();
+    expect(await s.hub.onDownload(downloadItem({ id: 7, danger: 'file' }))).toBeNull();
+    expect(s.downloads.log).toEqual([]);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('keeps a download the browser flags while it is paused, and resumes it', async () => {
+    const downloads = new FakeDownloads();
+    downloads.browserState = { state: 'in_progress', paused: true, danger: 'url' };
+    s = await setup({ downloads });
+    const result = await s.hub.onDownload(downloadItem({ id: 7, danger: 'safe' }));
+    expect(result).toMatchObject({ kind: 'kept', reason: 'browser_flagged', browserCopy: 'resumed' });
+    expect(downloads.log).toEqual(['pause:7', 'resume:7']);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('leaves programs in the browser untouched, so its own checks run', async () => {
+    s = await setup();
+    const item = downloadItem({
+      id: 8,
+      filename: '/home/me/Downloads/setup.exe',
+      mime: 'application/octet-stream',
+    });
+    expect(await s.hub.onDownload(item)).toBeNull();
+    expect(s.downloads.log).toEqual([]);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
   it('uses a new handover id for every download', async () => {
     s = await setup();
     await s.hub.onDownload(downloadItem({ id: 1 }));
@@ -657,6 +686,15 @@ describe('context menu', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await pending).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/file.iso']);
+  });
+
+  it('lets the browser download programs, so its own checks run', async () => {
+    s = await setup();
+    const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/get/Setup.EXE' }, undefined);
+    expect(result).toBe('browser');
+    expect(s.app.calls('add_download')).toHaveLength(0);
+    expect(s.downloads.log).toEqual(['start:https://example.com/get/Setup.EXE']);
+    expect(s.hub.snapshot().notice?.message).toContain('is a program');
   });
 
   it('lets the browser download it when site access was revoked', async () => {
