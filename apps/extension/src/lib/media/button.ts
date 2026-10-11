@@ -237,6 +237,8 @@ export class MediaButton {
   #pointer: { x: number; y: number } | null = null;
   /** True while the pointer is on the button itself, which may sit outside the element (audio). */
   #overButton = false;
+  /** The position last written to the host, so an unchanged one is not written again. */
+  #style = '';
   #timer: ReturnType<typeof setTimeout> | null = null;
   #statusTimer: ReturnType<typeof setTimeout> | null = null;
   #state: Shown = 'none';
@@ -513,7 +515,11 @@ export class MediaButton {
   }
 
   #position(position: { top: number; left: number }): void {
-    this.host.style.cssText = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
+    const style = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
+    // Scrolling and pointer moves call this every frame: only touch the page's DOM on a change.
+    if (style === this.#style) return;
+    this.#style = style;
+    this.host.style.cssText = style;
   }
 
   async #download(): Promise<void> {

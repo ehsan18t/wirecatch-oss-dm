@@ -342,6 +342,28 @@ describe('MediaButton', () => {
     expect(fake.downloads[0]?.title?.length).toBe(1024);
   });
 
+  it('does not rewrite its position while nothing moves', async () => {
+    const fake = fakeDeps();
+    const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    const writes: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => writes.push(...records));
+    observer.observe(b.host, { attributes: true, attributeFilter: ['style'] });
+    for (let i = 0; i < 3; i += 1) {
+      document.dispatchEvent(new Event('scroll'));
+      await settle();
+    }
+    expect(writes).toEqual([]);
+    video.getBoundingClientRect = () => ({ ...box(0, 100, 640, 360), x: 0, y: 100, toJSON: () => null });
+    document.dispatchEvent(new Event('scroll'));
+    await settle();
+    observer.disconnect();
+    expect(writes).toHaveLength(1);
+    expect(b.host.style.getPropertyValue('top')).toBe('108px');
+  });
+
   it('is a real, labelled button that keyboard users can reach', () => {
     const b = start(fakeDeps());
     expect(b.button.tagName).toBe('BUTTON');
