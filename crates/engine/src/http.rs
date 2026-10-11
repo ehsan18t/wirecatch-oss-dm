@@ -268,6 +268,9 @@ pub(crate) struct Clients {
     tls: rustls::ClientConfig,
     user_agent: String,
     connect_timeout: Duration,
+    /// Resolves names for every client [`build`](Self::build) makes, when set
+    /// (to keep a download away from the local network).
+    resolver: Option<Arc<crate::fetch::FilteringResolver>>,
 }
 
 /// The process-wide TLS configuration: the system's root certificates are read
@@ -305,12 +308,22 @@ impl Clients {
             tls,
             user_agent: opts.user_agent.clone(),
             connect_timeout: opts.connect_timeout,
+            resolver: None,
         }
+    }
+
+    /// Resolves names through `resolver` in every client built from now on.
+    pub fn set_resolver(&mut self, resolver: Arc<crate::fetch::FilteringResolver>) {
+        self.resolver = Some(resolver);
     }
 
     /// A client with its own connection pool and the shared TLS session cache.
     pub fn build(&self) -> Result<Client> {
-        self.builder().build().map_err(Error::network)
+        let builder = match &self.resolver {
+            Some(resolver) => self.builder().dns_resolver(resolver.clone()),
+            None => self.builder(),
+        };
+        builder.build().map_err(Error::network)
     }
 
     /// The settings every client shares, for a caller that adds its own.

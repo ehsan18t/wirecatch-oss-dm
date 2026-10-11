@@ -12,6 +12,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::error::{Error, Result};
+use crate::fetch::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::http::Clients;
 use crate::limiter::RateLimiter;
 use crate::progress::Progress;
@@ -105,6 +106,20 @@ pub struct DownloadOptions {
     /// Off by default because on fast links several TCP connections are
     /// already as fast, and QUIC costs more processor time per byte.
     pub http3: bool,
+    /// Whether an `http` or `https` download may reach the local network
+    /// (loopback, private, link-local and unspecified addresses). Default
+    /// [`PrivateNetwork::Allow`]: a link the user gave may point anywhere.
+    ///
+    /// With [`PrivateNetwork::Block`], or [`PrivateNetwork::Auto`] when the
+    /// link's host is on the internet, the download follows the same rules as a
+    /// [`Fetcher`](crate::Fetcher): every request and redirect hop to another
+    /// origin is checked first, and every connection resolves names through a
+    /// filter that never hands out a local address, so a name that changes its
+    /// address later (DNS rebinding) cannot reach one either. The link's own host
+    /// keeps local addresses only if all of its addresses were local when the
+    /// download started. HTTP/3 is not used then, as QUIC connections do not go
+    /// through that filter. `ftp` links are not covered.
+    pub private_network: PrivateNetwork,
 }
 
 impl Default for DownloadOptions {
@@ -122,6 +137,7 @@ impl Default for DownloadOptions {
             rate_limiters: Vec::new(),
             allow_insecure_redirects: false,
             http3: false,
+            private_network: PrivateNetwork::Allow,
         }
     }
 }
@@ -313,8 +329,37 @@ pub(crate) async fn download_with(
     cancel: CancellationToken,
     clients: Clients,
 ) -> Result<Outcome> {
-    let opts = request.options.clone();
-    let opened = transport::open(&request.url, &opts, &clients, &cancel).await?;
+    let guard = match request.url.scheme() {
+        "http" | "https" => {
+            private_guard(
+                &request.url,
+                request.options.private_network,
+                request.options.stall_timeout,
+            )
+            .await
+        }
+        _ => None,
+    };
+    download_guarded(request, progress, cancel, clients, guard).await
+}
+
+/// [`download_with`] with the local network protection already decided (tests
+/// pass one made for a host whose address looked public at the start).
+pub(crate) async fn download_guarded(
+    request: DownloadRequest,
+    progress: Arc<Progress>,
+    cancel: CancellationToken,
+    mut clients: Clients,
+    guard: Option<PrivateGuard>,
+) -> Result<Outcome> {
+    let mut opts = request.options.clone();
+    let session_guard = guard.map(|g| {
+        clients.set_resolver(g.resolver);
+        // QUIC connections would not go through the filtering resolver.
+        opts.http3 = false;
+        g.guard
+    });
+    let opened = transport::open(&request.url, &opts, &clients, &cancel, session_guard).await?;
     debug!(ranged = opened.ranged, total = ?opened.total, url = %opened.final_url, "probed");
     // What the resume file records and compares: never a password.
     let saved_url = ftp::without_password(&request.url).to_string();
