@@ -13,9 +13,10 @@ import {
   type MediaEventApi,
   type RequestFilter,
 } from '../src/lib/media/listen';
-import { MEDIA_COMMAND } from '../src/lib/media/messages';
+import { MEDIA_CHECK, MEDIA_COMMAND } from '../src/lib/media/messages';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
+import { POPUP_PORT_NAME, acceptsPopupPort } from '../src/lib/messages';
 import { flush } from './fakes';
 
 type MessageListener = (
@@ -152,5 +153,93 @@ describe('registerMediaListeners', () => {
     });
     await flush();
     expect(registry.items(3)).toHaveLength(1);
+  });
+});
+
+describe('tab and message listeners', () => {
+  it('limits address change events to the address in Firefox, and passes no filter in Chromium', () => {
+    expect(setup(true).updated.map((u) => u.filter)).toEqual([{ properties: ['url'] }]);
+    expect(setup(false).updated.map((u) => u.filter)).toEqual(['none']);
+  });
+
+  it('clears a tab when its address changes or it closes', async () => {
+    const { updated, removed, registry } = setup();
+    const hls = {
+      kind: 'hls' as const,
+      url: 'https://cdn.example.com/a/master.m3u8',
+      mime: null,
+      size: null,
+      audio: false,
+    };
+    registry.add(5, hls);
+    updated[0]?.listener(5, { url: 'https://example.com/next' });
+    await flush();
+    expect(registry.items(5)).toEqual([]);
+    registry.add(5, hls);
+    updated[0]?.listener(5, { title: 'Only the title' } as { url?: string });
+    await flush();
+    expect(registry.items(5)).toHaveLength(1);
+    removed[0]?.(5);
+    expect(registry.items(5)).toEqual([]);
+  });
+
+  it("answers media questions only from this extension's content scripts", async () => {
+    const { messages } = setup();
+    const listener = messages[0];
+    if (listener === undefined) throw new Error('no message listener');
+    const answers: unknown[] = [];
+    const ask = (
+      sender: ContentSender & { id?: string },
+      message: unknown = { type: MEDIA_CHECK, src: null, audio: false },
+    ) => listener(message, sender, (answer) => answers.push(answer));
+    const tab = { id: 4, url: 'https://example.com/watch' };
+    expect(ask({ id: 'another-extension', tab })).toBeUndefined();
+    expect(ask({ id: 'wirecatch-id' })).toBeUndefined();
+    expect(ask({ id: 'wirecatch-id', tab }, { type: 'not-for-media' })).toBeUndefined();
+    expect(answers).toEqual([]);
+    expect(ask({ id: 'wirecatch-id', tab })).toBe(true);
+    await flush();
+    expect(answers).toEqual([{ show: false }]);
+  });
+});
+
+describe('acceptsPopupPort', () => {
+  const base = 'chrome-extension://wirecatch-id/';
+  it('accepts the popup page of this extension', () => {
+    expect(
+      acceptsPopupPort(
+        { name: POPUP_PORT_NAME, sender: { id: 'wirecatch-id', url: `${base}popup.html` } },
+        'wirecatch-id',
+        base,
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses content scripts, other extensions and other port names', () => {
+    expect(
+      acceptsPopupPort(
+        { name: POPUP_PORT_NAME, sender: { id: 'wirecatch-id', url: 'https://evil.example.com/' } },
+        'wirecatch-id',
+        base,
+      ),
+    ).toBe(false);
+    expect(
+      acceptsPopupPort(
+        { name: POPUP_PORT_NAME, sender: { id: 'other', url: 'chrome-extension://other/popup.html' } },
+        'wirecatch-id',
+        base,
+      ),
+    ).toBe(false);
+    expect(
+      acceptsPopupPort({ name: POPUP_PORT_NAME, sender: { id: 'wirecatch-id' } }, 'wirecatch-id', base),
+    ).toBe(false);
+    expect(acceptsPopupPort({ name: POPUP_PORT_NAME }, 'wirecatch-id', base)).toBe(false);
+    expect(
+      acceptsPopupPort(
+        { name: 'other', sender: { id: 'wirecatch-id', url: `${base}popup.html` } },
+        'wirecatch-id',
+        base,
+      ),
+    ).toBe(false);
   });
 });

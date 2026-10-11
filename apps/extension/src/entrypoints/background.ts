@@ -11,7 +11,7 @@ import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
 import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
-import { POPUP_PORT_NAME } from '@/lib/messages';
+import { acceptsPopupPort } from '@/lib/messages';
 import { NativeClient, type NativePort } from '@/lib/native/client';
 import { originPattern } from '@/lib/site-access';
 
@@ -225,8 +225,7 @@ export default defineBackground(() => {
 
   browser.runtime.onConnect.addListener((port) => {
     // Only the popup itself, never a content script that knows the port name.
-    const fromExtensionPage = port.sender?.url?.startsWith(browser.runtime.getURL('/')) === true;
-    if (port.name !== POPUP_PORT_NAME || port.sender?.id !== browser.runtime.id || !fromExtensionPage) return;
+    if (!acceptsPopupPort(port, browser.runtime.id, browser.runtime.getURL('/'))) return;
     hub.addPopup(port);
   });
 

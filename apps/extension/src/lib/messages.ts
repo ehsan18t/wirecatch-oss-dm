@@ -9,6 +9,26 @@ import type { ConnectionStatus } from './native/status';
 /** Name of the `runtime.connect` port the popup opens to the background script. */
 export const POPUP_PORT_NAME = 'wirecatch-popup';
 
+/** What `runtime.onConnect` says about a port. */
+export interface PortInfo {
+  name: string;
+  sender?: { id?: string; url?: string };
+}
+
+/**
+ * True only for the popup's own port: the right name, this extension, and opened by
+ * one of the extension's pages (`extensionBaseUrl` is `runtime.getURL('/')`). A content
+ * script also belongs to this extension and can use the name, but runs on a web page,
+ * so it cannot change settings or send downloads through the popup's commands.
+ */
+export function acceptsPopupPort(port: PortInfo, extensionId: string, extensionBaseUrl: string): boolean {
+  return (
+    port.name === POPUP_PORT_NAME &&
+    port.sender?.id === extensionId &&
+    port.sender.url?.startsWith(extensionBaseUrl) === true
+  );
+}
+
 /** Something that happened in the background that the person should know about. */
 export interface Notice {
   tone: 'warning' | 'error';
