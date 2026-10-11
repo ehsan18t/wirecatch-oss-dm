@@ -143,7 +143,8 @@ pub(crate) fn newer(candidate: &str, installed: &str) -> bool {
     };
     match (parse(candidate), parse(installed)) {
         (Some(a), Some(b)) => a > b,
-        _ => candidate != installed,
+        // A version that cannot be read is never taken as newer.
+        _ => false,
     }
 }
 
@@ -151,6 +152,9 @@ pub(crate) fn newer(candidate: &str, installed: &str) -> bool {
 #[derive(Debug, Deserialize)]
 pub(crate) struct Release {
     pub tag_name: String,
+    /// When it was published (RFC 3339).
+    #[serde(default)]
+    pub published_at: Option<String>,
     #[serde(default)]
     pub assets: Vec<Asset>,
 }
@@ -202,6 +206,9 @@ mod tests {
         assert!(newer("2026.08.19.1", "2026.08.19"));
         assert!(!newer("2026.08.19", "2026.08.19"));
         assert!(!newer("2025.12.31", "2026.01.01"));
+        for unreadable in ["nightly", "2026.09.30-evil", "../2027.01.01", "", "2026..1"] {
+            assert!(!newer(unreadable, "2026.08.19"), "{unreadable}");
+        }
     }
 
     #[test]

@@ -73,6 +73,10 @@ pub struct MediaAddonSources {
     pub ytdlp_asset: String,
     /// The name of the checksum list in a yt-dlp release.
     pub ytdlp_checksums_asset: String,
+    /// Where yt-dlp's release files must come from: a newer release's files
+    /// are only taken from `<this><tag>/<file name>`, whatever the release
+    /// description says.
+    pub ytdlp_release_downloads: String,
 }
 
 impl MediaAddonSources {
@@ -129,6 +133,7 @@ impl MediaAddonSources {
             ),
             ytdlp_asset: ytdlp_asset().into(),
             ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+            ytdlp_release_downloads: "https://github.com/yt-dlp/yt-dlp/releases/download/".into(),
         }
     }
 }

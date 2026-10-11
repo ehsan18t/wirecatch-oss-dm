@@ -365,6 +365,7 @@ pub fn publish(server: &FileServer, releases: &Releases, prefix: &str) -> MediaA
         ytdlp_latest_release: None,
         ytdlp_asset: ytdlp_asset(),
         ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+        ytdlp_release_downloads: server.url("rel/"),
     }
 }
 
