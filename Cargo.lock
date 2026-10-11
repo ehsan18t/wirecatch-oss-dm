@@ -6322,6 +6322,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "winreg 0.10.1",
  "wirecatch-core",
  "wirecatch-ipc",
  "wirecatch-protocol",

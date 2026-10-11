@@ -12,6 +12,7 @@ use wirecatch_core::Manager;
 use wirecatch_protocol::app::UiEvent;
 
 use crate::activity::{Activity, Finished, notification_text};
+use crate::autostart::{self, Action};
 use crate::questions::{Attention, Questions, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{EVENT_NAME, RESYNC_EVENT, tray, window};
@@ -68,7 +69,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut activity = Activity::default();
     activity.load(&manager.list_downloads());
     let mut settings = manager.get_settings();
-    sync_autostart(&app, settings.start_with_system);
+    sync_autostart(&app, &manager, settings.start_with_system, false);
 
     let mut shown = String::new();
     let mut last_tooltip: Option<Instant> = None;
@@ -89,7 +90,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                     }
                     if let UiEvent::SettingsChanged(new) = event {
                         if new.start_with_system != settings.start_with_system {
-                            sync_autostart(&app, new.start_with_system);
+                            sync_autostart(&app, &manager, new.start_with_system, new.start_with_system);
                         }
                         settings = new;
                     }
@@ -136,16 +137,31 @@ pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: St
     }
 }
 
-/// Makes the system's start-at-sign-in entry match the setting. The entry starts the app with
-/// `--background`. Runs off the async threads because it touches the registry or the disk.
-pub fn sync_autostart<R: Runtime>(app: &AppHandle<R>, wanted: bool) {
+/// Makes the system's start-at-sign-in entry match the setting (see [`crate::autostart`]). The
+/// entry starts the app with `--background`. `just_turned_on` is set when the person switched
+/// the setting on a moment ago. Runs off the async threads because it touches the registry or
+/// the disk.
+pub fn sync_autostart<R: Runtime>(
+    app: &AppHandle<R>,
+    manager: &Manager,
+    wanted: bool,
+    just_turned_on: bool,
+) {
     let app = app.clone();
+    let manager = manager.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = autostart::read_state(crate::autostart_name());
         let launcher = app.autolaunch();
-        let result = match launcher.is_enabled() {
-            Ok(current) if current == wanted => Ok(()),
-            _ if wanted => launcher.enable(),
-            _ => launcher.disable(),
+        let result = match autostart::decide(wanted, state, just_turned_on) {
+            Action::Write => launcher.enable().map_err(|e| e.to_string()),
+            Action::Remove => launcher.disable().map_err(|e| e.to_string()),
+            Action::Nothing => Ok(()),
+            Action::TurnSettingOff => {
+                tracing::info!("starting with the system was turned off outside Wirecatch");
+                let mut settings = manager.get_settings();
+                settings.start_with_system = false;
+                manager.update_settings(settings).map_err(|e| e.to_string())
+            }
         };
         if let Err(e) = result {
             tracing::warn!("could not change starting with the system: {e}");

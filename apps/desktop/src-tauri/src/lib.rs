@@ -78,6 +78,7 @@
 pub mod activity;
 pub mod api;
 pub mod appimage;
+pub mod autostart;
 mod background;
 pub mod bridge;
 mod commands;
@@ -104,6 +105,15 @@ pub const EVENT_NAME: &str = "wirecatch://event";
 /// hook removes the value by this name.
 pub const RELEASE_AUTOSTART_NAME: &str = "Wirecatch";
 
+/// The start-at-sign-in entry's name for this build.
+pub fn autostart_name() -> &'static str {
+    if host::DEV_BUILD {
+        host::DEV_NAME
+    } else {
+        RELEASE_AUTOSTART_NAME
+    }
+}
+
 /// Tells the webview it missed events and must reload everything.
 pub const RESYNC_EVENT: &str = "wirecatch://resync";
 
@@ -126,11 +136,7 @@ pub fn run() {
     if host::DEV_BUILD {
         dev_identity(context.config_mut());
     }
-    let autostart_name = if host::DEV_BUILD {
-        host::DEV_NAME
-    } else {
-        RELEASE_AUTOSTART_NAME
-    };
+    let autostart_name = autostart_name();
 
     let app = tauri::Builder::default()
         // First, so a second launch hands over its command line and exits before anything else.
