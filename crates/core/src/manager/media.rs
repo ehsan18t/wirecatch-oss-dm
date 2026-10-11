@@ -392,7 +392,7 @@ impl Manager {
                 Some(tools) => {
                     let found = self.read_page(&source, tools, &token).await;
                     if tools.is_broken() {
-                        self.rescan_addon().await;
+                        self.rescan_addon(true).await;
                     }
                     found
                 }

@@ -70,8 +70,8 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// One installed file: its path relative to the component folder and its size.
-pub(crate) type Installed = Vec<(String, u64)>;
+/// The installed files of a part.
+pub(crate) type Installed = Vec<super::InstalledFile>;
 
 /// Puts the component's files from the verified release file `release` (the
 /// same open file that was checked) into the empty folder `stage`. `Err` says
@@ -87,7 +87,7 @@ pub(crate) fn unpack(
         .iter()
         .map(|f| Ok((f.from.as_str(), (safe_join(stage, &f.to)?, f.executable))))
         .collect::<Result<_, String>>()?;
-    let mut written: HashMap<String, u64> = HashMap::new();
+    let mut written: HashMap<String, (u64, String)> = HashMap::new();
     match component.archive {
         ArchiveKind::Plain => {
             let file = component
@@ -95,8 +95,8 @@ pub(crate) fn unpack(
                 .first()
                 .ok_or_else(|| "The add-on manifest names no file.".to_string())?;
             let (target, executable) = &targets[file.from.as_str()];
-            let size = write_file(release, target, *executable)?;
-            written.insert(file.from.clone(), size);
+            let written_file = write_file(release, target, *executable)?;
+            written.insert(file.from.clone(), written_file);
         }
         ArchiveKind::Zip => {
             let mut zip = zip::ZipArchive::new(BufReader::new(&mut *release))
@@ -113,8 +113,8 @@ pub(crate) fn unpack(
                     return Err(format!("{name} in the archive is not a plain file."));
                 }
                 claim(&mut written, &name)?;
-                let size = write_file(&mut entry, target, *executable)?;
-                written.insert(name, size);
+                let written_file = write_file(&mut entry, target, *executable)?;
+                written.insert(name, written_file);
             }
         }
         ArchiveKind::TarXz => {
@@ -138,15 +138,19 @@ pub(crate) fn unpack(
                     return Err(format!("{name} in the archive is not a plain file."));
                 }
                 claim(&mut written, &name)?;
-                let size = write_file(&mut entry, target, *executable)?;
-                written.insert(name, size);
+                let written_file = write_file(&mut entry, target, *executable)?;
+                written.insert(name, written_file);
             }
         }
     }
     let mut installed = Installed::new();
     for file in &component.files {
         match written.get(&file.from) {
-            Some(size) => installed.push((file.to.clone(), *size)),
+            Some((size, sha256)) => installed.push(super::InstalledFile {
+                path: file.to.clone(),
+                size: *size,
+                sha256: sha256.clone(),
+            }),
             None => return Err(format!("{} is missing from the archive.", file.from)),
         }
     }
@@ -154,7 +158,7 @@ pub(crate) fn unpack(
 }
 
 /// Refuses an entry that appears twice.
-fn claim(written: &mut HashMap<String, u64>, name: &str) -> Result<(), String> {
+fn claim(written: &mut HashMap<String, (u64, String)>, name: &str) -> Result<(), String> {
     if written.contains_key(name) {
         return Err(format!("{name} appears twice in the archive."));
     }
@@ -177,16 +181,43 @@ pub(crate) fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, String> 
     Ok(base.join(path))
 }
 
+/// Writes into a file and hashes what it writes.
+struct Hashing {
+    file: File,
+    hasher: Sha256,
+}
+
+impl Write for Hashing {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.file.write(buf)?;
+        self.hasher.update(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
 /// Copies `input` to a new file at `target`, at most [`MAX_FILE`] bytes.
-fn write_file(input: &mut impl Read, target: &Path, executable: bool) -> Result<u64, String> {
+/// Returns its size and SHA-256.
+fn write_file(
+    input: &mut impl Read,
+    target: &Path,
+    executable: bool,
+) -> Result<(u64, String), String> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| disk(&e))?;
     }
-    let mut out = File::options()
+    let file = File::options()
         .write(true)
         .create_new(true)
         .open(target)
         .map_err(|e| disk(&e))?;
+    let mut out = Hashing {
+        file,
+        hasher: Sha256::new(),
+    };
     let copied = io::copy(&mut input.take(MAX_FILE + 1), &mut out).map_err(|e| {
         if e.kind() == io::ErrorKind::InvalidData {
             format!("The archive is damaged ({e}).")
@@ -198,8 +229,10 @@ fn write_file(input: &mut impl Read, target: &Path, executable: bool) -> Result<
         return Err("A file in the archive is far larger than expected.".into());
     }
     out.flush().map_err(|e| disk(&e))?;
+    let sha256 = hex(&out.hasher.finalize());
+    drop(out.file);
     set_mode(target, executable).map_err(|e| disk(&e))?;
-    Ok(copied)
+    Ok((copied, sha256))
 }
 
 #[cfg(unix)]

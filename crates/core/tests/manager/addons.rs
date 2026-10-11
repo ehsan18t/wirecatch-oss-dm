@@ -535,7 +535,8 @@ impl Lock {
             use std::os::windows::fs::OpenOptionsExt;
             let file = std::fs::OpenOptions::new()
                 .read(true)
-                .share_mode(0)
+                // Others may read it (a checksum check), not delete or move it.
+                .share_mode(1)
                 .open(dir.join(name))
                 .unwrap();
             Lock { _file: file }
@@ -678,4 +679,33 @@ async fn a_half_finished_update_is_recorded_and_repaired() {
         std::fs::read(dir.join("ffmpeg").join("bin").join(exe("ffmpeg"))).unwrap(),
         b"new ffmpeg"
     );
+}
+
+/// Each file's checksum is recorded at install. A file changed in place (same
+/// size) is not looked for on every start, but a repair finds and replaces it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repair_finds_a_file_changed_in_place() {
+    let server = FileServer::start().await;
+    let releases = Releases::fake();
+    let mut h = harness(publish(&server, &releases, "tamper")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let dir = addon_dir(&h);
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("installed.json")).unwrap()).unwrap();
+    let file = &record["components"]["yt-dlp"]["files"][0];
+    let ytdlp = dir.join("yt-dlp").join(exe("yt-dlp"));
+    assert_eq!(file["sha256"], sha256(&std::fs::read(&ytdlp).unwrap()));
+
+    let mut bytes = std::fs::read(&ytdlp).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0xff;
+    std::fs::write(&ytdlp, &bytes).unwrap();
+    h.restart().await;
+    // Not checked on every start: sizes only.
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon("media").await.unwrap();
+    wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+    assert_eq!(std::fs::read(&ytdlp).unwrap(), releases.ytdlp);
 }

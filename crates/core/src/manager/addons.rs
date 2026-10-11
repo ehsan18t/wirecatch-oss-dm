@@ -75,7 +75,7 @@ impl AddonSlot {
     /// Loads the record and checks the files. Blocks on the disk.
     pub fn load(dir: &Path) -> Self {
         let record = Record::load(dir);
-        let tools = addons::tools(dir, &record);
+        let tools = addons::tools(dir, &record, false);
         Self {
             record,
             tools,
@@ -100,7 +100,8 @@ impl Manager {
         if self.lock_open()?.addon.op.is_some() {
             return Ok(());
         }
-        self.rescan_addon().await;
+        // A repair looks closely: every file's checksum.
+        self.rescan_addon(true).await;
         let mut state = self.lock_open()?;
         let plan = self.addon_plan(&state.addon);
         if state.addon.op.is_some() || plan.is_empty() {
@@ -153,20 +154,20 @@ impl Manager {
             state.addon.latest_ytdlp = None;
         }
         // Part of it may be gone: show what is really left.
-        self.rescan_addon().await;
+        self.rescan_addon(false).await;
         self.emit_addons(&self.lock().addon);
         removed
     }
 
     /// Looks at the add-on's files again, off the async threads, and updates
-    /// what the manager believes is installed. Does nothing while an install
-    /// owns the folder.
-    pub(super) async fn rescan_addon(&self) {
+    /// what the manager believes is installed; `deep` checks every file's
+    /// checksum too. Does nothing while an install owns the folder.
+    pub(super) async fn rescan_addon(&self, deep: bool) {
         let dir = self.inner.addon_dir.clone();
         let Ok((record, tools)) = self
             .blocking(move || {
                 let record = Record::load(&dir);
-                let tools = addons::tools(&dir, &record);
+                let tools = addons::tools(&dir, &record, deep);
                 Ok((record, tools))
             })
             .await
@@ -187,9 +188,9 @@ impl Manager {
     }
 
     /// [`rescan_addon`](Self::rescan_addon) in the background.
-    pub(super) fn spawn_addon_rescan(&self) {
+    pub(super) fn spawn_addon_rescan(&self, deep: bool) {
         let manager = self.clone();
-        self.spawn(async move { manager.rescan_addon().await });
+        self.spawn(async move { manager.rescan_addon(deep).await });
     }
 
     /// Looks for a newer yt-dlp now (sites change often, and an old yt-dlp stops
@@ -389,7 +390,7 @@ impl Manager {
         let failed = !ready && !cancelled && !quiet;
         drop(state);
         if rescan {
-            self.spawn_addon_rescan();
+            self.spawn_addon_rescan(false);
         }
         if ready {
             self.media_addon_ready();
@@ -863,7 +864,7 @@ fn swap_in(
             file_safe(&component.version)
         )));
     }
-    let tools = addons::tools(dir, &record);
+    let tools = addons::tools(dir, &record, false);
     Ok((record, tools))
 }
 
