@@ -1,6 +1,8 @@
 //! Where the media add-on's parts come from: pinned releases with their SHA-256
 //! checksums (D20, A8). Nothing is run unless it matched these.
 
+pub use super::signature::PinnedKey;
+
 /// The add-on id used by the UI and in settings profiles.
 pub const MEDIA_ADDON_ID: &str = "media";
 
@@ -65,14 +67,20 @@ pub struct MediaAddonSources {
     /// The Deno JavaScript runtime yt-dlp uses for some sites. Updated only when
     /// this pin changes.
     pub deno: AddonComponent,
-    /// The GitHub API address of yt-dlp's latest release, read at most once a
-    /// day to keep up with sites that change; `None` turns that off.
-    pub ytdlp_latest_release: Option<String>,
+    /// The GitHub API address of yt-dlp's list of releases (newest first),
+    /// read at most once a day to keep up with sites that change; `None` turns
+    /// that off. The list, not just the latest release, so the newest release
+    /// at least two days old can be found while a newer one waits (D21.1).
+    pub ytdlp_releases: Option<String>,
     /// The name of this platform's yt-dlp file in a release, for example
     /// `yt-dlp.exe`.
     pub ytdlp_asset: String,
-    /// The name of the checksum list in a yt-dlp release.
+    /// The name of the checksum list in a yt-dlp release. Its detached OpenPGP
+    /// signature is the file of the same name with `.sig` added.
     pub ytdlp_checksums_asset: String,
+    /// The key the checksum list of a newer yt-dlp must be signed with; a
+    /// release whose signature does not verify is never installed.
+    pub ytdlp_signing_key: PinnedKey,
     /// Where yt-dlp's release files must come from: a newer release's files
     /// are only taken from `<this><tag>/<file name>`, whatever the release
     /// description says.
@@ -128,11 +136,12 @@ impl MediaAddonSources {
             ytdlp: official_ytdlp(),
             ffmpeg: official_ffmpeg(),
             deno: official_deno(),
-            ytdlp_latest_release: Some(
-                "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest".into(),
+            ytdlp_releases: Some(
+                "https://api.github.com/repos/yt-dlp/yt-dlp/releases?per_page=10".into(),
             ),
             ytdlp_asset: ytdlp_asset().into(),
             ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+            ytdlp_signing_key: PinnedKey::ytdlp(),
             ytdlp_release_downloads: "https://github.com/yt-dlp/yt-dlp/releases/download/".into(),
         }
     }

@@ -9,6 +9,8 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  ImportedFolder,
+  ImportPreview,
   MediaChoice,
   MediaSelection,
   PendingCapture,
@@ -51,6 +53,7 @@ export function mediaAddon(): AddonInfo {
     installed_version: null,
     latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',
     size: 131 * 1024 * 1024,
+    note: null,
   };
 }
 
@@ -734,30 +737,76 @@ export class MockBackend implements Backend {
     });
   }
 
-  async importSettings(path: string) {
+  /** Puts a settings file where the file picker finds it, as if made elsewhere. */
+  putSettingsFile(path: string, profile: SettingsProfile) {
+    this.#files.set(path, structuredClone(profile));
+  }
+
+  #profile(path: string): SettingsProfile {
     const profile = this.#files.get(path);
     if (!profile) {
       throw new BackendError(
         'That file is not a Wirecatch settings file. Choose a file made with Export settings.',
       );
     }
+    return profile;
+  }
+
+  /**
+   * The default folder of `profile` as the core would place it: a startup folder is refused and
+   * replaced by Downloads, a folder outside the person's own folders is flagged.
+   */
+  #importedFolder(profile: SettingsProfile): ImportedFolder {
+    const requested = profile.settings.default_folder;
+    const startup = /Start Menu|[\\/]\.config[\\/]autostart/i.test(requested);
+    const used = startup ? '{Downloads}' : requested;
+    return {
+      setting: 'Default folder',
+      requested,
+      used,
+      resolved: used,
+      reason: startup
+        ? `"${requested}" is a system or startup folder, where a downloaded file could run by itself. Folders from a settings file cannot be there; choose another folder.`
+        : null,
+      outside_user_folders: !used.startsWith('{'),
+    };
+  }
+
+  #addonsToOffer(profile: SettingsProfile): string[] {
+    // Like the core: offered, never installed by the import itself.
+    return profile.addons.filter(
+      (id) => this.#addons.find((a) => a.id === id)?.state.type === 'not_installed',
+    );
+  }
+
+  async previewImport(path: string): Promise<ImportPreview> {
+    const profile = this.#profile(path);
+    const known = new Set(this.#queues.map((q) => q.id));
+    return {
+      folders: [this.#importedFolder(profile)],
+      queues_added: profile.queues.filter((q) => !known.has(q.id)).map((q) => q.name),
+      queues_updated: profile.queues.filter((q) => known.has(q.id)).map((q) => q.name),
+      addons_to_offer: this.#addonsToOffer(profile),
+    };
+  }
+
+  async importSettings(path: string) {
+    const profile = this.#profile(path);
     const known = new Set(this.#queues.map((q) => q.id));
     const added = profile.queues.filter((q) => !known.has(q.id)).length;
+    const folder = this.#importedFolder(profile);
     this.#settings = structuredClone(profile.settings);
+    this.#settings.default_folder = folder.used;
     this.#queues = structuredClone(profile.queues);
     this.#emit({ type: 'settings_changed', data: structuredClone(this.#settings) });
     this.#queuesChanged();
-    const folder = profile.settings.default_folder;
     this.#emit({
       type: 'settings_imported',
       data: {
-        folders: [{ setting: 'Default folder', requested: folder, used: folder, resolved: folder }],
+        folders: [folder],
         queues_added: added,
         queues_updated: profile.queues.length - added,
-        // Like the core: offered, never installed by the import itself.
-        addons_to_offer: profile.addons.filter(
-          (id) => this.#addons.find((a) => a.id === id)?.state.type === 'not_installed',
-        ),
+        addons_to_offer: this.#addonsToOffer(profile),
       },
     });
   }
@@ -1008,7 +1057,7 @@ export class MockBackend implements Backend {
   }
 
   /** Set by tests and sample data: what the next update check finds. */
-  nextUpdateCheck: 'up-to-date' | 'newer' | 'unreachable' = 'up-to-date';
+  nextUpdateCheck: 'up-to-date' | 'newer' | 'too-new' | 'unreachable' = 'up-to-date';
 
   async checkAddonUpdates() {
     const addon = this.#addon('media');
@@ -1018,6 +1067,12 @@ export class MockBackend implements Backend {
         'Wirecatch could not check for a newer media add-on (no connection). Check your internet connection, then try again.',
       );
     }
+    // As the core says it (D21.1): a release younger than two days waits.
+    addon.note =
+      installed && this.nextUpdateCheck === 'too-new'
+        ? 'A newer version came out today; Wirecatch installs it once it is two days old.'
+        : null;
+    this.#addonsChanged();
     if (installed && this.nextUpdateCheck === 'newer') {
       addon.state = { type: 'update_available' };
       addon.latest_version = 'yt-dlp 2026.10.30, ffmpeg 9.0.2, Deno 2.9.7';

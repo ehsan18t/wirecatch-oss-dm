@@ -247,6 +247,15 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(note()?.kind).toBe('error');
     expect(note()?.message).toMatch(/^Wirecatch could not check for a newer media add-on/);
 
+    // D21.1: a release younger than two days waits, and the result says so plainly.
+    backend.nextUpdateCheck = 'too-new';
+    await click(button('Check for updates'));
+    const waiting =
+      'A newer version came out today; Wirecatch installs it once it is two days old.';
+    expect(note()).toMatchObject({ kind: 'info', message: waiting });
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(screen.getByText(waiting, { selector: 'p.note' })).toBeInTheDocument();
+
     backend.nextUpdateCheck = 'newer';
     await click(button('Check for updates'));
     expect(note()?.message).toMatch(/^A newer media add-on is ready \(yt-dlp 2026\.10\.30/);
@@ -272,6 +281,50 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.addons?.[0]?.installed_version).toBe(version);
   });
 
+  it('import shows what the file would change and asks first; a startup folder is refused', async () => {
+    const { app, backend, click } = await setup();
+    const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+    if (!app.settings) throw new Error('no settings');
+    const before = plain(app.settings);
+    const profile = {
+      format_version: 1,
+      app_version: '0.1.0',
+      exported_at: 0,
+      settings: {
+        ...before,
+        default_folder:
+          'C:\\Users\\ada\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        connections_per_download: 3,
+      },
+      queues: plain(app.queues),
+      addons: [],
+    };
+    backend.putSettingsFile('C:\\Users\\ada\\Downloads\\evil.json', profile);
+    app.openDialog({ kind: 'import' });
+    await settle();
+    await click(button('Choose a settings file'));
+    await settle();
+    const preview = within(dialog());
+    expect(preview.getByText(/Nothing has changed yet/)).toBeInTheDocument();
+    expect(preview.getByText(/is a system or startup folder/)).toBeInTheDocument();
+    expect(preview.getByRole('button', { name: 'Import' })).toHaveFocus();
+    // Nothing changed yet; Cancel leaves it that way.
+    expect(plain(app.settings)).toEqual(before);
+    await click(preview.getByRole('button', { name: 'Cancel' }));
+    expect(plain(app.settings)).toEqual(before);
+    expect(app.importPreview).toBeNull();
+
+    // Imported after all: the startup folder is replaced by Downloads.
+    app.openDialog({ kind: 'import' });
+    await settle();
+    await click(button('Choose a settings file'));
+    await settle();
+    await click(button('Import'));
+    await settle();
+    expect(app.settings?.connections_per_download).toBe(3);
+    expect(app.settings?.default_folder).toBe('{Downloads}');
+  });
+
   it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {
     const { app, backend, click } = await setup();
     await app.installAddon('media');
@@ -282,6 +335,10 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     app.openDialog({ kind: 'import' });
     await settle();
     await click(button('Choose a settings file'));
+    await settle();
+    // First what the file would change; nothing is applied until Import.
+    expect(within(dialog()).getByText(/Wirecatch offers it after the import/)).toBeInTheDocument();
+    await click(button('Import'));
     await settle();
     const offer = within(dialog());
     expect(offer.getByText(/The file lists the media add-on/)).toBeInTheDocument();

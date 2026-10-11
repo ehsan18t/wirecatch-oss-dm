@@ -87,6 +87,10 @@ pub(crate) struct LastIds {
 pub(crate) struct Origin {
     pub user_agent: Option<String>,
     pub headers: Vec<Header>,
+    /// Its cookies and credentials were deleted because it did not finish
+    /// within a week, so a failure that needs a fresh link says so.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub forgot_sign_in: bool,
 }
 
 /// One download as stored.
@@ -771,6 +775,7 @@ mod tests {
                     name: "Cookie".into(),
                     value: "a=b".into(),
                 }],
+                forgot_sign_in: false,
             },
             naming: NameChoice {
                 settled: false,

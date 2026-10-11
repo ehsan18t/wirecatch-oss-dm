@@ -132,3 +132,68 @@ async fn a_profile_from_a_newer_version_is_refused() {
     assert_eq!(h.manager.list_queues().len(), 1);
     assert_eq!(h.manager.list_queues()[0].id, DEFAULT_QUEUE_ID);
 }
+
+/// The import is previewed before anything changes: folders as they would
+/// resolve here (a startup folder refused and replaced, a folder outside the
+/// person's own flagged), queues added and updated, add-ons to offer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_import_is_previewed_without_changing_anything() {
+    let here = Harness::new().await;
+    here.manager.create_queue("Night").unwrap();
+    let file = here.root.path().join("profile.json");
+    here.manager.export_settings(&file).await.unwrap();
+    let there = Harness::new().await;
+    let outside = there.root.path().join("elsewhere");
+    let startup = if cfg!(windows) {
+        "{Home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+    } else {
+        "{Home}/.config/autostart"
+    };
+    let mut profile: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    profile["settings"]["default_folder"] = startup.into();
+    profile["settings"]["categories"][0]["folder"] = outside.to_string_lossy().as_ref().into();
+    profile["addons"] = serde_json::json!(["media"]);
+    std::fs::write(&file, serde_json::to_vec(&profile).unwrap()).unwrap();
+
+    let before = (there.manager.get_settings(), there.manager.list_queues());
+    let mut events = there.manager.subscribe();
+    let preview = there.manager.preview_import(&file).await.unwrap();
+    assert_eq!(
+        (there.manager.get_settings(), there.manager.list_queues()),
+        before,
+        "the preview changed something"
+    );
+    assert!(events.try_recv().is_err(), "the preview sent events");
+
+    let default = &preview.folders[0];
+    assert_eq!(default.requested, PortablePath(startup.into()));
+    assert_eq!(default.used, PortablePath("{Downloads}".into()));
+    assert!(
+        default
+            .reason
+            .as_deref()
+            .is_some_and(|r| r.contains("system or startup folder")),
+        "{default:?}"
+    );
+    let video = &preview.folders[1];
+    assert_eq!(video.setting, "Video folder");
+    assert!(
+        video.outside_user_folders && video.reason.is_none(),
+        "{video:?}"
+    );
+    assert_eq!(std::path::Path::new(&video.resolved), outside);
+    assert_eq!(preview.queues_added, vec!["Night".to_string()]);
+    assert_eq!(preview.queues_updated.len(), 1);
+    assert_eq!(preview.addons_to_offer, vec!["media".to_string()]);
+
+    // Importing does what the preview said.
+    there.manager.import_settings(&file).await.unwrap();
+    let settings = there.manager.get_settings();
+    assert_eq!(settings.default_folder, PortablePath("{Downloads}".into()));
+    assert_eq!(
+        settings.categories[0].folder,
+        PortablePath(outside.to_string_lossy().into_owned())
+    );
+    assert_eq!(there.manager.list_queues().len(), 2);
+}

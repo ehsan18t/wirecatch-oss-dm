@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use axum::Router;
@@ -17,9 +17,17 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::Response;
 use axum::routing::get;
 use bytes::Bytes;
+use pgp::composed::{
+    DetachedSignature, KeyType, SecretKeyParamsBuilder, SignedPublicKey, SignedSecretKey,
+};
+use pgp::crypto::hash::HashAlgorithm;
+use pgp::ser::Serialize as _;
+use pgp::types::{KeyDetails as _, Password};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
-use wirecatch_core::{AddonComponent, AddonFile, ArchiveKind, MediaAddonSources};
+use wirecatch_core::{AddonComponent, AddonFile, ArchiveKind, MediaAddonSources, PinnedKey};
 use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 
@@ -362,11 +370,61 @@ pub fn publish(server: &FileServer, releases: &Releases, prefix: &str) -> MediaA
             }],
             program: exe("deno"),
         },
-        ytdlp_latest_release: None,
+        ytdlp_releases: None,
         ytdlp_asset: ytdlp_asset(),
         ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+        ytdlp_signing_key: test_signer().1.clone(),
         ytdlp_release_downloads: server.url("rel/"),
     }
+}
+
+/// A throwaway OpenPGP key made for the tests (seeded, so every run makes the
+/// same one), standing in for yt-dlp's release key; and the same key pinned.
+fn signer(seed: u64) -> (SignedSecretKey, PinnedKey) {
+    let mut params = SecretKeyParamsBuilder::default();
+    params
+        .key_type(KeyType::Ed25519Legacy)
+        .can_certify(true)
+        .can_sign(true)
+        .primary_user_id(format!("Test signer {seed} <test@example.invalid>"));
+    let secret = params
+        .build()
+        .unwrap()
+        .generate(StdRng::seed_from_u64(seed))
+        .unwrap();
+    let public = SignedPublicKey::from(secret.clone());
+    let pinned = PinnedKey {
+        armored: public.to_armored_string(Default::default()).unwrap(),
+        fingerprint: format!("{:X}", public.fingerprint()),
+    };
+    (secret, pinned)
+}
+
+/// The key the test add-on sources trust for yt-dlp updates.
+pub fn test_signer() -> &'static (SignedSecretKey, PinnedKey) {
+    static SIGNER: OnceLock<(SignedSecretKey, PinnedKey)> = OnceLock::new();
+    SIGNER.get_or_init(|| signer(1))
+}
+
+/// A detached binary signature over `data` by the trusted test key, or with
+/// `trusted` false by another key.
+pub fn sign(data: &[u8], trusted: bool) -> Vec<u8> {
+    static OTHER: OnceLock<(SignedSecretKey, PinnedKey)> = OnceLock::new();
+    let key = if trusted {
+        &test_signer().0
+    } else {
+        &OTHER.get_or_init(|| signer(2)).0
+    };
+    DetachedSignature::sign_binary_data(
+        StdRng::seed_from_u64(3),
+        &key.primary_key,
+        &Password::empty(),
+        HashAlgorithm::Sha256,
+        data,
+    )
+    .unwrap()
+    .to_bytes()
+    .unwrap()
 }
 
 pub fn ytdlp_asset() -> String {

@@ -59,6 +59,9 @@
   <p class="status" class:failed={addon.state.type === 'failed'}>
     {addonStatus(addon)}
   </p>
+  {#if addon.note}
+    <p class="note">{addon.note}</p>
+  {/if}
   <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
   {#if installing}
     <div
@@ -126,6 +129,14 @@
 
   .status.failed {
     color: var(--danger);
+  }
+
+  .note {
+    max-width: 320px;
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    text-align: right;
   }
 
   .wire {

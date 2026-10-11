@@ -15,6 +15,7 @@
     formatSize,
     formatSpeed,
     folderOf,
+    linkForDisplay,
     MEDIA_SOURCE_LABEL,
     progressFraction,
     STATUS_LABEL,
@@ -191,12 +192,12 @@
       <div>
         <dt>Link</dt>
         <dd class="path">
-          <span class="url">{one.url}</span>
+          <span class="url">{linkForDisplay(one.url)}</span>
           <button
             class="icon-btn"
             aria-label="Copy link"
             title="Copy link"
-            onclick={() => copyLink(one.url)}
+            onclick={() => copyLink(linkForDisplay(one.url))}
           >
             <Copy size={14} aria-hidden="true" />
           </button>

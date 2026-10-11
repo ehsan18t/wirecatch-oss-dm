@@ -71,6 +71,7 @@ mod tests {
             installed_version: None,
             latest_version: None,
             size: None,
+            note: None,
         }
     }
 

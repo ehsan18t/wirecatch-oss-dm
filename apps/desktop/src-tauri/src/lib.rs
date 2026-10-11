@@ -31,6 +31,7 @@
 //! | `get_settings` | none | `AppSettings` |
 //! | `update_settings` | `settings: AppSettings` | nothing |
 //! | `export_settings` | `path: String` | nothing |
+//! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
 //! | `import_settings` | `path: String` | nothing |
 //! | `pending_confirmations` | none | `Vec<PendingCapture>` |
 //! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | nothing |
@@ -192,6 +193,7 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::export_settings,
+            commands::preview_import,
             commands::import_settings,
             commands::pending_confirmations,
             commands::confirm_capture,
@@ -258,7 +260,8 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
         app.state::<Lifecycle>().keep(checking);
     }
 
-    let data_dir = host::data_dir(&app.path().data_dir()?);
+    // Moves a data folder an earlier version kept in the roaming profile, before anything opens it.
+    let data_dir = host::data_dir(&app.path().local_data_dir()?, &app.path().data_dir()?);
     let home = app.path().home_dir().unwrap_or_else(|_| data_dir.clone());
     let config = ManagerConfig::new(data_dir.clone(), host::known_folders(&home));
     app.manage(Core::new(config));

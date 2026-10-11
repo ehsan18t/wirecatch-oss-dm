@@ -10,6 +10,7 @@
 
 pub(crate) mod archive;
 pub(crate) mod manifest;
+pub(crate) mod signature;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -115,6 +116,17 @@ impl MediaTools {
     pub fn is_broken(&self) -> bool {
         self.broken.load(Ordering::Relaxed)
     }
+
+    /// Tools whose ffmpeg is `ffmpeg`, for tests of code that runs it.
+    #[cfg(test)]
+    pub fn for_test(ffmpeg: &Path) -> MediaTools {
+        MediaTools {
+            ytdlp: PathBuf::from("yt-dlp"),
+            ffmpeg: ffmpeg.to_path_buf(),
+            deno: PathBuf::from("deno"),
+            broken: Arc::default(),
+        }
+    }
 }
 
 /// The add-on's programs if every recorded file is there with its recorded
@@ -170,6 +182,12 @@ pub(crate) struct Release {
     /// When it was published (RFC 3339).
     #[serde(default)]
     pub published_at: Option<String>,
+    /// A draft is not published yet.
+    #[serde(default)]
+    pub draft: bool,
+    /// Marked as not ready for everyone.
+    #[serde(default)]
+    pub prerelease: bool,
     #[serde(default)]
     pub assets: Vec<Asset>,
 }

@@ -53,6 +53,22 @@ pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
         .map(|h| h.value.as_str())
 }
 
+/// `headers` without the sign-in they carry, or `None` when they carry none:
+/// cookies, `Authorization` and any other header that may hold a token are
+/// dropped; the referring page and the harmless headers of
+/// [`SAFE_FOR_ANY_SITE`] stay.
+pub(crate) fn without_sign_in(headers: &[Header]) -> Option<Vec<Header>> {
+    let kept: Vec<Header> = headers
+        .iter()
+        .filter(|h| {
+            let name = h.name.trim().to_ascii_lowercase();
+            name == "referer" || SAFE_FOR_ANY_SITE.contains(&name.as_str())
+        })
+        .cloned()
+        .collect();
+    (kept.len() != headers.len()).then_some(kept)
+}
+
 /// The headers a download keeps when its link moves to another site (another
 /// scheme, host or port).
 pub(crate) fn for_another_site(headers: &[Header]) -> Vec<Header> {

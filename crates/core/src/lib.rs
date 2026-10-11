@@ -19,6 +19,7 @@ mod media;
 mod naming;
 mod owner_only;
 mod profile;
+mod redact;
 mod schedule;
 mod server;
 mod settings;
@@ -28,7 +29,7 @@ mod user_error;
 mod zone;
 
 pub use addons::manifest::{
-    AddonComponent, AddonFile, ArchiveKind, MEDIA_ADDON_ID, MediaAddonSources,
+    AddonComponent, AddonFile, ArchiveKind, MEDIA_ADDON_ID, MediaAddonSources, PinnedKey,
 };
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};

@@ -162,7 +162,15 @@ async fn run_stream(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, UserError> {
-    let mut request = StreamRequest::new(job.url.clone(), &job.output);
+    // The stream is saved in the work folder first and put in place by
+    // `finish`, which marks it as downloaded from the internet before it is
+    // ever at its final name.
+    let work = media::work_dir(&job.output);
+    tokio::fs::create_dir_all(&work)
+        .await
+        .map_err(|e| disk(&e, &job.output))?;
+    let staged = work.join(job.output.file_name().unwrap_or_else(|| "stream".as_ref()));
+    let mut request = StreamRequest::new(job.url.clone(), &staged);
     request.video = choice(video);
     request.audio = choice(audio);
     request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
@@ -170,9 +178,7 @@ async fn run_stream(
     let stream = Arc::new(StreamProgress::default());
     progress.add_stream(stream.clone());
     match wirecatch_streams::download(request, stream, cancel.clone()).await {
-        Ok(wirecatch_streams::Outcome::Completed { path, bytes, .. }) => {
-            Ok(MediaDone::Completed { path, bytes })
-        }
+        Ok(wirecatch_streams::Outcome::Completed { path, .. }) => finish(&path, job, &work).await,
         Ok(_) | Err(wirecatch_streams::Error::Cancelled) => Ok(MediaDone::Paused),
         Err(e) => {
             note_missing_ffmpeg(job, &e);
@@ -625,6 +631,9 @@ pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> U
             folder,
             false,
         ),
+        // A track that is not a real video or audio file: the link most
+        // likely does not point at the video any more.
+        E::UnknownFormat { role } => crate::media::merge::unknown_format(role),
         E::Live | E::Drm(_) | E::Unsupported(_) | E::PrivateNetwork | E::NothingChosen => {
             with(None)
         }
@@ -728,6 +737,68 @@ mod tests {
         )
         .await;
         assert_eq!(ended, Err(media::unreadable()));
+    }
+
+    /// A stream (here one HLS segment, joined without ffmpeg) is saved in the
+    /// work folder, marked, and only then put at its final name: the final
+    /// file never exists without the mark.
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
+        // MPEG-TS packets: 188 bytes each, starting with the sync byte.
+        let segment: Vec<u8> = (0..188 * 40)
+            .map(|i| if i % 188 == 0 { 0x47 } else { (i % 251) as u8 })
+            .collect();
+        let app = axum::Router::new()
+            .route(
+                "/index.m3u8",
+                axum::routing::get(|| async {
+                    "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n"
+                }),
+            )
+            .route(
+                "/seg0.ts",
+                axum::routing::get(move || {
+                    let segment = segment.clone();
+                    async move { segment }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("clip.mp4");
+        let job = Job {
+            output: output.clone(),
+            url: Url::parse(&format!("http://{addr}/index.m3u8")).unwrap(),
+            origin: Origin::default(),
+            tools: None,
+            options: DownloadOptions::default(),
+            temp_dir: PathBuf::new(),
+            timeout: Duration::from_secs(5),
+            reserve: Arc::new(|_: &Path, _| true),
+        };
+        let done = run_stream(
+            &job,
+            Pick::Auto,
+            Pick::Auto,
+            &MediaProgress::default(),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let MediaDone::Completed { path, .. } = done else {
+            panic!("not completed: {done:?}");
+        };
+        assert_eq!(path.parent(), output.parent(), "{}", path.display());
+        let mark = std::fs::read_to_string(format!("{}:Zone.Identifier", path.display()))
+            .expect("the stream was put in place without the mark");
+        assert!(mark.contains("ZoneId=3"), "{mark}");
+        assert!(
+            !media::work_dir(&output).exists(),
+            "the work folder was left"
+        );
     }
 
     /// The finished file carries the Mark of the Web the moment it is in place.
@@ -861,6 +932,10 @@ mod tests {
             (E::PrivateNetwork, None),
             (E::Unsupported("several periods".into()), None),
             (E::Cancelled, Some(FixAction::Retry)),
+            (
+                E::UnknownFormat { role: "video" },
+                Some(FixAction::RefreshLink),
+            ),
         ];
         for (error, fix) in errors {
             let user = stream_error(&error, folder);

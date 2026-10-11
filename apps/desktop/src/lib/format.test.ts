@@ -11,6 +11,7 @@ import {
   formatSchedule,
   formatSize,
   formatSpeed,
+  linkForDisplay,
   parseTime,
   scheduleAllows,
 } from './format';
@@ -106,6 +107,18 @@ describe('links', () => {
     ]);
     expect(extractUrls('no links here')).toEqual([]);
     expect(extractUrls('https://a.com/x https://a.com/x')).toHaveLength(1);
+  });
+
+  it('never shows or copies a password in a link', () => {
+    expect(linkForDisplay('https://ada:s3cret@example.com/a.zip')).toBe(
+      'https://ada:***@example.com/a.zip',
+    );
+    expect(linkForDisplay('ftp://ada:p@ss@files.example.com:21/x?y=a@b')).toBe(
+      'ftp://ada:***@files.example.com:21/x?y=a@b',
+    );
+    expect(linkForDisplay('https://token@example.com/a')).toBe('https://***@example.com/a');
+    expect(linkForDisplay('https://example.com/a@b?c=d@e')).toBe('https://example.com/a@b?c=d@e');
+    expect(linkForDisplay('not a link')).toBe('not a link');
   });
 
   it('guesses file names and folders', () => {

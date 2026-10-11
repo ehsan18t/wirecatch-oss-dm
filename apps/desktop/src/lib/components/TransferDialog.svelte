@@ -45,9 +45,32 @@
     return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
   });
 
+  // What importing the chosen file would change, shown before anything is applied.
+  const preview = $derived(mode === 'import' ? (app.importPreview?.preview ?? null) : null);
+  const previewQueues = $derived.by(() => {
+    if (!preview) return '';
+    const names = (list: string[]) => list.join(', ');
+    return [
+      preview.queues_added.length > 0 ? `Adds queues: ${names(preview.queues_added)}.` : '',
+      preview.queues_updated.length > 0 ? `Changes queues: ${names(preview.queues_updated)}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  });
+  const previewAddons = $derived(
+    (preview?.addons_to_offer ?? []).flatMap((id) => app.addons?.find((a) => a.id === id) ?? []),
+  );
+  let importButton = $state<HTMLButtonElement>();
+  // The button that chose the file is gone once the preview shows; Import takes the focus.
+  $effect(() => {
+    if (preview && !done && !busy) importButton?.focus();
+  });
+
   async function run() {
     busy = true;
-    done = mode === 'export' ? await app.exportSettings() : await app.importSettings();
+    if (mode === 'export') done = await app.exportSettings();
+    else if (preview) done = await app.importSettings();
+    else await app.previewImport();
     busy = false;
   }
 </script>
@@ -89,13 +112,45 @@
             {#each moved as folder (folder.setting)}
               <li class="folder">
                 <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
-                <span class="was">The file asked for {folder.requested}, which is not here.</span>
+                <span class="was">
+                  {folder.reason ?? `The file asked for ${folder.requested}, which is not here.`}
+                </span>
               </li>
             {/each}
           </ul>
         </div>
       {/if}
     {/if}
+  {:else if preview}
+    <div class="preview">
+      <p class="note lead">
+        Nothing has changed yet. Importing this file replaces your settings like this:
+      </p>
+      <h3>Folders</h3>
+      <ul>
+        {#each preview.folders as folder (folder.setting)}
+          <li class="folder" class:flagged={folder.reason || folder.outside_user_folders}>
+            <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
+            {#if folder.reason}
+              <span class="was">{folder.reason} Downloads go to the folder above instead.</span>
+            {:else if folder.outside_user_folders}
+              <span class="was"
+                >This folder is outside your own folders. Check that you want downloads there.</span
+              >
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      {#if previewQueues}
+        <p class="note">{previewQueues}</p>
+      {/if}
+      {#each previewAddons as addon (addon.id)}
+        <p class="note">
+          The file lists the {addon.name.toLowerCase()}, which is not installed here. Wirecatch
+          offers it after the import; nothing is downloaded without you.
+        </p>
+      {/each}
+    </div>
   {:else}
     <div class="lists">
       <div>
@@ -121,6 +176,11 @@
     {#if done}
       <button class="btn primary" bind:this={doneButton} onclick={() => app.closeDialog()}
         >Done</button
+      >
+    {:else if preview}
+      <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
+      <button class="btn primary" bind:this={importButton} disabled={busy} onclick={run}
+        >Import</button
       >
     {:else}
       <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
@@ -184,6 +244,23 @@
 
   .moved {
     margin-top: 14px;
+  }
+
+  .preview {
+    display: grid;
+    gap: 6px;
+  }
+
+  .preview .note {
+    margin: 4px 0 0;
+  }
+
+  .preview .lead {
+    margin: 0 0 6px;
+  }
+
+  li.folder.flagged strong {
+    color: var(--danger);
   }
 
   .offer {

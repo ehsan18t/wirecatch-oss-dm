@@ -8,6 +8,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  ImportPreview,
   MediaChoice,
   MediaSelection,
   PendingCapture,
@@ -79,6 +80,8 @@ export interface Backend {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<void>;
   exportSettings(path: string): Promise<void>;
+  /** What importing the settings file at `path` would change, without changing anything. */
+  previewImport(path: string): Promise<ImportPreview>;
   importSettings(path: string): Promise<void>;
 
   pendingConfirmations(): Promise<PendingCapture[]>;
@@ -155,6 +158,7 @@ export const COMMANDS = {
   getSettings: 'get_settings',
   updateSettings: 'update_settings',
   exportSettings: 'export_settings',
+  previewImport: 'preview_import',
   importSettings: 'import_settings',
   pendingConfirmations: 'pending_confirmations',
   confirmCapture: 'confirm_capture',

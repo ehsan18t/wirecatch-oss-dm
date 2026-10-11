@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PendingCapture, QueueId } from '@wirecatch/protocol';
-  import { formatBytes, hostOf } from '$lib/format';
+  import { formatBytes, hostOf, linkForDisplay } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
   import Dialog from './Dialog.svelte';
@@ -78,7 +78,7 @@
       </select>
     </label>
 
-    <p class="link" title={capture.url}>{capture.url}</p>
+    <p class="link" title={linkForDisplay(capture.url)}>{linkForDisplay(capture.url)}</p>
   </form>
 
   {#snippet footer()}

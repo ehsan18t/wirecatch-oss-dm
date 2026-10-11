@@ -11,6 +11,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  ImportPreview,
   MediaChoice,
   MediaSelection,
   PendingCapture,
@@ -125,6 +126,9 @@ export class TauriBackend implements Backend {
   }
   exportSettings(path: string) {
     return this.#exec(COMMANDS.exportSettings, { path });
+  }
+  previewImport(path: string) {
+    return this.#call<ImportPreview>(COMMANDS.previewImport, { path });
   }
   importSettings(path: string) {
     return this.#exec(COMMANDS.importSettings, { path });

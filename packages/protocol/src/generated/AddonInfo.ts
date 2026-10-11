@@ -16,4 +16,9 @@ description: string, state: AddonState, installed_version: string | null, latest
 /**
  * Download size of the latest version, when known.
  */
-size: number | null, };
+size: number | null, 
+/**
+ * A plain sentence about updates to show with the add-on, for example
+ * that a newer version waits until it is two days old (D21.1).
+ */
+note: string | null, };

@@ -2,6 +2,7 @@
   // Right-click menu for the selected downloads. It only mirrors actions that are also visible
   // in the detail panel and the command palette (D3: nothing lives only in a context menu).
   import { onMount } from 'svelte';
+  import { linkForDisplay } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
 
   let { x, y, onclose }: { x: number; y: number; onclose: (refocusList: boolean) => void } =
@@ -46,7 +47,7 @@
           label: 'Copy link',
           run: async () => {
             try {
-              await navigator.clipboard.writeText(one.url);
+              await navigator.clipboard.writeText(linkForDisplay(one.url));
               app.notify('Link copied.');
             } catch {
               app.fail(

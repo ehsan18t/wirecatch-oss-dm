@@ -58,6 +58,14 @@ enum Ended {
 impl Manager {
     /// Starts the engine on `id`. The caller has already checked every limit.
     pub(super) fn start_run(&self, state: &mut State, id: DownloadId) {
+        // A sign-in older than a week is never sent, even before the hourly
+        // look at old downloads has got to it.
+        let now = self.inner.clock.unix_millis();
+        if let Some(entry) = state.downloads.get_mut(&id)
+            && super::sign_in::forget_if_old(entry, now)
+        {
+            self.save(state, id);
+        }
         let run_id = state.ids.run();
         let answered = CancellationToken::new();
         let connections = usize::from(state.settings.connections_per_download);
@@ -85,6 +93,10 @@ impl Manager {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),
         };
+        let mark = Mark {
+            url: entry.row.url.clone(),
+            referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
+        };
         match engine_request(entry, connections, limiters, target) {
             #[cfg(test)]
             Ok(_) if self.fake_engine().is_some() => {
@@ -98,7 +110,7 @@ impl Manager {
             }
             Ok(request) => self.launch(state, id, run_id, answered, move |cancel| {
                 let progress = Arc::new(Progress::default());
-                let work = wirecatch_engine::download(request, progress.clone(), cancel);
+                let work = download_marked(request, progress.clone(), cancel, mark);
                 (Gauge::Engine(progress), async move {
                     RunEnd::Engine(work.await)
                 })
@@ -111,7 +123,7 @@ impl Manager {
     pub(super) fn fail_to_start(&self, state: &mut State, id: DownloadId, error: UserError) {
         if let Some(entry) = state.downloads.get_mut(&id) {
             entry.row.status = DownloadStatus::Failed;
-            entry.row.error = Some(error);
+            entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
         }
         self.save(state, id);
     }
@@ -227,8 +239,9 @@ impl Manager {
                     // Reserved by the media job while it put the file in place.
                     state.claimed.remove(entry.path());
                 }
-                let referrer = headers::referrer(&entry.origin.headers).map(str::to_string);
-                self.mark_downloaded(entry.path(), &entry.row.url, referrer);
+                // Already marked as downloaded from the internet: the run did
+                // that before it reported the file (see `download_marked` and
+                // the media job's `finish`).
                 entry.row.status = DownloadStatus::Completed;
                 entry.row.total = Some(bytes);
                 entry.row.done = bytes;
@@ -260,7 +273,7 @@ impl Manager {
             }
             (Ended::Failed(error), None) => {
                 entry.row.status = DownloadStatus::Failed;
-                entry.row.error = Some(error);
+                entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
             }
             (Ended::Vanished, None) => {
                 warn!(id = id.0, "download task ended without a result");
@@ -270,15 +283,6 @@ impl Manager {
         }
         self.save(state, id);
         self.reconcile(state);
-    }
-
-    /// Marks a finished file as downloaded from the internet (on Windows), in the
-    /// background and best effort.
-    pub(super) fn mark_downloaded(&self, path: &Path, url: &str, referrer: Option<String>) {
-        let (path, url) = (path.to_path_buf(), url.to_string());
-        self.inner.runtime.spawn_blocking(move || {
-            crate::zone::mark(&path, &url, referrer.as_deref());
-        });
     }
 
     /// Deletes a download's partial files in the background. A run started before
@@ -368,6 +372,34 @@ enum Target {
     Resolve(PathResolver),
 }
 
+/// What the Mark of the Web of a download says: where it came from.
+pub(super) struct Mark {
+    pub url: String,
+    pub referrer: Option<String>,
+}
+
+/// Runs the engine on `request`. A finished file is marked as downloaded from
+/// the internet before the run reports it, so it is never shown as finished
+/// (or opened from the app) without the mark. The part file is normally marked
+/// already while it downloads (see the ticker), and the mark moves with it when
+/// the engine renames it; this covers a download that finishes before that.
+async fn download_marked(
+    request: DownloadRequest,
+    progress: Arc<Progress>,
+    cancel: CancellationToken,
+    mark: Mark,
+) -> Result<Outcome, EngineError> {
+    let result = wirecatch_engine::download(request, progress, cancel).await;
+    if let Ok(Outcome::Completed { path, .. }) = &result {
+        let path = path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::zone::mark(&path, &mark.url, mark.referrer.as_deref());
+        })
+        .await;
+    }
+    result
+}
+
 /// The engine request for a download. The manager always decides the path, either
 /// up front or through its resolver.
 fn engine_request(
@@ -407,6 +439,51 @@ mod tests {
     use super::*;
     use crate::{KnownFolders, ManagerConfig};
     use wirecatch_protocol::app::AddRequest;
+
+    /// A file served at `/file.bin` on a local server; returns its address.
+    async fn serve_file(body: Vec<u8>) -> String {
+        let app = axum::Router::new().route(
+            "/file.bin",
+            axum::routing::get(move || {
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/file.bin")
+    }
+
+    /// A download so small it finishes before the ticker could mark its part
+    /// file is still marked before the run reports it finished.
+    #[cfg(windows)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_download_is_marked_before_it_is_reported_finished() {
+        let url = serve_file(b"tiny".to_vec()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let mut request = DownloadRequest::new(Url::parse(&url).unwrap(), dir.path());
+        request.exact_path = Some(dir.path().join("tiny.bin"));
+        let mark = Mark {
+            url: format!("{url}?token=secret"),
+            referrer: Some("https://example.com/page".into()),
+        };
+        let outcome = download_marked(request, Arc::default(), CancellationToken::new(), mark)
+            .await
+            .unwrap();
+        let Outcome::Completed { path, .. } = outcome else {
+            panic!("not finished: {outcome:?}");
+        };
+        // Read at once: the run has reported the file, so the mark is there.
+        let text = std::fs::read_to_string(format!("{}:Zone.Identifier", path.display()))
+            .expect("the finished file was reported without the mark");
+        assert!(text.contains("ZoneId=3"), "{text}");
+        assert!(
+            text.contains("ReferrerUrl=https://example.com/page"),
+            "{text}"
+        );
+        assert!(!text.contains("secret"), "{text}");
+    }
 
     async fn paused_download() -> (Manager, DownloadId, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();

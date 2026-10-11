@@ -166,7 +166,7 @@ impl Manager {
             let addon = self.addon_info(&state.addon);
             self.emit(UiEvent::AddonRequired {
                 addon,
-                url: url.to_string(),
+                url: crate::redact::url_for_display(url.as_str()),
                 id,
             });
         } else {
@@ -184,7 +184,7 @@ impl Manager {
             .media
             .values()
             .filter_map(|m| match &m.stage {
-                MediaStage::Ready { choice, .. } => Some(choice.clone()),
+                MediaStage::Ready { choice, .. } => Some(choice_for_display(choice)),
                 _ => None,
             })
             .collect()
@@ -217,7 +217,7 @@ impl Manager {
                 let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
                     addon,
-                    url: choice_url,
+                    url: crate::redact::url_for_display(&choice_url),
                     id,
                 });
                 return Err(CoreError::AddonRequired);
@@ -323,7 +323,7 @@ impl Manager {
             .map(|(id, m)| AddonRequestItem {
                 id: *id,
                 addon: addon.clone(),
-                url: m.source.url.to_string(),
+                url: crate::redact::url_for_display(m.source.url.as_str()),
             })
             .collect()
     }
@@ -391,7 +391,7 @@ impl Manager {
         };
         self.emit(UiEvent::MediaAnalysing {
             id,
-            url: source.url.to_string(),
+            url: crate::redact::url_for_display(source.url.as_str()),
         });
         let found = match source.kind {
             MediaKind::Page => match &tools {
@@ -464,7 +464,7 @@ impl Manager {
                         plans,
                     };
                 }
-                self.emit(UiEvent::MediaChoiceRequested(choice));
+                self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
                 None
             }
             Err(error) => state.media.remove(&id).map(|pending| (pending, error)),
@@ -561,7 +561,7 @@ impl Manager {
         }
         if let Some(entry) = state.downloads.get_mut(&row.id) {
             entry.row.status = wirecatch_protocol::app::DownloadStatus::Failed;
-            entry.row.error = Some(error);
+            entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
         }
         self.save(&mut state, row.id);
         self.reconcile(&mut state);
@@ -614,6 +614,14 @@ impl Manager {
 }
 
 /// Request options carrying the browser's headers for the stream or page.
+/// A quality choice as the UI shows it: no password in the page's link.
+fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
+    MediaChoice {
+        page_url: crate::redact::optional_url_for_display(choice.page_url.as_deref()),
+        ..choice.clone()
+    }
+}
+
 pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.headers = headers::to_map(&origin.headers);

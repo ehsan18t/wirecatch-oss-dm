@@ -349,6 +349,18 @@ impl State {
 }
 
 impl Entry {
+    /// The row as it leaves the manager (for the UI, events and callers):
+    /// a password in its link is hidden. `row` keeps the real link.
+    pub fn summary(&self) -> DownloadSummary {
+        let mut row = self.row.clone();
+        row.url = crate::redact::url_for_display(&row.url);
+        // Some failures name the link they were about.
+        if let Some(error) = &mut row.error {
+            error.message = crate::redact::text_for_display(&error.message);
+        }
+        row
+    }
+
     pub fn path(&self) -> &std::path::Path {
         std::path::Path::new(&self.row.path)
     }
@@ -491,6 +503,24 @@ mod tests {
         let run = entry.run.unwrap();
         assert!(run.cancel.is_cancelled());
         run.stop
+    }
+
+    #[test]
+    fn the_row_that_leaves_the_manager_hides_link_passwords() {
+        let mut entry = running();
+        entry.row.url = "https://ada:s3cret@example.com/a.zip".into();
+        entry.row.error = Some(wirecatch_protocol::app::UserError {
+            message: "The key at https://ada:s3cret@example.com/key is not usable.".into(),
+            fix: None,
+        });
+        let shown = entry.summary();
+        assert_eq!(shown.url, "https://ada:***@example.com/a.zip");
+        assert_eq!(
+            shown.error.unwrap().message,
+            "The key at https://ada:***@example.com/key is not usable."
+        );
+        // The manager keeps the real link.
+        assert_eq!(entry.row.url, "https://ada:s3cret@example.com/a.zip");
     }
 
     #[test]
