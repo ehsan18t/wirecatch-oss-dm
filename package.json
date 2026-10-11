@@ -14,5 +14,16 @@
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build"
+  },
+  "pnpm": {
+    "overrides": {
+      "shell-quote@>=1.8.4 <1.11.0": ">=1.11.0",
+      "cookie@<0.7.0": ">=0.7.0 <0.8.0"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-86w9-cpqp-85rv"
+      ]
+    }
   }
 }

@@ -64,15 +64,26 @@ const desktopExclusion = () => (withDesktop ? [] : ['--exclude', DESKTOP_CRATE])
 
 class GateError extends Error {}
 
-/** pnpm is a `.cmd` script on Windows and needs a shell; cargo and git are real executables and must not get one, so `%` and quotes in their arguments reach them unchanged. */
-const needsShell = (command) => process.platform === 'win32' && command === 'pnpm';
+/** Upper bound on output read back from a command (cargo metadata of the whole workspace is a few MiB). */
+const MAX_CAPTURED_BYTES = 64 * 1024 * 1024;
+
+/**
+ * How to start a command. pnpm is a `.cmd` script on Windows and only starts through a shell, so it is passed as one command line built from this script's own constant arguments. cargo and git are real executables and start without a shell, so `%` and quotes in their arguments reach them unchanged.
+ */
+function invocation(command, args) {
+  if (process.platform === 'win32' && command === 'pnpm') {
+    return { file: [command, ...args].join(' '), args: [], shell: true };
+  }
+  return { file: command, args, shell: false };
+}
 
 function run(command, args, { env } = {}) {
   console.log(`\n$ ${[command, ...args].join(' ')}`);
-  const result = spawnSync(command, args, {
+  const how = invocation(command, args);
+  const result = spawnSync(how.file, how.args, {
     cwd: ROOT,
     stdio: 'inherit',
-    shell: needsShell(command),
+    shell: how.shell,
     env: { ...process.env, ...env },
   });
   if (result.status !== 0) {
@@ -81,11 +92,12 @@ function run(command, args, { env } = {}) {
 }
 
 function capture(command, args) {
-  return execFileSync(command, args, {
+  const how = invocation(command, args);
+  return execFileSync(how.file, how.args, {
     cwd: ROOT,
     encoding: 'utf8',
-    shell: needsShell(command),
-    maxBuffer: 64 * 1024 * 1024,
+    shell: how.shell,
+    maxBuffer: MAX_CAPTURED_BYTES,
   });
 }
 
@@ -250,6 +262,8 @@ const CHECKS = {
   'tauri-pairs': tauriPairs,
   deny: () => cargo('deny', '--locked', 'check'),
   'unused-deps': () => cargo('machete'),
+  // Ignored advisories live in `pnpm.auditConfig` in package.json. GHSA-86w9-cpqp-85rv (node-forge, no fixed release) reaches us only through web-ext's Android device support, which the Firefox signing script never uses.
+  'npm-audit': () => pnpm('audit'),
 };
 
 const GROUPS = {
@@ -257,7 +271,7 @@ const GROUPS = {
   js: ['protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'tauri-pairs'],
   release: ['engine-package'],
-  'supply-chain': ['unused-deps', 'deny'],
+  'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
 };
 
 /** What `node scripts/gate.mjs` runs with no arguments: everything a change must pass before it is reported done. */
