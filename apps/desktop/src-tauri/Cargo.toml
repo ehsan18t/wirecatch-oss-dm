@@ -40,7 +40,7 @@ tracing-subscriber = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # The same version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state.
-winreg = "0.10.1"
+winreg = "0.56.0"
 # The version Tauri already uses, to keep a download window behind the window that took the
 # focus from it (D23).
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
