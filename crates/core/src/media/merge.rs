@@ -111,7 +111,7 @@ pub(crate) async fn join(
         false,
         None,
         cancel,
-        |_| {},
+        |_, _| {},
     )
     .await
     {

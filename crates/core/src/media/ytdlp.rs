@@ -19,7 +19,7 @@ use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{FixAction, UserError};
 
 use super::MediaProgress;
-use super::process::{self, Ran, RunError};
+use super::process::{self, Output, Ran, RunError};
 use crate::addons::MediaTools;
 
 /// What yt-dlp says about a page (the fields Wirecatch reads).
@@ -174,7 +174,7 @@ pub(crate) async fn extract(
         true,
         Some(ctx.timeout),
         cancel,
-        |_| {},
+        |_, _| {},
     )
     .await;
     drop(cookies);
@@ -242,27 +242,36 @@ pub(crate) async fn download(
     args.push(ctx.page.as_str().into());
     let printed = std::sync::Mutex::new(None::<PathBuf>);
     let (done, total) = (AtomicU64::new(0), AtomicU64::new(0));
-    let result = process::run(&ctx.tools.ytdlp, &args, work, false, None, cancel, |line| {
-        if let Some(report) = line.trim().strip_prefix(PROGRESS_MARK) {
-            let mut numbers = report.split_whitespace().map(|n| n.parse::<f64>().ok());
-            let (now, all, guess) = (
-                numbers.next().flatten(),
-                numbers.next().flatten(),
-                numbers.next().flatten(),
-            );
-            if let Some(now) = now {
-                done.store(now as u64, Ordering::Relaxed);
-                total.store(all.or(guess).map_or(0, |t| t as u64), Ordering::Relaxed);
-                let total = Some(total.load(Ordering::Relaxed)).filter(|t| *t > 0);
-                progress.set_own(now as u64, total);
-            }
-        } else {
-            let path = PathBuf::from(line.trim());
-            if path.is_absolute() && path.starts_with(work) {
+    let result = process::run(
+        &ctx.tools.ytdlp,
+        &args,
+        work,
+        false,
+        None,
+        cancel,
+        |output, line| {
+            if let Some(report) = line
+                .trim()
+                .strip_prefix(PROGRESS_MARK)
+                .filter(|_| output == Output::Stdout)
+            {
+                let mut numbers = report.split_whitespace().map(|n| n.parse::<f64>().ok());
+                let (now, all, guess) = (
+                    numbers.next().flatten(),
+                    numbers.next().flatten(),
+                    numbers.next().flatten(),
+                );
+                if let Some(now) = now {
+                    done.store(now as u64, Ordering::Relaxed);
+                    total.store(all.or(guess).map_or(0, |t| t as u64), Ordering::Relaxed);
+                    let total = Some(total.load(Ordering::Relaxed)).filter(|t| *t > 0);
+                    progress.set_own(now as u64, total);
+                }
+            } else if let Some(path) = printed_output(output, line, work) {
                 *printed.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
             }
-        }
-    })
+        },
+    )
     .await;
     drop(cookies);
     let ran = match result {
@@ -280,10 +289,15 @@ pub(crate) async fn download(
         return Err(failed(&ran));
     }
     let printed = printed.into_inner().unwrap_or_else(|e| e.into_inner());
-    match printed
-        .filter(|p| p.is_file())
-        .or_else(|| largest_result(work))
-    {
+    let work = work.to_path_buf();
+    let found = tokio::task::spawn_blocking(move || {
+        printed
+            .and_then(|p| confirmed_output(&p, &work))
+            .or_else(|| largest_result(&work))
+    })
+    .await
+    .unwrap_or(None);
+    match found {
         Some(path) => Ok(Fetched::Done(path)),
         None => Err(fix(
             "The media add-on finished without saving the video. Try again.".into(),
@@ -291,21 +305,54 @@ pub(crate) async fn download(
     }
 }
 
-/// The largest finished file yt-dlp left in `work` (not a partial one).
+/// The path of the finished file in a line yt-dlp printed (`--print
+/// after_move:filepath`): from standard output only (a site's text in a
+/// warning on standard error is never taken for it), a full path straight
+/// inside `work` named `media.<ext>`, as the output template asks, with no
+/// `..` in it. Anything else is not taken for the result.
+fn printed_output(output: Output, line: &str, work: &Path) -> Option<PathBuf> {
+    if output != Output::Stdout {
+        return None;
+    }
+    let path = PathBuf::from(line.trim());
+    let plain = path.is_absolute()
+        && !path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir));
+    (plain && path.parent() == Some(work) && is_result_name(&path)).then_some(path)
+}
+
+/// Whether `path`'s file name is `media.<ext>`, the name the output template
+/// gives the finished file (`ext` being letters and digits only, so no partial
+/// or fragment file).
+fn is_result_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix("media."))
+        .is_some_and(|ext| {
+            (1..=10).contains(&ext.len()) && ext.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
+/// `path` if it really is a file straight inside `work`, once links and the
+/// like are resolved on both. Blocks on the disk.
+fn confirmed_output(path: &Path, work: &Path) -> Option<PathBuf> {
+    let real = std::fs::canonicalize(path).ok()?;
+    let work = std::fs::canonicalize(work).ok()?;
+    (real.parent() == Some(work.as_path()) && is_result_name(&real) && real.is_file())
+        .then(|| path.to_path_buf())
+}
+
+/// The largest finished file yt-dlp left in `work` (not a partial one), checked
+/// like a printed path. Blocks on the disk.
 fn largest_result(work: &Path) -> Option<PathBuf> {
     std::fs::read_dir(work)
         .ok()?
         .filter_map(Result::ok)
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            name.starts_with("media.")
-                && ![".part", ".ytdl", ".temp", ".json"]
-                    .iter()
-                    .any(|ext| name.ends_with(ext))
-                && !name.contains(".part-Frag")
-        })
-        .filter_map(|e| Some((e.metadata().ok()?.len(), e.path())))
-        .filter(|(_, p)| p.is_file())
+        .map(|e| e.path())
+        .filter(|p| is_result_name(p))
+        .filter_map(|p| confirmed_output(&p, work))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.len(), p)))
         .max_by_key(|(len, _)| *len)
         .map(|(_, p)| p)
 }
@@ -454,6 +501,70 @@ fn failed(ran: &Ran) -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_result_path_is_taken_only_from_stdout_and_only_inside_the_work_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("clip.mp4.wcmedia");
+        std::fs::create_dir_all(&work).unwrap();
+        let good = work.join("media.mp4");
+        let line = good.to_string_lossy().into_owned();
+        assert_eq!(
+            printed_output(Output::Stdout, &line, &work),
+            Some(good.clone())
+        );
+        // Standard error never names the result.
+        assert_eq!(printed_output(Output::Stderr, &line, &work), None);
+        let outside = dir.path().join("media.mp4");
+        let climbing = work.join("..").join("media.mp4");
+        let nested = work.join("sub").join("media.mp4");
+        for bad in [
+            outside.to_string_lossy().into_owned(),
+            climbing.to_string_lossy().into_owned(),
+            nested.to_string_lossy().into_owned(),
+            work.join("media.mp4.part").to_string_lossy().into_owned(),
+            work.join("media.f137.mp4").to_string_lossy().into_owned(),
+            work.join("secret.txt").to_string_lossy().into_owned(),
+            "media.mp4".to_string(),
+            "WARNING: see https://example.com".to_string(),
+        ] {
+            assert_eq!(printed_output(Output::Stdout, &bad, &work), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_result_must_really_be_a_file_in_the_work_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        // Not there yet.
+        assert_eq!(confirmed_output(&work.join("media.mp4"), &work), None);
+        std::fs::write(work.join("media.mp4"), b"video").unwrap();
+        std::fs::write(work.join("media.mp4.part"), b"partial, but larger").unwrap();
+        assert_eq!(
+            confirmed_output(&work.join("media.mp4"), &work),
+            Some(work.join("media.mp4"))
+        );
+        assert_eq!(largest_result(&work), Some(work.join("media.mp4")));
+        // A folder by the right name is not a file.
+        std::fs::create_dir(work.join("media.mkv")).unwrap();
+        assert_eq!(confirmed_output(&work.join("media.mkv"), &work), None);
+    }
+
+    /// A link named like the result that points elsewhere is refused, whether
+    /// printed or found by looking in the folder.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_out_of_the_work_folder_is_not_the_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let secret = dir.path().join("secret.mp4");
+        std::fs::write(&secret, b"someone else's file").unwrap();
+        std::os::unix::fs::symlink(&secret, work.join("media.mp4")).unwrap();
+        assert_eq!(confirmed_output(&work.join("media.mp4"), &work), None);
+        assert_eq!(largest_result(&work), None);
+    }
 
     #[test]
     fn cookies_are_bound_to_the_page_host() {

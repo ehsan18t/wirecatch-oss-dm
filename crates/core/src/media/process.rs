@@ -44,6 +44,13 @@ impl Ran {
     }
 }
 
+/// Which of a program's outputs a line came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Output {
+    Stdout,
+    Stderr,
+}
+
 /// Why a program did not run to its end.
 #[derive(Debug)]
 pub(crate) enum RunError {
@@ -55,7 +62,8 @@ pub(crate) enum RunError {
 
 /// Runs `program` with `args` in the folder `dir`. With `collect_stdout`,
 /// standard output is returned whole; otherwise each of its lines goes to
-/// `on_line`, as does every line of standard error.
+/// `on_line`, as does every line of standard error, each with the output it
+/// came from.
 ///
 /// The program and everything it starts form one group (a process group on
 /// Unix, a job object on Windows) that is killed as a whole when it is
@@ -69,7 +77,7 @@ pub(crate) async fn run(
     collect_stdout: bool,
     timeout: Option<Duration>,
     cancel: &CancellationToken,
-    mut on_line: impl FnMut(&str),
+    mut on_line: impl FnMut(Output, &str),
 ) -> Result<Ran, RunError> {
     let mut command = Command::new(program);
     command
@@ -131,7 +139,7 @@ pub(crate) async fn run(
         tokio::select! {
             line = rx.recv() => match line {
                 Some((is_err, line)) => {
-                    on_line(&line);
+                    on_line(if is_err { Output::Stderr } else { Output::Stdout }, &line);
                     if is_err {
                         tail.push(line);
                         if tail.len() > STDERR_TAIL {
