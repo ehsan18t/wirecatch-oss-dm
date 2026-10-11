@@ -39,11 +39,11 @@ describe('AppState', () => {
   it('selects ranges in display order', async () => {
     const { app } = await make();
     const [a, b, c] = app.visible;
-    app.selectOnly(a as number);
-    app.selectRange(c as number);
+    app.selectOnly(a!);
+    app.selectRange(c!);
     expect([...app.selection]).toEqual([a, b, c]);
-    app.toggle(b as number);
-    expect(app.selection.has(b as number)).toBe(false);
+    app.toggle(b!);
+    expect(app.selection.has(b!)).toBe(false);
     app.moveActive(1, true);
     expect(app.active).toBe(c);
     app.dispose();
@@ -53,19 +53,19 @@ describe('AppState', () => {
     const { app, backend } = await make();
     const spy = vi.spyOn(backend, 'reorder');
     const q = app.downloads.idsInQueue(1);
-    await app.placeInQueue(1, [q[3] as number], q[0] as number);
+    await app.placeInQueue(1, [q[3]!], q[0]!);
     const expected = [q[3], q[0], q[1], q[2], ...q.slice(4)];
     expect(app.downloads.idsInQueue(1)).toEqual(expected);
     expect(spy).toHaveBeenCalledWith(1, expected);
     // Dropping at the end.
-    await app.placeInQueue(1, [q[3] as number], null);
+    await app.placeInQueue(1, [q[3]!], null);
     expect(app.downloads.idsInQueue(1).at(-1)).toBe(q[3]);
     app.dispose();
   });
 
   it('only nudges inside a queue view', async () => {
     const { app } = await make();
-    app.selectOnly(app.visible[1] as number);
+    app.selectOnly(app.visible[1]!);
     await app.nudge(-1);
     expect(app.toasts.at(-1)?.message).toMatch(/Open a queue/);
     app.dispose();
@@ -99,9 +99,7 @@ describe('AppState', () => {
 
   it('runs fixes: choose a folder then retry', async () => {
     const { app } = await make();
-    const id = app.visible.find(
-      (x) => app.downloads.get(x)?.error?.fix === 'choose_folder',
-    ) as number;
+    const id = app.visible.find((x) => app.downloads.get(x)?.error?.fix === 'choose_folder')!;
     await app.fix(id, 'choose_folder');
     expect(app.downloads.get(id)?.status).toBe('queued');
     expect(app.downloads.get(id)?.path).not.toContain('E:\\Backups');
@@ -110,7 +108,7 @@ describe('AppState', () => {
 
   it('cancels a download, then starts it over from zero', async () => {
     const { app } = await make();
-    const id = app.visible.find((x) => app.downloads.get(x)?.status === 'paused') as number;
+    const id = app.visible.find((x) => app.downloads.get(x)?.status === 'paused')!;
     expect(app.downloads.get(id)?.done).toBeGreaterThan(0);
     await app.cancel([id]);
     expect(app.downloads.get(id)?.status).toBe('cancelled');
@@ -180,7 +178,7 @@ describe('commands', () => {
   it('cover the selection only when something is selected', async () => {
     const { app } = await make();
     expect(buildCommands(app).some((c) => c.group === 'Selected downloads')).toBe(false);
-    app.selectOnly(app.visible[0] as number);
+    app.selectOnly(app.visible[0]!);
     expect(buildCommands(app).some((c) => c.id === 'sel.pause')).toBe(true);
     app.dispose();
   });

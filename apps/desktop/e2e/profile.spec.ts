@@ -1,5 +1,6 @@
 // Not part of the acceptance run: a CPU profile of scrolling 10,000 rows with live updates,
-// summarized by self time per function. Run with PROFILE=1 to investigate slow frames.
+// summarized by self time per function and attached to the test report. Run with PROFILE=1 to
+// investigate slow frames.
 
 import { test } from '@playwright/test';
 import { open, rows } from './helpers';
@@ -9,7 +10,7 @@ interface Node {
   callFrame: { functionName: string; url: string; lineNumber: number };
 }
 
-test('profile scrolling', async ({ page }) => {
+test('profile scrolling', async ({ page }, testInfo) => {
   test.skip(!process.env.PROFILE, 'set PROFILE=1 to run');
   await open(page, process.env.PERF_QUERY ?? 'count=10000&active=60&capture=0');
   await rows(page).first().waitFor();
@@ -18,7 +19,7 @@ test('profile scrolling', async ({ page }) => {
   await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
   await cdp.send('Profiler.start');
   await page.evaluate(async () => {
-    const list = document.getElementById('download-list') as HTMLElement;
+    const list = document.getElementById('download-list')!;
     const max = list.scrollHeight - list.clientHeight;
     let pos = 0;
     await new Promise<void>((resolve) => {
@@ -48,5 +49,6 @@ test('profile scrolling', async ({ page }) => {
     self.set(key, (self.get(key) ?? 0) + (profile.timeDeltas[i] ?? 0) / 1000);
   });
   const top = [...self].sort((a, b) => b[1] - a[1]).slice(0, 25);
-  for (const [k, ms] of top) console.log(`${ms.toFixed(1).padStart(8)} ms  ${k}`);
+  const summary = top.map(([k, ms]) => `${ms.toFixed(1).padStart(8)} ms  ${k}`).join('\n');
+  await testInfo.attach('self time', { body: summary, contentType: 'text/plain' });
 });

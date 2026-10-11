@@ -138,7 +138,7 @@ test('keyboard only: every stop shows a visible focus ring', async ({ page }) =>
       const ring = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
       const shadow = s.boxShadow !== 'none';
       return {
-        name: el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30) ?? el.tagName,
+        name: el.getAttribute('aria-label') ?? (el.textContent.trim().slice(0, 30) || el.tagName),
         visible: ring || shadow,
       };
     });

@@ -48,7 +48,7 @@ function rowOf(radio: HTMLElement): HTMLElement {
 const optionTexts = (select: HTMLElement) =>
   within(select)
     .getAllByRole('option')
-    .map((o) => o.textContent?.trim());
+    .map((o) => o.textContent.trim());
 
 describe('the quality window with output formats', () => {
   it('starts as Original and says per quality what another format means', async () => {

@@ -14,7 +14,7 @@ describe('a download window fits its content', () => {
 
   it('resizes once per frame, only for a new height', () => {
     const fit = vi.fn();
-    const runs: Array<() => void> = [];
+    const runs: (() => void)[] = [];
     const report = fitReporter(fit, (run) => runs.push(run));
     report(400);
     report(420);

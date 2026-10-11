@@ -14,7 +14,7 @@ function block(selector: string): Record<string, string> {
   const close = css.indexOf('}', open);
   const tokens: Record<string, string> = {};
   for (const m of css.slice(open + 1, close).matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})\s*;/gi)) {
-    tokens[m[1] as string] = (m[2] as string).toLowerCase();
+    tokens[m[1]!] = m[2]!.toLowerCase();
   }
   return tokens;
 }
@@ -39,9 +39,9 @@ export function contrast(a: string, b: string): number {
 // [foreground, background, minimum]. 4.5 for text, 3 for focus rings, borders and icons.
 const TEXT = 4.5;
 const UI = 3;
-const PAIRS: Array<[string, string, number]> = [
+const PAIRS: [string, string, number][] = [
   ...['bg', 'surface', 'surface-2', 'surface-3', 'accent-soft'].flatMap(
-    (bg): Array<[string, string, number]> => [
+    (bg): [string, string, number][] => [
       ['ink', bg, TEXT],
       ['ink-2', bg, TEXT],
     ],
@@ -79,7 +79,7 @@ describe.each([
     const b = tokens[bg];
     expect(a, `token --${fg}`).toBeDefined();
     expect(b, `token --${bg}`).toBeDefined();
-    expect(contrast(a as string, b as string)).toBeGreaterThanOrEqual(min);
+    expect(contrast(a!, b!)).toBeGreaterThanOrEqual(min);
   });
 });
 

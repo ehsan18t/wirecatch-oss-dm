@@ -132,11 +132,11 @@ describe('a finished download’s window', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { host } = await show(b, { download: id });
     const window = screen.getByRole('button', { name: 'Open' }).closest('.progress-window');
-    await fireEvent.mouseEnter(window as Element);
+    await fireEvent.mouseEnter(window!);
     await settle();
     vi.advanceTimersByTime(CLOSE_AFTER_MS * 3);
     expect(host.close).not.toHaveBeenCalled();
-    await fireEvent.mouseLeave(window as Element);
+    await fireEvent.mouseLeave(window!);
     await settle();
     vi.advanceTimersByTime(CLOSE_AFTER_MS + 100);
     expect(host.close).toHaveBeenCalledTimes(1);

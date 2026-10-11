@@ -87,8 +87,8 @@ describe('Tauri command names', () => {
 
 describe('TauriBackend', () => {
   it('calls each command with camelCase argument keys', async () => {
-    const invoke = vi.fn(async () => undefined);
-    const b = new TauriBackend(invoke as never);
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const b = new TauriBackend(invoke);
     await b.remove([1, 2], true);
     await b.reorder(3, [2, 1]);
     await b.addDownload({
@@ -166,9 +166,11 @@ describe('TauriBackend', () => {
   });
 
   it('turns rejections into readable errors', async () => {
-    const b = new TauriBackend((async () => {
-      throw 'Wirecatch is not connected to its download engine yet.';
-    }) as never);
+    // Tauri rejects with the command's error as a plain string, not an Error.
+    const invoke = vi
+      .fn()
+      .mockRejectedValue('Wirecatch is not connected to its download engine yet.');
+    const b = new TauriBackend(invoke);
     await expect(b.listDownloads()).rejects.toBeInstanceOf(BackendError);
     await expect(b.listDownloads()).rejects.toThrow(/not connected/);
     expect(toBackendError({ message: 'x' }).message).toBe('x');

@@ -28,8 +28,8 @@ describe('dialogs', () => {
     await settle();
     const dialog = screen.getByRole('dialog');
     const buttons = within(dialog).getAllByRole('button');
-    const first = buttons[0] as HTMLElement;
-    const last = buttons.at(-1) as HTMLElement;
+    const first = buttons[0]!;
+    const last = buttons.at(-1)!;
 
     last.focus();
     await fireEvent.keyDown(dialog, { key: 'Tab' });

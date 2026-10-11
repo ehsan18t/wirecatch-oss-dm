@@ -26,12 +26,12 @@ describe('the add-on offer', () => {
     );
     const live = window.getByTestId('addon-live');
     expect(live).toHaveAttribute('aria-live', 'polite');
-    expect(live.textContent?.trim()).toBe('');
+    expect(live.textContent.trim()).toBe('');
 
     await userEvent.setup().click(window.getByRole('button', { name: /^Install$/ }));
     await settle();
     // The same element, now with the start of the install in it.
     expect(window.getByTestId('addon-live')).toBe(live);
-    expect(live.textContent?.trim()).toBe('Installing the media add-on.');
+    expect(live.textContent.trim()).toBe('Installing the media add-on.');
   });
 });

@@ -43,7 +43,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     const { app, user } = await setup();
     const before = app.downloads.size;
     const clipboardData = { getData: () => 'see https://example.com/files/report.pdf' };
-    fireEvent.paste(document.body, { clipboardData });
+    await fireEvent.paste(document.body, { clipboardData });
     await settle();
     expect(
       within(dialog()).getByDisplayValue('https://example.com/files/report.pdf'),
@@ -337,8 +337,8 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     await settle();
     await click(button('Import'));
     await settle();
-    expect(app.settings?.connections_per_download).toBe(3);
-    expect(app.settings?.default_folder).toBe('{Downloads}');
+    expect(app.settings.connections_per_download).toBe(3);
+    expect(app.settings.default_folder).toBe('{Downloads}');
   });
 
   it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {

@@ -205,9 +205,9 @@ describe('shell signals', () => {
   it('opens the Add dialog with links from a second launch, and reloads after missed events', async () => {
     const b = backend();
     let signal: ((s: ShellSignal) => void) | undefined;
-    vi.spyOn(b, 'onShellSignal').mockImplementation(async (listener) => {
+    vi.spyOn(b, 'onShellSignal').mockImplementation((listener) => {
       signal = listener;
-      return () => {};
+      return Promise.resolve(vi.fn());
     });
     const links = vi
       .spyOn(b, 'takeLaunchLinks')
@@ -235,9 +235,9 @@ describe('shell signals', () => {
   it('shows a storage failure from the core', async () => {
     const b = backend();
     let push: ((e: UiEvent) => void) | undefined;
-    vi.spyOn(b, 'subscribe').mockImplementation(async (listener) => {
+    vi.spyOn(b, 'subscribe').mockImplementation((listener) => {
       push = listener;
-      return () => {};
+      return Promise.resolve(vi.fn());
     });
     const app = new AppState(b);
     await app.init();

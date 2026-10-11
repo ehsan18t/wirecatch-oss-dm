@@ -2,7 +2,6 @@
 // Cancel, the media add-on for a picked quality, questions closed elsewhere, and the progress
 // that follows.
 
-import type { DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
 import {
@@ -278,8 +277,8 @@ describe('a progress window', () => {
   it('keeps only its own row from each batch', async () => {
     const b = backend();
     const { win } = await running(b);
-    const other = { ...(win.row as DownloadSummary), id: 999, done: 12345 };
-    const mine = { ...(win.row as DownloadSummary), done: 42 };
+    const other = { ...win.row!, id: 999, done: 12345 };
+    const mine = { ...win.row!, done: 42 };
     win.handle({ type: 'downloads_changed', data: [other] });
     expect(win.row?.done).not.toBe(12345);
     win.handle({ type: 'downloads_changed', data: [other, mine] });

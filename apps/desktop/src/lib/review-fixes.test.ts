@@ -31,13 +31,13 @@ const button = (name: RegExp | string) => screen.getByRole('button', { name });
 describe('2. the list does not jump back to the keyboard row', () => {
   it('keeps the scroll position when a status changes elsewhere', async () => {
     const { app, backend } = await setup();
-    app.selectOnly(app.visible[0] as number);
+    app.selectOnly(app.visible[0]!);
     await settle();
     const grid = screen.getByRole('grid', { name: 'Downloads' });
     const writes = vi.fn();
     Object.defineProperty(grid, 'scrollTop', { configurable: true, get: () => 2000, set: writes });
     const running = app.visible.find((id) => app.downloads.get(id)?.status === 'downloading');
-    await backend.pause(running as number);
+    await backend.pause(running!);
     await settle();
     expect(writes).not.toHaveBeenCalled();
     // Moving the keyboard row still brings it into view.
@@ -76,7 +76,7 @@ describe('4 and 12. destructive actions ask first, with focus on the safe choice
   it('cancel asks, focuses Keep downloading, and only then discards', async () => {
     const { app, click } = await setup();
     await click(rowByName('LibreOffice'));
-    const id = app.selectedRows[0]?.id as number;
+    const id = app.selectedRows[0]!.id;
     await click(button('Cancel and discard the partial file'));
     expect(document.activeElement).toBe(button('Keep downloading'));
     expect(app.downloads.get(id)?.status).not.toBe('cancelled');
@@ -102,7 +102,7 @@ describe('5. waiting downloads say why', () => {
     const reasons = app.visible.map((id) => app.downloads.get(id)?.waiting?.type).filter(Boolean);
     expect(reasons).toContain('queue_full');
     expect(reasons).toContain('in_line');
-    expect(screen.getAllByRole('row').some((r) => /2nd in line/.test(r.textContent ?? ''))).toBe(
+    expect(screen.getAllByRole('row').some((r) => r.textContent.includes('2nd in line'))).toBe(
       true,
     );
   });
@@ -180,11 +180,11 @@ describe('7. Try again does not double the listeners', () => {
 
   it('dispose before the backend is ready leaves nothing listening', async () => {
     const backend = new MockBackend({ autoTick: false, now: () => NOON });
-    let release: (b: MockBackend) => void = () => {};
-    const app = new AppState(() => new Promise((r) => (release = r)));
+    const ready = Promise.withResolvers<MockBackend>();
+    const app = new AppState(() => ready.promise);
     const started = app.init();
     app.dispose();
-    release(backend);
+    ready.resolve(backend);
     await started;
     backend.simulateCapture();
     expect(app.toasts).toHaveLength(0);
@@ -204,7 +204,7 @@ describe('8. the days picker says what it does', () => {
     expect(
       within(days)
         .getAllByRole('button', { pressed: true })
-        .map((b) => b.textContent?.trim()),
+        .map((b) => b.textContent.trim()),
     ).toEqual(['Mon']);
     expect(screen.getByText('Runs only on Mon.')).toBeInTheDocument();
   });
@@ -226,7 +226,7 @@ describe('10. the palette', () => {
 
   it('does not match letters scattered across a word', async () => {
     const { app } = await setup();
-    app.selectOnly(app.visible[0] as number);
+    app.selectOnly(app.visible[0]!);
     const titles = searchCommands(buildCommands(app), 'move').map((c) => c.title);
     expect(titles.length).toBeGreaterThan(0);
     for (const t of titles) expect(t).not.toMatch(/^Resume|^Remove/);
@@ -267,10 +267,12 @@ describe('14. pasting into a text field is just pasting', () => {
     const { app } = await setup();
     const search = screen.getByRole('searchbox', { name: 'Search downloads' });
     search.focus();
-    fireEvent.paste(search, { clipboardData: { getData: () => 'https://example.com/a.zip' } });
+    await fireEvent.paste(search, {
+      clipboardData: { getData: () => 'https://example.com/a.zip' },
+    });
     await settle();
     expect(app.dialog).toBeNull();
-    fireEvent.paste(document.body, {
+    await fireEvent.paste(document.body, {
       clipboardData: { getData: () => 'https://example.com/a.zip' },
     });
     await settle();
@@ -283,7 +285,7 @@ describe('16. bulk actions run together and report once', () => {
     const { app, backend } = await setup();
     const ids = app.visible.slice(0, 3);
     let calls = 0;
-    const gates: Array<() => void> = [];
+    const gates: (() => void)[] = [];
     vi.spyOn(backend, 'pause').mockImplementation(async (id) => {
       calls += 1;
       await new Promise<void>((r) => gates.push(r));
@@ -305,7 +307,7 @@ describe('16. bulk actions run together and report once', () => {
 describe('20. a link dropped on the window', () => {
   it('opens the Add dialog with it', async () => {
     const { app } = await setup();
-    fireEvent.drop(window, {
+    await fireEvent.drop(window, {
       dataTransfer: {
         types: ['text/uri-list'],
         getData: (t: string) => (t === 'text/uri-list' ? 'https://example.org/big.iso' : ''),
@@ -319,12 +321,12 @@ describe('20. a link dropped on the window', () => {
 describe('21. right-click menu on rows', () => {
   it('mirrors the visible actions, by mouse and by keyboard', async () => {
     const { app, user, click } = await setup();
-    fireEvent.contextMenu(rowByName('LibreOffice'));
+    await fireEvent.contextMenu(rowByName('LibreOffice'));
     await settle();
     const menu = screen.getByRole('menu');
     const labels = within(menu)
       .getAllByRole('menuitem')
-      .map((m) => m.textContent?.trim());
+      .map((m) => m.textContent.trim());
     expect(labels).toEqual(
       expect.arrayContaining([
         'Pause',
@@ -352,7 +354,7 @@ describe('21. right-click menu on rows', () => {
 describe('a password in a link is never shown or copied', () => {
   it('the detail panel and Copy link use the hidden form', async () => {
     const { app, backend, click } = await setup({ empty: true });
-    const writeText = vi.fn(async () => {});
+    const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
@@ -376,7 +378,7 @@ describe('a password in a link is never shown or copied', () => {
       .getAllByRole('row')
       .find((r) => r.getAttribute('aria-selected') === 'true');
     if (!selected) throw new Error('the row is not shown');
-    fireEvent.contextMenu(selected);
+    await fireEvent.contextMenu(selected);
     await settle();
     await click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy link' }));
     expect(writeText).toHaveBeenLastCalledWith('https://ada:***@example.com/files/locked.zip');

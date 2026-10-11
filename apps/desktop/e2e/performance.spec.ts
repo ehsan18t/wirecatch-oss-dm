@@ -2,7 +2,7 @@
 //
 // Loads 10,000 sample downloads with 60 of them running (60 rows change four times a second),
 // then measures frame times with requestAnimationFrame while (a) idle and (b) scrolling the
-// list continuously, and records long tasks. Results go to test-results/performance.json.
+// list continuously, and records long tasks. Results go to test-results/performance.json and the test's attachments.
 
 import { expect, test } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,7 @@ interface FrameStats {
   longestTaskMs: number;
 }
 
-test('10,000 downloads stay smooth while updating and scrolling', async ({ page }) => {
+test('10,000 downloads stay smooth while updating and scrolling', async ({ page }, testInfo) => {
   const navStart = Date.now();
   await open(page, process.env.PERF_QUERY ?? 'count=10000&active=60&capture=0');
   await rows(page).first().waitFor();
@@ -31,7 +31,7 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
 
   const measure = (scroll: boolean) =>
     page.evaluate(async (doScroll): Promise<FrameStats> => {
-      const list = document.getElementById('download-list') as HTMLElement;
+      const list = document.getElementById('download-list')!;
       const max = list.scrollHeight - list.clientHeight;
       let pos = list.scrollTop;
       const deltas: number[] = [];
@@ -96,9 +96,10 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
     idleWithUpdates: idle,
     scrollingWithUpdates: scrolling,
   };
-  console.log(JSON.stringify(results, null, 2));
+  const report = JSON.stringify(results, null, 2);
+  await testInfo.attach('performance', { body: report, contentType: 'application/json' });
   mkdirSync('test-results', { recursive: true });
-  writeFileSync('test-results/performance.json', JSON.stringify(results, null, 2));
+  writeFileSync('test-results/performance.json', report);
 
   expect(total).toBe('10000');
   // Virtualized: only a screenful of rows exists in the page.

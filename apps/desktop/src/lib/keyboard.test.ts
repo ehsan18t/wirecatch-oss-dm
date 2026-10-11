@@ -72,11 +72,11 @@ describe('keyboard only', () => {
     list.focus();
     await press('{ArrowDown}{ArrowDown}');
     const moving = app.active;
-    expect(app.downloads.idsInQueue(1).indexOf(moving as number)).toBe(1);
+    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(1);
     await press('{Alt>}{ArrowUp}{/Alt}');
-    expect(app.downloads.idsInQueue(1).indexOf(moving as number)).toBe(0);
+    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(0);
     await press('{Alt>}{ArrowDown}{ArrowDown}{/Alt}');
-    expect(app.downloads.idsInQueue(1).indexOf(moving as number)).toBe(2);
+    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(2);
   });
 
   it('runs any action from the command palette', async () => {
@@ -97,7 +97,7 @@ describe('keyboard only', () => {
     await press('window before');
     const option = screen
       .getAllByRole('option')
-      .find((o) => o.textContent?.includes('Browser: Show a window before each download'));
+      .find((o) => o.textContent.includes('Browser: Show a window before each download'));
     expect(option).toBeDefined();
     while (
       screen
