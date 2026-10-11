@@ -236,6 +236,8 @@ export class MediaButton {
     { src: string | null; show: boolean; at: number }
   >();
   readonly #asking = new WeakSet<HTMLMediaElement>();
+  /** Open shadow roots already searched for media, each once. */
+  readonly #searched = new WeakSet<ShadowRoot>();
   /** Removes the listeners that watch the page; run when the setting goes off. */
   readonly #cleanups: Array<() => void> = [];
   #enabled = false;
@@ -307,6 +309,7 @@ export class MediaButton {
     this.#listen(doc, 'pause', (e) => this.#onStop(e), true);
     this.#listen(doc, 'ended', (e) => this.#onStop(e), true);
     this.#listen(doc, 'loadedmetadata', (e) => this.#track(e.target), true);
+    this.#listen(doc, 'pointerover', (e) => this.#discover(e), true);
     this.#listen(doc, 'pointermove', (e) => this.#onPointer(e as PointerEvent), true);
     this.#listen(doc, 'pointerout', (e) => {
       if ((e as PointerEvent).relatedTarget === null) this.#onPointerGone();
@@ -404,15 +407,15 @@ export class MediaButton {
     return target;
   }
 
-  /** Media under the pointer inside open shadow roots, which the page-level search may not have seen yet. */
-  #findAt(x: number, y: number): void {
-    const queue: Array<Document | ShadowRoot> = [this.#doc];
-    for (let i = 0, root = queue[0]; root !== undefined && i < 20; i += 1, root = queue[i]) {
-      if (typeof root.elementsFromPoint !== 'function') return;
-      for (const el of root.elementsFromPoint(x, y)) {
-        if (el instanceof HTMLMediaElement) this.#track(el);
-        else if (el.shadowRoot !== null && !queue.includes(el.shadowRoot))
-          queue.push(el.shadowRoot);
+  /**
+   * Media the pointer comes near that the first search could not see: inside an open shadow root added later (a player built after the page loaded). Each root on the pointer's way in is searched once, when the pointer first enters it, so a page without media pays nothing per move.
+   */
+  #discover(event: Event): void {
+    for (const node of event.composedPath()) {
+      if (node instanceof HTMLMediaElement) this.#track(node);
+      else if (node instanceof ShadowRoot && !this.#searched.has(node)) {
+        this.#searched.add(node);
+        for (const el of findMedia(node)) this.#track(el);
       }
     }
   }
@@ -436,6 +439,8 @@ export class MediaButton {
     this.#pointer = { x: event.clientX, y: event.clientY };
     this.#overButton = event.target === this.host;
     if (this.#overButton) this.#lastActive = this.#now();
+    // Nothing to hover and nothing showing: no frame, no layout read.
+    if (this.#tracked.size === 0 && this.#state === 'none') return;
     this.#schedule();
   }
 
@@ -527,12 +532,7 @@ export class MediaButton {
     const p = this.#pointer;
     // On the button, the element it belongs to stays the one in use.
     if (p === null || this.#overButton) return;
-    let hit = this.#trackedAt(p.x, p.y);
-    if (hit === null) {
-      // Only when no known element is there: look inside open shadow roots under the pointer.
-      this.#findAt(p.x, p.y);
-      hit = this.#trackedAt(p.x, p.y);
-    }
+    const hit = this.#trackedAt(p.x, p.y);
     if (hit !== null) this.#lastActive = this.#now();
     this.#hovered = hit;
   }

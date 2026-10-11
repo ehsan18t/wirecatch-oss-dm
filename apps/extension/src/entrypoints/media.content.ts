@@ -6,6 +6,7 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { MediaButton } from '@/lib/media/button';
+import { SITE_ORIGINS } from '@/lib/site-access';
 import {
   MEDIA_BUTTON_KEY,
   asAnnounce,
@@ -23,7 +24,7 @@ function isAnswer(value: unknown): value is DownloadAnswer {
 }
 
 export default defineContentScript({
-  matches: ['http://*/*', 'https://*/*'],
+  matches: SITE_ORIGINS,
   allFrames: true,
   runAt: 'document_idle',
   // Do not announce the script to the page with `window.postMessage`; some pages misread such messages.

@@ -56,10 +56,10 @@
   },
   "src/lib/media/button.ts": {
     "@typescript-eslint/array-type": {
-      "count": 2
+      "count": 1
     },
     "@typescript-eslint/no-magic-numbers": {
-      "count": 8
+      "count": 7
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1

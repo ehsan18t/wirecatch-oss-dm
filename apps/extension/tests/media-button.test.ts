@@ -345,6 +345,63 @@ describe('MediaButton', () => {
     expect(b.state).toBe('shown');
   });
 
+  // The setting is on by default, and every pointer move in every frame of every page ran a hit
+  // test through the page and up to 20 shadow roots, also on pages without any media.
+  it('does no layout work for pointer moves on a page without media', async () => {
+    const fake = fakeDeps();
+    start(fake);
+    const layout = vi.spyOn(Element.prototype, 'getBoundingClientRect');
+    const frame = vi.spyOn(window, 'requestAnimationFrame');
+    for (let x = 0; x < 50; x += 1) {
+      document.body.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: x, clientY: x }),
+      );
+    }
+    // Checked before settling, which waits for a frame of its own.
+    expect(frame).not.toHaveBeenCalled();
+    frame.mockRestore();
+    await settle();
+    expect(layout).not.toHaveBeenCalled();
+    layout.mockRestore();
+  });
+
+  it('finds a video in a shadow root added later, when the pointer enters its player', async () => {
+    const fake = fakeDeps();
+    const b = start(fake);
+    const player = document.createElement('fancy-player');
+    document.body.append(player);
+    const root = player.attachShadow({ mode: 'open' });
+    const video = document.createElement('video');
+    video.src = 'https://e.com/a.mp4';
+    video.getBoundingClientRect = () => ({
+      ...box(0, 0, 640, 360),
+      x: 0,
+      y: 0,
+      toJSON: () => null,
+    });
+    // The pointer lands on the player's overlay, not on the video under it.
+    const overlay = document.createElement('div');
+    root.append(video, overlay);
+    overlay.dispatchEvent(
+      new PointerEvent('pointerover', {
+        bubbles: true,
+        composed: true,
+        clientX: 300,
+        clientY: 200,
+      }),
+    );
+    overlay.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        composed: true,
+        clientX: 300,
+        clientY: 200,
+      }),
+    );
+    await settle();
+    expect(b.state).toBe('shown');
+  });
+
   it("finds media inside a page's open shadow roots, but not closed ones", () => {
     const outer = document.createElement('div');
     const inner = document.createElement('div');
