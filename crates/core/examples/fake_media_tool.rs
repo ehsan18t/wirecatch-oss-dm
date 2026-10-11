@@ -7,8 +7,9 @@
 //!
 //! - `yt-dlp`: appends each call to `calls.jsonl` (its arguments, and the
 //!   cookies file's text and Unix mode at that moment). With `-J` it prints
-//!   `info.json`, or fails with the text of `fail.txt` if that exists, after
-//!   waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads":
+//!   `info.json`, or fails with the text of `fail.txt` if that exists (or of
+//!   `fail-without-cookies.txt`, when it exists and the call has no
+//!   `--cookies`), after waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads":
 //!   writes a file at its `-o` template (extension `mp4`, or the text of
 //!   `download-ext`), prints two progress
 //!   lines in the format Wirecatch asks for, and prints the file's path.
@@ -113,7 +114,13 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
                 .spawn();
         }
         wait(&dir.join("delay-ms"));
-        if let Ok(reason) = std::fs::read_to_string(dir.join("fail.txt")) {
+        let unsigned = cookies
+            .is_none()
+            .then(|| std::fs::read_to_string(dir.join("fail-without-cookies.txt")).ok())
+            .flatten();
+        if let Some(reason) =
+            unsigned.or_else(|| std::fs::read_to_string(dir.join("fail.txt")).ok())
+        {
             eprintln!("WARNING: something minor");
             eprintln!("ERROR: {}", reason.trim());
             return ExitCode::from(1);

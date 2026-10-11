@@ -244,6 +244,63 @@ fn page_info(server: &FileServer, video: &[u8], audio: &[u8]) -> String {
     .to_string()
 }
 
+/// Whether each yt-dlp call so far had the browser's cookies.
+fn cookie_use(h: &Harness) -> Vec<bool> {
+    ytdlp_calls(h)
+        .iter()
+        .map(|call| args(call).contains(&"--cookies".to_string()))
+        .collect()
+}
+
+/// YouTube is read without the browser's sign-in first: with a signed-in
+/// browser's cookies yt-dlp gets video addresses YouTube often refuses.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn youtube_is_read_without_the_browser_sign_in_first() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(1024), mp4_data(1024));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            "https://www.youtube.com/watch?v=Y_nLA7iE2Uk",
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    choice_requested(&mut ui).await;
+    assert_eq!(cookie_use(&h), [false]);
+}
+
+/// A video that needs the sign-in (age-restricted, members-only, private) is
+/// read again with the browser's cookies when reading it without them fails.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn youtube_uses_the_browser_sign_in_when_the_video_needs_it() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(1024), mp4_data(1024));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    tell_tool(
+        &h,
+        "fail-without-cookies.txt",
+        "[youtube] Y_nLA7iE2Uk: Sign in to confirm your age",
+    );
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            "https://youtu.be/Y_nLA7iE2Uk",
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    choice_requested(&mut ui).await;
+    assert_eq!(cookie_use(&h), [false, true]);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     let server = FileServer::start().await;

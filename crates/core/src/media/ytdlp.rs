@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
-use tracing::warn;
+use tracing::{debug, warn};
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{FixAction, UserError};
 
@@ -184,6 +184,7 @@ impl Info {
 }
 
 /// Where and how yt-dlp runs.
+#[derive(Clone, Copy)]
 pub(crate) struct Context<'a> {
     pub tools: &'a MediaTools,
     pub page: &'a Url,
@@ -195,20 +196,86 @@ pub(crate) struct Context<'a> {
     pub timeout: Duration,
 }
 
-/// Reads a page's formats with `yt-dlp -J`.
+/// Whether the browser's cookies go to yt-dlp from the first try for `page`.
+///
+/// Not for YouTube: with a signed-in browser's cookies yt-dlp reads YouTube as a
+/// web player whose video addresses YouTube often refuses (403) for minutes at
+/// a time, while without them it reads it as another player whose addresses
+/// work. Measured on 2026-10-11: with cookies, 3 of 5 fresh reads gave refused
+/// addresses; without, 5 of 5 worked. So YouTube is read without the cookies
+/// first, and with them only when that fails (age-restricted, members-only or
+/// private videos need the sign-in).
+pub(crate) fn cookies_first(page: &Url) -> bool {
+    let Some(host) = page.host_str() else {
+        return true;
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    let youtube = ["youtube.com", "youtu.be", "youtube-nocookie.com"]
+        .iter()
+        .any(|site| host == *site || host.ends_with(&format!(".{site}")));
+    !youtube
+}
+
+/// The same context without the browser's cookies, when the page is read
+/// without them first (see [`cookies_first`]); `None` otherwise.
+fn without_cookies<'a>(ctx: &Context<'a>) -> Option<Context<'a>> {
+    (ctx.cookies.is_some() && !cookies_first(ctx.page)).then_some(Context {
+        cookies: None,
+        ..*ctx
+    })
+}
+
+/// Reads a page's formats with `yt-dlp -J`: on YouTube without the browser's
+/// cookies first, then with them if yt-dlp could not read the page that way.
 pub(crate) async fn extract(
     ctx: &Context<'_>,
     cancel: &CancellationToken,
 ) -> Result<Info, UserError> {
+    if let Some(anonymous) = without_cookies(ctx) {
+        match extract_once(&anonymous, cancel).await {
+            Ok(info) => return Ok(info),
+            Err(Attempt::Refused(error)) => {
+                debug!(error = %error.message, "reading the page without the browser's sign-in failed; trying with it");
+            }
+            Err(Attempt::Other(error)) => return Err(error),
+        }
+    }
+    extract_once(ctx, cancel).await.map_err(Attempt::into_error)
+}
+
+/// Why one run of yt-dlp gave no result.
+enum Attempt {
+    /// yt-dlp ran and said it could not do it; another try with the browser's
+    /// sign-in may work.
+    Refused(UserError),
+    /// Stopped, timed out, could not start, or printed nonsense.
+    Other(UserError),
+}
+
+impl Attempt {
+    fn into_error(self) -> UserError {
+        match self {
+            Attempt::Refused(e) | Attempt::Other(e) => e,
+        }
+    }
+}
+
+impl From<UserError> for Attempt {
+    fn from(error: UserError) -> Self {
+        Attempt::Other(error)
+    }
+}
+
+async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, Attempt> {
     let cookies = CookiesFile::create(ctx)?;
     let mut args = common_args(ctx, cookies.as_ref());
     args.push("-J".into());
     args.push("--".into());
     args.push(ctx.page.as_str().into());
     if let Err(e) = std::fs::create_dir_all(ctx.temp_dir) {
-        return Err(fix(format!(
+        return Err(Attempt::Other(fix(format!(
             "Wirecatch could not prepare a folder for the media add-on ({e}). Check that the disk has free space, then try again."
-        )));
+        ))));
     }
     let result = process::run(
         &ctx.tools.ytdlp,
@@ -223,24 +290,24 @@ pub(crate) async fn extract(
     drop(cookies);
     let ran = match result {
         Ok(ran) => ran,
-        Err(RunError::Cancelled) => return Err(stopped()),
+        Err(RunError::Cancelled) => return Err(stopped().into()),
         Err(RunError::TimedOut) => {
-            return Err(fix(format!(
+            return Err(Attempt::Other(fix(format!(
                 "The media add-on took more than {} seconds to read this page. Check your connection, then try again.",
                 ctx.timeout.as_secs()
-            )));
+            ))));
         }
         Err(RunError::Start(e)) => {
             ctx.tools.mark_broken();
-            return Err(cannot_start(&e));
+            return Err(cannot_start(&e).into());
         }
     };
     if !ran.success {
-        return Err(failed(&ran));
+        return Err(Attempt::Refused(failed(&ran)));
     }
     serde_json::from_slice::<Info>(&ran.stdout).map_err(|e| {
         warn!(error = %e, "yt-dlp printed something that is not a page description");
-        fix("The media add-on could not read this page. Update the media add-on in Settings, Add-ons, then try again.".into())
+        Attempt::Other(fix("The media add-on could not read this page. Update the media add-on in Settings, Add-ons, then try again.".into()))
     })
 }
 
@@ -256,6 +323,9 @@ const PROGRESS_MARK: &str = "wcprogress";
 
 /// Lets yt-dlp download format selection `format` into `work` (for streams
 /// Wirecatch cannot download itself), reporting progress into `progress`.
+///
+/// On YouTube it runs without the browser's cookies first, like [`extract`],
+/// and with them only if yt-dlp failed that way; the parts it saved are kept.
 pub(crate) async fn download(
     ctx: &Context<'_>,
     format: &str,
@@ -263,6 +333,27 @@ pub(crate) async fn download(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Fetched, UserError> {
+    if let Some(anonymous) = without_cookies(ctx) {
+        match download_once(&anonymous, format, work, progress, cancel).await {
+            Ok(fetched) => return Ok(fetched),
+            Err(Attempt::Refused(error)) => {
+                debug!(error = %error.message, "downloading without the browser's sign-in failed; trying with it");
+            }
+            Err(Attempt::Other(error)) => return Err(error),
+        }
+    }
+    download_once(ctx, format, work, progress, cancel)
+        .await
+        .map_err(Attempt::into_error)
+}
+
+async fn download_once(
+    ctx: &Context<'_>,
+    format: &str,
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<Fetched, Attempt> {
     let cookies = CookiesFile::create(ctx)?;
     let mut args = common_args(ctx, cookies.as_ref());
     let template = work.join("media.%(ext)s");
@@ -321,15 +412,15 @@ pub(crate) async fn download(
         Ok(ran) => ran,
         Err(RunError::Cancelled) => return Ok(Fetched::Cancelled),
         Err(RunError::TimedOut) => {
-            return Err(fix("The media add-on stopped answering. Try again.".into()));
+            return Err(fix("The media add-on stopped answering. Try again.".into()).into());
         }
         Err(RunError::Start(e)) => {
             ctx.tools.mark_broken();
-            return Err(cannot_start(&e));
+            return Err(cannot_start(&e).into());
         }
     };
     if !ran.success {
-        return Err(failed(&ran));
+        return Err(Attempt::Refused(failed(&ran)));
     }
     let printed = printed.into_inner().unwrap_or_else(|e| e.into_inner());
     let work = work.to_path_buf();
@@ -342,9 +433,9 @@ pub(crate) async fn download(
     .unwrap_or(None);
     match found {
         Some(path) => Ok(Fetched::Done(path)),
-        None => Err(fix(
-            "The media add-on finished without saving the video. Try again.".into(),
-        )),
+        None => {
+            Err(fix("The media add-on finished without saving the video. Try again.".into()).into())
+        }
     }
 }
 
@@ -544,6 +635,29 @@ fn failed(ran: &Ran) -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn youtube_is_read_without_the_browser_sign_in_first() {
+        for page in [
+            "https://www.youtube.com/watch?v=Y_nLA7iE2Uk",
+            "https://youtube.com/shorts/abc",
+            "https://m.youtube.com/watch?v=1",
+            "https://music.youtube.com/watch?v=1",
+            "https://youtu.be/Y_nLA7iE2Uk",
+            "https://www.youtube-nocookie.com/embed/1",
+            "https://WWW.YOUTUBE.COM./watch?v=1",
+        ] {
+            assert!(!cookies_first(&Url::parse(page).unwrap()), "{page}");
+        }
+        for page in [
+            "https://vimeo.com/1",
+            "https://notyoutube.com/watch?v=1",
+            "https://youtube.com.example.org/watch?v=1",
+            "http://127.0.0.1:8080/page",
+        ] {
+            assert!(cookies_first(&Url::parse(page).unwrap()), "{page}");
+        }
+    }
 
     #[test]
     fn the_result_path_is_taken_only_from_stdout_and_only_inside_the_work_folder() {
