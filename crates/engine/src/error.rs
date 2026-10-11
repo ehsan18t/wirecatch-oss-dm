@@ -122,7 +122,8 @@ pub enum Error {
     /// a file that does not exist. Codes from 400 to 499 mean the problem is
     /// temporary, so they are retried (see [`Error::is_retryable`]); others
     /// are not.
-    #[error("the FTP server answered \"{code} {message}\" for {url}")]
+    #[error("the FTP server answered \"{code} {message}\" for {url}{}", ftp_reply_hint(*code))]
+    #[non_exhaustive]
     FtpReply {
         /// The FTP reply code, such as `550`.
         code: u16,
@@ -134,9 +135,8 @@ pub enum Error {
 
     /// The FTP server did not accept the user name or password. The text the
     /// server sent is included; the password never is.
-    #[error(
-        "the FTP server {host} did not accept the login (\"{code} {message}\"). Check the user name and password in the link, or remove them to log in anonymously"
-    )]
+    #[error("{}", login_refused_text(host, *code, message, *anonymous))]
+    #[non_exhaustive]
     FtpLoginRefused {
         /// The server's host name or address.
         host: String,
@@ -144,6 +144,9 @@ pub enum Error {
         code: u16,
         /// The text the server sent with the code.
         message: String,
+        /// Whether the login was the anonymous one (no user name in the
+        /// link), which many servers do not allow.
+        anonymous: bool,
     },
 
     /// An `ftps` or `ftpes` link asked for encryption, but the server does not
@@ -151,6 +154,7 @@ pub enum Error {
     #[error(
         "the FTP server {host} does not offer encryption, so the secure download was stopped. If downloading without encryption is acceptable, use an ftp:// link instead"
     )]
+    #[non_exhaustive]
     FtpTlsUnavailable {
         /// The server's host name or address.
         host: String,
@@ -221,6 +225,28 @@ impl Error {
     /// For a background task that panicked or was aborted.
     pub(crate) fn task(error: tokio::task::JoinError) -> Self {
         Error::Internal(format!("a background task failed: {error}"))
+    }
+}
+
+/// What to add to an FTP error reply to say how to fix it.
+fn ftp_reply_hint(code: u16) -> &'static str {
+    match code {
+        550 => {
+            ". Check that the file exists. The path in the link is relative to the folder the server logs in to; to give a path from the top folder, start it with %2F, as in ftp://host/%2Fpub/file.iso"
+        }
+        _ => "",
+    }
+}
+
+fn login_refused_text(host: &str, code: u16, message: &str, anonymous: bool) -> String {
+    if anonymous {
+        format!(
+            "the FTP server {host} did not accept an anonymous login (\"{code} {message}\"); it may not allow anonymous access. Add a user name and password to the link, as in ftp://user:password@{host}/path"
+        )
+    } else {
+        format!(
+            "the FTP server {host} did not accept the login (\"{code} {message}\"). Check the user name and password in the link"
+        )
     }
 }
 

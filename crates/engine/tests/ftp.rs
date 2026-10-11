@@ -291,6 +291,10 @@ async fn a_wrong_password_is_a_plain_language_error() {
         "{text}"
     );
     assert!(
+        text.contains("Check the user name and password") && !text.contains("anonymous"),
+        "{text}"
+    );
+    assert!(
         !text.contains("wrong-pass"),
         "the password is not in the message: {text}"
     );
@@ -300,6 +304,36 @@ async fn a_wrong_password_is_a_plain_language_error() {
         "a refused login is not retried"
     );
     assert!(files_in(&dir).is_empty(), "nothing written");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn a_refused_anonymous_login_says_to_add_a_login() {
+    let mut config = serving(b"x");
+    config.login = Some(("alice".into(), "right".into()));
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("anonymous");
+
+    let error = run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 1))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            error,
+            Error::FtpLoginRefused {
+                anonymous: true,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    let text = error.to_string();
+    assert!(text.contains("anonymous login"), "{text}");
+    assert!(
+        text.contains("ftp://user:password@127.0.0.1/path"),
+        "{text}"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -323,6 +357,10 @@ async fn a_missing_file_is_reported_and_nothing_is_written() {
     assert!(!url.contains("pw"), "no password in {url}");
     assert!(!error.is_retryable());
     assert!(error.to_string().contains("no such file"), "{error}");
+    assert!(
+        error.to_string().contains("start it with %2F"),
+        "says how to fix the path: {error}"
+    );
     assert!(files_in(&dir).is_empty(), "nothing written");
     std::fs::remove_dir_all(&dir).unwrap();
 }

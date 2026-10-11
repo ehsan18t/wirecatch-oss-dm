@@ -286,6 +286,10 @@ impl Target {
                     host: self.host_name(),
                     code: reply.code,
                     message: reply.message(),
+                    // RFC 1635: both names mean an anonymous login.
+                    anonymous: ["anonymous", "ftp"]
+                        .iter()
+                        .any(|name| self.user.eq_ignore_ascii_case(name)),
                 }
                 .into());
             }
