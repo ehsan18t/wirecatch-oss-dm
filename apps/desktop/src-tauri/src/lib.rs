@@ -141,7 +141,14 @@ pub fn run() {
     let app = tauri::Builder::default()
         // First, so a second launch hands over its command line and exits before anything else.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            window::handle_launch(app, &Launch::from_args(&argv));
+            // A launch while quitting starts the app again once this one has exited, instead
+            // of flashing a window that is about to close.
+            let quitting = app
+                .try_state::<Lifecycle>()
+                .is_some_and(|life| life.relaunch_later(&argv));
+            if !quitting {
+                window::handle_launch(app, &Launch::from_args(&argv));
+            }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

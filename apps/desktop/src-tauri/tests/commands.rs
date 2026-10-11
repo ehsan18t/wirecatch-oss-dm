@@ -5,7 +5,8 @@ mod common;
 
 use common::{Sandbox, TestServer, request, row, running, wait_for, wait_status};
 use wirecatch_desktop_lib::api::{self, Reveal};
-use wirecatch_desktop_lib::lifecycle::quit_sequence;
+use wirecatch_desktop_lib::host::Core;
+use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_protocol::app::{DownloadStatus, Theme};
 
@@ -147,6 +148,22 @@ struct NoShell;
 impl Shell for NoShell {
     fn open_window(&self) {}
     fn quit(&self) {}
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn quit_right_after_start_opens_then_stops_the_manager() {
+    let sandbox = Sandbox::new();
+    let core = Core::new(sandbox.config());
+    assert!(core.get().is_none(), "not opened yet");
+    let exited = std::sync::atomic::AtomicBool::new(false);
+    quit_core(Some(&core), || {
+        let manager = core.get().expect("opened by the quit");
+        let err = api::pause_all(manager).unwrap_err();
+        assert!(err.contains("shutting down"), "{err}");
+        exited.store(true, std::sync::atomic::Ordering::SeqCst);
+    })
+    .await;
+    assert!(exited.load(std::sync::atomic::Ordering::SeqCst));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
