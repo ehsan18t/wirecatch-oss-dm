@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client_version: env!("CARGO_PKG_VERSION").into(),
         protocol_version: PROTOCOL_VERSION,
         browser: None,
+        start_app: true,
     });
     let handover_id = format!("send-capture-{}", std::process::id());
     let capture = Call::AddDownload(NewDownload {

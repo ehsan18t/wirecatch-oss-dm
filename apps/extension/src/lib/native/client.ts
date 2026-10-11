@@ -34,8 +34,8 @@ export interface NativeTransport {
 
 export interface ClientOptions {
   transport: NativeTransport;
-  /** Builds the `hello` call sent first on every connection. */
-  hello: () => Promise<Hello>;
+  /** Builds the `hello` call sent first on every connection; the client adds whether the app may be started. */
+  hello: () => Promise<Omit<Hello, 'start_app'>>;
   helloTimeoutMs?: number;
   /** Delays between reconnection attempts; the last one repeats. */
   backoffMs?: readonly number[];
@@ -96,11 +96,44 @@ function utf8Length(text: string): number {
   return encoder.encode(text).length;
 }
 
+/** The connection problem an error from the bridge stands for, or null when it is about one request only. The bridge answers every request on a port it could not connect with the same error, so such a port is done. */
+function connectionProblem(error: ProtocolError): Problem | null {
+  switch (error.code) {
+    case 'app_not_running':
+      return { kind: 'app_closed', detail: null };
+    case 'app_unavailable':
+      return { kind: 'app_unavailable', detail: error.message };
+    case 'unsupported_version':
+    case 'invalid_request':
+    case 'invalid_url':
+    case 'not_found':
+    case 'internal':
+    case 'not_started':
+      return null;
+  }
+}
+
 function problemFromHelloError(error: RequestError): Problem {
-  const code = error.protocolError?.code;
-  if (code === 'app_unavailable') return { kind: 'app_unavailable', detail: error.message };
-  if (code === 'unsupported_version') return { kind: 'version_mismatch', detail: error.message };
+  const known = error.protocolError === null ? null : connectionProblem(error.protocolError);
+  if (known !== null) return known;
+  if (error.protocolError?.code === 'unsupported_version') {
+    return { kind: 'version_mismatch', detail: error.message };
+  }
   return { kind: 'disconnected', detail: error.message };
+}
+
+/** What is wrong with the answer to `hello`, or null when the app can be talked to. */
+function helloProblem(reply: Reply): Problem | null {
+  if (reply.type !== 'hello') {
+    return { kind: 'disconnected', detail: 'Wirecatch gave an unexpected answer to hello.' };
+  }
+  if (reply.data.protocol_version !== PROTOCOL_VERSION) {
+    return {
+      kind: 'version_mismatch',
+      detail: `The app speaks protocol version ${reply.data.protocol_version}; this extension speaks version ${PROTOCOL_VERSION}.`,
+    };
+  }
+  return null;
 }
 
 /**
@@ -109,6 +142,8 @@ function problemFromHelloError(error: RequestError): Problem {
  * Sends `hello` first on every connection, matches answers to requests by id,
  * times requests out, passes app events on, and reconnects with backoff when the
  * connection breaks.
+ *
+ * Only a request, which the person's own action causes (a download from the browser, the media button, a popup action), or the popup's Open button may start the app. Connecting on start-up and reconnecting only reach an app that is already running, and once the app is known to be closed nothing is retried, so a Wirecatch the person closed stays closed until something needs it (D25).
  */
 export class NativeClient {
   readonly #options: ClientOptions;
@@ -141,11 +176,11 @@ export class NativeClient {
     return this.#status;
   }
 
-  /** Connects for the first time. Calling it again does nothing. */
+  /** Connects for the first time, to an app that is already running. Calling it again does nothing. */
   start(): void {
     if (this.#started) return;
     this.#started = true;
-    void this.#connect();
+    void this.#connect(false);
   }
 
   /** Closes the connection for good and fails everything still waiting. */
@@ -156,11 +191,11 @@ export class NativeClient {
     this.#rejectAll(new RequestError('disconnected', 'The connection to Wirecatch was closed.'));
   }
 
-  /** Skips the remaining backoff and tries to connect right away (the popup's "Try again"). */
+  /** Skips the remaining backoff and connects right away, starting the app if it is closed (the popup's "Try again" and "Open Wirecatch", and every request). */
   reconnectNow(): void {
     if (this.#stopped || this.#status.state === 'connected' || this.#isAttempting()) return;
     this.#clearRetry();
-    void this.#connect();
+    void this.#connect(true);
   }
 
   onStatus(listener: (status: ConnectionStatus) => void): () => void {
@@ -222,7 +257,8 @@ export class NativeClient {
     });
   }
 
-  async #connect(): Promise<void> {
+  /** Opens a new connection. With `startApp` off, the bridge only reaches an app that is running. */
+  async #connect(startApp: boolean): Promise<void> {
     this.#dropPort();
     const generation = this.#generation;
     if (this.#status.state === 'unavailable') {
@@ -249,7 +285,7 @@ export class NativeClient {
 
     let reply: Reply;
     try {
-      const hello = await this.#options.hello();
+      const hello: Hello = { ...(await this.#options.hello()), start_app: startApp };
       if (generation !== this.#generation) return;
       reply = await this.#send(
         { method: 'hello', params: hello },
@@ -263,15 +299,9 @@ export class NativeClient {
       return;
     }
     if (generation !== this.#generation) return;
-    if (reply.type !== 'hello') {
-      this.#fail({ kind: 'disconnected', detail: 'Wirecatch gave an unexpected answer to hello.' });
-      return;
-    }
-    if (reply.data.protocol_version !== PROTOCOL_VERSION) {
-      this.#fail({
-        kind: 'version_mismatch',
-        detail: `The app speaks protocol version ${reply.data.protocol_version}; this extension speaks version ${PROTOCOL_VERSION}.`,
-      });
+    const problem = helloProblem(reply);
+    if (problem !== null || reply.type !== 'hello') {
+      this.#fail(problem ?? { kind: 'disconnected', detail: null });
       return;
     }
     this.#attempt = 0;
@@ -338,9 +368,8 @@ export class NativeClient {
     }
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.
-    if (outcome.status === 'err' && outcome.value.code === 'app_unavailable') {
-      this.#fail({ kind: 'app_unavailable', detail: outcome.value.message });
-    }
+    const problem = outcome.status === 'err' ? connectionProblem(outcome.value) : null;
+    if (problem !== null) this.#fail(problem);
   }
 
   #rememberLate(id: number, call: Call): void {
@@ -357,12 +386,19 @@ export class NativeClient {
       new RequestError('disconnected', problem.detail ?? 'The connection to Wirecatch was lost.'),
     );
     if (this.#stopped) return;
+    this.#clearRetry();
+    if (problem.kind === 'app_closed') {
+      // Closed by the person: nothing retries. The next request, or the popup's Open button, starts it.
+      this.#attempt = 0;
+      this.#setStatus({ state: 'unavailable', problem, retryAt: null });
+      return;
+    }
     const delay = this.#backoff[Math.min(this.#attempt, this.#backoff.length - 1)] ?? 30_000;
     this.#attempt += 1;
-    this.#clearRetry();
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;
-      void this.#connect();
+      // Retrying on its own, so it only reaches an app that is running: if the app was closed, the answer says so and retrying stops.
+      void this.#connect(false);
     }, delay);
     this.#setStatus({ state: 'unavailable', problem, retryAt: this.#now() + delay });
   }

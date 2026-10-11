@@ -168,6 +168,7 @@ Decided by the maintainer on 2026-10-12, replacing D19's per-user Windows instal
 3. What belongs to a person stays per user: the download list, settings and cookies in each user's `%LOCALAPPDATA%`, and start at sign-in. One user's cookies are never readable by another.
 4. Wirecatch never runs as administrator. A release build started that way says it does not need administrator rights and exits, because an elevated app could be driven by any program of the same user, and the unelevated browser extension could not reach it anyway. Whatever starts it, its endpoint is labelled at its own integrity level, so unelevated programs cannot open an elevated app's pipe. The installer starts the app after installing as the signed-in user, not elevated.
 5. Linux is unchanged: `.deb` and `.rpm` already install system-wide, and the AppImage is per user by nature.
+6. A Wirecatch the person closed stays closed until something needs it, as with other download managers. The browser extension starts it only for something the person did: a browser download it will take, the media button, or Open Wirecatch in its popup. Its checks on waking and its reconnects send `hello` with `start_app` off, so the bridge only reaches an app that is already running and otherwise answers `app_not_running`, and the extension then waits instead of retrying. This makes D5's "the bridge starts the app when needed" exact.
 
 ## Assumptions (not yet confirmed)
 

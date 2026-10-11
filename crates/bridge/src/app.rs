@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use tokio::time::{Instant, sleep_until, timeout_at};
 use wirecatch_ipc::{Connection, Endpoint, IpcError};
+use wirecatch_protocol::wire::ErrorCode;
 
 /// How long the bridge waits for the app, from the first connection attempt to
 /// giving up, including the time the app needs to start.
@@ -201,6 +202,8 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
 /// Why the app could not be reached, as told to the user through the extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Unavailable {
+    /// The code the extension acts on.
+    pub(crate) code: ErrorCode,
     /// Plain-language text for the extension to show.
     pub(crate) message: String,
 }
@@ -208,7 +211,16 @@ pub(crate) struct Unavailable {
 impl Unavailable {
     fn new(message: impl Into<String>) -> Self {
         Self {
+            code: ErrorCode::AppUnavailable,
             message: message.into(),
+        }
+    }
+
+    /// The app is not running, and the extension asked not to start it: the person closed it and has not asked for it since.
+    pub(crate) fn not_running() -> Self {
+        Self {
+            code: ErrorCode::AppNotRunning,
+            message: "Wirecatch is closed. It opens again when the browser has a download for it, or when you open it.".to_owned(),
         }
     }
 
@@ -263,8 +275,16 @@ impl Unavailable {
     }
 }
 
-/// Connects to the app, starting it if nothing is listening, and gives up after
-/// `budget`.
+/// Whether a connection may start the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Start {
+    /// Start it when nothing is listening: the person asked for something that needs it.
+    IfNeeded,
+    /// Only connect to a running app: a check the extension makes on its own.
+    Never,
+}
+
+/// Connects to the app, starting it if nothing is listening and `start` allows it, and gives up after `budget`.
 ///
 /// A server owned by another user (or any error other than "not running") is
 /// never retried and never causes a launch.
@@ -272,10 +292,12 @@ pub(crate) async fn connect_or_launch(
     endpoint: &Endpoint,
     launcher: &dyn Launcher,
     budget: Duration,
+    start: Start,
 ) -> Result<Connection, Unavailable> {
     let deadline = Instant::now() + budget;
     match attempt(endpoint, deadline, budget).await {
         Attempt::Connected(conn) => return Ok(conn),
+        Attempt::NotRunning if start == Start::Never => return Err(Unavailable::not_running()),
         Attempt::NotRunning => {}
         Attempt::Failed(unavailable) => return Err(unavailable),
     }
@@ -427,7 +449,7 @@ mod tests {
             launches: launches.clone(),
         };
         let started = Instant::now();
-        let mut conn = connect_or_launch(&endpoint, &app, START_BUDGET)
+        let mut conn = connect_or_launch(&endpoint, &app, START_BUDGET, Start::IfNeeded)
             .await
             .unwrap();
         assert!(started.elapsed() < START_BUDGET);
@@ -436,6 +458,43 @@ mod tests {
         let mut byte = [0u8; 1];
         conn.read_exact(&mut byte).await.unwrap();
         assert_eq!(&byte, b"x");
+    }
+
+    // A Wirecatch the person closed used to come back within a second: the extension reconnected and
+    // every new bridge started the app. A check that may not start it finds it closed and leaves it so.
+    #[tokio::test]
+    async fn a_closed_app_is_not_started_when_starting_is_not_allowed() {
+        let (endpoint, _dir) = test_endpoint();
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedApp {
+            endpoint: endpoint.clone(),
+            delay: Duration::ZERO,
+            launches: launches.clone(),
+        };
+
+        let refused = connect_or_launch(&endpoint, &app, START_BUDGET, Start::Never).await;
+
+        assert_eq!(refused.err(), Some(Unavailable::not_running()));
+        assert_eq!(*launches.lock().unwrap(), 0, "nothing was started");
+    }
+
+    #[tokio::test]
+    async fn a_running_app_is_reached_even_when_starting_is_not_allowed() {
+        let (endpoint, _dir) = test_endpoint();
+        let _listener = Listener::bind(&endpoint).unwrap();
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedApp {
+            endpoint: endpoint.clone(),
+            delay: Duration::ZERO,
+            launches: launches.clone(),
+        };
+
+        assert!(
+            connect_or_launch(&endpoint, &app, START_BUDGET, Start::Never)
+                .await
+                .is_ok()
+        );
+        assert_eq!(*launches.lock().unwrap(), 0);
     }
 
     #[tokio::test]
@@ -448,7 +507,7 @@ mod tests {
             delay: Duration::ZERO,
             launches: launches.clone(),
         };
-        connect_or_launch(&endpoint, &app, START_BUDGET)
+        connect_or_launch(&endpoint, &app, START_BUDGET, Start::IfNeeded)
             .await
             .unwrap();
         assert_eq!(*launches.lock().unwrap(), 0);
@@ -458,7 +517,7 @@ mod tests {
     async fn gives_up_when_the_app_cannot_be_started() {
         let (endpoint, _dir) = test_endpoint();
         let started = Instant::now();
-        let err = connect_or_launch(&endpoint, &FailingLauncher, START_BUDGET)
+        let err = connect_or_launch(&endpoint, &FailingLauncher, START_BUDGET, Start::IfNeeded)
             .await
             .unwrap_err();
         // FailingLauncher reports NotFound: the advice is to reinstall.
@@ -500,7 +559,7 @@ mod tests {
         };
         let budget = Duration::from_millis(600);
         let started = Instant::now();
-        let err = connect_or_launch(&endpoint, &app, budget)
+        let err = connect_or_launch(&endpoint, &app, budget, Start::IfNeeded)
             .await
             .unwrap_err();
         assert_eq!(err, Unavailable::timed_out(budget));

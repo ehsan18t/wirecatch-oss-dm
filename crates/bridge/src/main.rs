@@ -129,21 +129,26 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
         }
     };
 
-    let ended = runtime.block_on(relay::run(incoming, outgoing, || async {
-        let endpoint = app::endpoint().map_err(|e| {
-            log!("{e}");
-            app::Unavailable::from_ipc(&e)
-        })?;
-        let launcher = app::launcher().map_err(|e| {
-            log!("{e:#}");
-            app::Unavailable::cannot_start(&format!("{e:#}"))
-        })?;
-        app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET).await
+    let ended = runtime.block_on(relay::run(incoming, outgoing, |first| {
+        let start = if first.allows_starting_the_app() {
+            app::Start::IfNeeded
+        } else {
+            app::Start::Never
+        };
+        async move {
+            let endpoint = app::endpoint().map_err(|e| {
+                log!("{e}");
+                app::Unavailable::from_ipc(&e)
+            })?;
+            let launcher = app::launcher().map_err(|e| {
+                log!("{e:#}");
+                app::Unavailable::cannot_start(&format!("{e:#}"))
+            })?;
+            app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET, start).await
+        }
     }));
     if ended == relay::Ended::AppClosed {
-        // Exiting closes stdout, so the browser reports the port as disconnected
-        // and the extension reconnects with a fresh bridge, which starts the app
-        // again if needed.
+        // Exiting closes stdout, so the browser reports the port as disconnected. The extension then only checks whether Wirecatch is running; it starts it again only for a download.
         log!("Wirecatch went away; closing so the extension can reconnect");
     }
     // Dropping the runtime drops the app reader task and with it the last sender

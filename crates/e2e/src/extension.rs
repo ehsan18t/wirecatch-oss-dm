@@ -380,6 +380,7 @@ pub fn hello_call() -> Call {
             name: "chrome".into(),
             version: Some("140".into()),
         }),
+        start_app: true,
     })
 }
 

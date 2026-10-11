@@ -123,6 +123,7 @@ fn hello(protocol_version: u32) -> Call {
         client_version: "0.1.0".into(),
         protocol_version,
         browser: None,
+        start_app: true,
     })
 }
 

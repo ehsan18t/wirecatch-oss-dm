@@ -107,6 +107,10 @@ export class FakeApp implements NativeTransport {
   hostMissing: string | null = null;
   /** When set, `hello` is answered with this error (for example `app_unavailable`). */
   helloError: ProtocolError | null = null;
+  /** Whether the app is running. A `hello` that allows it starts a closed app; one that does not is answered `app_not_running`, as the bridge does. */
+  running = true;
+  /** How many times a `hello` started the app. */
+  starts = 0;
   /** When false, nothing is answered (a hung bridge). */
   answers = true;
   addBehavior: AddBehavior = 'started';
@@ -162,7 +166,16 @@ export class FakeApp implements NativeTransport {
     const reply = (outcome: Outcome): void => port.deliver({ kind: 'response', id, outcome });
     switch (call.method) {
       case 'hello':
-        if (this.helloError !== null) {
+        if (!this.running && call.params.start_app) {
+          this.running = true;
+          this.starts += 1;
+        }
+        if (!this.running) {
+          reply({
+            status: 'err',
+            value: { code: 'app_not_running', message: 'Wirecatch is closed.' },
+          });
+        } else if (this.helloError !== null) {
           reply({ status: 'err', value: this.helloError });
         } else {
           reply({

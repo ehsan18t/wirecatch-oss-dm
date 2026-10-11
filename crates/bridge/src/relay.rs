@@ -55,8 +55,8 @@ pub(crate) enum Ended {
 /// Runs the relay until the browser closes `incoming`, or until the app goes away
 /// after having been connected.
 ///
-/// `outgoing` carries frames to the browser. `connect` is called at most once, on
-/// the first frame.
+/// `outgoing` carries frames to the browser. `connect` is called at most once, with
+/// the first frame (the extension's `hello`, which says whether the app may be started).
 pub(crate) async fn run<C, F, Fut>(
     mut incoming: mpsc::Receiver<RawFrame>,
     outgoing: mpsc::Sender<RawFrame>,
@@ -64,7 +64,7 @@ pub(crate) async fn run<C, F, Fut>(
 ) -> Ended
 where
     C: AsyncRead + AsyncWrite + Send + 'static,
-    F: FnOnce() -> Fut,
+    F: FnOnce(&RawFrame) -> Fut,
     Fut: Future<Output = Result<C, Unavailable>>,
 {
     let Some(first) = incoming.recv().await else {
@@ -73,8 +73,8 @@ where
 
     // Connect, holding frames that arrive meanwhile and watching for the browser
     // to leave.
+    let connecting = connect(&first);
     let mut held = VecDeque::from([first]);
-    let connecting = connect();
     tokio::pin!(connecting);
     let connected = loop {
         tokio::select! {
@@ -108,7 +108,7 @@ where
 async fn refuse(frame: &RawFrame, outgoing: &mpsc::Sender<RawFrame>, why: &Unavailable) {
     match frame.envelope() {
         Envelope::Request(Some(id)) => {
-            answer_error(outgoing, id, ErrorCode::AppUnavailable, &why.message).await;
+            answer_error(outgoing, id, why.code, &why.message).await;
         }
         _ => log!("dropped a message from the extension because Wirecatch is unavailable"),
     }
@@ -240,7 +240,7 @@ async fn answer_pending(pending: &Pending, outgoing: &mpsc::Sender<RawFrame>) {
     let ids = std::mem::take(&mut *lock(pending));
     let why = Unavailable::lost();
     for id in ids {
-        answer_error(outgoing, id, ErrorCode::AppUnavailable, &why.message).await;
+        answer_error(outgoing, id, why.code, &why.message).await;
     }
 }
 
@@ -303,7 +303,7 @@ mod tests {
     }
 
     fn unavailable(id: u64, why: &Unavailable) -> RawFrame {
-        error(id, ErrorCode::AppUnavailable, &why.message)
+        error(id, why.code, &why.message)
     }
 
     struct Harness {
@@ -318,7 +318,7 @@ mod tests {
     {
         let (to_relay, incoming) = mpsc::channel(8);
         let (outgoing, from_relay) = mpsc::channel(8);
-        let relay = tokio::spawn(run(incoming, outgoing, connect));
+        let relay = tokio::spawn(run(incoming, outgoing, |_: &RawFrame| connect()));
         Harness {
             to_relay,
             from_relay,

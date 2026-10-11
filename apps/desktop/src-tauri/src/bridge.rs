@@ -264,6 +264,7 @@ mod tests {
                 client_version: "1".into(),
                 protocol_version: wirecatch_protocol::PROTOCOL_VERSION,
                 browser: None,
+                start_app: true,
             }),
         };
         frame::write_async(&mut client, &hello).await.unwrap();

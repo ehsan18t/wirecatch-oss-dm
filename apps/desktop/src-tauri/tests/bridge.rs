@@ -109,6 +109,7 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() {
                 name: "chrome".into(),
                 version: None,
             }),
+            start_app: true,
         }),
     };
     frame::write_async(&mut stdin, &hello).await.unwrap();

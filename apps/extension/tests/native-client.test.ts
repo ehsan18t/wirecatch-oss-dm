@@ -5,7 +5,7 @@ import type { ConnectionStatus } from '../src/lib/native/status';
 import { patchOf } from '../src/lib/protocol';
 import { FakeApp, flush } from './fakes';
 
-const HELLO: Hello = {
+const HELLO: Omit<Hello, 'start_app'> = {
   client: 'extension',
   client_version: '0.1.0',
   protocol_version: 1,
@@ -39,8 +39,57 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
     await flush();
-    expect(app.requests[0]).toEqual({ id: 1, call: { method: 'hello', params: HELLO } });
+    // Starting up only reaches an app that is already running.
+    expect(app.requests[0]).toEqual({
+      id: 1,
+      call: { method: 'hello', params: { ...HELLO, start_app: false } },
+    });
     expect(client.status).toEqual({ state: 'connected', appVersion: '0.1.0' });
+  });
+
+  // Quitting Wirecatch did not stick: the extension reconnected within a second, and every new
+  // bridge started the app again, so it came back hidden while any browser window was open.
+  it('keeps a Wirecatch the person closed closed', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(client.status.state).toBe('connected');
+
+    app.running = false;
+    app.openPort?.browserDisconnect('Native host has exited.');
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(client.status).toEqual({
+      state: 'unavailable',
+      problem: { kind: 'app_closed', detail: null },
+      retryAt: null,
+    });
+    expect(app.starts).toBe(0);
+    const connections = app.ports.length;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(app.ports).toHaveLength(connections);
+  });
+
+  it('does not start a closed Wirecatch when the extension starts up', async () => {
+    app.running = false;
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(client.status.state).toBe('unavailable');
+    expect(app.starts).toBe(0);
+  });
+
+  it('starts a closed Wirecatch for a request, which only the person causes', async () => {
+    app.running = false;
+    client = makeClient(app);
+    client.start();
+    await flush();
+
+    const reply = await client.request({ method: 'get_extension_settings' }, 5_000);
+
+    expect(reply.type).toBe('extension_settings');
+    expect(app.starts).toBe(1);
+    expect(client.status.state).toBe('connected');
   });
 
   it('matches answers to requests by id, even when they arrive out of order', async () => {

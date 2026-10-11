@@ -96,6 +96,13 @@ pub struct Hello {
     pub protocol_version: u32,
     /// Set by the extension; the bridge passes it through.
     pub browser: Option<BrowserInfo>,
+    /// Whether the bridge may start the app when it is not running. The extension sets it only when the person did something that needs the app, such as a download from the browser; its checks on waking and its reconnects leave it off, so a Wirecatch the person closed stays closed (D25). Missing means yes, as before.
+    #[serde(default = "start_app_by_default")]
+    pub start_app: bool,
+}
+
+fn start_app_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -150,6 +157,8 @@ pub enum ErrorCode {
     NotFound,
     /// Produced by the bridge when it cannot reach or start the app.
     AppUnavailable,
+    /// Produced by the bridge when the app is not running and the client asked not to start it (`Hello::start_app` off).
+    AppNotRunning,
     Internal,
     /// The app could not take over a captured download (the server did not answer
     /// in time, or sent something other than what the browser saw). The browser

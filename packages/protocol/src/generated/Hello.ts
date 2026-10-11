@@ -6,4 +6,8 @@ export type Hello = { client: ClientKind, client_version: string, protocol_versi
 /**
  * Set by the extension; the bridge passes it through.
  */
-browser: BrowserInfo | null, };
+browser: BrowserInfo | null, 
+/**
+ * Whether the bridge may start the app when it is not running. The extension sets it only when the person did something that needs the app, such as a download from the browser; its checks on waking and its reconnects leave it off, so a Wirecatch the person closed stays closed (D25). Missing means yes, as before.
+ */
+start_app: boolean, };

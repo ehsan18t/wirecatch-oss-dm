@@ -144,7 +144,7 @@ export default defineBackground(() => {
       connect: (): NativePort => browser.runtime.connectNative(__NATIVE_HOST_NAME__),
       disconnectReason: (port) => disconnectMessage(browser.runtime.lastError, port),
     },
-    hello: async (): Promise<Hello> => ({
+    hello: async (): Promise<Omit<Hello, 'start_app'>> => ({
       client: 'extension',
       client_version: browser.runtime.getManifest().version,
       protocol_version: PROTOCOL_VERSION,

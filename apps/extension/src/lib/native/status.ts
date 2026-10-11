@@ -11,6 +11,8 @@ export type ProblemKind =
   | 'host_untrusted'
   /** The bridge runs but could not reach or start the app. */
   | 'app_unavailable'
+  /** The app is closed, and nothing has asked for it since: the extension does not start it on its own. */
+  | 'app_closed'
   /** The app speaks a different protocol version. */
   | 'version_mismatch'
   /** The connection broke for another reason. */
@@ -111,6 +113,11 @@ export function describeProblem(kind: ProblemKind): ProblemText {
       return {
         title: 'The Wirecatch app could not be started.',
         fix: 'Open the Wirecatch app yourself, then click Try again.',
+      };
+    case 'app_closed':
+      return {
+        title: 'Wirecatch is closed.',
+        fix: 'It opens when the browser has a download for it. You can also open it now.',
       };
     case 'version_mismatch':
       return {

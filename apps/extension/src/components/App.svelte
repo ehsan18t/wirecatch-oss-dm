@@ -75,6 +75,7 @@
       case 'connecting':
         return 'Connecting';
       case 'unavailable':
+        if (status.problem.kind === 'app_closed') return 'Closed';
         return status.retryAt === null ? 'Connecting' : 'Not connected';
     }
   });
@@ -147,13 +148,19 @@
 
   <main aria-busy={snapshot === null}>
     {#if problem !== null && problemText !== null}
-      <section class="panel panel-warning" aria-labelledby="problem-title">
+      {@const closed = problem.kind === 'app_closed'}
+      <section
+        class="panel {closed ? 'panel-info' : 'panel-warning'}"
+        aria-labelledby="problem-title"
+      >
         <h2 id="problem-title">{problemText.title}</h2>
         <p>{problemText.fix}</p>
         {#if problem.detail}
           <p class="detail">Details: {problem.detail}</p>
         {/if}
-        <button type="button" class="button" onclick={() => model.reconnect()}>Try again</button>
+        <button type="button" class="button" onclick={() => model.reconnect()}>
+          {closed ? 'Open Wirecatch' : 'Try again'}
+        </button>
       </section>
     {/if}
 
@@ -448,6 +455,12 @@
   .panel-error {
     border-color: var(--error-border);
     background: var(--error-bg);
+  }
+
+  /* A state to know about, not a problem: Wirecatch is closed. */
+  .panel-info {
+    border-color: var(--border);
+    background: var(--surface);
   }
 
   .panel h2 {

@@ -142,6 +142,7 @@ fn hello(id: u64) -> Vec<u8> {
             client_version: "test".into(),
             protocol_version: PROTOCOL_VERSION,
             browser: None,
+            start_app: true,
         }),
     })
     .unwrap()

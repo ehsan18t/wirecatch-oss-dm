@@ -31,6 +31,30 @@ impl RawFrame {
         &self.0[4..]
     }
 
+    /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`). Anything else, and a `hello` from a client that does not say, allows it, as before the field existed.
+    pub(crate) fn allows_starting_the_app(&self) -> bool {
+        #[derive(Deserialize)]
+        struct Frame {
+            call: Option<Call>,
+        }
+        #[derive(Deserialize)]
+        struct Call {
+            method: String,
+            #[serde(default)]
+            params: Option<Params>,
+        }
+        #[derive(Deserialize)]
+        struct Params {
+            start_app: Option<bool>,
+        }
+        match serde_json::from_slice::<Frame>(self.body()) {
+            Ok(Frame {
+                call: Some(Call { method, params }),
+            }) if method == "hello" => params.and_then(|p| p.start_app).unwrap_or(true),
+            _ => true,
+        }
+    }
+
     /// Reads the envelope fields the bridge needs.
     pub(crate) fn envelope(&self) -> Envelope {
         #[derive(Deserialize)]
@@ -128,6 +152,28 @@ pub(crate) async fn read_async(
 mod tests {
     use super::*;
     use wirecatch_protocol::frame::MAX_FRAME_LEN;
+
+    fn raw(body: &str) -> RawFrame {
+        next_frame(&mut io::Cursor::new(frame_of(body.as_bytes())))
+    }
+
+    #[test]
+    fn a_hello_says_whether_the_app_may_be_started() {
+        let hello = |params: &str| {
+            raw(&format!(
+                r#"{{"kind":"request","id":1,"call":{{"method":"hello","params":{params}}}}}"#
+            ))
+        };
+        assert!(!hello(r#"{"start_app":false}"#).allows_starting_the_app());
+        assert!(hello(r#"{"start_app":true}"#).allows_starting_the_app());
+        // Clients from before the field, and every other call, allow it as before.
+        assert!(hello(r#"{"client":"cli"}"#).allows_starting_the_app());
+        assert!(
+            raw(r#"{"kind":"request","id":2,"call":{"method":"pause_all"}}"#)
+                .allows_starting_the_app()
+        );
+        assert!(raw("not json").allows_starting_the_app());
+    }
 
     fn frame_of(body: &[u8]) -> Vec<u8> {
         let mut out = (body.len() as u32).to_le_bytes().to_vec();

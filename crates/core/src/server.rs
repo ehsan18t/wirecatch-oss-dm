@@ -421,6 +421,7 @@ mod tests {
             client_version: "0.1.0".into(),
             protocol_version: v,
             browser: None,
+            start_app: true,
         };
         assert!(
             version_mismatch(&hello(PROTOCOL_VERSION + 1)).contains("Update the Wirecatch app")
