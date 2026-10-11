@@ -14,7 +14,7 @@
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -233,11 +233,31 @@ function msrv() {
   cargo(`+${version}`, 'check', '-p', ENGINE_CRATE, '--locked');
 }
 
+const GENERATED_TYPES = 'packages/protocol/src';
+
+/** Every file under `dir`, with its contents, keyed by its path from the repository root. */
+function folderContents(dir) {
+  const contents = new Map();
+  const walk = (folder) => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else contents.set(relative(ROOT, path), readFileSync(path, 'utf8'));
+    }
+  };
+  walk(join(ROOT, dir));
+  return contents;
+}
+
+/** Regenerates the TypeScript types and fails if that changed any file: what was there did not match `crates/protocol`. It compares the files themselves, so it also works before a change is committed. */
 function protocolDrift() {
+  const before = folderContents(GENERATED_TYPES);
   pnpm('protocol:generate');
-  const changes = capture('git', ['status', '--porcelain', '--', 'packages/protocol/src']).out.trim();
-  if (changes) {
-    throw new GateError(`The generated TypeScript protocol types are out of date. Run \`pnpm protocol:generate\` and commit the result:\n${changes}`);
+  const after = folderContents(GENERATED_TYPES);
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  const changed = [...paths].filter((path) => before.get(path) !== after.get(path));
+  if (changed.length > 0) {
+    throw new GateError(`The generated TypeScript protocol types were out of date; they are regenerated now, so review and commit them:\n${changed.join('\n')}`);
   }
 }
 
