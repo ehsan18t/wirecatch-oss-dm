@@ -3,7 +3,7 @@
   import { formatFileTypes, parseFileTypes } from '../lib/file-types';
   import { describeProblem } from '../lib/native/status';
   import type { PopupModel } from '../lib/popup/model.svelte';
-  import { SIZE_UNITS, splitSize, toBytes, type SizeUnit } from '../lib/size';
+  import { SIZE_UNITS, splitSize, toBytes, type SizeUnit } from '@wirecatch/units';
   import { matchingSite, siteForPage } from '../lib/sites';
   import IgnoredSites from './IgnoredSites.svelte';
   import MediaSection from './MediaSection.svelte';

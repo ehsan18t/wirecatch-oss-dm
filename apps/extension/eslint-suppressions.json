@@ -154,11 +154,6 @@
       "count": 1
     }
   },
-  "src/lib/size.ts": {
-    "wirecatch/no-magic-numbers": {
-      "count": 11
-    }
-  },
   "tests/fakes.ts": {
     "@typescript-eslint/array-type": {
       "count": 6

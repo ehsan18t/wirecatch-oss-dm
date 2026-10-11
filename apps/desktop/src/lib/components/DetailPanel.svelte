@@ -9,12 +9,10 @@
   import X from '@lucide/svelte/icons/x';
   import type { DownloadSummary, QueueId } from '@wirecatch/protocol';
   import {
-    formatBytes,
     formatDate,
     formatEta,
     formatPercent,
     formatSize,
-    formatSpeed,
     folderOf,
     linkForDisplay,
     MEDIA_SOURCE_LABEL,
@@ -25,6 +23,7 @@
     statusDetail,
     statusShort,
   } from '$lib/format';
+  import { formatBytes, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
   import ErrorFix from './ErrorFix.svelte';

@@ -14,11 +14,9 @@
   import {
     extractUrls,
     folderOf,
-    formatBytes,
     formatEta,
     formatPercent,
     formatSize,
-    formatSpeed,
     hostOf,
     MEDIA_SOURCE_LABEL,
     PROCESSING_LABEL,
@@ -27,6 +25,7 @@
     statusDetail,
     statusShort,
   } from '$lib/format';
+  import { formatBytes, formatSpeed } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
   import WindowFrame from './WindowFrame.svelte';
 

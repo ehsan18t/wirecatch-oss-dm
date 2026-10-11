@@ -1,7 +1,7 @@
 // Add-ons in plain words: what state one is in and what the person can do about it.
 
 import type { AddonInfo, AddonState } from '@wirecatch/protocol';
-import { formatBytes } from './format';
+import { formatBytes } from '@wirecatch/units';
 
 /** The id of the one add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
 export const MEDIA_ADDON = 'media';

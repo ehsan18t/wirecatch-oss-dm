@@ -6,14 +6,11 @@ import {
   extractUrls,
   fileNameFromUrl,
   folderOf,
-  formatBytes,
   formatDays,
   formatEta,
   formatPercent,
-  formatRate,
   formatSchedule,
   formatSize,
-  formatSpeed,
   linkForDisplay,
   parseTime,
   processingFraction,
@@ -23,29 +20,7 @@ import {
   statusShort,
 } from './format';
 
-describe('formatBytes', () => {
-  it('uses short units with sensible precision', () => {
-    expect(formatBytes(0)).toBe('0 B');
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(1536)).toBe('1.50 KB');
-    expect(formatBytes(15 * 1024 * 1024)).toBe('15.0 MB');
-    expect(formatBytes(6.1 * 1024 ** 3)).toBe('6.10 GB');
-    expect(formatBytes(-1)).toBe('0 B');
-  });
-});
-
-describe('speed, rate and time', () => {
-  it('hides a zero speed', () => {
-    expect(formatSpeed(0)).toBe('');
-    expect(formatSpeed(2 * 1024 * 1024)).toBe('2.00 MB/s');
-  });
-
-  it('writes limits without trailing zeros', () => {
-    expect(formatRate(4 * 1024 * 1024)).toBe('4 MB/s');
-    expect(formatRate(1.5 * 1024 * 1024)).toBe('1.5 MB/s');
-    expect(formatRate(512 * 1024)).toBe('512 KB/s');
-  });
-
+describe('time', () => {
   it('formats time left compactly', () => {
     expect(formatEta(null)).toBe('');
     expect(formatEta(0.2)).toBe('1 s');

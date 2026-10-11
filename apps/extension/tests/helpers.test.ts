@@ -12,7 +12,6 @@ import {
 } from '../src/lib/native/status';
 import { applyPatch, isConfirmed, patchOf } from '../src/lib/protocol';
 import { originPattern } from '../src/lib/site-access';
-import { splitSize, toBytes } from '../src/lib/size';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
 import { DEFAULT_SETTINGS } from './fakes';
 
@@ -57,24 +56,6 @@ describe('file types', () => {
     expect(fileNameFromUrl('nonsense')).toBeNull();
     expect(baseName('C:\\Users\\me\\a.zip')).toBe('a.zip');
     expect(baseName('/home/me/a.zip')).toBe('a.zip');
-  });
-});
-
-describe('size', () => {
-  it('shows bytes in the largest whole unit', () => {
-    expect(splitSize(0)).toEqual({ value: 0, unit: 'MB' });
-    expect(splitSize(5 * 1024 ** 2)).toEqual({ value: 5, unit: 'MB' });
-    expect(splitSize(2 * 1024 ** 3)).toEqual({ value: 2, unit: 'GB' });
-    expect(splitSize(1536)).toEqual({ value: 1.5, unit: 'KB' });
-    expect(splitSize(1000)).toEqual({ value: 0.98, unit: 'KB' });
-  });
-
-  it('turns typed values into bytes', () => {
-    expect(toBytes('5', 'MB')).toBe(5 * 1024 ** 2);
-    expect(toBytes('1,5', 'KB')).toBe(1536);
-    expect(toBytes('', 'MB')).toBe(0);
-    expect(toBytes('-1', 'MB')).toBeNull();
-    expect(toBytes('abc', 'MB')).toBeNull();
   });
 });
 

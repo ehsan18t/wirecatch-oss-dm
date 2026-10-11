@@ -21,7 +21,8 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "@wirecatch/protocol": "workspace:*"
+    "@wirecatch/protocol": "workspace:*",
+    "@wirecatch/units": "workspace:*"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "catalog:",

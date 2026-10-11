@@ -12,40 +12,7 @@ import type {
   WaitReason,
   Weekday,
 } from '@wirecatch/protocol';
-
-const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
-
-/** Bytes as a short size, for example `4.7 GB`. Uses 1024 steps, like most file managers. */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < UNITS.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  if (unit === 0) return `${Math.round(value)} B`;
-  const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(digits)} ${UNITS[unit]}`;
-}
-
-/** Bytes per second as a speed, for example `12.4 MB/s`. Zero speed is an empty string. */
-export function formatSpeed(bytesPerSecond: number): string {
-  if (bytesPerSecond <= 0) return '';
-  return `${formatBytes(bytesPerSecond)}/s`;
-}
-
-/** A limit or setting value: `4 MB/s`, `1.5 MB/s`, `512 KB/s`, without trailing zeros. */
-export function formatRate(bytesPerSecond: number): string {
-  let value = bytesPerSecond;
-  let unit = 0;
-  while (value >= 1024 && unit < UNITS.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const rounded = Math.round(value * 10) / 10;
-  return `${rounded} ${UNITS[unit]}/s`;
-}
+import { formatBytes, formatRate } from '@wirecatch/units';
 
 /** Seconds left as a compact duration: `45 s`, `3 min`, `1 h 20 min`, `2 days`. */
 export function formatEta(seconds: number | null): string {

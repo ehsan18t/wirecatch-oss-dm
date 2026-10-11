@@ -4,7 +4,8 @@
   // download goes on by itself once the add-on is installed.
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
-  import { formatBytes, hostOf } from '$lib/format';
+  import { hostOf } from '$lib/format';
+  import { formatBytes } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
   import WindowFrame from './WindowFrame.svelte';
 

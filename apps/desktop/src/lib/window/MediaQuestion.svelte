@@ -6,7 +6,8 @@
   // videos or for audio only, and every choice says before it starts whether it converts.
   import type { MediaChoice, MediaOption, OutputFormat, QueueId } from '@wirecatch/protocol';
   import { isInstalled } from '$lib/addons';
-  import { earlierNote, formatBytes, hostOf } from '$lib/format';
+  import { earlierNote, hostOf } from '$lib/format';
+  import { formatBytes } from '@wirecatch/units';
   import {
     conversionNote,
     fitFor,

@@ -2,7 +2,7 @@
   import type { MediaKind } from '@wirecatch/protocol';
   import type { MediaView } from '../lib/media/center';
   import type { MediaStatus } from '../lib/popup/model.svelte';
-  import { formatSize } from '../lib/size';
+  import { formatBytes } from '@wirecatch/units';
 
   interface Props {
     /** The active tab's list; null while it is on its way. */
@@ -63,7 +63,7 @@
           <div class="text">
             <span class="title">{entry.title}</span>
             <span class="detail">
-              {entry.detail}{entry.size === null ? '' : `, ${formatSize(entry.size)}`}
+              {entry.detail}{entry.size === null ? '' : `, ${formatBytes(entry.size)}`}
             </span>
             <p class="status status-{status?.tone ?? 'none'}" role="status">{status?.text ?? ''}</p>
           </div>

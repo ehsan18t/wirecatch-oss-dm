@@ -3,7 +3,8 @@
   // then Download now, Download later or Cancel. Enter is Download now.
   import type { PendingCapture, QueueId } from '@wirecatch/protocol';
   import CategoryIcon from '$lib/components/CategoryIcon.svelte';
-  import { earlierNote, formatBytes, hostOf, linkForDisplay } from '$lib/format';
+  import { earlierNote, hostOf, linkForDisplay } from '$lib/format';
+  import { formatBytes } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
   import { enterSubmits } from './keys';
   import WindowFrame from './WindowFrame.svelte';

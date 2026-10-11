@@ -11,7 +11,8 @@
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import type { Queue } from '@wirecatch/protocol';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
-  import { CATEGORIES, CATEGORY_LABEL, formatRate, formatSchedule, formatSpeed } from '$lib/format';
+  import { CATEGORIES, CATEGORY_LABEL, formatSchedule } from '$lib/format';
+  import { formatRate, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
   import CategoryIcon from './CategoryIcon.svelte';

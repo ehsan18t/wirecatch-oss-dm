@@ -399,7 +399,7 @@
       "count": 2
     },
     "wirecatch/no-magic-numbers": {
-      "count": 41
+      "count": 33
     }
   },
   "src/lib/keyboard.test.ts": {

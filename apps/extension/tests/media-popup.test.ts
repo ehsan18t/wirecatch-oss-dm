@@ -166,7 +166,7 @@ describe('Media on this page', () => {
     await waitFor(() => expect(within(section()).getAllByRole('listitem')).toHaveLength(2));
     const region = section();
     expect(within(region).getByText('Video stream (HLS)')).toBeTruthy();
-    expect(within(region).getByText('song.mp3, 3.5 MB')).toBeTruthy();
+    expect(within(region).getByText('song.mp3, 3.50 MB')).toBeTruthy();
     expect(
       within(region).getByRole('button', { name: 'Download Video stream (HLS): cdn.example.com' }),
     ).toBeTruthy();

@@ -6,11 +6,11 @@
     formatEta,
     formatPercent,
     formatSize,
-    formatSpeed,
     processingFraction,
     progressFraction,
     statusShort,
   } from '$lib/format';
+  import { formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
 
