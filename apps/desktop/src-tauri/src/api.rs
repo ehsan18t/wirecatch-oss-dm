@@ -164,76 +164,41 @@ fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
         .ok_or_else(|| plain(CoreError::DownloadNotFound(id)))
 }
 
-/// File types that run code when opened: programs, installers, scripts, shortcuts and
-/// packages. Opening one of these needs the person's confirmation first.
-pub const PROGRAM_EXTENSIONS: &[&str] = &[
-    "exe",
-    "msi",
-    "msix",
-    "msixbundle",
-    "appx",
-    "appxbundle",
-    "msp",
-    "mst",
-    "bat",
-    "cmd",
-    "com",
-    "scr",
-    "pif",
-    "cpl",
-    "ps1",
-    "psm1",
-    "psd1",
-    "vbs",
-    "vbe",
-    "js",
-    "jse",
-    "wsf",
-    "wsh",
-    "ws",
-    "hta",
-    "lnk",
-    "url",
-    "scf",
-    "reg",
-    "inf",
-    "chm",
-    "application",
-    "gadget",
-    "jar",
-    "appimage",
-    "sh",
-    "bash",
-    "zsh",
-    "csh",
-    "ksh",
-    "run",
-    "bin",
-    "command",
-    "desktop",
-    "deb",
-    "rpm",
-    "apk",
-    "flatpakref",
-    "snap",
-    "py",
-    "pyw",
-    "pl",
-    "rb",
-    "dmg",
-    "pkg",
-    "app",
+/// File types that open directly, without asking first: common video, audio, image, document
+/// and archive types that do not run code when opened. Every other type, and a file with no
+/// extension, could run code (programs, installers, scripts, shortcuts, disk images, Office
+/// files with macros and many more), so opening it needs the person's confirmation. An
+/// allowlist fails safe: a type nobody thought of asks first.
+///
+/// In order: video, audio, subtitles, images, documents (Office files with macros, such as
+/// `docm`, are left out on purpose), archives.
+pub const SAFE_EXTENSIONS: &[&str] = &[
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "3gp",
+    "ogv", "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "mka", "srt",
+    "vtt", "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif",
+    "pdf", "txt", "md", "rtf", "odt", "ods", "odp", "docx", "xlsx", "pptx", "csv", "epub", "zip",
+    "7z", "rar", "tar", "gz", "tgz", "bz2", "xz", "zst",
 ];
 
-/// Whether opening `path` would run code: a program type by its extension (any case), or on
-/// Linux a file without an extension that is marked executable.
+/// The type of `name` as the system sees it: trailing dots and spaces dropped (Windows ignores
+/// them), lower case, the last extension only (so `report.pdf.exe` is `exe`). `None` when the
+/// name has no extension.
+pub fn file_type(name: &str) -> Option<String> {
+    let name = name.trim_end_matches(['.', ' ']);
+    let (_, ext) = name.rsplit_once('.')?;
+    (!ext.is_empty()).then(|| ext.to_ascii_lowercase())
+}
+
+/// Whether opening `path` might run code, so the person must confirm first: any type not on
+/// [`SAFE_EXTENSIONS`], a file without an extension, and on Linux any file marked executable,
+/// whatever its name.
 pub fn is_program(path: &Path) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => PROGRAM_EXTENSIONS
-            .iter()
-            .any(|p| p.eq_ignore_ascii_case(ext)),
-        None => is_marked_executable(path),
-    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    let safe = file_type(&name).is_some_and(|ext| SAFE_EXTENSIONS.contains(&ext.as_str()));
+    !safe || is_marked_executable(path)
 }
 
 #[cfg(unix)]
@@ -280,7 +245,7 @@ pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> Command
     }
     if is_program(&path) && !allow_program {
         return Err(format!(
-            "{} is a program. Only open it if you trust {}. Use Show in folder to open it yourself.",
+            "{} is a type of file that can run code. Only open it if you trust {}. Use Show in folder to open it yourself.",
             row.file_name,
             site_of(&row.url)
         ));
@@ -372,50 +337,97 @@ mod tests {
     }
 
     #[test]
-    fn programs_and_scripts_are_recognized_in_any_case() {
+    fn known_safe_types_open_directly_in_any_case() {
+        for name in [
+            "movie.mp4",
+            "MOVIE.MKV",
+            "song.mp3",
+            "photo.JPG",
+            "report.pdf",
+            "notes.txt",
+            "sheet.xlsx",
+            "book.epub",
+            "archive.zip",
+            "backup.tar.gz",
+            "data.7z",
+        ] {
+            assert!(!is_program(Path::new(name)), "{name} should open directly");
+        }
+    }
+
+    #[test]
+    fn every_other_type_asks_first() {
         for name in [
             "setup.exe",
             "SETUP.EXE",
             "Installer.Msi",
             "run.bat",
-            "x.cmd",
             "x.ps1",
-            "x.vbs",
             "x.js",
             "x.hta",
             "x.lnk",
-            "x.reg",
-            "x.jar",
+            "x.url",
+            "console.msc",
+            "app.appref-ms",
+            "x.settingcontent-ms",
+            "x.website",
+            "x.xbap",
+            "x.wsc",
+            "x.sct",
+            "disk.iso",
+            "disk.img",
+            "disk.vhd",
+            "disk.vhdx",
+            "x.diagcab",
+            "x.library-ms",
+            "x.search-ms",
+            "x.xll",
+            "x.terminal",
+            "x.workflow",
+            "macros.docm",
+            "macros.xlsm",
+            "macros.pptm",
+            "page.html",
+            "drawing.svg",
             "Wirecatch.AppImage",
             "install.sh",
-            "x.run",
-            "x.bin",
             "x.deb",
-            "x.rpm",
+            "something.unknowntype",
+            "README",
+            "tool",
         ] {
             assert!(is_program(Path::new(name)), "{name} should need trust");
         }
-        for name in [
-            "movie.mp4",
-            "report.pdf",
-            "archive.zip",
-            "photo.JPG",
-            "notes.txt",
-        ] {
-            assert!(!is_program(Path::new(name)), "{name} is not a program");
-        }
+    }
+
+    #[test]
+    fn the_type_is_read_the_way_the_system_reads_it() {
+        assert_eq!(file_type("video.mp4."), Some("mp4".into()));
+        assert_eq!(file_type("video.mp4 . "), Some("mp4".into()));
+        assert_eq!(file_type("report.PDF"), Some("pdf".into()));
+        assert_eq!(file_type("report.pdf.exe"), Some("exe".into()));
+        assert_eq!(file_type("noext"), None);
+        assert_eq!(file_type("trailing."), None);
+        assert!(!is_program(Path::new("video.mp4.")));
+        assert!(!is_program(Path::new("video.mp4  ")));
+        assert!(is_program(Path::new("report.pdf.exe")));
+        assert!(is_program(Path::new("setup.exe.")));
+        assert!(is_program(Path::new("setup.exe ")));
     }
 
     #[cfg(unix)]
     #[test]
-    fn a_file_without_an_extension_marked_executable_is_a_program() {
+    fn a_file_marked_executable_is_a_program_whatever_its_name() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("tool");
-        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
-        assert!(!is_program(&file));
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(is_program(&file));
+        for name in ["tool", "movie.mp4"] {
+            let file = dir.path().join(name);
+            std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(is_program(&file), name == "tool", "{name} not executable");
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(is_program(&file), "{name} marked executable");
+        }
     }
 
     #[test]

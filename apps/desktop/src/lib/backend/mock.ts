@@ -66,16 +66,28 @@ const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' 
   },
 ];
 
-/** The mock's stand-in for the core's list of file types that run code when opened. */
-const PROGRAM_TYPES = new Set(
-  'exe msi msix appx bat cmd com scr pif cpl ps1 vbs vbe js jse wsf wsh hta lnk url reg jar appimage sh run bin deb rpm apk py'.split(
-    ' ',
-  ),
+/**
+ * The mock's copy of the desktop's `SAFE_EXTENSIONS` (`src-tauri/src/api.rs`): the only types
+ * that open without asking. Every other type, and a name without one, might run code.
+ */
+const SAFE_TYPES = new Set(
+  [
+    'mp4 m4v mkv webm mov avi wmv flv mpg mpeg ts m2ts 3gp ogv',
+    'mp3 m4a aac flac wav ogg oga opus wma aiff mka srt vtt',
+    'jpg jpeg png gif webp bmp tif tiff heic heif avif',
+    'pdf txt md rtf odt ods odp docx xlsx pptx csv epub',
+    'zip 7z rar tar gz tgz bz2 xz zst',
+  ]
+    .join(' ')
+    .split(' '),
 );
 
+/** Whether opening a file of this name might run code, read the way the desktop reads it. */
 export function isProgramName(name: string): boolean {
-  const dot = name.lastIndexOf('.');
-  return dot > 0 && PROGRAM_TYPES.has(name.slice(dot + 1).toLowerCase());
+  const trimmed = name.replace(/[. ]+$/, '');
+  const dot = trimmed.lastIndexOf('.');
+  if (dot < 0) return true;
+  return !SAFE_TYPES.has(trimmed.slice(dot + 1).toLowerCase());
 }
 
 /** How long the mock spends joining video and audio after a media download. */
@@ -989,7 +1001,7 @@ export class MockBackend implements Backend {
     }
     if (isProgramName(row.file_name) && !allowProgram) {
       throw new BackendError(
-        `${row.file_name} is a program. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
+        `${row.file_name} is a type of file that can run code. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
       );
     }
     this.opened.push(id);

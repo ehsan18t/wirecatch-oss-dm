@@ -22,8 +22,8 @@
   width={460}
 >
   <p class="text">
-    This is a program. Only open it if you trust <strong>{site}</strong>. Programs can change your
-    computer, and a file from an unknown site can contain anything.
+    This file type can run code. Only open it if you trust <strong>{site}</strong>. Code can change
+    your computer, and a file from an unknown site can contain anything.
   </p>
 
   {#snippet footer()}
