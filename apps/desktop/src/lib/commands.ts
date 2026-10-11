@@ -416,7 +416,8 @@ export function buildCommands(app: AppState): Command[] {
         group: 'Settings',
         title: `Remove the ${name}`,
         keywords: `${keywords} uninstall delete`,
-        run: () => app.removeAddon(addon.id),
+        // Removing stops video downloads, so the palette asks first.
+        run: () => app.openDialog({ kind: 'remove-addon', id: addon.id }),
       });
     }
   }

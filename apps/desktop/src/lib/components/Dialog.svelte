@@ -64,7 +64,7 @@
       ...el.querySelectorAll<HTMLElement>(
         'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
       ),
-    ].filter((f) => !f.hasAttribute('disabled') && f.getClientRects().length > 0);
+    ].filter((f) => !f.hasAttribute('disabled') && !f.closest('[hidden], [inert]'));
     const first = focusable[0];
     const last = focusable.at(-1);
     if (!first || !last) return;

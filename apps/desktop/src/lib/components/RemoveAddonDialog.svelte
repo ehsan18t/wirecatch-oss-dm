@@ -1,0 +1,37 @@
+<script lang="ts">
+  import { getApp } from '$lib/state/app.svelte';
+  import Dialog from './Dialog.svelte';
+
+  let { id }: { id: string } = $props();
+  const app = getApp();
+
+  const addon = $derived(app.addons?.find((a) => a.id === id));
+  const name = $derived(addon?.name.toLowerCase() ?? 'add-on');
+
+  async function remove() {
+    // Read before the dialog closes; its props go with it.
+    const target = id;
+    app.closeDialog();
+    await app.removeAddon(target);
+  }
+</script>
+
+<Dialog title={`Remove the ${name}?`} onclose={() => app.closeDialog()} width={440}>
+  <p class="text">
+    Downloads from video sites, and videos whose sound and picture must be joined, stop working
+    until you install it again. Your downloaded files stay.
+  </p>
+
+  {#snippet footer()}
+    <button class="btn" data-autofocus onclick={() => app.closeDialog()}>Keep</button>
+    <button class="btn danger" onclick={remove}>Remove</button>
+  {/snippet}
+</Dialog>
+
+<style>
+  .text {
+    margin: 0;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+</style>

@@ -54,7 +54,8 @@ export type Dialog =
   | { kind: 'export' }
   | { kind: 'import' }
   | { kind: 'shortcuts' }
-  | { kind: 'open-program'; id: DownloadId };
+  | { kind: 'open-program'; id: DownloadId }
+  | { kind: 'remove-addon'; id: string };
 
 export interface Toast {
   id: number;
