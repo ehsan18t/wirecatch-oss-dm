@@ -32,7 +32,6 @@ const LINT_PENDING = new Set([
   'wirecatch-desktop',
   'wirecatch-e2e',
   'wirecatch-engine',
-  'wirecatch-ipc',
   'wirecatch-streams',
 ]);
 

@@ -32,8 +32,6 @@
 //!   whose credentials (`SO_PEERCRED`) are another user, and the connector refuses
 //!   a server whose credentials are another user.
 
-#![warn(missing_docs)]
-
 #[cfg(not(any(windows, unix)))]
 compile_error!("wirecatch-ipc supports Windows and Linux only");
 
@@ -73,6 +71,7 @@ impl Endpoint {
     }
 
     /// The pipe name or socket path.
+    #[must_use]
     pub fn as_os_str(&self) -> &OsStr {
         &self.name
     }
@@ -171,6 +170,12 @@ impl IpcError {
 /// On Linux this also creates the containing folder with mode 0700 if it is
 /// missing, and refuses a folder that already exists but is not private to the
 /// current user.
+///
+/// # Errors
+///
+/// [`IpcError::Io`] when the current user cannot be read (Windows) or the folder
+/// cannot be created or inspected (Linux), and [`IpcError::UnsafeDirectory`] when the
+/// folder exists but is not private to the current user.
 pub fn endpoint() -> Result<Endpoint, IpcError> {
     #[cfg(windows)]
     {
@@ -227,8 +232,12 @@ impl Listener {
     /// Starts listening at `endpoint`. Must be called inside a tokio runtime with
     /// I/O enabled.
     ///
-    /// Fails with [`IpcError::AlreadyInUse`] if another listener owns the
-    /// endpoint.
+    /// # Errors
+    ///
+    /// [`IpcError::AlreadyInUse`] when another listener of the current user owns the
+    /// endpoint, [`IpcError::EndpointTaken`] when another user account holds it (Windows),
+    /// [`IpcError::UnsafeDirectory`] when the socket's folder is not private (Linux), and
+    /// [`IpcError::Io`] when the operating system refuses to create it.
     pub fn bind(endpoint: &Endpoint) -> Result<Self, IpcError> {
         #[cfg(windows)]
         let inner = windows::PipeListener::bind(endpoint)?;
@@ -237,27 +246,33 @@ impl Listener {
         Ok(Self { inner })
     }
 
-    /// Waits for the next client.
+    /// Waits for the next client. Cancelling the returned future is safe.
     ///
-    /// An error concerns only that one attempt (for example
-    /// [`IpcError::PeerRefused`]); the listener stays usable, so keep calling
-    /// `accept`. Cancelling the returned future is safe.
+    /// # Errors
+    ///
+    /// [`IpcError::PeerRefused`] when a client of another user account was turned
+    /// away, and [`IpcError::Io`] when a client failed to connect. An error concerns
+    /// only that one attempt: the listener stays usable, so keep calling `accept`.
     pub async fn accept(&mut self) -> Result<Connection, IpcError> {
         self.inner.accept().await
     }
 
     /// The endpoint this listener serves.
+    #[must_use]
     pub fn endpoint(&self) -> &Endpoint {
         self.inner.endpoint()
     }
 }
 
 /// Connects to the app at `endpoint`, after checking that the server belongs to
-/// the current user.
+/// the current user. Must be called inside a tokio runtime with I/O and time
+/// enabled.
 ///
-/// Returns [`IpcError::NotRunning`] when nothing is listening and
-/// [`IpcError::WrongOwner`] when the server belongs to someone else. Must be
-/// called inside a tokio runtime with I/O and time enabled.
+/// # Errors
+///
+/// [`IpcError::NotRunning`] when nothing is listening, [`IpcError::WrongOwner`]
+/// when the server belongs to someone else (nothing was sent to it), and
+/// [`IpcError::Io`] when the connection cannot be opened or its owner read.
 pub async fn connect(endpoint: &Endpoint) -> Result<Connection, IpcError> {
     #[cfg(windows)]
     {

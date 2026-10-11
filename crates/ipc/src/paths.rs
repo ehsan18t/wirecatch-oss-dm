@@ -1,30 +1,32 @@
 //! Pure endpoint and permission rules, kept free of system calls so they are unit
 //! tested on every platform.
+//!
+//! Each platform builds only its half of this module; tests build both halves
+//! everywhere, so the Linux rules are tested on Windows too and the other way round.
 
-//! Each platform uses only its half of this module; the other half is still
-//! compiled and tested everywhere, hence the `allow(dead_code)` markers.
-
+#[cfg(any(unix, test))]
 use std::ffi::OsStr;
+#[cfg(any(unix, test))]
 use std::path::PathBuf;
 
 /// Prefix of the per-user pipe name on Windows.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 pub(crate) const PIPE_PREFIX: &str = r"\\.\pipe\wirecatch-app-";
 
 /// Name of the folder created inside `XDG_RUNTIME_DIR`.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 pub(crate) const RUNTIME_SUBDIR: &str = "wirecatch";
 
 /// File name of the socket.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 pub(crate) const SOCKET_NAME: &str = "app.sock";
 
 /// File name of the lock that marks the live listener.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(unix)]
 pub(crate) const LOCK_NAME: &str = "app.lock";
 
 /// The Windows pipe name for a user, given the user's SID in string form.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(windows, test))]
 pub(crate) fn pipe_name(user_sid: &str) -> String {
     format!("{PIPE_PREFIX}{user_sid}")
 }
@@ -33,7 +35,7 @@ pub(crate) fn pipe_name(user_sid: &str) -> String {
 /// `/tmp/wirecatch-<uid>/app.sock` when `XDG_RUNTIME_DIR` is unset, empty or not an
 /// absolute path (the XDG Base Directory specification says relative values must
 /// be ignored).
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 pub(crate) fn socket_path(xdg_runtime_dir: Option<&OsStr>, uid: u32) -> PathBuf {
     let usable = xdg_runtime_dir.filter(|dir| dir.as_encoded_bytes().first() == Some(&b'/'));
     let dir = match usable {
@@ -44,7 +46,7 @@ pub(crate) fn socket_path(xdg_runtime_dir: Option<&OsStr>, uid: u32) -> PathBuf 
 }
 
 /// What is known about an existing folder, read without following symbolic links.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DirFacts {
     pub is_dir: bool,
@@ -54,7 +56,7 @@ pub(crate) struct DirFacts {
 }
 
 /// Why a folder is not private, and what the user can do about it.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirProblem {
     pub reason: String,
@@ -63,7 +65,7 @@ pub(crate) struct DirProblem {
 
 /// Checks that a folder is private to `uid`. `shown` is the folder as it appears
 /// in advice.
-#[cfg_attr(not(unix), allow(dead_code))]
+#[cfg(any(unix, test))]
 pub(crate) fn check_private_dir(facts: DirFacts, uid: u32, shown: &str) -> Result<(), DirProblem> {
     let problem = |reason: String, fix: String| Err(DirProblem { reason, fix });
     if facts.is_symlink || !facts.is_dir {
@@ -135,12 +137,16 @@ mod tests {
         );
     }
 
+    /// The file type bits of a folder in a mode (`S_IFDIR`, which `libc` has on Linux
+    /// only).
+    const FOLDER: u32 = 0o040_000;
+
     fn dir(owner_uid: u32, mode: u32) -> DirFacts {
         DirFacts {
             is_dir: true,
             is_symlink: false,
             owner_uid,
-            mode: 0o040000 | mode,
+            mode: FOLDER | mode,
         }
     }
 

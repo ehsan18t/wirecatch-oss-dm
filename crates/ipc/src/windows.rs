@@ -15,10 +15,11 @@ use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, PipeMode, 
 use tokio::time::{Instant, sleep};
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY, ERROR_SUCCESS, HANDLE, LocalFree,
+    WIN32_ERROR,
 };
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-    ConvertStringSidToSidW, GetSecurityInfo, SDDL_REVISION_1, SE_KERNEL_OBJECT,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
+    SDDL_REVISION_1, SE_KERNEL_OBJECT,
 };
 use windows_sys::Win32::Security::{
     CopySid, GetLengthSid, GetTokenInformation, IsValidSid, OWNER_SECURITY_INFORMATION,
@@ -36,6 +37,31 @@ use crate::{Connection, Elevation, Endpoint, Inner, IpcError, paths};
 /// listener always keeps one instance waiting, so this only covers the short gap
 /// while it creates the next one.
 const BUSY_WAIT: Duration = Duration::from_secs(2);
+
+/// How long `connect` waits before trying a busy pipe again.
+const BUSY_RETRY: Duration = Duration::from_millis(10);
+
+/// The longest string form a SID has, in UTF-16 code units: `S-1-`, an identifier
+/// authority of at most 15 characters, and up to 15 sub-authorities of up to 10
+/// digits each, every one after a dash.
+const MAX_SID_STRING_UNITS: usize = 4 + 15 + 15 * 11;
+
+/// The size of `T` as the `u32` that Win32 structures and calls take. A type of 4 GiB
+/// or more does not compile, so the conversion below never falls back.
+fn win32_size_of<T>() -> u32 {
+    const { assert!(mem::size_of::<T>() <= u32::MAX as usize) };
+    u32::try_from(mem::size_of::<T>()).unwrap_or(u32::MAX)
+}
+
+/// Whether `error` is the Win32 error `code`.
+fn is_os_error(error: &io::Error, code: WIN32_ERROR) -> bool {
+    error.raw_os_error() == Some(code.cast_signed())
+}
+
+/// The Win32 error `code` as an `io::Error`.
+fn os_error(code: WIN32_ERROR) -> io::Error {
+    io::Error::from_raw_os_error(code.cast_signed())
+}
 
 pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
     let sid = Sid::current_user()?
@@ -92,13 +118,15 @@ impl Sid {
     }
 
     /// Parses the string form, for example `S-1-5-18`.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn parse(text: &str) -> io::Result<Self> {
+        use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
+
         let wide = to_wide(OsStr::new(text));
         let mut psid: PSID = ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; on success `psid` receives a
         // LocalAlloc block that the guard frees.
-        if unsafe { ConvertStringSidToSidW(wide.as_ptr(), &mut psid) } == 0 {
+        if unsafe { ConvertStringSidToSidW(wide.as_ptr(), &raw mut psid) } == 0 {
             return Err(io::Error::last_os_error());
         }
         let _guard = LocalBox(psid);
@@ -116,12 +144,21 @@ impl Sid {
         let mut out: *mut u16 = ptr::null_mut();
         // SAFETY: `self` holds a valid SID; on success `out` receives a
         // NUL-terminated LocalAlloc string that the guard frees.
-        if unsafe { ConvertSidToStringSidW(self.as_psid(), &mut out) } == 0 {
+        if unsafe { ConvertSidToStringSidW(self.as_psid(), &raw mut out) } == 0 {
             return Err(io::Error::last_os_error());
         }
         let _guard = LocalBox(out.cast());
-        // SAFETY: `out` is NUL-terminated, so the scan stops inside the string.
-        let len = (0..).take_while(|&i| unsafe { *out.add(i) } != 0).count();
+        // SAFETY: `out` is NUL-terminated, so the scan stops inside the string; it
+        // also stops at the longest string form a SID has.
+        let len = (0..=MAX_SID_STRING_UNITS)
+            .take_while(|&i| unsafe { *out.add(i) } != 0)
+            .count();
+        if len > MAX_SID_STRING_UNITS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Windows returned an account id longer than any account id can be",
+            ));
+        }
         // SAFETY: the first `len` code units of `out` are initialized.
         let units = unsafe { std::slice::from_raw_parts(out, len) };
         Ok(String::from_utf16_lossy(units))
@@ -148,7 +185,7 @@ fn process_token() -> io::Result<OwnedHandle> {
     let mut raw: HANDLE = ptr::null_mut();
     // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing; on
     // success `raw` is a new token handle that we own.
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut raw) } == 0 {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: `raw` is a valid handle we own and nothing else closes it.
@@ -164,7 +201,7 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
     let mut needed = 0u32;
     // SAFETY: a size query with a null buffer; it fails by design and reports the
     // size in `needed`.
-    unsafe { GetTokenInformation(handle, class, ptr::null_mut(), 0, &mut needed) };
+    unsafe { GetTokenInformation(handle, class, ptr::null_mut(), 0, &raw mut needed) };
     if needed == 0 {
         return Err(io::Error::last_os_error());
     }
@@ -179,7 +216,7 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
             class,
             buf.as_mut_ptr().cast(),
             capacity,
-            &mut needed,
+            &raw mut needed,
         )
     } == 0
     {
@@ -188,7 +225,7 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
     // SAFETY: for both classes the call above filled `buf` with a structure whose
     // only field is a SID_AND_ATTRIBUTES, and `buf` is aligned for it. Its SID
     // pointer points inside `buf`, which outlives the copy.
-    let entry = unsafe { &*(buf.as_ptr() as *const SID_AND_ATTRIBUTES) };
+    let entry = unsafe { &*buf.as_ptr().cast::<SID_AND_ATTRIBUTES>() };
     // SAFETY: see above.
     unsafe { Sid::copy_from(entry.Sid) }
 }
@@ -209,9 +246,8 @@ pub(crate) fn elevation() -> io::Result<Elevation> {
 fn classify_elevation(kind: TOKEN_ELEVATION_TYPE, elevated: bool) -> io::Result<Elevation> {
     match kind {
         FULL_TOKEN => Ok(Elevation::Elevated),
-        LIMITED_TOKEN => Ok(Elevation::Standard),
         SINGLE_TOKEN if elevated => Ok(Elevation::AlwaysAdministrator),
-        SINGLE_TOKEN => Ok(Elevation::Standard),
+        LIMITED_TOKEN | SINGLE_TOKEN => Ok(Elevation::Standard),
         other => Err(io::Error::other(format!(
             "Windows reported an unknown elevation type {other}"
         ))),
@@ -228,7 +264,7 @@ unsafe fn read_token_value<T>(
     class: TOKEN_INFORMATION_CLASS,
     out: &mut T,
 ) -> io::Result<()> {
-    let size = u32::try_from(mem::size_of::<T>()).unwrap_or(u32::MAX);
+    let size = win32_size_of::<T>();
     let mut returned = 0u32;
     // SAFETY: `out` is writable for `size` bytes, and the caller guarantees it is the
     // structure `class` fills.
@@ -238,7 +274,7 @@ unsafe fn read_token_value<T>(
             class,
             ptr::from_mut(out).cast(),
             size,
-            &mut returned,
+            &raw mut returned,
         )
     } == 0
     {
@@ -247,7 +283,7 @@ unsafe fn read_token_value<T>(
     Ok(())
 }
 
-/// Frees a block that Windows allocated with LocalAlloc.
+/// Frees a block that Windows allocated with `LocalAlloc`.
 struct LocalBox(*mut c_void);
 
 impl Drop for LocalBox {
@@ -300,7 +336,7 @@ impl OwnerOnlyDescriptor {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 wide.as_ptr(),
                 SDDL_REVISION_1,
-                &mut descriptor,
+                &raw mut descriptor,
                 ptr::null_mut(),
             )
         } == 0
@@ -330,7 +366,7 @@ fn create_instance(
     first: bool,
 ) -> io::Result<NamedPipeServer> {
     let mut attributes = SECURITY_ATTRIBUTES {
-        nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        nLength: win32_size_of::<SECURITY_ATTRIBUTES>(),
         lpSecurityDescriptor: descriptor.0,
         bInheritHandle: 0,
     };
@@ -342,10 +378,8 @@ fn create_instance(
     // SAFETY: `attributes` is a valid SECURITY_ATTRIBUTES whose descriptor is
     // alive for the whole call (it is owned by `descriptor`, borrowed here).
     unsafe {
-        options.create_with_security_attributes_raw(
-            endpoint.as_os_str(),
-            (&mut attributes as *mut SECURITY_ATTRIBUTES).cast(),
-        )
+        options
+            .create_with_security_attributes_raw(endpoint.as_os_str(), (&raw mut attributes).cast())
     }
 }
 
@@ -371,12 +405,12 @@ fn classify_taken(endpoint: &Endpoint, user: &Sid, probe: io::Result<Sid>) -> Ip
         },
         Ok(owner) => taken_by(owner.to_string()),
         // Our own pipe always lets us in, so a refusal means someone else's.
-        Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+        Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
             taken_by("an account that does not let you in".into())
         }
         // Every instance is busy serving a client: our own app under load is the
         // likely case, and either way the name is not ours to take.
-        Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => IpcError::AlreadyInUse {
+        Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) => IpcError::AlreadyInUse {
             endpoint: endpoint.to_string(),
         },
         Err(e) => IpcError::io(
@@ -410,7 +444,7 @@ impl PipeListener {
             // FILE_FLAG_FIRST_PIPE_INSTANCE fails this way when the name already
             // exists, whoever created it. Find out who, so the user gets the
             // right advice.
-            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+            Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
                 return Err(classify_taken(endpoint, &user, probe_owner(endpoint)));
             }
             Err(e) => return Err(IpcError::io(format!("Could not listen at {endpoint}"), e)),
@@ -463,15 +497,12 @@ pub(crate) async fn connect(endpoint: &Endpoint, expected: &Sid) -> Result<Conne
             .open(endpoint.as_os_str());
         match opened {
             Ok(client) => break client,
-            Err(e)
-                if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32)
-                    && started.elapsed() < BUSY_WAIT =>
-            {
+            Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) && started.elapsed() < BUSY_WAIT => {
                 // No completion event exists for "an instance became free"
                 // (WaitNamedPipe blocks a thread), so wait briefly and retry.
-                sleep(Duration::from_millis(10)).await;
+                sleep(BUSY_RETRY).await;
             }
-            Err(e) if e.raw_os_error() == Some(ERROR_FILE_NOT_FOUND as i32) => {
+            Err(e) if is_os_error(&e, ERROR_FILE_NOT_FOUND) => {
                 return Err(IpcError::NotRunning {
                     endpoint: endpoint.to_string(),
                 });
@@ -509,7 +540,7 @@ pub(crate) fn verify_owner(
     }
 }
 
-/// Reads the owner of a kernel object from its handle (needs READ_CONTROL, which
+/// Reads the owner of a kernel object from its handle (needs `READ_CONTROL`, which
 /// a pipe client opened for reading has).
 fn handle_owner(handle: RawHandle) -> io::Result<Sid> {
     let mut owner: PSID = ptr::null_mut();
@@ -522,15 +553,15 @@ fn handle_owner(handle: RawHandle) -> io::Result<Sid> {
             handle as HANDLE,
             SE_KERNEL_OBJECT,
             OWNER_SECURITY_INFORMATION,
-            &mut owner,
+            &raw mut owner,
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null_mut(),
-            &mut descriptor,
+            &raw mut descriptor,
         )
     };
     if status != ERROR_SUCCESS {
-        return Err(io::Error::from_raw_os_error(status as i32));
+        return Err(os_error(status));
     }
     let _guard = LocalBox(descriptor);
     // SAFETY: `owner` points into `descriptor`, which is alive until the guard
@@ -567,8 +598,7 @@ mod tests {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
+            .map_or(0, |d| d.subsec_nanos());
         Endpoint::from_raw(format!(
             r"\\.\pipe\wirecatch-test-{}-{n}-{nanos}",
             std::process::id()
@@ -593,7 +623,7 @@ mod tests {
     }
 
     /// Reads the entries of an ACL whose entries all share the
-    /// ACCESS_ALLOWED_ACE layout (allowed, denied and mandatory label entries).
+    /// `ACCESS_ALLOWED_ACE` layout (allowed, denied and mandatory label entries).
     ///
     /// # Safety
     ///
@@ -605,8 +635,8 @@ mod tests {
         if unsafe {
             GetAclInformation(
                 acl,
-                (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
-                mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                (&raw mut info).cast(),
+                win32_size_of::<ACL_SIZE_INFORMATION>(),
                 AclSizeInformation,
             )
         } == 0
@@ -617,7 +647,7 @@ mod tests {
         for index in 0..info.AceCount {
             let mut ace: *mut c_void = ptr::null_mut();
             // SAFETY: `index` is below the ACE count reported above.
-            if unsafe { GetAce(acl, index, &mut ace) } == 0 {
+            if unsafe { GetAce(acl, index, &raw mut ace) } == 0 {
                 return Err(io::Error::last_os_error());
             }
             // SAFETY: every ACE starts with an ACE_HEADER.
@@ -653,15 +683,15 @@ mod tests {
                 handle as HANDLE,
                 SE_KERNEL_OBJECT,
                 OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION,
-                &mut owner,
+                &raw mut owner,
                 ptr::null_mut(),
-                &mut dacl,
-                &mut sacl,
-                &mut descriptor,
+                &raw mut dacl,
+                &raw mut sacl,
+                &raw mut descriptor,
             )
         };
         if status != ERROR_SUCCESS {
-            return Err(io::Error::from_raw_os_error(status as i32));
+            return Err(os_error(status));
         }
         let _guard = LocalBox(descriptor);
         // SAFETY: `owner` points into the live descriptor.
@@ -670,7 +700,9 @@ mod tests {
         let mut control = 0u16;
         let mut revision = 0u32;
         // SAFETY: `descriptor` is valid until the guard drops.
-        if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
+        if unsafe { GetSecurityDescriptorControl(descriptor, &raw mut control, &raw mut revision) }
+            == 0
+        {
             return Err(io::Error::last_os_error());
         }
         let aces = if dacl.is_null() {
@@ -828,7 +860,7 @@ mod tests {
                     OpenProcessToken(
                         GetCurrentProcess(),
                         TOKEN_DUPLICATE | TOKEN_QUERY,
-                        &mut process_token
+                        &raw mut process_token
                     ),
                     0
                 );
@@ -839,7 +871,7 @@ mod tests {
                         ptr::null(),
                         SecurityImpersonation,
                         TokenImpersonation,
-                        &mut token,
+                        &raw mut token,
                     ),
                     0
                 );
@@ -850,13 +882,12 @@ mod tests {
                         Attributes: SE_GROUP_INTEGRITY as u32,
                     },
                 };
-                let size =
-                    mem::size_of::<TOKEN_MANDATORY_LABEL>() as u32 + GetLengthSid(low.as_psid());
+                let size = win32_size_of::<TOKEN_MANDATORY_LABEL>() + GetLengthSid(low.as_psid());
                 assert_ne!(
                     SetTokenInformation(
                         token,
                         TokenIntegrityLevel,
-                        (&label as *const TOKEN_MANDATORY_LABEL).cast(),
+                        (&raw const label).cast(),
                         size,
                     ),
                     0
@@ -923,11 +954,7 @@ mod tests {
             other => panic!("expected EndpointTaken, got {other:?}"),
         }
         assert!(matches!(
-            classify_taken(
-                &endpoint,
-                &user,
-                Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32))
-            ),
+            classify_taken(&endpoint, &user, Err(os_error(ERROR_ACCESS_DENIED))),
             IpcError::EndpointTaken { .. }
         ));
     }

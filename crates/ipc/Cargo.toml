@@ -27,3 +27,6 @@ libc.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "io-util"] }
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
+
+[lints]
+workspace = true
