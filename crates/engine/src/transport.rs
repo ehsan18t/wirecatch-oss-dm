@@ -214,6 +214,15 @@ pub(crate) async fn open(
     match url.scheme() {
         "http" | "https" => open_http(url, opts, clients, cancel).await,
         "ftp" | "ftps" | "ftpes" => {
+            // Going around a proxy the user set would be a surprise, and
+            // possibly a leak: refuse instead, until FTP proxies are supported.
+            if let Some(variable) =
+                proxy_variable(FTP_PROXY_VARIABLES, &|name| std::env::var_os(name))
+            {
+                return Err(Error::FtpProxyUnsupported {
+                    variable: variable.to_string(),
+                });
+            }
             let target = ftp::Target::new(url, opts, clients.tls())?;
             let probe = with_retries(opts, cancel, || ftp::probe(&target, cancel)).await?;
             Ok(Opened {
@@ -277,9 +286,11 @@ async fn open_http(
     })
 }
 
+/// The variables a proxy for FTP is commonly set with.
+const FTP_PROXY_VARIABLES: &[&str] = &["FTP_PROXY", "ftp_proxy", "ALL_PROXY", "all_proxy"];
+
 /// The first of `names` that is set (and not empty) in the environment, as
 /// `env` reads it.
-#[cfg_attr(not(feature = "http3"), allow(dead_code))]
 pub(crate) fn proxy_variable(
     names: &[&'static str],
     env: &dyn Fn(&str) -> Option<std::ffi::OsString>,

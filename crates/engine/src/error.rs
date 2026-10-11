@@ -156,6 +156,18 @@ pub enum Error {
         host: String,
     },
 
+    /// A proxy is set in the environment (for example `ALL_PROXY` or
+    /// `FTP_PROXY`), but FTP downloads cannot go through a proxy yet, and
+    /// going around it without asking could expose what it is there to hide.
+    #[error(
+        "FTP downloads cannot go through a proxy yet, and the {variable} environment variable sets one. To download this link directly instead, remove {variable} from the environment"
+    )]
+    #[non_exhaustive]
+    FtpProxyUnsupported {
+        /// The environment variable that sets the proxy.
+        variable: String,
+    },
+
     /// Something inside the engine failed that should not, such as a task that
     /// panicked. This is a bug in Wirecatch; please report it with the text.
     #[error("internal error: {0}. This is a bug in Wirecatch; please report it")]
