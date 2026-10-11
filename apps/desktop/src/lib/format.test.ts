@@ -173,7 +173,7 @@ describe('a download already in the list (D23)', () => {
       'You started this today at 18:30 and cancelled it.',
     );
     for (const status of ['queued', 'failed', 'connecting'] as const) {
-      expect(earlierNote(row({ status }), now)).not.toContain('—');
+      expect(earlierNote(row({ status }), now)).not.toContain(String.fromCharCode(0x2014));
     }
   });
 
