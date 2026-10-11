@@ -7473,7 +7473,6 @@ dependencies = [
  "clap",
  "indicatif",
  "tokio",
- "tokio-util",
  "tracing-subscriber",
  "wirecatch-engine",
 ]

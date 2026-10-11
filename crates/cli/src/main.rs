@@ -1,4 +1,13 @@
-use std::path::PathBuf;
+//! `wirecatch`, the command-line downloader built on the Wirecatch engine.
+//!
+//! Exit status: 0 when the file is complete, 1 on an error, 2 for a usage mistake (from clap) and 130 when the download was paused or stopped with Ctrl+C. Running the same command again continues a paused download.
+#![expect(
+    clippy::print_stdout,
+    reason = "a command-line tool reports its result on standard output"
+)]
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,7 +15,25 @@ use anyhow::{Context, bail};
 use clap::Parser;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use wirecatch_engine::header::{HeaderName, HeaderValue};
-use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
+use wirecatch_engine::{
+    CancellationToken, DownloadOptions, DownloadRequest, Outcome, Progress, Url, download,
+};
+
+/// Environment variable that sets the log filter, in `tracing` filter syntax.
+const LOG_ENV: &str = "WIRECATCH_LOG";
+/// Log filter used when [`LOG_ENV`] is not set: only problems.
+const DEFAULT_LOG_FILTER: &str = "warn";
+/// Upper bound for `--connections`; more than this only adds load on the server.
+const MAX_CONNECTIONS: u16 = 64;
+/// How often the progress bar redraws.
+const PROGRESS_REFRESH: Duration = Duration::from_millis(100);
+/// Exit status for a download stopped by Ctrl+C, the shell convention for SIGINT (128 + 2).
+const EXIT_INTERRUPTED: u8 = 130;
+
+const STYLE_KNOWN_SIZE: &str =
+    "{msg} [{bar:30}] {bytes}/{total_bytes}  {binary_bytes_per_sec}  ETA {eta}  {prefix}";
+const STYLE_UNKNOWN_SIZE: &str = "{spinner} {msg} {bytes}  {binary_bytes_per_sec}  {prefix}";
+const PROGRESS_CHARS: &str = "=> ";
 
 /// Fast, resumable downloads over parallel connections.
 ///
@@ -16,7 +43,7 @@ use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Ur
 struct Args {
     /// The URL to download: http, https, ftp, ftps or ftpes.
     ///
-    /// FTP links may carry a login, as in ftp://user:password@host/path; without one the download logs in anonymously. ftps:// is encrypted from the start (port 990), or with AUTH TLS on port 21; ftpes:// always uses AUTH TLS. An encrypted link never falls back to an unencrypted connection.
+    /// FTP links may carry a login, as in `ftp://user:password@host/path`; without one the download logs in anonymously. `ftps://` is encrypted from the start (port 990), or with AUTH TLS on port 21; `ftpes://` always uses AUTH TLS. An encrypted link never falls back to an unencrypted connection.
     url: String,
 
     /// Folder to save into.
@@ -28,7 +55,12 @@ struct Args {
     name: Option<String>,
 
     /// Most parallel connections.
-    #[arg(short = 'c', long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..=64))]
+    #[arg(
+        short = 'c',
+        long,
+        default_value_t = default_connections(),
+        value_parser = clap::value_parser!(u16).range(1..=i64::from(MAX_CONNECTIONS)),
+    )]
     connections: u16,
 
     /// Extra request header, for example -H "Cookie: a=b". Repeatable. HTTP and HTTPS only.
@@ -48,17 +80,43 @@ struct Args {
     quiet: bool,
 }
 
+/// The engine's own default, so the CLI and the library never disagree.
+fn default_connections() -> u16 {
+    u16::try_from(DownloadOptions::default().connections).unwrap_or(MAX_CONNECTIONS)
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> anyhow::Result<ExitCode> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("WIRECATCH_LOG")
-                .unwrap_or_else(|_| "warn".into()),
+            tracing_subscriber::EnvFilter::try_from_env(LOG_ENV)
+                .unwrap_or_else(|_| DEFAULT_LOG_FILTER.into()),
         )
         .with_writer(std::io::stderr)
         .init();
 
     let args = Args::parse();
+    let quiet = args.quiet;
+    let request = build_request(args)?;
+
+    let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
+    tokio::spawn(stop_on_ctrl_c(cancel.clone()));
+
+    let bar = (!quiet)
+        .then(|| spawn_progress_bar(Arc::clone(&progress)))
+        .transpose()?;
+    let result = download(request, progress, cancel).await;
+    if let Some((bar, task)) = bar {
+        task.abort();
+        bar.finish_and_clear();
+    }
+
+    Ok(report(&result?))
+}
+
+/// Turns the command line into an engine request, refusing combinations the engine cannot honour.
+fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     let url = Url::parse(&args.url).with_context(|| format!("not a valid URL: {}", args.url))?;
     let is_ftp = match url.scheme() {
         "http" | "https" => false,
@@ -83,101 +141,140 @@ async fn main() -> anyhow::Result<()> {
     request.options.connections = args.connections.into();
     request.options.http3 = args.http3;
     for raw in &args.headers {
-        let (name, value) = raw
-            .split_once(':')
-            .with_context(|| format!("header must look like 'Name: value': {raw}"))?;
-        request.options.headers.append(
-            HeaderName::from_bytes(name.trim().as_bytes())
-                .with_context(|| format!("bad header name in {raw}"))?,
-            HeaderValue::from_str(value.trim())
-                .with_context(|| format!("bad header value in {raw}"))?,
-        );
+        let (name, value) = parse_header(raw)?;
+        request.options.headers.append(name, value);
     }
+    Ok(request)
+}
 
-    let progress = Arc::new(Progress::default());
-    let cancel = CancellationToken::new();
-    {
-        let cancel = cancel.clone();
-        tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                eprintln!("\nPausing... (press Ctrl+C again to quit immediately)");
-                cancel.cancel();
-                if tokio::signal::ctrl_c().await.is_ok() {
-                    std::process::exit(130);
-                }
-            }
-        });
+/// Parses one `-H "Name: value"` argument.
+fn parse_header(raw: &str) -> anyhow::Result<(HeaderName, HeaderValue)> {
+    let (name, value) = raw
+        .split_once(':')
+        .with_context(|| format!("header must look like 'Name: value': {raw}"))?;
+    let name = HeaderName::from_bytes(name.trim().as_bytes())
+        .with_context(|| format!("bad header name in {raw}"))?;
+    let value = HeaderValue::from_str(value.trim())
+        .with_context(|| format!("bad header value in {raw}"))?;
+    Ok((name, value))
+}
+
+/// The first Ctrl+C pauses (the engine saves its place); a second one quits at once.
+async fn stop_on_ctrl_c(cancel: CancellationToken) {
+    if tokio::signal::ctrl_c().await.is_err() {
+        return;
     }
-
-    let bar = (!args.quiet).then(|| spawn_progress_bar(progress.clone()));
-    let result = download(request, progress, cancel).await;
-    if let Some((bar, task)) = bar {
-        task.abort();
-        bar.finish_and_clear();
+    eprintln!("\nPausing... (press Ctrl+C again to quit immediately)");
+    cancel.cancel();
+    if tokio::signal::ctrl_c().await.is_ok() {
+        std::process::exit(i32::from(EXIT_INTERRUPTED));
     }
+}
 
-    match result? {
+/// Prints how the download ended and picks the exit status that says the same to a script.
+fn report(outcome: &Outcome) -> ExitCode {
+    match outcome {
         Outcome::Completed {
             path,
             bytes,
             resumed_from,
             ..
         } => {
-            let kept = if resumed_from > 0 {
-                format!(" ({} kept from earlier)", HumanBytes(resumed_from))
+            let kept = if *resumed_from > 0 {
+                format!(" ({} kept from earlier)", HumanBytes(*resumed_from))
             } else {
                 String::new()
             };
-            println!("Saved {} to {}{kept}", HumanBytes(bytes), path.display());
+            println!("Saved {} to {}{kept}", HumanBytes(*bytes), path.display());
+            ExitCode::SUCCESS
         }
         Outcome::Paused {
             path, remaining, ..
         } => {
-            println!(
-                "Paused with {} left for {}. Run the same command again to continue.",
-                HumanBytes(remaining),
-                path.display()
-            );
+            print_paused(path, Some(*remaining));
+            ExitCode::from(EXIT_INTERRUPTED)
         }
-        other => println!("Finished: {other:?}"),
+        _ => {
+            print_paused(Path::new(""), None);
+            ExitCode::from(EXIT_INTERRUPTED)
+        }
     }
-    Ok(())
 }
 
-fn spawn_progress_bar(progress: Arc<Progress>) -> (ProgressBar, tokio::task::JoinHandle<()>) {
+fn print_paused(path: &Path, remaining: Option<u64>) {
+    match remaining {
+        Some(remaining) => println!(
+            "Paused with {} left for {}. Run the same command again to continue.",
+            HumanBytes(remaining),
+            path.display()
+        ),
+        None => println!(
+            "Wirecatch stopped before the download finished. Run the same command again to continue."
+        ),
+    }
+}
+
+/// Draws a progress bar from the shared counters until the returned task is aborted.
+fn spawn_progress_bar(
+    progress: Arc<Progress>,
+) -> anyhow::Result<(ProgressBar, tokio::task::JoinHandle<()>)> {
+    let known = ProgressStyle::with_template(STYLE_KNOWN_SIZE)?.progress_chars(PROGRESS_CHARS);
+    let unknown = ProgressStyle::with_template(STYLE_UNKNOWN_SIZE)?;
     let bar = ProgressBar::new_spinner();
-    let known = ProgressStyle::with_template(
-        "{msg} [{bar:30}] {bytes}/{total_bytes}  {binary_bytes_per_sec}  ETA {eta}  {prefix}",
-    )
-    .expect("valid template")
-    .progress_chars("=> ");
-    let unknown =
-        ProgressStyle::with_template("{spinner} {msg} {bytes}  {binary_bytes_per_sec}  {prefix}")
-            .expect("valid template");
-    bar.set_style(unknown.clone());
+    bar.set_style(unknown);
 
     let task = {
         let bar = bar.clone();
         tokio::spawn(async move {
             let mut has_total = false;
+            let mut ticks = tokio::time::interval(PROGRESS_REFRESH);
             loop {
+                ticks.tick().await;
                 if let Some(name) = progress.file_name() {
                     bar.set_message(name);
                 }
-                match progress.total() {
-                    Some(total) if !has_total => {
-                        bar.set_style(known.clone());
-                        bar.set_length(total);
-                        has_total = true;
-                    }
-                    _ => {}
+                if let Some(total) = progress.total().filter(|_| !has_total) {
+                    bar.set_style(known.clone());
+                    bar.set_length(total);
+                    has_total = true;
                 }
                 bar.set_position(progress.done());
-                let n = progress.connections();
-                bar.set_prefix(format!("{n} conn{}", if n == 1 { "" } else { "s" }));
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                let connections = progress.connections();
+                let plural = if connections == 1 { "" } else { "s" };
+                bar.set_prefix(format!("{connections} conn{plural}"));
             }
         })
     };
-    (bar, task)
+    Ok((bar, task))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_connections_match_the_engine() {
+        assert_eq!(
+            usize::from(default_connections()),
+            DownloadOptions::default().connections
+        );
+    }
+
+    #[test]
+    fn header_argument_is_split_and_trimmed() {
+        let (name, value) = parse_header("Cookie:  a=b ").unwrap();
+        assert_eq!(name, "cookie");
+        assert_eq!(value, "a=b");
+    }
+
+    #[test]
+    fn header_without_colon_is_refused() {
+        assert!(parse_header("Cookie a=b").is_err());
+    }
+
+    #[test]
+    fn progress_styles_are_valid() {
+        assert!(ProgressStyle::with_template(STYLE_KNOWN_SIZE).is_ok());
+        assert!(ProgressStyle::with_template(STYLE_UNKNOWN_SIZE).is_ok());
+    }
 }
