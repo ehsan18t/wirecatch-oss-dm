@@ -347,6 +347,57 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     assert_eq!(ytdlp_calls(&h).len(), 2);
 }
 
+/// Starts the 1080p video and audio of `page_info` from page `watch/<n>`.
+async fn start_page_video(
+    h: &Harness,
+    server: &FileServer,
+    n: u32,
+) -> wirecatch_protocol::DownloadId {
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            &server.url(&format!("watch/{n}")),
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    h.manager.list_downloads()[0].id
+}
+
+/// yt-dlp's `http_chunk_size` for a format: no request for that format asks
+/// for more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_formats_chunk_size_limits_every_request_for_it() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let mut info: serde_json::Value =
+        serde_json::from_str(&page_info(&server, &video, &audio)).unwrap();
+    let chunk = 64 * 1024u64;
+    for format in info["formats"].as_array_mut().unwrap() {
+        format["downloader_options"] = serde_json::json!({"http_chunk_size": chunk});
+    }
+    tell_tool(&h, "info.json", &info.to_string());
+
+    let id = start_page_video(&h, &server, 23).await;
+    h.wait_status(id, DownloadStatus::Completed).await;
+
+    let requests = server.requests("fmt/video.mp4");
+    assert!(requests.len() >= 5, "{} requests", requests.len());
+    for seen in requests {
+        let (start, end) = seen.range().expect("a request without a range");
+        let end = end.expect("a request for a range with no end");
+        assert!(end - start <= chunk, "asked for {} bytes", end - start);
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn page_media_is_read_again_after_a_restart_and_continues() {
     let server = FileServer::start().await;

@@ -73,7 +73,28 @@ pub(crate) struct Format {
     /// `true`, `false` or `"maybe"`.
     #[serde(default)]
     pub has_drm: Option<serde_json::Value>,
+    /// How yt-dlp itself would download the format; see
+    /// [`request_limit`](Self::request_limit).
+    #[serde(default)]
+    pub downloader_options: Option<DownloaderOptions>,
 }
+
+/// The part of yt-dlp's `downloader_options` Wirecatch reads.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct DownloaderOptions {
+    /// Kept as any JSON value, so an odd one is ignored instead of making the
+    /// whole page unreadable.
+    #[serde(default)]
+    pub http_chunk_size: Option<serde_json::Value>,
+}
+
+/// The smallest `http_chunk_size` taken from yt-dlp. Anything smaller would
+/// mean many thousands of requests for one video, so it is not a real limit.
+const MIN_REQUEST_LIMIT: u64 = 64 * 1024;
+
+/// The largest request limit used. A larger `http_chunk_size` is cut to this:
+/// asking for less than a server allows is always fine.
+const MAX_REQUEST_LIMIT: u64 = 1024 * 1024 * 1024;
 
 impl Format {
     pub fn has_video(&self) -> bool {
@@ -96,6 +117,22 @@ impl Format {
                 .filter(|s| s.is_finite() && *s > 0.0)
                 .map(|s| s as u64)
         })
+    }
+
+    /// The most bytes one request for this format should ask for, from yt-dlp's
+    /// `http_chunk_size`: some servers (YouTube's among them) slow down any
+    /// request for more, which is why yt-dlp itself downloads them in pieces.
+    /// `None` when yt-dlp gave none, or a value that is not a whole number of
+    /// at least 64 KiB; values above 1 GiB are cut to 1 GiB.
+    pub fn request_limit(&self) -> Option<u64> {
+        let value = self.downloader_options.as_ref()?.http_chunk_size.as_ref()?;
+        let bytes = value.as_u64().or_else(|| {
+            value
+                .as_f64()
+                .filter(|f| f.is_finite() && f.fract() == 0.0 && *f >= 0.0)
+                .map(|f| f.min(u64::MAX as f64) as u64)
+        })?;
+        (bytes >= MIN_REQUEST_LIMIT).then(|| bytes.min(MAX_REQUEST_LIMIT))
     }
 
     /// Whether Wirecatch downloads this format itself: plain web addresses with
@@ -598,5 +635,61 @@ mod tests {
         assert!(!f[2].drm());
         assert_eq!(f[3].transport(), Transport::YtDlp);
         assert!(!f[3].has_video() && !f[3].has_audio());
+        assert!(f.iter().all(|f| f.request_limit().is_none()));
+    }
+
+    #[test]
+    fn the_request_limit_comes_from_http_chunk_size() {
+        let limit = |value: serde_json::Value| {
+            let format: Format = serde_json::from_value(serde_json::json!({
+                "format_id": "137",
+                "downloader_options": {"http_chunk_size": value},
+            }))
+            .unwrap();
+            format.request_limit()
+        };
+        // What yt-dlp reports for every YouTube format.
+        assert_eq!(limit(10_485_760.into()), Some(10_485_760));
+        assert_eq!(limit(serde_json::json!(10_485_760.0)), Some(10_485_760));
+        assert_eq!(limit((64 * 1024).into()), Some(64 * 1024));
+        // Too large: cut to 1 GiB.
+        assert_eq!(limit((5u64 << 30).into()), Some(1 << 30));
+        assert_eq!(limit(serde_json::json!(1e300)), Some(1 << 30));
+        // Zero, negative, tiny, fractional or not a number: no limit, and the
+        // page is still readable.
+        for odd in [
+            serde_json::json!(0),
+            serde_json::json!(-10_485_760),
+            serde_json::json!(4096),
+            serde_json::json!(10_485_760.5),
+            serde_json::json!("10485760"),
+            serde_json::json!(null),
+            serde_json::json!({"x": 1}),
+        ] {
+            assert_eq!(limit(odd.clone()), None, "{odd}");
+        }
+        // No `downloader_options` at all, or no chunk size in it.
+        let plain: Format = serde_json::from_str(r#"{"format_id":"1"}"#).unwrap();
+        assert_eq!(plain.request_limit(), None);
+        let other: Format =
+            serde_json::from_str(r#"{"format_id":"1","downloader_options":{"x":1}}"#).unwrap();
+        assert_eq!(other.request_limit(), None);
+    }
+
+    /// A page description as yt-dlp prints it for YouTube: every format has
+    /// `downloader_options.http_chunk_size`, and the whole page still reads
+    /// when one format has an odd value there.
+    #[test]
+    fn a_youtube_page_gives_every_format_its_chunk_size() {
+        let json = r#"{"title":"T","formats":[
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","protocol":"https",
+             "url":"https://rr1.googlevideo.example/videoplayback?itag=140","downloader_options":{"http_chunk_size":10485760}},
+            {"format_id":"137","ext":"mp4","vcodec":"avc1.640028","acodec":"none","protocol":"https",
+             "url":"https://rr1.googlevideo.example/videoplayback?itag=137","downloader_options":{"http_chunk_size":10485760}},
+            {"format_id":"18","ext":"mp4","protocol":"https","url":"https://a/18","downloader_options":{"http_chunk_size":"big"}}
+        ]}"#;
+        let info: Info = serde_json::from_str(json).unwrap();
+        let limits: Vec<Option<u64>> = info.formats.iter().map(Format::request_limit).collect();
+        assert_eq!(limits, [Some(10_485_760), Some(10_485_760), None]);
     }
 }

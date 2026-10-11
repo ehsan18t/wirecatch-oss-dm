@@ -411,8 +411,9 @@ async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserEr
 }
 
 /// The request options for one format: the format's own headers only (the
-/// page's cookies stay with the page), bound to its own address, and the local
-/// network rule decided for it.
+/// page's cookies stay with the page), bound to its own address, the local
+/// network rule decided for it, and requests no larger than the format's
+/// server allows at full speed (yt-dlp's `http_chunk_size`).
 fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOptions {
     let mut options = job.options.clone();
     let format_headers: Vec<Header> = format
@@ -433,6 +434,7 @@ fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOpt
         options.user_agent = agent;
     }
     options.private_network = rule;
+    options.max_request_bytes = format.request_limit();
     options
 }
 
@@ -714,6 +716,16 @@ mod tests {
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
         assert_eq!(options.headers.get("x-format").unwrap(), "yes");
+        assert_eq!(options.max_request_bytes, None);
+
+        // yt-dlp's chunk size becomes the engine's limit on one request.
+        let chunked: Format = serde_json::from_value(serde_json::json!({
+            "format_id": "137", "ext": "mp4",
+            "downloader_options": {"http_chunk_size": 10_485_760}
+        }))
+        .unwrap();
+        let options = part_options(&job, &chunked, PrivateNetwork::Block);
+        assert_eq!(options.max_request_bytes, Some(10_485_760));
     }
 
     #[tokio::test]

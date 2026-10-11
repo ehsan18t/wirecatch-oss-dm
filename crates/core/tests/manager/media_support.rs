@@ -48,6 +48,22 @@ pub struct Seen {
     pub headers: HeaderMap,
 }
 
+impl Seen {
+    /// The range asked for, `[start, end)`; `end` is `None` for an open range
+    /// such as `bytes=100-`.
+    pub fn range(&self) -> Option<(u64, Option<u64>)> {
+        let value = self.headers.get(header::RANGE)?.to_str().ok()?;
+        let (a, b) = value.strip_prefix("bytes=")?.split_once('-')?;
+        let start = a.parse().ok()?;
+        let end = if b.is_empty() {
+            None
+        } else {
+            Some(b.parse::<u64>().ok()?.checked_add(1)?)
+        };
+        Some((start, end))
+    }
+}
+
 #[derive(Default)]
 struct Files {
     files: Mutex<HashMap<String, File>>,
