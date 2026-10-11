@@ -86,6 +86,26 @@ describe('media and add-ons', () => {
   });
 });
 
+describe('questions asked while no window was open', () => {
+  it('come back in a new window', async () => {
+    const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    // Asked while closed to the tray: nobody is listening.
+    backend.simulateMediaChoice();
+    backend.simulateAddonRequired();
+
+    const app = new AppState(backend);
+    await app.init();
+    await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
+    await vi.waitFor(() => expect(app.addonRequest?.addon.id).toBe('media'));
+
+    // A reload restores the open choice without doubling it; the add-on prompt is handed
+    // over once.
+    await app.init();
+    await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
+    app.dispose();
+  });
+});
+
 describe('shell signals', () => {
   it('opens the Add dialog with links from a second launch, and reloads after missed events', async () => {
     const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });

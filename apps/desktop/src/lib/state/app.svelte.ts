@@ -279,6 +279,28 @@ export class AppState {
     // Neither is needed for the list, so neither holds it up.
     void this.loadAddons();
     void this.#takeLaunchLinks();
+    void this.#restoreQuestions();
+  }
+
+  /**
+   * Questions asked while no window was open, or before a reload: open media choices and a
+   * waiting add-on prompt. Confirmations come back with the main load.
+   */
+  async #restoreQuestions(): Promise<void> {
+    try {
+      const choices = await this.backend.pendingMediaChoices();
+      const known = new Set(this.mediaChoices.map((c) => c.id));
+      const fresh = choices.filter((c) => !known.has(c.id));
+      if (fresh.length > 0) this.mediaChoices = [...this.mediaChoices, ...fresh];
+    } catch {
+      // Not offered (yet): the events still bring new choices.
+    }
+    try {
+      const request = await this.backend.takeAddonRequest();
+      if (request) this.addonRequest = request;
+    } catch {
+      // Same: the event still brings a new prompt.
+    }
   }
 
   /** Lists the add-ons. A failure is shown in their settings section, not as an error note. */

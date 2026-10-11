@@ -41,7 +41,9 @@
 //! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
 //! | `take_launch_links` | none | `Vec<String>`: links passed on the command line, handed over once |
 //! | `choose_media` | `id: u64`, `selection: MediaSelection` | nothing (pending, WP11) |
-//! | `dismiss_media_choice` | `id: u64` | nothing (pending, WP11) |
+//! | `dismiss_media_choice` | `id: u64` | nothing (the desktop forgets the choice; the core is told once it has media support) |
+//! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open (kept by the desktop until the core offers them, WP11) |
+//! | `take_addon_request` | none | `Option<{ addon: AddonInfo, url: String }>`: an add-on prompt that arrived with no window, handed over once |
 //! | `list_addons` | none | `Vec<AddonInfo>` (pending, WP11) |
 //! | `install_addon` | `id: String` | nothing (pending, WP11) |
 //! | `update_addon` | `id: String` | nothing (pending, WP11) |
@@ -81,6 +83,7 @@ pub mod bridge;
 mod commands;
 pub mod host;
 pub mod lifecycle;
+pub mod questions;
 pub mod tray;
 pub mod window;
 
@@ -140,6 +143,7 @@ pub fn run() {
                 .build(),
         )
         .manage(LaunchLinks::default())
+        .manage(questions::Questions::default())
         .manage(Lifecycle::default())
         .setup(move |app| setup(app, launch))
         .invoke_handler(tauri::generate_handler![
@@ -175,6 +179,8 @@ pub fn run() {
             commands::take_launch_links,
             commands::choose_media,
             commands::dismiss_media_choice,
+            commands::pending_media_choices,
+            commands::take_addon_request,
             commands::list_addons,
             commands::install_addon,
             commands::update_addon,

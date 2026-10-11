@@ -39,6 +39,8 @@ const FIXED = [
   // Pending until the core has media and add-ons (WP11); the names and types are final.
   'choose_media',
   'dismiss_media_choice',
+  'pending_media_choices',
+  'take_addon_request',
   'list_addons',
   'install_addon',
   'update_addon',

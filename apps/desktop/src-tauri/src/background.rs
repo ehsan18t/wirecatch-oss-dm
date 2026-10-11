@@ -12,8 +12,9 @@ use wirecatch_core::Manager;
 use wirecatch_protocol::app::UiEvent;
 
 use crate::activity::{Activity, Finished, notification_text};
+use crate::questions::{Attention, Questions, attention};
 use crate::window::MAIN_WINDOW;
-use crate::{EVENT_NAME, RESYNC_EVENT, tray};
+use crate::{EVENT_NAME, RESYNC_EVENT, tray, window};
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
@@ -21,15 +22,24 @@ pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
 /// Downloads finishing within this long of the first one share one notification.
 pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
-/// Sends every core event to the webview on [`EVENT_NAME`]. Events are skipped while no window
-/// exists (the interface loads everything fresh when it opens). If this falls behind and
-/// misses events, the interface is told to reload on [`RESYNC_EVENT`].
+/// Sends every core event to the webview on [`EVENT_NAME`]. While no window exists, a question
+/// opens one and a storage failure becomes a system notification (see [`crate::questions`]);
+/// other events are skipped, since the interface loads everything fresh when it opens. If this
+/// falls behind and misses events, the interface is told to reload on [`RESYNC_EVENT`].
 pub async fn forward_events<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut events = manager.subscribe();
     loop {
         match events.recv().await {
             Ok(event) => {
+                if let Some(questions) = app.try_state::<Questions>() {
+                    questions.note(&event);
+                }
                 if app.get_webview_window(MAIN_WINDOW).is_none() {
+                    match attention(&event) {
+                        Attention::None => {}
+                        Attention::OpenWindow => window::show_main_window(&app),
+                        Attention::Notify { title, body } => show_notification(&app, title, body),
+                    }
                     continue;
                 }
                 if let Err(e) = app.emit(EVENT_NAME, &event) {
@@ -116,6 +126,11 @@ fn notify<R: Runtime>(app: &AppHandle<R>, finished: &[Finished]) {
     let Some((title, body)) = notification_text(finished) else {
         return;
     };
+    show_notification(app, title, body);
+}
+
+/// Shows a system notification.
+pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: String) {
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!("could not show a notification: {e}");
     }

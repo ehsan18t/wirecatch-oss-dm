@@ -8,6 +8,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  MediaChoice,
   MediaSelection,
   PendingCapture,
   Queue,
@@ -16,6 +17,12 @@ import type {
 } from '@wirecatch/protocol';
 
 export type Unsubscribe = () => void;
+
+/** A capture that needs an add-on, as `UiEvent::AddonRequired` carries it. */
+export interface AddonRequest {
+  addon: AddonInfo;
+  url: string;
+}
 
 /**
  * Signals from the desktop shell that are not core events. `resync`: some events were missed,
@@ -88,6 +95,10 @@ export interface Backend {
   chooseMedia(id: number, selection: MediaSelection): Promise<void>;
   /** Drops a media choice the person did not want. */
   dismissMediaChoice(id: number): Promise<void>;
+  /** Media choices still open, so a new or reloaded window asks them again. */
+  pendingMediaChoices(): Promise<MediaChoice[]>;
+  /** An add-on prompt that arrived while no window was open, handed over once. */
+  takeAddonRequest(): Promise<AddonRequest | null>;
 
   /** Optional components (D2, D20): one media add-on with yt-dlp, ffmpeg and Deno. */
   listAddons(): Promise<AddonInfo[]>;
@@ -143,6 +154,8 @@ export const COMMANDS = {
   takeLaunchLinks: 'take_launch_links',
   chooseMedia: 'choose_media',
   dismissMediaChoice: 'dismiss_media_choice',
+  pendingMediaChoices: 'pending_media_choices',
+  takeAddonRequest: 'take_addon_request',
   listAddons: 'list_addons',
   installAddon: 'install_addon',
   updateAddon: 'update_addon',

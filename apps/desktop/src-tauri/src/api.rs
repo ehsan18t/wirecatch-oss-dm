@@ -323,9 +323,22 @@ pub fn choose_media(_m: &Manager, _id: u64, _selection: MediaSelection) -> Comma
     not_yet()
 }
 
-/// Drops a media choice the person did not want. Pending, like [`choose_media`].
+/// Drops a media choice the person did not want. Until the core has media support there is
+/// nothing to tell it; the desktop forgets the choice itself.
 pub fn dismiss_media_choice(_m: &Manager, _id: u64) -> CommandResult<()> {
-    not_yet()
+    Ok(())
+}
+
+/// Media choices still waiting for an answer, so a new or reloaded window shows them again.
+///
+/// Adapter: the core does not offer `pending_media_choices()` yet (WP11), so these are the ones
+/// the desktop saw arrive and has not seen answered. Once the core has it, this returns the
+/// core's list instead.
+pub fn pending_media_choices(
+    _m: &Manager,
+    questions: &crate::questions::Questions,
+) -> Vec<wirecatch_protocol::app::MediaChoice> {
+    questions.media_choices()
 }
 
 /// Every add-on and its state. Pending until the core has the add-on manager.

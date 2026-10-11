@@ -31,6 +31,7 @@ import {
 } from './mock-data';
 import {
   BackendError,
+  type AddonRequest,
   type Backend,
   type SampleData,
   type ShellSignal,
@@ -862,7 +863,20 @@ export class MockBackend implements Backend {
       return;
     }
     this.#waitingForAddon.push(page);
-    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page } });
+    this.#addonRequest = { addon: structuredClone(addon), url: page };
+    this.#emit({ type: 'addon_required', data: structuredClone(this.#addonRequest) });
+  }
+
+  #addonRequest: AddonRequest | null = null;
+
+  async pendingMediaChoices() {
+    return structuredClone(this.#mediaChoices);
+  }
+
+  async takeAddonRequest() {
+    const request = this.#addonRequest;
+    this.#addonRequest = null;
+    return request;
   }
 
   async chooseMedia(id: number, selection: MediaSelection) {
@@ -942,6 +956,7 @@ export class MockBackend implements Backend {
         continue;
       }
       addon.state = { type: 'installed' };
+      this.#addonRequest = null;
       addon.installed_version = addon.latest_version;
       // What asked for the add-on continues on its own.
       const waiting = this.#waitingForAddon;

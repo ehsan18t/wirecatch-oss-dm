@@ -11,6 +11,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  MediaChoice,
   MediaSelection,
   PendingCapture,
   Queue,
@@ -22,6 +23,7 @@ import {
   COMMANDS,
   EVENT_NAME,
   SIGNAL_EVENTS,
+  type AddonRequest,
   type Backend,
   type ShellSignal,
   type Unsubscribe,
@@ -157,6 +159,12 @@ export class TauriBackend implements Backend {
   }
   dismissMediaChoice(id: number) {
     return this.#exec(COMMANDS.dismissMediaChoice, { id });
+  }
+  pendingMediaChoices() {
+    return this.#call<MediaChoice[]>(COMMANDS.pendingMediaChoices);
+  }
+  takeAddonRequest() {
+    return this.#call<AddonRequest | null>(COMMANDS.takeAddonRequest);
   }
   listAddons() {
     return this.#call<AddonInfo[]>(COMMANDS.listAddons);

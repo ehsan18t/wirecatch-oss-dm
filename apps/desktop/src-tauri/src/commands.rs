@@ -4,13 +4,14 @@
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::app::{
-    AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, MediaSelection,
-    PendingCapture, Queue,
+    AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, MediaChoice,
+    MediaSelection, PendingCapture, Queue,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::api::{self, CommandResult, Reveal};
 use crate::host::Core;
+use crate::questions::{AddonRequest, Questions};
 use crate::window::LaunchLinks;
 
 type CoreState<'a> = State<'a, Core>;
@@ -220,13 +221,37 @@ pub async fn choose_media(
     core: CoreState<'_>,
     id: u64,
     selection: MediaSelection,
+    questions: State<'_, Questions>,
 ) -> CommandResult<()> {
-    api::choose_media(core.manager().await?, id, selection)
+    api::choose_media(core.manager().await?, id, selection)?;
+    questions.answered_media(id);
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn dismiss_media_choice(core: CoreState<'_>, id: u64) -> CommandResult<()> {
+pub async fn dismiss_media_choice(
+    core: CoreState<'_>,
+    id: u64,
+    questions: State<'_, Questions>,
+) -> CommandResult<()> {
+    questions.answered_media(id);
     api::dismiss_media_choice(core.manager().await?, id)
+}
+
+#[tauri::command]
+pub async fn pending_media_choices(
+    core: CoreState<'_>,
+    questions: State<'_, Questions>,
+) -> CommandResult<Vec<MediaChoice>> {
+    Ok(api::pending_media_choices(
+        core.manager().await?,
+        &questions,
+    ))
+}
+
+#[tauri::command]
+pub fn take_addon_request(questions: State<'_, Questions>) -> Option<AddonRequest> {
+    questions.take_addon_request()
 }
 
 #[tauri::command]
