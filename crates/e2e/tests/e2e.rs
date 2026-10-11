@@ -127,7 +127,6 @@ fn withdrawing_from_a_new_connection_before_the_server_answers_leaves_nothing() 
 /// Scenario 2 on one connection: the withdraw is sent while `add_download` is
 /// still waiting for the server.
 #[test]
-#[ignore = "needs the protocol server to handle requests concurrently (commit d6df247, \"Handle each protocol request in its own task\", not on main yet): on main the withdraw waits behind add_download until the capture times out and then answers not_found"]
 fn withdrawing_on_the_same_connection_before_the_server_answers_leaves_nothing() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
@@ -339,7 +338,6 @@ fn popup_controls_reach_the_app() {
 /// Scenario 5: a capture waiting on a server that does not answer must not hold
 /// up the next request on the same connection.
 #[test]
-#[ignore = "needs the protocol server to handle requests concurrently (commit d6df247, \"Handle each protocol request in its own task\", not on main yet): on main list_queues waits until the capture times out"]
 fn a_capture_waiting_on_a_silent_server_does_not_delay_other_calls() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
