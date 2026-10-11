@@ -183,8 +183,10 @@ impl Fetcher {
     ///
     /// # Errors
     ///
-    /// [`Error::InvalidUrl`] if `url` is not an `http` or `https` address, or a
-    /// network error if the HTTP client cannot be set up.
+    /// [`Error::InvalidUrl`] if `url` is not an `http` or `https` address,
+    /// [`Error::InvalidOption`] if an option cannot work (see
+    /// [`DownloadOptions::validate`]), or a network error if the HTTP client
+    /// cannot be set up.
     pub async fn new(
         url: &Url,
         options: &DownloadOptions,
@@ -206,6 +208,7 @@ impl Fetcher {
         private_network: PrivateNetwork,
     ) -> Result<Self> {
         check_scheme(url)?;
+        options.validate()?;
         // The first use in a process reads the system certificate store, which
         // blocks, so that happens off the async threads.
         let clients = if Clients::shared_ready() {

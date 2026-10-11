@@ -163,6 +163,26 @@ impl Default for DownloadOptions {
 }
 
 impl DownloadOptions {
+    /// Checks that every option can work. [`download`] and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidOption`] naming the first option that cannot work.
+    pub fn validate(&self) -> Result<()> {
+        let positive = [
+            ("connections", self.connections > 0),
+            ("min_split", self.min_split > 0),
+            ("buffer_size", self.buffer_size > 0),
+            ("stall_timeout", !self.stall_timeout.is_zero()),
+            ("connect_timeout", !self.connect_timeout.is_zero()),
+            ("checkpoint_interval", !self.checkpoint_interval.is_zero()),
+        ];
+        match positive.into_iter().find(|&(_, ok)| !ok) {
+            Some((option, _)) => Err(Error::InvalidOption(option)),
+            None => Ok(()),
+        }
+    }
+
     /// [`max_request_bytes`](Self::max_request_bytes) as a limit, `None` when
     /// there is none.
     pub(crate) fn request_limit(&self) -> Option<u64> {
@@ -370,6 +390,7 @@ pub(crate) async fn download_with(
     cancel: CancellationToken,
     clients: Clients,
 ) -> Result<Outcome> {
+    request.options.validate()?;
     let guard = match request.url.scheme() {
         "http" | "https" => {
             private_guard(
