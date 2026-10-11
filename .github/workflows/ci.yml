@@ -66,7 +66,7 @@ jobs:
       - name: Gate (Rust)
         run: node scripts/gate.mjs rust
 
-      # The published engine: its package, its off-by-default http3 feature and its minimum Rust version. Once per run is enough.
+      # The published engine: its package and its minimum Rust version. Once per run is enough; its http3 feature is checked in the Rust group, on every system.
       - name: Gate (engine release checks)
         if: runner.os == 'Linux'
         run: node scripts/gate.mjs release

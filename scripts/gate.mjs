@@ -358,8 +358,11 @@ const CHECKS = {
   clippy,
   'clippy-http3': () => cargo('clippy', '-p', ENGINE_CRATE, '-p', 'wirecatch-cli', '--all-targets', '--locked', '--features', 'wirecatch-engine/http3,wirecatch-cli/http3', '--', '-D', 'warnings'),
   test,
+  // The engine with its off-by-default http3 feature, which no other check compiles into a test.
+  'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
   'test-desktop': testDesktop,
-  'engine-docs': () => run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked'], { env: { RUSTDOCFLAGS: '-D warnings' } }),
+  // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
+  'engine-docs': () => run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], { env: { RUSTDOCFLAGS: '-D warnings' } }),
   // Verifies the package builds as published; git cleanliness is not its concern, so it also runs before a change is committed.
   'engine-package': () => cargo('package', '-p', ENGINE_CRATE, '--locked', '--allow-dirty'),
   msrv,
@@ -384,8 +387,9 @@ const CHECKS = {
 };
 
 const GROUPS = {
-  rust: ['fmt', 'lint-policy', 'clippy', 'test', 'test-desktop', 'engine-docs'],
-  release: ['engine-package', 'clippy-http3', 'msrv'],
+  // The http3 checks run here, on every system CI tests, because QUIC sockets behave differently on Windows.
+  rust: ['fmt', 'lint-policy', 'clippy', 'test', 'test-desktop', 'clippy-http3', 'test-http3', 'engine-docs'],
+  release: ['engine-package', 'msrv'],
   js: ['protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'tauri-pairs', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],

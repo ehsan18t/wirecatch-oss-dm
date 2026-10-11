@@ -47,6 +47,10 @@ default = []
 # keep the default build lean (it adds 18 crates, quinn and h3 among them).
 http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn"]
 
+# docs.rs documents the http3 API too; the gate builds the docs the same way (engine-docs).
+[package.metadata.docs.rs]
+all-features = true
+
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
 
