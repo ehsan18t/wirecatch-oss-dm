@@ -168,6 +168,27 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('says nothing when a question answered here closes', async () => {
+    const { app, backend } = await make();
+    backend.simulateConfirmation();
+    backend.simulateConfirmation();
+    backend.simulateMediaChoice();
+    const [first, second] = app.pending;
+    // Each answer here makes the core close the question while it is still on screen.
+    await app.confirmCapture(first?.id ?? -1, { folder: null, file_name: null, queue: null });
+    await app.rejectCapture(second?.id ?? -1);
+    const choice = app.mediaChoices[0];
+    await app.chooseMedia(choice?.id ?? -1, {
+      option_id: '720',
+      folder: null,
+      file_name: null,
+      queue: null,
+    });
+    expect(app.question).toBeNull();
+    expect(app.toasts.filter((t) => /another window/.test(t.message))).toEqual([]);
+    app.dispose();
+  });
+
   it('Not now drops only the page its prompt is about', async () => {
     const { app, backend } = await make();
     backend.simulateAddonRequired();
