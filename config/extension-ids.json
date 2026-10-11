@@ -1,7 +1,7 @@
 {
-  "$comment": "Extension identities shared by the bridge (allowed origins) and the extension (manifest). Store ids are added at publication (A5).",
-  "chromium_dev_id": "chdgnmpjoipbgfeldicipccjjghmagki",
-  "chromium_dev_public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtR5Ub/hMTwq2GZpy7c277pRnrpRRjEf+4yn6ojwohj61eU+YBFp1lQAh3TMMR3hJ5V2JSQe7avxce9BgJJBnr39ASQh7HSvxv6zPTXBfXINF0MpKeOcbTbOHjiDvZH0ch8UKcX3P5ut0TqqfWTUSyAVVI56jocY0bjHbpwYHZNJ2DLC5dG6gwJGL1KuuJnywcNnoks29bp9RyXKU8epD1GOxnIK/mW4tnahjszCQjOXB1gwblcAwM+X0eZgPM1No4oqGKyIXgzMZV1LfEhm2A8hffzcHjBQBG1BqfMi77mY8GXR4a/5Dfi+8hqOQlP/jrQ1u/nQylPM8p4V3En84NwIDAQAB",
+  "$comment": "Extension identities shared by the bridge (allowed origins) and the extension (manifest). chromium_id is the one Chromium extension id for development and store builds; it follows from chromium_public_key, whose private key the maintainer keeps outside the repository (D22).",
+  "chromium_id": "chdgnmpjoipbgfeldicipccjjghmagki",
+  "chromium_public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtR5Ub/hMTwq2GZpy7c277pRnrpRRjEf+4yn6ojwohj61eU+YBFp1lQAh3TMMR3hJ5V2JSQe7avxce9BgJJBnr39ASQh7HSvxv6zPTXBfXINF0MpKeOcbTbOHjiDvZH0ch8UKcX3P5ut0TqqfWTUSyAVVI56jocY0bjHbpwYHZNJ2DLC5dG6gwJGL1KuuJnywcNnoks29bp9RyXKU8epD1GOxnIK/mW4tnahjszCQjOXB1gwblcAwM+X0eZgPM1No4oqGKyIXgzMZV1LfEhm2A8hffzcHjBQBG1BqfMi77mY8GXR4a/5Dfi+8hqOQlP/jrQ1u/nQylPM8p4V3En84NwIDAQAB",
   "firefox_id": "extension@wirecatch.app",
   "native_host_name": "app.wirecatch.bridge"
 }

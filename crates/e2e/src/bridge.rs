@@ -30,7 +30,7 @@ const EXTENSION_IDS: &str = include_str!("../../../config/extension-ids.json");
 /// The origin Chrome passes for the development build of the extension, for
 /// example `chrome-extension://<id>/`.
 pub fn chrome_origin() -> String {
-    format!("chrome-extension://{}/", extension_id("chromium_dev_id"))
+    format!("chrome-extension://{}/", extension_id("chromium_id"))
 }
 
 /// The add-on id Firefox passes for the extension.

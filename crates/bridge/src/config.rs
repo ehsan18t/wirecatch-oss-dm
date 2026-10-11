@@ -27,10 +27,10 @@ pub(crate) const NO_CHROMIUM_IDS: &str = "This bridge trusts no Chromium extensi
 struct ExtensionIds {
     #[serde(rename = "$comment", default)]
     _comment: Option<String>,
-    chromium_dev_id: String,
+    chromium_id: String,
     /// Used by the extension build to pin its id; the bridge does not need it.
-    #[serde(rename = "chromium_dev_public_key")]
-    _chromium_dev_public_key: String,
+    #[serde(rename = "chromium_public_key")]
+    _chromium_public_key: String,
     firefox_id: String,
     native_host_name: String,
 }
@@ -64,8 +64,8 @@ impl Config {
     /// but trusted only when `trust_dev_extension` is set.
     fn parse(raw: &str, trust_dev_extension: bool) -> anyhow::Result<Self> {
         let ids: ExtensionIds = serde_json::from_str(raw)?;
-        if !is_chromium_id(&ids.chromium_dev_id) {
-            bail!("{:?} is not a Chromium extension id", ids.chromium_dev_id);
+        if !is_chromium_id(&ids.chromium_id) {
+            bail!("{:?} is not a Chromium extension id", ids.chromium_id);
         }
         if !is_firefox_id(&ids.firefox_id) {
             bail!("{:?} is not a Firefox add-on id", ids.firefox_id);
@@ -76,7 +76,7 @@ impl Config {
         Ok(Self {
             native_host_name: ids.native_host_name,
             chromium_ids: if trust_dev_extension {
-                vec![ids.chromium_dev_id]
+                vec![ids.chromium_id]
             } else {
                 Vec::new()
             },
