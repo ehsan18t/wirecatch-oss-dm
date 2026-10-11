@@ -233,6 +233,8 @@ impl Source {
                     .ok_or(Error::NothingChosen)?;
                 let media = media_playlist(fetcher, &master.variants[best].url).await?;
                 let format = hls_format(&media);
+                let variant_ids = track_id::variants(&master.variants);
+                let rendition_ids = track_id::renditions(&master.renditions);
                 Ok(StreamInfo {
                     kind: StreamKind::Hls,
                     url: url.clone(),
@@ -241,9 +243,10 @@ impl Source {
                     video: master
                         .variants
                         .iter()
-                        .filter(|v| !v.audio_only())
-                        .map(|v| VideoTrack {
-                            id: track_id::variant(v),
+                        .zip(variant_ids)
+                        .filter(|(v, _)| !v.audio_only())
+                        .map(|(v, id)| VideoTrack {
+                            id,
                             width: v.resolution.map(|r| r.0),
                             height: v.resolution.map(|r| r.1),
                             bandwidth: v.bandwidth,
@@ -256,9 +259,10 @@ impl Source {
                     subtitles: master
                         .renditions
                         .iter()
-                        .filter(|r| r.kind == RenditionKind::Subtitles)
-                        .map(|r| SubtitleTrack {
-                            id: track_id::rendition(r),
+                        .zip(rendition_ids)
+                        .filter(|(r, _)| r.kind == RenditionKind::Subtitles)
+                        .map(|(r, id)| SubtitleTrack {
+                            id,
                             language: r.language.clone(),
                             name: r.name.clone(),
                         })
@@ -282,51 +286,51 @@ impl Source {
                 audio: Vec::new(),
                 subtitles: Vec::new(),
             }),
-            Source::Dash { url, mpd } => Ok(StreamInfo {
-                kind: StreamKind::Dash,
-                url: url.clone(),
-                duration: mpd.duration.and_then(seconds),
-                live: mpd.dynamic,
-                video: mpd
-                    .reps
-                    .iter()
-                    .filter(|r| r.kind == Kind::Video)
-                    .map(|r| VideoTrack {
-                        id: track_id::representation(r),
-                        width: r.width,
-                        height: r.height,
-                        bandwidth: r.bandwidth,
-                        codecs: r.codecs.clone(),
-                        frame_rate: r.frame_rate,
-                        format: dash_format(r),
-                    })
-                    .collect(),
-                audio: mpd
-                    .reps
-                    .iter()
-                    .filter(|r| r.kind == Kind::Audio)
-                    .map(|r| AudioTrack {
-                        id: track_id::representation(r),
-                        language: r.language.clone(),
-                        name: r.label.clone(),
-                        bandwidth: r.bandwidth,
-                        codecs: r.codecs.clone(),
-                        channels: r.channels.clone(),
-                        default: r.main,
-                        format: dash_format(r),
-                    })
-                    .collect(),
-                subtitles: mpd
-                    .reps
-                    .iter()
-                    .filter(|r| r.kind == Kind::Text)
-                    .map(|r| SubtitleTrack {
-                        id: track_id::representation(r),
-                        language: r.language.clone(),
-                        name: r.label.clone(),
-                    })
-                    .collect(),
-            }),
+            Source::Dash { url, mpd } => {
+                let ids = track_id::representations(&mpd.reps);
+                let tracks = |kind: Kind| {
+                    mpd.reps
+                        .iter()
+                        .zip(ids.iter().cloned())
+                        .filter(move |(r, _)| r.kind == kind)
+                };
+                Ok(StreamInfo {
+                    kind: StreamKind::Dash,
+                    url: url.clone(),
+                    duration: mpd.duration.and_then(seconds),
+                    live: mpd.dynamic,
+                    video: tracks(Kind::Video)
+                        .map(|(r, id)| VideoTrack {
+                            id,
+                            width: r.width,
+                            height: r.height,
+                            bandwidth: r.bandwidth,
+                            codecs: r.codecs.clone(),
+                            frame_rate: r.frame_rate,
+                            format: dash_format(r),
+                        })
+                        .collect(),
+                    audio: tracks(Kind::Audio)
+                        .map(|(r, id)| AudioTrack {
+                            id,
+                            language: r.language.clone(),
+                            name: r.label.clone(),
+                            bandwidth: r.bandwidth,
+                            codecs: r.codecs.clone(),
+                            channels: r.channels.clone(),
+                            default: r.main,
+                            format: dash_format(r),
+                        })
+                        .collect(),
+                    subtitles: tracks(Kind::Text)
+                        .map(|(r, id)| SubtitleTrack {
+                            id,
+                            language: r.language.clone(),
+                            name: r.label.clone(),
+                        })
+                        .collect(),
+                })
+            }
         }
     }
 
@@ -428,9 +432,10 @@ fn hls_audio(master: &Master, format: &'static str) -> Vec<AudioTrack> {
     let renditions = master
         .renditions
         .iter()
-        .filter(|r| r.kind == RenditionKind::Audio && r.url.is_some())
-        .map(|r| AudioTrack {
-            id: track_id::rendition(r),
+        .zip(track_id::renditions(&master.renditions))
+        .filter(|(r, _)| r.kind == RenditionKind::Audio && r.url.is_some())
+        .map(|(r, id)| AudioTrack {
+            id,
             language: r.language.clone(),
             name: r.name.clone(),
             bandwidth: None,
@@ -442,9 +447,10 @@ fn hls_audio(master: &Master, format: &'static str) -> Vec<AudioTrack> {
     let variants = master
         .variants
         .iter()
-        .filter(|v| v.audio_only())
-        .map(|v| AudioTrack {
-            id: track_id::variant(v),
+        .zip(track_id::variants(&master.variants))
+        .filter(|(v, _)| v.audio_only())
+        .map(|(v, id)| AudioTrack {
+            id,
             language: None,
             name: None,
             bandwidth: v.bandwidth,
@@ -474,67 +480,170 @@ fn best_variant(master: &Master, keep: impl Fn(&hls::Variant) -> bool) -> Option
 
 /// Track ids derived from what a track is, not where it is listed. Core keeps the chosen id to continue a download after a restart, and the playlist is read again then; a refreshed or rebalanced playlist may list its tracks in another order, and a position would then name another quality or language.
 mod track_id {
-    use super::{Fnv, dash, hls};
+    use std::collections::HashMap;
+
+    use url::Url;
+
+    use super::{Fnv, dash, hls, is_signing_parameter};
 
     /// The one track of a media playlist that is not part of a master playlist.
     pub(super) const SINGLE: &str = "v-playlist";
 
-    fn hashed(prefix: &str, parts: &[&str]) -> String {
+    /// Prefixes, one per kind of id, so ids of different kinds never meet.
+    const VARIANT: &str = "v";
+    const RENDITION: &str = "r";
+    /// A DASH representation named by its own `id`.
+    const REPRESENTATION: &str = "d";
+    /// A DASH representation without an `id`, named by its attributes.
+    const UNNAMED_REPRESENTATION: &str = "dh";
+    /// Joins an id and what tells it apart from another track with the same id.
+    const SUFFIX: char = '~';
+
+    fn hash(parts: &[&str]) -> String {
         let mut hash = Fnv::default();
         for part in parts {
             hash.write(part.as_bytes());
             hash.write(&[0xFF]);
         }
-        format!("{prefix}-{:016x}", hash.0)
+        format!("{:016x}", hash.0)
     }
 
-    /// A variant: its playlist's path (never the host, which CDNs change, or the query, where signed links keep a token), bandwidth, picture size and codecs.
-    pub(super) fn variant(variant: &hls::Variant) -> String {
-        let bandwidth = variant.bandwidth.map(|b| b.to_string()).unwrap_or_default();
-        let size = variant
-            .resolution
-            .map(|(w, h)| format!("{w}x{h}"))
-            .unwrap_or_default();
-        hashed(
-            "v",
-            &[
-                variant.url.path(),
-                &bandwidth,
-                &size,
-                variant.codecs.as_deref().unwrap_or_default(),
-            ],
-        )
+    fn text<T: ToString>(value: Option<T>) -> String {
+        value.map(|v| v.to_string()).unwrap_or_default()
     }
 
-    /// A rendition: its kind, group, language and name, which the master playlist uses to tell renditions apart.
-    pub(super) fn rendition(rendition: &hls::Rendition) -> String {
-        let kind = format!("{:?}", rendition.kind);
-        hashed(
-            "r",
-            &[
-                &kind,
-                &rendition.group,
-                rendition.language.as_deref().unwrap_or_default(),
-                rendition.name.as_deref().unwrap_or_default(),
-            ],
-        )
-    }
-
-    /// A DASH representation: its `id`, which the standard requires to be unique and which manifests keep stable; its attributes when a manifest leaves the id out.
-    pub(super) fn representation(rep: &dash::Rep) -> String {
-        if rep.id.is_empty() {
-            let bandwidth = rep.bandwidth.map(|b| b.to_string()).unwrap_or_default();
-            hashed(
-                "d",
-                &[
-                    &bandwidth,
-                    rep.codecs.as_deref().unwrap_or_default(),
-                    rep.language.as_deref().unwrap_or_default(),
-                ],
-            )
-        } else {
-            format!("d-{}", rep.id)
+    /// A link's path and query, without the host (which CDNs change) or the values of signing parameters (which a refreshed link changes).
+    fn stable_link(url: &Url) -> String {
+        let mut link = url.path().to_owned();
+        for (name, value) in url.query_pairs() {
+            link.push(if link.contains('?') { '&' } else { '?' });
+            link.push_str(&name);
+            if !is_signing_parameter(&name) {
+                link.push('=');
+                link.push_str(&value);
+            }
         }
+        link
+    }
+
+    /// Adds `~<suffix>` to every id that several entries share; `suffix` gets the entry's index and its number among them, in list order, and `None` keeps the id.
+    fn suffix_shared(
+        ids: Vec<String>,
+        suffix: impl Fn(usize, usize) -> Option<String>,
+    ) -> Vec<String> {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for id in &ids {
+            *counts.entry(id).or_default() += 1;
+        }
+        let mut seen: HashMap<&str, usize> = HashMap::new();
+        ids.iter()
+            .enumerate()
+            .map(|(i, id)| {
+                if counts[id.as_str()] < 2 {
+                    return id.clone();
+                }
+                let n = seen.entry(id).or_default();
+                let numbered = suffix(i, *n);
+                *n += 1;
+                numbered.map_or_else(|| id.clone(), |s| format!("{id}{SUFFIX}{s}"))
+            })
+            .collect()
+    }
+
+    /// Tracks that are the same in every respect are told apart by their number among them, in list order: the one case where a reordered list can still swap them.
+    fn numbered(ids: Vec<String>) -> Vec<String> {
+        suffix_shared(ids, |_, n| Some((n + 1).to_string()))
+    }
+
+    /// Every variant's id: a hash of its playlist link, bandwidth, picture size, frame rate, codecs and audio group.
+    pub(super) fn variants(variants: &[hls::Variant]) -> Vec<String> {
+        numbered(
+            variants
+                .iter()
+                .map(|v| {
+                    let size = text(v.resolution.map(|(w, h)| format!("{w}x{h}")));
+                    let id = hash(&[
+                        &stable_link(&v.url),
+                        &text(v.bandwidth),
+                        &size,
+                        &text(v.frame_rate),
+                        v.codecs.as_deref().unwrap_or_default(),
+                        v.audio_group.as_deref().unwrap_or_default(),
+                    ]);
+                    format!("{VARIANT}-{id}")
+                })
+                .collect(),
+        )
+    }
+
+    fn rendition_kind(kind: hls::RenditionKind) -> &'static str {
+        match kind {
+            hls::RenditionKind::Audio => "audio",
+            hls::RenditionKind::Video => "video",
+            hls::RenditionKind::Subtitles => "subtitles",
+            hls::RenditionKind::ClosedCaptions => "closed-captions",
+        }
+    }
+
+    /// Every rendition's id: a hash of its kind, group, language, name, channels and playlist link.
+    pub(super) fn renditions(renditions: &[hls::Rendition]) -> Vec<String> {
+        numbered(
+            renditions
+                .iter()
+                .map(|r| {
+                    let id = hash(&[
+                        rendition_kind(r.kind),
+                        &r.group,
+                        r.language.as_deref().unwrap_or_default(),
+                        r.name.as_deref().unwrap_or_default(),
+                        r.channels.as_deref().unwrap_or_default(),
+                        &text(r.url.as_ref().map(stable_link)),
+                    ]);
+                    format!("{RENDITION}-{id}")
+                })
+                .collect(),
+        )
+    }
+
+    fn representation_kind(kind: dash::Kind) -> &'static str {
+        match kind {
+            dash::Kind::Video => "video",
+            dash::Kind::Audio => "audio",
+            dash::Kind::Text => "text",
+        }
+    }
+
+    fn attributes(rep: &dash::Rep) -> String {
+        hash(&[
+            representation_kind(rep.kind),
+            &text(rep.bandwidth),
+            &text(rep.width),
+            &text(rep.height),
+            &text(rep.frame_rate),
+            rep.codecs.as_deref().unwrap_or_default(),
+            rep.mime.as_deref().unwrap_or_default(),
+            rep.language.as_deref().unwrap_or_default(),
+            rep.label.as_deref().unwrap_or_default(),
+            rep.channels.as_deref().unwrap_or_default(),
+        ])
+    }
+
+    /// Every representation's id: its own `id`, which the standard requires to be unique and manifests keep stable, or a hash of its attributes when a manifest leaves the id out. Manifests that repeat an id (two audio sets numbered from the same start, say) get the attributes added to tell those apart.
+    pub(super) fn representations(reps: &[dash::Rep]) -> Vec<String> {
+        let ids = reps
+            .iter()
+            .map(|r| {
+                if r.id.is_empty() {
+                    format!("{UNNAMED_REPRESENTATION}-{}", attributes(r))
+                } else {
+                    format!("{REPRESENTATION}-{}", r.id)
+                }
+            })
+            .collect();
+        let ids = suffix_shared(ids, |i, _| {
+            (!reps[i].id.is_empty()).then(|| attributes(&reps[i]))
+        });
+        numbered(ids)
     }
 }
 
@@ -552,6 +661,12 @@ async fn plan_hls(
         kind: "audio",
         id: id.to_string(),
     };
+    let variant_ids = track_id::variants(&master.variants);
+    let rendition_ids = track_id::renditions(&master.renditions);
+    let variant_named = |id: &str, audio_only: bool| {
+        (0..master.variants.len())
+            .find(|&i| master.variants[i].audio_only() == audio_only && variant_ids[i] == id)
+    };
 
     let variant = match video {
         Choice::Skip => None,
@@ -560,13 +675,7 @@ async fn plan_hls(
                 .or_else(|| best_variant(master, |_| true))
                 .ok_or(Error::NothingChosen)?,
         ),
-        Choice::Track(id) => Some(
-            master
-                .variants
-                .iter()
-                .position(|v| !v.audio_only() && track_id::variant(v) == *id)
-                .ok_or_else(|| no_video(id))?,
-        ),
+        Choice::Track(id) => Some(variant_named(id, false).ok_or_else(|| no_video(id))?),
     };
 
     // The audio as a playlist to fetch; `None` when there is no separate audio.
@@ -576,15 +685,12 @@ async fn plan_hls(
             let rendition = master
                 .renditions
                 .iter()
-                .find(|r| r.kind == RenditionKind::Audio && track_id::rendition(r) == *id);
-            if let Some(rendition) = rendition {
+                .zip(&rendition_ids)
+                .find(|(r, rid)| r.kind == RenditionKind::Audio && *rid == id);
+            if let Some((rendition, _)) = rendition {
                 Some((rendition.url.clone().ok_or_else(|| no_audio(id))?, None))
             } else {
-                let i = master
-                    .variants
-                    .iter()
-                    .position(|v| v.audio_only() && track_id::variant(v) == *id)
-                    .ok_or_else(|| no_audio(id))?;
+                let i = variant_named(id, true).ok_or_else(|| no_audio(id))?;
                 Some((
                     master.variants[i].url.clone(),
                     master.variants[i].codecs.clone(),
@@ -703,14 +809,13 @@ async fn plan_dash(fetcher: &Fetcher, mpd: Mpd, video: &Choice, audio: &Choice) 
             })
             .map(|(i, _)| i)
     };
+    let ids = track_id::representations(&mpd.reps);
     let pick = |choice: &Choice, kind: Kind, name: &'static str| -> Result<Option<usize>> {
         match choice {
             Choice::Skip => Ok(None),
             Choice::Auto => Ok(best(kind)),
-            Choice::Track(id) => mpd
-                .reps
-                .iter()
-                .position(|r| r.kind == kind && track_id::representation(r) == *id)
+            Choice::Track(id) => (0..mpd.reps.len())
+                .find(|&i| mpd.reps[i].kind == kind && ids[i] == *id)
                 .map(Some)
                 .ok_or_else(|| Error::NoSuchTrack {
                     kind: name,
@@ -873,6 +978,40 @@ mod tests {
         assert_eq!(a.fingerprint(), b.fingerprint());
         assert_ne!(a.fingerprint(), c.fingerprint());
         assert_ne!(d.fingerprint(), e.fingerprint());
+    }
+
+    // Manifests that repeat a representation id (two audio sets numbered from the same start) gave
+    // two tracks one id, and the first was taken: another language, silently.
+    #[test]
+    fn repeated_representation_ids_are_told_apart() {
+        let rep = |id: &str, language: &str| dash::Rep {
+            id: id.into(),
+            kind: Kind::Audio,
+            bandwidth: Some(128_000),
+            width: None,
+            height: None,
+            frame_rate: None,
+            codecs: Some("mp4a.40.2".into()),
+            mime: None,
+            language: Some(language.into()),
+            label: None,
+            channels: None,
+            main: false,
+            drm: None,
+            segments: dash::Segments::List(Vec::new()),
+        };
+        let english = rep("1", "en");
+        let ids = track_id::representations(&[rep("1", "de"), rep("1", "en"), rep("2", "fr")]);
+        assert_eq!(ids.len(), 3);
+        assert!(ids[0] != ids[1] && ids[0].starts_with("d-1~"), "{ids:?}");
+        assert_eq!(ids[2], "d-2");
+        // The same track keeps its id when the manifest lists it elsewhere.
+        let moved = track_id::representations(&[rep("2", "fr"), english, rep("1", "de")]);
+        assert_eq!(moved[1], ids[1]);
+
+        let twins = track_id::representations(&[rep("", "en"), rep("", "en")]);
+        assert_ne!(twins[0], twins[1]);
+        assert!(twins[0].starts_with("dh-"), "{twins:?}");
     }
 
     // Two videos told apart only by a query value got one fingerprint, so a work folder of one
