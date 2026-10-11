@@ -25,6 +25,14 @@ fn select(option: &str) -> MediaSelection {
     }
 }
 
+/// `len` bytes of test data that start like an MP4 file, so the join hands
+/// them to (the fake) ffmpeg instead of refusing them as an unknown format.
+fn mp4_data(len: usize) -> Vec<u8> {
+    let mut data = test_data(len);
+    data[..8].copy_from_slice(b"\0\0\0\x18ftyp");
+    data
+}
+
 async fn choice_requested(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> MediaChoice {
     next_event(ui, "a media choice", |e| match e {
         UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
@@ -238,7 +246,7 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake(), "r")).await;
     assert_eq!(install(&h).await.state, AddonState::Installed);
-    let (video, audio) = (test_data(300 * 1024), test_data(100 * 1024));
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(100 * 1024));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
     // Long enough for the "Processing" status to be seen.
     tell_tool(&h, "ffmpeg-delay-ms", "800");
@@ -314,6 +322,20 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     let lines: Vec<&str> = joined.lines().collect();
     assert!(lines.windows(2).any(|w| w == ["-c", "copy"]), "{joined}");
     assert_eq!(lines.iter().filter(|l| **l == "-i").count(), 2);
+    // Each input is read as the format it was recognized as, from a file only.
+    assert_eq!(
+        lines
+            .windows(2)
+            .filter(|w| w == &["-protocol_whitelist", "file"])
+            .count(),
+        2,
+        "{joined}"
+    );
+    assert_eq!(
+        lines.windows(2).filter(|w| w == &["-f", "mov"]).count(),
+        2,
+        "{joined}"
+    );
     assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
     // The format's own headers were sent with the format, never the page's cookies.
     for seen in server.requests("fmt/video.mp4") {
@@ -330,7 +352,7 @@ async fn page_media_is_read_again_after_a_restart_and_continues() {
     let server = FileServer::start().await;
     let mut h = harness(publish(&server, &Releases::fake(), "r")).await;
     assert_eq!(install(&h).await.state, AddonState::Installed);
-    let (video, audio) = (test_data(600 * 1024), test_data(20 * 1024));
+    let (video, audio) = (mp4_data(600 * 1024), mp4_data(20 * 1024));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
     server.throttle("fmt/video.mp4", Some(150 * 1024));
     let mut ui = h.manager.subscribe();

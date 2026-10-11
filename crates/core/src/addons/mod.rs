@@ -115,6 +115,17 @@ impl MediaTools {
     pub fn is_broken(&self) -> bool {
         self.broken.load(Ordering::Relaxed)
     }
+
+    /// Tools whose ffmpeg is `ffmpeg`, for tests of code that runs it.
+    #[cfg(test)]
+    pub fn for_test(ffmpeg: &Path) -> MediaTools {
+        MediaTools {
+            ytdlp: PathBuf::from("yt-dlp"),
+            ffmpeg: ffmpeg.to_path_buf(),
+            deno: PathBuf::from("deno"),
+            broken: Arc::default(),
+        }
+    }
 }
 
 /// The add-on's programs if every recorded file is there with its recorded

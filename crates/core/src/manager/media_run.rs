@@ -625,6 +625,9 @@ pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> U
             folder,
             false,
         ),
+        // A track that is not a real video or audio file: the link most
+        // likely does not point at the video any more.
+        E::UnknownFormat { role } => crate::media::merge::unknown_format(role),
         E::Live | E::Drm(_) | E::Unsupported(_) | E::PrivateNetwork | E::NothingChosen => {
             with(None)
         }
@@ -861,6 +864,10 @@ mod tests {
             (E::PrivateNetwork, None),
             (E::Unsupported("several periods".into()), None),
             (E::Cancelled, Some(FixAction::Retry)),
+            (
+                E::UnknownFormat { role: "video" },
+                Some(FixAction::RefreshLink),
+            ),
         ];
         for (error, fix) in errors {
             let user = stream_error(&error, folder);
