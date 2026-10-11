@@ -116,6 +116,13 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             ),
             FixAction::Retry,
         ),
+        // Settings are checked when they change and brought into range when they load, so this is a fault in Wirecatch: trying again cannot help.
+        EngineError::InvalidOption(option) => UserError {
+            message: format!(
+                "Wirecatch could not start this download because a setting it uses ({option}) is out of range. Check Settings, then add the download again."
+            ),
+            fix: None,
+        },
         // A kind of error added to the engine after this was written.
         other => fix(
             format!("The download failed ({other}). Try again."),
@@ -300,6 +307,24 @@ mod tests {
 
     fn action(error: &EngineError, worked: bool) -> Option<FixAction> {
         describe(error, Path::new("/downloads"), worked).fix
+    }
+
+    // It fell into the catch-all and told the person to try again, which can never help.
+    #[test]
+    fn an_option_out_of_range_is_not_offered_a_retry() {
+        let error = EngineError::InvalidOption("connections");
+        let described = describe(&error, Path::new("/downloads"), false);
+        assert_eq!(described.fix, None);
+        assert!(
+            !described.message.contains("Try again"),
+            "{}",
+            described.message
+        );
+        assert!(
+            described.message.contains("connections"),
+            "{}",
+            described.message
+        );
     }
 
     #[test]

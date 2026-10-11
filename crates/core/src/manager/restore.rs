@@ -42,8 +42,14 @@ pub(super) struct Surroundings<'a> {
 /// download whose file finished just before the app stopped (the file is there and
 /// its partial files are gone) is marked completed instead of downloaded again.
 pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored {
-    let settings = snapshot.settings.unwrap_or_else(settings::default_settings);
-    let mut queues: Vec<QueueSlot> = snapshot.queues.into_iter().map(QueueSlot::new).collect();
+    let settings = snapshot
+        .settings
+        .map_or_else(settings::default_settings, settings::within_limits);
+    let mut queues: Vec<QueueSlot> = snapshot
+        .queues
+        .into_iter()
+        .map(|queue| QueueSlot::new(settings::queue_within_limits(queue)))
+        .collect();
     if !queues.iter().any(|s| s.queue.is_default) {
         queues.insert(0, QueueSlot::new(settings::default_queue()));
     }
@@ -206,6 +212,33 @@ mod tests {
 
         assert_eq!(restored.state.queue_list(), vec![settings::default_queue()]);
         assert_eq!(restored.state.settings, settings::default_settings());
+    }
+
+    // Stored values skip the checks a change goes through. A stored 0 connections ran as one
+    // until the engine began refusing it; then every download failed with advice to try again.
+    #[test]
+    fn stored_numbers_out_of_range_are_brought_into_range() {
+        let mut stored_settings = settings::default_settings();
+        stored_settings.connections_per_download = 0;
+        stored_settings.max_concurrent_downloads = 0;
+        stored_settings.global_speed_limit = Some(0);
+        let mut queue = settings::default_queue();
+        queue.max_concurrent = 0;
+        queue.speed_limit = Some(0);
+        let snapshot = Snapshot {
+            settings: Some(stored_settings),
+            queues: vec![queue],
+            ..Snapshot::default()
+        };
+
+        let restored = restore(snapshot, nowhere(&|_| None));
+
+        let loaded = &restored.state.settings;
+        assert_eq!(loaded.connections_per_download, 1);
+        assert_eq!(loaded.max_concurrent_downloads, 1);
+        assert_eq!(loaded.global_speed_limit, None);
+        let queue = &restored.state.queue_list()[0];
+        assert_eq!((queue.max_concurrent, queue.speed_limit), (1, None));
     }
 
     #[test]

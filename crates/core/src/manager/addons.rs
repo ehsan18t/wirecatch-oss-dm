@@ -631,7 +631,7 @@ impl Manager {
     fn addon_download_options(&self) -> DownloadOptions {
         let state = self.lock();
         let mut options = DownloadOptions::default();
-        options.connections = usize::from(state.settings.connections_per_download).max(1);
+        options.connections = usize::from(state.settings.connections_per_download);
         options.rate_limiters = vec![self.inner.global_limiter.clone()];
         options
     }

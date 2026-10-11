@@ -124,6 +124,28 @@ pub(crate) fn default_queue() -> Queue {
     }
 }
 
+/// Brings the numbers downloads depend on into the range [`validate`] keeps them in. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
+pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
+    settings.connections_per_download = settings.connections_per_download.clamp(1, MAX_CONNECTIONS);
+    settings.max_concurrent_downloads = settings.max_concurrent_downloads.clamp(1, MAX_CONCURRENT);
+    settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
+    settings
+}
+
+/// [`within_limits`] for a queue.
+pub(crate) fn queue_within_limits(mut queue: Queue) -> Queue {
+    queue.max_concurrent = queue.max_concurrent.clamp(1, MAX_CONCURRENT);
+    queue.speed_limit = speed_limit_within_limits(queue.speed_limit);
+    queue
+}
+
+/// A limit of zero would stop every download for good, so it reads as no limit, which is what it was meant to say.
+fn speed_limit_within_limits(limit: Option<u64>) -> Option<u64> {
+    limit
+        .filter(|&limit| limit > 0)
+        .map(|limit| limit.min(MAX_SPEED_LIMIT))
+}
+
 /// Checks `settings` against the current queues and folders and returns them with
 /// lists cleaned up (lower case, no dots, no duplicates).
 pub(crate) fn validate(
