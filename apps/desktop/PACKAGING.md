@@ -52,4 +52,4 @@ An AppImage runs from a temporary mount (`/tmp/.mount_XXXX`) that disappears whe
    ```
 
 3. Publish `latest.json` and the signed installers with each GitHub release.
-4. Add the check itself: the plugin is registered, but nothing asks for updates yet. Call `app.updater()?.check()` from Rust after start (for example once a day), and install quietly when the app quits, so a download is never interrupted.
+4. That is all: the app checks a minute after start and then daily, downloads a newer version in the background (the updater refuses it unless its signature matches the public key), shows a notification, and installs it when the person quits, so a download is never interrupted. `src-tauri/tests/updates.rs` tests this against a local server with a throwaway key.

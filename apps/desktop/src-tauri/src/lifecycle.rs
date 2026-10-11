@@ -129,7 +129,11 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
             });
             match hook {
                 Some(hook) => hook(),
-                None => app.exit(0),
+                None => {
+                    // Everything has stopped, so a waiting update can replace the app now.
+                    crate::updates::install_pending(&app);
+                    app.exit(0);
+                }
             }
         })
         .await;

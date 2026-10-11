@@ -73,7 +73,9 @@
 //! # Updates
 //!
 //! `tauri-plugin-updater` is compiled in but only switched on when `tauri.conf.json` has a
-//! `plugins.updater` section (endpoints and the public signing key). See `apps/desktop/PACKAGING.md`.
+//! `plugins.updater` section (endpoints and the public signing key). Then [`updates`] checks a
+//! minute after start and daily, downloads a verified update in the background and installs it
+//! when the person quits. See `apps/desktop/PACKAGING.md`.
 
 pub mod activity;
 pub mod api;
@@ -86,6 +88,7 @@ pub mod host;
 pub mod lifecycle;
 pub mod questions;
 pub mod tray;
+pub mod updates;
 pub mod window;
 
 use tauri::Manager as _;
@@ -247,6 +250,9 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
 
     if updater_configured(app) {
         handle.plugin(tauri_plugin_updater::Builder::new().build())?;
+        app.manage(updates::PendingUpdate::default());
+        let checking = tauri::async_runtime::spawn(updates::keep_checking(handle.clone()));
+        app.state::<Lifecycle>().keep(checking);
     }
 
     let data_dir = host::data_dir(&app.path().data_dir()?);
