@@ -115,6 +115,17 @@ Decided by the lead while the user was away; easy to revisit before the first re
 ### D20. One-click media add-on (yt-dlp, ffmpeg and a JavaScript runtime)
 Decided by the user on 2026-10-11. ffmpeg is not bundled with the app (the static LGPL build alone is 134 MB). It ships inside one optional "Media add-on" together with yt-dlp and the JavaScript runtime yt-dlp needs for some sites (Deno). One click installs all of it; the app offers it at the moment it is first needed (a stream whose video and audio must be joined, or a page such as YouTube that needs extraction), and it also lives in Settings, Add-ons. Every component is pinned to an exact release and verified by SHA-256 before use (A8 lists the sources). Plain files and single-track streams never need it. A later improvement replaces the general ffmpeg build with a small remux-only LGPL build made in CI, which cuts the add-on download from about 60 MB to a few MB.
 
+### D21. Security decisions from the final review
+Decided by the lead on 2026-10-11 after the cross-component security review.
+1. Media add-on updates verify yt-dlp's OpenPGP signature on `SHA2-256SUMS` against a fingerprint pinned in the app (pure-Rust `pgp` crate, verification only, in `wirecatch-core`). The 48-hour maturity delay applies to every install path (quiet update, Update button, repair, reinstall), not just quiet updates.
+2. Program types (exe, msi, scripts, installers and similar) stay in the browser by default, so the browser's Safe Browsing and download warnings apply. Downloads the browser flags as dangerous are never taken over.
+3. ffmpeg only ever reads local files of the formats we expect: explicit input format, `-protocol_whitelist file` and a format whitelist on every input. Pinned add-on sources must be long-lived; a remux-only ffmpeg built by our own CI and published with our releases replaces the general build once the GitHub organization exists.
+4. CI keeps actions pinned by SHA and gets Dependabot for actions, Cargo and npm, plus `cargo audit`.
+5. The app's data folder moves to the local (non-roaming) app data folder, so cookies and add-on programs never follow roaming profiles.
+6. Release bridges trust only store extension ids; the development id is a debug-only feature.
+
+Actions only the user can take: reserve the Firefox add-on id `extension@wirecatch.app` on addons.mozilla.org (an unlisted upload is enough) and register the `wirecatch.app` domain, so nobody else can claim them (see D9).
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
