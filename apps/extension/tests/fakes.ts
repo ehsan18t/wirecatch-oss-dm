@@ -7,6 +7,7 @@ import type {
   Call,
   Event,
   ExtensionSettings,
+  Hello,
   Message,
   Outcome,
   ProtocolError,
@@ -98,6 +99,11 @@ export type AddBehavior =
   AddAction | { error: ProtocolError } | 'hang' | 'disconnect' | 'unexpected_action';
 
 /** The bridge plus the app, answering the protocol like the real ones would. */
+/** Like the bridge: a hello without `start_app` comes from an older client, which always started the app. */
+function mayStartApp(hello: Partial<Pick<Hello, 'start_app'>>): boolean {
+  return hello.start_app ?? true;
+}
+
 export class FakeApp implements NativeTransport {
   settings: ExtensionSettings = { ...DEFAULT_SETTINGS };
   queues: QueueSummary[] = QUEUES;
@@ -166,7 +172,7 @@ export class FakeApp implements NativeTransport {
     const reply = (outcome: Outcome): void => port.deliver({ kind: 'response', id, outcome });
     switch (call.method) {
       case 'hello':
-        if (!this.running && call.params.start_app) {
+        if (!this.running && mayStartApp(call.params)) {
           this.running = true;
           this.starts += 1;
         }

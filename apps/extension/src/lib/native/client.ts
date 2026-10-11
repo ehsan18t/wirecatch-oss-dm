@@ -160,6 +160,10 @@ export class NativeClient {
   readonly #lateListeners = new Set<(call: Call, outcome: Outcome) => void>();
   #started = false;
   #stopped = false;
+  /** Whether the open attempt may start the app. */
+  #attemptStartsApp = false;
+  /** A request or the Open button came while an attempt that may not start the app was open: if it finds the app closed, the client starts it right after. */
+  #startWanted = false;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   readonly #pending = new Map<number, Pending>();
   readonly #readyWaiters = new Set<{ resolve(): void; reject(error: RequestError): void }>();
@@ -193,7 +197,11 @@ export class NativeClient {
 
   /** Skips the remaining backoff and connects right away, starting the app if it is closed (the popup's "Try again" and "Open Wirecatch", and every request). */
   reconnectNow(): void {
-    if (this.#stopped || this.#status.state === 'connected' || this.#isAttempting()) return;
+    if (this.#stopped || this.#status.state === 'connected') return;
+    if (this.#isAttempting()) {
+      if (!this.#attemptStartsApp) this.#startWanted = true;
+      return;
+    }
     this.#clearRetry();
     void this.#connect(true);
   }
@@ -253,7 +261,7 @@ export class NativeClient {
         },
       };
       this.#readyWaiters.add(waiter);
-      if (!this.#isAttempting()) this.reconnectNow();
+      this.reconnectNow();
     });
   }
 
@@ -261,6 +269,8 @@ export class NativeClient {
   async #connect(startApp: boolean): Promise<void> {
     this.#dropPort();
     const generation = this.#generation;
+    this.#attemptStartsApp = startApp;
+    this.#startWanted = false;
     if (this.#status.state === 'unavailable') {
       this.#setStatus({ ...this.#status, retryAt: null });
     }
@@ -381,7 +391,13 @@ export class NativeClient {
   }
 
   #fail(problem: Problem): void {
+    const startNow = problem.kind === 'app_closed' && this.#startWanted && !this.#stopped;
     this.#dropPort();
+    if (startNow) {
+      // Asked for while an attempt that may not start the app was open, and the app is closed: start it now, for the requests still waiting.
+      void this.#connect(true);
+      return;
+    }
     this.#rejectAll(
       new RequestError('disconnected', problem.detail ?? 'The connection to Wirecatch was lost.'),
     );

@@ -92,6 +92,31 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
+  // The background usually wakes for the very click or download that needs the app, so the request
+  // arrives while the start-up attempt, which never starts the app, is still open. It failed with
+  // "The connection to Wirecatch was lost." and the app was never started.
+  it('starts a closed Wirecatch for a request made while the start-up attempt is open', async () => {
+    app.running = false;
+    client = makeClient(app);
+    client.start();
+
+    const reply = await client.request({ method: 'get_extension_settings' }, 5_000);
+
+    expect(reply.type).toBe('extension_settings');
+    expect(app.starts).toBe(1);
+  });
+
+  it('starts a closed Wirecatch for the Open button pressed while the start-up attempt is open', async () => {
+    app.running = false;
+    client = makeClient(app);
+    client.start();
+    client.reconnectNow();
+    await flush();
+
+    expect(app.starts).toBe(1);
+    expect(client.status.state).toBe('connected');
+  });
+
   it('matches answers to requests by id, even when they arrive out of order', async () => {
     client = makeClient(app);
     client.start();
