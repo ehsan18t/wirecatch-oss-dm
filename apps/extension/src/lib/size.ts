@@ -29,3 +29,17 @@ export function toBytes(value: string, unit: SizeUnit): number | null {
   if (!Number.isFinite(number) || number < 0) return null;
   return Math.round(number * unitBytes(unit));
 }
+
+/** A size for people to read, such as "820 KB" or "1.4 GB" (1 KB = 1024 bytes, as elsewhere). */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const shown = value >= 100 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${shown} ${units[unit] ?? 'TB'}`;
+}

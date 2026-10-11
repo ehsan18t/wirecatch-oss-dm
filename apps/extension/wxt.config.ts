@@ -44,11 +44,23 @@ export default defineConfig({
     return {
       name: 'Wirecatch',
       description: 'Sends your downloads to the Wirecatch download manager.',
-      permissions: ['downloads', 'nativeMessaging', 'cookies', 'contextMenus', 'storage'],
+      // webRequest: observe responses (never block or change them) to spot video and audio,
+      // that is HLS and DASH manifests and media files, so the media button and the popup can
+      // offer them. No blocking, declarativeNetRequest or webRequestBlocking permission is asked for.
+      permissions: ['downloads', 'nativeMessaging', 'cookies', 'contextMenus', 'storage', 'webRequest'],
       // Needed by the cookies API to read the cookies of the site a download comes from,
-      // and to read the address of the current tab for "Ignore this site".
+      // to read the address of the current tab for "Ignore this site", for webRequest to
+      // see media responses, and for the media button's content script.
       host_permissions: SITE_ORIGINS,
       action: { default_title: 'Wirecatch' },
+      // A keyboard way to download a page's media; people can change or remove it in the
+      // browser's extension shortcuts page.
+      commands: {
+        'download-media': {
+          suggested_key: { default: 'Alt+Shift+D' },
+          description: "Download this page's video or audio with Wirecatch",
+        },
+      },
       ...(isFirefox
         ? {
             browser_specific_settings: {
