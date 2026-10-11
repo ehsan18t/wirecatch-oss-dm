@@ -113,7 +113,9 @@ const HOST_RULES = [
   'display:block',
   'visibility:visible',
   'opacity:1',
-  'pointer-events:auto',
+  // The host's box never takes the pointer; only the visible button does (see `.b`),
+  // so the faded-out button cannot swallow clicks meant for the player's controls.
+  'pointer-events:none',
   'margin:0',
   'padding:0',
   'border:0',
@@ -132,10 +134,10 @@ const HOST_RULES = [
   .map((rule) => `${rule}!important`)
   .join(';');
 
-const SHADOW_CSS = `
+export const SHADOW_CSS = `
 :host{${HOST_RULES}}
-.w{all:initial;position:relative;display:block}
-.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s}
+.w{all:initial;position:relative;display:block;pointer-events:none}
+.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s;pointer-events:auto}
 .b:hover{background:#1d4ed8}
 .b:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 5px #1d4ed8}
 .b[aria-busy=true]{cursor:progress}
@@ -200,6 +202,8 @@ export class MediaButton {
   #busy = false;
   #frame = 0;
   #pointer: { x: number; y: number } | null = null;
+  /** True while the pointer is on the button itself, which may sit outside the element (audio). */
+  #overButton = false;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #statusTimer: ReturnType<typeof setTimeout> | null = null;
   #state: Shown = 'none';
@@ -298,15 +302,14 @@ export class MediaButton {
 
   #onPointer(event: PointerEvent): void {
     this.#pointer = { x: event.clientX, y: event.clientY };
-    if (event.target === this.host) {
-      this.#lastActive = this.#now();
-      return;
-    }
+    this.#overButton = event.target === this.host;
+    if (this.#overButton) this.#lastActive = this.#now();
     this.#schedule();
   }
 
   #onPointerGone(): void {
     this.#pointer = null;
+    this.#overButton = false;
     this.#hovered = null;
     this.#update();
   }
@@ -335,7 +338,8 @@ export class MediaButton {
   /** Finds the media element under the pointer, even under a player's transparent overlay. */
   #hitTest(): void {
     const p = this.#pointer;
-    if (p === null) return;
+    // On the button, the element it belongs to stays the one in use.
+    if (p === null || this.#overButton) return;
     let hit: HTMLMediaElement | null = null;
     for (const el of this.#tracked) {
       if (!el.isConnected) {

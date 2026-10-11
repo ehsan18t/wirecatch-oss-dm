@@ -4,7 +4,14 @@
  * `getBoundingClientRect`, since jsdom does none.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACTIVE_MS, MediaButton, placeButton, type Box, type ButtonDeps } from '../src/lib/media/button';
+import {
+  ACTIVE_MS,
+  MediaButton,
+  SHADOW_CSS,
+  placeButton,
+  type Box,
+  type ButtonDeps,
+} from '../src/lib/media/button';
 import type { DownloadAnswer, ElementInfo } from '../src/lib/media/messages';
 import { flush } from './fakes';
 
@@ -220,6 +227,39 @@ describe('MediaButton', () => {
     video.dispatchEvent(new Event('pause'));
     b.button.blur();
     expect(b.state).toBe('none');
+  });
+
+  it('lets only the visible button take the pointer, never the box around it', () => {
+    const host = /:host\{([^}]*)\}/.exec(SHADOW_CSS)?.[1] ?? '';
+    expect(host).toContain('pointer-events:none!important');
+    expect(host).not.toContain('pointer-events:auto');
+    expect(/\.w\{[^}]*pointer-events:none/.test(SHADOW_CSS)).toBe(true);
+    expect(/\.b\{[^}]*pointer-events:auto/.test(SHADOW_CSS)).toBe(true);
+    expect(/\.w\.idle \.b:not\(:focus-visible\)\{[^}]*pointer-events:none/.test(SHADOW_CSS)).toBe(true);
+  });
+
+  it('comes back when the pointer moves over the button, and stays while it is on it', async () => {
+    const fake = fakeDeps();
+    const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    const b = start(fake);
+    video.dispatchEvent(new Event('play'));
+    await settle();
+    clock += ACTIVE_MS + 10;
+    b.setEnabled(true);
+    expect(b.state).toBe('idle');
+    b.host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 580, clientY: 20 }));
+    await settle();
+    expect(b.state).toBe('shown');
+
+    // An audio player's button sits outside the element: being on it keeps it shown.
+    video.dispatchEvent(new Event('pause'));
+    const audio = media('audio', box(40, 300, 300, 54), { src: 'https://e.com/b.mp3', controls: '' });
+    audio.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 100, clientY: 320 }));
+    await settle();
+    expect(b.state).toBe('shown');
+    b.host.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 280 }));
+    await settle();
+    expect(b.state).toBe('shown');
   });
 
   it('is a real, labelled button that keyboard users can reach', () => {
