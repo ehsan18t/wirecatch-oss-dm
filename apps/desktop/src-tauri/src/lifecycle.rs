@@ -32,9 +32,24 @@ pub struct Lifecycle {
     tasks: Mutex<Vec<JoinHandle<()>>>,
     /// A launch that arrived while quitting, to run once this process has exited.
     relaunch: Mutex<Option<Vec<String>>>,
+    /// Replaces the final process exit (tests run without a real event loop to exit).
+    exit_hook: Mutex<Option<ExitHook>>,
 }
 
+type ExitHook = Box<dyn FnOnce() + Send>;
+
 impl Lifecycle {
+    /// Runs `hook` instead of exiting the process at the end of a quit. For tests, whose mock
+    /// runtime cannot exit.
+    pub fn on_exit(&self, hook: impl FnOnce() + Send + 'static) {
+        *self.exit_hook.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(hook));
+    }
+
+    /// Whether a quit has finished stopping everything and asked the process to exit.
+    pub fn has_finished(&self) -> bool {
+        self.finished.load(Ordering::SeqCst)
+    }
+
     /// Records that there is no tray icon: with nothing to come back through, closing the window
     /// quits, as if `close_to_tray` were off.
     pub fn without_tray(&self) {
@@ -105,10 +120,17 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
         let core = app.try_state::<Core>();
         quit_core(core.as_deref(), || {
-            if let Some(life) = app.try_state::<Lifecycle>() {
+            let hook = app.try_state::<Lifecycle>().and_then(|life| {
                 life.finished.store(true, Ordering::SeqCst);
+                life.exit_hook
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take()
+            });
+            match hook {
+                Some(hook) => hook(),
+                None => app.exit(0),
             }
-            app.exit(0);
         })
         .await;
     });

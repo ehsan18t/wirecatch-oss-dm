@@ -79,7 +79,7 @@ pub mod activity;
 pub mod api;
 pub mod appimage;
 pub mod autostart;
-mod background;
+pub mod background;
 pub mod bridge;
 mod commands;
 pub mod host;

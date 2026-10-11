@@ -94,7 +94,8 @@ impl<R: Runtime> Shell for AppShell<'_, R> {
     }
 }
 
-fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
+/// Runs the tray menu item with this id.
+pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let Some(action) = TrayAction::from_id(id) else {
         return;
     };

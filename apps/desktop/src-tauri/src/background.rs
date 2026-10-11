@@ -6,6 +6,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager as _, Runtime};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_notification::NotificationExt as _;
+use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Instant;
 use wirecatch_core::Manager;
@@ -28,7 +29,11 @@ pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 /// other events are skipped, since the interface loads everything fresh when it opens. If this
 /// falls behind and misses events, the interface is told to reload on [`RESYNC_EVENT`].
 pub async fn forward_events<R: Runtime>(app: AppHandle<R>, manager: Manager) {
-    let mut events = manager.subscribe();
+    forward(app, manager.subscribe()).await;
+}
+
+/// [`forward_events`] from any receiver of core events, until its sender is gone.
+pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Receiver<UiEvent>) {
     loop {
         match events.recv().await {
             Ok(event) => {
@@ -123,18 +128,81 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     }
 }
 
-fn notify<R: Runtime>(app: &AppHandle<R>, finished: &[Finished]) {
+/// One notification for downloads that finished close together.
+pub fn notify<R: Runtime>(app: &AppHandle<R>, finished: &[Finished]) {
     let Some((title, body)) = notification_text(finished) else {
         return;
     };
     show_notification(app, title, body);
 }
 
-/// Shows a system notification.
+/// Notifications shown, recorded when this is managed (tests do; the app does not).
+#[derive(Default)]
+pub struct ShownNotifications(pub std::sync::Mutex<Vec<(String, String)>>);
+
+/// Shows a system notification. Does nothing more than log when the notification plugin is
+/// missing.
 pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: String) {
+    if let Some(shown) = app.try_state::<ShownNotifications>() {
+        shown
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((title.clone(), body.clone()));
+    }
+    if app
+        .try_state::<tauri_plugin_notification::Notification<R>>()
+        .is_none()
+    {
+        tracing::info!("notification (no notification support): {title}: {body}");
+        return;
+    }
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!("could not show a notification: {e}");
     }
+}
+
+/// What changes the start-at-sign-in entry: the system's own (the autostart plugin), or a stand-in.
+pub trait Launcher {
+    /// Writes the entry, turned on.
+    fn enable(&self) -> Result<(), String>;
+    /// Removes the entry.
+    fn disable(&self) -> Result<(), String>;
+}
+
+impl Launcher for tauri_plugin_autostart::AutoLaunchManager {
+    fn enable(&self) -> Result<(), String> {
+        tauri_plugin_autostart::AutoLaunchManager::enable(self).map_err(|e| e.to_string())
+    }
+    fn disable(&self) -> Result<(), String> {
+        tauri_plugin_autostart::AutoLaunchManager::disable(self).map_err(|e| e.to_string())
+    }
+}
+
+/// Carries out one start-at-sign-in step: decides from the entry's `state` and does it, through
+/// `launcher` or, to follow a choice made outside Wirecatch, by turning the setting off.
+pub fn apply_autostart(
+    launcher: &impl Launcher,
+    manager: &Manager,
+    state: autostart::EntryState,
+    wanted: bool,
+    just_turned_on: bool,
+) -> Result<Action, String> {
+    let action = autostart::decide(wanted, state, just_turned_on);
+    match action {
+        Action::Write => launcher.enable()?,
+        Action::Remove => launcher.disable()?,
+        Action::Nothing => {}
+        Action::TurnSettingOff => {
+            tracing::info!("starting with the system was turned off outside Wirecatch");
+            let mut settings = manager.get_settings();
+            settings.start_with_system = false;
+            manager
+                .update_settings(settings)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(action)
 }
 
 /// Makes the system's start-at-sign-in entry match the setting (see [`crate::autostart`]). The
@@ -150,20 +218,15 @@ pub fn sync_autostart<R: Runtime>(
     let app = app.clone();
     let manager = manager.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if app
+            .try_state::<tauri_plugin_autostart::AutoLaunchManager>()
+            .is_none()
+        {
+            return;
+        }
         let state = autostart::read_state(crate::autostart_name());
-        let launcher = app.autolaunch();
-        let result = match autostart::decide(wanted, state, just_turned_on) {
-            Action::Write => launcher.enable().map_err(|e| e.to_string()),
-            Action::Remove => launcher.disable().map_err(|e| e.to_string()),
-            Action::Nothing => Ok(()),
-            Action::TurnSettingOff => {
-                tracing::info!("starting with the system was turned off outside Wirecatch");
-                let mut settings = manager.get_settings();
-                settings.start_with_system = false;
-                manager.update_settings(settings).map_err(|e| e.to_string())
-            }
-        };
-        if let Err(e) = result {
+        if let Err(e) = apply_autostart(&*app.autolaunch(), &manager, state, wanted, just_turned_on)
+        {
             tracing::warn!("could not change starting with the system: {e}");
         }
     });

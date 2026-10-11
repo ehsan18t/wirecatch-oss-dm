@@ -50,4 +50,6 @@ axum = { workspace = true }
 bytes = { workspace = true }
 futures-util = { workspace = true }
 tempfile = "3.27.0"
+# The mock runtime, to test the tray, quitting and event forwarding without a real window.
+tauri = { version = "2.12.3", features = ["tray-icon", "test"] }
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
