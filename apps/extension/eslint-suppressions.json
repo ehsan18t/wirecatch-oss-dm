@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/lib/capture/should-capture.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/lib/hub.ts": {
     "complexity": {
       "count": 3
@@ -43,26 +38,6 @@
       "count": 1
     },
     "no-param-reassign": {
-      "count": 1
-    }
-  },
-  "src/lib/media/detect.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/media/messages.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/media/registry.ts": {
-    "complexity": {
-      "count": 3
-    }
-  },
-  "src/lib/messages.ts": {
-    "complexity": {
       "count": 1
     }
   },

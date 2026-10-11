@@ -2,6 +2,7 @@ import type { ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/proto
 import type { MediaView } from '../media/center';
 import type { BackgroundMessage, Channel, PopupCommand, PopupRequest, Snapshot } from '../messages';
 import { applyPatch, patchOf, type SettingsChange } from '../protocol';
+import { literal, object } from '../validate';
 
 export interface Feedback {
   tone: 'success' | 'error';
@@ -16,10 +17,14 @@ export interface MediaStatus {
 
 type Result = { ok: true; message?: string } | { ok: false; message: string };
 
+/**
+ * Checks the kind of a message from the background script, which is this extension's
+ * own code; its fields are trusted, as the popup and the background ship together.
+ */
+const hasBackgroundType = object({ type: literal('snapshot', 'result', 'media') });
+
 function isBackgroundMessage(raw: unknown): raw is BackgroundMessage {
-  if (typeof raw !== 'object' || raw === null) return false;
-  const type = (raw as { type?: unknown }).type;
-  return type === 'snapshot' || type === 'result' || type === 'media';
+  return hasBackgroundType(raw);
 }
 
 /**

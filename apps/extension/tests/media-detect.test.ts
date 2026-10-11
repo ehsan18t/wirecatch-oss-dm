@@ -5,6 +5,7 @@ import {
   isNavigation,
   isWebUrl,
   MIN_DIRECT_MEDIA_BYTES,
+  rejectionOf,
   type ObservedResponse,
 } from '../src/lib/media/detect';
 import { MAX_MEDIA_URL_LENGTH } from '../src/lib/media/messages';
@@ -34,6 +35,18 @@ function response(
 }
 
 describe('classifyResponse', () => {
+  it('says why a response can never be listed, checking in order', () => {
+    expect(rejectionOf(response({}))).toBeNull();
+    expect(rejectionOf(response({ tabId: -1, statusCode: 404 }))).toBe('outside_tab');
+    expect(rejectionOf(response({ documentLifecycle: 'prerender' }))).toBe('prerender');
+    expect(rejectionOf(response({ statusCode: 302 }))).toBe('not_success');
+    expect(rejectionOf(response({ url: 'blob:https://example.com/1' }))).toBe('not_web');
+    const long = `https://example.com/${'a'.repeat(MAX_MEDIA_URL_LENGTH)}.m3u8`;
+    expect(rejectionOf(response({ url: long }))).toBe('url_too_long');
+    const attachment = response({ headers: { 'Content-Disposition': 'attachment' } });
+    expect(rejectionOf(attachment)).toBe('attachment');
+  });
+
   it.each([
     ['application/vnd.apple.mpegurl', 'hls'],
     ['application/x-mpegURL', 'hls'],

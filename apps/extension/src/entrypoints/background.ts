@@ -26,6 +26,7 @@ import { acceptsPopupPort } from '@/lib/messages';
 import { NativeClient } from '@/lib/native/client';
 import { browserTransport } from '@/lib/native/port';
 import { originPattern } from '@/lib/site-access';
+import { isNumber, itemsOf } from '@/lib/validate';
 
 const MENU_ID = 'wirecatch-download';
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
@@ -83,8 +84,7 @@ function inFlightStore(): InFlightStore | undefined {
   return {
     async load() {
       const items = await area.get(IN_FLIGHT_KEY);
-      const ids: unknown = items[IN_FLIGHT_KEY];
-      return Array.isArray(ids) ? ids.filter((id): id is number => typeof id === 'number') : [];
+      return itemsOf(items[IN_FLIGHT_KEY], isNumber);
     },
     async save(ids) {
       await area.set({ [IN_FLIGHT_KEY]: ids });

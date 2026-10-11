@@ -2,6 +2,16 @@
  * One-off messages between the media button (a content script) and the background
  * script. Kept apart from the popup messages so the content script stays tiny.
  */
+import {
+  isBoolean,
+  isString,
+  literal,
+  nullable,
+  object,
+  optional,
+  refine,
+  type Guard,
+} from '../validate';
 
 export const MEDIA_CHECK = 'wirecatch:media-check';
 
@@ -17,11 +27,11 @@ export interface AnnounceMessage {
   message: string;
 }
 
+const isAnnounce = object({ type: literal(MEDIA_ANNOUNCE), ok: isBoolean, message: isString });
+
 export function asAnnounce(raw: unknown): AnnounceMessage | null {
-  const m = raw as Partial<AnnounceMessage> | null;
-  if (m?.type !== MEDIA_ANNOUNCE || typeof m.ok !== 'boolean' || typeof m.message !== 'string')
-    return null;
-  return { type: MEDIA_ANNOUNCE, ok: m.ok, message: m.message.slice(0, MAX_TITLE_LENGTH) };
+  if (!isAnnounce(raw)) return null;
+  return { type: MEDIA_ANNOUNCE, ok: raw.ok, message: raw.message.slice(0, MAX_TITLE_LENGTH) };
 }
 
 /**
@@ -88,21 +98,33 @@ export function frameLocation(href: string): string | null {
   return isWebSrc(href) ? href : null;
 }
 
+const isSrc = nullable(refine(isString, isWebSrc));
+
+const isTitle = nullable(refine(isString, (title) => title.length <= MAX_TITLE_LENGTH));
+
+/** The fields both content script requests carry; `location` is missing in messages from older content scripts. */
+const elementFields = { src: isSrc, audio: isBoolean, location: optional(isSrc) };
+
+const isCheck = object({ type: literal(MEDIA_CHECK), ...elementFields });
+
+const isDownload = object({ type: literal(MEDIA_DOWNLOAD), title: isTitle, ...elementFields });
+
 /**
  * Checks the shape of a message from a content script; null for anything else. A missing `location` reads as null (the background then uses the browser's record of the frame's address).
  */
 export function asContentRequest(raw: unknown): ContentRequest | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const m = raw as Record<string, unknown>;
-  if (m.type !== MEDIA_CHECK && m.type !== MEDIA_DOWNLOAD) return null;
-  const { src, audio, title } = m;
-  const location = m.location ?? null;
-  if (typeof audio !== 'boolean') return null;
-  if (src !== null && !(typeof src === 'string' && isWebSrc(src))) return null;
-  if (location !== null && !(typeof location === 'string' && isWebSrc(location))) return null;
-  const info = { src, audio, location };
-  if (m.type === MEDIA_CHECK) return { type: MEDIA_CHECK, ...info };
-  if (!(title === null || (typeof title === 'string' && title.length <= MAX_TITLE_LENGTH)))
-    return null;
-  return { type: MEDIA_DOWNLOAD, title, ...info };
+  if (isCheck(raw)) {
+    return { type: MEDIA_CHECK, src: raw.src, audio: raw.audio, location: raw.location ?? null };
+  }
+  if (isDownload(raw)) {
+    const { title, src, audio } = raw;
+    return { type: MEDIA_DOWNLOAD, title, src, audio, location: raw.location ?? null };
+  }
+  return null;
 }
+
+/** The background's answer to `MEDIA_CHECK`. */
+export const isCheckAnswer: Guard<CheckAnswer> = object({ show: isBoolean });
+
+/** The background's answer to `MEDIA_DOWNLOAD`. */
+export const isDownloadAnswer: Guard<DownloadAnswer> = object({ ok: isBoolean, message: isString });

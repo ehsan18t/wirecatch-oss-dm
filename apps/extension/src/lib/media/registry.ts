@@ -1,4 +1,18 @@
 import type { DetectedKind, Detection } from './detect';
+import {
+  arrayOf,
+  isBoolean,
+  isNumber,
+  isString,
+  isUnknown,
+  literal,
+  nullable,
+  object,
+  optional,
+  refine,
+  tuple,
+  type Guard,
+} from '../validate';
 import { MAX_MEDIA_URL_LENGTH } from './messages';
 
 /** Media detected in a tab, in the order it was first seen. */
@@ -70,22 +84,39 @@ type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & {
   lastActive?: number;
 };
 
-function isItem(value: unknown): value is SavedItem {
-  if (typeof value !== 'object' || value === null) return false;
-  const i = value as Record<string, unknown>;
-  return (
-    (i.kind === 'hls' || i.kind === 'dash' || i.kind === 'direct') &&
-    typeof i.url === 'string' &&
-    i.url.length <= MAX_MEDIA_URL_LENGTH &&
-    typeof i.key === 'string' &&
-    i.key.length <= MAX_MEDIA_URL_LENGTH + KEY_PREFIX_ROOM &&
-    typeof i.seenAt === 'number' &&
-    typeof i.audio === 'boolean' &&
-    (i.mime === null || typeof i.mime === 'string') &&
-    (i.size === null || typeof i.size === 'number') &&
-    (i.frameId === undefined || typeof i.frameId === 'number') &&
-    (i.lastActive === undefined || typeof i.lastActive === 'number')
+const isSavedItem: Guard<SavedItem> = object({
+  kind: literal('hls', 'dash', 'direct'),
+  url: refine(isString, (url) => url.length <= MAX_MEDIA_URL_LENGTH),
+  key: refine(isString, (key) => key.length <= MAX_MEDIA_URL_LENGTH + KEY_PREFIX_ROOM),
+  seenAt: isNumber,
+  audio: isBoolean,
+  mime: nullable(isString),
+  size: nullable(isNumber),
+  frameId: optional(isNumber),
+  lastActive: optional(isNumber),
+});
+
+/** A saved list as `save` writes it; the tabs are read one by one, so one damaged tab does not lose the others. */
+const isSaved = object({ v: literal(1), tabs: arrayOf(isUnknown) });
+
+/** One tab of a saved list; its items are read one by one, and a page that is not text counts as unknown. */
+const isSavedTab = tuple(isNumber, arrayOf(isUnknown), isUnknown);
+
+/**
+ * True when an HLS playlist from this frame belongs to a stream already listed (see
+ * `MediaRegistry`): it is not listed again, but it keeps the stream's window open.
+ */
+function extendsStream(list: readonly MediaItem[], frameId: number, now: number): boolean {
+  const stream = list.find(
+    (i) => i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
   );
+  if (stream === undefined) return false;
+  stream.lastActive = now;
+  return true;
+}
+
+function fromSaved(item: SavedItem): MediaItem {
+  return { ...item, frameId: item.frameId ?? 0, lastActive: item.lastActive ?? item.seenAt };
 }
 
 /**
@@ -139,38 +170,32 @@ export class MediaRegistry {
     const list = this.#tabs.get(tabId) ?? [];
     const key = itemKey(detection.kind, detection.url);
     const index = list.findIndex((i) => i.key === key);
-    if (index >= 0) {
-      const old = list[index];
-      if (old === undefined) return false;
-      old.lastActive = now;
-      // The same file again: keep the newest address (its query may carry a fresher token).
-      const merged: MediaItem = {
-        ...old,
-        url: detection.url,
-        mime: detection.mime ?? old.mime,
-        size: detection.size ?? old.size,
-      };
-      if (merged.url === old.url && merged.mime === old.mime && merged.size === old.size)
-        return false;
-      const next = [...list];
-      next[index] = merged;
-      this.#set(tabId, next);
-      return true;
-    }
-    if (detection.kind === 'hls') {
-      const stream = list.find(
-        (i) =>
-          i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
-      );
-      if (stream !== undefined) {
-        // A variant of a listed stream: not listed, but it keeps the stream's window open.
-        stream.lastActive = now;
-        return false;
-      }
-    }
+    if (index >= 0) return this.#seenAgain(tabId, index, detection, now);
+    if (detection.kind === 'hls' && extendsStream(list, frameId, now)) return false;
     const kept =
       list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
     this.#set(tabId, [...kept, { ...detection, key, seenAt: now, frameId, lastActive: now }]);
+    return true;
+  }
+
+  /** The same file seen again: keeps the newest address (its query may carry a fresher token). */
+  #seenAgain(tabId: number, index: number, detection: Detection, now: number): boolean {
+    const list = this.items(tabId);
+    const old = list[index];
+    if (old === undefined) return false;
+    old.lastActive = now;
+    const merged: MediaItem = {
+      ...old,
+      url: detection.url,
+      mime: detection.mime ?? old.mime,
+      size: detection.size ?? old.size,
+    };
+    if (merged.url === old.url && merged.mime === old.mime && merged.size === old.size) {
+      return false;
+    }
+    const next = [...list];
+    next[index] = merged;
+    this.#set(tabId, next);
     return true;
   }
 
@@ -228,32 +253,37 @@ export class MediaRegistry {
     for (const [tabId, url] of liveTabs ?? []) {
       if (url !== null && !this.#pages.has(tabId)) this.#pages.set(tabId, pageKey(url));
     }
-    if (typeof saved !== 'object' || saved === null) return;
-    const { v, tabs } = saved as { v?: unknown; tabs?: unknown };
-    if (v !== 1 || !Array.isArray(tabs)) return;
-    for (const entry of tabs as unknown[]) {
-      if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1]))
-        continue;
-      const tabId = entry[0];
-      if (liveTabs !== undefined && !liveTabs.has(tabId)) continue;
-      const savedPage: unknown = entry[2];
-      const page = typeof savedPage === 'string' ? savedPage : undefined;
-      const known = this.#pages.get(tabId);
-      if (page !== known && (liveTabs !== undefined || known !== undefined)) continue;
-      const savedItems = (entry[1] as unknown[]).filter(isItem).map((i): MediaItem => ({
-        ...i,
-        frameId: i.frameId ?? 0,
-        lastActive: i.lastActive ?? i.seenAt,
-      }));
-      const current = this.#tabs.get(tabId) ?? [];
-      const merged = [
-        ...savedItems,
-        ...current.filter((c) => !savedItems.some((s) => s.key === c.key)),
-      ];
-      if (merged.length === 0) continue;
-      if (page !== undefined) this.#pages.set(tabId, page);
-      this.#set(tabId, merged.slice(-MAX_ITEMS_PER_TAB));
+    if (!isSaved(saved)) return;
+    for (const entry of saved.tabs) {
+      if (!isSavedTab(entry)) continue;
+      const [tabId, items, savedPage] = entry;
+      const page = isString(savedPage) ? savedPage : undefined;
+      if (!this.#mayRestore(tabId, page, liveTabs)) continue;
+      this.#restoreTab(tabId, items.filter(isSavedItem).map(fromSaved), page);
     }
+  }
+
+  /** Whether a tab's saved list belongs to what the tab shows now (see `restore`). */
+  #mayRestore(
+    tabId: number,
+    page: string | undefined,
+    liveTabs: ReadonlyMap<number, string | null> | undefined,
+  ): boolean {
+    if (liveTabs !== undefined) return liveTabs.has(tabId) && page === this.#pages.get(tabId);
+    const known = this.#pages.get(tabId);
+    return known === undefined || page === known;
+  }
+
+  /** Puts a tab's saved items back, before what was detected since the restart. */
+  #restoreTab(tabId: number, savedItems: MediaItem[], page: string | undefined): void {
+    const current = this.#tabs.get(tabId) ?? [];
+    const merged = [
+      ...savedItems,
+      ...current.filter((c) => !savedItems.some((s) => s.key === c.key)),
+    ];
+    if (merged.length === 0) return;
+    if (page !== undefined) this.#pages.set(tabId, page);
+    this.#set(tabId, merged.slice(-MAX_ITEMS_PER_TAB));
   }
 
   #set(tabId: number, items: MediaItem[]): void {

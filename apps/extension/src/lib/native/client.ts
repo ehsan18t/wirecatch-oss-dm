@@ -9,6 +9,7 @@ import {
   type ProtocolError,
   type Reply,
 } from '@wirecatch/protocol';
+import { isNumber, isRecord, isString, literal, object, oneOf } from '../validate';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
 
 /** Largest message the bridge accepts (D14: 1 MiB of UTF-8 JSON). */
@@ -80,22 +81,23 @@ const DEFAULT_BACKOFF: Backoff = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
 /** How long the first answer, to `hello`, may take: the bridge may have to start the app first. */
 const HELLO_TIMEOUT_MS = 10_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+/**
+ * The outer shape of a frame from the bridge: an answer to a request, or an event.
+ * What is inside is the app's, which speaks the same generated protocol; full
+ * validators for every reply and event are W3's generated ones.
+ */
+const hasMessageShape = oneOf(
+  object({
+    kind: literal('response'),
+    id: isNumber,
+    outcome: object({ status: literal('ok', 'err'), value: isRecord }),
+  }),
+  object({ kind: literal('event'), event: object({ type: isString }) }),
+);
 
 /** Checks the outer shape of a frame from the bridge; anything else is ignored. */
-function asMessage(raw: unknown): Message | null {
-  if (!isRecord(raw)) return null;
-  if (raw.kind === 'response' && typeof raw.id === 'number' && isRecord(raw.outcome)) {
-    const status = raw.outcome.status;
-    if ((status === 'ok' || status === 'err') && isRecord(raw.outcome.value)) return raw as Message;
-    return null;
-  }
-  if (raw.kind === 'event' && isRecord(raw.event) && typeof raw.event.type === 'string') {
-    return raw as Message;
-  }
-  return null;
+function isMessage(raw: unknown): raw is Message {
+  return hasMessageShape(raw);
 }
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
@@ -369,9 +371,8 @@ export class NativeClient {
     });
   }
 
-  #onMessage(raw: unknown): void {
-    const message = asMessage(raw);
-    if (message === null) return;
+  #onMessage(message: unknown): void {
+    if (!isMessage(message)) return;
     if (message.kind === 'event') {
       for (const listener of this.#eventListeners) listener(message.event);
       return;

@@ -14,14 +14,10 @@ import {
   MEDIA_DOWNLOAD,
   frameLocation,
   mediaButtonOn,
+  isCheckAnswer,
+  isDownloadAnswer,
   type ContentRequest,
-  type DownloadAnswer,
 } from '@/lib/media/messages';
-
-function isAnswer(value: unknown): value is DownloadAnswer {
-  const a = value as Partial<DownloadAnswer> | null;
-  return typeof a?.ok === 'boolean' && typeof a.message === 'string';
-}
 
 export default defineContentScript({
   matches: SITE_ORIGINS,
@@ -41,7 +37,7 @@ export default defineContentScript({
           ...info,
           location: frameLocation(location.href),
         });
-        return (answer as { show?: unknown } | null)?.show === true;
+        return isCheckAnswer(answer) && answer.show;
       },
       download: async (request) => {
         const answer = await ask({
@@ -49,7 +45,7 @@ export default defineContentScript({
           ...request,
           location: frameLocation(location.href),
         });
-        return isAnswer(answer)
+        return isDownloadAnswer(answer)
           ? answer
           : {
               ok: false,

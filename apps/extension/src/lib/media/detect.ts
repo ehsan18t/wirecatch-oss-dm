@@ -45,6 +45,9 @@ const HLS_TYPES = new Set([
 ]);
 const DASH_TYPES = new Set(['application/dash+xml', 'video/vnd.mpeg.dash.mpd']);
 
+/** Generic XML types a DASH manifest may be served as. */
+const XML_TYPES = new Set(['application/xml', 'text/xml']);
+
 /** Pieces of a stream rather than whole files: listing them would only add noise. */
 const SEGMENT_TYPES = new Set(['video/mp2t', 'video/iso.segment', 'audio/iso.segment']);
 const SEGMENT_EXTENSIONS = new Set(['ts', 'm4s', 'm4f', 'm4v-seg', 'cmfv', 'cmfa', 'aac-seg']);
@@ -177,55 +180,79 @@ export function isNavigation(response: ObservedResponse): boolean {
  *   `MAX_MEDIA_URL_LENGTH`, nor direct files smaller than `MIN_DIRECT_MEDIA_BYTES`.
  */
 export function classifyResponse(response: ObservedResponse): Detection | null {
-  if (response.tabId < 0) return null;
-  if (response.documentLifecycle === 'prerender') return null;
-  if (!isSuccess(response.statusCode)) return null;
-  if (!isWebUrl(response.url)) return null;
-  if (response.url.length > MAX_MEDIA_URL_LENGTH) return null;
-  if (isAttachment(response)) return null;
-
+  if (rejectionOf(response) !== null) return null;
   const mime = mimeOf(response);
-  const byUrl = classifyUrl(response.url);
-  const ext = extensionOf(response.url);
-
-  if ((mime !== null && HLS_TYPES.has(mime)) || (byUrl?.kind === 'hls' && isPlainText(mime))) {
-    return { kind: 'hls', url: response.url, mime, size: null, audio: false };
-  }
-  if (
-    (mime !== null && DASH_TYPES.has(mime)) ||
-    (byUrl?.kind === 'dash' &&
-      (isPlainText(mime) || mime === 'application/xml' || mime === 'text/xml'))
-  ) {
-    return { kind: 'dash', url: response.url, mime, size: null, audio: false };
-  }
-
-  if (!FILE_REQUEST_TYPES.has(response.type)) return null;
-  if (mime !== null && SEGMENT_TYPES.has(mime)) return null;
-  if (ext !== null && SEGMENT_EXTENSIONS.has(ext)) return null;
-
-  let direct: Detection | null = null;
-  if (isMediaMime(mime) && mime !== null) {
-    direct = {
-      kind: 'direct',
-      url: response.url,
-      mime,
-      size: sizeOf(response),
-      audio: mime.startsWith('audio/'),
-    };
-  } else if (byUrl?.kind === 'direct' && isGenericMime(mime)) {
-    direct = {
-      kind: 'direct',
-      url: response.url,
-      mime,
-      size: sizeOf(response),
-      audio: byUrl.audio,
-    };
-  }
-  if (direct !== null && direct.size !== null && direct.size < MIN_DIRECT_MEDIA_BYTES) return null;
-  return direct;
+  return manifestOf(response.url, mime) ?? directFileOf(response, mime);
 }
 
-function isMediaMime(mime: string | null): boolean {
+/** Why a response is never listed, whatever it contains. */
+export type Rejection =
+  'outside_tab' | 'prerender' | 'not_success' | 'not_web' | 'url_too_long' | 'attachment';
+
+/** The checks every listed response passes, in order; the first that rejects it decides. */
+const REJECTIONS: readonly {
+  reason: Rejection;
+  rejects: (response: ObservedResponse) => boolean;
+}[] = [
+  { reason: 'outside_tab', rejects: (r) => r.tabId < 0 },
+  { reason: 'prerender', rejects: (r) => r.documentLifecycle === 'prerender' },
+  { reason: 'not_success', rejects: (r) => !isSuccess(r.statusCode) },
+  { reason: 'not_web', rejects: (r) => !isWebUrl(r.url) },
+  { reason: 'url_too_long', rejects: (r) => r.url.length > MAX_MEDIA_URL_LENGTH },
+  { reason: 'attachment', rejects: isAttachment },
+];
+
+/** Why a response cannot be media worth listing, or null when its content decides. */
+export function rejectionOf(response: ObservedResponse): Rejection | null {
+  return REJECTIONS.find(({ rejects }) => rejects(response))?.reason ?? null;
+}
+
+/** An HLS or DASH manifest, by its type, or by its extension when the type is generic. */
+function manifestOf(url: string, mime: string | null): Detection | null {
+  const kind = manifestKind(url, mime);
+  return kind === null ? null : { kind, url, mime, size: null, audio: false };
+}
+
+function manifestKind(url: string, mime: string | null): 'hls' | 'dash' | null {
+  const byUrl = classifyUrl(url)?.kind;
+  if ((mime !== null && HLS_TYPES.has(mime)) || (byUrl === 'hls' && isPlainText(mime))) {
+    return 'hls';
+  }
+  const xmlOrPlain = isPlainText(mime) || (mime !== null && XML_TYPES.has(mime));
+  if ((mime !== null && DASH_TYPES.has(mime)) || (byUrl === 'dash' && xmlOrPlain)) {
+    return 'dash';
+  }
+  return null;
+}
+
+/** A whole video or audio file, loaded by a media element, a frame or the tab itself; never a stream segment. */
+function directFileOf(response: ObservedResponse, mime: string | null): Detection | null {
+  if (!FILE_REQUEST_TYPES.has(response.type) || isSegment(response.url, mime)) return null;
+  const audio = directAudio(response.url, mime);
+  if (audio === null) return null;
+  const size = sizeOf(response);
+  if (size !== null && size < MIN_DIRECT_MEDIA_BYTES) return null;
+  return { kind: 'direct', url: response.url, mime, size, audio };
+}
+
+function isSegment(url: string, mime: string | null): boolean {
+  const ext = extensionOf(url);
+  return (
+    (mime !== null && SEGMENT_TYPES.has(mime)) || (ext !== null && SEGMENT_EXTENSIONS.has(ext))
+  );
+}
+
+/**
+ * Whether a media file is audio: by its type, or by its extension when the type is
+ * generic. Null when it is not a video or audio file.
+ */
+function directAudio(url: string, mime: string | null): boolean | null {
+  if (isMediaMime(mime)) return mime.startsWith('audio/');
+  const byUrl = classifyUrl(url);
+  return byUrl?.kind === 'direct' && isGenericMime(mime) ? byUrl.audio : null;
+}
+
+function isMediaMime(mime: string | null): mime is string {
   return mime !== null && (mime.startsWith('video/') || mime.startsWith('audio/'));
 }
 

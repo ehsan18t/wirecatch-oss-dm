@@ -71,6 +71,11 @@ function schemeOf(url: string): string | null {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+/** Addresses that only exist inside the browser. */
+const BROWSER_ONLY_SCHEMES = new Set<string | null>(['blob:', 'data:']);
+
+const WEB_SCHEMES = new Set<string | null>(['http:', 'https:']);
+
 /** Browser verdicts that let a download go ahead; anything else is a warning the browser shows itself. */
 const NOT_DANGEROUS = new Set(['safe', 'accepted']);
 
@@ -101,36 +106,51 @@ export function shouldCapture(
   item: CaptureCandidate,
   settings: ExtensionSettings,
 ): CaptureDecision {
-  if (!settings.capture_enabled) return skip('capture_off');
-  if (!item.inProgress) return skip('not_in_progress');
-  if (item.startedByExtension) return skip('started_by_extension');
-  if (item.incognito) return skip('private_window');
-  if (item.danger !== null && !NOT_DANGEROUS.has(item.danger)) return skip('browser_flagged');
-
-  const scheme = schemeOf(item.url);
-  if (scheme === 'blob:' || scheme === 'data:') return skip('blob_or_data_url');
-  if (isInternal(item.url) || isInternal(item.referrer)) return skip('internal_page');
-  if (scheme !== 'http:' && scheme !== 'https:') return skip('unsupported_url');
-
-  const sites = settings.ignored_sites;
-  if (
-    sites.length > 0 &&
-    (matchingSite(item.url, sites) !== null ||
-      matchingSite(item.originalUrl, sites) !== null ||
-      matchingSite(item.referrer, sites) !== null)
-  ) {
-    return skip('ignored_site');
-  }
-
-  const fileName = item.fileName ?? fileNameFromUrl(item.url);
-  if (isProgramFile(fileName, item.mime)) return skip('program');
-  if (!matchesFileTypes(fileName, settings.capture_extensions)) return skip('file_type');
-
-  if (item.size !== null && item.size < settings.min_capture_size) return skip('too_small');
-
-  return { capture: true };
+  const rule = KEEP_RULES.find(({ keeps }) => keeps(item, settings));
+  return rule === undefined ? { capture: true } : { capture: false, reason: rule.reason };
 }
 
-function skip(reason: SkipReason): CaptureDecision {
-  return { capture: false, reason };
+/** One of the rules above: when `keeps` is true, the download stays in the browser for `reason`. */
+interface KeepRule {
+  reason: SkipReason;
+  keeps: (item: CaptureCandidate, settings: ExtensionSettings) => boolean;
+}
+
+/** The rules of `shouldCapture`, in order; the first that keeps the download decides. */
+const KEEP_RULES: readonly KeepRule[] = [
+  { reason: 'capture_off', keeps: (_, settings) => !settings.capture_enabled },
+  { reason: 'not_in_progress', keeps: (item) => !item.inProgress },
+  { reason: 'started_by_extension', keeps: (item) => item.startedByExtension },
+  { reason: 'private_window', keeps: (item) => item.incognito },
+  {
+    reason: 'browser_flagged',
+    keeps: (item) => item.danger !== null && !NOT_DANGEROUS.has(item.danger),
+  },
+  { reason: 'blob_or_data_url', keeps: (item) => BROWSER_ONLY_SCHEMES.has(schemeOf(item.url)) },
+  { reason: 'internal_page', keeps: (item) => isInternal(item.url) || isInternal(item.referrer) },
+  { reason: 'unsupported_url', keeps: (item) => !WEB_SCHEMES.has(schemeOf(item.url)) },
+  {
+    reason: 'ignored_site',
+    keeps: (item, settings) => onIgnoredSite(item, settings.ignored_sites),
+  },
+  { reason: 'program', keeps: (item) => isProgramFile(fileNameOf(item), item.mime) },
+  {
+    reason: 'file_type',
+    keeps: (item, settings) => !matchesFileTypes(fileNameOf(item), settings.capture_extensions),
+  },
+  {
+    reason: 'too_small',
+    keeps: (item, settings) => item.size !== null && item.size < settings.min_capture_size,
+  },
+];
+
+/** True when the download address, the address it started with, or the page it came from is an ignored site. */
+function onIgnoredSite(item: CaptureCandidate, sites: readonly string[]): boolean {
+  return [item.url, item.originalUrl, item.referrer].some(
+    (url) => matchingSite(url, sites) !== null,
+  );
+}
+
+function fileNameOf(item: CaptureCandidate): string | null {
+  return item.fileName ?? fileNameFromUrl(item.url);
 }

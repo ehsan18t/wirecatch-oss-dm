@@ -5,6 +5,19 @@
 import type { ExtensionSettings, ExtensionSettingsPatch, QueueSummary } from '@wirecatch/protocol';
 import type { MediaView } from './media/center';
 import type { ConnectionStatus } from './native/status';
+import {
+  arrayOf,
+  isBoolean,
+  isNumber,
+  isString,
+  literal,
+  nullable,
+  object,
+  oneOf,
+  optional,
+  refine,
+  type Guard,
+} from './validate';
 
 /** Name of the `runtime.connect` port the popup opens to the background script. */
 export const POPUP_PORT_NAME = 'wirecatch-popup';
@@ -85,32 +98,33 @@ export interface Channel<Out, In> {
   onDisconnect: { addListener(listener: () => void): void };
 }
 
-const COMMAND_TYPES = new Set<string>([
-  'update_settings',
-  'pause_all',
-  'resume_all',
-  'reconnect',
-  'open_app',
-  'dismiss_notice',
-  'watch_media',
-  'download_media',
-]);
+const isTabId = refine(isNumber, (id) => Number.isInteger(id) && id >= 0);
+const isStringList = optional(nullable(arrayOf(isString)));
 
-/** Checks the outer shape of a message from the popup. */
+const isPatch: Guard<ExtensionSettingsPatch> = object({
+  capture_enabled: optional(nullable(isBoolean)),
+  ask_before_download: optional(nullable(isBoolean)),
+  show_media_button: optional(nullable(isBoolean)),
+  ignored_sites: isStringList,
+  add_ignored_sites: isStringList,
+  remove_ignored_sites: isStringList,
+  capture_extensions: isStringList,
+  min_capture_size: optional(nullable(isNumber)),
+  default_queue: optional(nullable(isNumber)),
+});
+
+const isCommand: Guard<PopupCommand> = oneOf(
+  object({ type: literal('update_settings'), patch: isPatch }),
+  object({
+    type: literal('pause_all', 'resume_all', 'reconnect', 'open_app', 'dismiss_notice'),
+  }),
+  object({ type: literal('watch_media'), tabId: isTabId }),
+  object({ type: literal('download_media'), tabId: isTabId, key: isString }),
+);
+
+const isPopupRequest: Guard<PopupRequest> = object({ id: isNumber, command: isCommand });
+
+/** Checks a message from the popup; null for anything else. */
 export function asPopupRequest(raw: unknown): PopupRequest | null {
-  if (typeof raw !== 'object' || raw === null) return null;
-  const { id, command } = raw as { id?: unknown; command?: unknown };
-  if (typeof id !== 'number' || typeof command !== 'object' || command === null) return null;
-  const type = (command as { type?: unknown }).type;
-  if (typeof type !== 'string' || !COMMAND_TYPES.has(type)) return null;
-  if (type === 'update_settings') {
-    const patch = (command as { patch?: unknown }).patch;
-    if (typeof patch !== 'object' || patch === null) return null;
-  }
-  if (type === 'watch_media' || type === 'download_media') {
-    const { tabId, key } = command as { tabId?: unknown; key?: unknown };
-    if (typeof tabId !== 'number' || !Number.isInteger(tabId) || tabId < 0) return null;
-    if (type === 'download_media' && typeof key !== 'string') return null;
-  }
-  return raw as PopupRequest;
+  return isPopupRequest(raw) ? raw : null;
 }

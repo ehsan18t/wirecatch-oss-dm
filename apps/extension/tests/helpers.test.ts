@@ -324,4 +324,21 @@ describe('popup messages', () => {
     expect(asPopupRequest({ id: 1, command: { type: 'delete_everything' } })).toBeNull();
     expect(asPopupRequest(null)).toBeNull();
   });
+
+  it("checks the fields of a settings change and the media commands' tab", () => {
+    const update = (patch: unknown): unknown => ({
+      id: 1,
+      command: { type: 'update_settings', patch },
+    });
+    expect(asPopupRequest(update({ add_ignored_sites: ['example.com'] }))).not.toBeNull();
+    expect(asPopupRequest(update({ capture_enabled: null }))).not.toBeNull();
+    expect(asPopupRequest(update({ capture_enabled: 'yes' }))).toBeNull();
+    expect(asPopupRequest(update({ add_ignored_sites: [1] }))).toBeNull();
+    expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: 3 } })).not.toBeNull();
+    expect(asPopupRequest({ id: 1, command: { type: 'watch_media', tabId: -1 } })).toBeNull();
+    expect(asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3 } })).toBeNull();
+    expect(
+      asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3, key: 'k' } }),
+    ).not.toBeNull();
+  });
 });

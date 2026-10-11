@@ -1,4 +1,5 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
+import { isString, isUnknown, object } from '../validate';
 
 export type ProblemKind =
   /** The browser could not find or start the native helper (the bridge): not installed or not registered. */
@@ -82,13 +83,15 @@ export function classifyDisconnect(message: string | null): ProblemKind {
  * or null when the host simply exited). Anything else counts as no reason.
  */
 export function disconnectMessage(lastError: unknown, port: unknown): string | null {
-  return messageOf(lastError) ?? messageOf((port as { error?: unknown } | null)?.error);
+  return messageOf(lastError) ?? (hasError(port) ? messageOf(port.error) : null);
 }
 
+const hasError = object({ error: isUnknown });
+
+const hasMessage = object({ message: isString });
+
 function messageOf(value: unknown): string | null {
-  if (typeof value !== 'object' || value === null) return null;
-  const message = (value as { message?: unknown }).message;
-  return typeof message === 'string' && message !== '' ? message : null;
+  return hasMessage(value) && value.message !== '' ? value.message : null;
 }
 
 export interface ProblemText {
