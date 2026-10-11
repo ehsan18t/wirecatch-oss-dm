@@ -54,6 +54,33 @@ pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
 }
 
+/// The bridge to register for the app at `app_exe`. Under an AppImage (`appimage` set) that is
+/// a private copy in `private_dir`; otherwise the bridge next to the app. A bridge in a
+/// temporary location is never registered.
+pub fn bridge_to_register(
+    app_exe: &Path,
+    appimage: Option<&Path>,
+    private_dir: &Path,
+) -> Result<PathBuf, String> {
+    let bundled = bridge_path(app_exe)
+        .ok_or_else(|| "Could not find the browser bridge next to the app.".to_owned())?;
+    if let Some(appimage) = appimage {
+        #[cfg(unix)]
+        return crate::appimage::install_private_bridge(&bundled, appimage, private_dir);
+        #[cfg(not(unix))]
+        {
+            let _ = (appimage, private_dir);
+        }
+    }
+    if crate::appimage::is_temporary(&bundled) {
+        return Err(format!(
+            "The browser bridge is in a temporary folder ({}), so it is not registered. Install Wirecatch, or run it from a permanent folder.",
+            bundled.display()
+        ));
+    }
+    Ok(bundled)
+}
+
 /// Whether this build registers the bridge on start. Debug builds never do: they serve their
 /// own endpoint, which the registered bridge does not use, and registering them would point
 /// every browser at a source checkout instead of the installed app.
@@ -64,12 +91,20 @@ pub fn registers_on_start() -> bool {
 /// Runs `<bridge> install` on a thread of its own, so startup never waits on it. The command
 /// is idempotent: it writes the same manifests and registry values each time, which also
 /// repairs a registration that a browser update or a moved install broke. Failures are logged.
-pub fn register_in_background(bridge: PathBuf) {
+///
+/// `find` picks the bridge to register, on that thread (under an AppImage it copies one out
+/// first, see [`crate::appimage`]); `None` registers nothing.
+pub fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("register-bridge".into())
-        .spawn(move || match run_bridge(&bridge, "install") {
-            Ok(()) => tracing::info!("registered the browser bridge {}", bridge.display()),
-            Err(e) => tracing::warn!("{e}"),
+        .spawn(move || {
+            let Some(bridge) = find() else {
+                return;
+            };
+            match run_bridge(&bridge, "install") {
+                Ok(()) => tracing::info!("registered the browser bridge {}", bridge.display()),
+                Err(e) => tracing::warn!("{e}"),
+            }
         });
     if let Err(e) = spawned {
         tracing::warn!("could not register the browser bridge: {e}");
@@ -124,6 +159,37 @@ mod tests {
         });
         let bridge = bridge_path(&app).unwrap();
         assert_eq!(bridge, Path::new("install").join(BRIDGE_FILE_NAME));
+    }
+
+    #[test]
+    fn a_bridge_in_a_temporary_folder_is_never_registered() {
+        let private = Path::new("/home/ana/.local/share/wirecatch/bin");
+        let in_temp = std::env::temp_dir().join("x").join("wirecatch-app");
+        assert!(bridge_to_register(&in_temp, None, private).is_err());
+        let mount = Path::new("/tmp/.mount_Wirecatch/usr/bin/wirecatch-app");
+        assert!(bridge_to_register(mount, None, private).is_err());
+        let installed = Path::new("/opt/wirecatch/wirecatch-app");
+        assert_eq!(
+            bridge_to_register(installed, None, private).unwrap(),
+            Path::new("/opt/wirecatch").join(BRIDGE_FILE_NAME)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn under_an_appimage_the_private_copy_is_registered() {
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join(".mount_Wirecatch").join("usr").join("bin");
+        std::fs::create_dir_all(&mount).unwrap();
+        std::fs::write(mount.join(BRIDGE_FILE_NAME), b"bridge").unwrap();
+        let private = dir.path().join("data").join("bin");
+        let chosen = bridge_to_register(
+            &mount.join("wirecatch-app"),
+            Some(Path::new("/opt/Wirecatch.AppImage")),
+            &private,
+        )
+        .unwrap();
+        assert_eq!(chosen, private.join(BRIDGE_FILE_NAME));
     }
 
     #[test]

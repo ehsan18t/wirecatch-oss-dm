@@ -27,11 +27,11 @@ Uninstalling removes the registration before the files go:
 
 - **Windows**: `src-tauri/windows/hooks.nsh` (the `NSIS_HOOK_PREUNINSTALL` macro) runs `"$INSTDIR\wirecatch-bridge.exe" uninstall`. The installer is per user, so this runs as the user whose registration it removes.
 - **Linux packages**: `src-tauri/linux/prerm.sh` is the `.deb` and `.rpm` pre-removal script. On removal (not on upgrade) it runs `/usr/bin/wirecatch-bridge uninstall` as every regular user (uid 1000 to 59999 with an existing home folder), because each user's browsers have their own registration.
-- **AppImage**: there is no uninstaller. Run `wirecatch-bridge uninstall` from the extracted image, or leave it: a registration whose bridge is gone only makes the extension report that Wirecatch is unavailable.
+- **AppImage**: there is no uninstaller. Run `~/.local/share/wirecatch/bin/wirecatch-bridge uninstall`, then delete that folder.
 
-### AppImage caveat
+### AppImage
 
-An AppImage runs from a temporary mount that changes on every start, so the registered bridge path is only valid while that copy of the app runs. The extension then works while Wirecatch is open but cannot start it. A fix (copying the app and bridge to a stable folder on first start) is planned for Wave 3 with the Linux verification.
+An AppImage runs from a temporary mount (`/tmp/.mount_XXXX`) that disappears when it exits; registering the bridge there would point every browser at a path another local user could later fill with a program of their own. So under an AppImage (the `APPIMAGE` variable is set) the app copies the bridge to `~/.local/share/wirecatch/bin` (folder and files mode 0700, owned by the user, never written through a link) and registers that copy. Next to it, a two-line `wirecatch-app` script runs `exec '<path of the .AppImage>' "$@"`, because the bridge starts `wirecatch-app --background` from its own folder. Both are rewritten on every start, so moving the AppImage repairs itself on its next start. A bridge in a temporary folder is never registered, and an AppImage kept in `/tmp` is refused with a message asking to move it.
 
 ## Updates (switched off for now)
 

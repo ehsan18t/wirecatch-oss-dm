@@ -74,6 +74,7 @@
 
 pub mod activity;
 pub mod api;
+pub mod appimage;
 mod background;
 pub mod bridge;
 mod commands;
@@ -212,7 +213,7 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
 
     let data_dir = host::data_dir(&app.path().data_dir()?);
     let home = app.path().home_dir().unwrap_or_else(|_| data_dir.clone());
-    let config = ManagerConfig::new(data_dir, host::known_folders(&home));
+    let config = ManagerConfig::new(data_dir.clone(), host::known_folders(&home));
     app.manage(Core::new(config));
 
     tray::create(&handle)?;
@@ -223,14 +224,16 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
     window::handle_launch(&handle, &launch);
 
     if bridge::registers_on_start() {
-        match std::env::current_exe()
-            .ok()
-            .as_deref()
-            .and_then(bridge::bridge_path)
-        {
-            Some(bridge) => bridge::register_in_background(bridge),
-            None => tracing::warn!("could not find the browser bridge next to the app"),
-        }
+        let private_dir = data_dir.join("bin");
+        bridge::register_in_background(move || {
+            let app_exe = std::env::current_exe()
+                .map_err(|e| tracing::warn!("could not find the app's own file: {e}"))
+                .ok()?;
+            let appimage = std::env::var_os(appimage::APPIMAGE_VAR).map(std::path::PathBuf::from);
+            bridge::bridge_to_register(&app_exe, appimage.as_deref(), &private_dir)
+                .map_err(|e| tracing::warn!("{e}"))
+                .ok()
+        });
     } else {
         tracing::info!("debug build: not registering the browser bridge");
     }
