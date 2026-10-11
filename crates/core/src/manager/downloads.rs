@@ -67,12 +67,12 @@ impl Manager {
         let mut entries: Vec<&Entry> = state.visible().collect();
         let queue_index = |id: QueueId| state.queues.iter().position(|s| s.queue.id == id);
         entries.sort_by_key(|e| (queue_index(e.row.queue), e.position));
-        entries.into_iter().map(|e| e.row.clone()).collect()
+        entries.into_iter().map(|e| e.summary()).collect()
     }
 
     /// One download, as [`list_downloads`](Self::list_downloads) shows it.
     pub fn get_download(&self, id: DownloadId) -> Result<DownloadSummary> {
-        Ok(self.lock().entry(id)?.row.clone())
+        Ok(self.lock().entry(id)?.summary())
     }
 
     /// Adds a download from the app itself (paste, Add dialog, command palette) and
@@ -504,7 +504,7 @@ impl Manager {
             });
             self.save(&mut state, id);
             self.reconcile(&mut state);
-            let row = state.entry(id)?.row.clone();
+            let row = state.entry(id)?.summary();
             if let Some(handover) = &new.handover {
                 let action = capture_action(&row);
                 // A started capture is only taken over once the server answers;

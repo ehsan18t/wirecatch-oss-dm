@@ -191,6 +191,26 @@ export function formatLimit(bytesPerSecond: number | null): string {
 }
 
 /** Host name of a URL, or the URL itself if it does not parse. */
+/**
+ * A link as it may be shown or copied: a password in it becomes `***` (`https://ada:***@host/`),
+ * and a user name without a password too, since some sites put a token there. The core already
+ * sends links this way; this keeps the UI safe whatever it is given.
+ */
+export function linkForDisplay(url: string): string {
+  const scheme = url.indexOf('://');
+  if (scheme < 0) return url;
+  const start = scheme + 3;
+  const rest = url.slice(start);
+  const end = rest.search(/[/?#]/);
+  const authority = end < 0 ? rest : rest.slice(0, end);
+  const at = authority.lastIndexOf('@');
+  if (at < 0) return url;
+  const userinfo = authority.slice(0, at);
+  const colon = userinfo.indexOf(':');
+  const masked = colon < 0 ? '***' : `${userinfo.slice(0, colon)}:***`;
+  return `${url.slice(0, start)}${masked}${rest.slice(at)}`;
+}
+
 export function hostOf(url: string): string {
   try {
     return new URL(url).host;

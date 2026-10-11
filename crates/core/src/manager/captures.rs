@@ -108,7 +108,7 @@ impl Manager {
                 let mut state = self.lock();
                 state.handovers.decide(&capture.handover_id, reply.clone());
                 if let Ok(entry) = state.entry(row.id) {
-                    self.emit(UiEvent::Captured(entry.row.clone()));
+                    self.emit(UiEvent::Captured(entry.summary()));
                 }
                 Ok(reply)
             }
@@ -247,7 +247,7 @@ impl Manager {
         self.lock()
             .pending
             .values()
-            .map(|p| p.capture.clone())
+            .map(|p| capture_for_display(&p.capture))
             .collect()
     }
 
@@ -364,7 +364,9 @@ impl Manager {
                 request: capture,
             },
         );
-        self.emit(UiEvent::ConfirmationRequested(proposal));
+        self.emit(UiEvent::ConfirmationRequested(capture_for_display(
+            &proposal,
+        )));
         Ok(reply)
     }
 
@@ -441,6 +443,16 @@ fn direct_category(capture: &NewDownload) -> Option<Category> {
 }
 
 /// The headers that make a captured download work outside the browser.
+/// A capture waiting for an answer as the UI shows it: no password in its
+/// links. The manager keeps the real ones.
+fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
+    PendingCapture {
+        url: crate::redact::url_for_display(&capture.url),
+        page_url: crate::redact::optional_url_for_display(capture.page_url.as_deref()),
+        ..capture.clone()
+    }
+}
+
 pub(super) fn origin_of(capture: &NewDownload) -> Origin {
     Origin {
         user_agent: capture.user_agent.clone(),

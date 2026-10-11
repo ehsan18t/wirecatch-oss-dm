@@ -1089,3 +1089,89 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() {
     assert_eq!(*server.stats.cookies.lock().unwrap(), vec!["session=abc"]);
     assert!(server.stats.authorizations.lock().unwrap().is_empty());
 }
+
+/// A password in a link is never shown: rows, events, captures waiting for an
+/// answer and error messages hide it, while the manager keeps (and stores)
+/// the real link to download with.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_password_in_a_link_is_never_shown() {
+    let server = TestServer::fast(1024).await;
+    server.configure(|c| c.refuse.push(("/locked.bin".into(), 403)));
+    let h = Harness::new().await;
+    let mut ui = h.manager.subscribe();
+    let secret_url = |name: &str| {
+        server
+            .url(name)
+            .replacen("http://", "http://ada:s3cret@", 1)
+    };
+    let row = h.add(&secret_url("locked.bin")).await;
+    assert!(row.url.starts_with("http://ada:***@"), "{}", row.url);
+    let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
+    assert!(!failed.url.contains("s3cret"), "{}", failed.url);
+    assert!(
+        !failed.error.unwrap().message.contains("s3cret"),
+        "the error showed the password"
+    );
+    for listed in h.manager.list_downloads() {
+        assert!(!listed.url.contains("s3cret"), "{}", listed.url);
+    }
+    assert!(
+        !h.manager
+            .get_download(row.id)
+            .unwrap()
+            .url
+            .contains("s3cret")
+    );
+
+    // A capture waiting for an answer shows the hidden form, and downloads the real link.
+    tune(&h.manager, |s| s.extension.ask_before_download = true);
+    let mut asked = capture(secret_url("asked.bin"));
+    asked.page_url = Some("https://ada:pagepass@example.com/page".into());
+    h.manager.add_capture(asked).await.unwrap();
+    let pending = h.manager.pending_confirmations().remove(0);
+    assert!(
+        pending.url.starts_with("http://ada:***@"),
+        "{}",
+        pending.url
+    );
+    assert_eq!(
+        pending.page_url.as_deref(),
+        Some("https://ada:***@example.com/page")
+    );
+    h.manager
+        .confirm_capture(pending.id, CaptureConfirmation::default())
+        .await
+        .unwrap();
+    let confirmed = crate::common::wait_until("the confirmed download", || {
+        h.manager
+            .list_downloads()
+            .into_iter()
+            .find(|r| r.url.ends_with("/asked.bin"))
+    })
+    .await;
+    let done = h.wait_status(confirmed.id, DownloadStatus::Completed).await;
+    assert!(!done.url.contains("s3cret"));
+
+    // Nothing the UI heard had the password in it.
+    while let Ok(event) = ui.try_recv() {
+        let text = serde_json::to_string(&event).unwrap();
+        assert!(
+            !text.contains("s3cret") && !text.contains("pagepass"),
+            "{text}"
+        );
+    }
+    // The manager kept the real link to download with.
+    h.manager.shutdown().await;
+    let db = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    let db = rusqlite::Connection::open(db).unwrap();
+    let stored: String = db
+        .query_row("SELECT url FROM downloads WHERE id = ?1", [row.id.0], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(stored.contains("ada:s3cret@"), "{stored}");
+}

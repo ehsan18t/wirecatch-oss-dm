@@ -342,3 +342,38 @@ describe('21. right-click menu on rows', () => {
     expect(app.selectedRows[0]?.queue).toBe(3);
   });
 });
+
+describe('a password in a link is never shown or copied', () => {
+  it('the detail panel and Copy link use the hidden form', async () => {
+    const { app, backend, click } = await setup({ empty: true });
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const id = await backend.addDownload({
+      url: 'https://ada:s3cret@example.com/files/locked.zip',
+      queue: null,
+      folder: null,
+      file_name: null,
+      start: false,
+    });
+    await settle();
+    app.selectOnly(id);
+    await settle();
+    expect(screen.getByText('https://ada:***@example.com/files/locked.zip')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('s3cret');
+    await click(button('Copy link'));
+    expect(writeText).toHaveBeenLastCalledWith('https://ada:***@example.com/files/locked.zip');
+
+    const selected = screen
+      .getAllByRole('row')
+      .find((r) => r.getAttribute('aria-selected') === 'true');
+    if (!selected) throw new Error('the row is not shown');
+    fireEvent.contextMenu(selected);
+    await settle();
+    await click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Copy link' }));
+    expect(writeText).toHaveBeenLastCalledWith('https://ada:***@example.com/files/locked.zip');
+    expect(writeText.mock.calls.flat().join(' ')).not.toContain('s3cret');
+  });
+});

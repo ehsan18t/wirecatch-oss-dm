@@ -184,7 +184,7 @@ impl Manager {
             .media
             .values()
             .filter_map(|m| match &m.stage {
-                MediaStage::Ready { choice, .. } => Some(choice.clone()),
+                MediaStage::Ready { choice, .. } => Some(choice_for_display(choice)),
                 _ => None,
             })
             .collect()
@@ -464,7 +464,7 @@ impl Manager {
                         plans,
                     };
                 }
-                self.emit(UiEvent::MediaChoiceRequested(choice));
+                self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
                 None
             }
             Err(error) => state.media.remove(&id).map(|pending| (pending, error)),
@@ -614,6 +614,14 @@ impl Manager {
 }
 
 /// Request options carrying the browser's headers for the stream or page.
+/// A quality choice as the UI shows it: no password in the page's link.
+fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
+    MediaChoice {
+        page_url: crate::redact::optional_url_for_display(choice.page_url.as_deref()),
+        ..choice.clone()
+    }
+}
+
 pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.headers = headers::to_map(&origin.headers);
