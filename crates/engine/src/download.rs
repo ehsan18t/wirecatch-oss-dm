@@ -552,13 +552,21 @@ fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
     })
 }
 
+/// Whether a resume file's URL is `url`. Resume files written before
+/// passwords were left out of them still match, so they are continued once
+/// and rewritten without the password straight away.
+fn same_download(saved: &str, url: &str) -> bool {
+    saved == url
+        || Url::parse(saved).is_ok_and(|saved| ftp::without_password(&saved).as_str() == url)
+}
+
 /// Decides where the file goes and whether an earlier run can be continued.
 fn plan_target(dir: &Path, name: &str, url: &str, probe: &Opened) -> Target {
     let preferred = dir.join(name);
     let (part_path, state_path) = naming::part_paths(&preferred);
 
     if let Ok(saved) = ResumeState::load(&state_path)
-        && saved.url == url
+        && same_download(&saved.url, url)
         && !preferred.exists()
     {
         let part_len = std::fs::metadata(&part_path).map(|m| m.len()).ok();

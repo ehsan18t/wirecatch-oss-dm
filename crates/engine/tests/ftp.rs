@@ -182,6 +182,57 @@ async fn resumes_after_cancel_without_downloading_again() {
 }
 
 #[tokio::test]
+async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
+    let data = test_data(8 * MIB);
+    let mut config = serving(&data);
+    config.login = Some(("alice".into(), "s3cret".into()));
+    config.data_bps = Some(2 * MIB as u64);
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("old-state");
+    let url = server.url("ftp", "alice:s3cret@", "pub/file.bin");
+    let pause_after = |bytes: u64| {
+        let cancel = CancellationToken::new();
+        let progress = Arc::new(Progress::default());
+        let seen = progress.clone();
+        cancel_when(&cancel, move || seen.done() >= bytes);
+        (cancel, progress)
+    };
+
+    let (cancel, progress) = pause_after(MIB as u64);
+    let outcome = download(request(&url, &dir, 2), progress, cancel)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+
+    // Make it look like a resume file from before passwords were left out.
+    let state_path = dir.join("file.bin.wcstate");
+    let state = std::fs::read_to_string(&state_path).unwrap();
+    let with_password = state.replace("ftp://alice@", "ftp://alice:s3cret@");
+    assert_ne!(state, with_password);
+    std::fs::write(&state_path, with_password).unwrap();
+
+    // The next run continues it, and the resume file it leaves has no password.
+    let (cancel, progress) = pause_after(3 * MIB as u64);
+    let outcome = download(request(&url, &dir, 2), progress, cancel)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+    assert_eq!(files_in(&dir), ["file.bin.wcpart", "file.bin.wcstate"]);
+    let state = std::fs::read_to_string(&state_path).unwrap();
+    assert!(!state.contains("s3cret"), "the password is gone: {state}");
+
+    server.configure(|c| c.data_bps = None);
+    let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
+    assert!(resumed_from >= 3 * MIB as u64, "kept {resumed_from} bytes");
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    assert_eq!(files_in(&dir), ["file.bin"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn a_changed_file_starts_over_instead_of_resuming() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);
