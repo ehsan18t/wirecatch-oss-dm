@@ -16,7 +16,8 @@ use tracing::warn;
 use wirecatch_engine::{CancellationToken, DownloadOptions, Url};
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    Category, MediaChoice, MediaSelection, MediaSummary, PortablePath, UiEvent, UserError,
+    Category, MediaChoice, MediaSelection, MediaSubtitle, MediaSummary, OutputFormat, PortablePath,
+    UiEvent, UserError,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
 
@@ -27,8 +28,8 @@ use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::addons::MediaTools;
 use crate::error::{CoreError, Result};
-use crate::media::choice::{self, Offer, Plan};
-use crate::media::{self, MediaJob, Pick, StoredMedia, ytdlp};
+use crate::media::choice::{self, Offer, Plan, Resolved};
+use crate::media::{self, MediaJob, Pick, StoredMedia, output, ytdlp};
 use crate::store::Origin;
 use crate::{headers, settings};
 
@@ -94,6 +95,11 @@ pub(super) struct Found {
     pub title: Option<String>,
     pub offers: Vec<Offer>,
     pub video: Option<String>,
+    /// The subtitles a page offers, human-written ones first (D24).
+    pub subtitles: Vec<MediaSubtitle>,
+    /// The page has chapters.
+    pub chapters: bool,
+    pub duration_ms: Option<u64>,
 }
 
 /// Which video a page is, as yt-dlp names it: the extractor and the video's id
@@ -243,15 +249,21 @@ impl Manager {
     /// Returns the new download's id; its row also arrives with the next
     /// `DownloadsChanged`.
     ///
-    /// An option whose video and audio must be joined needs the media add-on;
-    /// without it this fails with [`CoreError::AddonRequired`], tells the UI with
-    /// `AddonRequired`, and keeps the choice so it can be made again.
+    /// The selection may save it in another format, with subtitles and chapters
+    /// (D24); what it asks for must be among what the choice offered. The
+    /// choices are remembered in the settings (separately for videos and for
+    /// audio only), so the next window starts from them.
+    ///
+    /// An option whose video and audio must be joined, or that is converted,
+    /// needs the media add-on; without it this fails with
+    /// [`CoreError::AddonRequired`], tells the UI with `AddonRequired`, and
+    /// keeps the choice so it can be made again.
     pub async fn choose_media(
         &self,
         id: u64,
         selection: MediaSelection,
     ) -> Result<wirecatch_protocol::DownloadId> {
-        let (pending, plan, choice) = {
+        let (pending, plan, choice, resolved) = {
             let mut state = self.lock_open()?;
             let Some(MediaPending {
                 stage: MediaStage::Ready { plans, choice },
@@ -267,7 +279,10 @@ impl Manager {
                         .into(),
                 )
             })?;
-            if plan.needs_ffmpeg && state.addon.tools.is_none() {
+            let resolved = plan
+                .resolve(choice, &selection)
+                .map_err(CoreError::Invalid)?;
+            if resolved.needs_ffmpeg && state.addon.tools.is_none() {
                 let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
                     addon,
@@ -280,18 +295,28 @@ impl Manager {
             let Some(pending) = state.media.remove(&id) else {
                 return Err(CoreError::ConfirmationNotFound(id));
             };
-            (pending, plan, choice)
+            (pending, plan, choice, resolved)
         };
+        let offered_formats = choice
+            .options
+            .iter()
+            .find(|o| o.id == selection.option_id)
+            .is_some_and(|o| o.outputs.len() > 1);
         match self
-            .insert_chosen(&pending, &plan, &choice, selection)
+            .insert_chosen(&pending, &plan, &resolved, &choice, selection.clone())
             .await
         {
             Ok(row) => {
-                let mut state = self.lock();
-                for handover in &pending.handovers {
-                    state.handovers.retarget(handover, Target::Confirmed(row));
+                {
+                    let mut state = self.lock();
+                    for handover in &pending.handovers {
+                        state.handovers.retarget(handover, Target::Confirmed(row));
+                    }
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
+                if offered_formats {
+                    self.remember_media_choice(&choice, &selection, plan.audio_only);
+                }
                 Ok(row)
             }
             Err(e) => {
@@ -491,6 +516,9 @@ impl Manager {
                 title,
                 offers,
                 video,
+                subtitles,
+                chapters,
+                duration_ms,
             }) => {
                 if let Some(video) = &video
                     && self.join_same_video(&mut state, id, video)
@@ -520,6 +548,9 @@ impl Manager {
                     options: offers.iter().map(|(o, _)| o.clone()).collect(),
                     folder: folder.to_string_lossy().into_owned(),
                     queue: pending.queue,
+                    subtitles,
+                    chapters,
+                    duration_ms,
                 };
                 let plans = offers.into_iter().map(|(o, p)| (o.id, p)).collect();
                 if let Some(pending) = state.media.get_mut(&id) {
@@ -552,6 +583,9 @@ impl Manager {
             title: None,
             offers: choice::from_stream(&info, ffmpeg)?,
             video: None,
+            subtitles: Vec::new(),
+            chapters: false,
+            duration_ms: None,
         })
     }
 
@@ -575,6 +609,12 @@ impl Manager {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,
             video: video_key(info.extractor_key.as_deref(), info.id.as_deref()),
+            subtitles: output::subtitles(&info)
+                .into_iter()
+                .map(|(subtitle, _)| subtitle)
+                .collect(),
+            chapters: output::has_chapters(&info.chapters),
+            duration_ms: choice::duration_ms(&info),
         })
     }
 
@@ -626,6 +666,8 @@ impl Manager {
                 format: "bv*+ba/b".into(),
                 video: None,
                 audio: None,
+                output: None,
+                keep_ext: None,
             },
             _ => MediaJob::Stream {
                 video: Pick::Auto,
@@ -680,6 +722,7 @@ impl Manager {
         &self,
         pending: &MediaPending,
         plan: &Plan,
+        resolved: &Resolved,
         choice: &MediaChoice,
         selection: MediaSelection,
     ) -> Result<wirecatch_protocol::DownloadId> {
@@ -687,10 +730,12 @@ impl Manager {
             Some(folder) => self.inner.folders.resolve(&PortablePath(folder))?,
             None => PathBuf::from(&choice.folder),
         };
+        // A typed name keeps its words; the finished file gets the extension
+        // of the format it is in (see `media_run::final_path`).
         let name = selection
             .file_name
             .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| media::file_name(&choice.title, &plan.ext));
+            .unwrap_or_else(|| media::file_name(&choice.title, &resolved.ext));
         let added = self
             .insert(NewEntry {
                 url: pending.source.url.clone(),
@@ -708,7 +753,7 @@ impl Manager {
                         source: pending.source.kind,
                         video_key: pending.video.clone(),
                     },
-                    job: Some(plan.job.clone()),
+                    job: Some(resolved.job.clone()),
                 }),
                 category: Some(if plan.audio_only {
                     Category::Audio
@@ -723,7 +768,80 @@ impl Manager {
     }
 }
 
-/// Request options carrying the browser's headers for the stream or page.
+impl Manager {
+    /// Saves a download whose conversion failed (its error offers
+    /// [`FixAction::KeepOriginal`](wirecatch_protocol::app::FixAction::KeepOriginal))
+    /// as it was downloaded instead (D24): the conversion, subtitles and
+    /// chapters are dropped, and it finishes from the parts already downloaded,
+    /// in their own format.
+    pub fn keep_original(&self, id: wirecatch_protocol::DownloadId) -> Result<()> {
+        {
+            let mut state = self.lock_open()?;
+            let entry = state.entry_mut(id)?;
+            let offered = entry.row.status == wirecatch_protocol::app::DownloadStatus::Failed
+                && entry.row.error.as_ref().and_then(|e| e.fix)
+                    == Some(wirecatch_protocol::app::FixAction::KeepOriginal);
+            let Some(MediaJob::Page {
+                output: output @ Some(_),
+                keep_ext,
+                ..
+            }) = entry.media_job.as_mut().filter(|_| offered)
+            else {
+                return Err(CoreError::WrongState(
+                    "This download is not waiting to be kept as it was downloaded.",
+                ));
+            };
+            *keep_ext = output.take().map(|o| o.original_ext);
+            self.save(&mut state, id);
+        }
+        self.retry(id)
+    }
+
+    /// Keeps what was chosen for a video (or for audio only) as the next
+    /// window's starting point, in the settings (D24).
+    fn remember_media_choice(
+        &self,
+        choice: &MediaChoice,
+        selection: &MediaSelection,
+        audio_only: bool,
+    ) {
+        let Ok(mut state) = self.lock_open() else {
+            return;
+        };
+        let mut new = state.settings.clone();
+        let defaults = if audio_only {
+            &mut new.media.audio
+        } else {
+            &mut new.media.video
+        };
+        defaults.format = selection.output;
+        if !matches!(
+            selection.output,
+            OutputFormat::Original | OutputFormat::Flac | OutputFormat::Wav
+        ) {
+            defaults.audio_kbps = selection.audio_kbps;
+        }
+        if let Some((languages, auto)) =
+            output::remembered_subtitles(&choice.subtitles, &selection.subtitles)
+        {
+            defaults.subtitle_languages = languages;
+            if let Some(auto) = auto {
+                defaults.auto_subtitles = auto;
+            }
+            if !audio_only {
+                defaults.subtitle_files = selection.subtitle_files;
+            }
+        }
+        if choice.chapters {
+            defaults.chapters = selection.chapters;
+        }
+        match settings::validate(new, &state.queue_list(), &self.inner.folders) {
+            Ok(new) => self.apply_settings(&mut state, new),
+            Err(e) => warn!(error = %e, "could not remember the media choices"),
+        }
+    }
+}
+
 /// A quality choice as the UI shows it: no password in the page's link.
 fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
     MediaChoice {
@@ -732,6 +850,7 @@ fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
     }
 }
 
+/// Request options carrying the browser's headers for the stream or page.
 pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.headers = headers::to_map(&origin.headers);

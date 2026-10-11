@@ -25,6 +25,11 @@ fn select(option: &str) -> MediaSelection {
         file_name: None,
         queue: None,
         later: false,
+        output: Default::default(),
+        audio_kbps: None,
+        subtitles: Vec::new(),
+        subtitle_files: false,
+        chapters: false,
     }
 }
 

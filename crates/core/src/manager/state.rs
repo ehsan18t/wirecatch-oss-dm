@@ -185,7 +185,7 @@ impl Gauge {
                 done: p.done(),
                 total: p.total(),
                 connections: p.connections(),
-                processing: false,
+                processing: None,
                 retry_at: None,
             },
             Gauge::Media(m) => m.read(),
@@ -437,6 +437,7 @@ impl Entry {
         self.row.speed = 0;
         self.row.connections = 0;
         self.row.eta_secs = None;
+        self.row.processing = None;
     }
 }
 
@@ -465,6 +466,7 @@ mod tests {
                 completed_at: None,
                 waiting: None,
                 media: None,
+                processing: None,
             },
             position: 1,
             origin: Origin::default(),

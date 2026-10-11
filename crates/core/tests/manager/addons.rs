@@ -896,6 +896,11 @@ async fn the_add_on_is_not_removed_while_in_use() {
                 file_name: None,
                 queue: None,
                 later: false,
+                output: Default::default(),
+                audio_kbps: None,
+                subtitles: Vec::new(),
+                subtitle_files: false,
+                chapters: false,
             },
         )
         .await

@@ -7,6 +7,7 @@ mod ftp;
 mod lifecycle;
 mod limits;
 mod media;
+mod media_output;
 mod media_support;
 mod profile;
 mod protocol;

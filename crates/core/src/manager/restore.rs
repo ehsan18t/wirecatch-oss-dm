@@ -191,6 +191,7 @@ mod tests {
                 completed_at: None,
                 waiting: None,
                 media: None,
+                processing: None,
             },
             position: id * 10,
             origin: Origin::default(),

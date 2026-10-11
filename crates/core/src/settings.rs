@@ -4,7 +4,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AppSettings, Category, CategoryRule, PortablePath, Queue, Theme};
+use wirecatch_protocol::app::{
+    AppSettings, Category, CategoryRule, MediaDefaults, OutputDefaults, OutputFormat, PortablePath,
+    Queue, Theme,
+};
 use wirecatch_protocol::extension::ExtensionSettings;
 
 use crate::error::{CoreError, Result};
@@ -102,6 +105,8 @@ pub fn default_settings() -> AppSettings {
         notify_on_complete: true,
         auto_update_addons: true,
         show_progress_windows: true,
+        // Original: nobody's downloads change until they choose (D24).
+        media: MediaDefaults::default(),
     }
 }
 
@@ -152,7 +157,66 @@ pub(crate) fn validate(
     }
     ext.capture_extensions = clean_extensions(&ext.capture_extensions)?;
     ext.ignored_sites = clean_list(&ext.ignored_sites, normalize_site, &IGNORED_SITES)?;
+    check_media_defaults(&mut settings.media.video, false)?;
+    check_media_defaults(&mut settings.media.audio, true)?;
     Ok(settings)
+}
+
+/// Most subtitle languages remembered for media downloads.
+pub const MAX_SUBTITLE_LANGUAGES: usize = 20;
+const MAX_LANGUAGE_CHARS: usize = 35;
+
+/// Checks the starting choices for media downloads (D24): a format of the
+/// right kind, an audio quality in a sensible range and plain language codes
+/// (lower case, without duplicates).
+fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()> {
+    use OutputFormat as F;
+    let fits = match defaults.format {
+        F::Original => true,
+        F::Mp4 | F::Mkv | F::Webm => !audio,
+        F::Mp3 | F::M4a | F::Opus | F::Flac | F::Wav => audio,
+    };
+    if !fits {
+        return Err(CoreError::Invalid(if audio {
+            "Audio downloads can be saved as Original, MP3, M4A, Opus, FLAC or WAV.".into()
+        } else {
+            "Videos can be saved as Original, MP4, MKV or WebM.".into()
+        }));
+    }
+    if defaults
+        .audio_kbps
+        .is_some_and(|k| !(32..=512).contains(&k))
+    {
+        return Err(CoreError::Invalid(
+            "The audio quality must be between 32 and 512 kbps.".into(),
+        ));
+    }
+    let mut languages: Vec<String> = Vec::new();
+    for language in &defaults.subtitle_languages {
+        let language = language.trim().to_ascii_lowercase();
+        if language.is_empty() {
+            continue;
+        }
+        let plain = language.len() <= MAX_LANGUAGE_CHARS
+            && language
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+        if !plain {
+            return Err(CoreError::Invalid(format!(
+                "\"{language}\" is not a language code. Use codes such as en, fr or pt-BR."
+            )));
+        }
+        if !languages.contains(&language) {
+            languages.push(language);
+        }
+    }
+    if languages.len() > MAX_SUBTITLE_LANGUAGES {
+        return Err(CoreError::Invalid(format!(
+            "At most {MAX_SUBTITLE_LANGUAGES} subtitle languages can be remembered. Remove some."
+        )));
+    }
+    defaults.subtitle_languages = languages;
+    Ok(())
 }
 
 /// Checks that `count` queues are allowed.
@@ -372,6 +436,48 @@ mod tests {
         let settings = default_settings();
         let checked = validate(settings.clone(), &[default_queue()], &folders()).unwrap();
         assert_eq!(checked, settings);
+    }
+
+    /// Media defaults: a format of the right kind, a sane audio quality and
+    /// plain language codes, cleaned up.
+    #[test]
+    fn media_defaults_are_checked_and_cleaned() {
+        let check = |video: OutputFormat, audio: OutputFormat| {
+            let mut s = default_settings();
+            s.media.video.format = video;
+            s.media.audio.format = audio;
+            validate(s, &[default_queue()], &folders())
+        };
+        assert!(check(OutputFormat::Mp4, OutputFormat::Mp3).is_ok());
+        assert!(check(OutputFormat::Original, OutputFormat::Original).is_ok());
+        let wrong = check(OutputFormat::Mp3, OutputFormat::Original).unwrap_err();
+        assert!(wrong.to_string().contains("MP4, MKV or WebM"), "{wrong}");
+        assert!(check(OutputFormat::Original, OutputFormat::Webm).is_err());
+
+        let mut s = default_settings();
+        s.media.video.subtitle_languages =
+            vec!["EN".into(), " en ".into(), "pt-BR".into(), "".into()];
+        s.media.audio.audio_kbps = Some(320);
+        let s = validate(s, &[default_queue()], &folders()).unwrap();
+        assert_eq!(s.media.video.subtitle_languages, ["en", "pt-br"]);
+        for bad in [Some(8), Some(10_000)] {
+            let mut s = default_settings();
+            s.media.audio.audio_kbps = bad;
+            assert!(validate(s, &[default_queue()], &folders()).is_err());
+        }
+        let mut s = default_settings();
+        s.media.video.subtitle_languages = vec!["en; rm -rf".into()];
+        assert!(validate(s, &[default_queue()], &folders()).is_err());
+    }
+
+    /// Settings stored before media defaults existed read as Original.
+    #[test]
+    fn older_settings_start_from_the_original_format() {
+        let mut json = serde_json::to_value(default_settings()).unwrap();
+        json.as_object_mut().unwrap().remove("media");
+        let s: AppSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(s.media, MediaDefaults::default());
+        assert_eq!(s.media.video.format, OutputFormat::Original);
     }
 
     #[test]

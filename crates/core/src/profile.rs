@@ -332,6 +332,28 @@ mod tests {
         assert_eq!(parse(&bytes).unwrap(), profile);
     }
 
+    /// The media defaults travel with the profile (D24), and a profile written
+    /// before they existed reads with the original format, without a new
+    /// format version.
+    #[test]
+    fn media_defaults_are_in_the_profile() {
+        let f = folders();
+        let mut s = default_settings();
+        s.media.video.format = wirecatch_protocol::app::OutputFormat::Mkv;
+        s.media.video.subtitle_languages = vec!["en".into()];
+        s.media.audio.format = wirecatch_protocol::app::OutputFormat::Mp3;
+        s.media.audio.audio_kbps = Some(256);
+        let profile = export(&s, &[default_queue()], &f, 42);
+        let bytes = serde_json::to_vec(&profile).unwrap();
+        assert_eq!(parse(&bytes).unwrap().settings.media, s.media);
+
+        let mut old = serde_json::to_value(&profile).unwrap();
+        old["settings"].as_object_mut().unwrap().remove("media");
+        let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
+        assert_eq!(read.format_version, 1);
+        assert_eq!(read.settings.media, Default::default());
+    }
+
     #[test]
     fn queues_merge_by_name_and_remap_the_extension_queue() {
         let current = vec![default_queue(), queue(2, "Night")];
