@@ -205,11 +205,7 @@ impl Fetcher {
             })));
             Arc::new(FilteringResolver {
                 exempt: url.host_str().map(str::to_string),
-                pinned: start_addrs
-                    .iter()
-                    .copied()
-                    .filter(|ip| is_private(*ip))
-                    .collect(),
+                pinned: pinned_addresses(&start_addrs),
             })
         });
         let clients = (0..options.connections.max(1))
@@ -624,6 +620,19 @@ async fn host_addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
     }
 }
 
+/// Local addresses the starting host may keep using once the guard is on.
+/// Only a host that was entirely local (the user deliberately fetching from
+/// their own network) keeps them; a host that mixed public and local answers
+/// gets none, so a hostile name server cannot slip a local address in beside a
+/// public one.
+fn pinned_addresses(start: &[IpAddr]) -> Vec<IpAddr> {
+    if all_private(start) {
+        start.to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
 /// Whether a host with these addresses is on the local network: it has
 /// addresses and all of them are local. A host that does not resolve counts as
 /// public, which keeps the guard on.
@@ -866,6 +875,16 @@ mod tests {
             .unwrap()
             .collect();
         assert!(!addrs.is_empty() && addrs.iter().all(|a| start.contains(&a.ip())));
+    }
+
+    #[test]
+    fn a_host_mixing_public_and_local_answers_keeps_no_local_address() {
+        let public: IpAddr = "93.184.215.14".parse().unwrap();
+        let local: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(pinned_addresses(&[public, local]).is_empty());
+        assert!(pinned_addresses(&[public]).is_empty());
+        assert!(pinned_addresses(&[]).is_empty());
+        assert_eq!(pinned_addresses(&[local]), vec![local]);
     }
 
     #[tokio::test]
