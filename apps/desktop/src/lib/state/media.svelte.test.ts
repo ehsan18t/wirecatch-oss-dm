@@ -25,7 +25,7 @@ describe('media and add-ons', () => {
     const addon = app.addons?.[0];
     expect(addon?.id).toBe('media');
     expect(addon?.name).toBe('Media add-on');
-    expect(addon?.description).toMatch(/YouTube and about 1,800 other sites/);
+    expect(addon?.description).toMatch(/YouTube \(yt-dlp\)/);
     expect(addon?.size).toBeGreaterThan(0);
     app.dispose();
   });
@@ -48,7 +48,7 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
-  it('downloads the picked quality, joins it, then finishes', async () => {
+  it('installs the add-on for a quality that needs it, then downloads, joins and finishes', async () => {
     const { app, backend } = await make();
     backend.simulateMediaChoice();
     const choice = app.mediaChoices[0];
@@ -62,7 +62,18 @@ describe('media and add-ons', () => {
       queue: null,
     });
     expect(ok).toBe(true);
+    // The add-on installs first; the picker steps aside for its prompt and nothing is lost.
+    expect(app.choiceAwaitingAddon?.id).toBe(choice?.id);
+    expect(app.question?.kind).toBe('addon');
+    expect(app.openMediaChoices).toHaveLength(0);
+    expect(app.addons?.[0]?.state.type).toBe('installing');
+    expect(app.downloads.order).toHaveLength(0);
+    backend.tick(4500);
+    // Installed: the picked quality downloads by itself.
+    await vi.waitFor(() => expect(app.downloads.order).toHaveLength(1));
     expect(app.mediaChoices).toHaveLength(0);
+    expect(app.choiceAwaitingAddon).toBeNull();
+    expect(app.question).toBeNull();
     const id = app.downloads.order[0] ?? 0;
     expect(app.downloads.get(id)?.media?.quality).toBe('4K (2160p)');
 
@@ -78,6 +89,8 @@ describe('media and add-ons', () => {
 
   it('says it is joining, and a stuck join can be paused', async () => {
     const { app, backend } = await make();
+    await app.installAddon('media');
+    backend.tick(4500);
     backend.simulateMediaChoice();
     const choice = app.mediaChoices[0];
     const joined = choice?.options.find((o) => o.needs_ffmpeg);
@@ -98,6 +111,60 @@ describe('media and add-ons', () => {
     await app.togglePause([id]);
     expect(app.downloads.get(id)?.status).toBe('paused');
     expect(app.counts.joining).toBe(0);
+    app.dispose();
+  });
+
+  it('gives the picker back when the add-on is declined, and installs nothing', async () => {
+    const { app, backend } = await make();
+    backend.simulateMediaChoice();
+    const choice = app.mediaChoices[0];
+    const joined = choice?.options.find((o) => o.needs_ffmpeg);
+    // The core asks for the add-on when the window did not know it was missing.
+    app.addons = null;
+    const ok = await app.chooseMedia(choice?.id ?? 0, {
+      option_id: joined?.id ?? '',
+      file_name: null,
+      folder: null,
+      queue: null,
+    });
+    expect(ok).toBe(true);
+    // No error note on top of the prompt: the prompt explains.
+    expect(app.toasts.filter((t) => t.kind === 'error')).toHaveLength(0);
+    expect(app.question?.kind).toBe('addon');
+    app.closeAddonRequest();
+    expect(app.choiceAwaitingAddon).toBeNull();
+    expect(app.question).toEqual({ kind: 'media', choice, waiting: 0 });
+    const [addon] = await backend.listAddons();
+    expect(addon?.state.type).toBe('not_installed');
+    app.dispose();
+  });
+
+  it('closes a question answered elsewhere, and says so only when it was on screen', async () => {
+    const { app, backend } = await make();
+    backend.simulateConfirmation();
+    backend.simulateMediaChoice();
+    expect(app.question?.kind).toBe('capture');
+    const capture = app.pending[0];
+
+    // The capture on screen is answered in another window.
+    backend.simulateAnsweredElsewhere();
+    expect(app.pending).toHaveLength(0);
+    expect(app.toasts.at(-1)?.message).toBe(
+      `${capture?.file_name} was answered in another window, or the browser took it back.`,
+    );
+    // The quality picker is next; answered here, it closes without a note.
+    expect(app.question?.kind).toBe('media');
+    const notes = app.toasts.length;
+    await app.dismissMediaChoice(app.mediaChoices[0]?.id ?? 0);
+    expect(app.question).toBeNull();
+    expect(app.toasts).toHaveLength(notes);
+
+    // One put aside (shown in the sidebar) closes quietly too.
+    backend.simulateMediaChoice();
+    app.hideMediaChoices();
+    backend.simulateAnsweredElsewhere();
+    expect(app.mediaChoices).toHaveLength(0);
+    expect(app.toasts).toHaveLength(notes);
     app.dispose();
   });
 

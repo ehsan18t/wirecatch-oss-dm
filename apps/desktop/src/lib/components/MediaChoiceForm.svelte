@@ -25,7 +25,7 @@
       return 'This quality comes as separate video and audio. Wirecatch joins them into one file when the download finishes.';
     }
     const size = addon?.size ? ` (${formatBytes(addon.size)})` : '';
-    return `This quality comes as separate video and audio. Wirecatch first installs the media add-on${size} to join them into one file.`;
+    return `This quality comes as separate video and audio. Wirecatch first installs the media add-on${size} to join them into one file, then downloads it.`;
   });
 
   async function changeFolder() {
@@ -117,7 +117,9 @@
       >Don't download</button
     >
     <button type="submit" form="media-form" class="btn primary" disabled={busy || !picked}
-      >Download</button
+      >{picked?.needs_ffmpeg && !isInstalled(addon)
+        ? 'Install add-on and download'
+        : 'Download'}</button
     >
   {/snippet}
 </Dialog>

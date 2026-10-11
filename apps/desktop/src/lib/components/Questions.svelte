@@ -1,32 +1,27 @@
 <script lang="ts">
   // Questions the core asks without being asked first, one at a time and never over another
-  // dialog: confirm a browser download, pick a video quality, install an add-on.
+  // dialog: confirm a browser download, install an add-on, pick a video quality. The order
+  // lives in `app.question`. Each form is keyed by its question, so one the core closes (answered
+  // elsewhere, withdrawn by the browser) goes away and the next one opens fresh.
   import { getApp } from '$lib/state/app.svelte';
   import AddonPrompt from './AddonPrompt.svelte';
   import ConfirmCaptureForm from './ConfirmCaptureForm.svelte';
   import MediaChoiceForm from './MediaChoiceForm.svelte';
 
   const app = getApp();
-
-  const capture = $derived(app.dialog === null && !app.pendingHidden ? app.pending[0] : undefined);
-  const media = $derived(
-    app.dialog === null && !capture && !app.mediaHidden ? app.mediaChoices[0] : undefined,
-  );
-  const addon = $derived(
-    app.dialog === null && !capture && !media ? (app.addonRequest ?? undefined) : undefined,
-  );
+  const question = $derived(app.question);
 </script>
 
-{#if capture}
-  {#key capture.id}
-    <ConfirmCaptureForm {capture} waiting={app.pending.length - 1} />
+{#if question?.kind === 'capture'}
+  {#key question.capture.id}
+    <ConfirmCaptureForm capture={question.capture} waiting={question.waiting} />
   {/key}
-{:else if media}
-  {#key media.id}
-    <MediaChoiceForm choice={media} waiting={app.mediaChoices.length - 1} />
+{:else if question?.kind === 'addon'}
+  {#key question.request.url}
+    <AddonPrompt addon={question.request.addon} url={question.request.url} />
   {/key}
-{:else if addon}
-  {#key addon.url}
-    <AddonPrompt addon={addon.addon} url={addon.url} />
+{:else if question?.kind === 'media'}
+  {#key question.choice.id}
+    <MediaChoiceForm choice={question.choice} waiting={question.waiting} />
   {/key}
 {/if}

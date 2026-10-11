@@ -138,6 +138,9 @@ describe('AppState', () => {
     await app.updateSettings((d) => void (d.connections_per_download = 2));
     expect(await app.importSettings()).toMatch(/wirecatch-settings\.json$/);
     expect(app.settings?.connections_per_download).toBe(8);
+    // What changed, as the core reports it, for the import dialog to show.
+    expect(app.lastImport?.queues_updated).toBeGreaterThan(0);
+    expect(app.lastImport?.folders[0]?.setting).toBe('Default folder');
     app.dispose();
   });
 });

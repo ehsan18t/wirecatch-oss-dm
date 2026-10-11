@@ -11,7 +11,7 @@ import {
 describe('add-on wording', () => {
   it('says where the add-on stands in plain words', () => {
     const a = mediaAddon();
-    expect(addonStatus(a)).toBe('Not installed. Download size 96.0 MB.');
+    expect(addonStatus(a)).toBe('Not installed. Download size 138 MB.');
     expect(addonAction(a)).toBe('install');
 
     a.state = { type: 'installing', data: { done: 48 * 1024 * 1024, total: 96 * 1024 * 1024 } };
@@ -28,8 +28,13 @@ describe('add-on wording', () => {
     expect(addonAction(a)).toBe('update');
     expect(isInstalled(a)).toBe(true);
 
-    a.state = { type: 'failed', data: { message: 'The download was interrupted.' } };
-    expect(addonStatus(a)).toBe('Could not install: The download was interrupted.');
+    a.state = {
+      type: 'failed',
+      data: { message: 'Installing the media add-on failed. The download was interrupted.' },
+    };
+    expect(addonStatus(a)).toBe(
+      'Installing the media add-on failed. The download was interrupted.',
+    );
     expect(addonAction(a)).toBe('retry');
   });
 

@@ -40,7 +40,8 @@ export function addonStatus(addon: AddonInfo): string {
         ? `Version ${addon.latest_version} is ready to install.`
         : 'A newer version is ready to install.';
     case 'failed':
-      return `Could not install: ${state.data.message}`;
+      // The core's message already says what failed and why.
+      return state.data.message;
   }
 }
 

@@ -368,14 +368,14 @@ export function buildCommands(app: AppState): Command[] {
     });
   }
 
-  if (app.mediaChoices.length > 0) {
+  if (app.openMediaChoices.length > 0) {
     out.push({
       id: 'media.pick',
       group: 'Downloads',
       title:
-        app.mediaChoices.length === 1
+        app.openMediaChoices.length === 1
           ? 'Pick a quality for the video that is waiting'
-          : `Pick a quality for the ${app.mediaChoices.length} videos that are waiting`,
+          : `Pick a quality for the ${app.openMediaChoices.length} videos that are waiting`,
       keywords: 'media video quality resolution stream pending',
       run: () => app.showMediaChoices(),
     });

@@ -24,7 +24,9 @@
 <Dialog
   title={installed
     ? `${addon.name} is installed`
-    : `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`}
+    : url
+      ? `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`
+      : `This video needs the ${addon.name.toLowerCase()}`}
   onclose={() => app.closeAddonRequest()}
   width={460}
 >

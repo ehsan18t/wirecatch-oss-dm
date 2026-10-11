@@ -19,6 +19,21 @@
   ];
   const excluded = ['Download history', 'Saved site passwords'];
 
+  // What the import changed, as the core reported it.
+  const summary = $derived(app.lastImport);
+  const moved = $derived(summary?.folders.filter((f) => f.used !== f.requested) ?? []);
+  const queuesLine = $derived.by(() => {
+    if (!summary) return '';
+    const plural = (n: number) => (n === 1 ? '1 queue' : `${n} queues`);
+    const parts = [
+      summary.queues_added > 0 ? `added ${plural(summary.queues_added)}` : '',
+      summary.queues_updated > 0 ? `updated ${plural(summary.queues_updated)}` : '',
+    ].filter(Boolean);
+    if (parts.length === 0) return '';
+    const text = parts.join(' and ');
+    return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+  });
+
   async function run() {
     busy = true;
     done = mode === 'export' ? await app.exportSettings() : await app.importSettings();
@@ -42,6 +57,24 @@
         <strong>{done}</strong>
       </span>
     </p>
+    {#if mode === 'import' && summary}
+      {#if queuesLine}
+        <p class="note">{queuesLine}</p>
+      {/if}
+      {#if moved.length > 0}
+        <div class="moved">
+          <h3>Folders changed to fit this computer</h3>
+          <ul>
+            {#each moved as folder (folder.setting)}
+              <li class="folder">
+                <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
+                <span class="was">The file asked for {folder.requested}, which is not here.</span>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    {/if}
   {:else}
     <div class="lists">
       <div>
@@ -118,6 +151,32 @@
     margin: 0;
     line-height: 1.5;
     overflow-wrap: anywhere;
+  }
+
+  .note {
+    margin: 10px 0 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  .moved {
+    margin-top: 14px;
+  }
+
+  li.folder {
+    display: grid;
+    gap: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  li.folder strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .was {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
   }
 
   .done :global(svg) {

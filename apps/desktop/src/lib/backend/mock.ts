@@ -42,13 +42,14 @@ import {
 export function mediaAddon(): AddonInfo {
   return {
     id: 'media',
+    // As the core describes it.
     name: 'Media add-on',
     description:
-      'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
+      'Downloads video and audio from sites such as YouTube (yt-dlp), and joins separate video and audio into one file (ffmpeg).',
     state: { type: 'not_installed' },
     installed_version: null,
-    latest_version: '2026.10.02',
-    size: 96 * 1024 * 1024,
+    latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',
+    size: 138 * 1024 * 1024,
   };
 }
 
@@ -89,6 +90,14 @@ export function isProgramName(name: string): boolean {
   if (dot < 0) return true;
   return !SAFE_TYPES.has(trimmed.slice(dot + 1).toLowerCase());
 }
+
+/** The core's answer for a question that is no longer open. */
+const ALREADY_ANSWERED =
+  'That download was already confirmed or dismissed, or the browser took it back.';
+
+/** The core's answer for a quality that needs the media add-on while it is missing. */
+export const ADDON_REQUIRED =
+  'This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again.';
 
 /** How long the mock spends joining video and audio after a media download. */
 const PROCESSING_MS = 2500;
@@ -165,6 +174,12 @@ export class MockBackend implements Backend {
         keywords: 'simulate addon add-on required youtube yt-dlp',
         run: () => this.simulateAddonRequired(),
       },
+      {
+        id: 'mock.elsewhere',
+        title: 'Pretend the oldest question was answered somewhere else',
+        keywords: 'simulate confirmation closed withdrawn another window',
+        run: () => this.simulateAnsweredElsewhere(),
+      },
     ],
     now: () => this.#now(),
   };
@@ -179,12 +194,12 @@ export class MockBackend implements Backend {
   #addons: AddonInfo[] = [mediaAddon()];
   /** Pages that asked for the media add-on; they continue once it is installed. */
   #waitingForAddon: string[] = [];
-  #nextMediaId = 1;
   #mediaIndex = 0;
   readonly #listeners = new Set<(e: UiEvent) => void>();
   readonly #files = new Map<string, SettingsProfile>();
   #nextId = 1;
   #nextQueueId = 4;
+  /** Confirmations and media choices share one id space, as in the core. */
   #nextPendingId = 1;
   #timer: ReturnType<typeof setInterval> | undefined;
   #captureTimer: ReturnType<typeof setTimeout> | undefined;
@@ -743,10 +758,21 @@ export class MockBackend implements Backend {
         'That file is not a Wirecatch settings file. Choose a file made with Export settings.',
       );
     }
+    const known = new Set(this.#queues.map((q) => q.id));
+    const added = profile.queues.filter((q) => !known.has(q.id)).length;
     this.#settings = structuredClone(profile.settings);
     this.#queues = structuredClone(profile.queues);
     this.#emit({ type: 'settings_changed', data: structuredClone(this.#settings) });
     this.#queuesChanged();
+    const folder = profile.settings.default_folder;
+    this.#emit({
+      type: 'settings_imported',
+      data: {
+        folders: [{ setting: 'Default folder', requested: folder, used: folder, resolved: folder }],
+        queues_added: added,
+        queues_updated: profile.queues.length - added,
+      },
+    });
   }
 
   // ---- Browser captures ----
@@ -757,8 +783,9 @@ export class MockBackend implements Backend {
 
   async confirmCapture(id: number, confirmation: CaptureConfirmation) {
     const p = this.#pending.find((x) => x.id === id);
-    if (!p) throw new BackendError('That download was already answered.');
+    if (!p) throw new BackendError(ALREADY_ANSWERED);
     this.#pending = this.#pending.filter((x) => x.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
     const row = this.#create(p.url, {
       queue: confirmation.queue ?? p.queue,
       folder: confirmation.folder ?? p.folder,
@@ -770,7 +797,21 @@ export class MockBackend implements Backend {
   }
 
   async rejectCapture(id: number) {
+    if (!this.#pending.some((x) => x.id === id)) throw new BackendError(ALREADY_ANSWERED);
     this.#pending = this.#pending.filter((x) => x.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
+  }
+
+  /**
+   * Sample data only: the oldest open question is answered somewhere else (another window, or
+   * the browser took the download back), so the core closes it.
+   */
+  simulateAnsweredElsewhere(): void {
+    const question = this.#pending[0] ?? this.#mediaChoices[0];
+    if (!question) return;
+    this.#pending = this.#pending.filter((x) => x.id !== question.id);
+    this.#mediaChoices = this.#mediaChoices.filter((x) => x.id !== question.id);
+    this.#emit({ type: 'confirmation_closed', data: { id: question.id } });
   }
 
   /** Sample data only: pretends the browser extension handed over a download. */
@@ -822,7 +863,7 @@ export class MockBackend implements Backend {
     if (!sample) return;
     const MB = 1024 * 1024;
     const choice: MediaChoice = {
-      id: this.#nextMediaId++,
+      id: this.#nextPendingId++,
       title: sample.title,
       page_url: page ?? sample.page,
       options: [
@@ -893,10 +934,23 @@ export class MockBackend implements Backend {
 
   async chooseMedia(id: number, selection: MediaSelection) {
     const choice = this.#mediaChoices.find((c) => c.id === id);
-    if (!choice) throw new BackendError('That video was already downloaded or dismissed.');
+    if (!choice) throw new BackendError(ALREADY_ANSWERED);
     const option = choice.options.find((o) => o.id === selection.option_id);
-    if (!option) throw new BackendError('That quality is no longer offered. Pick another one.');
+    if (!option) {
+      throw new BackendError(
+        'That quality is not offered for this video. Choose one of the listed options.',
+      );
+    }
+    const addon = this.#addon('media');
+    const ready = addon.state.type === 'installed' || addon.state.type === 'update_available';
+    if (option.needs_ffmpeg && !ready) {
+      // Like the core: ask for the add-on and keep the choice open.
+      const url = choice.page_url ?? choice.title;
+      this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url } });
+      throw new BackendError(ADDON_REQUIRED);
+    }
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
     const ext = option.audio_only ? 'm4a' : 'mp4';
     const name = selection.file_name?.trim() || `${choice.title}.${ext}`;
     const row = this.#create(choice.page_url ?? choice.title, {
@@ -920,7 +974,9 @@ export class MockBackend implements Backend {
   }
 
   async dismissMediaChoice(id: number) {
+    if (!this.#mediaChoices.some((c) => c.id === id)) throw new BackendError(ALREADY_ANSWERED);
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
   }
 
   #addon(id: string): AddonInfo {

@@ -10,6 +10,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import type { Queue } from '@wirecatch/protocol';
+  import { MEDIA_ADDON } from '$lib/addons';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
   import { CATEGORIES, CATEGORY_LABEL, formatRate, formatSchedule, formatSpeed } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
@@ -91,13 +92,23 @@
       </span>
     </button>
   {/if}
-  {#if app.mediaChoices.length > 0 && app.mediaHidden}
+  {#if app.choiceAwaitingAddon && !app.addonRequest}
+    <button class="pending" onclick={() => app.openSettings('media_addon')}>
+      <Bell size={14} aria-hidden="true" />
+      <span>
+        {app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type === 'failed'
+          ? 'The media add-on did not install. Your video waits for it'
+          : 'Your video downloads once the media add-on is installed'}
+      </span>
+    </button>
+  {/if}
+  {#if app.openMediaChoices.length > 0 && app.mediaHidden}
     <button class="pending" onclick={() => app.showMediaChoices()}>
       <Bell size={14} aria-hidden="true" />
       <span>
-        {app.mediaChoices.length === 1
+        {app.openMediaChoices.length === 1
           ? '1 video waits for you to pick a quality'
-          : `${app.mediaChoices.length} videos wait for you to pick a quality`}
+          : `${app.openMediaChoices.length} videos wait for you to pick a quality`}
       </span>
     </button>
   {/if}
