@@ -3,6 +3,9 @@
  * `webRequest`. Observing only: nothing here can change, delay or block a request.
  */
 
+import { KB } from '@wirecatch/units';
+import { MAX_MEDIA_URL_LENGTH } from './messages';
+
 /** How detected media is delivered (the page kind is never detected from traffic). */
 export type DetectedKind = 'hls' | 'dash' | 'direct';
 
@@ -67,18 +70,22 @@ const AUDIO_EXTENSIONS = new Set([
 const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'sub_frame', 'object']);
 
 /**
- * Longest address kept (8 KiB). Real media addresses are far shorter; longer ones
- * would only fill the session storage the lists are saved to.
- */
-export const MAX_MEDIA_URL_LENGTH = 8 * 1024;
-
-/**
  * Direct video and audio files whose known size is below this (100 KiB) are not listed.
  * Pages play short interface sounds as media (YouTube's voice search sounds `open.mp3`,
  * `success.mp3`, `failure.mp3` and `no_input.mp3` are about 6 KB each); nobody wants to
  * download those, and real recordings are far larger. Files of unknown size are kept.
  */
-export const MIN_DIRECT_MEDIA_BYTES = 100 * 1024;
+export const MIN_DIRECT_MEDIA_BYTES = 100 * KB;
+
+/** HTTP 206: the answer holds part of the file, and `Content-Range` says its total size. */
+const HTTP_PARTIAL_CONTENT = 206;
+
+/** The 2xx status codes: the request succeeded. */
+const HTTP_SUCCESS = { from: 200, below: 300 };
+
+function isSuccess(status: number): boolean {
+  return status >= HTTP_SUCCESS.from && status < HTTP_SUCCESS.below;
+}
 
 /** Longest media type kept; RFC 6838 allows 127 characters for each half. */
 const MAX_MIME_LENGTH = 255;
@@ -131,7 +138,7 @@ function mimeOf(response: ObservedResponse): string | null {
 
 /** Total size: the part after the slash in `Content-Range` for 206 answers, `Content-Length` for 200. */
 function sizeOf(response: ObservedResponse): number | null {
-  if (response.statusCode === 206) {
+  if (response.statusCode === HTTP_PARTIAL_CONTENT) {
     const range = header(response, 'content-range');
     const total = range === null ? null : /\/(\d+)\s*$/.exec(range)?.[1];
     return total == null ? null : Number(total);
@@ -153,8 +160,7 @@ export function isNavigation(response: ObservedResponse): boolean {
   return (
     response.type === 'main_frame' &&
     response.tabId >= 0 &&
-    response.statusCode >= 200 &&
-    response.statusCode < 300 &&
+    isSuccess(response.statusCode) &&
     !isAttachment(response)
   );
 }
@@ -173,7 +179,7 @@ export function isNavigation(response: ObservedResponse): boolean {
 export function classifyResponse(response: ObservedResponse): Detection | null {
   if (response.tabId < 0) return null;
   if (response.documentLifecycle === 'prerender') return null;
-  if (response.statusCode < 200 || response.statusCode >= 300) return null;
+  if (!isSuccess(response.statusCode)) return null;
   if (!isWebUrl(response.url)) return null;
   if (response.url.length > MAX_MEDIA_URL_LENGTH) return null;
   if (isAttachment(response)) return null;

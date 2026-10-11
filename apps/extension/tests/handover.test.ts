@@ -72,9 +72,7 @@ async function setup(options: Options = {}): Promise<Setup> {
     userAgent: 'TestBrowser/1.0',
     inFlight,
     newHandoverId: () => `h${String((next += 1))}`,
-    connectWaitMs: 3_000,
-    requestTimeoutMs: 5_000,
-    withdrawTimeoutMs: 3_000,
+    timing: { connectWaitMs: 3_000, requestTimeoutMs: 5_000, withdrawTimeoutMs: 3_000 },
   });
   const started = hub.start();
   if (options.start !== false) {

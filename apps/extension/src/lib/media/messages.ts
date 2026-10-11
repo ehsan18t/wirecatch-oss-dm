@@ -35,8 +35,12 @@ export const MEDIA_BUTTON_KEY = 'wirecatch.mediaButton.v1';
 export function mediaButtonOn(stored: unknown): boolean {
   return stored !== false;
 }
-/** Longest address sent from a page; longer ones are not media worth handing over. */
-export const MAX_SRC_LENGTH = 8192;
+/**
+ * Longest media address handled (8 KiB), whether a page sends it or it is seen on the
+ * network. Real media addresses are far shorter; longer ones are not worth handing
+ * over and would only fill the session storage the lists are saved to.
+ */
+export const MAX_MEDIA_URL_LENGTH = 8 * 1024;
 /** Longest title sent from a page. */
 export const MAX_TITLE_LENGTH = 1024;
 export const MEDIA_DOWNLOAD = 'wirecatch:media-download';
@@ -74,9 +78,9 @@ export interface DownloadAnswer {
   message: string;
 }
 
-/** An http(s) address no longer than `MAX_SRC_LENGTH`: the only sources worth sending. */
+/** An http(s) address no longer than `MAX_MEDIA_URL_LENGTH`: the only sources worth sending. */
 export function isWebSrc(src: string): boolean {
-  return src.length <= MAX_SRC_LENGTH && /^https?:\/\//i.test(src);
+  return src.length <= MAX_MEDIA_URL_LENGTH && /^https?:\/\//i.test(src);
 }
 
 /** The frame's address as the content script sends it: null unless it is a short web address. */

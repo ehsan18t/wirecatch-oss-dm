@@ -4,10 +4,10 @@ import {
   classifyUrl,
   isNavigation,
   isWebUrl,
-  MAX_MEDIA_URL_LENGTH,
   MIN_DIRECT_MEDIA_BYTES,
   type ObservedResponse,
 } from '../src/lib/media/detect';
+import { MAX_MEDIA_URL_LENGTH } from '../src/lib/media/messages';
 import { pageSiteFor } from '../src/lib/media/page-sites';
 import {
   HLS_STREAM_WINDOW_MS,

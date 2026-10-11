@@ -1,6 +1,11 @@
 import { UNKNOWN_REQUEST_ID, type Event, type Hello } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_MESSAGE_BYTES, NativeClient, RequestError } from '../src/lib/native/client';
+import {
+  MAX_MESSAGE_BYTES,
+  NativeClient,
+  RequestError,
+  type Backoff,
+} from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
 import { patchOf } from '../src/lib/protocol';
 import { FakeApp, flush } from './fakes';
@@ -12,7 +17,7 @@ const HELLO: Omit<Hello, 'start_app'> = {
   browser: { name: 'chrome', version: '141' },
 };
 
-function makeClient(app: FakeApp, backoffMs: number[] = [1_000, 2_000, 4_000]): NativeClient {
+function makeClient(app: FakeApp, backoffMs: Backoff = [1_000, 2_000, 4_000]): NativeClient {
   return new NativeClient({
     transport: app,
     hello: () => Promise.resolve(HELLO),

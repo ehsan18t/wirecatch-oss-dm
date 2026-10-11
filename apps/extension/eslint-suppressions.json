@@ -30,9 +30,6 @@
   "src/lib/cookies.ts": {
     "eqeqeq": {
       "count": 3
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 4
     }
   },
   "src/lib/hub.ts": {
@@ -41,9 +38,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 3
     }
   },
   "src/lib/media/button.ts": {
@@ -58,14 +52,6 @@
     },
     "no-param-reassign": {
       "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 7
-    }
-  },
-  "src/lib/media/center.ts": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
     }
   },
   "src/lib/media/detect.ts": {
@@ -74,9 +60,6 @@
     },
     "eqeqeq": {
       "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 5
     }
   },
   "src/lib/media/messages.ts": {
@@ -92,9 +75,6 @@
   "src/lib/media/registry.ts": {
     "complexity": {
       "count": 3
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
     }
   },
   "src/lib/messages.ts": {
@@ -105,9 +85,6 @@
   "src/lib/native/client.ts": {
     "complexity": {
       "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
     }
   },
   "src/lib/referrer.ts": {

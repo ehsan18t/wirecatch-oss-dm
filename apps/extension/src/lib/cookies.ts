@@ -105,14 +105,23 @@ export function registrableDomain(host: string): string {
   if (h.startsWith('[') || /^\d+(\.\d+){3}$/.test(h)) return h;
   const labels = h.split('.');
   if (labels.length <= 2) return h;
-  const lastTwo = labels.slice(-2).join('.');
-  const lastThree = labels.slice(-3).join('.');
-  let suffixLength = 1;
-  if (SHARED_SUFFIXES.has(lastThree)) suffixLength = 3;
-  else if (SHARED_SUFFIXES.has(lastTwo)) suffixLength = 2;
-  else if ((labels.at(-1)?.length ?? 0) === 2 && COUNTRY_SECOND_LEVELS.has(labels.at(-2) ?? ''))
-    suffixLength = 2;
-  return labels.slice(-(suffixLength + 1)).join('.');
+  return labels.slice(-(suffixLabels(labels) + 1)).join('.');
+}
+
+/** Labels in the longest of `SHARED_SUFFIXES`. */
+const MAX_SHARED_SUFFIX_LABELS = Math.max(...[...SHARED_SUFFIXES].map((s) => s.split('.').length));
+
+/** Country code top-level domains have two letters (`uk`, `au`). */
+const COUNTRY_CODE_LENGTH = 2;
+
+/** How many of the host's last labels are its public suffix (`co.uk` is two, `com` is one). */
+function suffixLabels(labels: readonly string[]): number {
+  for (let n = Math.min(MAX_SHARED_SUFFIX_LABELS, labels.length); n > 1; n -= 1) {
+    if (SHARED_SUFFIXES.has(labels.slice(-n).join('.'))) return n;
+  }
+  const top = labels[labels.length - 1] ?? '';
+  const second = labels[labels.length - 2] ?? '';
+  return top.length === COUNTRY_CODE_LENGTH && COUNTRY_SECOND_LEVELS.has(second) ? 2 : 1;
 }
 
 /** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */

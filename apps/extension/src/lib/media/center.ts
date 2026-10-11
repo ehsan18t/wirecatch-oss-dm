@@ -91,8 +91,12 @@ export interface MediaCenterDeps {
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
   liveTabs?(): Promise<{ id: number; url: string | null }[]>;
+  /** How long changes are gathered before the lists are saved; `SAVE_DELAY_MS` when missing. */
   saveDelayMs?: number;
 }
+
+/** How long changes are gathered before the lists are saved, so a burst of detections is written once. */
+const SAVE_DELAY_MS = 250;
 
 export const PRIVATE_WINDOW = 'Wirecatch does not take media from private windows.';
 export const IGNORED_SITE =
@@ -344,6 +348,6 @@ export class MediaCenter {
       store.save(this.#deps.registry.save()).catch(() => {
         // Session storage unavailable: the lists then last as long as this background script.
       });
-    }, this.#deps.saveDelayMs ?? 250);
+    }, this.#deps.saveDelayMs ?? SAVE_DELAY_MS);
   }
 }

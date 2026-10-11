@@ -81,12 +81,8 @@ export interface HubDeps {
   newHandoverId?: () => string;
   badge?: Badge;
   now?: () => number;
-  /** How long a paused download waits for the app to connect before it resumes in the browser. */
-  connectWaitMs?: number;
-  /** How long to wait for the app to answer a call. */
-  requestTimeoutMs?: number;
-  /** How long to wait for the answer to `withdraw_download`. */
-  withdrawTimeoutMs?: number;
+  /** How long to wait for the app; each value missing here is taken from `DEFAULT_TIMING`. */
+  timing?: Partial<HubTiming>;
   /** Publishes the "Show download button on videos" setting where content scripts read it (`MEDIA_BUTTON_KEY`). */
   mediaButtonSetting?: { save(on: boolean): Promise<void> };
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
@@ -129,8 +125,26 @@ const CAPTURE_EVERYTHING: ExtensionSettings = {
 /** How many handover ids are remembered for spotting late answers. */
 const RECENT_LIMIT = 50;
 
-/** How long a call waits for the app's answer unless `requestTimeoutMs` says otherwise. */
-const REQUEST_TIMEOUT_MS = 10_000;
+/** How long the hub waits for the app. */
+export interface HubTiming {
+  /** How long a paused download, or media about to be sent, waits for the app to connect. */
+  connectWaitMs: number;
+  /** How long a call waits for the app's answer. */
+  requestTimeoutMs: number;
+  /** How long to wait for the answer to `withdraw_download`. */
+  withdrawTimeoutMs: number;
+}
+
+/**
+ * The waits used unless `HubDeps.timing` says otherwise. A paused download waits less
+ * than a call does, so the browser resumes it soon when the app cannot be reached; a
+ * withdraw only runs after a call already took too long, so it waits the least.
+ */
+const DEFAULT_TIMING: HubTiming = {
+  connectWaitMs: 6_000,
+  requestTimeoutMs: 10_000,
+  withdrawTimeoutMs: 3_000,
+};
 
 const NO_SITE_ACCESS =
   'Wirecatch needs access to websites to take downloads with their cookies. Open this popup and click Allow access.';
@@ -163,6 +177,7 @@ function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
 export class Hub {
   readonly #deps: HubDeps;
   readonly #now: () => number;
+  readonly #timing: HubTiming;
   readonly #popups = new Set<Channel<BackgroundMessage, unknown>>();
   /** Browser downloads being handed over right now (persisted through `deps.inFlight`). */
   readonly #inFlight = new Set<number>();
@@ -180,6 +195,7 @@ export class Hub {
   constructor(deps: HubDeps) {
     this.#deps = deps;
     this.#now = deps.now ?? Date.now;
+    this.#timing = { ...DEFAULT_TIMING, ...deps.timing };
     this.#ready = new Promise((resolve) => {
       this.#markReady = resolve;
     });
@@ -414,7 +430,7 @@ export class Hub {
       try {
         const reply = await this.#client.request(
           { method: 'get_extension_settings' },
-          this.#deps.connectWaitMs ?? 6_000,
+          this.#timing.connectWaitMs,
         );
         if (reply.type === 'extension_settings') this.#adoptSettings(reply.data);
       } catch {
@@ -499,7 +515,7 @@ export class Hub {
   async #addDownload(download: NewDownload): Promise<AddedDownload> {
     const reply = await this.#client.request(
       { method: 'add_download', params: download },
-      this.#requestTimeout(),
+      this.#timing.requestTimeoutMs,
     );
     if (reply.type !== 'download_added') {
       throw new Error('Wirecatch gave an unexpected answer.');
@@ -510,7 +526,7 @@ export class Hub {
   async #withdraw(handoverId: string): Promise<WithdrawOutcome> {
     const reply = await this.#client.request(
       { method: 'withdraw_download', params: { handover_id: handoverId } },
-      this.#deps.withdrawTimeoutMs ?? 3_000,
+      this.#timing.withdrawTimeoutMs,
     );
     if (reply.type !== 'withdrawn') throw new Error('Wirecatch gave an unexpected answer.');
     return reply.data;
@@ -528,7 +544,7 @@ export class Hub {
     try {
       const reply = await this.#client.request(
         { method: 'get_extension_settings' },
-        this.#deps.connectWaitMs ?? 6_000,
+        this.#timing.connectWaitMs,
       );
       if (reply.type === 'extension_settings') {
         this.#adoptSettings(reply.data);
@@ -578,7 +594,7 @@ export class Hub {
         return;
       case 'open_app':
         // Sent even when the app is closed: a request starts it, and the app then shows its window.
-        await this.#client.request({ method: 'show_window' }, this.#requestTimeout());
+        await this.#client.request({ method: 'show_window' }, this.#timing.requestTimeoutMs);
         return;
       case 'dismiss_notice':
         this.#setNotice(null);
@@ -610,11 +626,7 @@ export class Hub {
     if (this.#client.status.state !== 'connected') {
       throw new Error('Wirecatch is not connected, so this cannot be done right now.');
     }
-    return this.#client.request(call, this.#requestTimeout());
-  }
-
-  #requestTimeout(): number {
-    return this.#deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    return this.#client.request(call, this.#timing.requestTimeoutMs);
   }
 
   #onStatus(status: ConnectionStatus): void {
@@ -640,7 +652,7 @@ export class Hub {
 
   async #refresh(): Promise<void> {
     try {
-      const timeout = this.#requestTimeout();
+      const timeout = this.#timing.requestTimeoutMs;
       const [settings, queues] = await Promise.all([
         this.#client.request({ method: 'get_extension_settings' }, timeout),
         this.#client.request({ method: 'list_queues' }, timeout),

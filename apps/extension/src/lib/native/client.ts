@@ -36,9 +36,10 @@ export interface ClientOptions {
   transport: NativeTransport;
   /** Builds the `hello` call sent first on every connection; the client adds whether the app may be started. */
   hello: () => Promise<Omit<Hello, 'start_app'>>;
+  /** How long to wait for the answer to `hello`; `HELLO_TIMEOUT_MS` when missing. */
   helloTimeoutMs?: number;
   /** Delays between reconnection attempts; the last one repeats. */
-  backoffMs?: readonly number[];
+  backoffMs?: Backoff;
   now?: () => number;
 }
 
@@ -70,7 +71,14 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-const DEFAULT_BACKOFF = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000] as const;
+/** Delays between reconnection attempts, in milliseconds; never empty, so there is always one to repeat. */
+export type Backoff = readonly [number, ...number[]];
+
+/** Retries come quickly at first (the app may be starting) and then settle at one every 30 seconds. */
+const DEFAULT_BACKOFF: Backoff = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+
+/** How long the first answer, to `hello`, may take: the bridge may have to start the app first. */
+const HELLO_TIMEOUT_MS = 10_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -88,6 +96,12 @@ function asMessage(raw: unknown): Message | null {
     return raw as Message;
   }
   return null;
+}
+
+/** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
+function backoffDelay(backoff: Backoff, attempt: number): number {
+  const [first, ...rest] = backoff;
+  return attempt === 0 ? first : (rest[Math.min(attempt, rest.length) - 1] ?? first);
 }
 
 const encoder = new TextEncoder();
@@ -147,7 +161,7 @@ function helloProblem(reply: Reply): Problem | null {
  */
 export class NativeClient {
   readonly #options: ClientOptions;
-  readonly #backoff: readonly number[];
+  readonly #backoff: Backoff;
   readonly #now: () => number;
   #status: ConnectionStatus = { state: 'connecting' };
   #port: NativePort | null = null;
@@ -299,7 +313,7 @@ export class NativeClient {
       if (generation !== this.#generation) return;
       reply = await this.#send(
         { method: 'hello', params: hello },
-        this.#options.helloTimeoutMs ?? 10_000,
+        this.#options.helloTimeoutMs ?? HELLO_TIMEOUT_MS,
       );
     } catch (error) {
       if (generation !== this.#generation) return;
@@ -409,7 +423,7 @@ export class NativeClient {
       this.#setStatus({ state: 'unavailable', problem, retryAt: null });
       return;
     }
-    const delay = this.#backoff[Math.min(this.#attempt, this.#backoff.length - 1)] ?? 30_000;
+    const delay = backoffDelay(this.#backoff, this.#attempt);
     this.#attempt += 1;
     this.#retryTimer = setTimeout(() => {
       this.#retryTimer = null;

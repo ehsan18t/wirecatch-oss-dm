@@ -34,6 +34,16 @@ export const MIN_VIDEO = { width: 160, height: 90 };
 const INSET = 8;
 /** Height kept clear above a video's native controls. */
 const CONTROLS_SPACE = 48;
+/** Space between an audio player and the button above or below it. */
+const AUDIO_GAP = 4;
+/** The button's height, set by `.b` in `SHADOW_CSS`. */
+const BUTTON_HEIGHT = 32;
+/** About the button's width with its label, used to place it before it can be measured. */
+const TYPICAL_BUTTON_WIDTH = 112;
+/** A focused container stands for the media inside it when it is at most this much larger. */
+const PLAYER_AREA_RATIO = 1.5;
+/** Added to the wait for the button to fade, so the timer fires just after that moment, not before. */
+const WAKE_SLACK_MS = 20;
 /** How long the button stays fully visible after the last pointer movement or play. */
 export const ACTIVE_MS = 3000;
 /** A "nothing to download" answer is asked again after this long (media may show up once playback starts). */
@@ -66,8 +76,8 @@ export function placeButton(
   let top: number;
   let left: number;
   if (kind.audio) {
-    top = target.top - size.height - 4;
-    if (top < 0) top = target.bottom + 4;
+    top = target.top - size.height - AUDIO_GAP;
+    if (top < 0) top = target.bottom + AUDIO_GAP;
     left = target.right - size.width;
   } else {
     top = Math.max(target.top, 0) + INSET;
@@ -174,7 +184,7 @@ const HOST_RULES = [
 export const SHADOW_CSS = `
 :host{${HOST_RULES}}
 .w{all:initial;position:relative;display:block;pointer-events:none}
-.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s;pointer-events:auto}
+.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:${String(BUTTON_HEIGHT)}px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s;pointer-events:auto}
 .b:hover{background:#1d4ed8}
 .b:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 5px #1d4ed8}
 .b[aria-busy=true]{cursor:progress}
@@ -339,7 +349,9 @@ export class MediaButton {
     if (this.#state !== 'shown' && this.#state !== 'idle') {
       const view = this.#doc.defaultView;
       const parent = this.#doc.fullscreenElement ?? this.#doc.documentElement;
-      this.#position({ top: 8, left: Math.max(0, (view?.innerWidth ?? 0) - 128) });
+      // Where the button would sit over a video filling the window.
+      const left = (view?.innerWidth ?? 0) - TYPICAL_BUTTON_WIDTH - 2 * INSET;
+      this.#position({ top: INSET, left: Math.max(0, left) });
       if (this.host.parentNode !== parent) parent.append(this.host);
       this.#wrap.classList.add('msg');
       this.#state = 'message';
@@ -483,7 +495,7 @@ export class MediaButton {
     for (const el of this.#tracked) {
       if (!usable(el) || !containsDeep(target, el)) continue;
       const r = el.getBoundingClientRect();
-      if (box.width * box.height <= 1.5 * r.width * r.height) return el;
+      if (box.width * box.height <= PLAYER_AREA_RATIO * r.width * r.height) return el;
     }
     return null;
   }
@@ -603,7 +615,7 @@ export class MediaButton {
         this.#timer = null;
         this.#update();
       },
-      Math.max(0, at - this.#now()) + 20,
+      Math.max(0, at - this.#now()) + WAKE_SLACK_MS,
     );
   }
 
@@ -625,7 +637,10 @@ export class MediaButton {
         { audio: el.tagName === 'AUDIO', controls: el.controls },
         { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
         // Measured once the button is in the page; a typical size until then.
-        { width: this.button.offsetWidth || 112, height: this.button.offsetHeight || 32 },
+        {
+          width: this.button.offsetWidth || TYPICAL_BUTTON_WIDTH,
+          height: this.button.offsetHeight || BUTTON_HEIGHT,
+        },
       );
     };
     let position = state === 'none' || target === null ? null : place(target);

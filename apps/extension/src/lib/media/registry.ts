@@ -1,4 +1,5 @@
-import { MAX_MEDIA_URL_LENGTH, type DetectedKind, type Detection } from './detect';
+import type { DetectedKind, Detection } from './detect';
+import { MAX_MEDIA_URL_LENGTH } from './messages';
 
 /** Media detected in a tab, in the order it was first seen. */
 export interface MediaItem extends Detection {
@@ -37,6 +38,12 @@ export const MAX_ITEMS_PER_TAB = 30;
  */
 export const MAX_SAVED_CHARS = 1024 * 1024;
 
+/** Room for the kind a key puts before its address (`direct:`), with some to spare. */
+const KEY_PREFIX_ROOM = 16;
+
+/** Characters a saved item adds besides its own JSON: its comma and its tab's share of the wrapping. */
+const SAVED_ITEM_OVERHEAD = 16;
+
 function parts(url: string): { origin: string; path: string } | null {
   try {
     const u = new URL(url);
@@ -71,7 +78,7 @@ function isItem(value: unknown): value is SavedItem {
     typeof i.url === 'string' &&
     i.url.length <= MAX_MEDIA_URL_LENGTH &&
     typeof i.key === 'string' &&
-    i.key.length <= MAX_MEDIA_URL_LENGTH + 16 &&
+    i.key.length <= MAX_MEDIA_URL_LENGTH + KEY_PREFIX_ROOM &&
     typeof i.seenAt === 'number' &&
     typeof i.audio === 'boolean' &&
     (i.mime === null || typeof i.mime === 'string') &&
@@ -197,8 +204,7 @@ export class MediaRegistry {
       for (let i = items.length - 1; i >= 0 && budget > 0; i -= 1) {
         const item = items[i];
         if (item === undefined) continue;
-        // The item, its comma, and its tab's share of the wrapping.
-        const size = JSON.stringify(item).length + 16;
+        const size = JSON.stringify(item).length + SAVED_ITEM_OVERHEAD;
         if (size > budget) {
           budget = 0;
           break;

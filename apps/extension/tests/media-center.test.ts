@@ -16,7 +16,7 @@ import {
 import { chooseTarget, describeTarget, type ButtonContext } from '../src/lib/media/choose';
 import type { Detection } from '../src/lib/media/detect';
 import {
-  MAX_SRC_LENGTH,
+  MAX_MEDIA_URL_LENGTH,
   MAX_TITLE_LENGTH,
   MEDIA_CHECK,
   MEDIA_DOWNLOAD,
@@ -290,9 +290,7 @@ async function setup(
         return Promise.resolve();
       },
     },
-    requestTimeoutMs: 60,
-    withdrawTimeoutMs: 60,
-    connectWaitMs: 60,
+    timing: { requestTimeoutMs: 60, withdrawTimeoutMs: 60, connectWaitMs: 60 },
   });
   await center.start();
   if (options.connect !== false) {
@@ -343,7 +341,7 @@ describe('media button messages', () => {
       'blob:https://example.com/1',
       'data:video/mp4;base64,AAAA',
       'javascript:alert(1)',
-      `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`,
+      `https://e.com/${'a'.repeat(MAX_MEDIA_URL_LENGTH)}`,
     ]) {
       expect(
         center.handleContentMessage({ type: MEDIA_CHECK, src, audio: false }, sender),
@@ -719,7 +717,7 @@ describe('the address the frame shows now (single-page sites)', () => {
     for (const location of [
       5,
       'javascript:alert(1)',
-      `https://e.com/${'a'.repeat(MAX_SRC_LENGTH)}`,
+      `https://e.com/${'a'.repeat(MAX_MEDIA_URL_LENGTH)}`,
     ]) {
       expect(
         center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false, location }, top),

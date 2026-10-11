@@ -81,9 +81,7 @@ async function openPopup(
     hasSiteAccess: () => Promise.resolve(true),
     userAgent: null,
     media,
-    connectWaitMs: 50,
-    requestTimeoutMs: 50,
-    withdrawTimeoutMs: 50,
+    timing: { connectWaitMs: 50, requestTimeoutMs: 50, withdrawTimeoutMs: 50 },
   });
   await hub.start();
   await flush();
