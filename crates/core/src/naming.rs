@@ -53,11 +53,18 @@ pub(crate) fn settled_name(
         .map_or_else(|| GENERIC_NAME.to_string(), |name| naming::sanitize(&name));
     let server_named_it = suggested != from_link && suggested != GENERIC_NAME;
     let name = match choice.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(chosen) => chosen,
+        // The user can choose again, so their name is refused rather than changed.
+        Some(chosen) => return checked(naming::sanitize(chosen)),
         None if server_named_it || provisional.is_empty() => suggested,
         None => provisional,
     };
-    checked(naming::sanitize(name))
+    // A server cannot be asked for another name: change it instead, or the
+    // download would fail on every try.
+    let mut name = naming::sanitize(name);
+    while checked(name.clone()).is_err() {
+        name.push('_');
+    }
+    Ok(name)
 }
 
 /// The engine's name for a file when neither the server nor the link offers one.
@@ -91,19 +98,23 @@ fn checked(name: String) -> Result<String> {
 /// (no file, part file or resume file) and not claimed by another download.
 /// Touches the file system, so call it off async threads.
 pub(crate) fn unique_path(dir: &Path, name: &str, claimed: &Claimed) -> PathBuf {
-    let (stem, ext) = split_ext(name);
-    let mut n = 0u64;
+    let mut n = 0;
     loop {
-        let candidate = if n == 0 {
-            dir.join(name)
-        } else {
-            dir.join(format!("{stem} ({n}){ext}"))
-        };
+        let candidate = candidate(dir, name, n);
         if !claimed.contains(&candidate) && is_free_on_disk(&candidate) {
             return candidate;
         }
         n += 1;
     }
+}
+
+/// The `n`th name tried for `name` in `dir`: `name` itself, then `name (1)`...
+pub(crate) fn candidate(dir: &Path, name: &str, n: u64) -> PathBuf {
+    if n == 0 {
+        return dir.join(name);
+    }
+    let (stem, ext) = split_ext(name);
+    dir.join(format!("{stem} ({n}){ext}"))
 }
 
 /// The part and resume files the engine keeps next to `path` while downloading.
@@ -124,7 +135,32 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
         .map(|m| m.len())
 }
 
-fn is_free_on_disk(path: &Path) -> bool {
+/// Whether the only things at `path` are a part file and a resume file that a
+/// download of `url` left there, with no finished file: what a run leaves when the
+/// app stops right after the server answered, before the chosen path was saved.
+/// The download may take that path again and continue. Touches the file system.
+pub(crate) fn left_by(path: &Path, url: &str) -> bool {
+    let [part, state] = partial_files(path);
+    if path.exists() || !part.is_file() {
+        return false;
+    }
+    // The resume file is small JSON that names the link it was made for.
+    let Ok(json) = std::fs::read(&state) else {
+        return false;
+    };
+    let saved = serde_json::from_slice::<serde_json::Value>(&json)
+        .ok()
+        .and_then(|v| v.get("url")?.as_str().map(normalized_url));
+    saved.is_some_and(|saved| saved == normalized_url(url))
+}
+
+fn normalized_url(url: &str) -> String {
+    Url::parse(url).map_or_else(|_| url.to_string(), |u| u.to_string())
+}
+
+/// Whether nothing is at `path`: no file, part file or resume file. Touches the
+/// file system.
+pub(crate) fn is_free_on_disk(path: &Path) -> bool {
     !path.exists() && partial_files(path).iter().all(|p| !p.exists())
 }
 
@@ -134,6 +170,11 @@ fn split_ext(name: &str) -> (&str, &str) {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
         _ => (name, ""),
     }
+}
+
+/// Whether `a` and `b` name the same file, compared the way claims are.
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
+    key(a) == key(b)
 }
 
 /// Windows file names are case-insensitive; Linux ones are not.
@@ -175,6 +216,20 @@ mod tests {
         assert!(settle(Some("x.wcpart"), "server.pdf").is_err());
     }
 
+    /// The user can pick another name; a server cannot be asked to. Its name is
+    /// changed instead of failing the download on every try.
+    #[test]
+    fn a_server_name_like_the_engines_own_files_is_changed() {
+        let link = Url::parse("https://example.com/get?id=7").unwrap();
+        for (server, kept) in [
+            ("movie.mkv.wcpart", "movie.mkv.wcpart_"),
+            ("state.WCSTATE", "state.WCSTATE_"),
+        ] {
+            assert_eq!(settled_name(None, server, &link, "").unwrap(), kept);
+            assert_eq!(settled_name(None, server, &link, "a.pdf").unwrap(), kept);
+        }
+    }
+
     #[test]
     fn names_of_the_engines_own_files_are_refused() {
         let url = Url::parse("https://example.com/x").unwrap();
@@ -202,6 +257,26 @@ mod tests {
             unique_path(dir.path(), ".bashrc", &claimed),
             dir.path().join(".bashrc")
         );
+    }
+
+    #[test]
+    fn only_partial_files_of_the_same_link_are_taken_up_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"x").unwrap();
+        std::fs::write(
+            &state,
+            br#"{"version":1,"url":"https://example.com/a.zip"}"#,
+        )
+        .unwrap();
+        assert!(left_by(&path, "https://example.com/a.zip"));
+        assert!(!left_by(&path, "https://example.com/other.zip"));
+        std::fs::write(&path, b"finished").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.zip"));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::write(&state, b"not json").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.zip"));
     }
 
     #[cfg(windows)]

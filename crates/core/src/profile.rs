@@ -176,7 +176,8 @@ fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) -> Vec<I
     let mut report = Vec::with_capacity(settings.categories.len() + 1);
     let mut place = |setting: String, folder: &mut PortablePath, fallback: &PortablePath| {
         let requested = folder.clone();
-        let resolved = match folders.resolve(folder) {
+        // A file from elsewhere may not point downloads at a network folder.
+        let resolved = match folders.resolve_local(folder) {
             Ok(path) => path,
             Err(_) => {
                 *folder = fallback.clone();
@@ -347,6 +348,48 @@ mod tests {
         };
         let err = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap_err();
         assert!(err.to_string().contains("at most 100 queues"), "{err}");
+    }
+
+    /// A settings file may come from anywhere: it must not point downloads at a
+    /// device, or quietly at a network share. Those fall back like a missing
+    /// folder, and the import summary says so.
+    #[test]
+    fn device_and_network_folders_from_a_file_fall_back() {
+        let mut settings = default_settings();
+        settings.default_folder = PortablePath(r"\\server\share\Downloads".into());
+        let special = [
+            r"\\?\UNC\server\share\Video",
+            r"\\.\C:\Music",
+            r"\\?\C:\Compressed",
+            r"\\.\PhysicalDrive0",
+        ];
+        for (rule, folder) in settings.categories.iter_mut().zip(special) {
+            rule.folder = PortablePath(folder.into());
+        }
+        let profile = SettingsProfile {
+            format_version: 1,
+            app_version: "0.1.0".into(),
+            exported_at: 0,
+            settings,
+            queues: vec![],
+            addons: vec![],
+        };
+        let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
+        let downloads = PortablePath("{Downloads}".into());
+        assert_eq!(imported.settings.default_folder, downloads);
+        for rule in &imported.settings.categories[..special.len()] {
+            assert_eq!(rule.folder, downloads, "{:?}", rule.category);
+        }
+        let report = &imported.summary.folders;
+        assert_eq!(
+            report[0].requested,
+            PortablePath(r"\\server\share\Downloads".into())
+        );
+        assert_eq!(report[0].used, downloads);
+        for (entry, folder) in report[1..].iter().zip(special) {
+            assert_eq!(entry.requested, PortablePath(folder.into()));
+            assert_eq!(entry.used, downloads);
+        }
     }
 
     #[test]

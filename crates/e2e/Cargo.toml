@@ -1,0 +1,27 @@
+[package]
+name = "wirecatch-e2e"
+description = "End-to-end tests: the real browser bridge, the manager and a local HTTP server, driven by a scripted fake extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Stands in for `wirecatch-app --background` when the bridge has to start the
+# app (the bridge launch test). It runs the manager with no UI on a private test
+# endpoint and exits when its first client goes away.
+[[bin]]
+name = "wirecatch-e2e-app"
+path = "src/bin/wirecatch-e2e-app.rs"
+test = false
+
+[dependencies]
+wirecatch-core = { path = "../core" }
+wirecatch-ipc = { path = "../ipc" }
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
+anyhow.workspace = true
+axum.workspace = true
+bytes.workspace = true
+serde_json.workspace = true
+tempfile = "3.27.0"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process"] }

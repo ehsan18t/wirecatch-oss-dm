@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use tracing::warn;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{AddRequest, DownloadStatus, DownloadSummary, PortablePath, UiEvent};
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
@@ -14,8 +15,8 @@ use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Expectation, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
-use crate::settings;
 use crate::store::{NameChoice, Origin};
+use crate::{headers, settings};
 
 /// Everything needed to add a download, whichever way it arrived.
 pub(super) struct NewEntry {
@@ -216,8 +217,30 @@ impl Manager {
         .await
     }
 
+    /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
+    /// removing them in the background.
+    pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
+        {
+            let mut state = self.lock();
+            for id in &ids {
+                if let Ok(entry) = state.entry_mut(*id) {
+                    entry.removing = true;
+                }
+            }
+        }
+        let manager = self.clone();
+        self.spawn(async move {
+            if let Err(e) = manager.remove(&ids, false).await {
+                warn!(error = %e, "could not finish removing a download");
+            }
+        });
+    }
+
     /// Gives a download a fresh link, for example after the old one expired. What
     /// was already downloaded is kept as long as the server still serves the same file.
+    /// A link to another site (scheme, host or port) does not get the browser's
+    /// cookies and credentials for the old one; the user agent and harmless
+    /// headers such as the preferred language are kept.
     pub fn refresh_link(&self, id: DownloadId, url: &str) -> Result<()> {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
@@ -226,6 +249,10 @@ impl Manager {
             return Err(CoreError::WrongState(
                 "This download has already finished, so its link cannot be changed.",
             ));
+        }
+        let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
+        if !same_site {
+            entry.origin.headers = headers::for_another_site(&entry.origin.headers);
         }
         entry.row.url = url.to_string();
         entry.row.error = None;
@@ -306,6 +333,8 @@ impl Manager {
                 self.save(&mut state, id);
             }
         }
+        // A paused download no longer waits for its queue: clear its reason now.
+        self.reconcile(&mut state);
         Ok(())
     }
 

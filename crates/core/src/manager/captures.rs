@@ -24,6 +24,8 @@ use crate::{headers, naming};
 
 /// Most captures that can wait for confirmation at once.
 const MAX_PENDING: usize = 100;
+/// Most captures of one link that can share one confirmation.
+const MAX_HANDOVERS_PER_CONFIRMATION: usize = 32;
 
 impl Manager {
     /// Takes over a download captured in the browser.
@@ -98,15 +100,19 @@ impl Manager {
                 Ok(reply)
             }
             Err(reason) => {
+                // Answer at once: stopping the attempt can take up to the stop
+                // timeout, and the extension does not wait that long. The attempt
+                // is hidden now and removed in the background.
                 self.lock().handovers.remove(&capture.handover_id);
-                self.remove(&[row.id], false).await?;
+                self.remove_in_background(vec![row.id]);
                 Err(CoreError::NotStarted(reason))
             }
         }
     }
 
     /// Waits until the server has answered the app with the captured file, the
-    /// attempt failed, or the capture timeout ran out. `Err` carries the reason.
+    /// attempt failed, or the capture timeout ran out. `Err` carries the reason as
+    /// whole sentences, for [`CoreError::NotStarted`].
     async fn await_answer(
         &self,
         id: DownloadId,
@@ -128,7 +134,7 @@ impl Manager {
                 _ = exited.cancelled() => {}
                 _ = timeout => {
                     return Err(format!(
-                        "the server did not answer within {} seconds.",
+                        "The server did not answer within {} seconds.",
                         self.inner.capture_timeout.as_secs()
                     ));
                 }
@@ -136,13 +142,13 @@ impl Manager {
         }
         let state = self.lock();
         if state.handovers.get(handover).is_none() {
-            return Err("the browser withdrew it.".into());
+            return Err("The browser took it back.".into());
         }
         match state.entry(id) {
-            Err(_) => Err("it was removed.".into()),
+            Err(_) => Err("It was removed.".into()),
             Ok(entry) if entry.server_answered() => Ok(()),
             Ok(entry) => Err(entry.row.error.as_ref().map_or_else(
-                || "it stopped before the server answered.".to_string(),
+                || "It stopped before the server answered.".to_string(),
                 |e| e.message.clone(),
             )),
         }
@@ -169,7 +175,7 @@ impl Manager {
         match state.handovers.get(handover) {
             Some(known) if known.deciding.is_none() => Ok(known.reply.clone()),
             _ => Err(CoreError::NotStarted(
-                "an earlier attempt to take it over did not work.".into(),
+                "An earlier attempt to take it over did not work.".into(),
             )),
         }
     }
@@ -186,8 +192,16 @@ impl Manager {
             };
             match known.target {
                 Target::Dismissed => return Ok(WithdrawOutcome::NotFound),
+                // The user said yes in the app; the browser no longer needs its copy.
+                Target::Confirmed(_) => return Ok(WithdrawOutcome::AlreadyStarted),
                 Target::Pending(pending) => {
-                    state.pending.remove(&pending);
+                    // Other tabs may still be waiting on the same question.
+                    if let Some(waiting) = state.pending.get_mut(&pending) {
+                        waiting.handovers.retain(|h| h != handover_id);
+                        if waiting.handovers.is_empty() {
+                            state.pending.remove(&pending);
+                        }
+                    }
                     state.handovers.remove(handover_id);
                     return Ok(WithdrawOutcome::Withdrawn);
                 }
@@ -206,7 +220,9 @@ impl Manager {
                 }
             }
         };
-        self.remove(&[download], false).await?;
+        // Hidden and never started again from now on; stopping it may take up to
+        // the stop timeout, which the extension should not have to wait for.
+        self.remove_in_background(vec![download]);
         Ok(WithdrawOutcome::Withdrawn)
     }
 
@@ -229,8 +245,12 @@ impl Manager {
             .ok_or(CoreError::ConfirmationNotFound(id))?;
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
-                let target = Target::Download(row.id);
-                self.lock().handovers.retarget(&pending.handover, target);
+                let mut state = self.lock();
+                for handover in &pending.handovers {
+                    state
+                        .handovers
+                        .retarget(handover, Target::Confirmed(row.id));
+                }
                 Ok(())
             }
             Err(e) => {
@@ -250,9 +270,9 @@ impl Manager {
             .pending
             .remove(&id)
             .ok_or(CoreError::ConfirmationNotFound(id))?;
-        state
-            .handovers
-            .retarget(&pending.handover, Target::Dismissed);
+        for handover in &pending.handovers {
+            state.handovers.retarget(handover, Target::Dismissed);
+        }
         Ok(())
     }
 
@@ -272,11 +292,20 @@ impl Manager {
         };
         // The same link captured again joins the confirmation already showing.
         let url_text = url.to_string();
-        if let Some(existing) = state.pending.values().find(|p| p.capture.url == url_text) {
-            let target = Target::Pending(existing.capture.id);
+        if let Some(existing) = state
+            .pending
+            .values_mut()
+            .find(|p| p.capture.url == url_text)
+        {
+            if existing.handovers.len() >= MAX_HANDOVERS_PER_CONFIRMATION {
+                return Err(CoreError::Invalid(
+                    "This link was captured many times and is already waiting for your confirmation. Answer that first.".into(),
+                ));
+            }
+            existing.handovers.push(capture.handover_id.clone());
             let handover = Handover {
                 reply: reply.clone(),
-                target,
+                target: Target::Pending(existing.capture.id),
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
@@ -313,7 +342,7 @@ impl Manager {
             id,
             Pending {
                 capture: proposal.clone(),
-                handover: capture.handover_id.clone(),
+                handovers: vec![capture.handover_id.clone()],
                 request: capture,
             },
         );
