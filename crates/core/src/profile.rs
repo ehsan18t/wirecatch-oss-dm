@@ -166,6 +166,7 @@ pub(crate) fn merge(
             folders: folder_report,
             queues_added: added,
             queues_updated: updated,
+            addons_to_offer: Vec::new(),
         },
     })
 }

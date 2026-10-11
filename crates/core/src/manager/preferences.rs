@@ -93,17 +93,18 @@ impl Manager {
     /// are resolved on this machine, and downloads are left alone. What changed,
     /// including any folder that had to be replaced, is sent to the UI as
     /// [`UiEvent::SettingsImported`]. Add-ons the profile lists that are not
-    /// installed here are installed in the background.
+    /// installed here are listed there for the UI to offer; nothing is
+    /// downloaded without the person asking.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let path = path.to_path_buf();
         let bytes = self.blocking(move || profile::read_file(&path)).await?;
         let incoming = profile::parse(&bytes)?;
         let wants_media = incoming.addons.iter().any(|a| a == MEDIA_ADDON_ID);
 
-        let install = {
+        {
             let mut state = self.lock_open()?;
             let current = state.queue_list();
-            let imported = profile::merge(incoming, &current, &self.inner.folders, || {
+            let mut imported = profile::merge(incoming, &current, &self.inner.folders, || {
                 state.ids.queue()
             })?;
             self.inner.store.save_last_ids(state.ids.last());
@@ -116,11 +117,13 @@ impl Manager {
             // Queues first: the new settings may name a queue that was just added.
             self.queues_changed(&mut state);
             self.apply_settings(&mut state, imported.settings);
+            if wants_media && state.addon.tools.is_none() {
+                imported
+                    .summary
+                    .addons_to_offer
+                    .push(MEDIA_ADDON_ID.to_string());
+            }
             self.emit(UiEvent::SettingsImported(imported.summary));
-            wants_media && state.addon.tools.is_none()
-        };
-        if install {
-            self.install_addon(MEDIA_ADDON_ID).await?;
         }
         Ok(())
     }
