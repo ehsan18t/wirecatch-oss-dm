@@ -361,7 +361,8 @@ describe('media button messages', () => {
     expect(lastAdd(app)).toEqual({
       handover_id: expect.any(String) as string,
       url: HLS.url,
-      referrer: 'https://player.example.net/embed/7',
+      // Another origin: only the frame's origin, as the browser sends it.
+      referrer: 'https://player.example.net/',
       page_url: 'https://example.com/watch',
       suggested_name: null,
       mime: null,
@@ -587,7 +588,7 @@ describe('popup media list', () => {
     });
     expect(lastAdd(app)).toMatchObject({
       url: FILE.url,
-      referrer: 'https://example.com/watch',
+      referrer: 'https://example.com/',
       mime: 'video/mp4',
       size_hint: 5_242_880,
       media: { kind: 'direct', title: 'A nice video' },

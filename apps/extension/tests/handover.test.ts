@@ -642,6 +642,27 @@ describe('context menu', () => {
     });
     expect(s.cookieCalls).toEqual([['https://example.com/file.iso', 'firefox-container-2']]);
     expect(s.cookieContexts).toEqual([{ initiator: 'https://example.com/page', navigation: true }]);
+  });
+
+  it('sends the referrer the browser would: the origin only to another origin, nothing from https to http', async () => {
+    s = await setup();
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://cdn.example.com/a.zip', pageUrl: 'https://example.com/account?id=7' },
+      undefined,
+    );
+    await s.hub.onMenuClick(
+      { linkUrl: 'http://mirror.example.com/a.zip', pageUrl: 'https://example.com/account?id=7' },
+      undefined,
+    );
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip', pageUrl: 'https://example.com/account?id=7#files' },
+      undefined,
+    );
+    expect(addDownloadCalls(s.app).map((d) => d.referrer)).toEqual([
+      'https://example.com/',
+      null,
+      'https://example.com/account?id=7',
+    ]);
     expect(s.downloads.log).toEqual([]);
   });
 

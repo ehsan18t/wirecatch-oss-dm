@@ -22,6 +22,7 @@ import {
 import { shouldCapture } from './capture/should-capture';
 import type { CookieContext } from './cookies';
 import { fileNameFromUrl, isProgramFile } from './file-types';
+import { refererFor } from './referrer';
 import type { MediaRequest, MediaSendResult, MediaView } from './media/center';
 import {
   asPopupRequest,
@@ -345,7 +346,8 @@ export class Hub {
       {
         handover_id: handoverId,
         url,
-        referrer: click.frameUrl ?? click.pageUrl ?? null,
+        // What the browser itself would send (strict-origin-when-cross-origin), never more.
+        referrer: refererFor(url, click.frameUrl ?? click.pageUrl),
         page_url: click.pageUrl ?? null,
         suggested_name: null,
         mime: null,
@@ -401,7 +403,7 @@ export class Hub {
       {
         handover_id: this.#newHandoverId(),
         url: target.url,
-        referrer: request.referrer,
+        referrer: refererFor(target.url, request.referrer),
         page_url: request.pageUrl,
         suggested_name: null,
         mime: target.mime,
