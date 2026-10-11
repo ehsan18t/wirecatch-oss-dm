@@ -24,6 +24,16 @@ impl Claimed {
         self.0.remove(&key(path));
     }
 
+    /// Takes `path` for a moment, before it becomes a download's path.
+    pub fn reserve(&mut self, path: &Path) {
+        self.insert(path);
+    }
+
+    /// Gives back a path taken with [`reserve`](Self::reserve).
+    pub fn release(&mut self, path: &Path) {
+        self.remove(path);
+    }
+
     /// How many paths are taken.
     #[cfg(debug_assertions)]
     pub fn len(&self) -> usize {

@@ -41,7 +41,14 @@ struct Job {
     options: DownloadOptions,
     temp_dir: PathBuf,
     timeout: Duration,
+    /// Reserves a path for the finished file among the paths other downloads
+    /// hold; `false` if one of them holds it already.
+    reserve: Reserve,
 }
+
+/// Reserves a path for a finished file (`true` to reserve, `false` to give a
+/// reservation back); reserving returns `false` when another download holds it.
+type Reserve = Arc<dyn Fn(&Path, bool) -> bool + Send + Sync>;
 
 impl Manager {
     /// Starts media download `id` (the caller checked every limit).
@@ -84,6 +91,23 @@ impl Manager {
             options,
             temp_dir: self.inner.temp_dir.clone(),
             timeout: self.inner.media_timeout,
+            reserve: {
+                let manager = Arc::downgrade(&self.inner);
+                Arc::new(move |path: &Path, take: bool| {
+                    Manager::from_weak(&manager).is_some_and(|m| {
+                        let mut state = m.lock();
+                        if !take {
+                            state.claimed.release(path);
+                            true
+                        } else if state.claimed.contains(path) {
+                            false
+                        } else {
+                            state.claimed.reserve(path);
+                            true
+                        }
+                    })
+                })
+            },
         };
         self.launch(state, id, run_id, answered, move |cancel| {
             let progress = Arc::new(MediaProgress::default());
@@ -361,16 +385,11 @@ async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserEr
         job.url.to_string(),
         headers::referrer(&job.origin.headers).map(str::to_string),
     );
+    let reserve = job.reserve.clone();
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
         // Marked before it is put in place, so it is never there unmarked.
         crate::zone::mark(&file, &url, referrer.as_deref());
-        let wanted = final_path(&file, &planned);
-        let target = if wanted == planned {
-            planned
-        } else {
-            free_path(&wanted)
-        };
-        std::fs::rename(&file, &target)?;
+        let target = place(&file, &planned, &reserve)?;
         let bytes = std::fs::metadata(&target)?.len();
         let _ = std::fs::remove_dir_all(&work);
         Ok((target, bytes))
@@ -444,17 +463,54 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
     }
 }
 
-/// `wanted`, or `name (1).ext` and so on if it is taken. Blocks on the disk.
-fn free_path(wanted: &Path) -> PathBuf {
+/// Moves the finished `file` to `planned` (with the file's own media
+/// extension, see [`final_path`]) or, if that name is taken on disk or by
+/// another download, to `name (1).ext` and so on. An existing file is never
+/// replaced. Blocks on the disk.
+fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<PathBuf> {
+    let wanted = final_path(file, planned);
     let dir = wanted.parent().unwrap_or(Path::new(""));
     let name = wanted
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    (0..)
-        .map(|n| crate::naming::candidate(dir, &name, n))
-        .find(|p| crate::naming::is_free_on_disk(p))
-        .unwrap_or_else(|| wanted.to_path_buf())
+    for n in 0..10_000 {
+        let candidate = crate::naming::candidate(dir, &name, n);
+        if !crate::naming::is_free_on_disk(&candidate) {
+            continue;
+        }
+        // The planned path is this download's own; any other is reserved, and
+        // given back if it cannot be used after all.
+        let reserved = candidate != planned;
+        if reserved && !reserve(&candidate, true) {
+            continue;
+        }
+        // A hard link never replaces an existing file, so a file that appeared
+        // since the check is left alone.
+        let moved = match std::fs::hard_link(file, &candidate) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(file);
+                Ok(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            // A drive without hard links (FAT, exFAT): move it, having checked.
+            Err(_) => std::fs::rename(file, &candidate).map(|()| true),
+        };
+        match moved {
+            Ok(true) => return Ok(candidate),
+            Ok(false) | Err(_) if reserved => {
+                reserve(&candidate, false);
+                moved?;
+            }
+            other => {
+                other?;
+            }
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "no free name for the video",
+    ))
 }
 
 /// How a format's address may use the local network. A page that is itself on
@@ -643,6 +699,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            reserve: Arc::new(|_: &Path, _| true),
         };
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
@@ -659,6 +716,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            reserve: Arc::new(|_: &Path, _| true),
         };
         let progress = MediaProgress::default();
         let ended = run(
@@ -688,6 +746,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            reserve: Arc::new(|_: &Path, _| true),
         };
         let done = finish(&part, &job, &work).await.unwrap();
         let MediaDone::Completed { path, .. } = done else {
@@ -700,6 +759,29 @@ mod tests {
             "{mark}"
         );
         assert!(!mark.contains("secret"));
+    }
+
+    #[test]
+    fn a_finished_video_never_replaces_a_file_or_takes_a_reserved_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let planned = dir.path().join("out.mp4");
+        std::fs::write(&planned, b"someone else's").unwrap();
+        let file = dir.path().join("video.mp4");
+        std::fs::write(&file, b"video").unwrap();
+        let free: Reserve = Arc::new(|_: &Path, _| true);
+        let placed = place(&file, &planned, &free).unwrap();
+        assert_eq!(placed, dir.path().join("out (1).mp4"));
+        assert_eq!(std::fs::read(&planned).unwrap(), b"someone else's");
+        assert_eq!(std::fs::read(&placed).unwrap(), b"video");
+        assert!(!file.exists());
+
+        // Another extension: a name another download holds is skipped.
+        let file = dir.path().join("video.webm");
+        std::fs::write(&file, b"webm").unwrap();
+        let held = dir.path().join("out.webm");
+        let reserve: Reserve = Arc::new(move |p: &Path, _| p != held);
+        let placed = place(&file, &planned, &reserve).unwrap();
+        assert_eq!(placed, dir.path().join("out (1).webm"));
     }
 
     #[test]
