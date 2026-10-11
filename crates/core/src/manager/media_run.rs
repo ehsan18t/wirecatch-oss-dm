@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome, Progress,
-    RateLimiter, Url,
+    CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
+    PrivateNetwork, Progress, RateLimiter, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{FixAction, UserError};
@@ -198,19 +198,27 @@ async fn run_page(
             .all(|f| f.transport() != Transport::YtDlp && f.url.is_some());
     if !ourselves {
         // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
-        // downloads the same selection.
+        // downloads the same selection. Its own requests are not covered by the
+        // local network rule below (see `network_rule`); yt-dlp makes them.
         return match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
             Fetched::Done(file) => finish(&file, &job.output, &work).await,
             Fetched::Cancelled => Ok(MediaDone::Paused),
         };
     }
+    let mut rules = Vec::with_capacity(found.len());
     for format in &found {
-        guard_network(&job.url, format.url.as_deref().unwrap_or_default()).await?;
+        let url = format
+            .url
+            .as_deref()
+            .and_then(|u| Url::parse(u).ok())
+            .ok_or_else(|| refresh("The page gave an address for the video that is not valid."))?;
+        rules.push(network_rule(&job.url, &url).await?);
     }
     let parts = found
         .iter()
         .zip(ROLES)
-        .map(|(f, role)| fetch_part(job, f, role, &work, progress, cancel));
+        .zip(rules)
+        .map(|((f, role), rule)| fetch_part(job, f, role, rule, &work, progress, cancel));
     let mut files = Vec::new();
     let results = futures_join(parts.collect()).await;
     for result in results {
@@ -266,6 +274,7 @@ async fn fetch_part(
     job: &Job,
     format: &Format,
     role: &str,
+    rule: PrivateNetwork,
     work: &Path,
     progress: &MediaProgress,
     cancel: &CancellationToken,
@@ -286,31 +295,13 @@ async fn fetch_part(
         .as_deref()
         .and_then(|u| Url::parse(u).ok())
         .ok_or_else(|| refresh("The page gave an address for the video that is not valid."))?;
-    let mut options = job.options.clone();
-    let format_headers: Vec<Header> = format
-        .http_headers
-        .iter()
-        .map(|(name, value)| Header {
-            name: name.clone(),
-            value: value.clone(),
-        })
-        .collect();
-    // The page's cookies stay with the page: a format gets only the headers
-    // yt-dlp gave for it, bound to its own address.
-    options.headers = headers::to_map(&format_headers);
-    if let Some(agent) = format
-        .http_headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
-        .map(|(_, v)| v.clone())
-    {
-        options.user_agent = agent;
-    }
+    let options = part_options(job, format, rule);
     let part = work.join(part_name(format, role));
     let file = match format.transport() {
         Transport::Hls => {
             let mut request = StreamRequest::new(url, part);
             request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
+            request.private_network = rule;
             request.options = options;
             let stream = Arc::new(StreamProgress::default());
             progress.add_stream(stream.clone());
@@ -385,6 +376,32 @@ async fn finish(file: &Path, output: &Path, work: &Path) -> Result<MediaDone, Us
     Ok(MediaDone::Completed { path, bytes })
 }
 
+/// The request options for one format: the format's own headers only (the
+/// page's cookies stay with the page), bound to its own address, and the local
+/// network rule decided for it.
+fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOptions {
+    let mut options = job.options.clone();
+    let format_headers: Vec<Header> = format
+        .http_headers
+        .iter()
+        .map(|(name, value)| Header {
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect();
+    options.headers = headers::to_map(&format_headers);
+    if let Some(agent) = format
+        .http_headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+        .map(|(_, v)| v.clone())
+    {
+        options.user_agent = agent;
+    }
+    options.private_network = rule;
+    options
+}
+
 /// The name of a part in the work folder: its role and a media extension,
 /// never one the site chose otherwise.
 fn part_name(format: &Format, role: &str) -> String {
@@ -432,23 +449,40 @@ fn free_path(wanted: &Path) -> PathBuf {
         .unwrap_or_else(|| wanted.to_path_buf())
 }
 
-/// Refuses a format on the local network when the page is on the internet, so a
-/// website cannot make Wirecatch reach the router or other devices at home.
-async fn guard_network(page: &Url, format: &str) -> Result<(), UserError> {
-    let Ok(format) = Url::parse(format) else {
-        return Ok(());
-    };
-    if all_private(page).await || !any_private(&format).await {
-        return Ok(());
+/// How a format's address may use the local network. A page that is itself on
+/// the local network (a media server at home) may point anywhere. A page on the
+/// internet may only point to the internet: a format whose host is local, or
+/// whose name does not resolve (so cannot be checked), is refused, and the rest
+/// download with the local network blocked for every request, redirect hop and
+/// connection, so a later redirect or a name that changes its address (DNS
+/// rebinding) cannot reach it either.
+///
+/// When yt-dlp downloads a format by itself (the fallback), its own requests
+/// are not covered by this.
+async fn network_rule(page: &Url, format: &Url) -> Result<PrivateNetwork, UserError> {
+    if all_private(page).await {
+        return Ok(PrivateNetwork::Allow);
     }
-    Err(UserError {
-        message:
-            "This video points to a device on your own network, which Wirecatch blocks for safety."
-                .into(),
-        fix: None,
-    })
+    let found = addresses(format).await;
+    if found.is_empty() {
+        return Err(UserError {
+            message: "The server of this video's file could not be found, so Wirecatch could not check where it is and did not download it. Check your connection, then try again.".into(),
+            fix: Some(FixAction::Retry),
+        });
+    }
+    if found.into_iter().any(is_private) {
+        return Err(UserError {
+            message:
+                "This video points to a device on your own network, which Wirecatch blocks for safety."
+                    .into(),
+            fix: None,
+        });
+    }
+    Ok(PrivateNetwork::Block)
 }
 
+/// The addresses of `url`'s host: the address itself, or what its name
+/// resolves to (nothing if it does not resolve).
 async fn addresses(url: &Url) -> Vec<IpAddr> {
     let Some(host) = url.host_str() else {
         return Vec::new();
@@ -472,10 +506,6 @@ async fn addresses(url: &Url) -> Vec<IpAddr> {
 async fn all_private(url: &Url) -> bool {
     let found = addresses(url).await;
     !found.is_empty() && found.into_iter().all(is_private)
-}
-
-async fn any_private(url: &Url) -> bool {
-    addresses(url).await.into_iter().any(is_private)
 }
 
 fn is_private(ip: IpAddr) -> bool {
@@ -545,6 +575,71 @@ pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> U
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn formats_of_a_page_on_the_internet_stay_on_the_internet() {
+        let url = |u: &str| Url::parse(u).unwrap();
+        let public_page = url("http://93.184.215.14/watch");
+        let local_page = url("http://127.0.0.1:9/watch");
+        // A page at home may point anywhere.
+        assert_eq!(
+            network_rule(&local_page, &url("http://192.168.1.10/v.mp4"))
+                .await
+                .unwrap(),
+            PrivateNetwork::Allow
+        );
+        // A page on the internet: public formats download with the local
+        // network blocked for every hop and connection.
+        assert_eq!(
+            network_rule(&public_page, &url("http://93.184.215.15/v.mp4"))
+                .await
+                .unwrap(),
+            PrivateNetwork::Block
+        );
+        for local in [
+            "http://127.0.0.1:8080/v.mp4",
+            "http://localhost/v.mp4",
+            "http://10.0.0.1/v.mp4",
+            "http://[::1]/v.mp4",
+            "http://169.254.169.254/latest",
+        ] {
+            let error = network_rule(&public_page, &url(local)).await.unwrap_err();
+            assert!(
+                error.message.contains("your own network"),
+                "{local}: {}",
+                error.message
+            );
+        }
+        // A name that does not resolve cannot be checked, so it is refused.
+        let error = network_rule(&public_page, &url("http://no-such-host.invalid/v.mp4"))
+            .await
+            .unwrap_err();
+        assert!(
+            error.message.contains("could not be found"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn a_format_downloads_under_its_network_rule() {
+        let format: Format = serde_json::from_value(serde_json::json!({
+            "format_id": "1", "ext": "mp4", "http_headers": {"X-Format": "yes"}
+        }))
+        .unwrap();
+        let job = Job {
+            output: PathBuf::from("/v/out.mp4"),
+            url: Url::parse("http://93.184.215.14/watch").unwrap(),
+            origin: Origin::default(),
+            tools: None,
+            options: DownloadOptions::default(),
+            temp_dir: PathBuf::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let options = part_options(&job, &format, PrivateNetwork::Block);
+        assert_eq!(options.private_network, PrivateNetwork::Block);
+        assert_eq!(options.headers.get("x-format").unwrap(), "yes");
+    }
 
     #[test]
     fn parts_get_media_extensions() {

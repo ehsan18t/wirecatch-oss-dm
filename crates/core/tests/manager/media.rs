@@ -625,3 +625,39 @@ async fn a_page_cannot_save_a_program() {
         assert!(programs.is_empty(), "{programs:?}");
     }
 }
+
+/// A page on the internet whose format points into the local network is
+/// refused, and the local server is never contacted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"));
+    let mut ui = h.manager.subscribe();
+    // The fake yt-dlp never fetches the page; its address only says where the
+    // page is: on the internet.
+    h.manager
+        .add_capture(media_capture(
+            "http://93.184.215.14/watch?v=1",
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    let id = h.manager.list_downloads()[0].id;
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("your own network"),
+        "{}",
+        error.message
+    );
+    assert!(server.requests("fmt/video.mp4").is_empty());
+    assert!(server.requests("fmt/audio.m4a").is_empty());
+}
