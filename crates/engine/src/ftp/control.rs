@@ -272,12 +272,15 @@ impl Control {
         let (code, separator, rest) = split_reply_line(&first)?;
         let mut text = rest.to_string();
         if separator == '-' {
-            // Multi-line: ends with a line starting with the same code and a space.
+            // Multi-line: ends with a line starting with the same code and a
+            // space, or (as some servers send it) the bare code.
             let end = format!("{code} ");
+            let bare = code.to_string();
             for _ in 0..MAX_LINES {
                 let line = self.read_line().await?;
                 let (content, last) = match line.strip_prefix(&end) {
                     Some(content) => (content, true),
+                    None if line == bare => ("", true),
                     None => (line.as_str(), false),
                 };
                 if text.len() < MAX_TEXT {
@@ -409,6 +412,38 @@ pub(crate) fn parse_mdtm(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A control connection to a local socket that sends `script`.
+    async fn control_reading(script: &'static [u8]) -> Control {
+        use tokio::io::AsyncWriteExt as _;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut server, _) = listener.accept().await.unwrap();
+            server.write_all(script).await.unwrap();
+            // Keep the connection open so a reader waiting for more stalls.
+            std::future::pending::<()>().await;
+        });
+        let stream = Stream::connect(addr, Duration::from_secs(5), "test connection")
+            .await
+            .unwrap();
+        Control::new(stream, Duration::from_secs(2))
+    }
+
+    #[tokio::test]
+    async fn multi_line_replies_end_with_the_code_alone_too() {
+        let mut control =
+            control_reading(b"211-Features:\r\n EPSV\r\n UTF8\r\n211\r\n200 Next.\r\n").await;
+        let features = control.reply().await.unwrap();
+        assert_eq!(features.code, 211);
+        assert_eq!(features.text, "Features: EPSV UTF8");
+        let next = control.reply().await.unwrap();
+        assert_eq!((next.code, next.text.as_str()), (200, "Next."));
+
+        // The usual form, with a space and text after the code.
+        let mut control = control_reading(b"220-Hello\r\n220 Ready\r\n").await;
+        assert_eq!(control.reply().await.unwrap().text, "Hello Ready");
+    }
 
     #[test]
     fn reply_lines() {
