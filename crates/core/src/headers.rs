@@ -45,6 +45,14 @@ pub(crate) fn is_allowed(name: &str) -> bool {
     !name.is_empty() && !FORBIDDEN.contains(&name.as_str()) && !name.starts_with("proxy-")
 }
 
+/// The `Referer` among `headers`, if any.
+pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
+    headers
+        .iter()
+        .find(|h| h.name.trim().eq_ignore_ascii_case("referer"))
+        .map(|h| h.value.as_str())
+}
+
 /// The headers a download keeps when its link moves to another site (another
 /// scheme, host or port).
 pub(crate) fn for_another_site(headers: &[Header]) -> Vec<Header> {

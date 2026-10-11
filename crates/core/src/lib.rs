@@ -23,6 +23,7 @@ mod settings;
 mod speed;
 mod store;
 mod user_error;
+mod zone;
 
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};

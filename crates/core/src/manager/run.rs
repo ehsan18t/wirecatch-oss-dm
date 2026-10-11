@@ -155,6 +155,8 @@ impl Manager {
 
         match (end, run.stop) {
             (RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })), _) => {
+                let referrer = headers::referrer(&entry.origin.headers).map(str::to_string);
+                self.mark_downloaded(entry.path(), &entry.row.url, referrer);
                 entry.row.status = DownloadStatus::Completed;
                 entry.row.total = Some(bytes);
                 entry.row.done = bytes;
@@ -196,6 +198,15 @@ impl Manager {
         }
         self.save(state, id);
         self.reconcile(state);
+    }
+
+    /// Marks a finished file as downloaded from the internet (on Windows), in the
+    /// background and best effort.
+    pub(super) fn mark_downloaded(&self, path: &Path, url: &str, referrer: Option<String>) {
+        let (path, url) = (path.to_path_buf(), url.to_string());
+        self.inner.runtime.spawn_blocking(move || {
+            crate::zone::mark(&path, &url, referrer.as_deref());
+        });
     }
 
     /// Deletes a download's partial files in the background. A run started before
