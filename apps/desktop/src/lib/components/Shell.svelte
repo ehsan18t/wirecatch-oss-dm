@@ -4,19 +4,24 @@
   import { isDownloadDrag } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
   import CommandPalette from './CommandPalette.svelte';
-  import ConfirmCapture from './ConfirmCapture.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import Dialogs from './Dialogs.svelte';
   import DownloadList from './DownloadList.svelte';
+  import Questions from './Questions.svelte';
   import Settings from './Settings.svelte';
   import Sidebar from './Sidebar.svelte';
+  import StorageBanner from './StorageBanner.svelte';
   import Toasts from './Toasts.svelte';
   import Toolbar from './Toolbar.svelte';
 
   const app = getApp();
 
-  /** Below this width the detail panel floats over the list instead of taking a column. */
-  const DOCK_WIDTH = 1360;
+  /**
+   * Below this width the detail panel floats over the list instead of taking a column. It docks
+   * whenever the list beside it still has room for Name, Size, Done and Status: sidebar (236)
+   * plus panel (316) plus 600 for the list, which then shows its narrowest set of columns.
+   */
+  const DOCK_WIDTH = 236 + 316 + 600;
 
   onMount(() => {
     const query = window.matchMedia(`(min-width: ${DOCK_WIDTH}px)`);
@@ -51,7 +56,12 @@
   }
 
   // A visible question (a dialog, or the ask-first dialog) takes the keyboard.
-  const blocked = $derived(app.dialog !== null || (app.pending.length > 0 && !app.pendingHidden));
+  const blocked = $derived(
+    app.dialog !== null ||
+      (app.pending.length > 0 && !app.pendingHidden) ||
+      (app.mediaChoices.length > 0 && !app.mediaHidden) ||
+      app.addonRequest !== null,
+  );
 
   function onkeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -119,6 +129,7 @@
       <Settings />
     {:else}
       <Toolbar />
+      <StorageBanner />
       {#if app.loadError}
         <div class="load-error" role="alert">
           <p class="title">Wirecatch cannot reach its download engine.</p>
@@ -141,7 +152,7 @@
 </div>
 
 <Dialogs />
-<ConfirmCapture />
+<Questions />
 <CommandPalette />
 <Toasts />
 

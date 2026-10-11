@@ -35,16 +35,57 @@
 </script>
 
 <header class="toolbar">
-  <div class="title">
-    <h1>{title}</h1>
-    <p class="meta num">
-      {count === 1 ? '1 download' : `${count.toLocaleString('en-US')} downloads`}
-      {#if app.search.trim()}
-        matching "{app.search.trim()}"
+  <div class="row">
+    <div class="title">
+      <h1>{title}</h1>
+      <p class="meta num">
+        {count === 1 ? '1 download' : `${count.toLocaleString('en-US')} downloads`}
+        {#if app.search.trim()}
+          matching "{app.search.trim()}"
+        {/if}
+      </p>
+    </div>
+
+    <div class="tools">
+      <button
+        class="btn"
+        onclick={() => app.pauseAll()}
+        disabled={!canPauseAll}
+        title={canPauseAll ? 'Pause every download' : 'Nothing is running or waiting'}
+      >
+        <Pause size={14} aria-hidden="true" /><span class="label">Pause all</span>
+      </button>
+      <button
+        class="btn"
+        onclick={() => app.resumeAll()}
+        disabled={!canResumeAll}
+        title={canResumeAll ? 'Resume every paused download' : 'Nothing is paused'}
+      >
+        <Play size={14} aria-hidden="true" /><span class="label">Resume all</span>
+      </button>
+      {#if app.wide}
+        <button
+          class="btn"
+          aria-pressed={app.detailsOpen}
+          title={app.detailsOpen ? 'Hide the details panel' : 'Show the details panel'}
+          onclick={() => (app.detailsOpen = !app.detailsOpen)}
+        >
+          <PanelRight size={14} aria-hidden="true" /><span class="label">Details</span>
+        </button>
       {/if}
-    </p>
+      <button
+        class="btn primary"
+        aria-keyshortcuts="Control+N"
+        onclick={() => app.openDialog({ kind: 'add', urls: [] })}
+      >
+        <Plus size={15} aria-hidden="true" /> Add download
+      </button>
+    </div>
+  </div>
+
+  <div class="row">
     {#if queue}
-      <div class="queue-actions">
+      <div class="queue-actions" role="group" aria-label="This queue">
         <button
           class="btn ghost small"
           onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}
@@ -67,82 +108,55 @@
         {/if}
       </div>
     {/if}
-  </div>
 
-  <div class="tools">
-    <div class="search">
-      <Search size={14} aria-hidden="true" />
-      <input
-        id="list-search"
-        class="field"
-        type="search"
-        placeholder="Search names and links"
-        aria-label="Search downloads"
-        aria-keyshortcuts="Control+F"
-        bind:value={app.search}
-        onkeydown={(e) => {
-          if (e.key === 'Escape' && app.search) {
-            e.stopPropagation();
-            app.search = '';
-          } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            document.getElementById('download-list')?.focus();
-          }
-        }}
-      />
+    <div class="filters">
+      <div class="search">
+        <Search size={14} aria-hidden="true" />
+        <input
+          id="list-search"
+          class="field"
+          type="search"
+          placeholder="Search names and links"
+          aria-label="Search downloads"
+          aria-keyshortcuts="Control+F"
+          bind:value={app.search}
+          onkeydown={(e) => {
+            if (e.key === 'Escape' && app.search) {
+              e.stopPropagation();
+              app.search = '';
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              document.getElementById('download-list')?.focus();
+            }
+          }}
+        />
+      </div>
+      <label class="sort">
+        <span class="sort-label">Sort</span>
+        <select class="field" aria-label="Sort" bind:value={app.sort}>
+          {#each sorts as key (key)}
+            <option value={key}>{SORT_LABEL[key]}</option>
+          {/each}
+        </select>
+      </label>
     </div>
-    <label class="sort">
-      <span class="sort-label">Sort</span>
-      <select class="field" aria-label="Sort" bind:value={app.sort}>
-        {#each sorts as key (key)}
-          <option value={key}>{SORT_LABEL[key]}</option>
-        {/each}
-      </select>
-    </label>
-    <button
-      class="btn"
-      onclick={() => app.pauseAll()}
-      disabled={!canPauseAll}
-      title={canPauseAll ? 'Pause every download' : 'Nothing is running or waiting'}
-    >
-      <Pause size={14} aria-hidden="true" /><span class="label">Pause all</span>
-    </button>
-    <button
-      class="btn"
-      onclick={() => app.resumeAll()}
-      disabled={!canResumeAll}
-      title={canResumeAll ? 'Resume every paused download' : 'Nothing is paused'}
-    >
-      <Play size={14} aria-hidden="true" /><span class="label">Resume all</span>
-    </button>
-    {#if app.wide}
-      <button
-        class="btn"
-        aria-pressed={app.detailsOpen}
-        title={app.detailsOpen ? 'Hide the details panel' : 'Show the details panel'}
-        onclick={() => (app.detailsOpen = !app.detailsOpen)}
-      >
-        <PanelRight size={14} aria-hidden="true" /><span class="label">Details</span>
-      </button>
-    {/if}
-    <button
-      class="btn primary"
-      aria-keyshortcuts="Control+N"
-      onclick={() => app.openDialog({ kind: 'add', urls: [] })}
-    >
-      <Plus size={15} aria-hidden="true" /> Add download
-    </button>
   </div>
 </header>
 
 <style>
   .toolbar {
+    display: grid;
+    gap: 10px;
+    padding: 16px 20px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 18px 20px 12px;
-    border-bottom: 1px solid var(--line);
+    min-width: 0;
   }
 
   .title {
@@ -170,19 +184,27 @@
     white-space: nowrap;
   }
 
+  /* The queue's own actions share the second line with search and sort, always on one line. */
   .queue-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex: none;
+    flex-wrap: nowrap;
     gap: 2px;
-    margin: 6px 0 0 -9px;
+    margin-left: -9px;
+    white-space: nowrap;
   }
 
-  /* One line, always: the tools keep their size and the title gives way. */
-  .tools {
+  /* One line each: these keep their size and the title gives way. */
+  .tools,
+  .filters {
     display: flex;
     flex: none;
     align-items: center;
     gap: 6px;
+  }
+
+  .filters {
+    margin-left: auto;
   }
 
   .search {
@@ -199,7 +221,7 @@
   }
 
   .search input {
-    width: 210px;
+    width: 220px;
     padding-left: 29px;
   }
 
@@ -211,10 +233,11 @@
     font-size: var(--text-sm);
   }
 
-  /* With less room, labels give way to icons; the names stay for screen readers and tooltips. */
-  @container main (max-width: 999px) {
+  /* Labels give way to icons only when the room is really short (the smallest window still has
+     them); the names stay for screen readers and tooltips. */
+  @container main (max-width: 640px) {
     .search input {
-      width: 160px;
+      width: 150px;
     }
 
     .sort-label,

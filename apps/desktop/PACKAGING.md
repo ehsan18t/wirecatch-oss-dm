@@ -1,0 +1,55 @@
+# Packaging the desktop app
+
+How Wirecatch is bundled into installers (D19). Release builds are made in Wave 3; nothing here needs to run during everyday development.
+
+## Building installers
+
+```bash
+pnpm --filter @wirecatch/desktop bundle       # release installers
+pnpm --filter @wirecatch/desktop build:tauri  # debug installers, for checking the packaging
+```
+
+Both first run `scripts/prepare-bridge.mjs`, which builds `wirecatch-bridge` and copies it to `src-tauri/binaries/wirecatch-bridge-<target triple>[.exe]` (ignored by git). Then `tauri build` runs with `src-tauri/tauri.bundle.conf.json` merged in, which lists the bridge as an external binary. The bundler installs it next to the app with its plain name, `wirecatch-bridge(.exe)`, which matters: the bridge starts `wirecatch-app --background` from its own folder, and the app runs `wirecatch-bridge install` from its own folder.
+
+The external binary lives in a separate config file because Tauri's build script refuses to build when a listed external binary is missing, and plain `cargo build` and `cargo test` should not depend on building the bridge first.
+
+| Platform | Output                                                | Notes                                                            |
+| -------- | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| Windows  | NSIS installer, per user (`installMode: currentUser`) | No administrator rights. Installs to `%LOCALAPPDATA%\Wirecatch`. |
+| Linux    | `.deb`, `.rpm`                                        | App and bridge in `/usr/bin`.                                    |
+| Linux    | AppImage                                              | See "AppImage" below.                                            |
+
+## Browser registration and uninstall
+
+The app runs `<its folder>/wirecatch-bridge install` on a background thread at every start (D19). It is idempotent, so installers, AppImages and portable copies all register themselves, and a registration broken by a browser update or a moved install repairs itself. Failures are logged and never block startup. Debug builds never register it: they run as a separate app, "Wirecatch Dev", with their own identifier, data folder and endpoint, so a development copy runs beside an installed Wirecatch without touching it or pointing your browsers at a source checkout.
+
+Uninstalling removes the registration before the files go:
+
+- **Windows**: `src-tauri/windows/hooks.nsh` (the `NSIS_HOOK_PREUNINSTALL` macro) runs `"$INSTDIR\wirecatch-bridge.exe" uninstall`. The installer is per user, so this runs as the user whose registration it removes.
+- **Linux packages**: `src-tauri/linux/prerm.sh` is the `.deb` and `.rpm` pre-removal script. On removal (not on upgrade) it runs `/usr/bin/wirecatch-bridge uninstall` as every regular user (uid 1000 to 59999 with an existing home folder), because each user's browsers have their own registration.
+- **AppImage**: there is no uninstaller. Run `~/.local/share/wirecatch/bin/wirecatch-bridge uninstall`, then delete that folder.
+
+### AppImage
+
+An AppImage runs from a temporary mount (`/tmp/.mount_XXXX`) that disappears when it exits; registering the bridge there would point every browser at a path another local user could later fill with a program of their own. So under an AppImage (the `APPIMAGE` variable is set) the app copies the bridge to `~/.local/share/wirecatch/bin` (folder and files mode 0700, owned by the user, never written through a link) and registers that copy. Next to it, a two-line `wirecatch-app` script runs `exec '<path of the .AppImage>' "$@"`, because the bridge starts `wirecatch-app --background` from its own folder. Both are rewritten on every start, so moving the AppImage repairs itself on its next start. A bridge in a temporary folder is never registered, and an AppImage kept in `/tmp` is refused with a message asking to move it.
+
+## Updates (switched off for now)
+
+`tauri-plugin-updater` is compiled in, but the app only registers it when `tauri.conf.json` has a `plugins.updater` section with a public key. That needs the GitHub organization and a signing key first (D19). To switch it on:
+
+1. Make a signing key pair: `pnpm tauri signer generate -w ~/.tauri/wirecatch.key`. Keep the private key and its password secret (CI secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`).
+2. Add to `tauri.conf.json`:
+
+   ```json
+   "bundle": { "createUpdaterArtifacts": true },
+   "plugins": {
+     "updater": {
+       "pubkey": "<contents of wirecatch.key.pub>",
+       "endpoints": ["https://github.com/<org>/wirecatch/releases/latest/download/latest.json"],
+       "windows": { "installMode": "passive" }
+     }
+   }
+   ```
+
+3. Publish `latest.json` and the signed installers with each GitHub release.
+4. That is all: the app checks a minute after start and then daily, downloads a newer version in the background (the updater refuses it unless its signature matches the public key), shows a notification, and installs it when the person quits, so a download is never interrupted. `src-tauri/tests/updates.rs` tests this against a local server with a throwaway key.

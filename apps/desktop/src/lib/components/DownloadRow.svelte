@@ -84,7 +84,7 @@
     {/if}
     <span class="status" role="gridcell" title={statusText}>{statusText}</span>
     <span class="wire" aria-hidden="true">
-      {#if fraction === null && (row.status === 'downloading' || row.status === 'connecting')}
+      {#if row.status === 'processing' || (fraction === null && (row.status === 'downloading' || row.status === 'connecting'))}
         <span class="fill unknown"></span>
       {:else}
         <span
