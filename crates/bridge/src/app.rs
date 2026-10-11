@@ -133,7 +133,21 @@ impl Launcher for ProcessLauncher {
 /// browser: standard streams go to the null device, it gets its own session (Linux)
 /// or process group (Windows), and on Windows it leaves the browser's job object
 /// when allowed (Firefox kills the whole job when it closes the host).
+///
+/// On Windows it is started as a child of the desktop shell when possible (see
+/// [`crate::shell_parent`]), so Task Manager lists it as Wirecatch rather than
+/// inside the browser.
 fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        let dir = program.parent().filter(|d| !d.as_os_str().is_empty());
+        match crate::shell_parent::spawn(program, args, dir) {
+            Ok(_) => return Ok(()),
+            Err(e) => log!(
+                "could not start Wirecatch from the desktop shell ({e}); starting it from here instead, so Task Manager may list it inside the browser"
+            ),
+        }
+    }
     let mut command = Command::new(program);
     command
         .args(args)

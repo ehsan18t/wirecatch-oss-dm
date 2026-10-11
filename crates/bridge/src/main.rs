@@ -35,6 +35,8 @@ mod config;
 mod install;
 mod raw_frame;
 mod relay;
+#[cfg(windows)]
+mod shell_parent;
 
 use raw_frame::RawFrame;
 
