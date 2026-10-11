@@ -73,6 +73,8 @@ pub fn sanitize(name: &str) -> String {
         .map(|c| match c {
             '<' | '>' | ':' | '"' | '|' | '?' | '*' => '_',
             c if c.is_control() => '_',
+            // Invisible format characters can make `exe.mp4` display as `mp4.exe`.
+            c if is_format_char(c) => '_',
             c => c,
         })
         .collect();
@@ -92,6 +94,37 @@ pub fn sanitize(name: &str) -> String {
         out.insert(0, '_');
     }
     truncate_keeping_extension(&out, MAX_NAME_BYTES)
+}
+
+/// Whether `c` is a Unicode format character (general category Cf): the bidirectional marks,
+/// embeddings, overrides and isolates (U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069)
+/// that can make a file name display in a different order than it is, and the zero-width and
+/// other invisible characters that can hide part of it.
+fn is_format_char(c: char) -> bool {
+    matches!(
+        u32::from(c),
+        0x00AD
+            | 0x0600..=0x0605
+            | 0x061C
+            | 0x06DD
+            | 0x070F
+            | 0x0890..=0x0891
+            | 0x08E2
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x202A..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0xFEFF
+            | 0xFFF9..=0xFFFB
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0001
+            | 0xE0020..=0xE007F
+    )
 }
 
 fn is_windows_reserved(name: &str) -> bool {
@@ -164,6 +197,41 @@ mod tests {
     fn content_disposition_plain_with_semicolon_in_quotes() {
         let v = r#"attachment; filename="a;b.txt""#;
         assert_eq!(from_content_disposition(v).as_deref(), Some("a;b.txt"));
+    }
+
+    #[test]
+    fn invisible_format_characters_cannot_disguise_a_name() {
+        // "invoice\u{202E}4pm.exe" displays as "invoiceexe.mp4".
+        assert_eq!(sanitize("invoice\u{202E}4pm.exe"), "invoice_4pm.exe");
+        for c in [
+            '\u{200E}',
+            '\u{200F}',
+            '\u{202A}',
+            '\u{202B}',
+            '\u{202C}',
+            '\u{202D}',
+            '\u{202E}',
+            '\u{2066}',
+            '\u{2067}',
+            '\u{2068}',
+            '\u{2069}',
+            '\u{200B}',
+            '\u{200D}',
+            '\u{2060}',
+            '\u{FEFF}',
+            '\u{00AD}',
+            '\u{E0041}',
+        ] {
+            assert_eq!(
+                sanitize(&format!("a{c}b.txt")),
+                "a_b.txt",
+                "U+{:04X}",
+                u32::from(c)
+            );
+        }
+        // Ordinary letters from right-to-left scripts stay.
+        assert_eq!(sanitize("שלום.pdf"), "שלום.pdf");
+        assert_eq!(sanitize("مرحبا.txt"), "مرحبا.txt");
     }
 
     #[test]
