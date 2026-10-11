@@ -14,5 +14,6 @@ mod protocol;
 mod queues;
 mod restart;
 mod schedule;
+mod settings;
 mod settle;
 mod windows;

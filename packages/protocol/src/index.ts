@@ -54,6 +54,7 @@ export type { QueueId } from "./generated/QueueId";
 export type { QueueSummary } from "./generated/QueueSummary";
 export type { Reply } from "./generated/Reply";
 export type { Schedule } from "./generated/Schedule";
+export type { SettingsChange } from "./generated/SettingsChange";
 export type { SettingsProfile } from "./generated/SettingsProfile";
 export type { Theme } from "./generated/Theme";
 export type { TimeOfDay } from "./generated/TimeOfDay";

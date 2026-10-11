@@ -449,6 +449,17 @@ pub enum Theme {
     Dark,
 }
 
+/// One change to [`AppSettings`]: the setting at `path` (field names from the top, such as `["extension", "ask_before_download"]`) becomes `value`. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SettingsChange {
+    /// Field names from the top of the settings to the one that changes. Every name must exist.
+    pub path: Vec<String>,
+    /// The new value, in the settings' own JSON form.
+    #[ts(type = "unknown")]
+    pub value: serde_json::Value,
+}
+
 /// Every user setting. The app is the only store (D5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
