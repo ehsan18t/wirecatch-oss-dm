@@ -989,18 +989,19 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() {
 }
 
 /// The stored `origin` (cookies and headers) of download `id`, read from the
-/// database the way anyone with the file could.
-fn stored_origin(h: &Harness, id: wirecatch_protocol::DownloadId) -> String {
+/// database the way anyone with the file could; `None` until the database
+/// thread has written the row, so callers can wait for it.
+fn stored_origin(h: &Harness, id: wirecatch_protocol::DownloadId) -> Option<String> {
     let db = h
         .root
         .path()
         .join("data")
         .join(wirecatch_core::DATABASE_FILE);
-    let db = rusqlite::Connection::open(db).unwrap();
+    let db = rusqlite::Connection::open(db).ok()?;
     db.query_row("SELECT origin FROM downloads WHERE id = ?1", [id.0], |r| {
         r.get(0)
     })
-    .unwrap()
+    .ok()
 }
 
 async fn wait_until_stored(
@@ -1009,7 +1010,7 @@ async fn wait_until_stored(
     check: impl Fn(&str) -> bool,
 ) -> String {
     crate::common::wait_until("the stored origin", || {
-        Some(stored_origin(h, id)).filter(|o| check(o))
+        stored_origin(h, id).filter(|o| check(o))
     })
     .await
 }
@@ -1048,7 +1049,7 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() {
     // Six days on, it is all still there.
     h.clock.advance(chrono::TimeDelta::days(6));
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(stored_origin(&h, old).contains("session=abc"));
+    wait_until_stored(&h, old, |o| o.contains("session=abc")).await;
 
     // A week on, the sign-in is gone; harmless headers stay.
     h.clock
