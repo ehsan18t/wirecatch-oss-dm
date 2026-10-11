@@ -293,8 +293,7 @@ export class AppState {
   async #restoreQuestions(): Promise<void> {
     try {
       const choices = await this.backend.pendingMediaChoices();
-      const known = new Set(this.mediaChoices.map((c) => c.id));
-      const fresh = choices.filter((c) => !known.has(c.id));
+      const fresh = choices.filter((c) => !this.mediaChoices.some((k) => k.id === c.id));
       if (fresh.length > 0) this.mediaChoices = [...this.mediaChoices, ...fresh];
     } catch {
       // Not offered (yet): the events still bring new choices.
