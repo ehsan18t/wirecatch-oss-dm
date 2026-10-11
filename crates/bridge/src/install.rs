@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 
@@ -344,7 +344,6 @@ pub(crate) struct ManifestFile {
     pub(crate) hosts_dir: PathBuf,
 }
 
-/// A registry key under HKCU whose default value is a manifest path.
 /// The registry root a key lives under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Hive {
@@ -364,6 +363,7 @@ impl Hive {
     }
 }
 
+/// A registry key whose default value is a manifest path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegistryEntry {
     pub(crate) hive: Hive,
@@ -561,6 +561,8 @@ fn plan_windows(
 pub(crate) trait Host {
     /// The file's contents, or `None` if it does not exist.
     fn read_file(&self, path: &Path) -> io::Result<Option<Vec<u8>>>;
+    /// Whether a file exists at `path`.
+    fn is_file(&self, path: &Path) -> bool;
     /// Writes the file, creating missing folders, replacing it atomically.
     fn write_file(&mut self, path: &Path, contents: &[u8]) -> io::Result<()>;
     /// Removes the file.
@@ -630,6 +632,9 @@ pub(crate) mod files {
 impl Host for RealHost {
     fn read_file(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
         files::read(path)
+    }
+    fn is_file(&self, path: &Path) -> bool {
+        path.is_file()
     }
 
     fn write_file(&mut self, path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -916,11 +921,12 @@ pub(crate) fn covered_by_machine(machine: &Plan, host: &dyn Host) -> bool {
     !machine.keys.is_empty() && keys && files
 }
 
-/// The per-user install the app runs on every start. When the per-machine installer already registered this bridge for every user, it removes any registration of its own for this user instead of adding one: a per-user copy would outlive an uninstall, which can only clean up the account that runs it.
+/// The per-user install the app runs on every start. When the per-machine installer already registered this bridge for every user, it removes any registration of its own for this user instead of adding one: a per-user copy would outlive an uninstall, which can only clean up the account that runs it. It also removes this account's registrations of bridges that no longer exist, which would hide the machine one.
 pub(crate) fn install_for_user(user: &Plan, machine: Option<&Plan>, host: &mut dyn Host) -> Report {
     match machine {
         Some(machine) if covered_by_machine(machine, host) => {
             let mut report = uninstall(user, host);
+            remove_dead_registrations(user, host, &mut report);
             report.ok(
                 "Registered for every user of this computer; nothing to add for this account."
                     .to_owned(),
@@ -944,16 +950,7 @@ pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
         match host.read_file(&file.path) {
             Ok(None) => {}
             Ok(Some(bytes)) if bytes == file.contents.as_bytes() => {
-                match host.remove_file(&file.path) {
-                    Ok(()) => {
-                        report.ok(format!("Removed {shown}"));
-                        if let Err(e) = host.remove_dir_if_empty(&file.hosts_dir) {
-                            report
-                                .fail(format!("Could not tidy {}: {e}", file.hosts_dir.display()));
-                        }
-                    }
-                    Err(e) => report.fail(format!("Could not remove {shown}: {e}")),
-                }
+                delete_manifest(file, host, &mut report);
             }
             Ok(Some(_)) => report.ok(format!(
                 "Left {shown} in place: it was changed or written by another copy of Wirecatch"
@@ -998,6 +995,66 @@ fn remove_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
             return;
         }
     }
+    delete_key(entry, host, report);
+}
+
+/// Removes this account's registrations whose manifest names a bridge that no longer exists: left by a per-user install of an earlier version, or by a portable copy that was deleted. Browsers read the account's registration before the machine's, so such a leftover hides the machine registration and the extension cannot start any bridge. A registration of another copy that still exists is left alone: that copy chose it, and registers again on its next start.
+fn remove_dead_registrations(user: &Plan, host: &mut dyn Host, report: &mut Report) {
+    for file in &user.files {
+        let bridge = match host.read_file(&file.path) {
+            Ok(None) => continue,
+            Ok(Some(bytes)) => manifest_bridge(&bytes),
+            Err(e) => {
+                report.fail(format!("Could not read {}: {e}", file.path.display()));
+                continue;
+            }
+        };
+        if bridge.is_some_and(|bridge| host.is_file(&bridge)) {
+            continue;
+        }
+        // Keys first, like `uninstall`, so no browser is left pointing at a removed manifest.
+        for entry in user
+            .keys
+            .iter()
+            .filter(|e| Path::new(&e.value) == file.path)
+        {
+            if matches!(host.registry_value(entry.hive, &entry.key), Ok(Some(value)) if value == entry.value)
+            {
+                delete_key(entry, host, report);
+            }
+        }
+        delete_manifest(file, host, report);
+    }
+}
+
+/// The bridge a manifest names (its `path`), or `None` when it cannot be read as a manifest.
+fn manifest_bridge(bytes: &[u8]) -> Option<PathBuf> {
+    #[derive(Deserialize)]
+    struct Named {
+        path: PathBuf,
+    }
+    serde_json::from_slice::<Named>(bytes)
+        .ok()
+        .map(|named| named.path)
+}
+
+/// Removes a manifest, and its folder when that is left empty.
+fn delete_manifest(file: &ManifestFile, host: &mut dyn Host, report: &mut Report) {
+    let shown = file.path.display();
+    match host.remove_file(&file.path) {
+        Ok(()) => {
+            report.ok(format!("Removed {shown}"));
+            if let Err(e) = host.remove_dir_if_empty(&file.hosts_dir) {
+                report.fail(format!("Could not tidy {}: {e}", file.hosts_dir.display()));
+            }
+        }
+        Err(e) => report.fail(format!("Could not remove {shown}: {e}")),
+    }
+}
+
+/// Removes a key, and its `NativeMessagingHosts` parent when that is left empty.
+fn delete_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
+    let name = format!(r"{}\{}", entry.hive.name(), entry.key);
     match host.delete_registry_key(entry.hive, &entry.key) {
         Ok(()) => {
             report.ok(format!("Removed {name}"));
@@ -1157,6 +1214,9 @@ mod tests {
     impl Host for FakeHost {
         fn read_file(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
             files::read(path)
+        }
+        fn is_file(&self, path: &Path) -> bool {
+            path.is_file()
         }
         fn write_file(&mut self, path: &Path, contents: &[u8]) -> io::Result<()> {
             files::write(path, contents)
@@ -1858,6 +1918,67 @@ mod tests {
             covered_by_machine(&machine, &host),
             "the machine registration stays"
         );
+    }
+
+    // Browsers read the account's registration before the machine's. One left by an earlier per-user
+    // install, or by a portable copy that was deleted, named a bridge that is gone, and the app no
+    // longer rewrote it, so the extension could not start any bridge for that account.
+    #[test]
+    fn a_user_install_removes_registrations_of_bridges_that_are_gone() {
+        let temp = TempDir::new();
+        let exe = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let (machine, user) = machine_and_user(&temp, &exe);
+        let deleted = temp.0.join("Deleted").join("wirecatch-bridge.exe");
+        let (_, deleted_user) = machine_and_user(&temp, &deleted);
+        let mut host = FakeHost::default();
+        assert_eq!(install(&deleted_user, &mut host).failures, 0);
+        assert_eq!(install(&machine, &mut host).failures, 0);
+
+        let report = install_for_user(&user, Some(&machine), &mut host);
+
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(
+            user.keys.iter().all(|k| host
+                .registry_value(Hive::CurrentUser, &k.key)
+                .unwrap()
+                .is_none()),
+            "the dead registration is removed: {:?}",
+            host.snapshot()
+        );
+        assert!(user.files.iter().all(|f| !f.path.exists()));
+        assert!(covered_by_machine(&machine, &host));
+    }
+
+    #[test]
+    fn a_user_install_leaves_a_registration_of_another_copy_that_exists() {
+        let temp = TempDir::new();
+        let exe = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let (machine, user) = machine_and_user(&temp, &exe);
+        let portable = temp.0.join("Portable").join("wirecatch-bridge.exe");
+        files::write(&portable, b"a bridge").unwrap();
+        let (_, portable_user) = machine_and_user(&temp, &portable);
+        let mut host = FakeHost::default();
+        assert_eq!(install(&portable_user, &mut host).failures, 0);
+        assert_eq!(install(&machine, &mut host).failures, 0);
+
+        let report = install_for_user(&user, Some(&machine), &mut host);
+
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(portable_user.keys.iter().all(|k| {
+            host.registry_value(Hive::CurrentUser, &k.key)
+                .unwrap()
+                .as_deref()
+                == Some(k.value.as_str())
+        }));
+        assert!(portable_user.files.iter().all(|f| f.path.exists()));
     }
 
     #[test]

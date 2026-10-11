@@ -145,7 +145,10 @@ pub fn registers_on_start() -> bool {
 
 /// Runs `<bridge> install` on a thread of its own, so startup never waits on it. The command
 /// is idempotent: it writes the same manifests and registry values each time, which also
-/// repairs a registration that a browser update or a moved install broke. Failures are logged.
+/// repairs a registration that a browser update or a moved install broke. Under a per-machine
+/// install it writes nothing for the account, and only removes the account's own registration
+/// and any that names a bridge which no longer exists, since those would hide the machine one.
+/// Failures are logged.
 ///
 /// `find` picks the bridge to register, on that thread (under an AppImage it copies one out
 /// first, see [`crate::appimage`]); `None` registers nothing.
