@@ -294,6 +294,16 @@ async fn settings_changes_reach_every_client() {
     ));
 }
 
+// The extension's "Open Wirecatch" starts the app in the tray; this call brings its window up.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_can_ask_for_the_window() {
+    let h = Harness::new().await;
+    let mut ui = h.manager.subscribe();
+    let mut client = Client::connected(&h.manager).await;
+    assert_eq!(client.call(Call::ShowWindow).await.unwrap(), Reply::Done);
+    while !matches!(ui.recv().await.unwrap(), UiEvent::WindowRequested) {}
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_capture_starts_at_once_and_shows_a_toast() {
     let server = TestServer::fast(1024).await;

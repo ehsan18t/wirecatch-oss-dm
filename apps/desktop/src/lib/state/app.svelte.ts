@@ -435,6 +435,9 @@ export class AppState {
         // Not a passing note: it stays until the person deals with it.
         this.storageProblem = event.data.message;
         break;
+      case 'window_requested':
+        // The desktop shell brings the window to the front; nothing changes in it.
+        break;
     }
   }
 

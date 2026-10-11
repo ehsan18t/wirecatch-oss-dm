@@ -19,4 +19,4 @@ export type UiEvent = { "type": "downloads_changed", "data": Array<DownloadSumma
  * `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
  * needs it. Shares the id space of [`ConfirmationClosed`](Self::ConfirmationClosed).
  */
-id: number, } } | { "type": "confirmation_closed", "data": { id: number, } };
+id: number, } } | { "type": "confirmation_closed", "data": { id: number, } } | { "type": "window_requested" };

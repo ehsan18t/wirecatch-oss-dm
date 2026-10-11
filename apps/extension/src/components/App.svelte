@@ -158,7 +158,11 @@
         {#if problem.detail}
           <p class="detail">Details: {problem.detail}</p>
         {/if}
-        <button type="button" class="button" onclick={() => model.reconnect()}>
+        <button
+          type="button"
+          class="button"
+          onclick={() => (closed ? void model.openApp() : model.reconnect())}
+        >
           {closed ? 'Open Wirecatch' : 'Try again'}
         </button>
       </section>

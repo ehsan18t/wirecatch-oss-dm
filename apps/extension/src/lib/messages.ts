@@ -58,6 +58,8 @@ export type PopupCommand =
   | { type: 'pause_all' }
   | { type: 'resume_all' }
   | { type: 'reconnect' }
+  /** Start Wirecatch if it is closed, and show its window. */
+  | { type: 'open_app' }
   | { type: 'dismiss_notice' }
   /** Start sending `media` messages for this tab's "Media on this page" list. */
   | { type: 'watch_media'; tabId: number }
@@ -88,6 +90,7 @@ const COMMAND_TYPES = new Set<string>([
   'pause_all',
   'resume_all',
   'reconnect',
+  'open_app',
   'dismiss_notice',
   'watch_media',
   'download_media',

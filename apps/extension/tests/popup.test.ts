@@ -318,6 +318,19 @@ describe('popup', () => {
     expect(app.calls('resume_all')).toHaveLength(1);
   });
 
+  // The button used to only reconnect, and the bridge starts the app in the tray, so nothing opened.
+  it('opens a closed Wirecatch and shows its window', async () => {
+    const { app } = await openPopup({
+      configure: (fake) => {
+        fake.running = false;
+      },
+    });
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Open Wirecatch' }));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Wirecatch is open.'));
+    expect(app.starts).toBe(1);
+    expect(app.calls('show_window')).toHaveLength(1);
+  });
+
   it('rolls a change back and says why when the app refuses it', async () => {
     const { app } = await openPopup();
     app.updateError = { code: 'internal', message: 'Settings could not be saved.' };

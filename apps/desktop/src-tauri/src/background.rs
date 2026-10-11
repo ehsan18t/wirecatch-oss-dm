@@ -44,6 +44,7 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     Attention::None => {}
                     Attention::Ask(id) => download_windows::ask(&app, id),
                     Attention::Closed(id) => download_windows::question_closed(&app, id),
+                    Attention::ShowMain => crate::window::show_main_window(&app),
                     Attention::Notify { title, body } => {
                         let unseen = app.get_webview_window(MAIN_WINDOW).is_none()
                             || sleep::skips_events(&app, MAIN_WINDOW);

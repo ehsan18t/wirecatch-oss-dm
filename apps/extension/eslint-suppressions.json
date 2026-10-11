@@ -45,7 +45,7 @@
   },
   "src/lib/hub.ts": {
     "@typescript-eslint/no-magic-numbers": {
-      "count": 6
+      "count": 3
     },
     "complexity": {
       "count": 3

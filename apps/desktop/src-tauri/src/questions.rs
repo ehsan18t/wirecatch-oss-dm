@@ -25,6 +25,8 @@ pub enum Attention {
     Ask(u64),
     /// The question with this id is no longer open; it no longer waits for a window.
     Closed(u64),
+    /// A client asked to see Wirecatch: the main window comes to the front.
+    ShowMain,
     /// Something went wrong that the person must know about: a system notification when no
     /// main window shows it.
     Notify {
@@ -43,6 +45,7 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
         UiEvent::AddonRequired { id, .. } => Attention::Ask(*id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
+        UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::StorageFailed(error) => Attention::Notify {
             title: "Wirecatch could not save its download list".to_owned(),
             body: error.message.clone(),
@@ -173,6 +176,7 @@ mod tests {
             attention(&UiEvent::DownloadsRemoved(vec![])),
             Attention::None
         );
+        assert_eq!(attention(&UiEvent::WindowRequested), Attention::ShowMain);
     }
 
     #[test]

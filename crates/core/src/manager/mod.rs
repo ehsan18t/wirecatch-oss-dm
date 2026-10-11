@@ -311,6 +311,11 @@ impl Manager {
         self.inner.wire_events.subscribe()
     }
 
+    /// Asks the desktop to show its main window ([`UiEvent::WindowRequested`]), for a client such as the extension's "Open Wirecatch".
+    pub fn request_window(&self) {
+        self.emit(UiEvent::WindowRequested);
+    }
+
     /// Stops every download so it can continue on the next start, saves everything,
     /// closes the database and stops the background work. Once it returns, the data
     /// folder can be deleted or moved (the database file is closed). Later operations

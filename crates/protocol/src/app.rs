@@ -608,6 +608,8 @@ pub enum UiEvent {
         #[ts(type = "number")]
         id: u64,
     },
+    /// A client asked to see Wirecatch (the extension's "Open Wirecatch"): the desktop shows its main window.
+    WindowRequested,
 }
 
 /// What importing a settings profile changed.

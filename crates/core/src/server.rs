@@ -176,6 +176,10 @@ async fn handle(manager: &Manager, call: Call) -> Outcome {
         Call::ListQueues => Ok(Reply::Queues(manager.queue_summaries())),
         Call::PauseAll => manager.pause_all().map(|()| Reply::Done),
         Call::ResumeAll => manager.resume_all().map(|()| Reply::Done),
+        Call::ShowWindow => {
+            manager.request_window();
+            Ok(Reply::Done)
+        }
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),

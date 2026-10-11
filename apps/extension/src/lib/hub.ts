@@ -127,6 +127,9 @@ const CAPTURE_EVERYTHING: ExtensionSettings = {
 /** How many handover ids are remembered for spotting late answers. */
 const RECENT_LIMIT = 50;
 
+/** How long a call waits for the app's answer unless `requestTimeoutMs` says otherwise. */
+const REQUEST_TIMEOUT_MS = 10_000;
+
 const NO_SITE_ACCESS =
   'Wirecatch needs access to websites to take downloads with their cookies. Open this popup and click Allow access.';
 
@@ -488,7 +491,7 @@ export class Hub {
   async #addDownload(download: NewDownload): Promise<AddedDownload> {
     const reply = await this.#client.request(
       { method: 'add_download', params: download },
-      this.#deps.requestTimeoutMs ?? 10_000,
+      this.#requestTimeout(),
     );
     if (reply.type !== 'download_added') {
       throw new Error('Wirecatch gave an unexpected answer.');
@@ -565,6 +568,10 @@ export class Hub {
       case 'reconnect':
         this.#client.reconnectNow();
         return;
+      case 'open_app':
+        // Sent even when the app is closed: a request starts it, and the app then shows its window.
+        await this.#client.request({ method: 'show_window' }, this.#requestTimeout());
+        return;
       case 'dismiss_notice':
         this.#setNotice(null);
         return;
@@ -590,11 +597,16 @@ export class Hub {
     }
   }
 
+  /** A popup call: only to a connected app, since none of them is worth starting a closed one for. */
   async #call(call: Call): Promise<Reply> {
     if (this.#client.status.state !== 'connected') {
       throw new Error('Wirecatch is not connected, so this cannot be done right now.');
     }
-    return this.#client.request(call, this.#deps.requestTimeoutMs ?? 10_000);
+    return this.#client.request(call, this.#requestTimeout());
+  }
+
+  #requestTimeout(): number {
+    return this.#deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   }
 
   #onStatus(status: ConnectionStatus): void {
@@ -608,7 +620,7 @@ export class Hub {
 
   async #refresh(): Promise<void> {
     try {
-      const timeout = this.#deps.requestTimeoutMs ?? 10_000;
+      const timeout = this.#requestTimeout();
       const [settings, queues] = await Promise.all([
         this.#client.request({ method: 'get_extension_settings' }, timeout),
         this.#client.request({ method: 'list_queues' }, timeout),

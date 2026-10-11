@@ -54,6 +54,8 @@ pub enum Call {
     ListQueues,
     PauseAll,
     ResumeAll,
+    /// Brings the app's main window to the front, starting the app first like any call (the extension's "Open Wirecatch").
+    ShowWindow,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

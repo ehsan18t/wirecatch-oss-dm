@@ -210,6 +210,7 @@ export class FakeApp implements NativeTransport {
         return;
       case 'pause_all':
       case 'resume_all':
+      case 'show_window':
         reply({ status: 'ok', value: { type: 'done' } });
         return;
       case 'withdraw_download': {
