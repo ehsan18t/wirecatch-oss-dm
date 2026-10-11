@@ -6,6 +6,8 @@ use std::path::Path;
 use wirecatch_engine::Error as EngineError;
 use wirecatch_protocol::app::{FixAction, UserError};
 
+use crate::store::Recovery;
+
 /// Raw OS codes for a full disk, in case the standard library does not classify them.
 #[cfg(windows)]
 const DISK_FULL_CODES: &[i32] = &[39, 112]; // ERROR_HANDLE_DISK_FULL, ERROR_DISK_FULL
@@ -119,6 +121,36 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             format!("The download failed ({other}). Try again."),
             FixAction::Retry,
         ),
+    }
+}
+
+/// Something the person should know about how Wirecatch started, shown once as a notification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartupNotice {
+    /// A short title.
+    pub title: String,
+    /// What happened and what it means for the person, in whole sentences.
+    pub message: String,
+}
+
+/// The notice for a download list that had to be repaired while opening.
+pub(crate) fn list_recovered(recovery: &Recovery) -> StartupNotice {
+    match recovery {
+        Recovery::Damaged { kept_at } => StartupNotice {
+            title: "Wirecatch started a new download list".to_owned(),
+            message: format!(
+                "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders. The damaged list is kept at {}.",
+                kept_at.display()
+            ),
+        },
+        Recovery::UnreadableRemoved(count) => StartupNotice {
+            title: "Some downloads were removed from the list".to_owned(),
+            message: format!(
+                "Wirecatch could not read {count} {} in its list and removed {}. Files already downloaded are still in their folders.",
+                if *count == 1 { "download" } else { "downloads" },
+                if *count == 1 { "it" } else { "them" },
+            ),
+        },
     }
 }
 

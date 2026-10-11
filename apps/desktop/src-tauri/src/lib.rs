@@ -330,6 +330,10 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
             return;
         }
     };
+    if let Some(notice) = manager.startup_notice() {
+        tracing::warn!("{}: {}", notice.title, notice.message);
+        background::show_notification(&app, notice.title.clone(), notice.message.clone());
+    }
     let life = app.state::<Lifecycle>();
     // Subscribed before looking at open questions, so none falls between the two.
     let events = manager.subscribe();

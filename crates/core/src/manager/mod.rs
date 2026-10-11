@@ -45,7 +45,7 @@ use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
 use crate::store::Store;
-use crate::user_error;
+use crate::user_error::{self, StartupNotice};
 use state::{Entry, State, Stop};
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
@@ -208,6 +208,8 @@ struct Inner {
     queues_changed: Arc<Notify>,
     /// Stops the background tasks.
     stopped: CancellationToken,
+    /// What to tell the person about this start, if anything.
+    startup_notice: Option<StartupNotice>,
     /// Plays the engine in unit tests.
     #[cfg(test)]
     fake_engine: Mutex<Option<fake::FakeEngine>>,
@@ -238,8 +240,9 @@ impl Manager {
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
-        let (store, restored) = blocking(&runtime, move || {
-            let (store, snapshot) = Store::open(&dir, on_failure)?;
+        let (store, restored, recovery) = blocking(&runtime, move || {
+            let (store, mut snapshot) = Store::open(&dir, on_failure)?;
+            let recovery = snapshot.recovery.take();
             let around = restore::Surroundings {
                 now,
                 now_millis,
@@ -249,7 +252,7 @@ impl Manager {
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             // Cookies files left by a crash: nothing may keep them.
             let _ = std::fs::remove_dir_all(&temp_at);
-            Ok((store, restored))
+            Ok((store, restored, recovery))
         })
         .await?;
         store.save_settings(restored.state.settings.clone());
@@ -276,6 +279,7 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
+            startup_notice: recovery.as_ref().map(user_error::list_recovered),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
         });
@@ -283,6 +287,11 @@ impl Manager {
         manager.spawn_background_tasks();
         manager.reconcile(&mut manager.lock());
         Ok(manager)
+    }
+
+    /// What the person should be told about this start, such as a damaged download list that was set aside. `None` on a normal start.
+    pub fn startup_notice(&self) -> Option<&StartupNotice> {
+        self.inner.startup_notice.as_ref()
     }
 
     /// Events for the desktop UI.

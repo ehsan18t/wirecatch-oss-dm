@@ -146,7 +146,28 @@ pub(crate) struct Snapshot {
     pub last_ids: LastIds,
     pub queues: Vec<Queue>,
     pub downloads: Vec<StoredDownload>,
+    /// What had to be repaired to open the list, for the person to be told.
+    pub recovery: Option<Recovery>,
 }
+
+/// A repair made while opening the download list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Recovery {
+    /// The database file was damaged. It was moved to `kept_at`, untouched, and a new, empty list was started.
+    Damaged {
+        /// Where the damaged file now is.
+        kept_at: PathBuf,
+    },
+    /// This many downloads could not be read and were deleted, since their rows may still hold cookies.
+    UnreadableRemoved(usize),
+}
+
+/// Suffix of a damaged database moved aside, followed by the Unix time in milliseconds.
+const DAMAGED_SUFFIX: &str = ".damaged-";
+/// Suffix of the copy taken before a schema upgrade, followed by the schema version it holds.
+const BACKUP_SUFFIX: &str = ".bak-v";
+/// SQLite's own files next to the database, which belong to it and move with it.
+const SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
 
 /// Told why saving failed after every retry.
 pub(crate) type FailureHandler = Box<dyn Fn(String) + Send>;
@@ -202,6 +223,8 @@ impl Store {
     ///
     /// `on_failure` is called (on the database thread) with the reason whenever a
     /// batch of writes could not be saved even after retrying.
+    ///
+    /// A database file SQLite reports as damaged is moved aside and a new list is started, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recovery`] says so.
     pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
         std::fs::create_dir_all(dir).map_err(|source| CoreError::File {
             path: dir.display().to_string(),
@@ -210,12 +233,17 @@ impl Store {
         // The folder first, so the database and its journal files inherit its access.
         restrict_to_owner(dir);
         let path = dir.join(DATABASE_FILE);
-        let mut conn = Connection::open(&path)?;
-        restrict_to_owner(&path);
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-        configure(&conn)?;
-        migrate(&mut conn)?;
-        let snapshot = load(&conn)?;
+        let (conn, damaged) = match open_database(&path) {
+            Ok(conn) => (conn, None),
+            Err(CoreError::Database(e)) if is_damage(&e) => {
+                error!(error = %e, "the download list is damaged; setting it aside and starting a new one");
+                let kept_at = set_aside(&path)?;
+                (open_database(&path)?, Some(Recovery::Damaged { kept_at }))
+            }
+            Err(e) => return Err(e),
+        };
+        let mut snapshot = load(&conn)?;
+        snapshot.recovery = damaged.or(snapshot.recovery);
 
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
@@ -487,11 +515,94 @@ fn configure(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn migrate(conn: &mut Connection) -> Result<()> {
+/// Opens the database at `path`, checks it is intact and brings its schema up to date.
+fn open_database(path: &Path) -> Result<Connection> {
+    let mut conn = Connection::open(path)?;
+    restrict_to_owner(path);
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    configure(&conn)?;
+    check_integrity(&conn)?;
+    migrate(&mut conn, path)?;
+    Ok(conn)
+}
+
+/// SQLite's quick structural check. A damaged file can open and answer the first queries, then fail later, so this runs before anything is read.
+fn check_integrity(conn: &Connection) -> rusqlite::Result<()> {
+    let verdict: String = conn.pragma_query_value(None, "quick_check", |row| row.get(0))?;
+    if verdict == "ok" {
+        Ok(())
+    } else {
+        Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+            Some(verdict),
+        ))
+    }
+}
+
+/// Whether an error means the file itself is damaged, as opposed to a full disk or a locked file, which a later start can get past.
+fn is_damage(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::DatabaseCorrupt)
+    )
+}
+
+/// Moves a damaged database and its side files to `<name>.damaged-<unix ms>`, keeping them for anyone who wants to recover them. Returns where the database went.
+fn set_aside(path: &Path) -> Result<PathBuf> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    let moved = |from: &Path| -> Result<PathBuf> {
+        let mut name = from.as_os_str().to_owned();
+        name.push(format!("{DAMAGED_SUFFIX}{stamp}"));
+        let to = PathBuf::from(name);
+        std::fs::rename(from, &to).map_err(|source| CoreError::File {
+            path: from.display().to_string(),
+            source,
+        })?;
+        Ok(to)
+    };
+    let kept_at = moved(path)?;
+    for side in SIDE_FILES {
+        let mut name = path.as_os_str().to_owned();
+        name.push(side);
+        let side = PathBuf::from(name);
+        if side.exists() {
+            moved(&side)?;
+        }
+    }
+    Ok(kept_at)
+}
+
+/// Copies the database to `<name>.bak-v<version>` before its schema changes, so a failed or faulty upgrade can be undone by hand. `VACUUM INTO` writes a consistent copy, including what is still in the write-ahead log.
+fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) -> Result<()> {
+    let mut name = path.as_os_str().to_owned();
+    name.push(format!("{BACKUP_SUFFIX}{version}"));
+    let backup = PathBuf::from(name);
+    match std::fs::remove_file(&backup) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(CoreError::File {
+                path: backup.display().to_string(),
+                source,
+            });
+        }
+    }
+    conn.execute("VACUUM INTO ?1", [backup.to_string_lossy()])?;
+    restrict_to_owner(&backup);
+    Ok(())
+}
+
+fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     let supported = MIGRATIONS.len() as u32;
     let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if found > supported {
         return Err(CoreError::DatabaseTooNew { found, supported });
+    }
+    // A new, empty database has nothing worth a copy.
+    if found > 0 && found < supported {
+        back_up_before_upgrade(conn, path, found)?;
     }
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(found as usize) {
         let tx = conn.transaction()?;
@@ -540,20 +651,26 @@ fn load(conn: &Connection) -> Result<Snapshot> {
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media
          FROM downloads ORDER BY position",
     )?;
-    let downloads = stmt
-        .query_map([], read_download)?
-        .filter_map(|row| match row {
-            Ok(Some(download)) => Some(Ok(download)),
-            Ok(None) => None,
-            Err(e) => Some(Err(e)),
-        })
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut downloads = Vec::new();
+    let mut unreadable = Vec::new();
+    for row in stmt.query_map([], read_download)? {
+        match row? {
+            StoredRow::Readable(download) => downloads.push(*download),
+            StoredRow::Unreadable(id) => unreadable.push(id),
+        }
+    }
+    // The rows may still hold cookies, and nothing can ever show or resume them.
+    let mut delete = conn.prepare("DELETE FROM downloads WHERE id = ?1")?;
+    for id in &unreadable {
+        delete.execute([id.0])?;
+    }
 
     Ok(Snapshot {
         settings,
         last_ids,
         queues,
         downloads,
+        recovery: (!unreadable.is_empty()).then_some(Recovery::UnreadableRemoved(unreadable.len())),
     })
 }
 
@@ -625,17 +742,22 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     Ok(())
 }
 
-/// A row that cannot be understood is skipped with a warning rather than failing
-/// the whole start.
-fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
+/// One stored download row, or the id of a row that cannot be understood.
+enum StoredRow {
+    Readable(Box<StoredDownload>),
+    Unreadable(DownloadId),
+}
+
+/// A row that cannot be understood is reported rather than failing the whole start.
+fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     let id = DownloadId(row.get(0)?);
     let path: String = row.get(2)?;
     let category = from_text(&row.get::<_, String>(5)?);
     let status = from_text(&row.get::<_, String>(6)?);
     let origin = from_json(&row.get::<_, String>(12)?, "download origin");
     let (Some(category), Some(status), Some(origin)) = (category, status, origin) else {
-        warn!(id = id.0, "skipping a stored download that cannot be read");
-        return Ok(None);
+        warn!(id = id.0, "a stored download cannot be read");
+        return Ok(StoredRow::Unreadable(id));
     };
     let mut status = status;
     let mut error = row
@@ -670,7 +792,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(Some(StoredDownload {
+    Ok(StoredRow::Readable(Box::new(StoredDownload {
         summary: DownloadSummary {
             id,
             url: row.get(1)?,
@@ -699,7 +821,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             folder: row.get(15)?,
         },
         media,
-    }))
+    })))
 }
 
 /// Unit-like enums are stored as their snake_case serde name.
@@ -975,6 +1097,122 @@ mod tests {
         assert_eq!(snapshot.settings, Some(settings));
         assert_eq!(snapshot.queues, vec![queue]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
+    }
+
+    /// Files in `dir` whose names start with `prefix`.
+    fn files_starting(dir: &Path, prefix: &str) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(prefix)
+            })
+            .collect()
+    }
+
+    fn assert_set_aside(dir: &Path, snapshot: &Snapshot, original: &[u8]) {
+        let Some(Recovery::Damaged { kept_at }) = &snapshot.recovery else {
+            panic!(
+                "expected a damaged list to be set aside, got {:?}",
+                snapshot.recovery
+            );
+        };
+        assert_eq!(
+            std::fs::read(kept_at).unwrap(),
+            original,
+            "the damaged file is kept as it was"
+        );
+        assert!(snapshot.downloads.is_empty() && snapshot.queues.is_empty());
+        let damaged = format!("{DATABASE_FILE}{DAMAGED_SUFFIX}");
+        assert_eq!(files_starting(dir, &damaged).len(), 1);
+    }
+
+    // A damaged file used to stop the app from opening on every start, with advice to restart that could never help.
+    #[test]
+    fn a_file_that_is_not_a_database_is_set_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let garbage =
+            b"this is not a database, just some bytes a sync tool left behind".repeat(100);
+        std::fs::write(dir.path().join(DATABASE_FILE), &garbage).unwrap();
+
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+
+        assert_set_aside(dir.path(), &snapshot, &garbage);
+        store.save_downloads(vec![download(1)]);
+        drop(store);
+        let (_, reopened) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(reopened.recovery, None, "the new list opens normally");
+    }
+
+    #[test]
+    fn a_truncated_database_is_set_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(DATABASE_FILE);
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE filler (data BLOB);")
+                .unwrap();
+            for _ in 0..64 {
+                conn.execute("INSERT INTO filler VALUES (zeroblob(4096))", [])
+                    .unwrap();
+            }
+        }
+        let whole = std::fs::read(&path).unwrap();
+        let cut = &whole[..whole.len() / 2];
+        std::fs::write(&path, cut).unwrap();
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+
+        assert_set_aside(dir.path(), &snapshot, cut);
+    }
+
+    #[test]
+    fn a_database_is_copied_before_its_schema_is_upgraded() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        insert_old_download(&conn);
+        drop(conn);
+
+        Store::open(dir.path(), ignore_failures()).unwrap();
+
+        let backup = dir.path().join(format!("{DATABASE_FILE}{BACKUP_SUFFIX}1"));
+        let copy = Connection::open(&backup).unwrap();
+        let version: u32 = copy
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        let rows: i64 = copy
+            .query_row("SELECT count(*) FROM downloads", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            (version, rows),
+            (1, 1),
+            "the copy is the list as it was before the upgrade"
+        );
+    }
+
+    // Unreadable rows used to stay in the table forever, still holding their cookies, and nobody was told.
+    #[tokio::test]
+    async fn unreadable_downloads_are_removed_and_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1), download(2)]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute("UPDATE downloads SET origin = 'not json' WHERE id = 2", [])
+            .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.recovery, Some(Recovery::UnreadableRemoved(1)));
+        assert_eq!(snapshot.downloads, vec![download(1)]);
+        let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(again.recovery, None, "the unreadable row is gone for good");
     }
 
     #[test]

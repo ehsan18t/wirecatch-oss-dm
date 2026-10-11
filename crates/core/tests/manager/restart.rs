@@ -136,3 +136,31 @@ async fn the_data_folder_can_be_deleted_right_after_shutdown() {
     assert!(data.join(wirecatch_core::DATABASE_FILE).is_file());
     std::fs::remove_dir_all(&data).expect("the data folder is still in use after shutdown");
 }
+
+/// A damaged download list used to stop the app from starting at all. Now it is set aside, a new list opens, and the person is told where the old one is.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() {
+    let mut h = Harness::new().await;
+    assert!(
+        h.manager.startup_notice().is_none(),
+        "a normal start has nothing to say"
+    );
+    h.manager.shutdown().await;
+    let database = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    std::fs::write(&database, b"not a database".repeat(400)).unwrap();
+
+    h.restart().await;
+
+    let notice = h.manager.startup_notice().expect("the person is told");
+    assert!(notice.message.contains("damaged"), "{}", notice.message);
+    assert!(
+        notice.message.contains("still in their folders"),
+        "{}",
+        notice.message
+    );
+    assert!(h.manager.list_downloads().is_empty());
+}
