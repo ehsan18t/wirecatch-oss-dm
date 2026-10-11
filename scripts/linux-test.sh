@@ -4,7 +4,7 @@
 # Usage (from the repository root, with Docker running):
 #   bash scripts/linux-test.sh
 #
-# The image uses the Rust release from rust-toolchain.toml, so this matches CI. The source is copied into the container (tests write temporary files and the protocol tests regenerate TypeScript), and the build folder lives in a named volume so repeated runs are incremental. The desktop crate needs a display and system WebKit packages, so it is left to CI and the Windows run.
+# It runs the Rust group of the gate (scripts/gate.mjs) without the desktop crate, with the Rust release from rust-toolchain.toml as CI does. Debian's Node is older than the repository's minimum; the gate script is written to run on it. The source is copied into the container (tests write temporary files and the protocol tests regenerate TypeScript), and the build folder lives in a named volume so repeated runs are incremental. The desktop crate needs a display and system WebKit packages, so it is left to CI and the Windows run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,6 +36,6 @@ docker run --rm -i \
       export PATH=/usr/local/cargo/bin:\$PATH CARGO_HOME=/target/cargo-home CARGO_TARGET_DIR=/target RUSTUP_HOME=/usr/local/rustup
       export WIRECATCH_TEST_FFMPEG=\$(command -v ffmpeg) WIRECATCH_REQUIRE_FFMPEG=1
       cd /work
-      node scripts/gate.mjs --no-desktop fmt lint-policy clippy test
+      node scripts/gate.mjs --no-desktop --no-fail-fast rust
     "
   '

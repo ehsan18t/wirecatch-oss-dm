@@ -1,4 +1,4 @@
-# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. The gate script holds every command; this file only decides where each check runs.
+# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. Every check and every tool version lives in the gate script; this file installs what a runner lacks and decides where each group runs. Together the jobs run exactly what `pnpm gate` runs.
 # Actions are pinned to commit SHAs; the version each SHA belongs to is in the comment.
 name: CI
 
@@ -19,8 +19,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  # The oldest Rust the published engine crate promises to build with (rust-version in Cargo.toml).
-  RUST_MSRV: "1.88.0"
   NODE_VERSION: "22"
 
 jobs:
@@ -68,30 +66,11 @@ jobs:
       - name: Gate (Rust)
         run: node scripts/gate.mjs rust
 
-      # The engine is published to crates.io, and its http3 feature is off by default: check both once per run.
+      # The published engine: its package, its off-by-default http3 feature and its minimum Rust version. Once per run is enough.
       - name: Gate (engine release checks)
         if: runner.os == 'Linux'
-        run: node scripts/gate.mjs release clippy-http3
+        run: node scripts/gate.mjs release
 
-  msrv:
-    name: Engine on its minimum Rust version
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10
-        with:
-          toolchain: ${{ env.RUST_MSRV }}
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Check
-        run: cargo +${{ env.RUST_MSRV }} check -p wirecatch-engine --locked
-
-  # Supply chain: known advisories (Rust and npm), licenses compatible with GPL-3.0-only, banned or duplicated crates, crate sources and unused dependencies. The policy is in deny.toml and package.json (pnpm.auditConfig).
   supply-chain:
     name: Supply chain
     timeout-minutes: 20
@@ -114,11 +93,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # Pinned, and built from their own lockfiles, like every other tool here.
-      - name: Install cargo-deny and cargo-machete
-        run: |
-          cargo install cargo-deny --version 0.19.0 --locked
-          cargo install cargo-machete --version 0.9.2 --locked
+      # cargo-deny and cargo-machete, at the versions in scripts/gate.mjs, built from their own lockfiles.
+      - name: Install gate tools
+        run: node scripts/gate.mjs --install-tools
 
       - name: Gate (supply chain)
         run: node scripts/gate.mjs supply-chain
@@ -132,9 +109,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      # The whole history, so the commit check can compare against main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types.
+      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types, and the Tauri version check reads Cargo.lock through cargo.
       - name: Install Rust
         run: rustup toolchain install
 
@@ -153,20 +133,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main.
+      - name: Choose the commits to check
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            range="$BEFORE..$GITHUB_SHA"
+          else
+            range="origin/main..$GITHUB_SHA"
+          fi
+          echo "GATE_COMMIT_RANGE=$range" >> "$GITHUB_ENV"
+
       - name: Gate (JavaScript and repository rules)
         run: node scripts/gate.mjs js repo
-
-  commits:
-    name: Commit messages
-    if: github.event_name == 'pull_request'
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Gate (commit messages)
-        env:
-          GATE_COMMIT_RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-        run: node scripts/gate.mjs commits

@@ -6,7 +6,7 @@
     reason = "a command-line tool reports its result on standard output"
 )]
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,9 +80,11 @@ struct Args {
     quiet: bool,
 }
 
-/// The engine's own default, so the CLI and the library never disagree.
+/// The engine's own default, so the CLI and the library never disagree, kept inside the range `--connections` accepts.
 fn default_connections() -> u16 {
-    u16::try_from(DownloadOptions::default().connections).unwrap_or(MAX_CONNECTIONS)
+    u16::try_from(DownloadOptions::default().connections)
+        .unwrap_or(MAX_CONNECTIONS)
+        .clamp(1, MAX_CONNECTIONS)
 }
 
 #[tokio::main]
@@ -101,18 +103,20 @@ async fn main() -> anyhow::Result<ExitCode> {
 
     let progress = Arc::new(Progress::default());
     let cancel = CancellationToken::new();
-    tokio::spawn(stop_on_ctrl_c(cancel.clone()));
+    let ctrl_c = tokio::spawn(stop_on_ctrl_c(cancel.clone()));
 
     let bar = (!quiet)
         .then(|| spawn_progress_bar(Arc::clone(&progress)))
         .transpose()?;
     let result = download(request, progress, cancel).await;
+    ctrl_c.abort();
     if let Some((bar, task)) = bar {
         task.abort();
         bar.finish_and_clear();
     }
 
-    Ok(report(&result?))
+    let ending = report(&result?);
+    Ok(ending.exit_code())
 }
 
 /// Turns the command line into an engine request, refusing combinations the engine cannot honour.
@@ -164,15 +168,41 @@ async fn stop_on_ctrl_c(cancel: CancellationToken) {
     if tokio::signal::ctrl_c().await.is_err() {
         return;
     }
-    eprintln!("\nPausing... (press Ctrl+C again to quit immediately)");
+    eprintln!(
+        "
+Pausing... (press Ctrl+C again to quit immediately)"
+    );
     cancel.cancel();
     if tokio::signal::ctrl_c().await.is_ok() {
         std::process::exit(i32::from(EXIT_INTERRUPTED));
     }
 }
 
-/// Prints how the download ended and picks the exit status that says the same to a script.
-fn report(outcome: &Outcome) -> ExitCode {
+/// How a download ended, as far as a script running `wirecatch` is concerned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ending {
+    /// The file is complete.
+    Saved,
+    /// The download stopped before the end; running the same command continues it.
+    Stopped,
+}
+
+impl Ending {
+    /// The exit status that tells a script the same thing.
+    fn exit_code(self) -> ExitCode {
+        ExitCode::from(self.status())
+    }
+
+    fn status(self) -> u8 {
+        match self {
+            Ending::Saved => 0,
+            Ending::Stopped => EXIT_INTERRUPTED,
+        }
+    }
+}
+
+/// Prints how the download ended.
+fn report(outcome: &Outcome) -> Ending {
     match outcome {
         Outcome::Completed {
             path,
@@ -186,31 +216,24 @@ fn report(outcome: &Outcome) -> ExitCode {
                 String::new()
             };
             println!("Saved {} to {}{kept}", HumanBytes(*bytes), path.display());
-            ExitCode::SUCCESS
+            Ending::Saved
         }
         Outcome::Paused {
             path, remaining, ..
         } => {
-            print_paused(path, Some(*remaining));
-            ExitCode::from(EXIT_INTERRUPTED)
+            println!(
+                "Paused with {} left for {}. Run the same command again to continue.",
+                HumanBytes(*remaining),
+                path.display()
+            );
+            Ending::Stopped
         }
         _ => {
-            print_paused(Path::new(""), None);
-            ExitCode::from(EXIT_INTERRUPTED)
+            println!(
+                "Wirecatch stopped before the download finished. Run the same command again to continue."
+            );
+            Ending::Stopped
         }
-    }
-}
-
-fn print_paused(path: &Path, remaining: Option<u64>) {
-    match remaining {
-        Some(remaining) => println!(
-            "Paused with {} left for {}. Run the same command again to continue.",
-            HumanBytes(remaining),
-            path.display()
-        ),
-        None => println!(
-            "Wirecatch stopped before the download finished. Run the same command again to continue."
-        ),
     }
 }
 
@@ -270,6 +293,18 @@ mod tests {
     #[test]
     fn header_without_colon_is_refused() {
         assert!(parse_header("Cookie a=b").is_err());
+    }
+
+    #[test]
+    fn default_connections_fit_the_accepted_range() {
+        assert!((1..=MAX_CONNECTIONS).contains(&default_connections()));
+    }
+
+    // A paused download used to exit 0, so `wirecatch URL && next-step` went on with an unfinished file.
+    #[test]
+    fn only_a_saved_file_exits_zero() {
+        assert_eq!(Ending::Saved.status(), 0);
+        assert_eq!(Ending::Stopped.status(), EXIT_INTERRUPTED);
     }
 
     #[test]

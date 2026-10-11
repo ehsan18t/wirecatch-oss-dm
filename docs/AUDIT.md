@@ -102,5 +102,15 @@ When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ pat
 
 | Workstream | Status |
 |---|---|
-| W0 | in progress |
-| W1 to W14 | not started |
+| W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
+| W1 | in progress: STR-1, ENG-1, ENG-2, DUI-1 and CORE-1 fixed |
+| W2 to W14 | not started |
+
+Parts of W0 findings carried into later workstreams:
+
+- XC-22: the remaining crates opt into the workspace lints and drop their own `missing_docs` attributes (W14), then `std::thread::sleep` is banned in `clippy.toml`.
+- XC-23: `packages/` and `scripts/` are not yet linted or formatted (W14).
+- XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
+- XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
+- XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
+- XC-32: `SECURITY.md` needs a security contact address, a product identity value (W2).

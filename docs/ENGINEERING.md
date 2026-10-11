@@ -1,6 +1,8 @@
 # Engineering standard
 
-This is how code in Wirecatch is written. It applies to every package and every contributor, human or agent. Each rule says how it is enforced: **gate** means `pnpm gate` fails when it is broken, **review** means a reviewer checks it. A rule enforced only by review is a candidate for a new check; propose one when you find a way.
+This is how code in Wirecatch is written. It applies to every package and every contributor, human or agent. Each rule says how it is enforced: **gate** means `pnpm gate` (and CI, which runs the same checks) fails when it is broken, **review** means a reviewer checks it. A rule enforced only by review is a candidate for a new check; propose one when you find a way.
+
+The Rust lint rules marked **gate** apply to a crate once it follows the workspace lints. Until every crate does ([AUDIT](AUDIT.md) W14; the crates still to go are `LINT_PENDING` in `scripts/gate.mjs`), they are review rules in the others. The ESLint rules apply everywhere, with the violations that predate them recorded in each app's `eslint-suppressions.json`.
 
 The gates are a floor. Passing them does not make a change good; breaking them makes it wrong.
 
@@ -10,15 +12,16 @@ A fact written in two places will disagree with itself. Each kind of fact has on
 
 | Fact | Its one home | Enforced by |
 |---|---|---|
-| Product identity: names, ids, app identifiers, host and pipe names, folder names, URLs, emails | `config/product.toml`, generated into Rust, TypeScript and every manifest (being introduced, [AUDIT](AUDIT.md) W2; until then `config/extension-ids.json` and named constants) | gate (generated files must be current) |
+| Product identity: names, ids, app identifiers, host and pipe names, folder names, URLs, emails | `config/product.toml`, generated into Rust, TypeScript and every manifest. Being introduced ([AUDIT](AUDIT.md) W2); until then `config/extension-ids.json` holds the extension ids and the rest are named constants | review (a gate check that generated files are current comes with W2) |
 | Anything that crosses a process boundary: types, command and event names, limits, defaults, error codes | `crates/protocol`, generated into `packages/protocol` (D15) | gate (`protocol`) |
-| Commands every check runs | `scripts/gate.mjs` | review |
-| Rust lint policy | `[workspace.lints]` in `Cargo.toml` and `clippy.toml` | gate (`lint-policy`) |
+| Commands every check runs, and the versions of the cargo tools they use | `scripts/gate.mjs` | review |
+| Rust lint policy | `[workspace.lints]` in `Cargo.toml` and `clippy.toml` | gate (`lint-policy` checks every crate follows it or is listed as pending) |
 | TypeScript and Svelte lint policy | `packages/eslint-config` | review |
-| Formatting | `rustfmt.toml`, `.prettierrc.json` | gate |
+| Formatting | `rustfmt.toml`, `.prettierrc.json` | gate for Rust and the two apps; review for `packages/` and `scripts/` |
 | Shared Rust dependency versions | `[workspace.dependencies]` | review |
 | Shared JavaScript tool versions | the `catalog` in `pnpm-workspace.yaml` | review |
-| The Rust release | `rust-toolchain.toml` | gate |
+| The Rust release | `rust-toolchain.toml` (rustup and CI read it) | review |
+| The engine's minimum Rust release | `rust-version` in `crates/engine/Cargo.toml` | gate (`msrv`) |
 
 Generated files are never edited by hand. Change the source and regenerate.
 
@@ -61,7 +64,7 @@ Enforced by: review.
 - Arithmetic on untrusted numbers is checked or saturating. Conversions use `try_from`, not `as`. Durations from untrusted input use `Duration::try_from_secs_f64`.
 - Release builds abort on panic, so one panic kills every running download. Treat a reachable panic as a critical bug.
 
-Enforced by: gate (`unwrap_used`, `expect_used`, `todo`, `unimplemented`, pedantic cast lints), review.
+Enforced by: gate (`unwrap_used`, `expect_used`, `todo`, `unimplemented`, pedantic cast lints); review for `panic!` and indexing.
 
 ### Exceptions to a lint
 
@@ -75,7 +78,7 @@ Enforced by: gate (`allow_attributes`, `allow_attributes_without_reason`).
 - Every `unsafe` block has a `// SAFETY:` comment proving each requirement of the call it makes, for this call, not in general.
 - Prefer a maintained crate (`windows`, `windows-registry`, std's `OwnedHandle`) to hand-written FFI.
 
-Enforced by: gate (`undocumented_unsafe_blocks`), review.
+Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules and `forbid(unsafe_code)`.
 
 ### Types
 
@@ -96,13 +99,13 @@ Enforced by: gate (`undocumented_unsafe_blocks`), review.
 
 - A module has one responsibility. A file past about 500 lines or a function past about 80 is a signal to split; clippy's `too_many_lines` enforces the function limit.
 - Lower layers never import from higher ones (for example, the engine's HTTP layer never reaches into the download orchestrator).
-- Every public item has a doc comment (gate, `missing_docs`).
+- Every public item has a doc comment. Gate (`missing_docs`).
 
 ## 5. TypeScript and Svelte
 
 - Svelte 5 runes only. `$derived` for values computed from state, `$effect` only for side effects, and every effect that subscribes, listens or starts a timer returns its cleanup.
 - Strict TypeScript. No `any`. No `as` casts or `!` assertions on data from outside the program (IPC, storage, messages, the DOM); validate it with the generated validators instead.
-- Layers: components call state, state calls the backend, and only `src/lib/backend` talks to Tauri (desktop). In the extension, only `src/lib/native` talks to the app. Gate (`no-restricted-imports`, `no-restricted-syntax`).
+- Layers in the desktop app: components get what they need from state and never import the backend; the state classes call the backend; routes wire the two together; only `src/lib/backend` talks to Tauri. In the extension, only `src/lib/native` talks to the app. Gate (`no-restricted-imports`, `no-restricted-syntax`, including dynamic `import()` and destructuring).
 - Every `{#each}` has a key. Lists that can be long are virtualized. A progress tick updates the rows that changed, not the whole list.
 - Functions stay under 80 lines and a complexity of 12, files under 400 lines. Gate.
 
@@ -113,7 +116,7 @@ Existing violations are recorded in each app's `eslint-suppressions.json`. That 
 - Rust logs with `tracing`; each binary writes to a file in the app's log folder as well as to stderr (being fixed, [AUDIT](AUDIT.md) W5).
 - `error` means a person will see a failure, `warn` means something went wrong and was handled, `info` marks lifecycle events, `debug` and `trace` are for development.
 - Never log secrets: cookies, authorization headers, passwords, or URLs that carry credentials or signed tokens.
-- The extension reports errors through its one logger, never `console` directly. Gate (`no-console`).
+- The extension never calls `console` directly (gate, `no-console`) and never swallows an error silently (review). It has no logger yet; [AUDIT](AUDIT.md) W5 adds one, and then every error goes through it.
 
 ## 7. Tests
 
@@ -136,9 +139,20 @@ Everything a person reads: UI copy, CLI output, errors, docs, comments and commi
 
 `type(scope): subject` in Conventional Commits form: lower case, imperative, no trailing period, at most 72 characters. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `style`, `revert`. The scope is the package (`engine`, `protocol`, `core`, `ipc`, `bridge`, `streams`, `cli`, `e2e`, `desktop`, `extension`), or none for a repository-wide change. Breaking changes use `!` after the scope and a `BREAKING CHANGE:` footer. The body explains why, one line per paragraph. Merges into main: `chore: merge <what> (<work package>)`. No `Co-Authored-By` or other tool or AI credit lines; the author is the person who owns the repository.
 
-Enforced by: gate (`commits` in CI, and the commit-msg hook that `pnpm install` turns on).
+Enforced by: gate for the form, the length, lower case, the trailing period, em dashes and credit lines (`commits`, which CI runs over every pull request and push, and the commit-msg hook that `pnpm install` turns on); review for the imperative mood, a body that explains why, `BREAKING CHANGE:` footers and the merge form, since git writes merge messages itself.
 
-## 10. Security
+## 10. Performance
+
+Performance is a feature of a download manager.
+
+- No allocation per chunk or per progress tick in a hot path; reuse buffers.
+- No polling where an event exists (section 4).
+- No work proportional to the whole download list on a progress update; touch the rows that changed (section 5).
+- A change to the engine's transfer path is checked with `cargo run --release -p wirecatch-engine --example bench_local` before and after.
+
+Enforced by: review, and the store tests that measure how much one progress batch touches.
+
+## 11. Security
 
 - Anything that handles cookies, credentials, paths from outside, downloaded executables or another process's messages gets tests for the hostile case.
 - Paths built from outside input are joined with the safe-join helper so they cannot leave their folder.

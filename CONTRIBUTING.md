@@ -8,7 +8,7 @@ Read [docs/DECISIONS.md](docs/DECISIONS.md) (why things are the way they are) an
 
 ## Quality gates
 
-Run the gate before sending a change. It runs every check CI runs, from one script (`scripts/gate.mjs`):
+Run the gate before sending a change. It runs every check CI runs, from one script (`scripts/gate.mjs`). The supply-chain checks need cargo-deny and cargo-machete; `node scripts/gate.mjs --install-tools` installs the versions CI uses.
 
 ```bash
 pnpm gate
@@ -18,12 +18,13 @@ pnpm gate
 
 Notes:
 
-- `pnpm install` also turns on a commit-msg hook that checks your commit messages.
+- `pnpm install` also turns on a commit-msg hook that checks your commit messages (unless you already use another hooks folder; it says so).
+- Build the desktop interface once (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app; the gate compiles the desktop crate against a placeholder page when it is missing.
 - The desktop crate's tests run separately because Tauri's build script breaks other crates' doctests when everything links together.
 - `wirecatch-bridge/test-overrides` is for tests only and must never be enabled in a build.
 - Every bridge build trusts the same Chromium extension id (`chromium_id` in `config/extension-ids.json`) and the Firefox add-on id (D22). Every Chromium build of the extension (`pnpm dev`, `pnpm build` or `pnpm build:dev` in `apps/extension`) carries the matching public key, so an unpacked load gets that id and works with any bridge, including an installed release. Only `pnpm build:store` leaves the key out, for the Chrome Web Store (`apps/extension/PUBLISHING.md`). To register a bridge you built yourself, run `cargo run -p wirecatch-bridge -- install`.
 - The stream joining tests use a real ffmpeg when `WIRECATCH_TEST_FFMPEG` points to one; CI sets `WIRECATCH_REQUIRE_FFMPEG=1` so they cannot be skipped there.
-- On Windows or macOS with Docker running, `bash scripts/linux-test.sh` runs the Rust gate on Linux as a normal user, with a real ffmpeg and the same Rust release as CI.
+- On Windows or macOS with Docker running, `bash scripts/linux-test.sh` runs the gate's Rust group on Linux as a normal user, with a real ffmpeg and the same Rust release as CI, leaving out the desktop crate (it needs a display).
 - Tests never reach the internet. Servers in tests are local (see `crates/engine/tests/common`).
 
 ## Conventions

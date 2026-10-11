@@ -27,7 +27,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `apps/extension` | WXT browser extension for Chromium and Firefox. |
 | `packages/protocol` | Generated TypeScript types. Never edit `src/generated` by hand. |
 | `packages/eslint-config` | The one ESLint configuration. |
-| `config/` | Product identity shared by every package. |
+| `config/` | Product identity shared by every package: today the extension ids; all of it after [AUDIT](docs/AUDIT.md) W2. |
 | `scripts/gate.mjs` | Every quality check. |
 
 ## Gates
@@ -36,9 +36,10 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 pnpm gate
 ```
 
-That runs every check a change must pass (`node scripts/gate.mjs --list` shows them; `pnpm gate rust` or `pnpm gate js` runs a group). Run it yourself before reporting a change done, and report its real output, failures included. The definition of done is D18 in `docs/DECISIONS.md`.
+That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm gate rust` or `pnpm gate js` runs a group). The supply-chain checks need two cargo tools: `node scripts/gate.mjs --install-tools`. Run it yourself before reporting a change done, and report its real output, failures included. The definition of done is D18 in `docs/DECISIONS.md`.
 
 - Install once with `pnpm install`; it also turns on the commit-msg hook.
+- Build the desktop interface (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app itself; the gate compiles the desktop crate against a placeholder page when it is missing.
 - Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files; the gate fails otherwise.
 - `wirecatch-bridge/test-overrides` is for tests only and is never enabled in a build.
 - Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.

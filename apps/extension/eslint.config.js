@@ -1,6 +1,8 @@
 import { globals, wirecatch } from '@wirecatch/eslint-config';
 import svelteConfig from './svelte.config.js';
 
+const NATIVE_ONLY = 'Talk to the app through `src/lib/native/client.ts` only.';
+
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: { ...globals.browser, ...globals.webextensions },
@@ -16,7 +18,11 @@ export default wirecatch({
           'error',
           {
             selector: 'MemberExpression[property.name=/^(connectNative|sendNativeMessage)$/]',
-            message: 'Talk to the app through `src/lib/native/client.ts` only.',
+            message: NATIVE_ONLY,
+          },
+          {
+            selector: 'ObjectPattern > Property[key.name=/^(connectNative|sendNativeMessage)$/]',
+            message: NATIVE_ONLY,
           },
         ],
       },

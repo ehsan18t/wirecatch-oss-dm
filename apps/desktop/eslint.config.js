@@ -24,6 +24,31 @@ export default wirecatch({
             ],
           },
         ],
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector: 'ImportExpression[source.value=/^@tauri-apps\\//]',
+            message: 'Call Tauri through `$lib/backend` only.',
+          },
+        ],
+      },
+    },
+    {
+      // Components show state and report what the person did; the state classes call the backend, and the routes wire the two together.
+      files: ['src/lib/components/**'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['@tauri-apps/*'], message: 'Call Tauri through `$lib/backend` only.' },
+              {
+                group: ['$lib/backend', '$lib/backend/*', '**/backend', '**/backend/*'],
+                message: 'Components get what they need from state, not from the backend.',
+              },
+            ],
+          },
+        ],
       },
     },
   ],
