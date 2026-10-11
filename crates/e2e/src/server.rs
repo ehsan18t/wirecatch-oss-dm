@@ -69,7 +69,9 @@ impl TestServer {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("could not bind the test server");
-        let addr = listener.local_addr().expect("the test server has no address");
+        let addr = listener
+            .local_addr()
+            .expect("the test server has no address");
         tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
@@ -110,10 +112,13 @@ impl TestServer {
     /// Waits for the first request for `path` (with its leading slash).
     pub async fn wait_for_request(&self, path: &str) -> Seen {
         let mut seen = self.inner.seen.subscribe();
-        let found = tokio::time::timeout(PATIENCE, seen.wait_for(|v| v.iter().any(|s| s.path == path)))
-            .await
-            .unwrap_or_else(|_| panic!("the server never saw a request for {path}"))
-            .expect("the test server stopped");
+        let found = tokio::time::timeout(
+            PATIENCE,
+            seen.wait_for(|v| v.iter().any(|s| s.path == path)),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("the server never saw a request for {path}"))
+        .expect("the test server stopped");
         found
             .iter()
             .find(|s| s.path == path)

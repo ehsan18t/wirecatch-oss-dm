@@ -67,7 +67,11 @@ async fn a_capture_starts_after_the_server_answers_and_completes() {
     .await;
     let file = std::fs::read(&row.path).expect("the downloaded file exists");
     assert!(file == server.data(), "the file differs from the server's");
-    assert!(sandbox.part_files().is_empty(), "{:?}", sandbox.part_files());
+    assert!(
+        sandbox.part_files().is_empty(),
+        "{:?}",
+        sandbox.part_files()
+    );
 
     assert_eq!(first.header("cookie"), Some(COOKIE));
     let seen = server.requests_for("/complete.bin");
@@ -100,8 +104,16 @@ async fn withdrawing_from_a_new_connection_before_the_server_answers_leaves_noth
     let refused = added(ext.outcome(request).await).expect_err("the withdrawn capture failed");
     assert_eq!(refused.code, ErrorCode::NotStarted, "{refused:?}");
 
-    assert!(no_rows_for(&app, &url), "{:#?}", app.manager.list_downloads());
-    assert!(sandbox.part_files().is_empty(), "{:?}", sandbox.part_files());
+    assert!(
+        no_rows_for(&app, &url),
+        "{:#?}",
+        app.manager.list_downloads()
+    );
+    assert!(
+        sandbox.part_files().is_empty(),
+        "{:?}",
+        sandbox.part_files()
+    );
     server.release();
 
     assert!(reconnected.close().await.success());
@@ -130,8 +142,16 @@ async fn withdrawing_on_the_same_connection_before_the_server_answers_leaves_not
     let refused = added(ext.outcome(request).await).expect_err("the withdrawn capture failed");
     assert_eq!(refused.code, ErrorCode::NotStarted, "{refused:?}");
 
-    assert!(no_rows_for(&app, &url), "{:#?}", app.manager.list_downloads());
-    assert!(sandbox.part_files().is_empty(), "{:?}", sandbox.part_files());
+    assert!(
+        no_rows_for(&app, &url),
+        "{:#?}",
+        app.manager.list_downloads()
+    );
+    assert!(
+        sandbox.part_files().is_empty(),
+        "{:?}",
+        sandbox.part_files()
+    );
     server.release();
 
     assert!(ext.close().await.success());
@@ -225,7 +245,11 @@ async fn extension_settings_sync_both_ways() {
         })
         .await;
     assert!(!changed.show_media_button);
-    assert!(changed.ignored_sites.contains(&"ignored.example".to_string()));
+    assert!(
+        changed
+            .ignored_sites
+            .contains(&"ignored.example".to_string())
+    );
     assert_eq!(changed.min_capture_size, 4096);
     assert_eq!(app.manager.get_settings().extension, changed);
     firefox
@@ -440,7 +464,10 @@ async fn ask_before_download_waits_for_the_user() {
     let url = server.url("confirm.bin");
     let reply = ext.add_download(capture(&url, "handover-confirm")).await;
     assert_eq!(reply, Ok(waiting.clone()));
-    assert!(server.requests().is_empty(), "the link was tried before confirming");
+    assert!(
+        server.requests().is_empty(),
+        "the link was tried before confirming"
+    );
     let pending = app.manager.pending_confirmations();
     assert_eq!(pending.len(), 1, "{pending:?}");
     assert_eq!(pending[0].url, url);
@@ -470,9 +497,17 @@ async fn ask_before_download_waits_for_the_user() {
         .reject_capture(rejected.id)
         .expect("the capture was rejected");
     assert!(app.manager.pending_confirmations().is_empty());
-    assert!(no_rows_for(&app, &url), "{:#?}", app.manager.list_downloads());
+    assert!(
+        no_rows_for(&app, &url),
+        "{:#?}",
+        app.manager.list_downloads()
+    );
     assert!(server.requests_for("/reject.bin").is_empty());
-    assert!(sandbox.part_files().is_empty(), "{:?}", sandbox.part_files());
+    assert!(
+        sandbox.part_files().is_empty(),
+        "{:?}",
+        sandbox.part_files()
+    );
     let id = ext.send(withdraw_call("handover-reject")).await;
     assert_eq!(
         withdrawn(ext.outcome(id).await),

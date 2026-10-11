@@ -102,13 +102,20 @@ impl FakeExtension {
         };
         let launch: Vec<String> = launch
             .iter()
-            .map(|part| part.to_str().expect("launch arguments are text").to_string())
+            .map(|part| {
+                part.to_str()
+                    .expect("launch arguments are text")
+                    .to_string()
+            })
             .collect();
         let mut command = Command::new(bridge::bridge_exe());
         command
             .args(caller.args(&std::env::temp_dir()))
             .env(ENDPOINT_VAR, endpoint.as_os_str())
-            .env(LAUNCH_VAR, serde_json::to_string(&launch).expect("text is JSON"))
+            .env(
+                LAUNCH_VAR,
+                serde_json::to_string(&launch).expect("text is JSON"),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
