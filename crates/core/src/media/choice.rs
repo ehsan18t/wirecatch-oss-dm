@@ -285,7 +285,7 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         let label = format!("{quality}, {}", ext.to_ascii_uppercase());
         let id = match &job {
             MediaJob::Page { format, .. } => format.clone(),
-            MediaJob::Stream { .. } => continue,
+            MediaJob::Stream { .. } | MediaJob::Unreadable => continue,
         };
         offers.push(offer(
             id,

@@ -562,3 +562,25 @@ async fn a_finished_download_is_marked_as_from_the_internet() {
         format!("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl={host}\r\n")
     );
 }
+
+/// The part file is marked while the download runs, so the finished file has
+/// the mark from the moment it is renamed into place.
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_is_marked_before_it_is_finished() {
+    let len = 256 * KIB;
+    let server = TestServer::throttled(len as usize, 64 * KIB).await;
+    let h = Harness::new().await;
+    let row = h.add(&server.url("setup.exe?token=abc")).await;
+    let running = h
+        .wait_for(row.id, "downloading", |r| r.done >= 16 * KIB)
+        .await;
+    let [part, _] = partial_files(&running.path);
+    let stream = format!("{}:Zone.Identifier", part.display());
+    let text = wait_until("the part file is marked", || {
+        std::fs::read_to_string(&stream).ok()
+    })
+    .await;
+    assert!(text.contains("HostUrl="), "{text}");
+    assert!(!text.contains("token"), "{text}");
+}

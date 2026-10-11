@@ -16,8 +16,9 @@ const MAX_URL_LEN: usize = 2048;
 
 /// The text of the `Zone.Identifier` stream for a file downloaded from
 /// `host_url`, found through `referrer` if known. Zone 3 is the internet zone.
-/// URLs lose any user name, password and fragment; anything that is not a URL
-/// is left out.
+/// URLs lose any user name, password and fragment, and the file's address its
+/// query too (which often carries a token); anything that is not a URL is left
+/// out.
 pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String {
     let mut text = String::from("[ZoneTransfer]\r\nZoneId=3\r\n");
     if let Some(referrer) = referrer.and_then(clean_url) {
@@ -25,7 +26,10 @@ pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String 
         text.push_str(&referrer);
         text.push_str("\r\n");
     }
-    if let Some(host) = clean_url(host_url) {
+    if let Some(host) = clean_url(host_url).map(|u| match u.split_once('?') {
+        Some((without, _)) => without.to_string(),
+        None => u,
+    }) {
         text.push_str("HostUrl=");
         text.push_str(&host);
         text.push_str("\r\n");
@@ -78,7 +82,7 @@ mod tests {
         );
         assert_eq!(
             text,
-            "[ZoneTransfer]\r\nZoneId=3\r\nReferrerUrl=https://site.example/page\r\nHostUrl=https://files.example/a.zip?x=1\r\n"
+            "[ZoneTransfer]\r\nZoneId=3\r\nReferrerUrl=https://site.example/page\r\nHostUrl=https://files.example/a.zip\r\n"
         );
     }
 

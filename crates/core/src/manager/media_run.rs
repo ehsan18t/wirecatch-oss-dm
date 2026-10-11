@@ -114,6 +114,7 @@ async fn run(
             video,
             audio,
         } => run_page(&job, &format, video, audio, progress, cancel).await,
+        MediaJob::Unreadable => return Err(media::unreadable()),
     };
     match result {
         Err(_) if cancel.is_cancelled() => Ok(MediaDone::Paused),
@@ -201,7 +202,7 @@ async fn run_page(
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
         return match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
-            Fetched::Done(file) => finish(&file, &job.output, &work).await,
+            Fetched::Done(file) => finish(&file, job, &work).await,
             Fetched::Cancelled => Ok(MediaDone::Paused),
         };
     }
@@ -246,7 +247,7 @@ async fn run_page(
         }
         _ => return Err(addon_missing()),
     };
-    finish(&file, &job.output, &work).await
+    finish(&file, job, &work).await
 }
 
 /// An ffmpeg that could not be started means the add-on needs looking at again.
@@ -353,9 +354,16 @@ async fn fetch_part(
 /// Moves the finished file from the work folder to its place and removes the
 /// work folders. The file keeps its own extension; if that differs from the
 /// planned one and the name is taken, a free name is used.
-async fn finish(file: &Path, output: &Path, work: &Path) -> Result<MediaDone, UserError> {
+async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserError> {
+    let output = &job.output;
     let (file, planned, work) = (file.to_path_buf(), output.to_path_buf(), work.to_path_buf());
+    let (url, referrer) = (
+        job.url.to_string(),
+        headers::referrer(&job.origin.headers).map(str::to_string),
+    );
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
+        // Marked before it is put in place, so it is never there unmarked.
+        crate::zone::mark(&file, &url, referrer.as_deref());
         let wanted = final_path(&file, &planned);
         let target = if wanted == planned {
             planned
@@ -639,6 +647,59 @@ mod tests {
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
         assert_eq!(options.headers.get("x-format").unwrap(), "yes");
+    }
+
+    #[tokio::test]
+    async fn a_job_that_cannot_be_read_never_runs() {
+        let job = Job {
+            output: PathBuf::from("/v/out.mp4"),
+            url: Url::parse("http://127.0.0.1:9/watch").unwrap(),
+            origin: Origin::default(),
+            tools: None,
+            options: DownloadOptions::default(),
+            temp_dir: PathBuf::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let progress = MediaProgress::default();
+        let ended = run(
+            job,
+            MediaJob::Unreadable,
+            &progress,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(ended, Err(media::unreadable()));
+    }
+
+    /// The finished file carries the Mark of the Web the moment it is in place.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_finished_video_is_marked_before_it_is_put_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("out.mp4.wcmedia");
+        std::fs::create_dir_all(&work).unwrap();
+        let part = work.join("video.mp4");
+        std::fs::write(&part, b"video").unwrap();
+        let job = Job {
+            output: dir.path().join("out.mp4"),
+            url: Url::parse("https://videos.example/watch?v=1&token=secret").unwrap(),
+            origin: Origin::default(),
+            tools: None,
+            options: DownloadOptions::default(),
+            temp_dir: PathBuf::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let done = finish(&part, &job, &work).await.unwrap();
+        let MediaDone::Completed { path, .. } = done else {
+            panic!("not completed: {done:?}");
+        };
+        let mark = std::fs::read_to_string(format!("{}:Zone.Identifier", path.display()))
+            .expect("no mark when the file was put in place");
+        assert!(
+            mark.contains("HostUrl=https://videos.example/watch\r\n"),
+            "{mark}"
+        );
+        assert!(!mark.contains("secret"));
     }
 
     #[test]

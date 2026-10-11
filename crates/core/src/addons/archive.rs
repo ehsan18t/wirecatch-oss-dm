@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -18,9 +18,35 @@ use super::manifest::{AddonComponent, ArchiveKind};
 /// Largest single file accepted from an archive (Deno is about 100 MB).
 const MAX_FILE: u64 = 1024 * 1024 * 1024;
 
+/// Opens a downloaded release file for checking and unpacking. On Windows no
+/// other program may write to, replace or delete it while it is open, so the
+/// bytes that are unpacked are the bytes that were checked. (On Unix the open
+/// file stays the one checked even if another is renamed over it.)
+pub(crate) fn open_release(path: &Path) -> io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        /// Others may read it, nothing else.
+        const FILE_SHARE_READ: u32 = 0x1;
+        File::options()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(path)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path)
+    }
+}
+
 /// The SHA-256 of a file, as lower-case hex.
 pub(crate) fn sha256_file(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
+    sha256_of(&mut open_release(path)?)
+}
+
+/// The SHA-256 of everything in `file`, from its start, as lower-case hex.
+pub(crate) fn sha256_of(file: &mut File) -> io::Result<String> {
+    file.seek(SeekFrom::Start(0))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1024 * 1024];
     loop {
@@ -47,13 +73,15 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 /// One installed file: its path relative to the component folder and its size.
 pub(crate) type Installed = Vec<(String, u64)>;
 
-/// Puts the component's files from the verified release file `release` into
-/// the empty folder `stage`. `Err` says what was wrong, in a sentence.
+/// Puts the component's files from the verified release file `release` (the
+/// same open file that was checked) into the empty folder `stage`. `Err` says
+/// what was wrong, in a sentence.
 pub(crate) fn unpack(
     component: &AddonComponent,
-    release: &Path,
+    release: &mut File,
     stage: &Path,
 ) -> Result<Installed, String> {
+    release.seek(SeekFrom::Start(0)).map_err(|e| disk(&e))?;
     let targets: HashMap<&str, (PathBuf, bool)> = component
         .files
         .iter()
@@ -67,13 +95,11 @@ pub(crate) fn unpack(
                 .first()
                 .ok_or_else(|| "The add-on manifest names no file.".to_string())?;
             let (target, executable) = &targets[file.from.as_str()];
-            let mut input = File::open(release).map_err(|e| disk(&e))?;
-            let size = write_file(&mut input, target, *executable)?;
+            let size = write_file(release, target, *executable)?;
             written.insert(file.from.clone(), size);
         }
         ArchiveKind::Zip => {
-            let input = File::open(release).map_err(|e| disk(&e))?;
-            let mut zip = zip::ZipArchive::new(BufReader::new(input))
+            let mut zip = zip::ZipArchive::new(BufReader::new(&mut *release))
                 .map_err(|e| format!("The archive could not be read ({e})."))?;
             for index in 0..zip.len() {
                 let mut entry = zip
@@ -92,8 +118,7 @@ pub(crate) fn unpack(
             }
         }
         ArchiveKind::TarXz => {
-            let input = File::open(release).map_err(|e| disk(&e))?;
-            let xz = lzma_rust2::XzReader::new(BufReader::new(input), true);
+            let xz = lzma_rust2::XzReader::new(BufReader::new(&mut *release), true);
             let mut tar = tar::Archive::new(xz);
             let entries = tar
                 .entries()
@@ -211,6 +236,50 @@ mod tests {
         );
     }
 
+    /// What is unpacked is what was checked, even if something tries to put
+    /// another file in its place in between.
+    #[test]
+    fn the_file_checked_is_the_file_unpacked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("release");
+        std::fs::write(&path, b"original").unwrap();
+        let mut release = open_release(&path).unwrap();
+        let checked = sha256_of(&mut release).unwrap();
+        assert_eq!(checked, hex(&Sha256::digest(b"original")));
+
+        let other = dir.path().join("other");
+        std::fs::write(&other, b"replaced").unwrap();
+        let replaced = std::fs::rename(&other, &path);
+        if cfg!(windows) {
+            assert!(
+                replaced.is_err(),
+                "the checked file was replaced while open"
+            );
+            assert!(
+                File::options().write(true).open(&path).is_err(),
+                "the checked file could be written while open"
+            );
+        }
+
+        let stage = dir.path().join("stage");
+        let component = AddonComponent {
+            name: "x".into(),
+            version: "1".into(),
+            url: String::new(),
+            sha256: checked,
+            size: 8,
+            archive: ArchiveKind::Plain,
+            files: vec![AddonFile {
+                from: String::new(),
+                to: "tool".into(),
+                executable: true,
+            }],
+            program: "tool".into(),
+        };
+        unpack(&component, &mut release, &stage).unwrap();
+        assert_eq!(std::fs::read(stage.join("tool")).unwrap(), b"original");
+    }
+
     #[test]
     fn unsafe_target_paths_are_refused() {
         let base = Path::new("/addons");
@@ -223,8 +292,9 @@ mod tests {
     #[test]
     fn a_manifest_with_an_unsafe_target_installs_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let release = dir.path().join("tool");
-        std::fs::write(&release, b"tool").unwrap();
+        let path = dir.path().join("tool");
+        std::fs::write(&path, b"tool").unwrap();
+        let mut release = open_release(&path).unwrap();
         let stage = dir.path().join("stage");
         let component = AddonComponent {
             name: "x".into(),
@@ -240,7 +310,7 @@ mod tests {
             }],
             program: "../escaped".into(),
         };
-        assert!(unpack(&component, &release, &stage).is_err());
+        assert!(unpack(&component, &mut release, &stage).is_err());
         assert!(!dir.path().join("escaped").exists());
     }
 }
