@@ -1,9 +1,9 @@
 //! Downloads, queues and settings as the desktop UI sees them.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
-use crate::extension::ExtensionSettings;
+use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use crate::{DownloadId, QueueId};
 
 /// One row of the download list.
@@ -449,15 +449,100 @@ pub enum Theme {
     Dark,
 }
 
-/// One change to [`AppSettings`]: the setting at `path` (field names from the top, such as `["extension", "ask_before_download"]`) becomes `value`. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct SettingsChange {
-    /// Field names from the top of the settings to the one that changes. Every name must exist.
-    pub path: Vec<String>,
-    /// The new value, in the settings' own JSON form.
-    #[ts(type = "unknown")]
-    pub value: serde_json::Value,
+/// A change to some of [`AppSettings`]: only the fields that are present change, and a group (`extension`, `media`) changes only in the fields its own patch holds. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, optional_fields)]
+pub struct AppSettingsPatch {
+    pub default_folder: Option<PortablePath>,
+    pub categories: Option<Vec<CategoryRule>>,
+    pub connections_per_download: Option<u8>,
+    pub max_concurrent_downloads: Option<u32>,
+    /// The new limit in bytes per second; `null` removes it.
+    #[serde(default, skip_serializing_if = "Update::is_keep")]
+    // f64: TypeScript sees a `number`, like every other u64 in the protocol.
+    #[ts(optional, as = "Option<Option<f64>>")]
+    pub global_speed_limit: Update<Option<u64>>,
+    pub extension: Option<ExtensionSettingsPatch>,
+    pub theme: Option<Theme>,
+    pub start_with_system: Option<bool>,
+    pub close_to_tray: Option<bool>,
+    pub notify_on_complete: Option<bool>,
+    pub auto_update_addons: Option<bool>,
+    pub show_progress_windows: Option<bool>,
+    pub media: Option<MediaDefaultsPatch>,
+}
+
+/// A change to some of [`MediaDefaults`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, optional_fields)]
+pub struct MediaDefaultsPatch {
+    pub video: Option<OutputDefaultsPatch>,
+    pub audio: Option<OutputDefaultsPatch>,
+}
+
+/// A change to some of [`OutputDefaults`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, optional_fields)]
+pub struct OutputDefaultsPatch {
+    pub format: Option<OutputFormat>,
+    /// The new quality in kbps; `null` goes back to the format's usual quality.
+    #[serde(default, skip_serializing_if = "Update::is_keep")]
+    #[ts(optional, as = "Option<Option<u32>>")]
+    pub audio_kbps: Update<Option<u32>>,
+    pub subtitle_languages: Option<Vec<String>>,
+    pub auto_subtitles: Option<bool>,
+    pub subtitle_files: Option<bool>,
+    pub chapters: Option<bool>,
+}
+
+/// A patch field for a setting that can be empty. `Option` alone cannot say both "leave it" and "empty it", since JSON `null` reads as `None`: here a missing field is [`Update::Keep`] (through `#[serde(default)]`) and any value, `null` included, is [`Update::Set`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Update<T> {
+    /// Leave the setting as it is.
+    #[default]
+    Keep,
+    /// Give the setting this value.
+    Set(T),
+}
+
+impl<T> Update<T> {
+    /// Whether the setting is left as it is.
+    pub fn is_keep(&self) -> bool {
+        matches!(self, Self::Keep)
+    }
+}
+
+impl<T: Serialize> Serialize for Update<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            // A patch skips the field instead (`skip_serializing_if`): `null` would read back as a value.
+            Self::Keep => serializer.serialize_unit(),
+            Self::Set(value) => value.serialize(serializer),
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Update<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        T::deserialize(deserializer).map(Self::Set)
+    }
+}
+
+/// Replaces `slot` when the patch has a value for it.
+fn set<T>(slot: &mut T, value: Option<T>) {
+    if let Some(value) = value {
+        *slot = value;
+    }
+}
+
+/// Replaces `slot` when the patch sets it.
+fn update<T>(slot: &mut T, value: Update<T>) {
+    if let Update::Set(value) = value {
+        *slot = value;
+    }
 }
 
 /// Every user setting. The app is the only store (D5).
@@ -493,6 +578,104 @@ pub struct AppSettings {
 
 fn default_true() -> bool {
     true
+}
+
+impl AppSettings {
+    /// Applies a patch. Every field is named on both sides, so a setting added to one and not the other does not compile.
+    pub fn apply(&mut self, patch: AppSettingsPatch) {
+        let Self {
+            default_folder,
+            categories,
+            connections_per_download,
+            max_concurrent_downloads,
+            global_speed_limit,
+            extension,
+            theme,
+            start_with_system,
+            close_to_tray,
+            notify_on_complete,
+            auto_update_addons,
+            show_progress_windows,
+            media,
+        } = self;
+        let AppSettingsPatch {
+            default_folder: new_default_folder,
+            categories: new_categories,
+            connections_per_download: new_connections_per_download,
+            max_concurrent_downloads: new_max_concurrent_downloads,
+            global_speed_limit: new_global_speed_limit,
+            extension: extension_patch,
+            theme: new_theme,
+            start_with_system: new_start_with_system,
+            close_to_tray: new_close_to_tray,
+            notify_on_complete: new_notify_on_complete,
+            auto_update_addons: new_auto_update_addons,
+            show_progress_windows: new_show_progress_windows,
+            media: media_patch,
+        } = patch;
+        set(default_folder, new_default_folder);
+        set(categories, new_categories);
+        set(connections_per_download, new_connections_per_download);
+        set(max_concurrent_downloads, new_max_concurrent_downloads);
+        update(global_speed_limit, new_global_speed_limit);
+        if let Some(extension_patch) = extension_patch {
+            extension.apply(extension_patch);
+        }
+        set(theme, new_theme);
+        set(start_with_system, new_start_with_system);
+        set(close_to_tray, new_close_to_tray);
+        set(notify_on_complete, new_notify_on_complete);
+        set(auto_update_addons, new_auto_update_addons);
+        set(show_progress_windows, new_show_progress_windows);
+        if let Some(media_patch) = media_patch {
+            media.apply(media_patch);
+        }
+    }
+}
+
+impl MediaDefaults {
+    /// Applies a patch; see [`AppSettings::apply`].
+    pub fn apply(&mut self, patch: MediaDefaultsPatch) {
+        let Self { video, audio } = self;
+        let MediaDefaultsPatch {
+            video: video_patch,
+            audio: audio_patch,
+        } = patch;
+        if let Some(video_patch) = video_patch {
+            video.apply(video_patch);
+        }
+        if let Some(audio_patch) = audio_patch {
+            audio.apply(audio_patch);
+        }
+    }
+}
+
+impl OutputDefaults {
+    /// Applies a patch; see [`AppSettings::apply`].
+    pub fn apply(&mut self, patch: OutputDefaultsPatch) {
+        let Self {
+            format,
+            audio_kbps,
+            subtitle_languages,
+            auto_subtitles,
+            subtitle_files,
+            chapters,
+        } = self;
+        let OutputDefaultsPatch {
+            format: new_format,
+            audio_kbps: new_audio_kbps,
+            subtitle_languages: new_subtitle_languages,
+            auto_subtitles: new_auto_subtitles,
+            subtitle_files: new_subtitle_files,
+            chapters: new_chapters,
+        } = patch;
+        set(format, new_format);
+        update(audio_kbps, new_audio_kbps);
+        set(subtitle_languages, new_subtitle_languages);
+        set(auto_subtitles, new_auto_subtitles);
+        set(subtitle_files, new_subtitle_files);
+        set(chapters, new_chapters);
+    }
 }
 
 /// The file written by settings export and read by import (D6).
@@ -672,6 +855,38 @@ pub struct ImportPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A patch tells "unchanged" (missing) from "set to nothing" (null), and refuses a name it
+    // does not know instead of ignoring it, which a misspelt setting would otherwise be.
+    #[test]
+    fn a_patch_reads_missing_null_and_unknown_fields_apart() {
+        let read = |json: &str| serde_json::from_str::<AppSettingsPatch>(json);
+        assert_eq!(read("{}").unwrap(), AppSettingsPatch::default());
+        assert_eq!(
+            read(r#"{"global_speed_limit": null}"#)
+                .unwrap()
+                .global_speed_limit,
+            Update::Set(None)
+        );
+        assert_eq!(
+            read(r#"{"global_speed_limit": 5}"#)
+                .unwrap()
+                .global_speed_limit,
+            Update::Set(Some(5))
+        );
+        let kbps = read(r#"{"media": {"audio": {"audio_kbps": null}}}"#).unwrap();
+        assert_eq!(
+            kbps.media.and_then(|m| m.audio).map(|a| a.audio_kbps),
+            Some(Update::Set(None))
+        );
+        assert_eq!(read("{}").unwrap().global_speed_limit, Update::Keep);
+        // Plain fields write null, which reads back as unchanged; an emptiable one must not.
+        let written = serde_json::to_string(&AppSettingsPatch::default()).unwrap();
+        assert!(!written.contains("global_speed_limit"), "{written}");
+        assert!(read(r#"{"no_such_setting": 1}"#).is_err());
+        assert!(read(r#"{"media": {"video": {"no_such_setting": 1}}}"#).is_err());
+        assert!(read(r#"{"theme": 42}"#).is_err());
+    }
 
     /// A selection from a client that knows nothing of output formats keeps today's
     /// behaviour: the original format, no subtitles, no chapters.

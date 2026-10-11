@@ -157,7 +157,7 @@ impl Default for ExtensionSettings {
 
 /// A partial update: only fields that are `Some` change.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[ts(export, optional_fields = nullable)]
 pub struct ExtensionSettingsPatch {
     pub capture_enabled: Option<bool>,
     pub ask_before_download: Option<bool>,
@@ -170,7 +170,7 @@ pub struct ExtensionSettingsPatch {
     /// Hosts to remove from `ignored_sites` (applied last).
     pub remove_ignored_sites: Option<Vec<String>>,
     pub capture_extensions: Option<Vec<String>>,
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number | null")]
     pub min_capture_size: Option<u64>,
     pub default_queue: Option<QueueId>,
 }

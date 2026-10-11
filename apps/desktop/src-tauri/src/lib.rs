@@ -30,7 +30,7 @@
 //! | `set_queue_paused` | `id: QueueId`, `paused: bool` | nothing |
 //! | `start_queue_now` | `id: QueueId` | nothing |
 //! | `get_settings` | none | `AppSettings` |
-//! | `change_settings` | `changes: Vec<SettingsChange>` | nothing; only the named settings change |
+//! | `change_settings` | `patch: AppSettingsPatch` | nothing; only the settings in the patch change |
 //! | `export_settings` | `path: String` | nothing |
 //! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
 //! | `import_settings` | `path: String` | nothing |

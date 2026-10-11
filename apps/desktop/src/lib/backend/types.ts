@@ -5,6 +5,7 @@ import type {
   AddonInfo,
   AddRequest,
   AppSettings,
+  AppSettingsPatch,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
@@ -14,7 +15,6 @@ import type {
   PendingCapture,
   Queue,
   QueueId,
-  SettingsChange,
   UiEvent,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../window/registry';
@@ -101,8 +101,8 @@ export interface Backend {
   startQueueNow(id: QueueId): Promise<void>;
 
   getSettings(): Promise<AppSettings>;
-  /** Changes only the named settings, applied to the app's current settings. */
-  changeSettings(changes: readonly SettingsChange[]): Promise<void>;
+  /** Changes only the settings in the patch, applied to the app's current settings. */
+  changeSettings(patch: AppSettingsPatch): Promise<void>;
   exportSettings(path: string): Promise<void>;
   /** What importing the settings file at `path` would change, without changing anything. */
   previewImport(path: string): Promise<ImportPreview>;

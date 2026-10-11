@@ -8,6 +8,7 @@ import type {
   AddonInfo,
   AddRequest,
   AppSettings,
+  AppSettingsPatch,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
@@ -17,7 +18,6 @@ import type {
   PendingCapture,
   Queue,
   QueueId,
-  SettingsChange,
   UiEvent,
 } from '@wirecatch/protocol';
 import {
@@ -126,8 +126,8 @@ export class TauriBackend implements Backend {
   getSettings() {
     return this.#call<AppSettings>(COMMANDS.getSettings);
   }
-  changeSettings(changes: readonly SettingsChange[]) {
-    return this.#exec(COMMANDS.changeSettings, { changes });
+  changeSettings(patch: AppSettingsPatch) {
+    return this.#exec(COMMANDS.changeSettings, { patch });
   }
   exportSettings(path: string) {
     return this.#exec(COMMANDS.exportSettings, { path });

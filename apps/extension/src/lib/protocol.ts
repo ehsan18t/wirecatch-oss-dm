@@ -33,8 +33,8 @@ export function applyPatch(
   for (const host of patch.add_ignored_sites ?? []) {
     if (!sites.includes(host)) sites = [...sites, host];
   }
-  const remove = patch.remove_ignored_sites;
-  if (remove !== null) sites = sites.filter((host) => !remove.includes(host));
+  const removed = patch.remove_ignored_sites ?? [];
+  sites = sites.filter((host) => !removed.includes(host));
   return {
     capture_enabled: patch.capture_enabled ?? settings.capture_enabled,
     ask_before_download: patch.ask_before_download ?? settings.ask_before_download,

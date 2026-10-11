@@ -40,17 +40,6 @@ pub enum CoreError {
     #[error("{0}")]
     Invalid(String),
 
-    /// A settings change names a setting that does not exist, or gives it a value of the wrong kind. Sent by a window, so it means the window and the app disagree on what the settings are.
-    #[error(
-        "Wirecatch could not change the setting {path}: {problem}. Close and open the window, then try again."
-    )]
-    SettingsChange {
-        /// The setting, as field names joined with dots.
-        path: String,
-        /// What is wrong, in a few words.
-        problem: String,
-    },
-
     /// The operation does not apply to the download in its current state.
     #[error("{0}")]
     WrongState(&'static str),
@@ -153,8 +142,7 @@ impl CoreError {
             | CoreError::Path(_)
             | CoreError::ProfileTooNew { .. }
             | CoreError::InvalidProfile(_)
-            | CoreError::AddonRequired
-            | CoreError::SettingsChange { .. } => ErrorCode::InvalidRequest,
+            | CoreError::AddonRequired => ErrorCode::InvalidRequest,
             CoreError::DatabaseTooNew { .. }
             | CoreError::Database(_)
             | CoreError::File { .. }

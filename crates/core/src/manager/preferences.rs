@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AppSettings, ImportPreview, SettingsChange, UiEvent};
+use wirecatch_protocol::app::{AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use wirecatch_protocol::wire::Event;
 
@@ -21,9 +21,13 @@ impl Manager {
         self.lock().settings.clone()
     }
 
-    /// Replaces the settings after checking them. Lists are cleaned up (lower case,
+    /// Replaces every setting after checking them. Lists are cleaned up (lower case,
     /// no duplicates), and the stored result arrives as `SettingsChanged`. New
     /// limits apply to running downloads at once.
+    ///
+    /// Settings someone else changed in the meantime are overwritten, so the windows and
+    /// the shell change settings with [`change_settings`](Self::change_settings); this is
+    /// for replacing them all at once.
     pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
         let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
@@ -31,10 +35,14 @@ impl Manager {
         Ok(())
     }
 
-    /// Applies `changes` to the current settings, checks the result and keeps it, like [`update_settings`](Self::update_settings). Each change names one setting, so settings nobody changed keep their current values whoever set them: two windows changing different settings never undo each other.
-    pub fn change_settings(&self, changes: &[SettingsChange]) -> Result<()> {
+    /// Applies `patch` to the current settings, checks the result and keeps it, like [`update_settings`](Self::update_settings). A patch holds only the settings that change, so settings nobody changed keep their current values whoever set them: two windows changing different settings never undo each other.
+    pub fn change_settings(&self, mut patch: AppSettingsPatch) -> Result<()> {
+        if let Some(extension) = &mut patch.extension {
+            normalize_site_edits(extension);
+        }
         let mut state = self.lock_open()?;
-        let new = with_changes(&state.settings, changes)?;
+        let mut new = state.settings.clone();
+        new.apply(patch);
         let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
         self.apply_settings(&mut state, new);
         Ok(())
@@ -51,16 +59,7 @@ impl Manager {
         &self,
         mut patch: ExtensionSettingsPatch,
     ) -> Result<ExtensionSettings> {
-        for list in [
-            &mut patch.add_ignored_sites,
-            &mut patch.remove_ignored_sites,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            list.iter_mut()
-                .for_each(|s| *s = settings::normalize_site(s));
-        }
+        normalize_site_edits(&mut patch);
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.extension.apply(patch);
@@ -198,37 +197,16 @@ impl Manager {
     }
 }
 
-/// `current` with `changes` applied, each replacing the value at its path. The result is read back as [`AppSettings`], so a value of the wrong kind is refused rather than stored.
-fn with_changes(current: &AppSettings, changes: &[SettingsChange]) -> Result<AppSettings> {
-    let mut value = serde_json::to_value(current)
-        .map_err(|e| CoreError::Internal(format!("settings could not be read as JSON: {e}")))?;
-    for change in changes {
-        let path = change.path.join(".");
-        let refused = |problem: &str| CoreError::SettingsChange {
-            path: path.clone(),
-            problem: problem.to_owned(),
-        };
-        let Some((last, parents)) = change.path.split_last() else {
-            return Err(refused("no setting was named"));
-        };
-        let mut object = &mut value;
-        for name in parents {
-            object = object
-                .get_mut(name.as_str())
-                .filter(|inner| inner.is_object())
-                .ok_or_else(|| refused("there is no such group of settings"))?;
-        }
-        let slot = object
-            .get_mut(last.as_str())
-            .ok_or_else(|| refused("there is no such setting"))?;
-        *slot = change.value.clone();
+/// Writes the sites a patch adds or removes the way the list stores them (lower case), so they match.
+fn normalize_site_edits(patch: &mut ExtensionSettingsPatch) {
+    for list in [
+        &mut patch.add_ignored_sites,
+        &mut patch.remove_ignored_sites,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        list.iter_mut()
+            .for_each(|s| *s = settings::normalize_site(s));
     }
-    serde_json::from_value(value).map_err(|e| CoreError::SettingsChange {
-        path: changes
-            .iter()
-            .map(|c| c.path.join("."))
-            .collect::<Vec<_>>()
-            .join(", "),
-        problem: format!("the new value is not one it can take ({e})"),
-    })
 }

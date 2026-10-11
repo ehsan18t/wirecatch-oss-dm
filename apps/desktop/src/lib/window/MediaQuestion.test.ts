@@ -162,7 +162,7 @@ describe('the quality window with output formats', () => {
         audio_kbps: 160,
         chapters: false,
       };
-      await b.changeSettings([{ path: ['media'], value: settings.media }]);
+      await b.changeSettings({ media: settings.media });
     });
     expect(saveAs()).toHaveValue('mkv');
     expect(screen.getByRole('checkbox', { name: 'English' })).toBeChecked();

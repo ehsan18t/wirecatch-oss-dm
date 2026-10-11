@@ -59,9 +59,9 @@ export class DownloadWindowState {
   readonly #target: Target;
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter(
-    async (changes) =>
+    async (patch) =>
       (await this.#act(async () => {
-        await this.backend.changeSettings(changes);
+        await this.backend.changeSettings(patch);
         return true;
       })) === true,
   );

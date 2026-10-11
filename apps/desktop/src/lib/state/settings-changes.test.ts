@@ -1,87 +1,107 @@
-import type { AppSettings, SettingsChange } from '@wirecatch/protocol';
+import type { AppSettings, AppSettingsPatch } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import { MockBackend } from '../backend/mock';
 import {
-  applyChanges,
+  applyPatch,
   changeSettings,
   type SettingsHolder,
   SettingsWriter,
-  settingsChanges,
-  withoutChanges,
+  settingsPatch,
+  withoutPatch,
 } from './settings-changes.svelte';
 
 async function settings(): Promise<AppSettings> {
   return new MockBackend({ empty: true }).getSettings();
 }
 
-describe('settingsChanges', () => {
-  it('names only the settings that changed, down to the setting in a group', async () => {
+describe('settingsPatch', () => {
+  it('holds only the settings that changed, down to the setting in a group', async () => {
     const before = await settings();
     const after = structuredClone(before);
     after.theme = 'dark';
     after.extension.ask_before_download = !before.extension.ask_before_download;
-    expect(settingsChanges(before, after)).toEqual(
-      [
-        { path: ['extension', 'ask_before_download'], value: after.extension.ask_before_download },
-        { path: ['theme'], value: 'dark' },
-      ].sort((a, b) => a.path.join('.').localeCompare(b.path.join('.'))),
-    );
+    after.media.audio.chapters = !before.media.audio.chapters;
+    expect(settingsPatch(before, after)).toEqual({
+      theme: 'dark',
+      extension: { ask_before_download: after.extension.ask_before_download },
+      media: { audio: { chapters: after.media.audio.chapters } },
+    });
   });
 
   it('replaces a list whole', async () => {
     const before = await settings();
     const after = structuredClone(before);
     after.extension.ignored_sites = [...before.extension.ignored_sites, 'example.com'];
-    expect(settingsChanges(before, after)).toEqual([
-      { path: ['extension', 'ignored_sites'], value: after.extension.ignored_sites },
-    ]);
+    expect(settingsPatch(before, after)).toEqual({
+      extension: { ignored_sites: after.extension.ignored_sites },
+    });
+  });
+
+  // A setting that can be empty must reach the app as null, which clears it, and back.
+  it('sends a setting that became empty as null', async () => {
+    const before = await settings();
+    const limited = structuredClone(before);
+    limited.global_speed_limit = 500_000;
+    limited.media.audio.audio_kbps = 192;
+    expect(settingsPatch(before, limited)).toEqual({
+      global_speed_limit: 500_000,
+      media: { audio: { audio_kbps: 192 } },
+    });
+    const cleared = structuredClone(limited);
+    cleared.global_speed_limit = null;
+    cleared.media.audio.audio_kbps = null;
+    const patch = settingsPatch(limited, cleared);
+    expect(patch).toEqual({ global_speed_limit: null, media: { audio: { audio_kbps: null } } });
+    expect(applyPatch(limited, patch ?? {})).toEqual(cleared);
   });
 
   it('has nothing to send when nothing changed', async () => {
     const before = await settings();
-    expect(settingsChanges(before, structuredClone(before))).toEqual([]);
+    expect(settingsPatch(before, structuredClone(before))).toBeNull();
   });
 });
 
-describe('withoutChanges', () => {
+describe('withoutPatch', () => {
   it('takes back a failed change unless something newer replaced it', async () => {
     const before = await settings();
-    const failed: SettingsChange[] = [
-      { path: ['theme'], value: 'dark' },
-      { path: ['notify_on_complete'], value: !before.notify_on_complete },
-    ];
-    const current = applyChanges(before, failed);
+    const failed: AppSettingsPatch = {
+      theme: 'dark',
+      notify_on_complete: !before.notify_on_complete,
+      extension: { capture_enabled: !before.extension.capture_enabled },
+    };
+    const current = applyPatch(before, failed);
     current.theme = 'light'; // a newer change, made while the failed one was on its way
-    const restored = withoutChanges(current, failed, before);
+    const restored = withoutPatch(current, failed, before);
     expect(restored.theme).toBe('light');
     expect(restored.notify_on_complete).toBe(before.notify_on_complete);
+    expect(restored.extension.capture_enabled).toBe(before.extension.capture_enabled);
   });
 });
 
 describe('SettingsWriter', () => {
-  it('sends batches in the order they were made, even when an earlier one is slower', async () => {
-    const sent: string[] = [];
+  it('sends patches in the order they were made, even when an earlier one is slower', async () => {
+    const sent: number[] = [];
     let releaseFirst: () => void = () => undefined;
     const firstDone = new Promise<void>((resolve) => (releaseFirst = resolve));
-    const writer = new SettingsWriter(async (changes) => {
-      const name = changes[0]?.path.join('.') ?? '';
-      if (name === 'first') await firstDone;
-      sent.push(name);
+    const writer = new SettingsWriter(async (patch) => {
+      const order = patch.max_concurrent_downloads ?? 0;
+      if (order === 1) await firstDone;
+      sent.push(order);
       return true;
     });
-    const first = writer.write([{ path: ['first'], value: 1 }]);
-    const second = writer.write([{ path: ['second'], value: 2 }]);
+    const first = writer.write({ max_concurrent_downloads: 1 });
+    const second = writer.write({ max_concurrent_downloads: 2 });
     releaseFirst();
     await Promise.all([first, second]);
-    expect(sent).toEqual(['first', 'second']);
+    expect(sent).toEqual([1, 2]);
   });
 
-  it('keeps going after a batch fails', async () => {
-    const writer = new SettingsWriter((changes) =>
-      changes[0]?.path[0] === 'bad' ? Promise.reject(new Error('refused')) : Promise.resolve(true),
+  it('keeps going after a patch fails', async () => {
+    const writer = new SettingsWriter((patch) =>
+      patch.theme === 'dark' ? Promise.reject(new Error('refused')) : Promise.resolve(true),
     );
-    await expect(writer.write([{ path: ['bad'], value: 0 }])).rejects.toThrow('refused');
-    await expect(writer.write([{ path: ['good'], value: 0 }])).resolves.toBe(true);
+    await expect(writer.write({ theme: 'dark' })).rejects.toThrow('refused');
+    await expect(writer.write({ theme: 'light' })).resolves.toBe(true);
   });
 });
 
@@ -91,7 +111,7 @@ describe('two windows changing settings at once', () => {
   it('keeps both changes', async () => {
     const backend = new MockBackend({ empty: true });
     const start = await backend.getSettings();
-    const send = (changes: SettingsChange[]) => backend.changeSettings(changes).then(() => true);
+    const send = (patch: AppSettingsPatch) => backend.changeSettings(patch).then(() => true);
     const main: SettingsHolder = { settings: structuredClone(start) };
     const download: SettingsHolder = { settings: structuredClone(start) };
 

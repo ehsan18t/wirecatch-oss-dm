@@ -257,7 +257,7 @@ describe('NativeClient', () => {
     await flush();
     app.updateError = { code: 'invalid_request', message: 'No such queue.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} as never }, 1_000)
+      .request({ method: 'update_extension_settings', params: {} }, 1_000)
       .catch((e: unknown) => e);
     expect(error).toMatchObject({
       kind: 'app',
@@ -343,7 +343,7 @@ describe('NativeClient', () => {
     if (first === undefined) throw new Error('no port');
     app.updateError = { code: 'app_unavailable', message: 'Wirecatch closed.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} as never }, 1_000)
+      .request({ method: 'update_extension_settings', params: {} }, 1_000)
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'app_unavailable' } });
     expect(client.status).toMatchObject({

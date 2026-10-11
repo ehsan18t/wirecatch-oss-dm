@@ -1,17 +1,11 @@
 //! Settings changed from several windows at once. A window used to send its whole copy of the settings, so a change made in another window that had not reached it yet was quietly undone.
 
-use serde_json::json;
-use wirecatch_core::CoreError;
-use wirecatch_protocol::app::{SettingsChange, Theme};
+use wirecatch_protocol::app::{
+    AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, Theme, Update,
+};
+use wirecatch_protocol::extension::ExtensionSettingsPatch;
 
 use crate::common::Harness;
-
-fn change(path: &[&str], value: serde_json::Value) -> SettingsChange {
-    SettingsChange {
-        path: path.iter().map(|name| (*name).to_owned()).collect(),
-        value,
-    }
-}
 
 #[tokio::test]
 async fn two_windows_changing_different_settings_keep_both() {
@@ -20,13 +14,19 @@ async fn two_windows_changing_different_settings_keep_both() {
 
     // Both windows start from the same copy; each changes one setting.
     h.manager
-        .change_settings(&[change(&["theme"], json!("dark"))])
+        .change_settings(AppSettingsPatch {
+            theme: Some(Theme::Dark),
+            ..AppSettingsPatch::default()
+        })
         .unwrap();
     h.manager
-        .change_settings(&[change(
-            &["extension", "ask_before_download"],
-            json!(!before.extension.ask_before_download),
-        )])
+        .change_settings(AppSettingsPatch {
+            extension: Some(ExtensionSettingsPatch {
+                ask_before_download: Some(!before.extension.ask_before_download),
+                ..ExtensionSettingsPatch::default()
+            }),
+            ..AppSettingsPatch::default()
+        })
         .unwrap();
 
     let after = h.manager.get_settings();
@@ -45,51 +45,59 @@ async fn two_windows_changing_different_settings_keep_both() {
     );
 }
 
+// A setting that can be empty (no speed limit, the format's usual audio quality) must be able to
+// go from empty to a value and back, which "leave unchanged" alone cannot say.
 #[tokio::test]
-async fn an_unknown_setting_is_refused_and_changes_nothing() {
+async fn a_setting_that_can_be_empty_is_set_and_cleared() {
     let h = Harness::new().await;
-    let before = h.manager.get_settings();
+    let limit = |limit: Option<u64>| AppSettingsPatch {
+        global_speed_limit: Update::Set(limit),
+        ..AppSettingsPatch::default()
+    };
+    let kbps = |kbps: Option<u32>| AppSettingsPatch {
+        media: Some(MediaDefaultsPatch {
+            audio: Some(OutputDefaultsPatch {
+                audio_kbps: Update::Set(kbps),
+                ..OutputDefaultsPatch::default()
+            }),
+            ..MediaDefaultsPatch::default()
+        }),
+        ..AppSettingsPatch::default()
+    };
 
-    let refused = h.manager.change_settings(&[
-        change(&["theme"], json!("dark")),
-        change(&["no_such_setting"], json!(1)),
-    ]);
+    h.manager.change_settings(limit(Some(500_000))).unwrap();
+    h.manager.change_settings(kbps(Some(192))).unwrap();
+    let set = h.manager.get_settings();
+    assert_eq!(set.global_speed_limit, Some(500_000));
+    assert_eq!(set.media.audio.audio_kbps, Some(192));
 
-    assert!(
-        matches!(refused, Err(CoreError::SettingsChange { .. })),
-        "{refused:?}"
-    );
+    h.manager
+        .change_settings(AppSettingsPatch::default())
+        .unwrap();
     assert_eq!(
         h.manager.get_settings(),
-        before,
-        "a refused batch changes nothing"
+        set,
+        "an empty patch changes nothing"
     );
+
+    h.manager.change_settings(limit(None)).unwrap();
+    h.manager.change_settings(kbps(None)).unwrap();
+    let cleared = h.manager.get_settings();
+    assert_eq!(cleared.global_speed_limit, None);
+    assert_eq!(cleared.media.audio.audio_kbps, None);
 }
 
 #[tokio::test]
-async fn a_value_of_the_wrong_kind_is_refused() {
+async fn a_refused_patch_changes_nothing() {
     let h = Harness::new().await;
     let before = h.manager.get_settings();
 
-    let refused = h.manager.change_settings(&[change(&["theme"], json!(42))]);
+    let refused = h.manager.change_settings(AppSettingsPatch {
+        theme: Some(Theme::Dark),
+        max_concurrent_downloads: Some(0),
+        ..AppSettingsPatch::default()
+    });
 
-    assert!(
-        matches!(refused, Err(CoreError::SettingsChange { .. })),
-        "{refused:?}"
-    );
+    assert!(refused.is_err(), "{refused:?}");
     assert_eq!(h.manager.get_settings(), before);
-}
-
-#[tokio::test]
-async fn a_path_into_a_value_that_is_not_a_group_is_refused() {
-    let h = Harness::new().await;
-
-    let refused = h
-        .manager
-        .change_settings(&[change(&["theme", "inner"], json!(1))]);
-
-    assert!(
-        matches!(refused, Err(CoreError::SettingsChange { .. })),
-        "{refused:?}"
-    );
 }

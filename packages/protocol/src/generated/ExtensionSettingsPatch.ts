@@ -4,17 +4,17 @@ import type { QueueId } from "./QueueId";
 /**
  * A partial update: only fields that are `Some` change.
  */
-export type ExtensionSettingsPatch = { capture_enabled: boolean | null, ask_before_download: boolean | null, show_media_button: boolean | null, 
+export type ExtensionSettingsPatch = { capture_enabled?: boolean | null, ask_before_download?: boolean | null, show_media_button?: boolean | null, 
 /**
  * Replaces the whole list. Prefer the add and remove fields, which do not
  * overwrite an edit made at the same time from another browser.
  */
-ignored_sites: Array<string> | null, 
+ignored_sites?: Array<string> | null, 
 /**
  * Hosts to add to `ignored_sites` (applied after `ignored_sites`).
  */
-add_ignored_sites: Array<string> | null, 
+add_ignored_sites?: Array<string> | null, 
 /**
  * Hosts to remove from `ignored_sites` (applied last).
  */
-remove_ignored_sites: Array<string> | null, capture_extensions: Array<string> | null, min_capture_size: number | null, default_queue: QueueId | null, };
+remove_ignored_sites?: Array<string> | null, capture_extensions?: Array<string> | null, min_capture_size?: number | null, default_queue?: QueueId | null, };

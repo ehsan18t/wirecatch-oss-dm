@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Instant;
 use wirecatch_core::Manager;
-use wirecatch_protocol::app::UiEvent;
+use wirecatch_protocol::app::{AppSettingsPatch, UiEvent};
 
 use crate::activity::{Activity, Finished, notification_text};
 use crate::autostart::{self, Action};
@@ -214,10 +214,12 @@ pub fn apply_autostart(
         Action::Nothing => {}
         Action::TurnSettingOff => {
             tracing::info!("starting with the system was turned off outside Wirecatch");
-            let mut settings = manager.get_settings();
-            settings.start_with_system = false;
+            // Only this one setting, so a change made meanwhile in a window is kept.
             manager
-                .update_settings(settings)
+                .change_settings(AppSettingsPatch {
+                    start_with_system: Some(false),
+                    ..AppSettingsPatch::default()
+                })
                 .map_err(|e| e.to_string())?;
         }
     }

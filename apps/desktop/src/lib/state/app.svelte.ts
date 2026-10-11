@@ -84,9 +84,9 @@ export class AppState {
   readonly hints = new Hints();
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter(
-    async (changes) =>
+    async (patch) =>
       (await this.#run(async () => {
-        await this.backend.changeSettings(changes);
+        await this.backend.changeSettings(patch);
         return true;
       })) === true,
   );
@@ -918,7 +918,7 @@ export class AppState {
   /** Tries saving again after a storage failure: an empty change still goes through the app's save. */
   async retryStorage(): Promise<void> {
     if (!this.settings) return;
-    const ok = await this.#settingsWriter.write([]);
+    const ok = await this.#settingsWriter.write({});
     if (ok) this.storageProblem = null;
   }
 
