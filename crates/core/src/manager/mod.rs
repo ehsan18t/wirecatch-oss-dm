@@ -45,6 +45,8 @@ use state::{Entry, State, Stop};
 const UI_EVENT_BUFFER: usize = 1024;
 /// The same for protocol events.
 const WIRE_EVENT_BUFFER: usize = 64;
+/// Longest wait at shutdown for the database to save the last changes and close.
+const DATABASE_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Where the manager keeps its data and how it reads the world around it.
 #[derive(Clone)]
@@ -221,8 +223,10 @@ impl Manager {
         self.inner.wire_events.subscribe()
     }
 
-    /// Stops every download so it can continue on the next start, saves everything
-    /// and stops the background work. Later operations fail with [`CoreError::Closed`].
+    /// Stops every download so it can continue on the next start, saves everything,
+    /// closes the database and stops the background work. Once it returns, the data
+    /// folder can be deleted or moved (the database file is closed). Later operations
+    /// fail with [`CoreError::Closed`].
     pub async fn shutdown(&self) {
         let exits: Vec<CancellationToken> = {
             let mut state = self.lock();
@@ -241,7 +245,7 @@ impl Manager {
         for exited in exits {
             exited.cancelled().await;
         }
-        self.inner.store.flush().await;
+        self.inner.store.close(DATABASE_CLOSE_TIMEOUT).await;
     }
 
     fn spawn_background_tasks(&self) {

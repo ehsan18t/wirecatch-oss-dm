@@ -149,7 +149,10 @@ enum Op {
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
+    #[cfg_attr(not(test), allow(dead_code))]
     Flush(oneshot::Sender<()>),
+    /// Saves everything sent before it, closes the database and stops the thread.
+    Close(oneshot::Sender<()>),
 }
 
 /// Handle to the database thread. Writes are applied in the order they are sent.
@@ -167,6 +170,7 @@ impl std::fmt::Debug for Op {
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::Flush(_) => "Flush",
+            Op::Close(_) => "Close",
         })
     }
 }
@@ -233,15 +237,29 @@ impl Store {
     }
 
     /// Waits until every write sent so far is on disk.
+    #[cfg(test)]
     pub async fn flush(&self) {
         let (done, wait) = oneshot::channel();
         self.send(Op::Flush(done));
         let _ = wait.await;
     }
 
+    /// Saves every write sent so far, closes the database file and stops the
+    /// database thread, waiting at most `timeout` for it. Afterwards the data folder
+    /// can be deleted or moved at once (Windows refuses while a file in it is open),
+    /// and later writes are dropped.
+    pub async fn close(&self, timeout: Duration) {
+        let (done, wait) = oneshot::channel();
+        self.send(Op::Close(done));
+        if tokio::time::timeout(timeout, wait).await.is_err() {
+            warn!(?timeout, "the database did not close in time");
+        }
+    }
+
     fn send(&self, op: Op) {
         if let Err(mpsc::SendError(op)) = self.ops.send(op) {
-            error!(?op, "the database thread has stopped; change not saved");
+            // After `close` this is expected: the app is shutting down.
+            warn!(?op, "the database is closed; change not saved");
         }
     }
 }
@@ -253,13 +271,30 @@ impl Store {
 /// told why. Writes that still fail are kept, in order, and tried again before
 /// the next writes (or after a while if none come), never dropped: a lost delete
 /// would bring back a removed download.
-fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
+fn run(conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
+    let (conn, closed) = write_until_closed(conn, ops, on_failure);
+    // Closing the connection checkpoints the journal and releases the files.
+    if let Err((_, e)) = conn.close() {
+        warn!(error = %e, "the database did not close cleanly");
+    }
+    if let Some(closed) = closed {
+        let _ = closed.send(());
+    }
+}
+
+/// The body of [`run`]: applies writes until a `Close` arrives or every handle is
+/// gone, and returns the connection with the waiting `Close`, if any.
+fn write_until_closed(
+    mut conn: Connection,
+    ops: mpsc::Receiver<Op>,
+    on_failure: FailureHandler,
+) -> (Connection, Option<oneshot::Sender<()>>) {
     let mut kept: Vec<Op> = Vec::new();
     loop {
         let first = if kept.is_empty() {
             match ops.recv() {
                 Ok(op) => Some(op),
-                Err(mpsc::RecvError) => return,
+                Err(mpsc::RecvError) => return (conn, None),
             }
         } else {
             match ops.recv_timeout(RETRY_KEPT_AFTER) {
@@ -274,16 +309,22 @@ fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler
                             "changes could not be saved before closing"
                         );
                     }
-                    return;
+                    return (conn, None);
                 }
             }
         };
         let mut writes = std::mem::take(&mut kept);
         let retried = writes.len();
         let mut flushed = Vec::new();
+        let mut closing = None;
         for op in first.into_iter().chain(ops.try_iter()) {
             match op {
                 Op::Flush(done) => flushed.push(done),
+                Op::Close(done) => {
+                    // Writes sent after the close are not taken.
+                    closing = Some(done);
+                    break;
+                }
                 write => writes.push(write),
             }
         }
@@ -307,6 +348,18 @@ fn run(mut conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler
         }
         for done in flushed {
             let _ = done.send(());
+        }
+        if let Some(done) = closing {
+            if !kept.is_empty() {
+                let lost = apply_one_by_one(&mut conn, std::mem::take(&mut kept));
+                if !lost.is_empty() {
+                    error!(
+                        writes = lost.len(),
+                        "changes could not be saved before closing"
+                    );
+                }
+            }
+            return (conn, Some(done));
         }
     }
 }
@@ -364,7 +417,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveQueues(_) => Target::Queues,
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
-        Op::Flush(_) => Target::Nothing,
+        Op::Flush(_) | Op::Close(_) => Target::Nothing,
     }
 }
 
@@ -398,7 +451,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveQueues(queues) => save_queues(&tx, queues)?,
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
-            Op::Flush(_) => {}
+            Op::Flush(_) | Op::Close(_) => {}
         }
     }
     tx.commit()
