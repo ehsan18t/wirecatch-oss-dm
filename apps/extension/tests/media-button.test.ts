@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACTIVE_MS,
+  MESSAGE_MS,
   MediaButton,
   SHADOW_CSS,
   findMedia,
@@ -441,6 +442,32 @@ describe('MediaButton', () => {
       expect(tab(page).defaultPrevented).toBe(false);
       expect(document.activeElement).toBe(page);
     });
+  });
+
+  it('keeps its message readable after the video stops being in use, until it expires', async () => {
+    const fake = fakeDeps();
+    fake.answer = { ok: false, message: 'Wirecatch could not be reached. Open Wirecatch, then try again.' };
+    const saved = { ...MESSAGE_MS };
+    MESSAGE_MS.error = 150;
+    try {
+      const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+      const b = start(fake);
+      video.dispatchEvent(new Event('play'));
+      await settle();
+      b.button.click();
+      await settle();
+      // The video stops and the pointer is elsewhere: the button goes, its message stays.
+      video.dispatchEvent(new Event('pause'));
+      expect(b.state).toBe('message');
+      expect(b.host.isConnected).toBe(true);
+      expect(b.status.textContent).toContain('Open Wirecatch');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(b.status.textContent).toBe('');
+      expect(b.state).toBe('none');
+      expect(b.host.isConnected).toBe(false);
+    } finally {
+      Object.assign(MESSAGE_MS, saved);
+    }
   });
 
   it('is a real, labelled button that keyboard users can reach', () => {

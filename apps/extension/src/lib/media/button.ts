@@ -179,6 +179,7 @@ export const SHADOW_CSS = `
 .s{all:initial;position:absolute;top:38px;right:0;width:max-content;max-width:260px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;border-radius:6px}
 .s:not(:empty){padding:6px 10px;background:rgba(17,19,24,.94);box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .s.err:not(:empty){background:#991b1b}
+.w.msg .b{visibility:hidden}
 @media (prefers-reduced-motion:reduce){.b{transition:none}}
 @media (forced-colors:active){.b,.s:not(:empty){border:1px solid CanvasText;forced-color-adjust:auto}}
 `;
@@ -210,7 +211,11 @@ const CONTAINED = [
   'touchstart',
 ];
 
-export type Shown = 'none' | 'shown' | 'idle';
+/** `message`: the button is gone but its last message stays readable (and announced) until it expires. */
+export type Shown = 'none' | 'shown' | 'idle' | 'message';
+
+/** How long a message stays, long enough for screen readers to announce it. */
+export const MESSAGE_MS = { ok: 4000, error: 8000 };
 
 export class MediaButton {
   /** The element the page sees: a bare custom element whose content is in a closed shadow root. */
@@ -419,7 +424,8 @@ export class MediaButton {
   #onKey(event: KeyboardEvent): void {
     if (event.key !== 'Tab' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
     const focused = event.composedPath()[0] ?? event.target;
-    if (this.#state === 'none' || this.#target === null || this.#mediaFor(focused) !== this.#target) return;
+    const reachable = this.#state === 'shown' || this.#state === 'idle';
+    if (!reachable || this.#target === null || this.#mediaFor(focused) !== this.#target) return;
     if (!(focused instanceof HTMLElement)) return;
     event.preventDefault();
     this.#returnTo = focused;
@@ -555,10 +561,17 @@ export class MediaButton {
     };
     let position = state === 'none' || target === null ? null : place(target);
     if (position === null || target === null) {
+      if (this.status.textContent !== '' && this.host.isConnected) {
+        // Keep the message (a live region) in place until it has been read; it expires on its own.
+        this.#wrap.classList.add('msg');
+        this.#state = 'message';
+        return;
+      }
       this.host.remove();
       this.#state = 'none';
       return;
     }
+    this.#wrap.classList.remove('msg');
     // Outside the body, where page frameworks do not manage the children, unless a
     // player container is full screen: only its contents are drawn then.
     const parent = fullscreen ?? this.#doc.documentElement;
@@ -615,8 +628,9 @@ export class MediaButton {
             () => {
               this.#statusTimer = null;
               this.status.textContent = '';
+              this.#update();
             },
-            error ? 8000 : 4000,
+            error ? MESSAGE_MS.error : MESSAGE_MS.ok,
           );
   }
 }
