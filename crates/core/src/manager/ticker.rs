@@ -12,7 +12,7 @@ use tokio::sync::Notify;
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent};
 
-use super::state::Entry;
+use super::state::{Entry, Gauge};
 use super::{Inner, Manager};
 use crate::speed;
 
@@ -50,12 +50,23 @@ impl Manager {
         let state = &mut *state;
         #[cfg(debug_assertions)]
         state.assert_consistent();
+        let mut to_mark = Vec::new();
         for id in &state.running {
-            if let Some(entry) = state.downloads.get_mut(id)
-                && sample(entry, now)
-            {
-                state.dirty.insert(*id);
+            if let Some(entry) = state.downloads.get_mut(id) {
+                if sample(entry, now) {
+                    state.dirty.insert(*id);
+                }
+                to_mark.extend(part_to_mark(entry));
             }
+        }
+        if !to_mark.is_empty() {
+            // The part file is marked as soon as it exists, so the finished file
+            // carries the mark from the moment it is renamed into place.
+            self.inner.runtime.spawn_blocking(move || {
+                for (part, url, referrer) in to_mark {
+                    crate::zone::mark(&part, &url, referrer.as_deref());
+                }
+            });
         }
         let running = !state.running.is_empty();
 
@@ -79,6 +90,20 @@ impl Manager {
         }
         running
     }
+}
+
+/// The engine's part file of a running download that has not been marked yet,
+/// once the server has answered (the path is final then), with the addresses
+/// for the mark.
+fn part_to_mark(entry: &mut Entry) -> Option<(std::path::PathBuf, String, Option<String>)> {
+    let run = entry.run.as_mut()?;
+    if run.marked || !matches!(run.gauge, Gauge::Engine(_)) || !run.gauge.read().answered {
+        return None;
+    }
+    run.marked = true;
+    let [part, _] = crate::naming::partial_files(std::path::Path::new(&entry.row.path));
+    let referrer = crate::headers::referrer(&entry.origin.headers).map(str::to_string);
+    Some((part, entry.row.url.clone(), referrer))
 }
 
 /// Copies a run's engine counters into its row. Returns whether the row changed.

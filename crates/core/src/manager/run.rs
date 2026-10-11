@@ -156,6 +156,7 @@ impl Manager {
             cancel,
             exited,
             gauge,
+            marked: false,
             stop: None,
             meter: SpeedMeter::default(),
             task: task.abort_handle(),

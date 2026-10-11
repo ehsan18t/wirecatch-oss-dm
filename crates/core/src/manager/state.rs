@@ -161,6 +161,9 @@ pub(super) struct Run {
     /// Cancelled by the run's task once the engine has returned and closed its files.
     pub exited: CancellationToken,
     pub gauge: Gauge,
+    /// Whether the engine's part file got its Mark of the Web, so the file is
+    /// marked before it is renamed into place.
+    pub marked: bool,
     /// Why the run is being stopped, once it is.
     pub stop: Option<Stop>,
     pub meter: SpeedMeter,
@@ -461,6 +464,7 @@ mod tests {
                 cancel: CancellationToken::new(),
                 exited: CancellationToken::new(),
                 gauge: Gauge::Engine(Arc::new(Progress::default())),
+                marked: false,
                 stop: None,
                 meter: SpeedMeter::default(),
                 task: idle_task(),
