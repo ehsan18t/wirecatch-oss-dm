@@ -180,11 +180,19 @@ pub const SAFE_EXTENSIONS: &[&str] = &[
     "bz2", "xz", "zst",
 ];
 
-/// The type of `name` as the system sees it: trailing dots and spaces dropped (Windows ignores
-/// them), lower case, the last extension only (so `report.pdf.exe` is `exe`). `None` when the
-/// name has no extension.
+/// The type of `name` as the system sees it: lower case, the last extension only (so
+/// `report.pdf.exe` is `exe`). `None` when the name has no extension.
+///
+/// On Windows trailing dots and spaces are dropped first, because Windows drops them and opens
+/// `video.mp4.` as an mp4. On Linux they are part of the name: `video.mp4.` has no extension
+/// there, and the desktop may pick a program for it by its content instead (a `.desktop`
+/// launcher, say), so it must ask, and trimming would wrongly call it an mp4.
 pub fn file_type(name: &str) -> Option<String> {
-    let name = name.trim_end_matches(['.', ' ']);
+    let name = if cfg!(windows) {
+        name.trim_end_matches(['.', ' '])
+    } else {
+        name
+    };
     let (_, ext) = name.rsplit_once('.')?;
     (!ext.is_empty()).then(|| ext.to_ascii_lowercase())
 }
@@ -404,17 +412,31 @@ mod tests {
 
     #[test]
     fn the_type_is_read_the_way_the_system_reads_it() {
-        assert_eq!(file_type("video.mp4."), Some("mp4".into()));
-        assert_eq!(file_type("video.mp4 . "), Some("mp4".into()));
         assert_eq!(file_type("report.PDF"), Some("pdf".into()));
         assert_eq!(file_type("report.pdf.exe"), Some("exe".into()));
         assert_eq!(file_type("noext"), None);
         assert_eq!(file_type("trailing."), None);
-        assert!(!is_program(Path::new("video.mp4.")));
-        assert!(!is_program(Path::new("video.mp4  ")));
         assert!(is_program(Path::new("report.pdf.exe")));
         assert!(is_program(Path::new("setup.exe.")));
         assert!(is_program(Path::new("setup.exe ")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_drops_trailing_dots_and_spaces() {
+        assert_eq!(file_type("video.mp4."), Some("mp4".into()));
+        assert_eq!(file_type("video.mp4 . "), Some("mp4".into()));
+        assert!(!is_program(Path::new("video.mp4.")));
+        assert!(!is_program(Path::new("video.mp4  ")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn elsewhere_trailing_dots_and_spaces_are_part_of_the_name() {
+        assert_eq!(file_type("video.mp4."), None);
+        assert_eq!(file_type("video.mp4 "), Some("mp4 ".into()));
+        assert!(is_program(Path::new("video.mp4.")));
+        assert!(is_program(Path::new("video.mp4 ")));
     }
 
     #[cfg(unix)]
