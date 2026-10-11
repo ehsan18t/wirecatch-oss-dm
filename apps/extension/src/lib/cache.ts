@@ -42,7 +42,8 @@ export function asCachedSettings(value: unknown): CachedSettings | null {
   const c = value as Record<string, unknown>;
   if (!isSettings(c.settings) || typeof c.savedAt !== 'number') return null;
   const queues = Array.isArray(c.queues) ? c.queues.filter(isQueue) : [];
-  return { settings: c.settings, queues, savedAt: c.savedAt };
+  // Missing in caches written before it existed: then the app counts as running, which connects once to find out.
+  return { settings: c.settings, queues, savedAt: c.savedAt, appClosed: c.appClosed === true };
 }
 
 export function storageCache(area: StorageArea): SettingsCache {

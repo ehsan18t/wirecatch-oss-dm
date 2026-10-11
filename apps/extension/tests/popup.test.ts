@@ -350,6 +350,7 @@ describe('popup', () => {
           settings: { ...app.settings, capture_extensions: ['iso'] },
           queues: [{ id: 1, name: 'Main', is_default: true }],
           savedAt: Date.UTC(2026, 9, 1),
+          appClosed: false,
         };
         app.hostMissing = 'Specified native messaging host not found.';
       },
@@ -479,6 +480,7 @@ describe('popup accessibility', () => {
           settings: { ...app.settings, ignored_sites: ['a.example'] },
           queues: [],
           savedAt: 1,
+          appClosed: false,
         };
         app.hostMissing = 'Specified native messaging host not found.';
       },

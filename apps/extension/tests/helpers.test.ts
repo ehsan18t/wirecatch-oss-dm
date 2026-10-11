@@ -312,10 +312,14 @@ describe('settings cache', () => {
       settings: DEFAULT_SETTINGS,
       queues: [{ id: 1, name: 'Main', is_default: true }],
       savedAt: 5,
+      appClosed: true,
     };
     await cache.save(value);
     expect(store[CACHE_KEY]).toEqual(value);
     expect(await cache.load()).toEqual(value);
+    // Written before the field existed: the app counts as running, so waking connects once to find out.
+    const older = { settings: value.settings, queues: value.queues, savedAt: value.savedAt };
+    expect(asCachedSettings(older)?.appClosed).toBe(false);
     expect(asCachedSettings({ settings: { capture_enabled: 'yes' }, savedAt: 1 })).toBeNull();
     expect(asCachedSettings('nope')).toBeNull();
     expect(
@@ -324,6 +328,7 @@ describe('settings cache', () => {
       settings: DEFAULT_SETTINGS,
       queues: [],
       savedAt: 1,
+      appClosed: false,
     });
   });
 });

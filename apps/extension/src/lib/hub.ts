@@ -41,6 +41,8 @@ export interface CachedSettings {
   settings: ExtensionSettings;
   queues: QueueSummary[];
   savedAt: number;
+  /** The app was closed when last seen, so waking does not start a bridge only to find that out again. */
+  appClosed: boolean;
 }
 
 export interface SettingsCache {
@@ -192,12 +194,15 @@ export class Hub {
     return this.#ready;
   }
 
-  /** Connects to the app, loads the display cache and resumes downloads a previous run left paused. */
+  /**
+   * Loads the display cache, connects to the app if it was running when last seen, and resumes downloads a previous run left paused.
+   *
+   * The background wakes for every web response and tab change. While the app is closed, connecting each time would start a bridge process only to learn that again, so it waits until something needs the app: a request (which starts it) or the popup (which shows whether it runs).
+   */
   async start(): Promise<void> {
     this.#client.onStatus((status) => this.#onStatus(status));
     this.#client.onEvent((event) => this.#onEvent(event));
     this.#client.onLateAnswer((call, outcome) => this.#onLateAnswer(call, outcome));
-    this.#client.start();
     // Both are read before `ready`, so no new download can overwrite the list of paused ones first.
     const [cached, leftPaused] = await Promise.all([
       this.#deps.cache.load().catch(() => null),
@@ -205,6 +210,7 @@ export class Hub {
     ]);
     // Settings fetched from the app while loading win over the cache.
     if (this.#cache === null) this.#cache = cached;
+    if (cached?.appClosed !== true) this.#client.start();
     this.#markReady();
     this.#publish();
     await this.#recoverInFlight(leftPaused);
@@ -226,6 +232,8 @@ export class Hub {
   /** Connects an open popup: it gets a snapshot once the cache is loaded, and after every change. */
   addPopup(channel: Channel<BackgroundMessage, unknown>): void {
     this.#popups.add(channel);
+    // The popup shows whether the app runs; this finds out if waking did not.
+    this.#client.start();
     let stopWatching: (() => void) | null = null;
     channel.onDisconnect.addListener(() => {
       this.#popups.delete(channel);
@@ -614,8 +622,20 @@ export class Hub {
       void this.#refresh();
     } else {
       this.#live = null;
+      if (status.state === 'unavailable' && status.problem.kind === 'app_closed') {
+        this.#rememberClosed();
+      }
     }
     this.#publish();
+  }
+
+  /** Keeps in the cache that the app is closed, for the next time the background wakes. */
+  #rememberClosed(): void {
+    if (this.#cache === null || this.#cache.appClosed) return;
+    this.#cache = { ...this.#cache, appClosed: true };
+    this.#deps.cache.save(this.#cache).catch(() => {
+      // Not kept: the next wake connects once more to find out.
+    });
   }
 
   async #refresh(): Promise<void> {
@@ -708,6 +728,7 @@ export class Hub {
       settings: this.#live,
       queues: this.#queues,
       savedAt: this.#now(),
+      appClosed: false,
     };
     this.#cache = value;
     this.#deps.cache.save(value).catch(() => {

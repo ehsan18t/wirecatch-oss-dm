@@ -6,6 +6,7 @@ import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
 import { Hub, type CachedSettings, type SettingsCache } from '../src/lib/hub';
+import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import {
   DEFAULT_SETTINGS,
@@ -13,6 +14,7 @@ import {
   FakeDownloads,
   MemoryCache,
   MemoryInFlight,
+  channelPair,
   downloadItem,
   flush,
 } from './fakes';
@@ -439,6 +441,7 @@ describe('handover', () => {
             settings: { ...DEFAULT_SETTINGS, capture_enabled: false },
             queues: [],
             savedAt: 1,
+            appClosed: false,
           };
           app.hostMissing = 'Specified native messaging host not found.';
         },
@@ -450,7 +453,7 @@ describe('handover', () => {
     it('resumes a download the cached settings would capture', async () => {
       s = await setup({
         configure: (app, cache) => {
-          cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1 };
+          cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: false };
           app.hostMissing = 'Specified native messaging host not found.';
         },
       });
@@ -483,6 +486,42 @@ describe('handover', () => {
     });
   });
 
+  // Every wake of the background (any web response, any tab change) started a bridge process, also
+  // while Wirecatch was closed, only to learn it was still closed.
+  it('starts no bridge on waking while the app was closed when last seen', async () => {
+    const { app, hub } = await setup({
+      configure: (fake, cache) => {
+        fake.running = false;
+        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+      },
+    });
+    expect(app.ports).toHaveLength(0);
+    // The popup shows whether the app runs, so it finds out.
+    const [, background] = channelPair<PopupRequest, BackgroundMessage>();
+    hub.addPopup(background);
+    await flush();
+    expect(app.ports).toHaveLength(1);
+    expect(app.starts).toBe(0);
+  });
+
+  it('remembers that the app is closed, and forgets it once the app runs', async () => {
+    const cache = new MemoryCache();
+    cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: false };
+    const { app, client } = await setup({
+      cache,
+      configure: (fake) => {
+        fake.running = false;
+      },
+    });
+    expect(client.status.state).toBe('unavailable');
+    expect(cache.value.appClosed).toBe(true);
+
+    app.running = true;
+    client.reconnectNow();
+    await flush();
+    expect(cache.value.appClosed).toBe(false);
+  });
+
   it('judges nothing before the cached settings are loaded', async () => {
     let release: (value: CachedSettings | null) => void = () => undefined;
     const slowCache: SettingsCache = {
@@ -502,7 +541,12 @@ describe('handover', () => {
     const pending = s.hub.onDownload(downloadItem());
     await flush();
     expect(s.downloads.log).toEqual([]);
-    release({ settings: { ...DEFAULT_SETTINGS, capture_enabled: false }, queues: [], savedAt: 1 });
+    release({
+      settings: { ...DEFAULT_SETTINGS, capture_enabled: false },
+      queues: [],
+      savedAt: 1,
+      appClosed: false,
+    });
     expect(await pending).toBeNull();
     expect(s.downloads.log).toEqual([]);
     await s.started;
@@ -566,7 +610,7 @@ describe('handover', () => {
   it('rechecks the app settings after pausing and resumes if they now say no', async () => {
     s = await setup({
       configure: (app, cache) => {
-        cache.value = { settings: { ...app.settings }, queues: [], savedAt: 1 };
+        cache.value = { settings: { ...app.settings }, queues: [], savedAt: 1, appClosed: false };
         app.settings = { ...app.settings, capture_enabled: false };
         app.hostMissing = 'Specified native messaging host not found.';
       },
