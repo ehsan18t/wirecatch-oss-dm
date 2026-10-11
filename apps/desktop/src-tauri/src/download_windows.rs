@@ -50,6 +50,57 @@ pub const WINDOW_SIZE: (f64, f64) = (460.0, 600.0);
 /// The smallest a download window can be made, in logical pixels.
 pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, 320.0);
 
+/// The space kept free above and below a window that fits its content, in logical pixels.
+pub const SCREEN_MARGIN: f64 = 48.0;
+
+/// The height a download window takes for content `wanted` pixels tall: what it needs, never
+/// less than the smallest window and never taller than the screen it is on (`screen`, the
+/// height of its work area, when the system says). A height that is not a number gives the
+/// smallest window.
+pub fn fitted_height(wanted: f64, screen: Option<f64>) -> f64 {
+    let floor = MIN_WINDOW_SIZE.1;
+    let ceiling = screen
+        .filter(|h| h.is_finite())
+        .map_or(WINDOW_SIZE.1, |h| (h - 2.0 * SCREEN_MARGIN).max(floor));
+    if !wanted.is_finite() {
+        return floor;
+    }
+    wanted.ceil().clamp(floor, ceiling)
+}
+
+/// Makes a download window as tall as its content (`height`, in logical pixels, as the page
+/// measured it), keeping its width, and moves it up if it would now reach past the bottom of
+/// its screen.
+pub fn fit_to_content<R: Runtime>(window: &tauri::WebviewWindow<R>, height: f64) {
+    let monitor = window.current_monitor().ok().flatten();
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let area = monitor.as_ref().map(|m| {
+        let s = m.scale_factor();
+        let work = m.work_area();
+        (
+            f64::from(work.position.y) / s,
+            f64::from(work.size.height) / s,
+        )
+    });
+    let height = fitted_height(height, area.map(|(_, h)| h));
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    let width = f64::from(size.width) / scale;
+    if (f64::from(size.height) / scale - height).abs() < 1.0 {
+        return;
+    }
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    if let (Some((top, screen)), Ok(at)) = (area, window.outer_position()) {
+        let y = f64::from(at.y) / scale;
+        let bottom = top + screen - SCREEN_MARGIN / 2.0;
+        if y + height > bottom {
+            let x = f64::from(at.x) / scale;
+            let _ = window.set_position(LogicalPosition::new(x, (bottom - height).max(top)));
+        }
+    }
+}
+
 /// Whether `label` is a download window's.
 pub fn is_download_window(label: &str) -> bool {
     label.starts_with(LABEL_PREFIX)
@@ -522,6 +573,28 @@ const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_takes_the_height_its_content_needs_within_the_screen() {
+        // A short progress view: smaller than the opening size, rounded up to whole pixels.
+        assert_eq!(fitted_height(431.2, Some(1040.0)), 432.0);
+        // Never smaller than the smallest window.
+        assert_eq!(fitted_height(120.0, Some(1040.0)), MIN_WINDOW_SIZE.1);
+        // A long quality list: as tall as the screen allows, with a margin; the body scrolls.
+        assert_eq!(
+            fitted_height(2000.0, Some(1040.0)),
+            1040.0 - 2.0 * SCREEN_MARGIN
+        );
+        // Unknown screen: no taller than the opening size.
+        assert_eq!(fitted_height(900.0, None), WINDOW_SIZE.1);
+        // A tiny screen still gets the smallest window, and nonsense gives the smallest too.
+        assert_eq!(fitted_height(700.0, Some(300.0)), MIN_WINDOW_SIZE.1);
+        assert_eq!(fitted_height(f64::NAN, Some(1040.0)), MIN_WINDOW_SIZE.1);
+        assert_eq!(
+            fitted_height(f64::INFINITY, Some(1040.0)),
+            MIN_WINDOW_SIZE.1
+        );
+    }
 
     fn opened(step: Option<Step>) -> OpenWindow {
         match step {

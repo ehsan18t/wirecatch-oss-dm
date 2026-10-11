@@ -53,6 +53,7 @@ const FIXED = [
   'show_question_windows',
   'show_progress_window',
   'close_download_window',
+  'fit_download_window',
 ];
 
 describe('Tauri command names', () => {
@@ -111,6 +112,7 @@ describe('TauriBackend', () => {
     await b.showQuestionWindows();
     await b.showProgressWindow(6);
     await b.closeDownloadWindow();
+    await b.fitDownloadWindow(432);
     expect(invoke.mock.calls).toEqual([
       ['remove', { ids: [1, 2], deleteFile: true }],
       ['reorder', { queue: 3, idsInOrder: [2, 1] }],
@@ -137,6 +139,7 @@ describe('TauriBackend', () => {
       ['show_question_windows', undefined],
       ['show_progress_window', { id: 6 }],
       ['close_download_window', undefined],
+      ['fit_download_window', { height: 432 }],
     ]);
   });
 

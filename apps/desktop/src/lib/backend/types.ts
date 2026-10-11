@@ -216,6 +216,7 @@ export const COMMANDS = {
   showQuestionWindows: 'show_question_windows',
   showProgressWindow: 'show_progress_window',
   closeDownloadWindow: 'close_download_window',
+  fitDownloadWindow: 'fit_download_window',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */

@@ -162,6 +162,10 @@ export class TauriBackend implements Backend {
   closeDownloadWindow() {
     return this.#exec(COMMANDS.closeDownloadWindow);
   }
+  /** Makes the download window this page runs in as tall as its content (logical pixels). */
+  fitDownloadWindow(height: number) {
+    return this.#exec(COMMANDS.fitDownloadWindow, { height });
+  }
   openFile(id: DownloadId, allowProgram = false) {
     return this.#exec(COMMANDS.openFile, { id, allowProgram });
   }

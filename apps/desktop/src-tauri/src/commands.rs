@@ -287,6 +287,15 @@ pub async fn close_download_window(window: WebviewWindow) -> CommandResult<()> {
 }
 
 #[tauri::command]
+pub async fn fit_download_window(window: WebviewWindow, height: f64) -> CommandResult<()> {
+    if !download_windows::is_download_window(window.label()) {
+        return Err("Only a download window fits itself to its content.".into());
+    }
+    download_windows::fit_to_content(&window, height);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn dismiss_media_choice(core: CoreState<'_>, id: u64) -> CommandResult<()> {
     api::dismiss_media_choice(core.manager().await?, id)
 }

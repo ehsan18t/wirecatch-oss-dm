@@ -57,6 +57,7 @@
 //! | `show_question_windows` | none | nothing; every open question's window comes to the front or opens again |
 //! | `show_progress_window` | `id: DownloadId` | nothing; opens (or brings forward) that download's window |
 //! | `close_download_window` | none | nothing; closes the download window that calls it |
+//! | `fit_download_window` | `height: f64` | nothing; makes the download window that calls it as tall as its content (`height`, logical pixels), within its screen |
 //!
 //! Every command reaches the real core; none is pending. The core checks for add-on updates
 //! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
@@ -230,6 +231,7 @@ pub fn run() {
             commands::show_question_windows,
             commands::show_progress_window,
             commands::close_download_window,
+            commands::fit_download_window,
         ])
         .build(context);
     match app {

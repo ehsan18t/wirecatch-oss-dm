@@ -7,6 +7,7 @@
   import { TauriBackend } from '$lib/backend/tauri';
   import DownloadWindow from '$lib/window/DownloadWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
+  import { setFitWindow } from '$lib/window/fit';
 
   /** What the address asks for, or `null` when it names nothing usable. */
   function target(search: string): Target | null {
@@ -23,6 +24,10 @@
 
   let win = $state<DownloadWindowState | null>(null);
   let problem = $state<string | null>(null);
+  let backend: TauriBackend | null = null;
+
+  // The window is only as tall as the view it shows; a failure leaves it as it is.
+  setFitWindow((height) => void backend?.fitDownloadWindow(height).catch(() => undefined));
 
   onMount(() => {
     const wanted = target(window.location.search);
@@ -35,9 +40,10 @@
       problem = 'This window does not say which download it is for. Close it and try again.';
       return;
     }
-    const backend = new TauriBackend();
-    const state = new DownloadWindowState(backend, wanted, {
-      close: () => void backend.closeDownloadWindow().catch(() => window.close()),
+    const shell = new TauriBackend();
+    backend = shell;
+    const state = new DownloadWindowState(shell, wanted, {
+      close: () => void shell.closeDownloadWindow().catch(() => window.close()),
     });
     win = state;
     void state.init();
