@@ -925,6 +925,8 @@ export class AppState {
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+    // Not answered after all: a later close from elsewhere is news again.
+    else this.#answering.delete(id);
   }
 
   /** Brings back the quality picker after it was put aside. */
@@ -966,6 +968,8 @@ export class AppState {
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+    // Not answered after all: a later close from elsewhere is news again.
+    else this.#answering.delete(id);
   }
 
   // ---- Media and add-ons ----

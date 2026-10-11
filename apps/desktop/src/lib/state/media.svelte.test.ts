@@ -206,6 +206,26 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('still says so when a failed answer here is answered elsewhere later', async () => {
+    const { app, backend } = await make();
+    for (const fails of ['confirmCapture', 'rejectCapture'] as const) {
+      backend.simulateConfirmation();
+      const capture = app.pending[0];
+      vi.spyOn(backend, fails).mockRejectedValueOnce(new Error('The folder is read-only.'));
+      if (fails === 'confirmCapture') {
+        await app.confirmCapture(capture?.id ?? -1, { folder: null, file_name: null, queue: null });
+      } else {
+        await app.rejectCapture(capture?.id ?? -1);
+      }
+      expect(app.pending).toHaveLength(1);
+      backend.simulateAnsweredElsewhere();
+      expect(app.toasts.at(-1)?.message).toBe(
+        `${capture?.file_name} was answered in another window, or the browser took it back.`,
+      );
+    }
+    app.dispose();
+  });
+
   it('says nothing when a question answered here closes', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();
