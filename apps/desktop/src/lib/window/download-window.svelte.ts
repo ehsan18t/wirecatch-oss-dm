@@ -16,6 +16,7 @@ import type {
 } from '@wirecatch/protocol';
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend/types';
+import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
 
 /** What the window is showing. */
 export type Phase = 'loading' | 'ask' | 'progress' | 'gone';
@@ -56,6 +57,14 @@ export class DownloadWindowState {
   readonly backend: Backend;
   readonly #host: WindowHost;
   readonly #target: Target;
+  /** Settings changes go to the app one after another, in the order they were made. */
+  readonly #settingsWriter = new SettingsWriter(
+    async (changes) =>
+      (await this.#act(async () => {
+        await this.backend.changeSettings(changes);
+        return true;
+      })) === true,
+  );
 
   phase = $state<Phase>('loading');
   question = $state<Question | null>(null);
@@ -448,17 +457,8 @@ export class DownloadWindowState {
 
   // ---- Settings shown in the window ----
 
-  async #saveSettings(change: (draft: AppSettings) => void): Promise<void> {
-    if (!this.settings) return;
-    const before = $state.snapshot(this.settings);
-    const draft = $state.snapshot(this.settings);
-    change(draft);
-    this.settings = draft;
-    const ok = await this.#act(async () => {
-      await this.backend.updateSettings(draft);
-      return true;
-    });
-    if (!ok) this.settings = before;
+  #saveSettings(change: (draft: AppSettings) => void): Promise<void> {
+    return changeSettings(this, change, this.#settingsWriter);
   }
 
   /** "Start downloads without asking": the window before each browser file, inverted. */

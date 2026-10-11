@@ -154,7 +154,7 @@ describe('MockBackend', () => {
     const { mock } = make();
     const s = await mock.getSettings();
     await mock.exportSettings('C:\\p.json');
-    await mock.updateSettings({ ...s, theme: 'dark' });
+    await mock.changeSettings([{ path: ['theme'], value: 'dark' }]);
     expect((await mock.getSettings()).theme).toBe('dark');
     await mock.importSettings('C:\\p.json');
     expect((await mock.getSettings()).theme).toBe(s.theme);
@@ -167,11 +167,11 @@ describe('MockBackend', () => {
     const { mock, events } = make({ empty: true });
     const s = await mock.getSettings();
     expect(s.extension.ask_before_download).toBe(true);
-    await mock.updateSettings({ ...s, extension: { ...s.extension, ask_before_download: false } });
+    await mock.changeSettings([{ path: ['extension', 'ask_before_download'], value: false }]);
     mock.simulateCapture();
     expect(events.some((e) => e.type === 'captured')).toBe(true);
     expect(mock.windows.windows).toHaveLength(0);
-    await mock.updateSettings(s);
+    await mock.changeSettings([{ path: ['extension', 'ask_before_download'], value: true }]);
     mock.simulateCapture();
     const asked = events.find((e) => e.type === 'confirmation_requested');
     expect(asked?.type).toBe('confirmation_requested');

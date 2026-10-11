@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use wirecatch_core::{AddonRequestItem, CoreError, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue,
+    ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue, SettingsChange,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -123,8 +123,8 @@ pub fn get_settings(m: &Manager) -> AppSettings {
 }
 
 /// Saves every setting at once.
-pub fn update_settings(m: &Manager, settings: AppSettings) -> CommandResult<()> {
-    m.update_settings(settings).map_err(plain)
+pub fn change_settings(m: &Manager, changes: &[SettingsChange]) -> CommandResult<()> {
+    m.change_settings(changes).map_err(plain)
 }
 
 /// Writes the settings profile to `path`.

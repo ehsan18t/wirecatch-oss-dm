@@ -88,7 +88,7 @@ describe('AppState', () => {
     await app.updateSettings((d) => void (d.theme = 'dark'));
     expect(app.settings?.theme).toBe('dark');
     expect((await backend.getSettings()).theme).toBe('dark');
-    vi.spyOn(backend, 'updateSettings').mockRejectedValueOnce(
+    vi.spyOn(backend, 'changeSettings').mockRejectedValueOnce(
       new BackendError('Disk is read only.'),
     );
     await app.updateSettings((d) => void (d.theme = 'light'));

@@ -11,7 +11,7 @@ use wirecatch_desktop_lib::questions::Question;
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, Theme,
+    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, SettingsChange, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
@@ -32,7 +32,19 @@ async fn commands_drive_the_core_and_state_survives_a_restart() {
     settings.theme = Theme::Dark;
     settings.max_concurrent_downloads = 7;
     settings.notify_on_complete = false;
-    api::update_settings(&m, settings).unwrap();
+    let change = |name: &str, value: serde_json::Value| SettingsChange {
+        path: vec![name.to_owned()],
+        value,
+    };
+    api::change_settings(
+        &m,
+        &[
+            change("theme", serde_json::json!("dark")),
+            change("max_concurrent_downloads", serde_json::json!(7)),
+            change("notify_on_complete", serde_json::json!(false)),
+        ],
+    )
+    .unwrap();
     let mut night = api::create_queue(&m, "Night").unwrap();
     night.max_concurrent = 1;
     api::update_queue(&m, night.clone()).unwrap();

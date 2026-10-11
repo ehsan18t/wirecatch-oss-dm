@@ -19,6 +19,7 @@ import type {
 import { getContext, setContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { MEDIA_ADDON } from '../addons';
+import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import type { Backend } from '../backend/types';
 import { extractUrls, formatTime, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
@@ -81,6 +82,14 @@ export class AppState {
   readonly #loadBackend: () => Promise<Backend>;
   readonly downloads = new DownloadStore();
   readonly hints = new Hints();
+  /** Settings changes go to the app one after another, in the order they were made. */
+  readonly #settingsWriter = new SettingsWriter(
+    async (changes) =>
+      (await this.#run(async () => {
+        await this.backend.changeSettings(changes);
+        return true;
+      })) === true,
+  );
 
   queues = $state<Queue[]>([]);
   settings = $state<AppSettings | null>(null);
@@ -827,18 +836,9 @@ export class AppState {
 
   // ---- Settings ----
 
-  /** Changes settings right away and saves them; on failure the old values come back. */
-  async updateSettings(change: (draft: AppSettings) => void): Promise<void> {
-    if (!this.settings) return;
-    const before = $state.snapshot(this.settings);
-    const draft = $state.snapshot(this.settings);
-    change(draft);
-    this.settings = draft;
-    const ok = await this.#run(async () => {
-      await this.backend.updateSettings(draft);
-      return true;
-    });
-    if (!ok) this.settings = before;
+  /** Changes settings right away and saves only what changed; on failure those settings come back. */
+  updateSettings(change: (draft: AppSettings) => void): Promise<void> {
+    return changeSettings(this, change, this.#settingsWriter);
   }
 
   async exportSettings(): Promise<string | null> {
@@ -912,14 +912,10 @@ export class AppState {
     this.addonPages = this.addonPages.filter((page) => page !== id);
   }
 
-  /** Tries saving again after a storage failure: any change is saved, so this saves settings. */
+  /** Tries saving again after a storage failure: an empty change still goes through the app's save. */
   async retryStorage(): Promise<void> {
     if (!this.settings) return;
-    const settings = $state.snapshot(this.settings);
-    const ok = await this.#run(async () => {
-      await this.backend.updateSettings(settings);
-      return true;
-    });
+    const ok = await this.#settingsWriter.write([]);
     if (ok) this.storageProblem = null;
   }
 

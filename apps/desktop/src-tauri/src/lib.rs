@@ -30,7 +30,7 @@
 //! | `set_queue_paused` | `id: QueueId`, `paused: bool` | nothing |
 //! | `start_queue_now` | `id: QueueId` | nothing |
 //! | `get_settings` | none | `AppSettings` |
-//! | `update_settings` | `settings: AppSettings` | nothing |
+//! | `change_settings` | `changes: Vec<SettingsChange>` | nothing; only the named settings change |
 //! | `export_settings` | `path: String` | nothing |
 //! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
 //! | `import_settings` | `path: String` | nothing |
@@ -218,7 +218,7 @@ pub fn run() {
             commands::set_queue_paused,
             commands::start_queue_now,
             commands::get_settings,
-            commands::update_settings,
+            commands::change_settings,
             commands::export_settings,
             commands::preview_import,
             commands::import_settings,

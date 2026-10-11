@@ -26,7 +26,7 @@ const FIXED = [
   'set_queue_paused',
   'start_queue_now',
   'get_settings',
-  'update_settings',
+  'change_settings',
   'export_settings',
   'preview_import',
   'import_settings',

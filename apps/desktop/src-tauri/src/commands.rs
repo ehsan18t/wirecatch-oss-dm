@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager as _, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadSummary, ImportPreview,
-    MediaChoice, MediaSelection, PendingCapture, Queue,
+    MediaChoice, MediaSelection, PendingCapture, Queue, SettingsChange,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -132,8 +132,11 @@ pub async fn get_settings(core: CoreState<'_>) -> CommandResult<AppSettings> {
 }
 
 #[tauri::command]
-pub async fn update_settings(core: CoreState<'_>, settings: AppSettings) -> CommandResult<()> {
-    api::update_settings(core.manager().await?, settings)
+pub async fn change_settings(
+    core: CoreState<'_>,
+    changes: Vec<SettingsChange>,
+) -> CommandResult<()> {
+    api::change_settings(core.manager().await?, &changes)
 }
 
 #[tauri::command]

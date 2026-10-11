@@ -15,6 +15,7 @@ import type {
   MediaOption,
   MediaSelection,
   OutputFit,
+  SettingsChange,
   PendingCapture,
   ProcessingStep,
   Queue,
@@ -24,6 +25,7 @@ import type {
   WaitReason,
 } from '@wirecatch/protocol';
 import { isProgramName } from '../filetypes';
+import { applyChanges } from '../state/settings-changes.svelte';
 import { WindowRegistry } from '../window/registry';
 import { fileNameFromUrl, folderOf, hostOf, scheduleAllows } from '../format';
 import {
@@ -904,8 +906,8 @@ export class MockBackend implements Backend {
     return structuredClone(this.#settings);
   }
 
-  async updateSettings(settings: AppSettings) {
-    this.#settings = structuredClone(settings);
+  async changeSettings(changes: readonly SettingsChange[]) {
+    this.#settings = applyChanges(this.#settings, changes);
     this.#emit({ type: 'settings_changed', data: structuredClone(this.#settings) });
   }
 

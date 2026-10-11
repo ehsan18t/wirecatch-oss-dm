@@ -8,9 +8,9 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
-      // Only the backend layer talks to Tauri; everything else goes through `$lib/backend`, so the mock backend can stand in for it.
+      // Only the backend layer talks to Tauri; everything else goes through `$lib/backend`, so the mock backend can stand in for it. Tests may use the mock directly.
       files: ['src/**'],
-      ignores: ['src/lib/backend/**'],
+      ignores: ['src/lib/backend/**', 'src/**/*.test.ts', 'src/lib/testing/**'],
       rules: {
         'no-restricted-imports': [
           'error',

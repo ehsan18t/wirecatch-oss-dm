@@ -20,11 +20,6 @@
       "count": 1
     }
   },
-  "src/lib/addons.test.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/lib/addons.ts": {
     "@typescript-eslint/no-magic-numbers": {
       "count": 4
@@ -444,14 +439,6 @@
     },
     "@typescript-eslint/prefer-includes": {
       "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/lib/settings-schema.test.ts": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/lib/settings-schema.ts": {
@@ -462,9 +449,6 @@
   "src/lib/state/app.svelte.test.ts": {
     "@typescript-eslint/non-nullable-type-assertion-style": {
       "count": 11
-    },
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/lib/state/app.svelte.ts": {
@@ -502,19 +486,11 @@
       "count": 2
     }
   },
-  "src/lib/state/open.svelte.test.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/lib/state/questions.svelte.test.ts": {
     "@typescript-eslint/no-empty-function": {
       "count": 2
     },
     "@typescript-eslint/require-await": {
-      "count": 2
-    },
-    "no-restricted-imports": {
       "count": 2
     }
   },
@@ -525,9 +501,6 @@
   },
   "src/lib/testing/setup.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },
@@ -553,9 +526,6 @@
     },
     "@typescript-eslint/restrict-plus-operands": {
       "count": 1
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/lib/window/FileQuestion.svelte": {
@@ -570,9 +540,6 @@
   },
   "src/lib/window/MediaQuestion.test.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "no-restricted-imports": {
       "count": 1
     }
   },
@@ -611,9 +578,6 @@
   "src/lib/window/download-window.svelte.test.ts": {
     "@typescript-eslint/non-nullable-type-assertion-style": {
       "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/lib/window/download-window.svelte.ts": {

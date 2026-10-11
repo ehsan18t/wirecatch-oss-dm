@@ -14,6 +14,7 @@ import type {
   PendingCapture,
   Queue,
   QueueId,
+  SettingsChange,
   UiEvent,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../window/registry';
@@ -100,7 +101,8 @@ export interface Backend {
   startQueueNow(id: QueueId): Promise<void>;
 
   getSettings(): Promise<AppSettings>;
-  updateSettings(settings: AppSettings): Promise<void>;
+  /** Changes only the named settings, applied to the app's current settings. */
+  changeSettings(changes: readonly SettingsChange[]): Promise<void>;
   exportSettings(path: string): Promise<void>;
   /** What importing the settings file at `path` would change, without changing anything. */
   previewImport(path: string): Promise<ImportPreview>;
@@ -193,7 +195,7 @@ export const COMMANDS = {
   setQueuePaused: 'set_queue_paused',
   startQueueNow: 'start_queue_now',
   getSettings: 'get_settings',
-  updateSettings: 'update_settings',
+  changeSettings: 'change_settings',
   exportSettings: 'export_settings',
   previewImport: 'preview_import',
   importSettings: 'import_settings',
