@@ -44,8 +44,18 @@ pub(crate) struct InstalledComponent {
     pub version: String,
     /// The program to run, relative to the component folder.
     pub program: String,
-    /// Every installed file (relative path) and its size.
-    pub files: Vec<(String, u64)>,
+    /// Every installed file.
+    pub files: Vec<InstalledFile>,
+}
+
+/// One installed file, as unpacked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct InstalledFile {
+    /// Relative to the part's folder, with `/` separators.
+    pub path: String,
+    pub size: u64,
+    /// Lower-case hex, taken while it was written.
+    pub sha256: String,
 }
 
 impl Record {
@@ -108,15 +118,20 @@ impl MediaTools {
 }
 
 /// The add-on's programs if every recorded file is there with its recorded
-/// size, so nothing half-installed or damaged is ever run. Blocks on the disk.
-pub(crate) fn tools(dir: &Path, record: &Record) -> Option<MediaTools> {
+/// size, so nothing half-installed or damaged is ever run. With `deep`, each
+/// file's SHA-256 is checked too: when repairing, and after a program could not
+/// be started, not on every start of the app. Blocks on the disk.
+pub(crate) fn tools(dir: &Path, record: &Record, deep: bool) -> Option<MediaTools> {
     let program = |name: &str| -> Option<PathBuf> {
         let component = record.components.get(name)?;
         let folder = dir.join(name);
-        for (file, size) in &component.files {
-            let path = archive::safe_join(&folder, file).ok()?;
+        for file in &component.files {
+            let path = archive::safe_join(&folder, &file.path).ok()?;
             let meta = std::fs::metadata(&path).ok()?;
-            if !meta.is_file() || meta.len() != *size {
+            let intact = meta.is_file()
+                && meta.len() == file.size
+                && (!deep || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
+            if !intact {
                 warn!(path = %path.display(), "a media add-on file is missing or changed");
                 return None;
             }
@@ -233,12 +248,16 @@ mod tests {
             InstalledComponent {
                 version: "2.9.7".into(),
                 program: "deno".into(),
-                files: vec![("deno".into(), 3)],
+                files: vec![InstalledFile {
+                    path: "deno".into(),
+                    size: 3,
+                    sha256: "0".repeat(64),
+                }],
             },
         );
         record.save(dir.path()).unwrap();
         assert_eq!(Record::load(dir.path()), record);
         // Nothing to run: the file itself is missing.
-        assert!(tools(dir.path(), &record).is_none());
+        assert!(tools(dir.path(), &record, false).is_none());
     }
 }

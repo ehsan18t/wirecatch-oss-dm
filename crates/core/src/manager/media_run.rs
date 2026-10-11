@@ -117,7 +117,8 @@ impl Manager {
                 if tools.is_some_and(|t| t.is_broken())
                     && let Some(manager) = Manager::from_weak(&manager)
                 {
-                    manager.spawn_addon_rescan();
+                    // A program that would not start: check every file closely.
+                    manager.spawn_addon_rescan(true);
                 }
                 RunEnd::Media(end)
             })
