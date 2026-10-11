@@ -4,7 +4,11 @@ import type { MediaKind } from "./MediaKind";
 /**
  * What the extension knows about captured media.
  */
-export type MediaHint = { kind: MediaKind, 
+export type MediaHint = { 
+/**
+ * How the media is delivered, which decides how the app downloads it.
+ */
+kind: MediaKind, 
 /**
  * The page or video title, used for the file name.
  */

@@ -2,7 +2,23 @@
 import type { BrowserInfo } from "./BrowserInfo";
 import type { ClientKind } from "./ClientKind";
 
-export type Hello = { client: ClientKind, client_version: string, protocol_version: number, 
+/**
+ * The first call on a connection.
+ */
+export type Hello = { 
+/**
+ * What kind of program is calling.
+ */
+client: ClientKind, 
+/**
+ * The client's own version, for logs and error reports.
+ */
+client_version: string, 
+/**
+ * The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the client speaks; the app refuses
+ * one it does not speak with [`ErrorCode::UnsupportedVersion`].
+ */
+protocol_version: number, 
 /**
  * Set by the extension; the bridge passes it through.
  */

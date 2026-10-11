@@ -13,7 +13,15 @@ export type NewDownload = {
  * `add_download` with the same id as the same download (idempotent), and
  * [`Call::WithdrawDownload`](crate::wire::Call::WithdrawDownload) refers to it.
  */
-handover_id: string, url: string, referrer: string | null, 
+handover_id: string, 
+/**
+ * Address of the file (or, for [`MediaKind::Page`], of the page holding the media).
+ */
+url: string, 
+/**
+ * Value for the `Referer` header, as the browser would have sent it.
+ */
+referrer: string | null, 
 /**
  * The page the download started from.
  */
@@ -21,11 +29,32 @@ page_url: string | null,
 /**
  * Name the browser or page suggested; the server's name wins if this is absent.
  */
-suggested_name: string | null, mime: string | null, size_hint: number | null, 
+suggested_name: string | null, 
+/**
+ * The MIME type the browser saw, for example `video/mp4`; tells audio from video for
+ * a direct media file.
+ */
+mime: string | null, 
+/**
+ * Size in bytes the browser expected, shown until the server answers.
+ */
+size_hint: number | null, 
 /**
  * Value for the `Cookie` header, so downloads behind a login keep working.
  */
-cookies: string | null, user_agent: string | null, extra_headers: Array<Header>, source: CaptureSource, 
+cookies: string | null, 
+/**
+ * The browser's `User-Agent`, so the server answers the app as it answered the browser.
+ */
+user_agent: string | null, 
+/**
+ * Further request headers the download needs, sent as given.
+ */
+extra_headers: Array<Header>, 
+/**
+ * What in the browser started the capture.
+ */
+source: CaptureSource, 
 /**
  * Queue to add to; the default queue if absent.
  */

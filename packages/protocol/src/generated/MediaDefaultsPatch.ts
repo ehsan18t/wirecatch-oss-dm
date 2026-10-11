@@ -4,4 +4,12 @@ import type { OutputDefaultsPatch } from "./OutputDefaultsPatch";
 /**
  * A change to some of [`MediaDefaults`].
  */
-export type MediaDefaultsPatch = { video?: OutputDefaultsPatch, audio?: OutputDefaultsPatch, };
+export type MediaDefaultsPatch = { 
+/**
+ * Changes to [`MediaDefaults::video`].
+ */
+video?: OutputDefaultsPatch, 
+/**
+ * Changes to [`MediaDefaults::audio`].
+ */
+audio?: OutputDefaultsPatch, };

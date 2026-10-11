@@ -13,19 +13,27 @@ pub struct NewDownload {
     /// `add_download` with the same id as the same download (idempotent), and
     /// [`Call::WithdrawDownload`](crate::wire::Call::WithdrawDownload) refers to it.
     pub handover_id: String,
+    /// Address of the file (or, for [`MediaKind::Page`], of the page holding the media).
     pub url: String,
+    /// Value for the `Referer` header, as the browser would have sent it.
     pub referrer: Option<String>,
     /// The page the download started from.
     pub page_url: Option<String>,
     /// Name the browser or page suggested; the server's name wins if this is absent.
     pub suggested_name: Option<String>,
+    /// The MIME type the browser saw, for example `video/mp4`; tells audio from video for
+    /// a direct media file.
     pub mime: Option<String>,
+    /// Size in bytes the browser expected, shown until the server answers.
     #[ts(type = "number | null")]
     pub size_hint: Option<u64>,
     /// Value for the `Cookie` header, so downloads behind a login keep working.
     pub cookies: Option<String>,
+    /// The browser's `User-Agent`, so the server answers the app as it answered the browser.
     pub user_agent: Option<String>,
+    /// Further request headers the download needs, sent as given.
     pub extra_headers: Vec<Header>,
+    /// What in the browser started the capture.
     pub source: CaptureSource,
     /// Queue to add to; the default queue if absent.
     pub queue: Option<QueueId>,
@@ -39,6 +47,7 @@ pub struct NewDownload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaHint {
+    /// How the media is delivered, which decides how the app downloads it.
     pub kind: MediaKind,
     /// The page or video title, used for the file name.
     pub title: Option<String>,
@@ -59,32 +68,41 @@ pub enum MediaKind {
     Page,
 }
 
+/// One HTTP request header.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Header {
+    /// The header's name, for example `Authorization`.
     pub name: String,
+    /// The header's value, sent as is.
     pub value: String,
 }
 
+/// What in the browser handed a download to the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum CaptureSource {
     /// The browser started a download and the extension took it over.
     BrowserDownload,
+    /// The person chose to download a link from the extension's item in the right-click menu.
     ContextMenu,
     /// The download button shown over a video or audio element.
     MediaButton,
 }
 
+/// The app's answer to a [`NewDownload`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AddedDownload {
     /// Absent when the app is waiting for the user to confirm (`ask_before_download`).
     pub id: Option<DownloadId>,
+    /// What the app did with it, which tells the extension whether it may erase the
+    /// browser's copy yet.
     pub action: AddAction,
 }
 
+/// What the app did with a captured download.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -103,6 +121,7 @@ pub enum AddAction {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct WithdrawRequest {
+    /// The [`NewDownload::handover_id`] of the capture to forget.
     pub handover_id: String,
 }
 
@@ -138,6 +157,7 @@ pub struct ExtensionSettings {
     /// Files known to be smaller than this stay in the browser.
     #[ts(type = "number")]
     pub min_capture_size: u64,
+    /// Queue captured downloads go to when the capture names none.
     pub default_queue: QueueId,
 }
 
@@ -159,8 +179,11 @@ impl Default for ExtensionSettings {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, optional_fields = nullable)]
 pub struct ExtensionSettingsPatch {
+    /// The new [`ExtensionSettings::capture_enabled`].
     pub capture_enabled: Option<bool>,
+    /// The new [`ExtensionSettings::ask_before_download`].
     pub ask_before_download: Option<bool>,
+    /// The new [`ExtensionSettings::show_media_button`].
     pub show_media_button: Option<bool>,
     /// Replaces the whole list. Prefer the add and remove fields, which do not
     /// overwrite an edit made at the same time from another browser.
@@ -169,9 +192,12 @@ pub struct ExtensionSettingsPatch {
     pub add_ignored_sites: Option<Vec<String>>,
     /// Hosts to remove from `ignored_sites` (applied last).
     pub remove_ignored_sites: Option<Vec<String>>,
+    /// The new [`ExtensionSettings::capture_extensions`], replacing the whole list.
     pub capture_extensions: Option<Vec<String>>,
+    /// The new [`ExtensionSettings::min_capture_size`], in bytes.
     #[ts(optional, type = "number | null")]
     pub min_capture_size: Option<u64>,
+    /// The new [`ExtensionSettings::default_queue`].
     pub default_queue: Option<QueueId>,
 }
 

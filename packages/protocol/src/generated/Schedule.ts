@@ -2,7 +2,14 @@
 import type { TimeOfDay } from "./TimeOfDay";
 import type { Weekday } from "./Weekday";
 
-export type Schedule = { start: TimeOfDay, 
+/**
+ * When a queue runs, in the computer's local time.
+ */
+export type Schedule = { 
+/**
+ * When the queue starts each day it runs.
+ */
+start: TimeOfDay, 
 /**
  * `None` runs until the queue is empty.
  */

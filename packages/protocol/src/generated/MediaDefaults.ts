@@ -5,4 +5,12 @@ import type { OutputDefaults } from "./OutputDefaults";
  * What the quality window starts from (D24): the last choices, kept separately for videos
  * and for audio only. Also in Settings, Media, and in the settings profile.
  */
-export type MediaDefaults = { video: OutputDefaults, audio: OutputDefaults, };
+export type MediaDefaults = { 
+/**
+ * Where the quality window starts for a video.
+ */
+video: OutputDefaults, 
+/**
+ * Where the quality window starts for audio only.
+ */
+audio: OutputDefaults, };

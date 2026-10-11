@@ -5,7 +5,27 @@ import type { Queue } from "./Queue";
 /**
  * The file written by settings export and read by import (D6).
  */
-export type SettingsProfile = { format_version: number, app_version: string, exported_at: number, settings: AppSettings, queues: Array<Queue>, 
+export type SettingsProfile = { 
+/**
+ * Version of this file's layout; an app refuses a profile newer than it understands.
+ */
+format_version: number, 
+/**
+ * Version of the app that wrote it.
+ */
+app_version: string, 
+/**
+ * When it was written, in Unix time in milliseconds.
+ */
+exported_at: number, 
+/**
+ * Every setting.
+ */
+settings: AppSettings, 
+/**
+ * Every queue, with its limits and schedule.
+ */
+queues: Array<Queue>, 
 /**
  * Ids of installed add-ons, reinstalled on import.
  */

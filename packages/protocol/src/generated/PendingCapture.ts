@@ -9,11 +9,31 @@ export type PendingCapture = {
 /**
  * Identifies this confirmation; not a download id yet.
  */
-id: number, url: string, file_name: string, 
+id: number, 
+/**
+ * The address to download, with any password removed.
+ */
+url: string, 
+/**
+ * The name it will be saved as if the user just confirms.
+ */
+file_name: string, 
 /**
  * Where it will be saved if the user just confirms.
  */
-folder: string, category: Category, size: number | null, queue: QueueId, 
+folder: string, 
+/**
+ * The kind of file, which picked the folder.
+ */
+category: Category, 
+/**
+ * Size in bytes, when known.
+ */
+size: number | null, 
+/**
+ * The queue it goes to if the user just confirms.
+ */
+queue: QueueId, 
 /**
  * The page it came from, shown so the user knows what they are confirming.
  */

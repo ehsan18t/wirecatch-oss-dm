@@ -2,7 +2,18 @@
 import type { QueueId } from "./QueueId";
 import type { Schedule } from "./Schedule";
 
-export type Queue = { id: QueueId, name: string, 
+/**
+ * A line of downloads with its own limits and schedule.
+ */
+export type Queue = { 
+/**
+ * Identifies the queue.
+ */
+id: QueueId, 
+/**
+ * The name the person gave it, unique among the queues.
+ */
+name: string, 
 /**
  * Downloads from this queue that may run at the same time.
  */
@@ -14,7 +25,12 @@ speed_limit: number | null,
 /**
  * When set, the queue only runs inside this window.
  */
-schedule: Schedule | null, is_default: boolean, 
+schedule: Schedule | null, 
+/**
+ * Downloads go to this queue when none is named. There is always exactly one, and it
+ * cannot be deleted.
+ */
+is_default: boolean, 
 /**
  * A paused queue starts nothing new, including downloads added later, and
  * its running downloads are paused. Resuming it does not resume downloads

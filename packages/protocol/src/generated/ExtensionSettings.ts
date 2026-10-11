@@ -30,4 +30,8 @@ capture_extensions: Array<string>,
 /**
  * Files known to be smaller than this stay in the browser.
  */
-min_capture_size: number, default_queue: QueueId, };
+min_capture_size: number, 
+/**
+ * Queue captured downloads go to when the capture names none.
+ */
+default_queue: QueueId, };

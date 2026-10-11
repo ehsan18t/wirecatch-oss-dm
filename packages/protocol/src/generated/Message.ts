@@ -3,8 +3,28 @@ import type { Call } from "./Call";
 import type { Event } from "./Event";
 import type { Outcome } from "./Outcome";
 
+/**
+ * One frame on a local connection.
+ */
 export type Message = { "kind": "request", 
 /**
  * Chosen by the client, unique per connection, never [`UNKNOWN_REQUEST_ID`].
  */
-id: number, call: Call, } | { "kind": "response", id: number, outcome: Outcome, } | { "kind": "event", event: Event, };
+id: number, 
+/**
+ * What the client asks for.
+ */
+call: Call, } | { "kind": "response", 
+/**
+ * The id of the request this answers, or [`UNKNOWN_REQUEST_ID`] for an error the
+ * app cannot tie to a request.
+ */
+id: number, 
+/**
+ * The reply, or why the call failed.
+ */
+outcome: Outcome, } | { "kind": "event", 
+/**
+ * What changed.
+ */
+event: Event, };

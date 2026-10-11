@@ -4,8 +4,28 @@ import type { OutputFormat } from "./OutputFormat";
 /**
  * A change to some of [`OutputDefaults`].
  */
-export type OutputDefaultsPatch = { format?: OutputFormat, 
+export type OutputDefaultsPatch = { 
+/**
+ * The new [`OutputDefaults::format`].
+ */
+format?: OutputFormat, 
 /**
  * The new quality in kbps; `null` goes back to the format's usual quality.
  */
-audio_kbps?: number | null, subtitle_languages?: Array<string>, auto_subtitles?: boolean, subtitle_files?: boolean, chapters?: boolean, };
+audio_kbps?: number | null, 
+/**
+ * The new [`OutputDefaults::subtitle_languages`], replacing the list.
+ */
+subtitle_languages?: Array<string>, 
+/**
+ * The new [`OutputDefaults::auto_subtitles`].
+ */
+auto_subtitles?: boolean, 
+/**
+ * The new [`OutputDefaults::subtitle_files`].
+ */
+subtitle_files?: boolean, 
+/**
+ * The new [`OutputDefaults::chapters`].
+ */
+chapters?: boolean, };

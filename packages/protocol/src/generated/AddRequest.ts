@@ -4,7 +4,11 @@ import type { QueueId } from "./QueueId";
 /**
  * A download added from the app itself (paste, Add dialog, command palette).
  */
-export type AddRequest = { url: string, 
+export type AddRequest = { 
+/**
+ * The address to download.
+ */
+url: string, 
 /**
  * Default queue if absent.
  */

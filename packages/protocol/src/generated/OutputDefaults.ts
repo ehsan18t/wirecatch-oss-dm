@@ -4,7 +4,11 @@ import type { OutputFormat } from "./OutputFormat";
 /**
  * The starting choices for one kind of media download.
  */
-export type OutputDefaults = { format: OutputFormat, 
+export type OutputDefaults = { 
+/**
+ * The format picked first.
+ */
+format: OutputFormat, 
 /**
  * Audio quality in kbps for a lossy audio format; `None` is the format's usual quality.
  */

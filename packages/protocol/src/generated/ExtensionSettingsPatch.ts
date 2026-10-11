@@ -4,7 +4,19 @@ import type { QueueId } from "./QueueId";
 /**
  * A partial update: only fields that are `Some` change.
  */
-export type ExtensionSettingsPatch = { capture_enabled?: boolean | null, ask_before_download?: boolean | null, show_media_button?: boolean | null, 
+export type ExtensionSettingsPatch = { 
+/**
+ * The new [`ExtensionSettings::capture_enabled`].
+ */
+capture_enabled?: boolean | null, 
+/**
+ * The new [`ExtensionSettings::ask_before_download`].
+ */
+ask_before_download?: boolean | null, 
+/**
+ * The new [`ExtensionSettings::show_media_button`].
+ */
+show_media_button?: boolean | null, 
 /**
  * Replaces the whole list. Prefer the add and remove fields, which do not
  * overwrite an edit made at the same time from another browser.
@@ -17,4 +29,16 @@ add_ignored_sites?: Array<string> | null,
 /**
  * Hosts to remove from `ignored_sites` (applied last).
  */
-remove_ignored_sites?: Array<string> | null, capture_extensions?: Array<string> | null, min_capture_size?: number | null, default_queue?: QueueId | null, };
+remove_ignored_sites?: Array<string> | null, 
+/**
+ * The new [`ExtensionSettings::capture_extensions`], replacing the whole list.
+ */
+capture_extensions?: Array<string> | null, 
+/**
+ * The new [`ExtensionSettings::min_capture_size`], in bytes.
+ */
+min_capture_size?: number | null, 
+/**
+ * The new [`ExtensionSettings::default_queue`].
+ */
+default_queue?: QueueId | null, };

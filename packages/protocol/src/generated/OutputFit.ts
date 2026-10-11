@@ -4,7 +4,11 @@ import type { OutputFormat } from "./OutputFormat";
 /**
  * How one quality is saved as one [`OutputFormat`].
  */
-export type OutputFit = { format: OutputFormat, 
+export type OutputFit = { 
+/**
+ * The format this describes.
+ */
+format: OutputFormat, 
 /**
  * The file's extension, without the dot, for example `mp4`.
  */

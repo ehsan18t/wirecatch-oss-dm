@@ -5,7 +5,23 @@ import type { QueueId } from "./QueueId";
 /**
  * The user's pick for a [`MediaChoice`]; absent fields keep the proposal.
  */
-export type MediaSelection = { option_id: string, folder: string | null, file_name: string | null, queue: QueueId | null, 
+export type MediaSelection = { 
+/**
+ * The [`MediaOption::id`] picked.
+ */
+option_id: string, 
+/**
+ * Absolute folder to save in, instead of [`MediaChoice::folder`].
+ */
+folder: string | null, 
+/**
+ * File name to save as, instead of the one made from the title.
+ */
+file_name: string | null, 
+/**
+ * Queue to add it to, instead of [`MediaChoice::queue`].
+ */
+queue: QueueId | null, 
 /**
  * Download later: add it to its queue paused instead of starting it (D23).
  */

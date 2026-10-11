@@ -20,25 +20,35 @@ crate::exported::exported_consts! {
     pub const UNKNOWN_REQUEST_ID: u64 = 0;
 }
 
-// Messages are decoded, handled and dropped one at a time, so the size gap
-// between variants costs nothing worth an extra allocation per request.
-#[allow(clippy::large_enum_variant)]
+/// One frame on a local connection.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "messages are decoded, handled and dropped one at a time, so the size gap between variants costs nothing worth an extra allocation per request"
+)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Message {
+    /// A client asks the app to do something; the app answers with one [`Message::Response`].
     Request {
         /// Chosen by the client, unique per connection, never [`UNKNOWN_REQUEST_ID`].
         #[ts(type = "number")]
         id: u64,
+        /// What the client asks for.
         call: Call,
     },
+    /// The app's answer to one request.
     Response {
+        /// The id of the request this answers, or [`UNKNOWN_REQUEST_ID`] for an error the
+        /// app cannot tie to a request.
         #[ts(type = "number")]
         id: u64,
+        /// The reply, or why the call failed.
         outcome: Outcome,
     },
+    /// News the app pushes without being asked.
     Event {
+        /// What changed.
         event: Event,
     },
 }
@@ -48,23 +58,38 @@ pub enum Message {
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Call {
+    /// Opens the conversation: says who the client is and which protocol it speaks. Must be
+    /// the first call on a connection; answered with [`Reply::Hello`].
     Hello(Hello),
+    /// Hands over a download captured in the browser; answered with [`Reply::DownloadAdded`].
     AddDownload(NewDownload),
+    /// Asks the app to forget a handover the extension gave up waiting for; answered with
+    /// [`Reply::Withdrawn`].
     WithdrawDownload(WithdrawRequest),
+    /// Asks for the settings the extension shows; answered with [`Reply::ExtensionSettings`].
     GetExtensionSettings,
+    /// Changes some of the extension's settings; answered with the new
+    /// [`Reply::ExtensionSettings`], and every client also gets
+    /// [`Event::ExtensionSettingsChanged`].
     UpdateExtensionSettings(ExtensionSettingsPatch),
+    /// Asks for the queues a download can be added to; answered with [`Reply::Queues`].
     ListQueues,
+    /// Pauses every download that is running or waiting; answered with [`Reply::Done`].
     PauseAll,
+    /// Puts every paused download back in line; answered with [`Reply::Done`].
     ResumeAll,
     /// Brings the app's main window to the front, starting the app first like any call (the extension's "Open Wirecatch").
     ShowWindow,
 }
 
+/// How a [`Call`] ended.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "status", content = "value", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Outcome {
+    /// The call succeeded.
     Ok(Reply),
+    /// The call failed.
     Err(ProtocolError),
 }
 
@@ -73,10 +98,16 @@ pub enum Outcome {
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Reply {
+    /// Answers [`Call::Hello`].
     Hello(HelloReply),
+    /// Answers [`Call::AddDownload`].
     DownloadAdded(AddedDownload),
+    /// Answers [`Call::WithdrawDownload`].
     Withdrawn(WithdrawOutcome),
+    /// Answers [`Call::GetExtensionSettings`] and [`Call::UpdateExtensionSettings`] with the
+    /// settings as they are now.
     ExtensionSettings(ExtensionSettings),
+    /// Answers [`Call::ListQueues`], in sidebar order.
     Queues(Vec<QueueSummary>),
     /// For calls with nothing to return.
     Done,
@@ -89,14 +120,21 @@ pub enum Reply {
 pub enum Event {
     /// Sent to every connected client whenever these settings change, from any side.
     ExtensionSettingsChanged(ExtensionSettings),
+    /// Sent to every connected client whenever the queues change: the whole list, in sidebar
+    /// order.
     QueuesChanged(Vec<QueueSummary>),
 }
 
+/// The first call on a connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Hello {
+    /// What kind of program is calling.
     pub client: ClientKind,
+    /// The client's own version, for logs and error reports.
     pub client_version: String,
+    /// The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the client speaks; the app refuses
+    /// one it does not speak with [`ErrorCode::UnsupportedVersion`].
     pub protocol_version: u32,
     /// Set by the extension; the bridge passes it through.
     pub browser: Option<BrowserInfo>,
@@ -109,46 +147,62 @@ fn start_app_by_default() -> bool {
     true
 }
 
+/// The kind of program on the other end of a connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum ClientKind {
+    /// The browser extension, through the bridge.
     Extension,
+    /// The native messaging bridge itself.
     Bridge,
+    /// The `wirecatch` command-line tool.
     Cli,
 }
 
+/// The browser the extension runs in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct BrowserInfo {
     /// For example `chrome`, `edge`, `brave`, `firefox`.
     pub name: String,
+    /// The browser's version, when the extension can tell.
     pub version: Option<String>,
 }
 
+/// The app's answer to [`Call::Hello`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct HelloReply {
+    /// The app's version.
     pub app_version: String,
+    /// The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the app speaks.
     pub protocol_version: u32,
 }
 
+/// A queue as clients outside the app see it: enough to pick one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct QueueSummary {
+    /// The queue to name in [`NewDownload::queue`].
     pub id: QueueId,
+    /// The name the person gave it.
     pub name: String,
+    /// Downloads go to this queue when none is named.
     pub is_default: bool,
 }
 
+/// Why a [`Call`] failed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProtocolError {
+    /// What kind of failure it is, for the client to act on; never decide from `message`.
     pub code: ErrorCode,
     /// Plain-language explanation, safe to show to a user.
     pub message: String,
 }
 
+/// The kinds of failure a client can tell apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -157,12 +211,16 @@ pub enum ErrorCode {
     UnsupportedVersion,
     /// The first call was not `hello`, or the message made no sense.
     InvalidRequest,
+    /// The download's address is not one the app can download from.
     InvalidUrl,
+    /// The download, queue or pending confirmation the call names does not exist.
     NotFound,
     /// Produced by the bridge when it cannot reach or start the app.
     AppUnavailable,
     /// Produced by the bridge when the app is not running and the client asked not to start it (`Hello::start_app` off).
     AppNotRunning,
+    /// Something failed inside the app, such as its database or a file it keeps; trying again
+    /// later may work.
     Internal,
     /// The app could not take over a captured download (the server did not answer
     /// in time, or sent something other than what the browser saw). The browser

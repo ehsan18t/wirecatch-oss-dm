@@ -2,4 +2,7 @@
 import type { ProtocolError } from "./ProtocolError";
 import type { Reply } from "./Reply";
 
+/**
+ * How a [`Call`] ended.
+ */
 export type Outcome = { "status": "ok", "value": Reply } | { "status": "err", "value": ProtocolError };

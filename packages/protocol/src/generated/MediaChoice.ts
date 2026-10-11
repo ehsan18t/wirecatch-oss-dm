@@ -10,7 +10,15 @@ export type MediaChoice = {
 /**
  * Identifies this choice; not a download id yet.
  */
-id: number, title: string, page_url: string | null, 
+id: number, 
+/**
+ * The video's title, which names the file.
+ */
+title: string, 
+/**
+ * The page the media was found on, with any password in the address removed.
+ */
+page_url: string | null, 
 /**
  * Best first. The UI preselects the first one.
  */
@@ -18,7 +26,11 @@ options: Array<MediaOption>,
 /**
  * Where it will be saved if the user just confirms.
  */
-folder: string, queue: QueueId, 
+folder: string, 
+/**
+ * The queue it goes to if the user just confirms.
+ */
+queue: QueueId, 
 /**
  * The subtitles the video has, human-written ones first, then auto-generated ones (D24).
  * Empty for streams and for videos without subtitles.

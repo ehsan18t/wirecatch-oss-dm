@@ -10,32 +10,44 @@ use crate::{DownloadId, QueueId};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DownloadSummary {
+    /// The download this row shows.
     pub id: DownloadId,
+    /// Where it is downloaded from, with any password in the address removed.
     pub url: String,
+    /// Name of the saved file, without the folder.
     pub file_name: String,
     /// Full path of the final file.
     pub path: String,
+    /// The queue it belongs to.
     pub queue: QueueId,
+    /// The kind of file, which picked its folder.
     pub category: Category,
+    /// Where it is in its life.
     pub status: DownloadStatus,
+    /// Size in bytes, when the server said.
     #[ts(type = "number | null")]
     pub total: Option<u64>,
+    /// Bytes downloaded so far.
     #[ts(type = "number")]
     pub done: u64,
-    /// Smoothed over the last few seconds.
+    /// Bytes per second, smoothed over the last few seconds.
     #[ts(type = "number")]
     pub speed: u64,
+    /// Connections open to the server right now.
     pub connections: u32,
+    /// Seconds left at the current speed, when the size is known and data is flowing.
     #[ts(type = "number | null")]
     pub eta_secs: Option<u64>,
+    /// Why it failed, for a `Failed` download.
     pub error: Option<UserError>,
     /// Why a `Queued` download is not running yet; `None` for every other status.
     pub waiting: Option<WaitReason>,
     /// Set for video and audio downloaded from a stream or a media page.
     pub media: Option<MediaSummary>,
-    /// Unix time in milliseconds.
+    /// When it was added, in Unix time in milliseconds.
     #[ts(type = "number")]
     pub added_at: i64,
+    /// When it completed, in Unix time in milliseconds; `None` until then.
     #[ts(type = "number | null")]
     pub completed_at: Option<i64>,
     /// What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
@@ -48,8 +60,10 @@ pub struct DownloadSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProcessingProgress {
+    /// What ffmpeg is doing.
     pub step: ProcessingStep,
-    /// How much is done, in tenths of a percent (0 to 1000), when known.
+    /// How much of the step is done, in tenths of a percent (0 to [`PER_MILLE_DONE`]), when
+    /// known.
     pub per_mille: Option<u16>,
 }
 
@@ -67,16 +81,23 @@ pub enum ProcessingStep {
     Converting,
 }
 
+/// Where a download is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum DownloadStatus {
     /// Waiting for its queue to have room or for the queue's schedule.
     Queued,
+    /// Asking the server for the file; no data has arrived yet.
     Connecting,
+    /// Data is arriving.
     Downloading,
+    /// Stopped by the person, by pausing its queue, or by "pause all"; the downloaded part
+    /// is kept and resuming continues from it.
     Paused,
+    /// The file is in its folder, finished.
     Completed,
+    /// Stopped by an error, described in [`DownloadSummary::error`].
     Failed,
     /// Stopped by the user; the partial file is gone. Retry starts over.
     Cancelled,
@@ -89,40 +110,57 @@ pub enum DownloadStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct UserError {
+    /// What happened and what to do about it, in plain language.
     pub message: String,
+    /// The fix offered as a button, when there is one.
     pub fix: Option<FixAction>,
 }
 
+/// A fix the UI can offer for a [`UserError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum FixAction {
+    /// Try the download again.
     Retry,
     /// The link expired: get a fresh one from the page, keep the downloaded bytes.
     RefreshLink,
+    /// The folder cannot be used or written to: pick another one.
     ChooseFolder,
+    /// The disk is full: make room, then try again.
     FreeDiskSpace,
     /// Converting a downloaded video failed: save it as it was downloaded instead (D24).
     KeepOriginal,
 }
 
+/// The kind of file a download is; each has its own folder ([`CategoryRule`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Category {
+    /// Video files.
     Video,
+    /// Sound files.
     Audio,
+    /// Compressed files and disc images.
     Archive,
+    /// Text, office documents and e-books.
     Document,
+    /// Installers and programs.
     Program,
+    /// Pictures.
     Image,
+    /// Everything no rule matches; saved in the default folder.
     Other,
 }
 
+/// A line of downloads with its own limits and schedule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Queue {
+    /// Identifies the queue.
     pub id: QueueId,
+    /// The name the person gave it, unique among the queues.
     pub name: String,
     /// Downloads from this queue that may run at the same time.
     pub max_concurrent: u32,
@@ -131,6 +169,8 @@ pub struct Queue {
     pub speed_limit: Option<u64>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
+    /// Downloads go to this queue when none is named. There is always exactly one, and it
+    /// cannot be deleted.
     pub is_default: bool,
     /// A paused queue starts nothing new, including downloads added later, and
     /// its running downloads are paused. Resuming it does not resume downloads
@@ -147,6 +187,7 @@ pub struct Queue {
 pub struct MediaSummary {
     /// For example "1080p" or "Audio only".
     pub quality: String,
+    /// How the media was delivered.
     pub source: crate::extension::MediaKind,
     /// The site and id of a video read from its page, for example `Youtube:dQw4w9WgXcQ`, so
     /// another link to the same video is recognised. `None` for streams and media files.
@@ -161,12 +202,15 @@ pub struct MediaChoice {
     /// Identifies this choice; not a download id yet.
     #[ts(type = "number")]
     pub id: u64,
+    /// The video's title, which names the file.
     pub title: String,
+    /// The page the media was found on, with any password in the address removed.
     pub page_url: Option<String>,
     /// Best first. The UI preselects the first one.
     pub options: Vec<MediaOption>,
     /// Where it will be saved if the user just confirms.
     pub folder: String,
+    /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
     /// The subtitles the video has, human-written ones first, then auto-generated ones (D24).
     /// Empty for streams and for videos without subtitles.
@@ -181,13 +225,17 @@ pub struct MediaChoice {
     pub duration_ms: Option<u64>,
 }
 
+/// One quality the media is offered in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaOption {
+    /// Identifies it in [`MediaSelection::option_id`].
     pub id: String,
     /// Plain words, for example "1080p, MP4".
     pub label: String,
+    /// The video's height in pixels; `None` for audio only or when the source does not say.
     pub height: Option<u32>,
+    /// The option has sound and no picture.
     pub audio_only: bool,
     /// Estimated size when the source says.
     #[ts(type = "number | null")]
@@ -209,15 +257,24 @@ pub struct MediaOption {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum OutputFormat {
+    /// The file as the site sends it; nothing is converted.
     #[default]
     Original,
+    /// MP4 video, which plays almost everywhere.
     Mp4,
+    /// Matroska video, which holds any codec and subtitle tracks.
     Mkv,
+    /// `WebM` video, the open format browsers play.
     Webm,
+    /// MP3 audio.
     Mp3,
+    /// AAC audio in an M4A file.
     M4a,
+    /// Opus audio.
     Opus,
+    /// FLAC: lossless, compressed audio.
     Flac,
+    /// WAV: lossless, uncompressed audio.
     Wav,
 }
 
@@ -259,9 +316,14 @@ impl OutputFormat {
 }
 
 /// How one quality is saved as one [`OutputFormat`].
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "temporary: converts_video and converts_audio are the video and audio actions the core already models as enums, and become those enums when W3 and W8 change this wire type together with the desktop that reads it"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OutputFit {
+    /// The format this describes.
     pub format: OutputFormat,
     /// The file's extension, without the dot, for example `mp4`.
     pub ext: String,
@@ -307,9 +369,13 @@ pub struct MediaSubtitle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaSelection {
+    /// The [`MediaOption::id`] picked.
     pub option_id: String,
+    /// Absolute folder to save in, instead of [`MediaChoice::folder`].
     pub folder: Option<String>,
+    /// File name to save as, instead of the one made from the title.
     pub file_name: Option<String>,
+    /// Queue to add it to, instead of [`MediaChoice::queue`].
     pub queue: Option<QueueId>,
     /// Download later: add it to its queue paused instead of starting it (D23).
     #[serde(default)]
@@ -338,8 +404,10 @@ pub struct MediaSelection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaDefaults {
+    /// Where the quality window starts for a video.
     #[serde(default)]
     pub video: OutputDefaults,
+    /// Where the quality window starts for audio only.
     #[serde(default)]
     pub audio: OutputDefaults,
 }
@@ -348,6 +416,7 @@ pub struct MediaDefaults {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OutputDefaults {
+    /// The format picked first.
     #[serde(default)]
     pub format: OutputFormat,
     /// Audio quality in kbps for a lossy audio format; `None` is the format's usual quality.
@@ -373,11 +442,15 @@ pub struct OutputDefaults {
 pub struct AddonInfo {
     /// Stable id, for example `ffmpeg` or `yt-dlp`.
     pub id: String,
+    /// The name shown, for example `yt-dlp`.
     pub name: String,
     /// One plain-language line on what it adds.
     pub description: String,
+    /// Whether it is installed, being installed or out of date.
     pub state: AddonState,
+    /// The version on this machine, when installed.
     pub installed_version: Option<String>,
+    /// The newest version Wirecatch may install, when known.
     pub latest_version: Option<String>,
     /// Download size of the latest version, when known.
     #[ts(type = "number | null")]
@@ -388,20 +461,29 @@ pub struct AddonInfo {
     pub note: Option<String>,
 }
 
+/// Where an add-on is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 #[ts(export)]
 pub enum AddonState {
+    /// Not on this machine; what needs it is unavailable until it is installed.
     NotInstalled,
+    /// Being downloaded and installed.
     Installing {
+        /// Bytes downloaded so far.
         #[ts(type = "number")]
         done: u64,
+        /// Size of the download in bytes, when known.
         #[ts(type = "number | null")]
         total: Option<u64>,
     },
+    /// Installed and up to date.
     Installed,
+    /// Installed, and a newer version can be installed.
     UpdateAvailable,
+    /// The last install or update failed.
     Failed {
+        /// What went wrong, in plain language.
         message: String,
     },
 }
@@ -414,26 +496,45 @@ pub enum AddonState {
 pub enum WaitReason {
     /// Its queue is paused.
     QueuePaused,
-    /// Outside its queue's schedule; `starts_at` is the next start, if any.
-    QueueSchedule { starts_at: Option<TimeOfDay> },
+    /// Outside its queue's schedule.
+    QueueSchedule {
+        /// When the queue next starts, if it does.
+        starts_at: Option<TimeOfDay>,
+    },
     /// Its queue already runs as many downloads as it may.
-    QueueFull { running: u32, limit: u32 },
+    QueueFull {
+        /// Downloads of the queue running now.
+        running: u32,
+        /// The queue's [`Queue::max_concurrent`].
+        limit: u32,
+    },
     /// The app already runs as many downloads as allowed overall.
-    GlobalLimit { running: u32, limit: u32 },
+    GlobalLimit {
+        /// Downloads running now, across all queues.
+        running: u32,
+        /// [`AppSettings::max_concurrent_downloads`].
+        limit: u32,
+    },
     /// Ahead of it in the same queue are other waiting downloads.
-    InLine { position: u32 },
+    InLine {
+        /// Its place among the queue's waiting downloads, counting from 1.
+        position: u32,
+    },
     /// A video's server refused it for now; Wirecatch tries again by itself at
     /// `retry_at` (Unix time in milliseconds), keeping what was downloaded. Only
     /// on a download that is connecting, never on a queued one.
     ServerRefused {
+        /// When the next try starts, in Unix time in milliseconds.
         #[ts(type = "number")]
         retry_at: i64,
     },
 }
 
+/// When a queue runs, in the computer's local time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Schedule {
+    /// When the queue starts each day it runs.
     pub start: TimeOfDay,
     /// `None` runs until the queue is empty.
     pub stop: Option<TimeOfDay>,
@@ -441,23 +542,34 @@ pub struct Schedule {
     pub days: Vec<Weekday>,
 }
 
+/// A time on the clock, in the computer's local time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct TimeOfDay {
+    /// 0 to 23.
     pub hour: u8,
+    /// 0 to 59.
     pub minute: u8,
 }
 
+/// A day of the week.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Weekday {
+    /// Monday.
     Mon,
+    /// Tuesday.
     Tue,
+    /// Wednesday.
     Wed,
+    /// Thursday.
     Thu,
+    /// Friday.
     Fri,
+    /// Saturday.
     Sat,
+    /// Sunday.
     Sun,
 }
 
@@ -468,21 +580,28 @@ pub enum Weekday {
 #[ts(export)]
 pub struct PortablePath(pub String);
 
+/// Which files are a [`Category`], and where they are saved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CategoryRule {
+    /// The category the rule is for.
     pub category: Category,
-    /// Lower case, without the dot.
+    /// File extensions of the category: lower case, without the dot.
     pub extensions: Vec<String>,
+    /// Where files of the category are saved.
     pub folder: PortablePath,
 }
 
+/// How the app looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Theme {
+    /// Follow the operating system's light or dark setting.
     System,
+    /// Always light.
     Light,
+    /// Always dark.
     Dark,
 }
 
@@ -491,22 +610,34 @@ pub enum Theme {
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
 pub struct AppSettingsPatch {
+    /// The new [`AppSettings::default_folder`].
     pub default_folder: Option<PortablePath>,
+    /// The new [`AppSettings::categories`], replacing every rule.
     pub categories: Option<Vec<CategoryRule>>,
+    /// The new [`AppSettings::connections_per_download`].
     pub connections_per_download: Option<u8>,
+    /// The new [`AppSettings::max_concurrent_downloads`].
     pub max_concurrent_downloads: Option<u32>,
     /// The new limit in bytes per second; `null` removes it.
     #[serde(default, skip_serializing_if = "Update::is_keep")]
     // f64: TypeScript sees a `number`, like every other u64 in the protocol.
     #[ts(optional, as = "Option<Option<f64>>")]
     pub global_speed_limit: Update<Option<u64>>,
+    /// Changes to [`AppSettings::extension`].
     pub extension: Option<ExtensionSettingsPatch>,
+    /// The new [`AppSettings::theme`].
     pub theme: Option<Theme>,
+    /// The new [`AppSettings::start_with_system`].
     pub start_with_system: Option<bool>,
+    /// The new [`AppSettings::close_to_tray`].
     pub close_to_tray: Option<bool>,
+    /// The new [`AppSettings::notify_on_complete`].
     pub notify_on_complete: Option<bool>,
+    /// The new [`AppSettings::auto_update_addons`].
     pub auto_update_addons: Option<bool>,
+    /// The new [`AppSettings::show_progress_windows`].
     pub show_progress_windows: Option<bool>,
+    /// Changes to [`AppSettings::media`].
     pub media: Option<MediaDefaultsPatch>,
 }
 
@@ -515,7 +646,9 @@ pub struct AppSettingsPatch {
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
 pub struct MediaDefaultsPatch {
+    /// Changes to [`MediaDefaults::video`].
     pub video: Option<OutputDefaultsPatch>,
+    /// Changes to [`MediaDefaults::audio`].
     pub audio: Option<OutputDefaultsPatch>,
 }
 
@@ -524,14 +657,19 @@ pub struct MediaDefaultsPatch {
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
 pub struct OutputDefaultsPatch {
+    /// The new [`OutputDefaults::format`].
     pub format: Option<OutputFormat>,
     /// The new quality in kbps; `null` goes back to the format's usual quality.
     #[serde(default, skip_serializing_if = "Update::is_keep")]
     #[ts(optional, as = "Option<Option<u32>>")]
     pub audio_kbps: Update<Option<u32>>,
+    /// The new [`OutputDefaults::subtitle_languages`], replacing the list.
     pub subtitle_languages: Option<Vec<String>>,
+    /// The new [`OutputDefaults::auto_subtitles`].
     pub auto_subtitles: Option<bool>,
+    /// The new [`OutputDefaults::subtitle_files`].
     pub subtitle_files: Option<bool>,
+    /// The new [`OutputDefaults::chapters`].
     pub chapters: Option<bool>,
 }
 
@@ -600,23 +738,33 @@ crate::exported::exported_consts! {
 }
 
 /// Every user setting. The app is the only store (D5).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent setting the person switches on its own, persisted as is; they are not states of one machine, and grouping them would change the settings file for no gain"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AppSettings {
+    /// Where downloads no [`CategoryRule`] matches are saved.
     pub default_folder: PortablePath,
+    /// Which files go to which folder, one rule per category.
     pub categories: Vec<CategoryRule>,
-    /// Most connections per download.
+    /// Most connections per download, 1 to [`MAX_CONNECTIONS_PER_DOWNLOAD`].
     pub connections_per_download: u8,
-    /// Downloads running at once across all queues.
+    /// Downloads running at once across all queues, 1 to [`MAX_CONCURRENT_DOWNLOADS`].
     pub max_concurrent_downloads: u32,
     /// Bytes per second for everything together; `None` is unlimited.
     #[ts(type = "number | null")]
     pub global_speed_limit: Option<u64>,
+    /// What the browser extension does.
     pub extension: ExtensionSettings,
+    /// How the app looks.
     pub theme: Theme,
+    /// Start Wirecatch when the person signs in to the computer.
     pub start_with_system: bool,
     /// Closing the window keeps downloads running in the tray.
     pub close_to_tray: bool,
+    /// Show a system notification when a download completes.
     pub notify_on_complete: bool,
     /// Keep installed add-ons up to date without asking.
     #[serde(default = "default_true")]
@@ -736,11 +884,16 @@ impl OutputDefaults {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct SettingsProfile {
+    /// Version of this file's layout; an app refuses a profile newer than it understands.
     pub format_version: u32,
+    /// Version of the app that wrote it.
     pub app_version: String,
+    /// When it was written, in Unix time in milliseconds.
     #[ts(type = "number")]
     pub exported_at: i64,
+    /// Every setting.
     pub settings: AppSettings,
+    /// Every queue, with its limits and schedule.
     pub queues: Vec<Queue>,
     /// Ids of installed add-ons, reinstalled on import.
     pub addons: Vec<String>,
@@ -750,6 +903,7 @@ pub struct SettingsProfile {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AddRequest {
+    /// The address to download.
     pub url: String,
     /// Default queue if absent.
     pub queue: Option<QueueId>,
@@ -768,13 +922,18 @@ pub struct PendingCapture {
     /// Identifies this confirmation; not a download id yet.
     #[ts(type = "number")]
     pub id: u64,
+    /// The address to download, with any password removed.
     pub url: String,
+    /// The name it will be saved as if the user just confirms.
     pub file_name: String,
     /// Where it will be saved if the user just confirms.
     pub folder: String,
+    /// The kind of file, which picked the folder.
     pub category: Category,
+    /// Size in bytes, when known.
     #[ts(type = "number | null")]
     pub size: Option<u64>,
+    /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
     /// The page it came from, shown so the user knows what they are confirming.
     pub page_url: Option<String>,
@@ -784,8 +943,11 @@ pub struct PendingCapture {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CaptureConfirmation {
+    /// Absolute folder to save in, instead of [`PendingCapture::folder`].
     pub folder: Option<String>,
+    /// File name to save as, instead of [`PendingCapture::file_name`].
     pub file_name: Option<String>,
+    /// Queue to add it to, instead of [`PendingCapture::queue`].
     pub queue: Option<QueueId>,
     /// Download later: add it to its queue paused instead of starting it (D23).
     #[serde(default)]
@@ -800,8 +962,11 @@ pub struct CaptureConfirmation {
 pub enum UiEvent {
     /// Changed rows only, batched (at most about ten batches per second).
     DownloadsChanged(Vec<DownloadSummary>),
+    /// Downloads that are gone from the list.
     DownloadsRemoved(Vec<DownloadId>),
+    /// Every queue, in sidebar order, after any queue changed.
     QueuesChanged(Vec<Queue>),
+    /// Every setting, after any changed.
     SettingsChanged(AppSettings),
     /// A browser capture started; the UI shows the toast with Change and Open folder (D4).
     Captured(DownloadSummary),
@@ -820,14 +985,19 @@ pub enum UiEvent {
     /// (dismissed, withdrawn by the browser, or it could not be read, in which case a failed
     /// download says why).
     MediaAnalysing {
+        /// The id the question will have.
         #[ts(type = "number")]
         id: u64,
+        /// The page or stream being read, with any password removed.
         url: String,
     },
+    /// Every add-on, after any changed (an install's progress included).
     AddonsChanged(Vec<AddonInfo>),
     /// A capture needs an add-on that is not installed; the UI offers to install it.
     AddonRequired {
+        /// The add-on needed.
         addon: AddonInfo,
+        /// The page or stream that needs it, with any password removed.
         url: String,
         /// The media that waits: a page waiting for the add-on (dismiss it with
         /// `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
@@ -842,6 +1012,7 @@ pub enum UiEvent {
     /// example a [`MediaChoice`] that follows an add-on install). Pending captures and
     /// media choices share one id space, so the id is never ambiguous.
     ConfirmationClosed {
+        /// The id of the question that closed.
         #[ts(type = "number")]
         id: u64,
     },
@@ -855,7 +1026,9 @@ pub enum UiEvent {
 pub struct ImportSummary {
     /// Every folder setting in the profile and the folder it became on this machine.
     pub folders: Vec<ImportedFolder>,
+    /// Queues the profile added.
     pub queues_added: u32,
+    /// Existing queues, matched by name, that took the profile's limits and schedule.
     pub queues_updated: u32,
     /// Ids of add-ons the profile lists that are not installed here. Nothing is
     /// downloaded on import; the UI may offer to install them.

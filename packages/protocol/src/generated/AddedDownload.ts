@@ -2,8 +2,16 @@
 import type { AddAction } from "./AddAction";
 import type { DownloadId } from "./DownloadId";
 
+/**
+ * The app's answer to a [`NewDownload`].
+ */
 export type AddedDownload = { 
 /**
  * Absent when the app is waiting for the user to confirm (`ask_before_download`).
  */
-id: DownloadId | null, action: AddAction, };
+id: DownloadId | null, 
+/**
+ * What the app did with it, which tells the extension whether it may erase the
+ * browser's copy yet.
+ */
+action: AddAction, };

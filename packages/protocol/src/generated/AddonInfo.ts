@@ -8,11 +8,27 @@ export type AddonInfo = {
 /**
  * Stable id, for example `ffmpeg` or `yt-dlp`.
  */
-id: string, name: string, 
+id: string, 
+/**
+ * The name shown, for example `yt-dlp`.
+ */
+name: string, 
 /**
  * One plain-language line on what it adds.
  */
-description: string, state: AddonState, installed_version: string | null, latest_version: string | null, 
+description: string, 
+/**
+ * Whether it is installed, being installed or out of date.
+ */
+state: AddonState, 
+/**
+ * The version on this machine, when installed.
+ */
+installed_version: string | null, 
+/**
+ * The newest version Wirecatch may install, when known.
+ */
+latest_version: string | null, 
 /**
  * Download size of the latest version, when known.
  */

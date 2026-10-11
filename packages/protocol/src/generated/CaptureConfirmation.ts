@@ -4,7 +4,19 @@ import type { QueueId } from "./QueueId";
 /**
  * The user's answer to a [`PendingCapture`]; absent fields keep the proposal.
  */
-export type CaptureConfirmation = { folder: string | null, file_name: string | null, queue: QueueId | null, 
+export type CaptureConfirmation = { 
+/**
+ * Absolute folder to save in, instead of [`PendingCapture::folder`].
+ */
+folder: string | null, 
+/**
+ * File name to save as, instead of [`PendingCapture::file_name`].
+ */
+file_name: string | null, 
+/**
+ * Queue to add it to, instead of [`PendingCapture::queue`].
+ */
+queue: QueueId | null, 
 /**
  * Download later: add it to its queue paused instead of starting it (D23).
  */

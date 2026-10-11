@@ -11,15 +11,59 @@ import type { WaitReason } from "./WaitReason";
 /**
  * One row of the download list.
  */
-export type DownloadSummary = { id: DownloadId, url: string, file_name: string, 
+export type DownloadSummary = { 
+/**
+ * The download this row shows.
+ */
+id: DownloadId, 
+/**
+ * Where it is downloaded from, with any password in the address removed.
+ */
+url: string, 
+/**
+ * Name of the saved file, without the folder.
+ */
+file_name: string, 
 /**
  * Full path of the final file.
  */
-path: string, queue: QueueId, category: Category, status: DownloadStatus, total: number | null, done: number, 
+path: string, 
 /**
- * Smoothed over the last few seconds.
+ * The queue it belongs to.
  */
-speed: number, connections: number, eta_secs: number | null, error: UserError | null, 
+queue: QueueId, 
+/**
+ * The kind of file, which picked its folder.
+ */
+category: Category, 
+/**
+ * Where it is in its life.
+ */
+status: DownloadStatus, 
+/**
+ * Size in bytes, when the server said.
+ */
+total: number | null, 
+/**
+ * Bytes downloaded so far.
+ */
+done: number, 
+/**
+ * Bytes per second, smoothed over the last few seconds.
+ */
+speed: number, 
+/**
+ * Connections open to the server right now.
+ */
+connections: number, 
+/**
+ * Seconds left at the current speed, when the size is known and data is flowing.
+ */
+eta_secs: number | null, 
+/**
+ * Why it failed, for a `Failed` download.
+ */
+error: UserError | null, 
 /**
  * Why a `Queued` download is not running yet; `None` for every other status.
  */
@@ -29,9 +73,13 @@ waiting: WaitReason | null,
  */
 media: MediaSummary | null, 
 /**
- * Unix time in milliseconds.
+ * When it was added, in Unix time in milliseconds.
  */
-added_at: number, completed_at: number | null, 
+added_at: number, 
+/**
+ * When it completed, in Unix time in milliseconds; `None` until then.
+ */
+completed_at: number | null, 
 /**
  * What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
  * `None` at any other time.

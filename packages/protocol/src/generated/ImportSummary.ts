@@ -8,7 +8,15 @@ export type ImportSummary = {
 /**
  * Every folder setting in the profile and the folder it became on this machine.
  */
-folders: Array<ImportedFolder>, queues_added: number, queues_updated: number, 
+folders: Array<ImportedFolder>, 
+/**
+ * Queues the profile added.
+ */
+queues_added: number, 
+/**
+ * Existing queues, matched by name, that took the profile's limits and schedule.
+ */
+queues_updated: number, 
 /**
  * Ids of add-ons the profile lists that are not installed here. Nothing is
  * downloaded on import; the UI may offer to install them.

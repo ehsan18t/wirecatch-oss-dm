@@ -2,8 +2,19 @@
 import type { Category } from "./Category";
 import type { PortablePath } from "./PortablePath";
 
-export type CategoryRule = { category: Category, 
 /**
- * Lower case, without the dot.
+ * Which files are a [`Category`], and where they are saved.
  */
-extensions: Array<string>, folder: PortablePath, };
+export type CategoryRule = { 
+/**
+ * The category the rule is for.
+ */
+category: Category, 
+/**
+ * File extensions of the category: lower case, without the dot.
+ */
+extensions: Array<string>, 
+/**
+ * Where files of the category are saved.
+ */
+folder: PortablePath, };

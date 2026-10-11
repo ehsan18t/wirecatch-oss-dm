@@ -20,3 +20,6 @@ tokio = ["dep:tokio"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "rt", "macros"] }
+
+[lints]
+workspace = true

@@ -5,4 +5,32 @@ import type { TimeOfDay } from "./TimeOfDay";
  * Why a queued download is waiting, shown in plain words so queues are never a
  * mystery (D3).
  */
-export type WaitReason = { "type": "queue_paused" } | { "type": "queue_schedule", "data": { starts_at: TimeOfDay | null, } } | { "type": "queue_full", "data": { running: number, limit: number, } } | { "type": "global_limit", "data": { running: number, limit: number, } } | { "type": "in_line", "data": { position: number, } } | { "type": "server_refused", "data": { retry_at: number, } };
+export type WaitReason = { "type": "queue_paused" } | { "type": "queue_schedule", "data": { 
+/**
+ * When the queue next starts, if it does.
+ */
+starts_at: TimeOfDay | null, } } | { "type": "queue_full", "data": { 
+/**
+ * Downloads of the queue running now.
+ */
+running: number, 
+/**
+ * The queue's [`Queue::max_concurrent`].
+ */
+limit: number, } } | { "type": "global_limit", "data": { 
+/**
+ * Downloads running now, across all queues.
+ */
+running: number, 
+/**
+ * [`AppSettings::max_concurrent_downloads`].
+ */
+limit: number, } } | { "type": "in_line", "data": { 
+/**
+ * Its place among the queue's waiting downloads, counting from 1.
+ */
+position: number, } } | { "type": "server_refused", "data": { 
+/**
+ * When the next try starts, in Unix time in milliseconds.
+ */
+retry_at: number, } };

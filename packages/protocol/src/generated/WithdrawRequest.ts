@@ -3,4 +3,8 @@
 /**
  * Asks the app to forget a handover the extension gave up waiting for.
  */
-export type WithdrawRequest = { handover_id: string, };
+export type WithdrawRequest = { 
+/**
+ * The [`NewDownload::handover_id`] of the capture to forget.
+ */
+handover_id: string, };

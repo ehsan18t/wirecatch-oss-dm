@@ -4,8 +4,13 @@ import type { ProcessingStep } from "./ProcessingStep";
 /**
  * What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
  */
-export type ProcessingProgress = { step: ProcessingStep, 
+export type ProcessingProgress = { 
 /**
- * How much is done, in tenths of a percent (0 to 1000), when known.
+ * What ffmpeg is doing.
+ */
+step: ProcessingStep, 
+/**
+ * How much of the step is done, in tenths of a percent (0 to [`PER_MILLE_DONE`]), when
+ * known.
  */
 per_mille: number | null, };

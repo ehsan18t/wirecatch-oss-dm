@@ -8,8 +8,56 @@ import type { Theme } from "./Theme";
 /**
  * A change to some of [`AppSettings`]: only the fields that are present change, and a group (`extension`, `media`) changes only in the fields its own patch holds. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
  */
-export type AppSettingsPatch = { default_folder?: PortablePath, categories?: Array<CategoryRule>, connections_per_download?: number, max_concurrent_downloads?: number, 
+export type AppSettingsPatch = { 
+/**
+ * The new [`AppSettings::default_folder`].
+ */
+default_folder?: PortablePath, 
+/**
+ * The new [`AppSettings::categories`], replacing every rule.
+ */
+categories?: Array<CategoryRule>, 
+/**
+ * The new [`AppSettings::connections_per_download`].
+ */
+connections_per_download?: number, 
+/**
+ * The new [`AppSettings::max_concurrent_downloads`].
+ */
+max_concurrent_downloads?: number, 
 /**
  * The new limit in bytes per second; `null` removes it.
  */
-global_speed_limit?: number | null, extension?: ExtensionSettingsPatch, theme?: Theme, start_with_system?: boolean, close_to_tray?: boolean, notify_on_complete?: boolean, auto_update_addons?: boolean, show_progress_windows?: boolean, media?: MediaDefaultsPatch, };
+global_speed_limit?: number | null, 
+/**
+ * Changes to [`AppSettings::extension`].
+ */
+extension?: ExtensionSettingsPatch, 
+/**
+ * The new [`AppSettings::theme`].
+ */
+theme?: Theme, 
+/**
+ * The new [`AppSettings::start_with_system`].
+ */
+start_with_system?: boolean, 
+/**
+ * The new [`AppSettings::close_to_tray`].
+ */
+close_to_tray?: boolean, 
+/**
+ * The new [`AppSettings::notify_on_complete`].
+ */
+notify_on_complete?: boolean, 
+/**
+ * The new [`AppSettings::auto_update_addons`].
+ */
+auto_update_addons?: boolean, 
+/**
+ * The new [`AppSettings::show_progress_windows`].
+ */
+show_progress_windows?: boolean, 
+/**
+ * Changes to [`AppSettings::media`].
+ */
+media?: MediaDefaultsPatch, };

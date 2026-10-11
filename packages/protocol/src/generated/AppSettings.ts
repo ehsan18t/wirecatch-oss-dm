@@ -8,23 +8,47 @@ import type { Theme } from "./Theme";
 /**
  * Every user setting. The app is the only store (D5).
  */
-export type AppSettings = { default_folder: PortablePath, categories: Array<CategoryRule>, 
+export type AppSettings = { 
 /**
- * Most connections per download.
+ * Where downloads no [`CategoryRule`] matches are saved.
+ */
+default_folder: PortablePath, 
+/**
+ * Which files go to which folder, one rule per category.
+ */
+categories: Array<CategoryRule>, 
+/**
+ * Most connections per download, 1 to [`MAX_CONNECTIONS_PER_DOWNLOAD`].
  */
 connections_per_download: number, 
 /**
- * Downloads running at once across all queues.
+ * Downloads running at once across all queues, 1 to [`MAX_CONCURRENT_DOWNLOADS`].
  */
 max_concurrent_downloads: number, 
 /**
  * Bytes per second for everything together; `None` is unlimited.
  */
-global_speed_limit: number | null, extension: ExtensionSettings, theme: Theme, start_with_system: boolean, 
+global_speed_limit: number | null, 
+/**
+ * What the browser extension does.
+ */
+extension: ExtensionSettings, 
+/**
+ * How the app looks.
+ */
+theme: Theme, 
+/**
+ * Start Wirecatch when the person signs in to the computer.
+ */
+start_with_system: boolean, 
 /**
  * Closing the window keeps downloads running in the tray.
  */
-close_to_tray: boolean, notify_on_complete: boolean, 
+close_to_tray: boolean, 
+/**
+ * Show a system notification when a download completes.
+ */
+notify_on_complete: boolean, 
 /**
  * Keep installed add-ons up to date without asking.
  */

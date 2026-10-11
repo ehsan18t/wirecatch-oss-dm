@@ -4,4 +4,12 @@ import type { FixAction } from "./FixAction";
 /**
  * An error worded for a person, with the fix offered as a button (D3, rule 4).
  */
-export type UserError = { message: string, fix: FixAction | null, };
+export type UserError = { 
+/**
+ * What happened and what to do about it, in plain language.
+ */
+message: string, 
+/**
+ * The fix offered as a button, when there is one.
+ */
+fix: FixAction | null, };
