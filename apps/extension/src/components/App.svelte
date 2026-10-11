@@ -446,7 +446,20 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding: 0 16px 4px;
+    overscroll-behavior: contain;
+    /* Room under the last line, so text at the end never sits against the footer's border. */
+    padding: 0 16px 12px;
+    /* A shadow at the top or bottom edge while more content is hidden there, so a line cut
+       by the edge reads as "scroll for more" rather than as cut-off text. The two covers
+       scroll with the content (local) and hide each shadow once that end is reached. */
+    background:
+      linear-gradient(var(--bg) 30%, transparent) center top / 100% 24px no-repeat local,
+      linear-gradient(transparent, var(--bg) 70%) center bottom / 100% 24px no-repeat local,
+      radial-gradient(farthest-side at 50% 0, var(--scroll-shadow), transparent) center top / 100% 10px
+        no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, var(--scroll-shadow), transparent) center bottom / 100% 10px
+        no-repeat scroll,
+      var(--bg);
   }
 
   .settings {

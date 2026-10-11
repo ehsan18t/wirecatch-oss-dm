@@ -19,7 +19,7 @@
 
   const keyboardHint = $derived(
     shortcut === null
-      ? "You can set a keyboard shortcut that sends a page's video or audio to Wirecatch in your browser's extension shortcuts."
+      ? "To send a page's video or audio with a key press, set a shortcut in your browser's extension shortcuts."
       : `On a page, press ${shortcut} to send its video or audio to Wirecatch, or use the Download buttons in this list.`,
   );
 

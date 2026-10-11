@@ -113,7 +113,11 @@ describe('Media on this page', () => {
     ).toBeTruthy();
     cleanup();
     await openPopup(1, { shortcut: null });
-    expect(within(section()).getByText(/set a keyboard shortcut/)).toBeTruthy();
+    expect(
+      within(section()).getByText(
+        "To send a page's video or audio with a key press, set a shortcut in your browser's extension shortcuts.",
+      ),
+    ).toBeTruthy();
   });
 
   it('lists detected media live, with a labelled Download button for each', async () => {

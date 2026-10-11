@@ -19,6 +19,7 @@
   --error-text: #b91c1c;
   --switch-off: #78716c;
   --switch-knob: #ffffff;
+  --scroll-shadow: rgb(0 0 0 / 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +43,7 @@
     --error-text: #fca5a5;
     --switch-off: #7d7670;
     --switch-knob: #ffffff;
+    --scroll-shadow: rgb(0 0 0 / 0.55);
   }
 }
 
