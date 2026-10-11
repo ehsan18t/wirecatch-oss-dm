@@ -127,12 +127,33 @@ fn is_format_char(c: char) -> bool {
     )
 }
 
+/// Whether Windows reads `name` as a device rather than a file: `CON`, `PRN`, `AUX`, `NUL`,
+/// `CONIN$`, `CONOUT$`, and `COM` or `LPT` followed by a digit, including the superscript
+/// digits `¹`, `²` and `³`, whatever the case and with any extension (`NUL.txt` is `NUL`).
 fn is_windows_reserved(name: &str) -> bool {
-    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
-    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.len() == 4
-            && stem.as_bytes()[3].is_ascii_digit())
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    if matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) {
+        return true;
+    }
+    let Some(number) = stem
+        .strip_prefix("COM")
+        .or_else(|| stem.strip_prefix("LPT"))
+    else {
+        return false;
+    };
+    let mut chars = number.chars();
+    matches!(
+        (chars.next(), chars.next()),
+        (Some('0'..='9' | '\u{B9}' | '\u{B2}' | '\u{B3}'), None)
+    )
 }
 
 fn truncate_keeping_extension(name: &str, max: usize) -> String {
@@ -256,6 +277,31 @@ mod tests {
         assert_eq!(sanitize("com1"), "_com1");
         assert_eq!(sanitize("console.txt"), "console.txt");
         assert_eq!(sanitize(""), "download");
+    }
+
+    #[test]
+    fn every_windows_device_name_is_avoided() {
+        for (name, safe) in [
+            ("CONIN$", "_CONIN$"),
+            ("conout$.txt", "_conout$.txt"),
+            ("COM\u{B9}.txt", "_COM\u{B9}.txt"),
+            ("com\u{B2}", "_com\u{B2}"),
+            ("LPT\u{B3}.log", "_LPT\u{B3}.log"),
+            ("lpt9.tar.gz", "_lpt9.tar.gz"),
+            ("NUL .txt", "_NUL .txt"),
+        ] {
+            assert_eq!(sanitize(name), safe, "{name}");
+        }
+        // Close, but ordinary names.
+        for name in [
+            "COM\u{2074}.txt",
+            "COM10.txt",
+            "LPT.txt",
+            "CONIN.txt",
+            "CONOUT$X.txt",
+        ] {
+            assert_eq!(sanitize(name), name, "{name}");
+        }
     }
 
     #[test]
