@@ -26,6 +26,8 @@ export interface ButtonContext {
   frameUrl: string | null;
   /** Address of the tab's page. */
   tabUrl: string | null;
+  /** The frame the element is in (0 for the tab's page); its own media comes first. */
+  frameId?: number | null;
 }
 
 function fromItem(item: MediaItem): MediaTarget {
@@ -63,6 +65,8 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
  *    on a page that swaps videos it is the one playing now. Variant playlists of a
  *    stream are not listed, so this is normally a master playlist.
  * 3. Otherwise a direct file detected in the tab.
+ *
+ * In steps 2 and 3, media loaded by the element's own frame wins over the rest of the tab.
  * 4. Otherwise the page, on a well-known video site (the app's media add-on reads it).
  *
  * Null means nothing downloadable is known, so the button is not shown.
@@ -73,10 +77,18 @@ export function chooseTarget(items: readonly MediaItem[], context: ButtonContext
     const loaded = items.find((i) => i.url === src);
     if (loaded !== undefined) return fromItem(loaded);
   }
-  const stream = items.findLast((i) => i.kind === 'hls' || i.kind === 'dash');
-  if (stream !== undefined) return fromItem(stream);
-  const file = items.find((i) => i.kind === 'direct');
-  if (file !== undefined) return fromItem(file);
+  // Media the element's own frame loaded comes first: on a page with an embedded
+  // player, that is the player the person clicked on.
+  const frame = context.frameId ?? null;
+  const own = frame === null ? [] : items.filter((i) => i.frameId === frame);
+  for (const list of [own, items]) {
+    const stream = list.findLast((i) => i.kind === 'hls' || i.kind === 'dash');
+    if (stream !== undefined) return fromItem(stream);
+  }
+  for (const list of [own, items]) {
+    const file = list.find((i) => i.kind === 'direct');
+    if (file !== undefined) return fromItem(file);
+  }
   return pageTarget(context.frameUrl, context.tabUrl);
 }
 

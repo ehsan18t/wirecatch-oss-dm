@@ -29,6 +29,8 @@ export interface ContentSender {
   };
   /** Address of the frame the content script runs in. */
   url?: string;
+  /** The frame the content script runs in (0 for the tab's page). */
+  frameId?: number;
 }
 
 /** Media to hand to the app, with the page it belongs to. */
@@ -157,6 +159,7 @@ export class MediaCenter {
       elementIsAudio: request.audio,
       frameUrl: sender.url ?? null,
       tabUrl: sender.tab?.url ?? null,
+      frameId: sender.frameId ?? null,
     });
   }
 

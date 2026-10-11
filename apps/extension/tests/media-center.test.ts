@@ -86,6 +86,33 @@ describe('chooseTarget (what the media button sends)', () => {
     });
   });
 
+  it("prefers media loaded by the element's own frame", () => {
+    const registry = new MediaRegistry();
+    registry.add(1, DASH, 5);
+    registry.add(1, HLS, 0);
+    registry.add(1, FILE, 0);
+    registry.add(1, SONG, 5);
+    const list = registry.items(1);
+    expect(chooseTarget(list, context({ frameId: 5 }))?.url).toBe(DASH.url);
+    expect(chooseTarget(list, context({ frameId: 0 }))?.url).toBe(HLS.url);
+    // A frame with nothing of its own falls back to the whole tab.
+    expect(chooseTarget(list, context({ frameId: 9 }))?.url).toBe(HLS.url);
+    const files = new MediaRegistry();
+    files.add(1, FILE, 0);
+    files.add(1, SONG, 5);
+    expect(chooseTarget(files.items(1), context({ frameId: 5 }))?.url).toBe(SONG.url);
+    expect(chooseTarget(files.items(1), context({ frameId: 0 }))?.url).toBe(FILE.url);
+  });
+
+  it('passes the sender frame from the media button through', async () => {
+    const { center, registry, tabs, app } = await setup();
+    registry.add(1, DASH, 3);
+    registry.add(1, HLS, 0);
+    const sender = { ...fromTab(1, tabs, 'https://player.example.net/embed/1'), frameId: 3 };
+    await center.handleContentMessage({ type: MEDIA_DOWNLOAD, src: null, audio: false, title: null }, sender);
+    expect(lastAdd(app).url).toBe(DASH.url);
+  });
+
   it('sends the embedded player page when the video sits in a frame from a well-known site', () => {
     const target = chooseTarget(
       [],
