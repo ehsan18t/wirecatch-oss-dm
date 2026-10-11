@@ -56,7 +56,7 @@ export class FakeNativePort implements NativePort {
   readonly methods: Call['method'][] = [];
   reason: string | null = null;
   readonly #messageListeners: Listener<unknown>[] = [];
-  readonly #disconnectListeners: Array<() => void> = [];
+  readonly #disconnectListeners: (() => void)[] = [];
 
   constructor(private readonly app: FakeApp) {}
 
@@ -126,7 +126,7 @@ export class FakeApp implements NativeTransport {
   /** When set, `update_extension_settings` is refused with this error. */
   updateError: ProtocolError | null = null;
   /** Every request received, in order. */
-  readonly requests: Array<{ id: number; call: Call }> = [];
+  readonly requests: { id: number; call: Call }[] = [];
   readonly ports: FakeNativePort[] = [];
   /** Called when a request arrives, before it is answered. */
   onRequest: ((call: Call) => void) | null = null;
@@ -328,10 +328,10 @@ export class MemoryCache implements SettingsCache {
 
 /** Two connected ends of a `runtime.Port`, like the popup and the background have. */
 export function channelPair<A, B>(): [Channel<A, B>, Channel<B, A>, () => void] {
-  const aListeners: Array<(m: B) => void> = [];
-  const bListeners: Array<(m: A) => void> = [];
-  const aDisconnect: Array<() => void> = [];
-  const bDisconnect: Array<() => void> = [];
+  const aListeners: ((m: B) => void)[] = [];
+  const bListeners: ((m: A) => void)[] = [];
+  const aDisconnect: (() => void)[] = [];
+  const bDisconnect: (() => void)[] = [];
   let open = true;
   const a: Channel<A, B> = {
     postMessage: (m) => {

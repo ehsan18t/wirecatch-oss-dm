@@ -1,4 +1,5 @@
 import { baseName } from '../file-types';
+import { nonEmpty } from '../text';
 import type { CaptureCandidate } from './should-capture';
 
 /**
@@ -23,10 +24,6 @@ export interface DownloadItemLike {
   cookieStoreId?: string;
   /** Chromium: the browser's safety verdict (`safe`, `accepted`, `file`, `url` and so on). */
   danger?: string;
-}
-
-function nonEmpty(value: string | undefined): string | null {
-  return value === undefined || value === '' ? null : value;
 }
 
 function knownSize(item: DownloadItemLike): number | null {

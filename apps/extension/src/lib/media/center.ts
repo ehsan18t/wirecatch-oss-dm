@@ -90,7 +90,7 @@ export interface MediaCenterDeps {
   /**
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
-  liveTabs?(): Promise<Array<{ id: number; url: string | null }>>;
+  liveTabs?(): Promise<{ id: number; url: string | null }[]>;
   saveDelayMs?: number;
 }
 
@@ -258,7 +258,7 @@ export class MediaCenter {
   async view(tabId: number): Promise<MediaView> {
     await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(() => null);
-    if (tab === null || tab.url === null || !/^https?:/i.test(tab.url)) {
+    if (!tab?.url || !/^https?:/i.test(tab.url)) {
       return { tabId, page: 'other', entries: [] };
     }
     if (tab.incognito) return { tabId, page: 'private', entries: [] };

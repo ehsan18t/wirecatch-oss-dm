@@ -81,7 +81,7 @@
   });
 
   const cachedNote = $derived.by(() => {
-    if (snapshot === null || !snapshot.settingsFromCache) return null;
+    if (!snapshot?.settingsFromCache) return null;
     const when =
       snapshot.cachedAt === null ? '' : ` from ${new Date(snapshot.cachedAt).toLocaleString()}`;
     return `Showing your last saved settings${when}. They can be changed again once Wirecatch is connected.`;

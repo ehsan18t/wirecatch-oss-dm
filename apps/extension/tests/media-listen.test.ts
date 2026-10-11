@@ -26,18 +26,18 @@ type MessageListener = (
 ) => boolean | undefined;
 
 function fakeApi(firefox = false) {
-  const responses: Array<{
+  const responses: {
     listener: (d: ObservedResponse) => void;
     filter: RequestFilter;
     extra: string[];
-  }> = [];
-  const removed: Array<(tabId: number) => void> = [];
-  const updated: Array<{
+  }[] = [];
+  const removed: ((tabId: number) => void)[] = [];
+  const updated: {
     listener: (tabId: number, change: { url?: string }) => void;
     filter: unknown;
-  }> = [];
+  }[] = [];
   const messages: MessageListener[] = [];
-  const commands: Array<(command: string, tab?: { id?: number }) => void> = [];
+  const commands: ((command: string, tab?: { id?: number }) => void)[] = [];
   const api: MediaEventApi = {
     onResponseStarted: {
       addListener: (listener, filter, extra) => void responses.push({ listener, filter, extra }),
@@ -60,7 +60,7 @@ function setup(firefox = false) {
   const registry = new MediaRegistry();
   const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
   const sent: string[] = [];
-  const announced: Array<[number, MediaSendResult]> = [];
+  const announced: [number, MediaSendResult][] = [];
   const media = new MediaCenter({
     registry,
     getTab: (id) =>

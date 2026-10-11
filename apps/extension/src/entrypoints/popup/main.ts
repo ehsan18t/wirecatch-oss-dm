@@ -5,6 +5,7 @@ import { MEDIA_COMMAND } from '@/lib/media/messages';
 import { POPUP_PORT_NAME, type PopupRequest } from '@/lib/messages';
 import { PopupModel } from '@/lib/popup/model.svelte';
 import { SITE_ORIGINS } from '@/lib/site-access';
+import { nonEmpty } from '@/lib/text';
 import './style.css';
 
 /** Longest the popup waits for the background before showing itself anyway. */
@@ -64,8 +65,7 @@ async function start(): Promise<void> {
 async function mediaShortcut(): Promise<string | null> {
   try {
     const commands = await browser.commands.getAll();
-    const shortcut = commands.find((c) => c.name === MEDIA_COMMAND)?.shortcut ?? '';
-    return shortcut === '' ? null : shortcut;
+    return nonEmpty(commands.find((c) => c.name === MEDIA_COMMAND)?.shortcut);
   } catch {
     return null;
   }

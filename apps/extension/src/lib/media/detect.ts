@@ -14,7 +14,7 @@ export interface ObservedResponse {
   /** Resource type: `main_frame`, `media`, `xmlhttprequest` and so on. */
   type: string;
   statusCode: number;
-  responseHeaders?: Array<{ name: string; value?: string }>;
+  responseHeaders?: { name: string; value?: string }[];
   /** Firefox only: true for requests from private windows. Chromium leaves it out. */
   incognito?: boolean;
   /** Chromium only: `prerender` for pages loading in the background before anyone opens them. */

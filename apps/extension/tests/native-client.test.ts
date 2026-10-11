@@ -205,7 +205,7 @@ describe('NativeClient', () => {
 
   it('passes an answer that arrives after the timeout to late-answer listeners', async () => {
     client = makeClient(app);
-    const late: Array<[string, string]> = [];
+    const late: [string, string][] = [];
     client.onLateAnswer((call, outcome) => late.push([call.method, outcome.status]));
     client.start();
     await flush();

@@ -17,7 +17,7 @@ export interface MediaItem extends Detection {
  */
 export interface SavedMedia {
   v: 1;
-  tabs: Array<[tabId: number, items: MediaItem[], page?: string]>;
+  tabs: [tabId: number, items: MediaItem[], page?: string][];
 }
 
 /**

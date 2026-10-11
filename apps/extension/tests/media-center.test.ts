@@ -189,7 +189,7 @@ interface Harness {
   registry: MediaRegistry;
   center: MediaCenter;
   tabs: Map<number, TabInfo>;
-  cookieCalls: Array<[string, string | null]>;
+  cookieCalls: [string, string | null][];
   cookieContexts: CookieContext[];
   saved: SavedMedia[];
   buttonSaves: boolean[];
@@ -255,7 +255,7 @@ async function setup(
   ]);
   const saved: SavedMedia[] = [];
   const buttonSaves: boolean[] = [];
-  const cookieCalls: Array<[string, string | null]> = [];
+  const cookieCalls: [string, string | null][] = [];
   const cookieContexts: CookieContext[] = [];
   const center: MediaCenter = new MediaCenter({
     registry,
@@ -798,7 +798,7 @@ describe('popup media list', () => {
   it("lists only the page on YouTube, not YouTube's own interface sounds", async () => {
     const { center, registry } = await setup();
     const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
-    const sounds: Array<[string, number]> = [
+    const sounds: [string, number][] = [
       ['no_input.mp3', 6_034],
       ['failure.mp3', 5_888],
       ['success.mp3', 6_195],
@@ -940,7 +940,7 @@ describe('background restart', () => {
   };
 
   /** Lists saved while each tab showed https://a.example.com/. */
-  function savedWith(...tabs: Array<[number, Detection]>): SavedMedia {
+  function savedWith(...tabs: [number, Detection][]): SavedMedia {
     const before = new MediaRegistry();
     for (const [tab, d] of tabs) {
       before.newPage(tab, 'https://a.example.com/');

@@ -4,6 +4,7 @@
  * page styles cannot reach inside, and its styles cannot leak out. Everything it
  * needs to know about the tab comes from the background script through `deps`.
  */
+import { nonEmpty } from '../text';
 import { MAX_TITLE_LENGTH, isWebSrc, type DownloadAnswer, type ElementInfo } from './messages';
 
 export interface ButtonDeps {
@@ -91,7 +92,8 @@ export function isCandidate(el: HTMLMediaElement): boolean {
 }
 
 export function elementInfo(el: HTMLMediaElement): ElementInfo {
-  const src = el.currentSrc || el.src || el.querySelector('source')?.src || '';
+  // The browser reports a missing address as an empty string.
+  const src = nonEmpty(el.currentSrc) ?? nonEmpty(el.src) ?? el.querySelector('source')?.src ?? '';
   // `blob:`, `data:` and `mediasource:` addresses mean nothing outside the page: not sent.
   return { src: isWebSrc(src) ? src : null, audio: el.tagName === 'AUDIO' };
 }
@@ -239,7 +241,7 @@ export class MediaButton {
   /** Open shadow roots already searched for media, each once. */
   readonly #searched = new WeakSet<ShadowRoot>();
   /** Removes the listeners that watch the page; run when the setting goes off. */
-  readonly #cleanups: Array<() => void> = [];
+  readonly #cleanups: (() => void)[] = [];
   #enabled = false;
   /** Whether the page is being watched: only while the setting is on. */
   #watching = false;
@@ -508,7 +510,7 @@ export class MediaButton {
     const back = event.key === 'Escape' || (event.key === 'Tab' && event.shiftKey);
     const onward = event.key === 'Tab' && !event.shiftKey;
     const to = this.#returnTo;
-    if ((!back && !onward) || to === null || !to.isConnected) return;
+    if ((!back && !onward) || !to?.isConnected) return;
     // Onward: focus the player again without cancelling the key, so the browser moves on from it.
     if (back) event.preventDefault();
     this.#returnTo = null;
@@ -556,11 +558,7 @@ export class MediaButton {
   #allowed(el: HTMLMediaElement): boolean {
     const { src } = elementInfo(el);
     const known = this.#checks.get(el);
-    if (
-      known !== undefined &&
-      known.src === src &&
-      (known.show || this.#now() - known.at < RECHECK_MS)
-    ) {
+    if (known?.src === src && (known.show || this.#now() - known.at < RECHECK_MS)) {
       return known.show;
     }
     if (!this.#asking.has(el)) {

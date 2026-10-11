@@ -88,7 +88,7 @@ describe('placeButton', () => {
 interface Fake {
   deps: ButtonDeps;
   checks: ElementInfo[];
-  downloads: Array<ElementInfo & { title: string | null }>;
+  downloads: (ElementInfo & { title: string | null })[];
   show: boolean;
   answer: DownloadAnswer | Error;
 }

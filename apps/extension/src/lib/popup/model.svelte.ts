@@ -33,7 +33,7 @@ export class PopupModel {
   media = $state<MediaView | null>(null);
   /** Per item key: the outcome of its Download button. */
   mediaStatus = $state<Record<string, MediaStatus>>({});
-  #pending = $state<Array<{ id: number; patch: ExtensionSettingsPatch }>>([]);
+  #pending = $state<{ id: number; patch: ExtensionSettingsPatch }[]>([]);
 
   /** The settings to show: the app's (or cached) values with changes still on their way applied on top. */
   settings = $derived.by((): ExtensionSettings | null => {

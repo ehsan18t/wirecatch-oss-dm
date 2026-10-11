@@ -34,7 +34,7 @@ interface Setup {
   client: NativeClient;
   hub: Hub;
   inFlight: MemoryInFlight;
-  cookieCalls: Array<[string, string | null]>;
+  cookieCalls: [string, string | null][];
   cookieContexts: CookieContext[];
   started: Promise<void>;
 }
@@ -45,7 +45,7 @@ async function setup(options: Options = {}): Promise<Setup> {
   options.configure?.(app, memory);
   const downloads = options.downloads ?? new FakeDownloads();
   const inFlight = options.inFlight ?? new MemoryInFlight();
-  const cookieCalls: Array<[string, string | null]> = [];
+  const cookieCalls: [string, string | null][] = [];
   const cookieContexts: CookieContext[] = [];
   const client = new NativeClient({
     transport: app,

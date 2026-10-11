@@ -16,7 +16,7 @@ export interface BrowserClues {
   userAgent?: string | null;
 }
 
-const BRAND_NAMES: ReadonlyArray<[RegExp, string]> = [
+const BRAND_NAMES: readonly [RegExp, string][] = [
   [/edge/i, 'edge'],
   [/opera/i, 'opera'],
   [/brave/i, 'brave'],
@@ -41,7 +41,7 @@ export function detectBrowser(clues: BrowserClues): BrowserInfo {
     if (found) return { name, version: found.version };
   }
   const ua = clues.userAgent ?? '';
-  const fromUa: ReadonlyArray<[RegExp, string]> = [
+  const fromUa: readonly [RegExp, string][] = [
     [/Edg\/([\d.]+)/, 'edge'],
     [/OPR\/([\d.]+)/, 'opera'],
     [/Vivaldi\/([\d.]+)/, 'vivaldi'],
