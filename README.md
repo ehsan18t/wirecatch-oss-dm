@@ -32,21 +32,20 @@ License: GPL-3.0-only. Decisions behind the design are in [docs/DECISIONS.md](do
 | `apps/desktop` | The desktop app (Tauri 2, SvelteKit, Svelte 5). |
 | `apps/extension` | The browser extension (WXT, Svelte 5) for Chromium and Firefox. |
 | `packages/protocol` | Generated TypeScript types. |
+| `packages/eslint-config` | The one ESLint configuration every package uses. |
 
 ## Getting started (development)
 
-Requirements: Rust 1.90 or newer, Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
+Requirements: rustup (it installs the Rust release named in `rust-toolchain.toml`), Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
 
 ```bash
 pnpm install
 ```
 
-```bash
-pnpm --filter @wirecatch/desktop build
-```
+Run every check (the same ones CI runs):
 
 ```bash
-cargo test --workspace --exclude wirecatch-desktop --features wirecatch-bridge/test-overrides
+pnpm gate
 ```
 
 Run the desktop app in development mode:

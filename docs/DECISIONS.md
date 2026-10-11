@@ -98,8 +98,8 @@ SQLite (`rusqlite`, bundled) in the per-user app data folder, with versioned mig
 
 ### D18. Quality bar (definition of done)
 A change is done only when all of these hold:
-1. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass for every touched crate.
-2. `pnpm check`, `pnpm lint`, `pnpm test` and `pnpm build` pass for every touched app or package.
+1. `pnpm gate` passes (every check, from `scripts/gate.mjs`; CI runs the same script).
+2. The change follows [ENGINEERING.md](ENGINEERING.md), including the rules only a reviewer can check.
 3. New behavior has tests that would fail without it; bug fixes add a regression test.
 4. Every public Rust item has a doc comment. No `unwrap()` on input that comes from outside the process.
 5. User-facing text follows the house style (no em dashes, plain language, errors say how to fix them).

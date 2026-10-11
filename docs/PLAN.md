@@ -22,9 +22,9 @@ Wave 3  Packaging, installers, Linux verification, streams (HLS/DASH), media add
 ## Rules every package follows
 
 - **Stay in your folder.** A package edits only its own folder. Shared files (`Cargo.toml` at the root, `package.json` at the root, `crates/protocol`, `docs/`) belong to the lead. Lock files may change; the lead reconciles them at merge.
-- **Shared identities** (extension ids, native host name) live in `config/extension-ids.json`; both the bridge and the extension read them from there.
+- **Shared identities** (names, ids, host and folder names) live only under `config/` and are generated or read from there, never copied (ENGINEERING.md, section 1).
 - **Contracts are fixed.** Types that cross a process boundary live in `wirecatch-protocol` (D15). A package that needs a change describes it in its report instead of editing the crate; the lead applies it between waves. Only WP1 may make additive changes there, and must list them.
-- **Dependencies** go in the package's own `Cargo.toml` or `package.json` with explicit versions.
+- **Dependencies** shared by more than one crate go in `[workspace.dependencies]`; shared JavaScript tools go in the pnpm catalog. Versions are explicit.
 - **Definition of done** is D18, plus the package's acceptance checklist below.
 
 ## Contracts already in place (Wave 0)
