@@ -588,3 +588,73 @@ async fn the_add_on_is_not_removed_while_in_use() {
     assert!(addon_dir(&h).join("installed.json").is_file());
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 }
+
+/// An update whose second part cannot be swapped in leaves a record that says
+/// exactly what is on disk, and the next install finishes the job.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_half_finished_update_is_recorded_and_repaired() {
+    let server = FileServer::start().await;
+    let sources = publish(&server, &Releases::fake(), "half");
+    let mut h = harness(sources.clone()).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+
+    // The app now pins a newer yt-dlp and a newer ffmpeg.
+    let mut newer = sources;
+    let new_ytdlp = [crate::media_support::fake_tool(), b"v2".to_vec()].concat();
+    server.put("half2/yt-dlp", new_ytdlp.clone());
+    newer.ytdlp.version = "2026.09.01".into();
+    newer.ytdlp.url = server.url("half2/yt-dlp");
+    newer.ytdlp.sha256 = sha256(&new_ytdlp);
+    newer.ytdlp.size = new_ytdlp.len() as u64;
+    let new_zip = crate::media_support::zip(&[
+        (
+            &format!("ff/bin/{}", exe("ffmpeg")),
+            Some(b"new ffmpeg".as_slice()),
+        ),
+        ("ff/bin/avcodec-63.dll", Some(b"new library".as_slice())),
+    ]);
+    server.put("half2/ffmpeg.zip", new_zip.clone());
+    newer.ffmpeg.version = "n9.1".into();
+    newer.ffmpeg.url = server.url("half2/ffmpeg.zip");
+    newer.ffmpeg.sha256 = sha256(&new_zip);
+    newer.ffmpeg.size = new_zip.len() as u64;
+    let newer = std::sync::Arc::new(newer);
+    *h.tweak_mut() = Some(std::sync::Arc::new(
+        move |c: wirecatch_core::ManagerConfig| c.with_addon_sources((*newer).clone()),
+    ));
+    h.restart().await;
+
+    // ffmpeg's folder cannot be moved away, so only yt-dlp is swapped in.
+    let dir = addon_dir(&h);
+    let lock = Lock::hold(&dir.join("ffmpeg"), &format!("bin/{}", exe("ffmpeg")));
+    let mut ui = h.manager.subscribe();
+    h.manager.update_addon("media").await.unwrap();
+    wait_addon(&mut ui, "the update failed", |a| {
+        matches!(a.state, AddonState::Failed { .. })
+    })
+    .await;
+    let record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("installed.json")).unwrap()).unwrap();
+    assert_eq!(record["components"]["yt-dlp"]["version"], "2026.09.01");
+    assert_eq!(
+        record["components"]["ffmpeg"]["version"],
+        "n9.0.2-25-g67b60c310b"
+    );
+    let shown = crate::common::wait_until("the record is read again", || {
+        h.manager
+            .list_addons()
+            .remove(0)
+            .installed_version
+            .filter(|v| v.contains("2026.09.01"))
+    })
+    .await;
+    assert!(shown.contains("ffmpeg 9.0.2"), "{shown}");
+
+    drop(lock);
+    h.manager.update_addon("media").await.unwrap();
+    wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+    assert_eq!(
+        std::fs::read(dir.join("ffmpeg").join("bin").join(exe("ffmpeg"))).unwrap(),
+        b"new ffmpeg"
+    );
+}

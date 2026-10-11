@@ -360,6 +360,8 @@ impl Manager {
     ) {
         let mut state = self.lock();
         let quiet = state.addon.op.take().is_some_and(|op| op.quiet);
+        // Some parts may have been swapped in before a failure.
+        let rescan = result.is_err() && !cancelled;
         match result {
             Ok((record, tools)) => {
                 state.addon.record = record;
@@ -386,6 +388,9 @@ impl Manager {
         let ready = state.addon.tools.is_some();
         let failed = !ready && !cancelled && !quiet;
         drop(state);
+        if rescan {
+            self.spawn_addon_rescan();
+        }
         if ready {
             self.media_addon_ready();
         } else if failed {
@@ -843,15 +848,18 @@ fn swap_in(
                 files,
             },
         );
+        // Recorded at once: if a later part cannot be swapped in, the record
+        // still says exactly what is on disk, so the next install repairs only
+        // what is missing and nothing is run that does not match it.
+        record
+            .save(dir)
+            .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
         let _ = std::fs::remove_file(work.join(format!(
             "{}-{}.download",
             component.name,
             file_safe(&component.version)
         )));
     }
-    record
-        .save(dir)
-        .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
     let tools = addons::tools(dir, &record);
     Ok((record, tools))
 }
