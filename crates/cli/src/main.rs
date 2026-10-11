@@ -23,8 +23,12 @@ use wirecatch_engine::{
 const LOG_ENV: &str = "WIRECATCH_LOG";
 /// Log filter used when [`LOG_ENV`] is not set: only problems.
 const DEFAULT_LOG_FILTER: &str = "warn";
-/// Upper bound for `--connections`; more than this only adds load on the server.
+/// Upper bound for `--connections`: the engine's limit, in the type the flag is read as.
 const MAX_CONNECTIONS: u16 = 64;
+const _: () = assert!(
+    MAX_CONNECTIONS as usize == wirecatch_engine::MAX_CONNECTIONS,
+    "the flag allows what the engine allows"
+);
 /// How often the progress bar redraws.
 const PROGRESS_REFRESH: Duration = Duration::from_millis(100);
 /// Exit status for a download stopped by Ctrl+C, the shell convention for SIGINT (128 + 2).

@@ -19,8 +19,8 @@ pub enum Error {
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
 
-    /// A [`DownloadOptions`](crate::DownloadOptions) value that cannot work, such as a zero buffer size or timeout. Nothing was sent; the value is the name of the option to fix.
-    #[error("the download option `{0}` must be greater than zero")]
+    /// A [`DownloadOptions`](crate::DownloadOptions) value that cannot work, such as a zero buffer size or timeout, or one above its limit (see [`DownloadOptions::validate`](crate::DownloadOptions::validate)). Nothing was sent; the value is the name of the option to fix.
+    #[error("the download option `{0}` is outside the range it accepts")]
     InvalidOption(&'static str),
 
     /// The connection failed: DNS, refused or reset connections, TLS errors,

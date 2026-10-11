@@ -23,6 +23,11 @@ use crate::{ftp, naming, storage, worker};
 
 const MIB: u64 = 1024 * 1024;
 
+/// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
+pub const MAX_CONNECTIONS: usize = 64;
+/// Largest buffer one connection may fill before writing ([`DownloadOptions::buffer_size`]): 64 MiB. Each connection holds two, so this bounds memory, and a larger one would gain nothing.
+pub const MAX_BUFFER_SIZE: usize = 64 * MIB as usize;
+
 /// Tuning for a download. The defaults suit most connections.
 ///
 /// Start from [`DownloadOptions::default`] and change what you need:
@@ -163,21 +168,27 @@ impl Default for DownloadOptions {
 }
 
 impl DownloadOptions {
-    /// Checks that every option can work. [`download`] and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic.
+    /// Checks that every option can work. [`download`] and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic, and so are more than [`MAX_CONNECTIONS`] connections or a buffer over [`MAX_BUFFER_SIZE`], which would exhaust memory.
     ///
     /// # Errors
     ///
     /// [`Error::InvalidOption`] naming the first option that cannot work.
     pub fn validate(&self) -> Result<()> {
-        let positive = [
-            ("connections", self.connections > 0),
+        let in_range = [
+            (
+                "connections",
+                (1..=MAX_CONNECTIONS).contains(&self.connections),
+            ),
             ("min_split", self.min_split > 0),
-            ("buffer_size", self.buffer_size > 0),
+            (
+                "buffer_size",
+                (1..=MAX_BUFFER_SIZE).contains(&self.buffer_size),
+            ),
             ("stall_timeout", !self.stall_timeout.is_zero()),
             ("connect_timeout", !self.connect_timeout.is_zero()),
             ("checkpoint_interval", !self.checkpoint_interval.is_zero()),
         ];
-        match positive.into_iter().find(|&(_, ok)| !ok) {
+        match in_range.into_iter().find(|&(_, ok)| !ok) {
             Some((option, _)) => Err(Error::InvalidOption(option)),
             None => Ok(()),
         }

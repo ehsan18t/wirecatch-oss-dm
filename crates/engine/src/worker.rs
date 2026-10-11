@@ -292,7 +292,10 @@ async fn stream(
         }
     };
 
-    writer.finish(&shared.table).await?;
+    let finished = writer.finish(&shared.table).await;
+    // Bytes counted as received but dropped by a failed write are fetched again by whoever resumes.
+    shared.progress.take_back(writer.take_dropped());
+    finished?;
 
     // A failure of HTTP/3 itself: the range carries on over TCP.
     let outcome = match outcome {
@@ -421,6 +424,10 @@ struct Writer {
     in_flight: Option<WriteJob>,
     /// Set when a write of this segment failed; cleared by [`Writer::start`].
     failed: bool,
+    /// Bytes taken by [`Writer::push`] that are not known to be on disk yet: buffered or in flight.
+    unwritten: u64,
+    /// Bytes taken and then dropped because a write failed; see [`Writer::take_dropped`].
+    dropped: u64,
 }
 
 impl Writer {
@@ -434,6 +441,8 @@ impl Writer {
             offset: 0,
             in_flight: None,
             failed: false,
+            unwritten: 0,
+            dropped: 0,
         }
     }
 
@@ -444,7 +453,13 @@ impl Writer {
         self.failed = false;
     }
 
+    /// Takes `data` to write. Once a write has failed, data is dropped (and counted in [`Writer::take_dropped`]) rather than buffered, since nothing more of this segment may be written.
     async fn push(&mut self, mut data: &[u8], table: &Mutex<SegmentTable>) -> Result<()> {
+        if self.failed {
+            self.dropped += data.len() as u64;
+            return Ok(());
+        }
+        self.unwritten += data.len() as u64;
         while !data.is_empty() {
             let n = (self.capacity - self.buf.len()).min(data.len());
             self.buf.extend_from_slice(&data[..n]);
@@ -496,6 +511,7 @@ impl Writer {
             .and_then(|r| r.map_err(Error::from))
         {
             Ok(written) => {
+                self.unwritten -= written.range.end - written.range.start;
                 table
                     .lock()
                     .unwrap()
@@ -506,9 +522,15 @@ impl Writer {
             Err(error) => {
                 self.failed = true;
                 self.buf.clear();
+                self.dropped += std::mem::take(&mut self.unwritten);
                 Err(error)
             }
         }
+    }
+
+    /// Bytes dropped since the last call because a write failed: received and counted, but never written.
+    fn take_dropped(&mut self) -> u64 {
+        std::mem::take(&mut self.dropped)
     }
 
     /// Writes everything buffered and waits until it is on disk.
@@ -540,9 +562,21 @@ mod tests {
             Err(std::io::Error::other("disk full"))
         }));
 
+        // The first buffer was taken by push before it went out.
+        writer.unwritten = 4;
+
         let pushed = writer.push(b"BBBB", &table).await;
         assert!(pushed.is_err(), "the failed write is reported");
         writer.finish(&table).await.unwrap();
+        assert_eq!(
+            writer.take_dropped(),
+            8,
+            "both buffers were counted and dropped"
+        );
+
+        // A push after the failure used to loop for ever: the full buffer was never emptied.
+        writer.push(b"CCCCCCCC", &table).await.unwrap();
+        assert_eq!(writer.take_dropped(), 8);
 
         assert_eq!(table.lock().unwrap().remaining()[0].start, 0);
         assert_eq!(

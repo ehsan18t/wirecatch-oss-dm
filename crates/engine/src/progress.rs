@@ -96,6 +96,20 @@ impl Progress {
         self.done.fetch_add(bytes, Ordering::Relaxed);
     }
 
+    /// Takes back bytes counted by [`add`](Self::add) that were never written and will be fetched again.
+    pub(crate) fn take_back(&self, bytes: u64) {
+        // A loop rather than `fetch_update` or `try_update`: one is deprecated, the other newer than the minimum Rust version.
+        let mut done = self.done.load(Ordering::Relaxed);
+        while let Err(now) = self.done.compare_exchange_weak(
+            done,
+            done.saturating_sub(bytes),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            done = now;
+        }
+    }
+
     pub(crate) fn connection_opened(&self) -> ConnectionGuard<'_> {
         self.connections.fetch_add(1, Ordering::Relaxed);
         ConnectionGuard(self)
