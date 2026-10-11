@@ -410,10 +410,10 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
     );
 }
 
-/// D6: a settings profile lists the installed add-ons, and importing it on
-/// another machine installs them there.
+/// D6: a settings profile lists the installed add-ons. Importing it on another
+/// machine offers them (the UI asks) and downloads nothing by itself.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn importing_settings_reinstalls_the_add_on() {
+async fn importing_settings_offers_the_add_on_without_downloading_it() {
     let server = FileServer::start().await;
     let sources = publish(&server, &Releases::fake(), "prof");
     let first = harness(sources.clone()).await;
@@ -423,16 +423,37 @@ async fn importing_settings_reinstalls_the_add_on() {
     let profile: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert_eq!(profile["addons"], serde_json::json!(["media"]));
+    let requests = server.requests("prof/yt-dlp").len();
 
     let second = harness(sources).await;
     let mut ui = second.manager.subscribe();
     second.manager.import_settings(&file).await.unwrap();
-    let info = wait_addon(&mut ui, "installed on import", |a| {
-        a.state == AddonState::Installed
+    let summary = next_event(&mut ui, "the import summary", |e| match e {
+        UiEvent::SettingsImported(summary) => Some(summary.clone()),
+        _ => None,
     })
     .await;
-    assert_eq!(info.id, "media");
-    assert!(addon_dir(&second).join("installed.json").is_file());
+    assert_eq!(summary.addons_to_offer, vec!["media".to_string()]);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(
+        second.manager.list_addons()[0].state,
+        AddonState::NotInstalled
+    );
+    assert_eq!(
+        server.requests("prof/yt-dlp").len(),
+        requests,
+        "it was downloaded"
+    );
+
+    // Where it is installed already, nothing is offered.
+    let mut ui = first.manager.subscribe();
+    first.manager.import_settings(&file).await.unwrap();
+    let summary = next_event(&mut ui, "the import summary", |e| match e {
+        UiEvent::SettingsImported(summary) => Some(summary.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(summary.addons_to_offer.is_empty());
 }
 
 /// An antivirus may take a program away; installing again must look at the

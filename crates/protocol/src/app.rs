@@ -401,6 +401,10 @@ pub struct ImportSummary {
     pub folders: Vec<ImportedFolder>,
     pub queues_added: u32,
     pub queues_updated: u32,
+    /// Ids of add-ons the profile lists that are not installed here. Nothing is
+    /// downloaded on import; the UI may offer to install them.
+    #[serde(default)]
+    pub addons_to_offer: Vec<String>,
 }
 
 /// One folder setting from an imported profile.
