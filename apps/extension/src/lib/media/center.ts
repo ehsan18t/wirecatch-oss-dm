@@ -232,6 +232,34 @@ export class MediaCenter {
     };
   }
 
+  /**
+   * The keyboard shortcut: sends the tab's best media, chosen like the button does
+   * without an element (newest stream, then a file, then the page on a video site).
+   */
+  async downloadBest(tabId: number): Promise<MediaSendResult> {
+    await this.#ready;
+    const tab = await this.#deps.getTab(tabId).catch(() => null);
+    if (tab === null) return { ok: false, message: TAB_GONE };
+    if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
+    const sender: ContentSender = { tab: { id: tabId, url: tab.url ?? undefined }, frameId: 0 };
+    if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
+    const target = chooseTarget(this.#deps.registry.items(tabId), {
+      elementSrc: null,
+      elementIsAudio: false,
+      frameUrl: tab.url,
+      tabUrl: tab.url,
+      frameId: 0,
+    });
+    if (target === null) return { ok: false, message: NOTHING_FOUND };
+    return this.#deps.send({
+      target,
+      title: cleanTitle(tab.title),
+      pageUrl: tab.url,
+      referrer: tab.url,
+      cookieStoreId: tab.cookieStoreId,
+    });
+  }
+
   /** Sends one item from the popup's list to the app. */
   async download(tabId: number, key: string): Promise<MediaSendResult> {
     await this.#ready;

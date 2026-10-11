@@ -53,6 +53,14 @@ export default defineConfig({
       // see media responses, and for the media button's content script.
       host_permissions: SITE_ORIGINS,
       action: { default_title: 'Wirecatch' },
+      // A keyboard way to download a page's media; people can change or remove it in the
+      // browser's extension shortcuts page.
+      commands: {
+        'download-media': {
+          suggested_key: { default: 'Alt+Shift+D' },
+          description: "Download this page's video or audio with Wirecatch",
+        },
+      },
       ...(isFirefox
         ? {
             browser_specific_settings: {

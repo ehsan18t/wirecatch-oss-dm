@@ -470,6 +470,25 @@ describe('MediaButton', () => {
     }
   });
 
+  it("shows the keyboard shortcut's answer in the corner when no button is showing", async () => {
+    const saved = { ...MESSAGE_MS };
+    MESSAGE_MS.ok = 150;
+    try {
+      const b = start(fakeDeps());
+      b.announce('Sent to Wirecatch.', false);
+      // The live region is in the page before its text arrives, so it is announced.
+      expect(b.host.isConnected).toBe(true);
+      expect(b.status.textContent).toBe('');
+      await settle();
+      expect(b.state).toBe('message');
+      expect(b.status.textContent).toBe('Sent to Wirecatch.');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(b.host.isConnected).toBe(false);
+    } finally {
+      Object.assign(MESSAGE_MS, saved);
+    }
+  });
+
   it('is a real, labelled button that keyboard users can reach', () => {
     const b = start(fakeDeps());
     expect(b.button.tagName).toBe('BUTTON');

@@ -305,6 +305,26 @@ export class MediaButton {
     return this.#state;
   }
 
+  /**
+   * Shows the answer to the keyboard shortcut. Over the button when it is showing;
+   * otherwise in the top right corner, until the message expires.
+   */
+  announce(message: string, error: boolean): void {
+    if (this.#state !== 'shown' && this.#state !== 'idle') {
+      const view = this.#doc.defaultView;
+      const parent = this.#doc.fullscreenElement ?? this.#doc.documentElement;
+      this.#position({ top: 8, left: Math.max(0, (view?.innerWidth ?? 0) - 128) });
+      if (this.host.parentNode !== parent) parent.append(this.host);
+      this.#wrap.classList.add('msg');
+      this.#state = 'message';
+    }
+    // The live region is in the page first, then gets its text, so it is announced.
+    const say = (): void => this.#say(message, error);
+    const view = this.#doc.defaultView;
+    if (view === null) say();
+    else view.requestAnimationFrame(say);
+  }
+
   /** Follows the "Show download button on videos" setting; off hides the button at once. */
   setEnabled(on: boolean): void {
     this.#enabled = on;

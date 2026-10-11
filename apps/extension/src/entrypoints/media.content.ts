@@ -8,6 +8,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { MediaButton } from '@/lib/media/button';
 import {
   MEDIA_BUTTON_KEY,
+  asAnnounce,
   MEDIA_CHECK,
   MEDIA_DOWNLOAD,
   mediaButtonOn,
@@ -53,5 +54,13 @@ export default defineContentScript({
     };
     browser.storage.onChanged.addListener(onChanged);
     ctx.onInvalidated(() => browser.storage.onChanged.removeListener(onChanged));
+    // The answer to the keyboard shortcut, from the background (pages cannot send these).
+    const onMessage = (raw: unknown): undefined => {
+      const announce = asAnnounce(raw);
+      if (announce !== null) button.announce(announce.message, !announce.ok);
+      return undefined;
+    };
+    browser.runtime.onMessage.addListener(onMessage);
+    ctx.onInvalidated(() => browser.runtime.onMessage.removeListener(onMessage));
   },
 });

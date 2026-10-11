@@ -11,9 +11,17 @@
     /** The "Show download button on videos" setting; null before settings are known. */
     buttonOn: boolean | null;
     ondownload: (key: string) => void;
+    /** The keyboard shortcut that downloads a page's media; null when none is set. */
+    shortcut?: string | null;
   }
 
-  let { view, statuses, buttonOn, ondownload }: Props = $props();
+  let { view, statuses, buttonOn, ondownload, shortcut = null }: Props = $props();
+
+  const keyboardHint = $derived(
+    shortcut === null
+      ? "You can set a keyboard shortcut that sends a page's video or audio to Wirecatch in your browser's extension shortcuts."
+      : `On a page, press ${shortcut} to send its video or audio to Wirecatch, or use the Download buttons in this list.`,
+  );
 
   const BADGES: Record<MediaKind, string> = { hls: 'HLS', dash: 'DASH', direct: 'File', page: 'Page' };
 
@@ -37,7 +45,9 @@
   {:else if view.page === 'other'}
     <p class="help">Open a web page with video or audio to see it here.</p>
   {:else if view.entries.length === 0}
-    <p class="help">No video or audio found on this page yet. Start playing it, and it shows up here.</p>
+    <p class="help">
+      No video or audio found on this page yet. Start playing it, and it shows up in this list.
+    </p>
     <p class="help">{buttonHint}</p>
   {:else}
     <ul class="list">
@@ -65,6 +75,7 @@
       {/each}
     </ul>
   {/if}
+  <p class="help">{keyboardHint}</p>
 </section>
 
 <style>

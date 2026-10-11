@@ -8,7 +8,7 @@ import { cookieHeader } from '@/lib/cookies';
 import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
 import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
 import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
-import { MEDIA_BUTTON_KEY } from '@/lib/media/messages';
+import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { POPUP_PORT_NAME } from '@/lib/messages';
@@ -205,10 +205,22 @@ export default defineBackground(() => {
       onTabRemoved: browser.tabs.onRemoved,
       onTabUpdated: browser.tabs.onUpdated,
       onMessage: browser.runtime.onMessage,
+      onCommand: browser.commands.onCommand,
       extensionId: browser.runtime.id,
       firefox: typeof (browser.runtime as { getBrowserInfo?: unknown }).getBrowserInfo === 'function',
     },
-    { watcher, media },
+    {
+      watcher,
+      media,
+      announce: (tabId, result) => {
+        // The page's top frame shows it next to where the person is looking; pages without
+        // the content script (browser pages, other extensions) get it in the popup instead.
+        const message: AnnounceMessage = { type: MEDIA_ANNOUNCE, ok: result.ok, message: result.message };
+        browser.tabs.sendMessage(tabId, message, { frameId: 0 }).catch(() => {
+          hub.notify(result.ok ? 'warning' : 'error', result.message);
+        });
+      },
+    },
   );
 
   browser.runtime.onConnect.addListener((port) => {

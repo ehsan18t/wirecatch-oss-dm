@@ -5,6 +5,24 @@
 
 export const MEDIA_CHECK = 'wirecatch:media-check';
 
+/** Name of the keyboard shortcut (`commands` in the manifest) that downloads a page's media. */
+export const MEDIA_COMMAND = 'download-media';
+
+/** Sent by the background to the page's top frame: show this answer to the shortcut. */
+export const MEDIA_ANNOUNCE = 'wirecatch:media-announce';
+
+export interface AnnounceMessage {
+  type: typeof MEDIA_ANNOUNCE;
+  ok: boolean;
+  message: string;
+}
+
+export function asAnnounce(raw: unknown): AnnounceMessage | null {
+  const m = raw as Partial<AnnounceMessage> | null;
+  if (m?.type !== MEDIA_ANNOUNCE || typeof m.ok !== 'boolean' || typeof m.message !== 'string') return null;
+  return { type: MEDIA_ANNOUNCE, ok: m.ok, message: m.message.slice(0, MAX_TITLE_LENGTH) };
+}
+
 /**
  * `storage.local` key holding only the "Show download button on videos" setting, as
  * a boolean. Content scripts read this key alone, never the settings cache with the

@@ -1,6 +1,7 @@
 import { mount } from 'svelte';
 import { browser } from 'wxt/browser';
 import App from '@/components/App.svelte';
+import { MEDIA_COMMAND } from '@/lib/media/messages';
 import { POPUP_PORT_NAME, type PopupRequest } from '@/lib/messages';
 import { PopupModel } from '@/lib/popup/model.svelte';
 import { SITE_ORIGINS } from '@/lib/site-access';
@@ -47,7 +48,27 @@ async function start(): Promise<void> {
   ]);
   const target = document.getElementById('app');
   if (target === null) return;
-  mount(App, { target, props: { model, currentUrl: tab.url, siteAccess, requestSiteAccess } });
+  mount(App, {
+    target,
+    props: {
+      model,
+      currentUrl: tab.url,
+      siteAccess,
+      requestSiteAccess,
+      mediaShortcut: await mediaShortcut(),
+    },
+  });
+}
+
+/** The keyboard shortcut for downloading a page's media, as the browser shows it; null when none is set. */
+async function mediaShortcut(): Promise<string | null> {
+  try {
+    const commands = await browser.commands.getAll();
+    const shortcut = commands.find((c) => c.name === MEDIA_COMMAND)?.shortcut ?? '';
+    return shortcut === '' ? null : shortcut;
+  } catch {
+    return null;
+  }
 }
 
 /** Must run from the click itself: browsers only show the permission prompt for a user action. */

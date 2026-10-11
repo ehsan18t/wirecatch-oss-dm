@@ -711,6 +711,11 @@ export class Hub {
     }
   }
 
+  /** Shows a message in the popup (and the badge), for answers that have nowhere else to go. */
+  notify(tone: Notice['tone'], message: string): void {
+    this.#setNotice({ tone, message, at: this.#now() });
+  }
+
   #setNotice(notice: Notice | null): void {
     this.#notice = notice;
     this.#publish();

@@ -38,7 +38,7 @@ afterEach(() => {
 
 async function openPopup(
   tabId: number,
-  options: { configure?: (app: FakeApp, registry: MediaRegistry) => void } = {},
+  options: { configure?: (app: FakeApp, registry: MediaRegistry) => void; shortcut?: string | null } = {},
 ): Promise<Opened> {
   const app = new FakeApp();
   const registry = new MediaRegistry();
@@ -73,7 +73,9 @@ async function openPopup(
   const model = new PopupModel(popupEnd);
   model.watchMedia(tabId);
   await flush();
-  const { container } = render(App, { props: { model, currentUrl: TABS.get(tabId)?.url ?? null } });
+  const { container } = render(App, {
+    props: { model, currentUrl: TABS.get(tabId)?.url ?? null, mediaShortcut: options.shortcut ?? null },
+  });
   const result = { app, client, registry, model, container };
   opened.push(result);
   return result;
@@ -100,6 +102,18 @@ describe('Media on this page', () => {
       expect(within(section()).getByText(/Turn on "Show download button on videos" below/)).toBeTruthy(),
     );
     expect(app.settings.show_media_button).toBe(false);
+  });
+
+  it('names the keyboard shortcut and the list as ways to download without the button', async () => {
+    await openPopup(1, { shortcut: 'Alt+Shift+D' });
+    expect(
+      within(section()).getByText(
+        'On a page, press Alt+Shift+D to send its video or audio to Wirecatch, or use the Download buttons in this list.',
+      ),
+    ).toBeTruthy();
+    cleanup();
+    await openPopup(1, { shortcut: null });
+    expect(within(section()).getByText(/set a keyboard shortcut/)).toBeTruthy();
   });
 
   it('lists detected media live, with a labelled Download button for each', async () => {

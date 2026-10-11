@@ -4,8 +4,9 @@
  * without a browser. The background script passes the real `browser` APIs.
  */
 import { SITE_ORIGINS } from '../site-access';
-import type { ContentSender, MediaCenter } from './center';
+import type { ContentSender, MediaCenter, MediaSendResult } from './center';
 import type { ObservedResponse } from './detect';
+import { MEDIA_COMMAND } from './messages';
 import type { MediaWatcher } from './watch';
 
 export interface RequestFilter {
@@ -36,6 +37,8 @@ export interface MediaEventApi {
       sendResponse: (response: unknown) => void,
     ) => boolean | undefined
   >;
+  /** Keyboard shortcuts (`commands.onCommand`); the tab is where the shortcut was pressed. */
+  onCommand: Event<(command: string, tab?: { id?: number }) => void>;
   /** This extension's id (`runtime.id`). */
   extensionId: string;
   /** Firefox lets `tabs.onUpdated` be limited to address changes; Chromium refuses the argument. */
@@ -67,9 +70,22 @@ export const MANIFEST_REQUESTS: RequestFilter = {
 
 export function registerMediaListeners(
   api: MediaEventApi,
-  handlers: { watcher: MediaWatcher; media: MediaCenter },
+  handlers: {
+    watcher: MediaWatcher;
+    media: MediaCenter;
+    /** Shows the shortcut's answer on the page (or elsewhere when the page cannot show it). */
+    announce: (tabId: number, result: MediaSendResult) => void;
+  },
 ): void {
-  const { watcher, media } = handlers;
+  const { watcher, media, announce } = handlers;
+  api.onCommand.addListener((command, tab) => {
+    const tabId = tab?.id;
+    if (command !== MEDIA_COMMAND || tabId === undefined || tabId < 0) return;
+    media.downloadBest(tabId).then(
+      (result) => announce(tabId, result),
+      () => undefined,
+    );
+  });
   const onResponse = (details: ObservedResponse): void => {
     watcher.onResponse(details).catch(() => undefined);
   };

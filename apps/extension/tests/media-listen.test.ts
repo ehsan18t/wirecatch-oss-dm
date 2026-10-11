@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MatchPattern } from 'wxt/utils/match-patterns';
-import { MediaCenter, type ContentSender } from '../src/lib/media/center';
+import { MediaCenter, type ContentSender, type MediaSendResult } from '../src/lib/media/center';
 import type { ObservedResponse } from '../src/lib/media/detect';
 import {
   FILE_REQUESTS,
@@ -13,6 +13,7 @@ import {
   type MediaEventApi,
   type RequestFilter,
 } from '../src/lib/media/listen';
+import { MEDIA_COMMAND } from '../src/lib/media/messages';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { flush } from './fakes';
@@ -32,6 +33,7 @@ function fakeApi(firefox = false) {
   const removed: Array<(tabId: number) => void> = [];
   const updated: Array<{ listener: (tabId: number, change: { url?: string }) => void; filter: unknown }> = [];
   const messages: MessageListener[] = [];
+  const commands: Array<(command: string, tab?: { id?: number }) => void> = [];
   const api: MediaEventApi = {
     onResponseStarted: {
       addListener: (listener, filter, extra) => void responses.push({ listener, filter, extra }),
@@ -42,28 +44,82 @@ function fakeApi(firefox = false) {
         void updated.push({ listener, filter: rest.length > 0 ? rest[0] : 'none' }),
     },
     onMessage: { addListener: (listener) => void messages.push(listener) },
+    onCommand: { addListener: (listener) => void commands.push(listener) },
     extensionId: 'wirecatch-id',
     firefox,
   };
-  return { api, responses, removed, updated, messages };
+  return { api, responses, removed, updated, messages, commands };
 }
 
 function setup(firefox = false) {
   const fake = fakeApi(firefox);
   const registry = new MediaRegistry();
   const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
+  const sent: string[] = [];
+  const announced: Array<[number, MediaSendResult]> = [];
   const media = new MediaCenter({
     registry,
-    getTab: () => Promise.resolve(null),
-    send: () => Promise.resolve({ ok: true, message: '' }),
+    getTab: (id) =>
+      Promise.resolve(
+        id === 99
+          ? null
+          : { url: 'https://example.com/watch', title: 'A video', incognito: false, cookieStoreId: null },
+      ),
+    send: (request) => {
+      sent.push(request.target.url);
+      return Promise.resolve({ ok: true, message: 'Sent to Wirecatch.' });
+    },
   });
-  registerMediaListeners(fake.api, { watcher, media });
-  return { ...fake, registry };
+  registerMediaListeners(fake.api, {
+    watcher,
+    media,
+    announce: (tabId, result) => announced.push([tabId, result]),
+  });
+  return { ...fake, registry, sent, announced };
 }
 
 function matches(filter: RequestFilter, url: string): boolean {
   return filter.urls.some((pattern) => new MatchPattern(pattern).includes(url));
 }
+
+describe('the keyboard shortcut', () => {
+  it("sends the tab's best media and shows the answer on that tab", async () => {
+    const { commands, registry, sent, announced } = setup();
+    registry.add(5, {
+      kind: 'hls',
+      url: 'https://cdn.example.com/a/master.m3u8',
+      mime: null,
+      size: null,
+      audio: false,
+    });
+    registry.add(5, {
+      kind: 'dash',
+      url: 'https://cdn.example.com/b/manifest.mpd',
+      mime: null,
+      size: null,
+      audio: false,
+    });
+    commands[0]?.(MEDIA_COMMAND, { id: 5 });
+    await flush();
+    expect(sent).toEqual(['https://cdn.example.com/b/manifest.mpd']);
+    expect(announced).toEqual([[5, { ok: true, message: 'Sent to Wirecatch.' }]]);
+  });
+
+  it('says so when nothing was found or the tab is gone, and ignores other commands', async () => {
+    const { commands, sent, announced } = setup();
+    commands[0]?.(MEDIA_COMMAND, { id: 6 });
+    commands[0]?.(MEDIA_COMMAND, { id: 99 });
+    commands[0]?.('something-else', { id: 6 });
+    commands[0]?.(MEDIA_COMMAND, {});
+    await flush();
+    expect(sent).toEqual([]);
+    expect(announced.map(([tab, r]) => [tab, r.ok])).toEqual([
+      [6, false],
+      [99, false],
+    ]);
+    expect(announced[0]?.[1].message).toContain('has not found anything');
+  });
+});
 
 describe('registerMediaListeners', () => {
   it('observes media and page loads everywhere, but script requests only for manifest addresses', () => {
