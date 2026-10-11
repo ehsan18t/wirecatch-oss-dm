@@ -12,8 +12,11 @@ import type {
   ImportedFolder,
   ImportPreview,
   MediaChoice,
+  MediaOption,
   MediaSelection,
+  OutputFit,
   PendingCapture,
+  ProcessingStep,
   Queue,
   QueueId,
   SettingsProfile,
@@ -74,6 +77,125 @@ const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' 
   },
 ];
 
+/** How long the sample videos are: 12 minutes 34 seconds. */
+const SAMPLE_DURATION_MS = 754_000;
+
+/** One "Save as" choice of a sample quality, as the core describes it (D24). */
+function sampleFit(format: OutputFit['format'], ext: string, rest: Partial<OutputFit>): OutputFit {
+  return {
+    format,
+    ext,
+    converts_video: false,
+    converts_audio: false,
+    video_codec: null,
+    audio_codec: null,
+    audio_kbps: null,
+    lossless_source: false,
+    size: null,
+    embeds_subtitles: false,
+    chapters: false,
+    ...rest,
+  };
+}
+
+/**
+ * The sample qualities: 4K only as VP9 (MP4 converts it), 1080p and 720p as H.264 (WebM converts
+ * them), and audio as AAC and Opus. A stream offers only its own format.
+ */
+function sampleMediaOptions(page: boolean): MediaOption[] {
+  const MB = 1024 * 1024;
+  const video = { embeds_subtitles: true, chapters: true };
+  const vp9 = { video_codec: 'VP9', audio_codec: 'Opus', audio_kbps: 160, ...video };
+  const h264 = { video_codec: 'H.264', audio_codec: 'AAC', audio_kbps: 128, ...video };
+  const option = (
+    id: string,
+    quality: string,
+    ext: string,
+    height: number | null,
+    size: number | null,
+    needsFfmpeg: boolean,
+    outputs: OutputFit[],
+  ): MediaOption => ({
+    id,
+    label: `${quality}, ${ext.toUpperCase()}`,
+    quality,
+    height,
+    audio_only: height === null,
+    size,
+    needs_ffmpeg: needsFfmpeg,
+    outputs: page ? outputs : [sampleFit('original', ext, { size })],
+  });
+  const audioSize = (kbps: number) => Math.round((kbps * SAMPLE_DURATION_MS) / 8);
+  return [
+    option('2160', '2160p', 'webm', 2160, 1840 * MB, true, [
+      sampleFit('original', 'webm', { ...vp9, size: 1840 * MB }),
+      sampleFit('mp4', 'mp4', {
+        ...vp9,
+        video_codec: 'H.264',
+        audio_codec: 'AAC',
+        audio_kbps: 128,
+        converts_video: true,
+        size: 2600 * MB,
+      }),
+      sampleFit('mkv', 'mkv', { ...vp9, size: 1840 * MB }),
+      sampleFit('webm', 'webm', { ...vp9, size: 1840 * MB }),
+    ]),
+    option('1080', '1080p', 'mp4', 1080, 612 * MB, true, [
+      sampleFit('original', 'mp4', { ...h264, size: 612 * MB }),
+      sampleFit('mp4', 'mp4', { ...h264, size: 612 * MB }),
+      sampleFit('mkv', 'mkv', { ...h264, size: 612 * MB }),
+      sampleFit('webm', 'webm', {
+        ...h264,
+        video_codec: 'VP9',
+        audio_codec: 'Opus',
+        audio_kbps: 160,
+        converts_video: true,
+        size: 480 * MB,
+      }),
+    ]),
+    option('720', '720p', 'mp4', 720, 298 * MB, false, [
+      sampleFit('original', 'mp4', { ...h264, size: 298 * MB }),
+      sampleFit('mp4', 'mp4', { ...h264, size: 298 * MB }),
+      sampleFit('mkv', 'mkv', { ...h264, size: 298 * MB }),
+      sampleFit('webm', 'webm', {
+        ...h264,
+        video_codec: 'VP9',
+        converts_video: true,
+        converts_audio: true,
+        size: 230 * MB,
+      }),
+    ]),
+    option('audio', 'Audio only', 'm4a', null, audioSize(129), false, [
+      sampleFit('original', 'm4a', {
+        audio_codec: 'AAC',
+        audio_kbps: 129,
+        size: audioSize(129),
+        chapters: true,
+      }),
+      sampleFit('mp3', 'mp3', {
+        audio_codec: 'Opus',
+        audio_kbps: 160,
+        converts_audio: true,
+        size: audioSize(192),
+      }),
+      sampleFit('m4a', 'm4a', {
+        audio_codec: 'AAC',
+        audio_kbps: 129,
+        size: audioSize(129),
+        chapters: true,
+      }),
+      sampleFit('opus', 'opus', { audio_codec: 'Opus', audio_kbps: 160, size: audioSize(160) }),
+      sampleFit('flac', 'flac', { audio_codec: 'Opus', audio_kbps: 160, converts_audio: true }),
+      sampleFit('wav', 'wav', {
+        audio_codec: 'Opus',
+        audio_kbps: 160,
+        converts_audio: true,
+        size: audioSize(1536),
+      }),
+    ]),
+  ];
+}
+
 /** The core's answer for a question that is no longer open. */
 const ALREADY_ANSWERED =
   'That download was already confirmed or dismissed, or the browser took it back.';
@@ -105,10 +227,12 @@ interface Sim {
   rate: number;
   /** Time spent connecting so far, in milliseconds. */
   connectingMs: number;
-  /** Time spent joining video and audio so far, in milliseconds. */
+  /** Time spent joining or converting so far, in milliseconds. */
   processingMs: number;
   /** Media that needs joining once downloaded. */
   needsJoin: boolean;
+  /** What ffmpeg does to it once downloaded (D24), if anything besides joining. */
+  step: ProcessingStep | null;
 }
 
 /** Small deterministic random source, so tests and screenshots are repeatable. */
@@ -250,6 +374,7 @@ export class MockBackend implements Backend {
           error: s.error ?? null,
           waiting: null,
           media: null,
+          processing: null,
           added_at: Math.round(now - s.age * 3_600_000),
           completed_at:
             s.status === 'completed' ? Math.round(now - (s.age - 0.2) * 3_600_000) : null,
@@ -281,6 +406,7 @@ export class MockBackend implements Backend {
           error: null,
           waiting: null,
           media: null,
+          processing: null,
           added_at: now - i * 60_000,
           completed_at: status === 'completed' ? now - i * 60_000 + 30_000 : null,
         },
@@ -297,7 +423,13 @@ export class MockBackend implements Backend {
 
   #insert(row: DownloadSummary, rate: number) {
     this.#rows.set(row.id, row);
-    this.#sim.set(row.id, { rate, connectingMs: 0, processingMs: 0, needsJoin: false });
+    this.#sim.set(row.id, {
+      rate,
+      connectingMs: 0,
+      processingMs: 0,
+      needsJoin: false,
+      step: null,
+    });
     this.#order.push(row.id);
   }
 
@@ -455,9 +587,13 @@ export class MockBackend implements Backend {
       row.done += Math.round((speed * dt) / 1000);
       if (row.total !== null && row.done >= row.total) {
         row.done = row.total;
-        // Media with separate video and audio is joined before it counts as finished.
-        if (this.#sim.get(id)?.needsJoin) {
+        // Media with separate video and audio is joined (or converted) before it counts as
+        // finished.
+        const sim = this.#sim.get(id);
+        if (sim && (sim.needsJoin || sim.step !== null)) {
           row.status = 'processing';
+          sim.processingMs = 0;
+          row.processing = { step: sim.step ?? 'joining', per_mille: sim.step ? 0 : null };
         } else {
           row.status = 'completed';
           row.completed_at = now;
@@ -477,9 +613,18 @@ export class MockBackend implements Backend {
       const row = this.#rows.get(id);
       if (row?.status !== 'processing' || wanted.has(id)) continue;
       sim.processingMs += dt;
-      if (sim.processingMs >= PROCESSING_MS) {
+      // Converting takes longer than joining, and reports how far it is.
+      const takes = sim.step === 'converting' ? PROCESSING_MS * 3 : PROCESSING_MS;
+      if (sim.processingMs >= takes) {
         row.status = 'completed';
         row.completed_at = now;
+        row.processing = null;
+        changed.set(id, row);
+      } else if (row.processing && row.processing.per_mille !== null) {
+        row.processing = {
+          step: row.processing.step,
+          per_mille: Math.min(999, Math.floor((sim.processingMs / takes) * 1000)),
+        };
         changed.set(id, row);
       }
     }
@@ -527,6 +672,7 @@ export class MockBackend implements Backend {
       error: null,
       waiting: null,
       media: null,
+      processing: null,
       added_at: this.#now(),
       completed_at: null,
     };
@@ -557,6 +703,8 @@ export class MockBackend implements Backend {
     if (row.status === 'completed' || row.status === 'paused') return;
     row.status = 'paused';
     row.waiting = null;
+    // A paused conversion starts again from the download when resumed.
+    row.processing = null;
     this.#stop(row);
     this.#changed([row]);
   }
@@ -608,6 +756,18 @@ export class MockBackend implements Backend {
     }
     const row = this.#row(id);
     row.url = url;
+    row.status = 'queued';
+    row.error = null;
+    this.#changed([row]);
+  }
+
+  async keepOriginal(id: DownloadId) {
+    const row = this.#row(id);
+    if (row.status !== 'failed' || row.error?.fix !== 'keep_original') {
+      throw new BackendError('This download is not waiting to be kept as it was downloaded.');
+    }
+    const sim = this.#sim.get(id);
+    if (sim) sim.step = null;
     row.status = 'queued';
     row.error = null;
     this.#changed([row]);
@@ -973,47 +1133,23 @@ export class MockBackend implements Backend {
   simulateMediaChoice(page?: string, id?: number): void {
     const sample = MEDIA_SAMPLES[this.#mediaIndex++ % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
     if (!sample) return;
-    const MB = 1024 * 1024;
+    const isPage = sample.source === 'page';
     const choice: MediaChoice = {
       id: id ?? this.#nextPendingId++,
       title: sample.title,
       page_url: page ?? sample.page,
-      options: [
-        {
-          id: '2160',
-          label: '4K (2160p), MP4',
-          height: 2160,
-          audio_only: false,
-          size: 1840 * MB,
-          needs_ffmpeg: true,
-        },
-        {
-          id: '1080',
-          label: '1080p, MP4',
-          height: 1080,
-          audio_only: false,
-          size: 612 * MB,
-          needs_ffmpeg: true,
-        },
-        {
-          id: '720',
-          label: '720p, MP4',
-          height: 720,
-          audio_only: false,
-          size: 298 * MB,
-          needs_ffmpeg: false,
-        },
-        {
-          id: 'audio',
-          label: 'Audio only, M4A',
-          height: null,
-          audio_only: true,
-          size: null,
-          needs_ffmpeg: false,
-        },
-      ],
+      options: sampleMediaOptions(isPage),
       folder: folderFor('video', this.#settings),
       queue: this.#settings.extension.default_queue,
+      subtitles: isPage
+        ? [
+            { id: 'sub:en', language: 'en', name: 'English', auto: false },
+            { id: 'sub:es', language: 'es', name: 'Spanish', auto: false },
+            { id: 'auto:en-orig', language: 'en', name: 'English', auto: true },
+          ]
+        : [],
+      chapters: isPage,
+      duration_ms: SAMPLE_DURATION_MS,
     };
     // Like the core: the reading is announced, then the choice comes under the same id.
     this.#emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
@@ -1062,9 +1198,18 @@ export class MockBackend implements Backend {
         'That quality is not offered for this video. Choose one of the listed options.',
       );
     }
+    const output = selection.output ?? 'original';
+    const fit = option.outputs.find((f) => f.format === output);
+    if (!fit) {
+      throw new BackendError(
+        'This quality cannot be saved in that format. Choose one of the formats listed for it.',
+      );
+    }
+    const extras = selection.subtitles.length > 0 || (selection.chapters && choice.chapters);
+    const converts = fit.converts_video || fit.converts_audio || selection.audio_kbps !== null;
     const addon = this.#addon('media');
     const ready = addon.state.type === 'installed' || addon.state.type === 'update_available';
-    if (option.needs_ffmpeg && !ready) {
+    if ((option.needs_ffmpeg || output !== 'original' || extras) && !ready) {
       // Like the core: ask for the add-on and keep the choice open.
       const url = choice.page_url ?? choice.title;
       this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url, id } });
@@ -1072,8 +1217,8 @@ export class MockBackend implements Backend {
     }
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
     this.#emit({ type: 'confirmation_closed', data: { id } });
-    const ext = option.audio_only ? 'm4a' : 'mp4';
-    const name = selection.file_name?.trim() || `${choice.title}.${ext}`;
+    if (option.outputs.length > 1) this.#rememberMediaChoice(choice, option, selection);
+    const name = selection.file_name?.trim() || `${choice.title}.${fit.ext}`;
     const row = this.#create(choice.page_url ?? choice.title, {
       queue: selection.queue ?? choice.queue,
       folder: selection.folder ?? choice.folder,
@@ -1089,11 +1234,31 @@ export class MockBackend implements Backend {
     const sim = this.#sim.get(row.id);
     if (sim) {
       sim.needsJoin = option.needs_ffmpeg;
+      sim.step = converts ? 'converting' : output !== 'original' || extras ? 'finishing' : null;
       // Sample media finishes in about eight seconds, so the joining step is quick to see.
       sim.rate = (row.total ?? 48 * 1024 * 1024) / 8;
     }
     this.#changed([row]);
     return row.id;
+  }
+
+  /** Like the core: the next window for this kind starts from these choices (D24). */
+  #rememberMediaChoice(choice: MediaChoice, option: MediaOption, selection: MediaSelection) {
+    const kind = option.audio_only ? 'audio' : 'video';
+    const remembered = this.#settings.media[kind];
+    remembered.format = selection.output;
+    if (['mp3', 'm4a', 'opus'].includes(selection.output)) {
+      remembered.audio_kbps = selection.audio_kbps;
+    }
+    if (choice.subtitles.length > 0) {
+      const picked = choice.subtitles.filter((s) => selection.subtitles.includes(s.id));
+      remembered.subtitle_languages = [...new Set(picked.map((s) => s.language.toLowerCase()))];
+      if (picked.some((s) => s.auto)) remembered.auto_subtitles = true;
+      else if (choice.subtitles.some((s) => s.auto)) remembered.auto_subtitles = false;
+      if (kind === 'video') remembered.subtitle_files = selection.subtitle_files;
+    }
+    if (choice.chapters) remembered.chapters = selection.chapters;
+    this.#emit({ type: 'settings_changed', data: structuredClone(this.#settings) });
   }
 
   async dismissMediaChoice(id: number) {

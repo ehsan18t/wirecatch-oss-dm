@@ -62,6 +62,11 @@ pub fn refresh_link(m: &Manager, id: DownloadId, url: &str) -> CommandResult<()>
     m.refresh_link(id, url).map_err(plain)
 }
 
+/// Saves a download whose conversion failed as it was downloaded instead (D24).
+pub fn keep_original(m: &Manager, id: DownloadId) -> CommandResult<()> {
+    m.keep_original(id).map_err(plain)
+}
+
 /// Moves downloads to another queue.
 pub fn move_to_queue(m: &Manager, ids: &[DownloadId], queue: QueueId) -> CommandResult<()> {
     m.move_to_queue(ids, queue).map_err(plain)

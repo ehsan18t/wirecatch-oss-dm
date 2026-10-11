@@ -73,6 +73,19 @@ export function defaultSettings(): AppSettings {
     notify_on_complete: true,
     auto_update_addons: true,
     show_progress_windows: true,
+    media: { video: defaultOutput(), audio: defaultOutput() },
+  };
+}
+
+/** Where a quality window starts before anything was chosen (D24): the original format. */
+export function defaultOutput(): AppSettings['media']['video'] {
+  return {
+    format: 'original',
+    audio_kbps: null,
+    subtitle_languages: [],
+    auto_subtitles: false,
+    subtitle_files: false,
+    chapters: false,
   };
 }
 
@@ -223,6 +236,21 @@ export const SEEDS: readonly Seed[] = [
       message:
         'The download link expired. Get a fresh link from the page it came from; the 62% already downloaded is kept.',
       fix: 'refresh_link',
+    },
+  },
+  {
+    name: 'Northern lights over Tromso, 4K time-lapse.mp4',
+    url: 'https://video.example.com/watch/aurora-tromso',
+    total: 1.8 * GB,
+    fraction: 1,
+    status: 'failed',
+    queue: 1,
+    rate: 9 * MB,
+    age: 28,
+    error: {
+      message:
+        'Wirecatch downloaded the video, but could not save it as MP4 (Conversion failed). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded (WEBM).',
+      fix: 'keep_original',
     },
   },
   {

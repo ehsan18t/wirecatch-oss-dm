@@ -99,6 +99,9 @@ mod tests {
             options: vec![],
             folder: "C:/Videos".into(),
             queue: QueueId(1),
+            subtitles: Vec::new(),
+            chapters: false,
+            duration_ms: None,
         }
     }
 

@@ -30,6 +30,11 @@ const select = (option: string, later = false) => ({
   file_name: null,
   queue: null,
   later,
+  output: 'original' as const,
+  audio_kbps: null,
+  subtitles: [],
+  subtitle_files: false,
+  chapters: false,
 });
 
 describe('media and add-ons', () => {

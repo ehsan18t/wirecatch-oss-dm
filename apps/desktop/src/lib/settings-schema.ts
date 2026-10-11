@@ -2,7 +2,7 @@
 // and the command palette all read this one list.
 
 export type SectionId =
-  'general' | 'files' | 'browser' | 'addons' | 'speed' | 'transfer' | 'advanced';
+  'general' | 'files' | 'browser' | 'media' | 'addons' | 'speed' | 'transfer' | 'advanced';
 
 export const SECTIONS: ReadonlyArray<{ id: SectionId; title: string; blurb: string }> = [
   { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
@@ -11,6 +11,12 @@ export const SECTIONS: ReadonlyArray<{ id: SectionId; title: string; blurb: stri
     id: 'browser',
     title: 'Browser',
     blurb: 'What the browser extension catches. The extension popup changes these same settings.',
+  },
+  {
+    id: 'media',
+    title: 'Media',
+    blurb:
+      'What the quality window for a video starts with. It remembers your last choices here, separately for videos and for audio only.',
   },
   {
     id: 'addons',
@@ -47,6 +53,15 @@ export type SettingId =
   | 'capture_extensions'
   | 'min_capture_size'
   | 'default_queue'
+  | 'media'
+  | 'media_subtitles'
+  | 'media_auto_subtitles'
+  | 'media_subtitle_files'
+  | 'media_chapters'
+  | 'media_audio'
+  | 'media_audio_subtitles'
+  | 'media_audio_auto_subtitles'
+  | 'media_audio_chapters'
   | 'global_speed_limit'
   | 'export'
   | 'import'
@@ -160,6 +175,69 @@ export const SETTINGS: readonly SettingDef[] = [
     label: 'Queue for browser downloads',
     help: 'Downloads caught from the browser join this queue.',
     keywords: 'queue default capture',
+  },
+  {
+    id: 'media',
+    section: 'media',
+    label: 'Save videos as',
+    help: 'Original keeps the format the site sends. MP4, MKV and WebM copy the video when it fits, and convert it only when the quality has no version in that format.',
+    keywords: 'format container convert mp4 mkv webm save as video h264 vp9 av1',
+  },
+  {
+    id: 'media_subtitles',
+    section: 'media',
+    label: 'Subtitle languages for videos',
+    help: 'Ticked first when a video has them, for example en or fr.',
+    keywords: 'subtitles captions cc languages srt',
+  },
+  {
+    id: 'media_auto_subtitles',
+    section: 'media',
+    label: 'Use auto-generated subtitles for videos',
+    help: 'When a language has no subtitles written by people, tick the ones made by speech recognition.',
+    keywords: 'subtitles captions automatic auto-generated speech recognition',
+  },
+  {
+    id: 'media_subtitle_files',
+    section: 'media',
+    label: 'Save subtitles as separate files',
+    help: 'Puts subtitles next to a video as .srt files instead of inside it.',
+    keywords: 'subtitles srt sidecar files embed',
+  },
+  {
+    id: 'media_chapters',
+    section: 'media',
+    label: 'Add chapters to videos',
+    help: 'Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.',
+    keywords: 'chapters markers sections',
+  },
+  {
+    id: 'media_audio',
+    section: 'media',
+    label: 'Save audio as',
+    help: 'For Audio only. Title, artist and the video’s picture go into MP3, M4A and FLAC files.',
+    keywords: 'audio music mp3 m4a aac opus flac wav bitrate kbps quality format',
+  },
+  {
+    id: 'media_audio_subtitles',
+    section: 'media',
+    label: 'Subtitle languages for audio',
+    help: 'Saved as .srt files next to the audio file.',
+    keywords: 'subtitles lyrics captions languages srt audio',
+  },
+  {
+    id: 'media_audio_auto_subtitles',
+    section: 'media',
+    label: 'Use auto-generated subtitles for audio',
+    help: 'When a language has no subtitles written by people, tick the ones made by speech recognition.',
+    keywords: 'subtitles captions automatic auto-generated audio',
+  },
+  {
+    id: 'media_audio_chapters',
+    section: 'media',
+    label: 'Add chapters to M4A audio',
+    help: 'Adds a video’s chapters to M4A files.',
+    keywords: 'chapters markers audio m4a',
   },
   {
     id: 'media_addon',

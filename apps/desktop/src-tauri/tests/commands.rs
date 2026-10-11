@@ -222,6 +222,11 @@ async fn media_and_addon_commands_reach_the_core() {
         file_name: None,
         queue: None,
         later: false,
+        output: Default::default(),
+        audio_kbps: None,
+        subtitles: Vec::new(),
+        subtitle_files: false,
+        chapters: false,
     };
     let gone = api::choose_media(&m, 99, selection).await.unwrap_err();
     assert!(gone.contains("already confirmed or dismissed"), "{gone}");

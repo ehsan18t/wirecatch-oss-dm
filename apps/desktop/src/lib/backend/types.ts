@@ -83,6 +83,8 @@ export interface Backend {
   retry(id: DownloadId): Promise<void>;
   /** Swaps in a fresh link for an expired one, keeping the bytes already downloaded. */
   refreshLink(id: DownloadId, url: string): Promise<void>;
+  /** Saves a video whose conversion failed as it was downloaded instead (D24). */
+  keepOriginal(id: DownloadId): Promise<void>;
   moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void>;
   reorder(queue: QueueId, idsInOrder: DownloadId[]): Promise<void>;
   pauseAll(): Promise<void>;
@@ -177,6 +179,7 @@ export const COMMANDS = {
   remove: 'remove',
   retry: 'retry',
   refreshLink: 'refresh_link',
+  keepOriginal: 'keep_original',
   moveToQueue: 'move_to_queue',
   reorder: 'reorder',
   pauseAll: 'pause_all',

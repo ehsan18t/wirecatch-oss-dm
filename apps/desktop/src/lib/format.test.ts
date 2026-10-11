@@ -2,6 +2,7 @@ import type { DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   earlierNote,
+  FIX_LABEL,
   extractUrls,
   fileNameFromUrl,
   folderOf,
@@ -15,6 +16,7 @@ import {
   formatSpeed,
   linkForDisplay,
   parseTime,
+  processingFraction,
   shownWait,
   scheduleAllows,
   statusDetail,
@@ -152,6 +154,7 @@ describe('a download already in the list (D23)', () => {
     error: null,
     waiting: null,
     media: null,
+    processing: null,
     added_at: new Date(2026, 9, 10, 18, 30).getTime(),
     completed_at: new Date(2026, 9, 10, 18, 38).getTime(),
     ...change,
@@ -191,6 +194,25 @@ describe('a download already in the list (D23)', () => {
     expect(statusDetail(row({ status: 'processing' }), 'Main')).toMatch(/joining them/);
     expect(statusDetail(row({}), 'Main')).toBeNull();
   });
+
+  it('names what ffmpeg does to a video and how far it is (D24)', () => {
+    const converting = row({
+      status: 'processing',
+      processing: { step: 'converting', per_mille: 456 },
+    });
+    expect(statusShort(converting)).toBe('Converting, 45%');
+    expect(processingFraction(converting)).toBeCloseTo(0.456);
+    expect(statusDetail(converting, 'Main')).toMatch(/converting it to the format you chose/);
+    const finishing = row({
+      status: 'processing',
+      processing: { step: 'finishing', per_mille: null },
+    });
+    expect(statusShort(finishing)).toBe('Finishing the file');
+    expect(processingFraction(finishing)).toBeNull();
+    // Only while processing.
+    expect(processingFraction(row({ status: 'paused', processing: null }))).toBeNull();
+    expect(FIX_LABEL.keep_original).toBe('Keep the original');
+  });
 });
 
 describe('a video whose server refused it for now', () => {
@@ -217,6 +239,7 @@ describe('a video whose server refused it for now', () => {
       error: null,
       waiting,
       media: null,
+      processing: null,
       added_at: at,
       completed_at: null,
     };

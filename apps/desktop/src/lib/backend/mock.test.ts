@@ -43,7 +43,9 @@ describe('MockBackend', () => {
       expect(statuses.has(s)).toBe(true);
     }
     const fixes = new Set(rows.map((r) => r.error?.fix).filter(Boolean));
-    expect(fixes).toEqual(new Set(['retry', 'refresh_link', 'choose_folder', 'free_disk_space']));
+    expect(fixes).toEqual(
+      new Set(['retry', 'refresh_link', 'choose_folder', 'free_disk_space', 'keep_original']),
+    );
     for (const r of rows) {
       if (r.error) expect(r.error.message).not.toMatch(/\u2014/);
     }

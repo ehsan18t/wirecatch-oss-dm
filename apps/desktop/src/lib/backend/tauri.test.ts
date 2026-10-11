@@ -14,6 +14,7 @@ const FIXED = [
   'remove',
   'retry',
   'refresh_link',
+  'keep_original',
   'move_to_queue',
   'reorder',
   'pause_all',
@@ -104,7 +105,13 @@ describe('TauriBackend', () => {
       file_name: null,
       queue: null,
       later: false,
+      output: 'mp4',
+      audio_kbps: null,
+      subtitles: ['sub:en'],
+      subtitle_files: false,
+      chapters: true,
     });
+    await b.keepOriginal(7);
     await b.installAddon('media');
     await b.getQuestion(5);
     await b.earlierDownload(5);
@@ -129,9 +136,21 @@ describe('TauriBackend', () => {
         'choose_media',
         {
           id: 4,
-          selection: { option_id: 'hd', folder: null, file_name: null, queue: null, later: false },
+          selection: {
+            option_id: 'hd',
+            folder: null,
+            file_name: null,
+            queue: null,
+            later: false,
+            output: 'mp4',
+            audio_kbps: null,
+            subtitles: ['sub:en'],
+            subtitle_files: false,
+            chapters: true,
+          },
         },
       ],
+      ['keep_original', { id: 7 }],
       ['install_addon', { id: 'media' }],
       ['get_question', { id: 5 }],
       ['earlier_download', { id: 5 }],

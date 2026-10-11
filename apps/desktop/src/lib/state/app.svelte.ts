@@ -706,6 +706,9 @@ export class AppState {
       case 'free_disk_space':
         await this.openFolder(id);
         break;
+      case 'keep_original':
+        await this.#run(() => this.backend.keepOriginal(id));
+        break;
     }
   }
 

@@ -21,6 +21,7 @@ function row(id: number, patch: Partial<DownloadSummary> = {}): DownloadSummary 
     error: null,
     waiting: null,
     media: null,
+    processing: null,
     added_at: id,
     completed_at: null,
     ...patch,

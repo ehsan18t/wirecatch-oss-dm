@@ -89,6 +89,9 @@ export class TauriBackend implements Backend {
   refreshLink(id: DownloadId, url: string) {
     return this.#exec(COMMANDS.refreshLink, { id, url });
   }
+  keepOriginal(id: DownloadId) {
+    return this.#exec(COMMANDS.keepOriginal, { id });
+  }
   moveToQueue(ids: DownloadId[], queue: QueueId) {
     return this.#exec(COMMANDS.moveToQueue, { ids, queue });
   }
