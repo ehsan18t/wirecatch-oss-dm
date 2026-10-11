@@ -1,8 +1,14 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
 
 export type ProblemKind =
-  /** The browser could not find or start the native helper (the bridge). */
+  /** The browser could not find or start the native helper (the bridge): not installed or not registered. */
   | 'host_missing'
+  /**
+   * The bridge is registered, but its manifest does not list this extension's id, so the browser
+   * refuses to start it. Reinstalling Wirecatch does not help; only the trusted extension or a
+   * Wirecatch that trusts this id does.
+   */
+  | 'host_untrusted'
   /** The bridge runs but could not reach or start the app. */
   | 'app_unavailable'
   /** The app speaks a different protocol version. */
@@ -23,16 +29,23 @@ export type ConnectionStatus =
 
 /**
  * Sorts the browser's disconnect message into a problem the person can act on.
- * Chromium: "Specified native messaging host not found." or "Access to the specified
- * native messaging host is forbidden." Firefox: "No such native application ...".
+ *
+ * Chromium (the constants in extensions/browser/api/messaging/native_message_host.cc):
+ * - "Specified native messaging host not found.": no manifest is registered under the name.
+ * - "Failed to start native messaging host.": a manifest is registered but its program is gone.
+ * - "Access to the specified native messaging host is forbidden.": the manifest's
+ *   `allowed_origins` does not list this extension.
+ * - "Native host has exited." and "Error when communicating with the native messaging host.":
+ *   the bridge started and then stopped (for example because the app closed) or broke the protocol.
+ * Firefox: "No such native application ...".
  */
 export function classifyDisconnect(message: string | null): ProblemKind {
   if (message === null) return 'disconnected';
   const text = message.toLowerCase();
+  if (text.includes('native messaging host is forbidden')) return 'host_untrusted';
   if (
-    text.includes('not found') ||
+    text.includes('native messaging host not found') ||
     text.includes('no such native application') ||
-    text.includes('is forbidden') ||
     text.includes('failed to start native messaging host')
   ) {
     return 'host_missing';
@@ -50,8 +63,13 @@ export function describeProblem(kind: ProblemKind): ProblemText {
   switch (kind) {
     case 'host_missing':
       return {
-        title: 'Wirecatch is not set up for this browser.',
-        fix: 'Reinstall the Wirecatch app, then click Try again.',
+        title: 'Wirecatch is not installed, or not set up for this browser.',
+        fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
+      };
+    case 'host_untrusted':
+      return {
+        title: 'This copy of the extension is not the one Wirecatch trusts.',
+        fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
       };
     case 'app_unavailable':
       return {

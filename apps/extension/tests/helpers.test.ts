@@ -127,23 +127,57 @@ describe('protocol helpers', () => {
 });
 
 describe('connection problems', () => {
-  it('recognizes a missing native host in each browser', () => {
-    expect(classifyDisconnect('Specified native messaging host not found.')).toBe('host_missing');
+  // The exact strings Chromium reports (extensions/browser/api/messaging/native_message_host.cc).
+  it.each([
+    ['Specified native messaging host not found.', 'host_missing'],
+    ['Failed to start native messaging host.', 'host_missing'],
+    ['Access to the specified native messaging host is forbidden.', 'host_untrusted'],
+    ['Native host has exited.', 'disconnected'],
+    ['Error when communicating with the native messaging host.', 'disconnected'],
+  ] as const)('sorts the Chromium message "%s" as %s', (message, kind) => {
+    expect(classifyDisconnect(message)).toBe(kind);
+  });
+
+  it('recognizes a missing native host in Firefox and a port closed without a reason', () => {
     expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe('host_missing');
-    expect(classifyDisconnect('Access to the specified native messaging host is forbidden.')).toBe(
-      'host_missing',
-    );
-    expect(classifyDisconnect('Native host has exited.')).toBe('disconnected');
     expect(classifyDisconnect(null)).toBe('disconnected');
   });
 
+  it('gives each problem its own fix, and never suggests a reinstall that would not help', () => {
+    expect(describeProblem('host_missing')).toEqual({
+      title: 'Wirecatch is not installed, or not set up for this browser.',
+      fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
+    });
+    expect(describeProblem('host_untrusted')).toEqual({
+      title: 'This copy of the extension is not the one Wirecatch trusts.',
+      fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
+    });
+    expect(describeProblem('disconnected').fix).toContain('reconnects by itself');
+    const kinds: ProblemKind[] = [
+      'host_missing',
+      'host_untrusted',
+      'app_unavailable',
+      'version_mismatch',
+      'disconnected',
+    ];
+    for (const kind of kinds) {
+      expect(`${describeProblem(kind).title} ${describeProblem(kind).fix}`).not.toMatch(/reinstall/i);
+    }
+  });
+
   it('explains every problem in plain language without em dashes', () => {
-    const kinds: ProblemKind[] = ['host_missing', 'app_unavailable', 'version_mismatch', 'disconnected'];
+    const kinds: ProblemKind[] = [
+      'host_missing',
+      'host_untrusted',
+      'app_unavailable',
+      'version_mismatch',
+      'disconnected',
+    ];
     for (const kind of kinds) {
       const text = describeProblem(kind);
       expect(text.title.length).toBeGreaterThan(10);
       expect(text.fix.length).toBeGreaterThan(10);
-      expect(`${text.title}${text.fix}`).not.toContain('\u2014');
+      expect(`${text.title}${text.fix}`).not.toContain('—');
     }
   });
 });
