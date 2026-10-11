@@ -80,6 +80,10 @@ pub struct ManagerConfig {
     pub addon_sources: MediaAddonSources,
     /// How long the media add-on's yt-dlp may take to read a page.
     pub media_timeout: Duration,
+    /// The pauses before a page's video download reads the page again for
+    /// fresh addresses, after the server refused one or said it expired. One
+    /// entry per automatic try; once they are used up, the download fails.
+    pub media_refresh_delays: Vec<Duration>,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -90,6 +94,20 @@ pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The default [`ManagerConfig::media_timeout`].
 pub const DEFAULT_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The default [`ManagerConfig::media_refresh_delays`]: three more tries,
+/// after 2, 10 and 30 seconds.
+///
+/// A video server sometimes refuses a perfectly good address for a while, and
+/// an address read again from the page usually works at once, so the first try
+/// comes quickly. The later ones wait longer to ride out a refusal that lasts,
+/// without keeping the person waiting more than about a minute for an answer
+/// or reading the page so often that the site takes it for a robot.
+pub const DEFAULT_MEDIA_REFRESH_DELAYS: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+];
 
 impl ManagerConfig {
     /// A configuration using the real clock.
@@ -102,6 +120,7 @@ impl ManagerConfig {
             capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
+            media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
         }
     }
 
@@ -115,6 +134,12 @@ impl ManagerConfig {
     /// Uses `timeout` as the [`media_timeout`](Self::media_timeout).
     pub fn with_media_timeout(mut self, timeout: Duration) -> Self {
         self.media_timeout = timeout;
+        self
+    }
+
+    /// Uses `delays` as the [`media_refresh_delays`](Self::media_refresh_delays).
+    pub fn with_media_refresh_delays(mut self, delays: Vec<Duration>) -> Self {
+        self.media_refresh_delays = delays;
         self
     }
 
@@ -167,6 +192,7 @@ struct Inner {
     /// A private folder for short-lived files (cookies handed to yt-dlp).
     temp_dir: PathBuf,
     media_timeout: Duration,
+    media_refresh_delays: Arc<[Duration]>,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
@@ -238,6 +264,7 @@ impl Manager {
             addon_sources: config.addon_sources,
             temp_dir,
             media_timeout: config.media_timeout,
+            media_refresh_delays: config.media_refresh_delays.into(),
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),

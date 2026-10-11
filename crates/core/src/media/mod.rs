@@ -96,6 +96,8 @@ pub(crate) struct MediaProgress {
     own_done: AtomicU64,
     own_total: AtomicU64,
     own: AtomicBool,
+    /// Waiting to try again with fresh addresses from the page.
+    waiting: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -116,6 +118,9 @@ pub(crate) struct Reading {
     pub total: Option<u64>,
     pub connections: usize,
     pub processing: bool,
+    /// Waiting to try again (a server refused, and the page is read again
+    /// for fresh addresses); nothing is being received.
+    pub waiting: bool,
 }
 
 impl MediaProgress {
@@ -135,6 +140,23 @@ impl MediaProgress {
         self.processing.store(on, Ordering::Relaxed);
     }
 
+    /// Marks the download as waiting to try again, or no longer waiting.
+    pub fn set_waiting(&self, on: bool) {
+        self.waiting.store(on, Ordering::Relaxed);
+    }
+
+    /// Forgets the parts of an attempt that did not finish, before the next
+    /// attempt adds its own (finished parts come back as such), and ends the
+    /// wait. Until then the earlier attempt's progress stays visible.
+    pub fn start_over(&self) {
+        self.lock().clear();
+        self.own.store(false, Ordering::Relaxed);
+        self.own_done.store(0, Ordering::Relaxed);
+        self.own_total.store(0, Ordering::Relaxed);
+        self.processing.store(false, Ordering::Relaxed);
+        self.waiting.store(false, Ordering::Relaxed);
+    }
+
     /// yt-dlp's own report: bytes so far and the total, if known.
     pub fn set_own(&self, done: u64, total: Option<u64>) {
         self.own.store(true, Ordering::Relaxed);
@@ -149,6 +171,7 @@ impl MediaProgress {
     pub fn read(&self) -> Reading {
         let mut reading = Reading {
             processing: self.processing.load(Ordering::Relaxed),
+            waiting: self.waiting.load(Ordering::Relaxed),
             ..Reading::default()
         };
         let mut total = Some(0u64);
@@ -315,5 +338,18 @@ mod tests {
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (10, Some(40)));
         assert!(reading.answered);
+        assert!(!reading.waiting);
+
+        // Waiting to try again keeps what is shown until the next attempt
+        // starts over with its own parts.
+        progress.set_waiting(true);
+        let waiting = progress.read();
+        assert!(waiting.waiting);
+        assert_eq!((waiting.done, waiting.total), (10, Some(40)));
+        progress.start_over();
+        progress.add_done(10);
+        let again = progress.read();
+        assert!(!again.waiting);
+        assert_eq!((again.done, again.total), (10, Some(10)));
     }
 }
