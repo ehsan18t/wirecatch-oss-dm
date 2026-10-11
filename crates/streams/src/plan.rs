@@ -361,8 +361,11 @@ pub(crate) fn detect(text: &str, content_type: Option<&str>, url: &Url) -> Optio
     }
 }
 
+/// A duration read from a playlist or manifest, or `None` when it is missing, zero, negative or too large to be real. The value comes from the network, so it must never panic: `Duration::from_secs_f64` does above about 1.8e19 seconds, and release builds abort on panic.
 fn seconds(value: f64) -> Option<Duration> {
-    (value.is_finite() && value > 0.0).then(|| Duration::from_secs_f64(value))
+    Duration::try_from_secs_f64(value)
+        .ok()
+        .filter(|duration| !duration.is_zero())
 }
 
 /// The extension of an HLS track joined as is: fragmented MP4 when it has

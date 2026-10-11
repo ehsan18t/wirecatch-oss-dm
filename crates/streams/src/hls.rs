@@ -13,6 +13,9 @@ use url::Url;
 
 use crate::plan::{Encryption, MAX_SEGMENTS, Piece, Refusal, too_many_segments};
 
+/// The longest a segment may say it lasts (`#EXTINF`): a day. No real segment comes near it; a larger value comes from a broken or hostile playlist and counts as unknown, so it never shows a video billions of years long or skews the size estimate.
+const MAX_SEGMENT_SECONDS: f64 = 24.0 * 60.0 * 60.0;
+
 /// A parsed playlist.
 #[derive(Debug)]
 pub(crate) enum Playlist {
@@ -201,7 +204,7 @@ fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
                         .split(',')
                         .next()
                         .and_then(|d| d.trim().parse::<f64>().ok())
-                        .filter(|d| d.is_finite() && *d >= 0.0)
+                        .filter(|d| (0.0..=MAX_SEGMENT_SECONDS).contains(d))
                         .unwrap_or(0.0);
                 }
                 "#EXT-X-BYTERANGE" => pending_range = Some(byte_range(value)?),

@@ -797,3 +797,45 @@ async fn speed_limits_apply_to_streams() {
         "without a limit it took {unlimited:?}"
     );
 }
+
+/// A segment duration too large for `Duration` (about 1.8e19 seconds) once panicked while inspecting, and release builds abort on panic, which took down the whole app.
+#[tokio::test]
+async fn an_absurd_segment_duration_is_unknown_not_a_crash() {
+    let server = Server::start().await;
+    server.put("huge/seg0.ts", segment(1, 100));
+    server.put_typed(
+        "huge/index.m3u8",
+        "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:1e300,\nseg0.ts\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let info = inspect(
+        &server.url("huge/index.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(info.duration, None);
+}
+
+// 1e18 seconds fits in a Duration, so it did not panic, but the video showed as billions of years
+// long and the size estimate was absurd.
+#[tokio::test]
+async fn a_segment_longer_than_a_day_counts_as_unknown() {
+    let server = Server::start().await;
+    server.put("long/seg0.ts", segment(1, 100));
+    server.put("long/seg1.ts", segment(2, 100));
+    server.put_typed(
+        "long/index.m3u8",
+        "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:1e18,\nseg0.ts\n#EXTINF:4,\nseg1.ts\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let info = inspect(
+        &server.url("long/index.m3u8"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(info.duration, Some(Duration::from_secs(4)));
+}

@@ -291,3 +291,24 @@ async fn a_base_url_into_the_local_network_is_refused() {
     let error = run(req).await.unwrap_err();
     assert!(matches!(error, Error::PrivateNetwork), "{error}");
 }
+
+/// A presentation duration too large for `Duration` once panicked while inspecting, and release builds abort on panic, which took down the whole app.
+#[tokio::test]
+async fn an_absurd_presentation_duration_is_not_a_crash() {
+    let server = Server::start().await;
+    server.put_typed(
+        "huge.mpd",
+        r#"<MPD type="static" mediaPresentationDuration="PT99999999999999999999S"><Period><AdaptationSet mimeType="video/mp4">
+          <SegmentList><SegmentURL media="0.m4s"/></SegmentList><Representation id="v" bandwidth="1"/>
+        </AdaptationSet></Period></MPD>"#,
+        DASH,
+    );
+    let info = inspect(
+        &server.url("huge.mpd"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(info.duration, None, "too long to be real, so unknown");
+}
