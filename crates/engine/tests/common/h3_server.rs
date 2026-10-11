@@ -78,6 +78,23 @@ pub struct Counts {
     /// Requests that arrived over HTTP/2.
     pub http2: AtomicUsize,
     pub bytes: AtomicU64,
+    /// The most bytes one request asked for; `u64::MAX` once a request asked
+    /// for a range with no end, or for no range.
+    pub largest_ask: AtomicU64,
+}
+
+/// How many bytes a request asks for: `u64::MAX` for a range with no end, or
+/// for no range at all.
+fn asked(headers: &HeaderMap) -> u64 {
+    headers
+        .get(RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("bytes="))
+        .and_then(|v| v.split_once('-'))
+        .and_then(|(a, b)| Some((a.parse::<u64>().ok()?, b.parse::<u64>().ok()?)))
+        .map_or(u64::MAX, |(start, last)| {
+            last.saturating_sub(start).saturating_add(1)
+        })
 }
 
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
@@ -136,6 +153,9 @@ pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u1
                 let service = hyper::service::service_fn(move |request: Request<Incoming>| {
                     let (status, mut headers, body) = answer(&data, request.headers());
                     counts.requests.fetch_add(1, Ordering::SeqCst);
+                    counts
+                        .largest_ask
+                        .fetch_max(asked(request.headers()), Ordering::SeqCst);
                     if request.version() == hyper::Version::HTTP_2 {
                         counts.http2.fetch_add(1, Ordering::SeqCst);
                     }
@@ -225,6 +245,9 @@ pub async fn start_h3_breaking(
                         };
                         let (status, headers, body) = answer(&data, request.headers());
                         counts.requests.fetch_add(1, Ordering::SeqCst);
+                        counts
+                            .largest_ask
+                            .fetch_max(asked(request.headers()), Ordering::SeqCst);
                         let mut response = http::Response::new(());
                         *response.status_mut() = status;
                         *response.headers_mut() = headers;

@@ -186,6 +186,7 @@ impl Gauge {
                 total: p.total(),
                 connections: p.connections(),
                 processing: false,
+                waiting: false,
             },
             Gauge::Media(m) => m.read(),
         }

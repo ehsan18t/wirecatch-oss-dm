@@ -113,6 +113,16 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     };
     let row = &mut entry.row;
     let reading = run.gauge.read();
+    if reading.waiting {
+        // Waiting to try again with fresh addresses: connecting again, as at
+        // the start of a run, with the progress so far kept.
+        let before = (row.status, row.speed, row.connections, row.eta_secs);
+        row.status = DownloadStatus::Connecting;
+        row.speed = 0;
+        row.connections = 0;
+        row.eta_secs = None;
+        return before != (row.status, row.speed, row.connections, row.eta_secs);
+    }
     // The engine names the file once the server has answered.
     if row.status == DownloadStatus::Connecting && !reading.answered {
         return false;

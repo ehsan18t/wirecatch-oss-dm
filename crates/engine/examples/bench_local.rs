@@ -3,7 +3,8 @@
 //! `cargo run --release -p wirecatch-engine --example bench_local`
 //!     Measures throughput for 1 to 16 connections against a local server that
 //!     caps each connection's speed (the way many CDNs and file hosts do), then
-//!     against an uncapped server to show the engine's own ceiling.
+//!     against an uncapped server to show the engine's own ceiling, with and
+//!     without a 10 MiB limit on the size of each request (as video sites need).
 //!
 //! `cargo run --release -p wirecatch-engine --example bench_local -- serve [port] [MiB/s per connection]`
 //!     Keeps a capped server running for trying the CLI by hand.
@@ -62,7 +63,7 @@ async fn main() {
     );
     let mut baseline = None;
     for connections in [1, 2, 4, 8, 16] {
-        let secs = timed_download(&capped, connections).await;
+        let secs = timed_download(&capped, connections, None).await;
         let base = *baseline.get_or_insert(secs);
         println!(
             "{connections:>12}  {secs:>9.2}  {:>10.1}  {:>7.1}x",
@@ -82,7 +83,21 @@ async fn main() {
     .await;
     println!("{:>12}  {:>9}  {:>10}", "connections", "seconds", "MiB/s");
     for connections in [1, 8] {
-        let secs = timed_download(&open, connections).await;
+        let secs = timed_download(&open, connections, None).await;
+        println!(
+            "{connections:>12}  {secs:>9.2}  {:>10.1}",
+            size as f64 / MIB as f64 / secs
+        );
+    }
+
+    println!(
+        "
+Same, with requests of at most 10 MiB each:
+"
+    );
+    println!("{:>12}  {:>9}  {:>10}", "connections", "seconds", "MiB/s");
+    for connections in [1, 8] {
+        let secs = timed_download(&open, connections, Some(10 * MIB)).await;
         println!(
             "{connections:>12}  {secs:>9.2}  {:>10.1}",
             size as f64 / MIB as f64 / secs
@@ -90,12 +105,13 @@ async fn main() {
     }
 }
 
-async fn timed_download(server: &TestServer, connections: usize) -> f64 {
+async fn timed_download(server: &TestServer, connections: usize, max_request: Option<u64>) -> f64 {
     let dir = std::env::temp_dir().join(format!("wirecatch-bench-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut request = DownloadRequest::new(server.url("bench.bin"), &dir);
     request.options.connections = connections;
+    request.options.max_request_bytes = max_request;
 
     let start = Instant::now();
     let outcome = download(

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use tracing::warn;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, RateLimiter, Url,
@@ -41,6 +42,9 @@ struct Job {
     options: DownloadOptions,
     temp_dir: PathBuf,
     timeout: Duration,
+    /// The pauses before each automatic try with fresh addresses; see
+    /// [`ManagerConfig::media_refresh_delays`](crate::ManagerConfig::media_refresh_delays).
+    refresh_delays: Arc<[Duration]>,
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
@@ -91,6 +95,7 @@ impl Manager {
             options,
             temp_dir: self.inner.temp_dir.clone(),
             timeout: self.inner.media_timeout,
+            refresh_delays: self.inner.media_refresh_delays.clone(),
             reserve: {
                 let manager = Arc::downgrade(&self.inner);
                 Arc::new(move |path: &Path, take: bool| {
@@ -193,6 +198,28 @@ async fn run_stream(
 /// A part's role, which names its file in the work folder.
 const ROLES: [&str; 2] = ["video", "audio"];
 
+/// Why one attempt at a page's video did not finish.
+#[derive(Debug)]
+enum PageError {
+    /// The server refused a format's address or said it expired (`status`,
+    /// when it answered with one). Reading the page again gives fresh
+    /// addresses, which usually work at once.
+    Refused {
+        status: Option<u16>,
+    },
+    Failed(UserError),
+}
+
+impl From<UserError> for PageError {
+    fn from(error: UserError) -> Self {
+        PageError::Failed(error)
+    }
+}
+
+/// Downloads a page's chosen formats. When the server refuses a format's
+/// address, the page is read again for fresh addresses and the download goes on
+/// by itself after each of [`Job::refresh_delays`], keeping the parts already
+/// finished; only when every try is used up does the person see an error.
 async fn run_page(
     job: &Job,
     format: &str,
@@ -201,6 +228,39 @@ async fn run_page(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, UserError> {
+    let mut delays = job.refresh_delays.iter();
+    loop {
+        let status = match page_attempt(job, format, &video, &audio, progress, cancel).await {
+            Ok(done) => return Ok(done),
+            Err(PageError::Failed(error)) => return Err(error),
+            Err(PageError::Refused { status }) => status,
+        };
+        let Some(delay) = delays.next() else {
+            return Err(refused_after_refreshing(status));
+        };
+        warn!(
+            status,
+            retry_in = ?delay,
+            "the server refused a video address; reading the page again for fresh ones"
+        );
+        progress.set_waiting(true);
+        tokio::select! {
+            _ = cancel.cancelled() => return Ok(MediaDone::Paused),
+            _ = tokio::time::sleep(*delay) => {}
+        }
+    }
+}
+
+/// One attempt at a page's video: reads the page for fresh format addresses
+/// and downloads the formats not finished yet.
+async fn page_attempt(
+    job: &Job,
+    format: &str,
+    video: &Option<String>,
+    audio: &Option<String>,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<MediaDone, PageError> {
     let tools = job.tools.as_ref().ok_or_else(addon_missing)?;
     let work = media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
@@ -217,8 +277,10 @@ async fn run_page(
     };
     // Format addresses expire: read the page again on every start.
     let info = ytdlp::extract(&ctx, cancel).await?;
+    // What an earlier attempt showed goes; this one adds its own parts.
+    progress.start_over();
     let formats = info.all_formats();
-    let wanted: Vec<&String> = [&video, &audio].into_iter().flatten().collect();
+    let wanted: Vec<&String> = [video, audio].into_iter().flatten().collect();
     let found: Vec<&Format> = wanted
         .iter()
         .filter_map(|id| formats.iter().find(|f| &&f.format_id == id))
@@ -233,7 +295,7 @@ async fn run_page(
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
         return match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
-            Fetched::Done(file) => finish(&file, job, &work).await,
+            Fetched::Done(file) => Ok(finish(&file, job, &work).await?),
             Fetched::Cancelled => Ok(MediaDone::Paused),
         };
     }
@@ -251,13 +313,25 @@ async fn run_page(
         .zip(ROLES)
         .zip(rules)
         .map(|((f, role), rule)| fetch_part(job, f, role, rule, &work, progress, cancel));
-    let mut files = Vec::new();
     let results = futures_join(parts.collect()).await;
+    // Stopped wins over any error, and an error a fresh address would not fix
+    // wins over a refused address.
+    let mut files = Vec::new();
+    let mut failed = None;
+    let mut refused = None;
     for result in results {
-        match result? {
-            Some(file) => files.push(file),
-            None => return Ok(MediaDone::Paused),
+        match result {
+            Ok(Some(file)) => files.push(file),
+            Ok(None) => return Ok(MediaDone::Paused),
+            Err(PageError::Failed(error)) => failed = failed.or(Some(error)),
+            Err(PageError::Refused { status }) => refused = refused.or(Some(status)),
         }
+    }
+    if let Some(error) = failed {
+        return Err(PageError::Failed(error));
+    }
+    if let Some(status) = refused {
+        return Err(PageError::Refused { status });
     }
     let file = match files.as_slice() {
         [single] => single.clone(),
@@ -276,9 +350,9 @@ async fn run_page(
                 Joined::Cancelled => return Ok(MediaDone::Paused),
             }
         }
-        _ => return Err(addon_missing()),
+        _ => return Err(addon_missing().into()),
     };
-    finish(&file, job, &work).await
+    Ok(finish(&file, job, &work).await?)
 }
 
 /// An ffmpeg that could not be started means the add-on needs looking at again.
@@ -301,7 +375,9 @@ async fn futures_join<F: std::future::Future>(parts: Vec<F>) -> Vec<F::Output> {
     }
 }
 
-/// Downloads one format into the work folder: `Ok(None)` when stopped.
+/// Downloads one format into the work folder: `Ok(None)` when stopped. A part
+/// finished in an earlier run or attempt (its `.done` marker names its file) is
+/// not downloaded again.
 async fn fetch_part(
     job: &Job,
     format: &Format,
@@ -310,7 +386,7 @@ async fn fetch_part(
     work: &Path,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<Option<PathBuf>, UserError> {
+) -> Result<Option<PathBuf>, PageError> {
     let marker = work.join(format!("{role}.done"));
     if let Ok(name) = tokio::fs::read_to_string(&marker).await {
         let file = work.join(name.trim());
@@ -342,7 +418,7 @@ async fn fetch_part(
                 Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
                 Err(e) => {
                     note_missing_ffmpeg(job, &e);
-                    return Err(stream_error(&e, work));
+                    return Err(stream_error(&e, work).into());
                 }
             }
         }
@@ -358,16 +434,17 @@ async fn fetch_part(
                 Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
                 Err(e) => {
                     let folder = job.output.parent().unwrap_or(Path::new(""));
-                    // A format address that stops working has usually expired;
-                    // trying again reads the page for fresh ones.
-                    let mut error = user_error::describe(&e, folder, true);
+                    // A format address that was refused or has expired: a
+                    // fresh one from the page usually works.
+                    let error = user_error::describe(&e, folder, true);
                     if error.fix == Some(FixAction::RefreshLink) {
-                        error = UserError {
-                            message: "The video's address on the server stopped working, as such addresses do after a while. Try again: Wirecatch reads the page again for fresh addresses and keeps what was already downloaded.".into(),
-                            fix: Some(FixAction::Retry),
+                        let status = match e {
+                            EngineError::HttpStatus { status, .. } => Some(status),
+                            _ => None,
                         };
+                        return Err(PageError::Refused { status });
                     }
-                    return Err(error);
+                    return Err(error.into());
                 }
             }
         }
@@ -411,8 +488,9 @@ async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserEr
 }
 
 /// The request options for one format: the format's own headers only (the
-/// page's cookies stay with the page), bound to its own address, and the local
-/// network rule decided for it.
+/// page's cookies stay with the page), bound to its own address, the local
+/// network rule decided for it, and requests no larger than the format's
+/// server allows at full speed (yt-dlp's `http_chunk_size`).
 fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOptions {
     let mut options = job.options.clone();
     let format_headers: Vec<Header> = format
@@ -433,6 +511,7 @@ fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOpt
         options.user_agent = agent;
     }
     options.private_network = rule;
+    options.max_request_bytes = format.request_limit();
     options
 }
 
@@ -601,6 +680,19 @@ fn is_private(ip: IpAddr) -> bool {
     }
 }
 
+/// The error once every automatic try with fresh addresses was refused too.
+fn refused_after_refreshing(status: Option<u16>) -> UserError {
+    let answered = status
+        .map(|s| format!(" (it answered {s})"))
+        .unwrap_or_default();
+    UserError {
+        message: format!(
+            "The video's server would not send the video{answered}, even after Wirecatch read the page again for fresh addresses. Servers sometimes do this for a few minutes. Try again in a few minutes; what was already downloaded is kept."
+        ),
+        fix: Some(FixAction::Retry),
+    }
+}
+
 fn refresh(message: &str) -> UserError {
     UserError {
         message: format!("{message} Try again; Wirecatch reads the page again."),
@@ -709,11 +801,22 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            refresh_delays: Arc::new([]),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
         assert_eq!(options.headers.get("x-format").unwrap(), "yes");
+        assert_eq!(options.max_request_bytes, None);
+
+        // yt-dlp's chunk size becomes the engine's limit on one request.
+        let chunked: Format = serde_json::from_value(serde_json::json!({
+            "format_id": "137", "ext": "mp4",
+            "downloader_options": {"http_chunk_size": 10_485_760}
+        }))
+        .unwrap();
+        let options = part_options(&job, &chunked, PrivateNetwork::Block);
+        assert_eq!(options.max_request_bytes, Some(10_485_760));
     }
 
     #[tokio::test]
@@ -726,6 +829,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            refresh_delays: Arc::new([]),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let progress = MediaProgress::default();
@@ -777,6 +881,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(5),
+            refresh_delays: Arc::new([]),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let done = run_stream(
@@ -818,6 +923,7 @@ mod tests {
             options: DownloadOptions::default(),
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
+            refresh_delays: Arc::new([]),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let done = finish(&part, &job, &work).await.unwrap();

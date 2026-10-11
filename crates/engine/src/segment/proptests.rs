@@ -256,6 +256,77 @@ proptest! {
         prop_assert_eq!(model.table.file_len(), len);
     }
 
+    /// One connection fetches its segment in requests of at most `limit` bytes
+    /// while other connections keep taking the upper half of what it has not
+    /// received yet. Every request starts where the connection got to, asks
+    /// for at most `limit` bytes, stays inside the segment as it was when the
+    /// request was sent, and together the requests fetch the segment exactly
+    /// once, however it shrinks.
+    #[test]
+    fn limited_requests_cover_a_shrinking_segment(
+        len in 1u64..=8_000_000,
+        limit in 1u64..=3_000_000,
+        min_split in 1u64..=500_000,
+        steps in prop::collection::vec((1u64..=1_000_000, any::<bool>()), 1..300),
+    ) {
+        let mut table = SegmentTable::new(Some(len), min_split);
+        let first = table.acquire(0).unwrap();
+        let mut steps = steps.into_iter().cycle();
+        let mut other = 1;
+        let mut requests = 0u64;
+        let mut received = 0u64;
+        loop {
+            let (from, to) = table.position(first.index);
+            if from >= to {
+                break;
+            }
+            let end = request_end(from, to, Some(limit));
+            prop_assert!(from < end && end <= to && end - from <= limit);
+            requests += 1;
+            prop_assert!(requests <= len, "more requests than bytes");
+            // The body of `[from, end)` arrives in pieces; meanwhile other
+            // connections may take part of the segment.
+            let mut at = from;
+            loop {
+                let (step, split) = steps.next().unwrap();
+                if split && table.acquire(other).is_some() {
+                    other += 1;
+                }
+                let (allowed, done) = table.claim(first.index, step.min(end - at));
+                at += allowed;
+                received += allowed;
+                prop_assert_eq!(table.position(first.index).0, at);
+                if done {
+                    break;
+                }
+                if at == end {
+                    // The request's body ended; the next one picks up from here.
+                    break;
+                }
+            }
+        }
+        let (claimed, end) = table.position(first.index);
+        prop_assert_eq!(claimed, end);
+        prop_assert_eq!(received, end - first.from);
+    }
+
+    #[test]
+    fn request_end_respects_the_limit(
+        from in 0u64..=u64::MAX / 2,
+        len in 1u64..=u64::MAX / 4,
+        limit in prop::option::of(0u64..=u64::MAX / 4),
+    ) {
+        let to = from + len;
+        let end = request_end(from, to, limit);
+        prop_assert!(from < end && end <= to);
+        match limit {
+            Some(n) if n > 0 => prop_assert_eq!(end, to.min(from + n)),
+            _ => prop_assert_eq!(end, to),
+        }
+        // A range of unknown length is never cut.
+        prop_assert_eq!(request_end(from, UNKNOWN_END, limit), UNKNOWN_END);
+    }
+
     #[test]
     fn resumed_table_stays_consistent(
         (_len, saved) in saved_ranges(),

@@ -474,13 +474,46 @@ pub struct Probe {
     pub validators: Validators,
     pub file_name: Option<String>,
     pub content_type: Option<String>,
+    /// A limited request was answered with part of the file and no size, so
+    /// the body is not the whole file.
+    limited_without_size: bool,
 }
 
 /// Sends `GET` with `Range: bytes=0-`. A `206` proves ranges work and gives the
 /// size, and its body is already the start of the file, so no extra round trip
 /// is spent on a separate `HEAD`.
-pub(crate) async fn probe(client: &Client, url: &Url, session: &Session) -> Result<Probe, Failure> {
-    let response = send(client, url, session, Some("bytes=0-")).await?;
+///
+/// With a `limit` ([`DownloadOptions::max_request_bytes`]) it asks for
+/// `bytes=0-(limit-1)` instead, and the body is only the start of the file.
+/// A server that answers that with a range but no size is asked again for
+/// `bytes=0-`, as without a limit: with no size, the download cannot know
+/// where the file ends except by reading one answer to its end.
+pub(crate) async fn probe(
+    client: &Client,
+    url: &Url,
+    session: &Session,
+    limit: Option<u64>,
+) -> Result<Probe, Failure> {
+    if let Some(limit) = limit.filter(|&n| n > 0) {
+        let range = format!("bytes=0-{}", limit - 1);
+        let probe = probe_range(client, url, session, &range).await?;
+        if probe.limited_without_size {
+            debug!("the server sent part of the file without its size; asking for all of it");
+        } else {
+            return Ok(probe);
+        }
+    }
+    probe_range(client, url, session, "bytes=0-").await
+}
+
+/// [`probe`] with the given `Range` header.
+async fn probe_range(
+    client: &Client,
+    url: &Url,
+    session: &Session,
+    range: &str,
+) -> Result<Probe, Failure> {
+    let response = send(client, url, session, Some(range)).await?;
     let status = response.status();
     let final_url = response.url().clone();
     let response_headers = response.headers();
@@ -494,6 +527,7 @@ pub(crate) async fn probe(client: &Client, url: &Url, session: &Session) -> Resu
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
 
+    let mut limited_without_size = false;
     let (ranged, total) = match status {
         StatusCode::PARTIAL_CONTENT => match content_range(response_headers) {
             Some(ContentRange {
@@ -505,7 +539,11 @@ pub(crate) async fn probe(client: &Client, url: &Url, session: &Session) -> Resu
                 start: 0,
                 total: None,
                 ..
-            }) => (false, None),
+            }) => {
+                // Only the whole file if the request asked for all of it.
+                limited_without_size = range != "bytes=0-";
+                (false, None)
+            }
             other => {
                 return Err(Error::RangeNotHonored {
                     expected: 0,
@@ -532,6 +570,7 @@ pub(crate) async fn probe(client: &Client, url: &Url, session: &Session) -> Resu
         validators,
         file_name,
         content_type,
+        limited_without_size,
     })
 }
 

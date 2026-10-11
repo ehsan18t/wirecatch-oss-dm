@@ -39,6 +39,8 @@ struct File {
     /// Bytes per second, if slowed down.
     bps: Option<u64>,
     content_type: Option<String>,
+    /// The next this many requests are answered with this status instead.
+    refuse: Option<(u16, usize)>,
 }
 
 /// One request as the server saw it.
@@ -46,6 +48,23 @@ struct File {
 pub struct Seen {
     pub path: String,
     pub headers: HeaderMap,
+    pub status: u16,
+}
+
+impl Seen {
+    /// The range asked for, `[start, end)`; `end` is `None` for an open range
+    /// such as `bytes=100-`.
+    pub fn range(&self) -> Option<(u64, Option<u64>)> {
+        let value = self.headers.get(header::RANGE)?.to_str().ok()?;
+        let (a, b) = value.strip_prefix("bytes=")?.split_once('-')?;
+        let start = a.parse().ok()?;
+        let end = if b.is_empty() {
+            None
+        } else {
+            Some(b.parse::<u64>().ok()?.checked_add(1)?)
+        };
+        Some((start, end))
+    }
 }
 
 #[derive(Default)]
@@ -99,6 +118,12 @@ impl FileServer {
         self.change(path, |f| f.bps = bps);
     }
 
+    /// Answers the next `times` requests for `path` with `status` (and no
+    /// body), the way a video server sometimes turns a good address away.
+    pub fn refuse(&self, path: &str, status: u16, times: usize) {
+        self.change(path, |f| f.refuse = Some((status, times)));
+    }
+
     fn change(&self, path: &str, change: impl FnOnce(&mut File)) {
         let key = format!("/{}", path.trim_start_matches('/'));
         if let Some(file) = self.inner.files.lock().unwrap().get_mut(&key) {
@@ -121,15 +146,38 @@ impl FileServer {
 }
 
 async fn serve(State(inner): State<Arc<Files>>, uri: Uri, headers: HeaderMap) -> Response {
+    let found = {
+        let mut files = inner.files.lock().unwrap();
+        files.get_mut(uri.path()).map(|file| {
+            let refused = match &mut file.refuse {
+                Some((status, times)) if *times > 0 => {
+                    *times -= 1;
+                    Some(*status)
+                }
+                _ => None,
+            };
+            (file.clone(), refused)
+        })
+    };
+    let status = match &found {
+        None => 404,
+        Some((_, Some(refused))) => *refused,
+        Some(_) if headers.contains_key(header::RANGE) => 206,
+        Some(_) => 200,
+    };
     inner.seen.lock().unwrap().push(Seen {
         path: uri.path().to_string(),
         headers: headers.clone(),
+        status,
     });
-    let Some(file) = inner.files.lock().unwrap().get(uri.path()).cloned() else {
-        return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::empty())
-            .unwrap();
+    let file = match found {
+        Some((file, None)) => file,
+        _ => {
+            return Response::builder()
+                .status(StatusCode::from_u16(status).unwrap())
+                .body(Body::empty())
+                .unwrap();
+        }
     };
     let len = file.body.len() as u64;
     let range = headers
@@ -436,6 +484,18 @@ pub async fn harness(sources: MediaAddonSources) -> Harness {
     let sources = Arc::new(sources);
     Harness::configured(Arc::new(move |config| {
         config.with_addon_sources((*sources).clone())
+    }))
+    .await
+}
+
+/// A harness whose media add-on comes from `sources`, and whose page videos
+/// read the page again after `delays` when a format's address is refused.
+pub async fn harness_refreshing(sources: MediaAddonSources, delays: Vec<Duration>) -> Harness {
+    let sources = Arc::new(sources);
+    Harness::configured(Arc::new(move |config| {
+        config
+            .with_addon_sources((*sources).clone())
+            .with_media_refresh_delays(delays.clone())
     }))
     .await
 }

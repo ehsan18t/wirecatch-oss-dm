@@ -3,6 +3,7 @@
 //! after a restart.
 
 use std::path::Path;
+use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
@@ -12,8 +13,8 @@ use wirecatch_protocol::extension::{AddAction, MediaKind};
 
 use crate::common::{Harness, test_data, wait_until};
 use crate::media_support::{
-    FileServer, Releases, args, harness, install, media_capture, next_event, publish, real_ffmpeg,
-    tell_tool, ytdlp_calls,
+    FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
+    publish, real_ffmpeg, tell_tool, ytdlp_calls,
 };
 
 fn select(option: &str) -> MediaSelection {
@@ -345,6 +346,190 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     }
     // The page was read again when the download started (addresses expire).
     assert_eq!(ytdlp_calls(&h).len(), 2);
+}
+
+/// Statuses a row went through, from the events received so far.
+fn statuses_seen(
+    ui: &mut tokio::sync::broadcast::Receiver<UiEvent>,
+    id: wirecatch_protocol::DownloadId,
+) -> Vec<(DownloadStatus, Option<String>)> {
+    let mut seen = Vec::new();
+    loop {
+        match ui.try_recv() {
+            Ok(UiEvent::DownloadsChanged(rows)) => seen.extend(
+                rows.into_iter()
+                    .filter(|r| r.id == id)
+                    .map(|r| (r.status, r.error.map(|e| e.message))),
+            ),
+            Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+            Err(_) => return seen,
+        }
+    }
+}
+
+/// Starts the 1080p video and audio of `page_info` from page `watch/<n>`.
+async fn start_page_video(
+    h: &Harness,
+    server: &FileServer,
+    n: u32,
+) -> wirecatch_protocol::DownloadId {
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            &server.url(&format!("watch/{n}")),
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    h.manager.list_downloads()[0].id
+}
+
+const QUICK: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(50),
+    Duration::from_millis(50),
+];
+
+/// A video server sometimes refuses a good address for a while: the page is
+/// read again for fresh addresses and the download goes on by itself, without
+/// the row ever saying it failed and without downloading the finished audio
+/// again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_format_address_is_read_again_and_the_download_goes_on() {
+    let server = FileServer::start().await;
+    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), QUICK.to_vec()).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    server.refuse("fmt/video.mp4", 403, 1);
+    let mut ui = h.manager.subscribe();
+
+    let id = start_page_video(&h, &server, 20).await;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+
+    assert!(Path::new(&done.path).is_file());
+    // Read for the choice, at the start, and once more after the refusal.
+    assert_eq!(ytdlp_calls(&h).len(), 3);
+    let statuses: Vec<u16> = server
+        .requests("fmt/video.mp4")
+        .iter()
+        .map(|s| s.status)
+        .collect();
+    assert_eq!(statuses.first(), Some(&403));
+    assert!(statuses[1..].iter().all(|s| *s == 206), "{statuses:?}");
+    // The audio finished in the first attempt and was kept.
+    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+    for (status, error) in statuses_seen(&mut ui, id) {
+        assert_ne!(status, DownloadStatus::Failed, "{error:?}");
+        assert_eq!(error, None);
+    }
+}
+
+/// When every try with fresh addresses is refused too, the row fails with a
+/// message that says what happened, without blaming an expired address.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_format_address_refused_every_time_ends_with_a_plain_error() {
+    let server = FileServer::start().await;
+    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), QUICK.to_vec()).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    server.refuse("fmt/video.mp4", 403, 1000);
+
+    let id = start_page_video(&h, &server, 21).await;
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+
+    // The choice, the first attempt and three more, each with a fresh read.
+    assert_eq!(ytdlp_calls(&h).len(), 1 + 1 + QUICK.len());
+    assert_eq!(server.requests("fmt/video.mp4").len(), 1 + QUICK.len());
+    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+    let error = failed.error.unwrap();
+    assert_eq!(error.fix, Some(FixAction::Retry));
+    assert!(error.message.contains("answered 403"), "{}", error.message);
+    assert!(
+        error.message.contains("read the page again"),
+        "{}",
+        error.message
+    );
+    assert!(!error.message.contains("expire"), "{}", error.message);
+    assert!(!error.message.contains('\u{2014}'), "{}", error.message);
+    assert!(error.message.ends_with('.'), "{}", error.message);
+}
+
+/// Pausing while the download waits to read the page again stops the wait at
+/// once; resuming later goes on with the finished parts kept.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pausing_while_waiting_to_read_the_page_again_stops_it() {
+    let server = FileServer::start().await;
+    let long = vec![Duration::from_secs(120)];
+    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), long).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    server.refuse("fmt/video.mp4", 403, 1000);
+
+    let id = start_page_video(&h, &server, 22).await;
+    wait_until("the refusal", || {
+        (!server.requests("fmt/video.mp4").is_empty()).then_some(())
+    })
+    .await;
+    // Waiting: the row says it is connecting, not that it failed.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let waiting = h.manager.list_downloads().remove(0);
+    assert_eq!(waiting.status, DownloadStatus::Connecting);
+    assert_eq!(waiting.error, None);
+    assert_eq!(ytdlp_calls(&h).len(), 2);
+
+    h.manager.pause(id).unwrap();
+    // Far sooner than the two minutes it was waiting for.
+    h.wait_status(id, DownloadStatus::Paused).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        ytdlp_calls(&h).len(),
+        2,
+        "the page was read again after the pause"
+    );
+
+    // Once the server takes the address again, resuming finishes the video
+    // without fetching the finished audio again.
+    server.refuse("fmt/video.mp4", 403, 0);
+    h.manager.resume(id).unwrap();
+    h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+}
+
+/// yt-dlp's `http_chunk_size` for a format: no request for that format asks
+/// for more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_formats_chunk_size_limits_every_request_for_it() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let mut info: serde_json::Value =
+        serde_json::from_str(&page_info(&server, &video, &audio)).unwrap();
+    let chunk = 64 * 1024u64;
+    for format in info["formats"].as_array_mut().unwrap() {
+        format["downloader_options"] = serde_json::json!({"http_chunk_size": chunk});
+    }
+    tell_tool(&h, "info.json", &info.to_string());
+
+    let id = start_page_video(&h, &server, 23).await;
+    h.wait_status(id, DownloadStatus::Completed).await;
+
+    let requests = server.requests("fmt/video.mp4");
+    assert!(requests.len() >= 5, "{} requests", requests.len());
+    for seen in requests {
+        let (start, end) = seen.range().expect("a request without a range");
+        let end = end.expect("a request for a range with no end");
+        assert!(end - start <= chunk, "asked for {} bytes", end - start);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

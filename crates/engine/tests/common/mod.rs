@@ -1,10 +1,12 @@
 //! A small HTTP server for tests: serves a byte buffer with optional range
 //! support, per-connection throttling, injected disconnects, custom headers,
-//! redirects, busy answers with `Retry-After` and a connection limit. Every
-//! request is logged with its headers so tests can check what was sent.
+//! redirects, busy answers with `Retry-After`, a connection limit and a limit on
+//! how much one request may ask for. Every request is logged with its headers
+//! and the connection it came on, so tests can check what was sent.
 
 #![allow(dead_code)]
 
+use std::net::SocketAddr;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +14,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::Response;
 use axum::routing::get;
@@ -44,6 +46,12 @@ pub struct Config {
     /// Requests with these sequence numbers are accepted but never answered.
     pub hang: Option<Range<usize>>,
     pub content_type: Option<String>,
+    /// Requests that ask for more than this many bytes, ask for a range with
+    /// no end, or ask for no range at all are refused with `403`, the way some
+    /// video servers turn away (or slow down) large requests.
+    pub max_range: Option<u64>,
+    /// Range answers give no size (`Content-Range: bytes 0-99/*`).
+    pub unknown_total: bool,
 }
 
 /// Answers a range of requests with a busy status instead of the file.
@@ -71,11 +79,30 @@ pub struct Seen {
     pub path: String,
     pub headers: HeaderMap,
     pub status: u16,
+    /// The client's end of the TCP connection the request came on: requests
+    /// with the same one shared a connection.
+    pub peer: SocketAddr,
 }
 
 impl Seen {
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name).and_then(|v| v.to_str().ok())
+    }
+
+    /// The range asked for in the `Range` header, `[start, end)`; `end` is
+    /// `None` for an open range such as `bytes=100-`.
+    pub fn range(&self) -> Option<(u64, Option<u64>)> {
+        let (a, b) = self
+            .header("range")?
+            .strip_prefix("bytes=")?
+            .split_once('-')?;
+        let start = a.parse().ok()?;
+        let end = if b.is_empty() {
+            None
+        } else {
+            Some(b.parse::<u64>().ok()?.checked_add(1)?)
+        };
+        Some((start, end))
     }
 }
 
@@ -123,7 +150,14 @@ impl TestServer {
             .with_state(inner.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap()
+        });
         Self {
             base: format!("http://{addr}"),
             data,
@@ -191,20 +225,50 @@ fn admit(current: &AtomicUsize, limit: usize) -> Option<usize> {
     }
 }
 
-fn log(inner: &Inner, uri: &Uri, headers: &HeaderMap, status: StatusCode) {
-    inner.stats.log.lock().unwrap().push(Seen {
-        at: Instant::now(),
-        wall: SystemTime::now(),
-        path: uri.path().to_string(),
-        headers: headers.clone(),
-        status: status.as_u16(),
-    });
+/// Whether a request asks for more than `max` bytes, for a range with no end,
+/// or for no range at all.
+fn asks_too_much(headers: &HeaderMap, max: u64) -> bool {
+    let asked = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("bytes="))
+        .and_then(|v| v.split_once('-'))
+        .and_then(|(a, b)| Some((a.parse::<u64>().ok()?, b.parse::<u64>().ok()?)));
+    match asked {
+        Some((start, last)) => last < start || last - start + 1 > max,
+        None => true,
+    }
 }
 
-async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) -> Response {
+async fn serve(
+    State(inner): State<Arc<Inner>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
     let config = inner.config.lock().unwrap().clone();
     let len = inner.data.len() as u64;
     let index = inner.stats.requests.fetch_add(1, Ordering::SeqCst);
+    let log = |inner: &Inner, uri: &Uri, headers: &HeaderMap, status: StatusCode| {
+        inner.stats.log.lock().unwrap().push(Seen {
+            at: Instant::now(),
+            wall: SystemTime::now(),
+            path: uri.path().to_string(),
+            headers: headers.clone(),
+            status: status.as_u16(),
+            peer,
+        });
+    };
+
+    if let Some(max) = config.max_range
+        && asks_too_much(&headers, max)
+    {
+        log(&inner, &uri, &headers, StatusCode::FORBIDDEN);
+        return Response::builder()
+            .status(StatusCode::FORBIDDEN)
+            .body(Body::empty())
+            .unwrap();
+    }
 
     if let Some((path, location)) = &config.redirect
         && uri.path() == path
@@ -269,9 +333,14 @@ async fn serve(State(inner): State<Arc<Inner>>, uri: Uri, headers: HeaderMap) ->
                 _ => end,
             };
             status = StatusCode::PARTIAL_CONTENT;
+            let total = if config.unknown_total {
+                "*".to_string()
+            } else {
+                len.to_string()
+            };
             builder = builder.status(status).header(
                 header::CONTENT_RANGE,
-                format!("bytes {start}-{}/{len}", end - 1),
+                format!("bytes {start}-{}/{total}", end - 1),
             );
             (start, end)
         }

@@ -142,6 +142,12 @@
 //! hands its work to the connections that are running, and the download
 //! finishes with those.
 //!
+//! Some servers slow down any single request for more than a certain amount,
+//! as video sites do to make players fetch a little at a time. Set
+//! [`DownloadOptions::max_request_bytes`] for those: no request then asks for
+//! more, and each connection fetches its part as a series of requests, one
+//! after another on the same connection.
+//!
 //! All connections share one TLS session cache for the whole process, so only
 //! the first connection to a host does a full handshake and later ones, in the
 //! same download or the next, resume its session. The system's root
