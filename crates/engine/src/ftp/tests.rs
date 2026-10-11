@@ -219,3 +219,46 @@ async fn an_untrusted_certificate_is_refused() {
     assert!(error.to_string().contains("certificate"), "{error}");
     assert_eq!(server.stats.count("USER"), 0, "no credentials sent");
 }
+
+#[tokio::test]
+async fn a_reply_sent_ahead_of_encryption_is_refused() {
+    let file = data(1000);
+    let (tls, roots) = test_tls();
+    let mut config = served(&file);
+    config.tls = Some(tls);
+    // A forged "230" right behind "234", in the clear: it must not be read as
+    // if it had come over TLS.
+    config.inject_after_auth = true;
+    let server = FtpServer::start(config).await;
+
+    let error = secure_download(&server, "ftpes", roots).await.unwrap_err();
+
+    assert!(matches!(error, Error::Network(_)), "{error:?}");
+    assert!(
+        error
+            .to_string()
+            .contains("unexpected data before encryption"),
+        "{error}"
+    );
+    assert_eq!(server.stats.count("USER"), 0, "no credentials sent");
+}
+
+#[tokio::test]
+async fn a_server_refusing_to_encrypt_data_is_not_used() {
+    let file = data(1000);
+    let (tls, roots) = test_tls();
+    let mut config = served(&file);
+    config.tls = Some(tls);
+    config.refuse_prot_p = true;
+    let server = FtpServer::start(config).await;
+
+    let error = secure_download(&server, "ftpes", roots).await.unwrap_err();
+
+    assert!(
+        matches!(error, Error::FtpTlsUnavailable { .. }),
+        "{error:?}"
+    );
+    assert_eq!(server.stats.count("PROT P"), 1);
+    assert_eq!(server.stats.count("RETR"), 0, "nothing sent in the clear");
+    assert_eq!(server.stats.count("EPSV"), 0);
+}

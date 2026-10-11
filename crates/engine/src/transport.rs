@@ -276,6 +276,19 @@ async fn open_http(
     })
 }
 
+/// The first of `names` that is set (and not empty) in the environment, as
+/// `env` reads it.
+#[cfg_attr(not(feature = "http3"), allow(dead_code))]
+pub(crate) fn proxy_variable(
+    names: &[&'static str],
+    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Option<&'static str> {
+    names
+        .iter()
+        .copied()
+        .find(|name| env(name).is_some_and(|value| !value.is_empty()))
+}
+
 /// The first request gets the same retry treatment as every later one: a server
 /// can drop a connection before sending any headers.
 ///

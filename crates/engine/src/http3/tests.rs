@@ -17,6 +17,7 @@ use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
 use h3_server::{Cert, Counts};
+use reqwest::header::HeaderValue;
 
 #[test]
 fn alt_svc_values() {
@@ -34,6 +35,36 @@ fn alt_svc_values() {
     assert_eq!(h3_port("clear", host), None);
     assert_eq!(h3_port(r#"h3=":0""#, host), None);
     assert_eq!(h3_port(r#"h2=":443""#, host), None);
+}
+
+#[test]
+fn http3_is_not_used_through_a_proxy() {
+    use std::ffi::OsString;
+
+    let opts = crate::download::DownloadOptions::default();
+    let clients = Clients::with_roots(&opts, rustls::RootCertStore::empty());
+    let url = Url::parse("https://files.example/a.iso").unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert("alt-svc", HeaderValue::from_static(r#"h3=":443""#));
+    let advertised = |env: &dyn Fn(&str) -> Option<OsString>| {
+        Origin::advertised_in(&url, &headers, None, clients.tls(), &opts, env).is_some()
+    };
+
+    assert!(advertised(&|_| None), "no proxy: HTTP/3 is used");
+    for variable in ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"] {
+        let env = move |name: &str| (name == variable).then(|| OsString::from("http://proxy:8080"));
+        assert!(
+            !advertised(&env),
+            "{variable} is set: QUIC would go around it"
+        );
+    }
+    // An empty variable sets no proxy, and an HTTP-only proxy does not apply.
+    assert!(advertised(
+        &|name: &str| (name == "HTTPS_PROXY").then(OsString::new)
+    ));
+    assert!(advertised(&|name: &str| {
+        (name == "HTTP_PROXY").then(|| OsString::from("http://proxy:8080"))
+    }));
 }
 
 fn test_data(len: usize) -> Bytes {
@@ -176,6 +207,10 @@ async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
 
     assert!(bytes == data, "downloaded bytes differ");
     assert!(requests(&h3) >= 1, "HTTP/3 was tried");
+    assert!(
+        requests(&h3) <= 4,
+        "and given up after it broke, not tried again"
+    );
     assert!(requests(&tcp) >= 2, "and abandoned for TCP");
 }
 

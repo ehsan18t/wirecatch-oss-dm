@@ -54,6 +54,12 @@ pub struct FtpConfig {
     /// How long to hold back the `426` after the client closed a data
     /// connection early.
     pub hold_abort_reply: Option<Duration>,
+    /// Sessions after the first `n` are accepted but never greeted.
+    pub silent_after: Option<usize>,
+    /// Sends a forged reply right behind `234`, before TLS starts.
+    pub inject_after_auth: bool,
+    /// Answers `PROT P` with `534`.
+    pub refuse_prot_p: bool,
 }
 
 impl Default for FtpConfig {
@@ -72,6 +78,9 @@ impl Default for FtpConfig {
             data_bps: None,
             drop_first: None,
             hold_abort_reply: None,
+            silent_after: None,
+            inject_after_auth: false,
+            refuse_prot_p: false,
         }
     }
 }
@@ -86,6 +95,7 @@ pub struct FtpStats {
     /// Most sessions logged in at the same time.
     pub max_logged_in: AtomicUsize,
     pub refused: AtomicUsize,
+    accepted: AtomicUsize,
     pub transfers: AtomicUsize,
     current_transfers: AtomicUsize,
     pub max_transfers: AtomicUsize,
@@ -94,6 +104,9 @@ pub struct FtpStats {
     pub rest_offsets: Mutex<Vec<u64>>,
     /// `426` replies currently held back (see `hold_abort_reply`).
     pub held_replies: AtomicUsize,
+    /// Transfers started on a control connection whose previous transfer
+    /// the client had cut short.
+    pub reused_after_abort: AtomicUsize,
     /// How each TLS data connection's handshake went.
     pub data_handshakes: Mutex<Vec<HandshakeKind>>,
 }
@@ -223,6 +236,12 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
     }
     let (_session, active) = Gauge::up(&stats.sessions, &stats.max_sessions);
     let over_limit = config.max_sessions.filter(|&(limit, _)| active > limit);
+    if config
+        .silent_after
+        .is_some_and(|n| stats.accepted.fetch_add(1, Ordering::SeqCst) >= n)
+    {
+        std::future::pending::<()>().await;
+    }
     let mut control = BufReader::new(stream);
     if let Some((_, Refuse::Greeting421)) = over_limit {
         stats.refused.fetch_add(1, Ordering::SeqCst);
@@ -245,6 +264,7 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
     let mut data_tls = false;
     let mut rest = 0u64;
     let mut passive: Option<TcpListener> = None;
+    let mut last_aborted = false;
     let mut line = String::new();
     loop {
         line.clear();
@@ -259,7 +279,13 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
         };
         match verb.as_str() {
             "AUTH" if config.tls.is_some() && !protected && arg.eq_ignore_ascii_case("TLS") => {
-                reply(&mut control, "234 Proceed with negotiation.").await?;
+                let answer = if config.inject_after_auth {
+                    "234 Proceed with negotiation.
+230 Forged: logged in."
+                } else {
+                    "234 Proceed with negotiation."
+                };
+                reply(&mut control, answer).await?;
                 let Some(tls) = &session_tls else {
                     unreachable!()
                 };
@@ -301,6 +327,9 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
             "NOOP" => reply(&mut control, "200 NOOP ok.").await?,
             _ if !logged_in => reply(&mut control, "530 Please login with USER and PASS.").await?,
             "PBSZ" => reply(&mut control, "200 PBSZ=0").await?,
+            "PROT" if config.refuse_prot_p => {
+                reply(&mut control, "534 Data protection is not available.").await?
+            }
             "PROT" if arg.eq_ignore_ascii_case("P") && protected => {
                 data_tls = true;
                 reply(&mut control, "200 PROT now Private.").await?;
@@ -363,6 +392,9 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
             }
             "RETR" => {
                 let offset = std::mem::take(&mut rest);
+                if std::mem::take(&mut last_aborted) {
+                    stats.reused_after_abort.fetch_add(1, Ordering::SeqCst);
+                }
                 let Some(listener) = passive.take() else {
                     reply(&mut control, "425 Use PASV or EPSV first.").await?;
                     continue;
@@ -417,6 +449,7 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                     // Broken off on purpose, or the client closed the connection.
                     Ok(false) | Err(_) => {
                         drop(data);
+                        last_aborted = true;
                         if let Some(hold) = config.hold_abort_reply {
                             stats.held_replies.fetch_add(1, Ordering::SeqCst);
                             tokio::time::sleep(hold).await;

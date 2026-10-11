@@ -555,3 +555,101 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     assert!(took < Duration::from_secs(2), "paused after {took:?}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
+    let data = test_data(8 * MIB);
+    let mut config = serving(&data);
+    config.data_bps = Some(4 * MIB as u64);
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("reuse");
+    let url = server.url("ftp", "", "pub/file.bin");
+
+    // Pause early, then resume: the resumed run's first transfer (from byte
+    // 0) is cut short at once, and its control connection carries on.
+    let cancel = CancellationToken::new();
+    let progress = Arc::new(Progress::default());
+    let seen = progress.clone();
+    cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    let outcome = download(request(&url, &dir, 2), progress, cancel)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+    let logins_before = server.stats.count("USER");
+    let transfers_before = server.stats.transfers.load(Ordering::SeqCst);
+
+    server.configure(|c| c.data_bps = None);
+    let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
+
+    assert!(resumed_from > 0);
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    let stats = &server.stats;
+    assert!(
+        stats.reused_after_abort.load(Ordering::SeqCst) >= 1,
+        "a transfer followed a cut-short one on the same control connection: {:?}",
+        stats.commands()
+    );
+    let logins = stats.count("USER") - logins_before;
+    let transfers = stats.transfers.load(Ordering::SeqCst) - transfers_before;
+    assert!(
+        logins < transfers,
+        "{logins} logins for {transfers} transfers"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
+    let data = test_data(8 * MIB);
+    let mut config = serving(&data);
+    config.data_bps = Some(2 * MIB as u64);
+    // Only the first session is greeted; the others wait forever.
+    config.silent_after = Some(1);
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("silent");
+
+    let cancel = CancellationToken::new();
+    let progress = Arc::new(Progress::default());
+    let seen = progress.clone();
+    let paused_at = cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    let outcome = download(
+        request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
+        progress,
+        cancel,
+    )
+    .await
+    .unwrap();
+
+    let took = since(&paused_at);
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+    assert!(took < Duration::from_secs(2), "paused after {took:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn cancelling_before_the_server_greets_returns_at_once() {
+    let mut config = serving(b"x");
+    config.silent_after = Some(0);
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("silent-first");
+
+    let cancel = CancellationToken::new();
+    let stats = server.stats.clone();
+    let cancelled_at = cancel_when(&cancel, move || stats.sessions.load(Ordering::SeqCst) >= 1);
+    let error = download(
+        request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
+        Arc::new(Progress::default()),
+        cancel,
+    )
+    .await
+    .unwrap_err();
+
+    let took = since(&cancelled_at);
+    assert!(matches!(error, Error::Cancelled), "{error:?}");
+    assert!(took < Duration::from_secs(2), "returned after {took:?}");
+    assert!(files_in(&dir).is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -25,6 +25,7 @@ use url::Url;
 use crate::download::{DownloadOptions, Shared};
 use crate::error::{Error, Result};
 use crate::http::{Failure, Session, parse_content_range, parse_retry_after};
+use crate::transport::proxy_variable;
 
 /// Longest wait for a QUIC handshake. A network that blocks UDP shows up as a
 /// handshake that never completes; this bounds how long a worker spends
@@ -65,10 +66,24 @@ impl Origin {
         tls: &rustls::ClientConfig,
         opts: &DownloadOptions,
     ) -> Option<Arc<Self>> {
+        Self::advertised_in(url, headers, peer, tls, opts, &|name| {
+            std::env::var_os(name)
+        })
+    }
+
+    /// [`Origin::advertised`], reading environment variables with `env`.
+    fn advertised_in(
+        url: &Url,
+        headers: &HeaderMap,
+        peer: Option<SocketAddr>,
+        tls: &rustls::ClientConfig,
+        opts: &DownloadOptions,
+        env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+    ) -> Option<Arc<Self>> {
         if url.scheme() != "https" {
             return None;
         }
-        if let Some(variable) = proxy_variable() {
+        if let Some(variable) = proxy_variable(HTTPS_PROXY_VARIABLES, env) {
             debug!(variable, "a proxy is set, so HTTP/3 is not used");
             return None;
         }
@@ -158,12 +173,8 @@ impl Origin {
     }
 }
 
-/// The proxy variable the HTTP client would use for `https`, if one is set.
-fn proxy_variable() -> Option<&'static str> {
-    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
-        .into_iter()
-        .find(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
-}
+/// The variables the HTTP client takes an `https` proxy from.
+const HTTPS_PROXY_VARIABLES: &[&str] = &["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"];
 
 /// The port of an `h3` alternative on `host` in an `Alt-Svc` value such as
 /// `h3=":443"; ma=86400, h3-29=":443"`. Drafts (`h3-29`) are not used.
