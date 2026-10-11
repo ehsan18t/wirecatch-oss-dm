@@ -114,6 +114,7 @@ async fn run(
             video,
             audio,
         } => run_page(&job, &format, video, audio, progress, cancel).await,
+        MediaJob::Unreadable => return Err(media::unreadable()),
     };
     match result {
         Err(_) if cancel.is_cancelled() => Ok(MediaDone::Paused),
@@ -639,6 +640,28 @@ mod tests {
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
         assert_eq!(options.headers.get("x-format").unwrap(), "yes");
+    }
+
+    #[tokio::test]
+    async fn a_job_that_cannot_be_read_never_runs() {
+        let job = Job {
+            output: PathBuf::from("/v/out.mp4"),
+            url: Url::parse("http://127.0.0.1:9/watch").unwrap(),
+            origin: Origin::default(),
+            tools: None,
+            options: DownloadOptions::default(),
+            temp_dir: PathBuf::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let progress = MediaProgress::default();
+        let ended = run(
+            job,
+            MediaJob::Unreadable,
+            &progress,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(ended, Err(media::unreadable()));
     }
 
     #[test]

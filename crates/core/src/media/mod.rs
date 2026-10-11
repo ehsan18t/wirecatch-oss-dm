@@ -48,6 +48,18 @@ pub(crate) enum MediaJob {
         /// The audio format id, when separate from the video.
         audio: Option<String>,
     },
+    /// What to download was stored but cannot be read back (a damaged
+    /// database). It never runs: downloading the link as a plain file would
+    /// save a web page, or worse.
+    Unreadable,
+}
+
+/// The message for a media download whose stored details cannot be read.
+pub(crate) fn unreadable() -> wirecatch_protocol::app::UserError {
+    wirecatch_protocol::app::UserError {
+        message: "The saved details of this video could not be read, so it cannot continue. Remove it and download the video again from its page.".into(),
+        fix: None,
+    }
 }
 
 /// The media part of a stored download.

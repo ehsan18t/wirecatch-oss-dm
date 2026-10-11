@@ -11,8 +11,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{error, warn};
-use wirecatch_protocol::app::{AppSettings, DownloadSummary, Queue};
+use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
 use wirecatch_protocol::extension::Header;
+use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::error::{CoreError, Result};
@@ -623,9 +624,34 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
         warn!(id = id.0, "skipping a stored download that cannot be read");
         return Ok(None);
     };
-    let media: Option<StoredMedia> = row
-        .get::<_, Option<String>>(16)?
-        .and_then(|json| from_json(&json, "download media"));
+    let mut status = status;
+    let mut error = row
+        .get::<_, Option<String>>(9)?
+        .and_then(|json| from_json(&json, "download error"));
+    let media: Option<StoredMedia> = match row.get::<_, Option<String>>(16)? {
+        None => None,
+        Some(json) => match from_json(&json, "download media") {
+            Some(media) => Some(media),
+            // Media whose details are damaged must never run as a plain
+            // download of its link (a page or a playlist).
+            None => {
+                if !matches!(
+                    status,
+                    DownloadStatus::Completed | DownloadStatus::Cancelled
+                ) {
+                    status = DownloadStatus::Failed;
+                    error = Some(crate::media::unreadable());
+                }
+                Some(StoredMedia {
+                    summary: MediaSummary {
+                        quality: "Unknown".into(),
+                        source: MediaKind::Page,
+                    },
+                    job: Some(crate::media::MediaJob::Unreadable),
+                })
+            }
+        },
+    };
     let file_name = PathBuf::from(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -644,9 +670,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             speed: 0,
             connections: 0,
             eta_secs: None,
-            error: row
-                .get::<_, Option<String>>(9)?
-                .and_then(|json| from_json(&json, "download error")),
+            error,
             added_at: row.get(10)?,
             completed_at: row.get(11)?,
             waiting: None,
@@ -860,6 +884,39 @@ mod tests {
         drop(store);
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![row]);
+    }
+
+    /// A media download whose stored details are damaged must not run as a
+    /// plain download of its page.
+    #[tokio::test]
+    async fn damaged_media_details_become_a_failed_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut row = download(1);
+        row.summary.status = DownloadStatus::Queued;
+        row.summary.error = None;
+        row.media = Some(StoredMedia {
+            summary: MediaSummary {
+                quality: "1080p".into(),
+                source: MediaKind::Page,
+            },
+            job: None,
+        });
+        store.save_downloads(vec![row]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute("UPDATE downloads SET media = '{\"broken'", [])
+            .unwrap();
+        drop(conn);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let loaded = &snapshot.downloads[0];
+        assert_eq!(loaded.summary.status, DownloadStatus::Failed);
+        assert_eq!(loaded.summary.error, Some(crate::media::unreadable()));
+        assert_eq!(
+            loaded.media.as_ref().and_then(|m| m.job.clone()),
+            Some(crate::media::MediaJob::Unreadable)
+        );
     }
 
     #[tokio::test]
