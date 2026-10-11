@@ -287,3 +287,26 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     assert_eq!(Path::new(&state.downloads[&id].row.path), path);
     state.assert_consistent();
 }
+
+/// A path held for a moment does not upset the consistency check, but a claim
+/// that belongs to no unfinished download does.
+#[tokio::test]
+async fn only_reservations_may_exceed_the_downloads_paths() {
+    let (manager, dir) = manager_with(
+        |_| Box::pin(std::future::pending()),
+        Duration::from_secs(1),
+        DEFAULT_CAPTURE_TIMEOUT,
+    )
+    .await;
+    let mut state = manager.lock();
+    let path = dir.path().join("moment.bin");
+    state.claimed.reserve(&path);
+    state.assert_consistent();
+    state.claimed.release(&path);
+    state.assert_consistent();
+    state.claimed.insert(&path);
+    let leaked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        state.assert_consistent();
+    }));
+    assert!(leaked.is_err(), "a claim of no download went unnoticed");
+}
