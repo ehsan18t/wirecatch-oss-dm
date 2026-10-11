@@ -18,6 +18,7 @@ import type {
   UiEvent,
   WaitReason,
 } from '@wirecatch/protocol';
+import { isProgramName } from '../filetypes';
 import { fileNameFromUrl, folderOf, hostOf, scheduleAllows } from '../format';
 import {
   bulkItem,
@@ -31,7 +32,7 @@ import {
 } from './mock-data';
 import {
   BackendError,
-  type AddonRequest,
+  type AddonRequestItem,
   type Backend,
   type SampleData,
   type ShellSignal,
@@ -42,13 +43,14 @@ import {
 export function mediaAddon(): AddonInfo {
   return {
     id: 'media',
+    // As the core describes it.
     name: 'Media add-on',
     description:
-      'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
+      'Downloads video and audio from sites such as YouTube (yt-dlp), and joins separate video and audio into one file (ffmpeg).',
     state: { type: 'not_installed' },
     installed_version: null,
-    latest_version: '2026.10.02',
-    size: 96 * 1024 * 1024,
+    latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',
+    size: 131 * 1024 * 1024,
   };
 }
 
@@ -66,17 +68,13 @@ const MEDIA_SAMPLES: ReadonlyArray<{ title: string; page: string; source: 'hls' 
   },
 ];
 
-/** The mock's stand-in for the core's list of file types that run code when opened. */
-const PROGRAM_TYPES = new Set(
-  'exe msi msix appx bat cmd com scr pif cpl ps1 vbs vbe js jse wsf wsh hta lnk url reg jar appimage sh run bin deb rpm apk py'.split(
-    ' ',
-  ),
-);
+/** The core's answer for a question that is no longer open. */
+const ALREADY_ANSWERED =
+  'That download was already confirmed or dismissed, or the browser took it back.';
 
-export function isProgramName(name: string): boolean {
-  const dot = name.lastIndexOf('.');
-  return dot > 0 && PROGRAM_TYPES.has(name.slice(dot + 1).toLowerCase());
-}
+/** The core's answer for a quality that needs the media add-on while it is missing. */
+export const ADDON_REQUIRED =
+  'This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again.';
 
 /** How long the mock spends joining video and audio after a media download. */
 const PROCESSING_MS = 2500;
@@ -153,6 +151,18 @@ export class MockBackend implements Backend {
         keywords: 'simulate addon add-on required youtube yt-dlp',
         run: () => this.simulateAddonRequired(),
       },
+      {
+        id: 'mock.elsewhere',
+        title: 'Pretend the oldest question was answered somewhere else',
+        keywords: 'simulate confirmation closed withdrawn another window',
+        run: () => this.simulateAnsweredElsewhere(),
+      },
+      {
+        id: 'mock.reading',
+        title: 'Pretend the browser sent a video page that takes a while to read',
+        keywords: 'simulate reading analysing page media',
+        run: () => this.simulateSlowReading(),
+      },
     ],
     now: () => this.#now(),
   };
@@ -166,13 +176,13 @@ export class MockBackend implements Backend {
   #mediaChoices: MediaChoice[] = [];
   #addons: AddonInfo[] = [mediaAddon()];
   /** Pages that asked for the media add-on; they continue once it is installed. */
-  #waitingForAddon: string[] = [];
-  #nextMediaId = 1;
+  #waitingForAddon: Array<{ id: number; url: string }> = [];
   #mediaIndex = 0;
   readonly #listeners = new Set<(e: UiEvent) => void>();
   readonly #files = new Map<string, SettingsProfile>();
   #nextId = 1;
   #nextQueueId = 4;
+  /** Confirmations and media choices share one id space, as in the core. */
   #nextPendingId = 1;
   #timer: ReturnType<typeof setInterval> | undefined;
   #captureTimer: ReturnType<typeof setTimeout> | undefined;
@@ -720,7 +730,7 @@ export class MockBackend implements Backend {
       exported_at: this.#now(),
       settings: structuredClone(this.#settings),
       queues: structuredClone(this.#queues),
-      addons: [],
+      addons: this.#addons.filter((a) => a.state.type !== 'not_installed').map((a) => a.id),
     });
   }
 
@@ -731,10 +741,25 @@ export class MockBackend implements Backend {
         'That file is not a Wirecatch settings file. Choose a file made with Export settings.',
       );
     }
+    const known = new Set(this.#queues.map((q) => q.id));
+    const added = profile.queues.filter((q) => !known.has(q.id)).length;
     this.#settings = structuredClone(profile.settings);
     this.#queues = structuredClone(profile.queues);
     this.#emit({ type: 'settings_changed', data: structuredClone(this.#settings) });
     this.#queuesChanged();
+    const folder = profile.settings.default_folder;
+    this.#emit({
+      type: 'settings_imported',
+      data: {
+        folders: [{ setting: 'Default folder', requested: folder, used: folder, resolved: folder }],
+        queues_added: added,
+        queues_updated: profile.queues.length - added,
+        // Like the core: offered, never installed by the import itself.
+        addons_to_offer: profile.addons.filter(
+          (id) => this.#addons.find((a) => a.id === id)?.state.type === 'not_installed',
+        ),
+      },
+    });
   }
 
   // ---- Browser captures ----
@@ -745,8 +770,9 @@ export class MockBackend implements Backend {
 
   async confirmCapture(id: number, confirmation: CaptureConfirmation) {
     const p = this.#pending.find((x) => x.id === id);
-    if (!p) throw new BackendError('That download was already answered.');
+    if (!p) throw new BackendError(ALREADY_ANSWERED);
     this.#pending = this.#pending.filter((x) => x.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
     const row = this.#create(p.url, {
       queue: confirmation.queue ?? p.queue,
       folder: confirmation.folder ?? p.folder,
@@ -758,7 +784,22 @@ export class MockBackend implements Backend {
   }
 
   async rejectCapture(id: number) {
+    if (!this.#pending.some((x) => x.id === id)) throw new BackendError(ALREADY_ANSWERED);
     this.#pending = this.#pending.filter((x) => x.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
+  }
+
+  /**
+   * Sample data only: the oldest open question is answered somewhere else (another window, or
+   * the browser took the download back), so the core closes it.
+   */
+  simulateAnsweredElsewhere(): void {
+    const question = this.#pending[0] ?? this.#mediaChoices[0] ?? this.#waitingForAddon[0];
+    if (!question) return;
+    this.#pending = this.#pending.filter((x) => x.id !== question.id);
+    this.#mediaChoices = this.#mediaChoices.filter((x) => x.id !== question.id);
+    this.#waitingForAddon = this.#waitingForAddon.filter((x) => x.id !== question.id);
+    this.#emit({ type: 'confirmation_closed', data: { id: question.id } });
   }
 
   /** Sample data only: pretends the browser extension handed over a download. */
@@ -805,12 +846,12 @@ export class MockBackend implements Backend {
   // ---- Media and add-ons ----
 
   /** Sample data only: the browser found media with several qualities. */
-  simulateMediaChoice(page?: string): void {
+  simulateMediaChoice(page?: string, id?: number): void {
     const sample = MEDIA_SAMPLES[this.#mediaIndex++ % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
     if (!sample) return;
     const MB = 1024 * 1024;
     const choice: MediaChoice = {
-      id: this.#nextMediaId++,
+      id: id ?? this.#nextPendingId++,
       title: sample.title,
       page_url: page ?? sample.page,
       options: [
@@ -850,8 +891,18 @@ export class MockBackend implements Backend {
       folder: folderFor('video', this.#settings),
       queue: this.#settings.extension.default_queue,
     };
+    // Like the core: the reading is announced, then the choice comes under the same id.
+    this.#emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
     this.#mediaChoices.push(choice);
     this.#emit({ type: 'media_choice_requested', data: structuredClone(choice) });
+  }
+
+  /** Sample data only: a page that takes three seconds to read before its qualities show. */
+  simulateSlowReading(): void {
+    const id = this.#nextPendingId++;
+    const page = 'https://video.example.com/watch/slow-page';
+    this.#emit({ type: 'media_analysing', data: { id, url: page } });
+    setTimeout(() => this.simulateMediaChoice(page, id), 3000);
   }
 
   /** Sample data only: a page that needs the media add-on to download. */
@@ -862,29 +913,39 @@ export class MockBackend implements Backend {
       this.simulateMediaChoice(page);
       return;
     }
-    this.#waitingForAddon.push(page);
-    this.#addonRequest = { addon: structuredClone(addon), url: page };
-    this.#emit({ type: 'addon_required', data: structuredClone(this.#addonRequest) });
+    const id = this.#nextPendingId++;
+    this.#waitingForAddon.push({ id, url: page });
+    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page, id } });
   }
-
-  #addonRequest: AddonRequest | null = null;
 
   async pendingMediaChoices() {
     return structuredClone(this.#mediaChoices);
   }
 
-  async takeAddonRequest() {
-    const request = this.#addonRequest;
-    this.#addonRequest = null;
-    return request;
+  async pendingAddonRequests(): Promise<AddonRequestItem[]> {
+    const addon = this.#addon('media');
+    return this.#waitingForAddon.map((w) => ({ ...w, addon: structuredClone(addon) }));
   }
 
   async chooseMedia(id: number, selection: MediaSelection) {
     const choice = this.#mediaChoices.find((c) => c.id === id);
-    if (!choice) throw new BackendError('That video was already downloaded or dismissed.');
+    if (!choice) throw new BackendError(ALREADY_ANSWERED);
     const option = choice.options.find((o) => o.id === selection.option_id);
-    if (!option) throw new BackendError('That quality is no longer offered. Pick another one.');
+    if (!option) {
+      throw new BackendError(
+        'That quality is not offered for this video. Choose one of the listed options.',
+      );
+    }
+    const addon = this.#addon('media');
+    const ready = addon.state.type === 'installed' || addon.state.type === 'update_available';
+    if (option.needs_ffmpeg && !ready) {
+      // Like the core: ask for the add-on and keep the choice open.
+      const url = choice.page_url ?? choice.title;
+      this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url, id } });
+      throw new BackendError(ADDON_REQUIRED);
+    }
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
     const ext = option.audio_only ? 'm4a' : 'mp4';
     const name = selection.file_name?.trim() || `${choice.title}.${ext}`;
     const row = this.#create(choice.page_url ?? choice.title, {
@@ -908,7 +969,13 @@ export class MockBackend implements Backend {
   }
 
   async dismissMediaChoice(id: number) {
+    // Like the core, this drops a quality choice or a page still waiting for the add-on.
+    const known =
+      this.#mediaChoices.some((c) => c.id === id) || this.#waitingForAddon.some((w) => w.id === id);
+    if (!known) throw new BackendError(ALREADY_ANSWERED);
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    this.#waitingForAddon = this.#waitingForAddon.filter((w) => w.id !== id);
+    this.#emit({ type: 'confirmation_closed', data: { id } });
   }
 
   #addon(id: string): AddonInfo {
@@ -928,12 +995,46 @@ export class MockBackend implements Backend {
   async installAddon(id: string) {
     const addon = this.#addon(id);
     if (addon.state.type === 'installing') return;
+    this.#beforeInstall.set(id, structuredClone(addon.state));
     addon.state = { type: 'installing', data: { done: 0, total: addon.size } };
     this.#addonsChanged();
   }
 
+  /** What each add-on was before its install or update started, for Stop. */
+  readonly #beforeInstall = new Map<string, AddonInfo['state']>();
+
   async updateAddon(id: string) {
     await this.installAddon(id);
+  }
+
+  /** Set by tests and sample data: what the next update check finds. */
+  nextUpdateCheck: 'up-to-date' | 'newer' | 'unreachable' = 'up-to-date';
+
+  async checkAddonUpdates() {
+    const addon = this.#addon('media');
+    const installed = addon.state.type === 'installed' || addon.state.type === 'update_available';
+    if (installed && this.nextUpdateCheck === 'unreachable') {
+      throw new BackendError(
+        'Wirecatch could not check for a newer media add-on (no connection). Check your internet connection, then try again.',
+      );
+    }
+    if (installed && this.nextUpdateCheck === 'newer') {
+      addon.state = { type: 'update_available' };
+      addon.latest_version = 'yt-dlp 2026.10.30, ffmpeg 9.0.2, Deno 2.9.7';
+      this.#addonsChanged();
+    }
+    return structuredClone(this.#addons);
+  }
+
+  async cancelAddonOperation(id: string) {
+    const addon = this.#addon(id);
+    if (addon.state.type !== 'installing') return;
+    // Like the core: an update keeps the installed version; a first install leaves nothing.
+    const before = this.#beforeInstall.get(id);
+    const kept = before?.type === 'installed' || before?.type === 'update_available';
+    addon.state = kept && before ? before : { type: 'not_installed' };
+    if (!kept) addon.installed_version = null;
+    this.#addonsChanged();
   }
 
   async removeAddon(id: string) {
@@ -956,13 +1057,12 @@ export class MockBackend implements Backend {
         continue;
       }
       addon.state = { type: 'installed' };
-      this.#addonRequest = null;
       addon.installed_version = addon.latest_version;
-      // What asked for the add-on continues on its own.
+      // What asked for the add-on continues on its own, under the same id.
       const waiting = this.#waitingForAddon;
       this.#waitingForAddon = [];
       queueMicrotask(() => {
-        for (const page of waiting) this.simulateMediaChoice(page);
+        for (const page of waiting) this.simulateMediaChoice(page.url, page.id);
       });
     }
     if (changed) this.#addonsChanged();
@@ -989,7 +1089,7 @@ export class MockBackend implements Backend {
     }
     if (isProgramName(row.file_name) && !allowProgram) {
       throw new BackendError(
-        `${row.file_name} is a program. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
+        `${row.file_name} is a type of file that can run code. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
       );
     }
     this.opened.push(id);

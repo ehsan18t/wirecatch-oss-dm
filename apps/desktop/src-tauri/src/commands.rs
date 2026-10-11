@@ -11,7 +11,8 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::api::{self, CommandResult, Reveal};
 use crate::host::Core;
-use crate::questions::{AddonRequest, Questions};
+use wirecatch_core::AddonRequestItem;
+
 use crate::window::LaunchLinks;
 
 type CoreState<'a> = State<'a, Core>;
@@ -221,55 +222,51 @@ pub async fn choose_media(
     core: CoreState<'_>,
     id: u64,
     selection: MediaSelection,
-    questions: State<'_, Questions>,
 ) -> CommandResult<()> {
-    api::choose_media(core.manager().await?, id, selection)?;
-    questions.answered_media(id);
-    Ok(())
+    api::choose_media(core.manager().await?, id, selection).await
 }
 
 #[tauri::command]
-pub async fn dismiss_media_choice(
-    core: CoreState<'_>,
-    id: u64,
-    questions: State<'_, Questions>,
-) -> CommandResult<()> {
-    questions.answered_media(id);
+pub async fn dismiss_media_choice(core: CoreState<'_>, id: u64) -> CommandResult<()> {
     api::dismiss_media_choice(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn pending_media_choices(
-    core: CoreState<'_>,
-    questions: State<'_, Questions>,
-) -> CommandResult<Vec<MediaChoice>> {
-    Ok(api::pending_media_choices(
-        core.manager().await?,
-        &questions,
-    ))
+pub async fn pending_media_choices(core: CoreState<'_>) -> CommandResult<Vec<MediaChoice>> {
+    Ok(api::pending_media_choices(core.manager().await?))
 }
 
 #[tauri::command]
-pub fn take_addon_request(questions: State<'_, Questions>) -> Option<AddonRequest> {
-    questions.take_addon_request()
+pub async fn pending_addon_requests(core: CoreState<'_>) -> CommandResult<Vec<AddonRequestItem>> {
+    Ok(api::pending_addon_requests(core.manager().await?))
 }
 
 #[tauri::command]
 pub async fn list_addons(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
-    api::list_addons(core.manager().await?)
+    Ok(api::list_addons(core.manager().await?))
 }
 
 #[tauri::command]
 pub async fn install_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::install_addon(core.manager().await?, &id)
+    api::install_addon(core.manager().await?, &id).await
 }
 
 #[tauri::command]
 pub async fn update_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::update_addon(core.manager().await?, &id)
+    api::update_addon(core.manager().await?, &id).await
 }
 
 #[tauri::command]
 pub async fn remove_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::remove_addon(core.manager().await?, &id)
+    api::remove_addon(core.manager().await?, &id).await
+}
+
+#[tauri::command]
+pub async fn cancel_addon_operation(core: CoreState<'_>, id: String) -> CommandResult<()> {
+    api::cancel_addon_operation(core.manager().await?, &id).await
+}
+
+#[tauri::command]
+pub async fn check_addon_updates(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
+    api::check_addon_updates(core.manager().await?).await
 }

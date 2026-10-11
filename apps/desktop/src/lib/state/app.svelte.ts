@@ -9,6 +9,7 @@ import type {
   DownloadId,
   DownloadSummary,
   FixAction,
+  ImportSummary,
   MediaChoice,
   MediaSelection,
   PendingCapture,
@@ -18,14 +19,31 @@ import type {
 } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
+import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend } from '../backend/types';
-import { extractUrls, formatTime, scheduleAllows } from '../format';
+import { extractUrls, formatTime, hostOf, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadStore } from './downloads.svelte';
 import { Hints } from './hints.svelte';
 import { countRows, visibleIds, type SortKey, type View } from './view';
 
 export type Screen = 'downloads' | 'settings';
+
+/**
+ * The add-on prompt: what needs the add-on and the id of what waits for it in the core, a page
+ * waiting for the add-on or a quality choice whose picked quality needs it. `url` may be empty.
+ */
+export interface AddonPrompt {
+  addon: AddonInfo;
+  url: string;
+  id: number;
+}
+
+/** A question the core asked, as shown on screen. `waiting` counts the ones queued behind it. */
+export type Question =
+  | { kind: 'capture'; capture: PendingCapture; waiting: number }
+  | { kind: 'addon'; request: AddonPrompt }
+  | { kind: 'media'; choice: MediaChoice; waiting: number };
 
 export type Dialog =
   | { kind: 'add'; urls: string[]; queue?: QueueId }
@@ -36,7 +54,8 @@ export type Dialog =
   | { kind: 'export' }
   | { kind: 'import' }
   | { kind: 'shortcuts' }
-  | { kind: 'open-program'; id: DownloadId };
+  | { kind: 'open-program'; id: DownloadId }
+  | { kind: 'remove-addon'; id: string };
 
 export interface Toast {
   id: number;
@@ -112,6 +131,8 @@ export class AppState {
   mediaChoices = $state<MediaChoice[]>([]);
   /** The quality picker was put aside; the choices still wait. */
   mediaHidden = $state(false);
+  /** Captured pages and streams being read for their qualities, shown as a quiet note. */
+  analysing = $state<Array<{ id: number; url: string }>>([]);
   /** Saving the download list failed; shown in a banner until dealt with. */
   storageProblem = $state<string | null>(null);
   /** Add-ons and their state; `null` until loaded. */
@@ -119,7 +140,16 @@ export class AppState {
   /** Why the add-ons could not be listed, shown in their settings section. */
   addonsError = $state<string | null>(null);
   /** A capture that needs an add-on; the prompt offers to install it. */
-  addonRequest = $state<{ addon: AddonInfo; url: string } | null>(null);
+  addonRequest = $state<AddonPrompt | null>(null);
+  /** The add-on prompt was put aside; what waits for the add-on still waits. */
+  addonHidden = $state(false);
+  /**
+   * A quality the person picked that needs the media add-on first: it downloads by itself once
+   * the add-on is installed, and its picker stays out of the way meanwhile.
+   */
+  choiceAwaitingAddon = $state<{ id: number; selection: MediaSelection } | null>(null);
+  /** What the last settings import changed, shown in the import dialog. */
+  lastImport = $state<ImportSummary | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
   /** Refreshed every half minute so schedule labels stay true. */
@@ -128,6 +158,10 @@ export class AppState {
   now = $state(new Date());
 
   #toastId = 1;
+  /** Questions this window answered; their `confirmation_closed` needs no note. */
+  // Bookkeeping only: nothing renders from it, so it need not be reactive.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  readonly #answering = new Set<number>();
   #unsubscribe: (() => void) | null = null;
   #clock: ReturnType<typeof setInterval> | undefined;
   /** Where "now" comes from: the system clock, or the sample clock of the mock backend. */
@@ -179,6 +213,27 @@ export class AppState {
   });
 
   defaultQueue = $derived(this.queues.find((q) => q.is_default) ?? this.queues[0]);
+
+  /** Media choices that wait for the person; one that waits for the add-on is already answered. */
+  openMediaChoices = $derived(
+    this.mediaChoices.filter((c) => c.id !== this.choiceAwaitingAddon?.id),
+  );
+
+  /**
+   * The question to show now, one at a time and never over another dialog: a browser download
+   * to confirm first, then an add-on to install (it may be what a picked quality waits for),
+   * then a quality to pick.
+   */
+  question = $derived.by((): Question | null => {
+    if (this.dialog !== null) return null;
+    const capture = this.pendingHidden ? undefined : this.pending[0];
+    if (capture) return { kind: 'capture', capture, waiting: this.pending.length - 1 };
+    if (this.addonRequest && !this.addonHidden)
+      return { kind: 'addon', request: this.addonRequest };
+    const choice = this.mediaHidden ? undefined : this.openMediaChoices[0];
+    if (choice) return { kind: 'media', choice, waiting: this.openMediaChoices.length - 1 };
+    return null;
+  });
 
   queueById(id: QueueId): Queue | undefined {
     return this.queues.find((q) => q.id === id);
@@ -296,11 +351,12 @@ export class AppState {
       const fresh = choices.filter((c) => !this.mediaChoices.some((k) => k.id === c.id));
       if (fresh.length > 0) this.mediaChoices = [...this.mediaChoices, ...fresh];
     } catch {
-      // Not offered (yet): the events still bring new choices.
+      // The events still bring new choices.
     }
     try {
-      const request = await this.backend.takeAddonRequest();
-      if (request) this.addonRequest = request;
+      // Pages that wait for the add-on: offer the install again, for the oldest one.
+      const [waiting] = await this.backend.pendingAddonRequests();
+      if (waiting && !this.addonRequest) this.addonRequest = { ...waiting };
     } catch {
       // Same: the event still brings a new prompt.
     }
@@ -380,6 +436,12 @@ export class AppState {
         }
         // A new question always shows, even if an earlier one was put aside.
         this.mediaHidden = false;
+        this.analysing = this.analysing.filter((a) => a.id !== event.data.id);
+        break;
+      case 'media_analysing':
+        if (!this.analysing.some((a) => a.id === event.data.id)) {
+          this.analysing = [...this.analysing, event.data];
+        }
         break;
       case 'addons_changed': {
         this.addons = event.data;
@@ -395,10 +457,29 @@ export class AppState {
             this.addonRequest = { ...asked, addon: fresh };
           }
         }
+        const waiting = this.choiceAwaitingAddon;
+        const media = event.data.find((a) => a.id === MEDIA_ADDON);
+        if (waiting && isInstalled(media)) {
+          this.choiceAwaitingAddon = null;
+          void this.chooseMedia(waiting.id, waiting.selection);
+        } else if (waiting && media?.state.type === 'not_installed') {
+          // The install was stopped: nothing will come, so the picker comes back.
+          this.choiceAwaitingAddon = null;
+          if (this.addonRequest?.id === waiting.id) this.closeAddonRequest();
+          this.mediaHidden = false;
+        }
         break;
       }
       case 'addon_required':
-        this.addonRequest = event.data;
+        this.addonRequest = { ...event.data };
+        // A new question always shows, even if an earlier one was put aside.
+        this.addonHidden = false;
+        break;
+      case 'confirmation_closed':
+        this.#questionClosed(event.data.id);
+        break;
+      case 'settings_imported':
+        this.lastImport = event.data;
         break;
       case 'storage_failed':
         // Not a passing note: it stays until the person deals with it.
@@ -827,6 +908,8 @@ export class AppState {
   async importSettings(): Promise<string | null> {
     const path = await this.#run(() => this.backend.pickOpenFile());
     if (!path) return null;
+    // The core reports what changed with `settings_imported`.
+    this.lastImport = null;
     const ok = await this.#run(async () => {
       await this.backend.importSettings(path);
       return true;
@@ -845,11 +928,14 @@ export class AppState {
   // ---- Browser captures ----
 
   async confirmCapture(id: number, answer: CaptureConfirmation): Promise<void> {
+    this.#answering.add(id);
     const ok = await this.#run(async () => {
       await this.backend.confirmCapture(id, answer);
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+    // Not answered after all: a later close from elsewhere is news again.
+    else this.#answering.delete(id);
   }
 
   /** Brings back the quality picker after it was put aside. */
@@ -885,29 +971,87 @@ export class AppState {
   }
 
   async rejectCapture(id: number): Promise<void> {
+    this.#answering.add(id);
     const ok = await this.#run(async () => {
       await this.backend.rejectCapture(id);
       return true;
     });
     if (ok) this.pending = this.pending.filter((p) => p.id !== id);
+    // Not answered after all: a later close from elsewhere is news again.
+    else this.#answering.delete(id);
   }
 
   // ---- Media and add-ons ----
 
-  /** Downloads the picked quality; the choice goes away once the core accepts it. */
+  /**
+   * Downloads the picked quality; the choice goes away once the core accepts it. A quality that
+   * needs the media add-on while it is missing installs the add-on first (the picker says so on
+   * its button) and then downloads by itself.
+   */
   async chooseMedia(id: number, selection: MediaSelection): Promise<boolean> {
-    const ok = await this.#run(async () => {
-      await this.backend.chooseMedia(id, selection);
+    const choice = this.mediaChoices.find((c) => c.id === id);
+    const needsAddon = choice?.options.find((o) => o.id === selection.option_id)?.needs_ffmpeg;
+    const media = this.addons?.find((a) => a.id === MEDIA_ADDON);
+    if (choice && needsAddon && media && !isInstalled(media)) {
+      this.choiceAwaitingAddon = { id, selection };
+      this.addonRequest = { addon: media, url: choice.page_url ?? '', id };
+      this.addonHidden = false;
+      if (media.state.type !== 'installing') void this.installAddon(media.id);
       return true;
-    });
-    if (ok) this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
-    return ok === true;
+    }
+    this.#answering.add(id);
+    try {
+      await this.backend.chooseMedia(id, selection);
+    } catch (err) {
+      this.#answering.delete(id);
+      if (needsAddon && isAddonRequired(message(err))) {
+        // The core asked for the add-on instead; its prompt explains, and the choice
+        // continues once it is installed.
+        this.choiceAwaitingAddon = { id, selection };
+        return true;
+      }
+      this.fail(message(err));
+      return false;
+    }
+    this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    return true;
   }
 
   async dismissMediaChoice(id: number): Promise<void> {
     // Gone from view at once; the core forgets it in the background.
+    this.#answering.add(id);
     this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
     await this.#run(() => this.backend.dismissMediaChoice(id));
+  }
+
+  /**
+   * The core closed a question: answered here or in another window, withdrawn by the browser,
+   * or replaced. If it was on screen and not answered here, a note says why it went away.
+   */
+  #questionClosed(id: number): void {
+    const shown = this.question;
+    const capture = this.pending.find((p) => p.id === id);
+    const choice = this.mediaChoices.find((c) => c.id === id);
+    if (capture) this.pending = this.pending.filter((p) => p.id !== id);
+    if (choice) this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    this.analysing = this.analysing.filter((a) => a.id !== id);
+    if (this.choiceAwaitingAddon?.id === id) this.choiceAwaitingAddon = null;
+    const page = this.addonRequest?.id === id ? this.addonRequest : null;
+    if (this.#answering.delete(id)) return;
+    // The page that asked for the add-on is gone (taken back by the browser, or waited too
+    // long). A failed install keeps its prompt, which offers Try again.
+    if (page && page.addon.state.type !== 'failed') {
+      this.closeAddonRequest();
+      this.notify(`The video from ${hostOf(page.url)} no longer waits for the media add-on.`);
+      return;
+    }
+    const onScreen =
+      (shown?.kind === 'capture' && shown.capture.id === id) ||
+      (shown?.kind === 'media' && shown.choice.id === id);
+    const name = capture?.file_name ?? choice?.title;
+    if (onScreen && name) {
+      this.notify(`${name} was answered in another window, or the browser took it back.`);
+    }
   }
 
   async installAddon(id: string): Promise<boolean> {
@@ -926,8 +1070,79 @@ export class AppState {
     await this.#run(() => this.backend.removeAddon(id));
   }
 
+  /** Looks for a newer media add-on now and says what was found, in plain words. */
+  async checkAddonUpdates(): Promise<void> {
+    const addons = await this.#run(() => this.backend.checkAddonUpdates());
+    if (!addons) return;
+    this.addons = addons;
+    const media = addons.find((a) => a.id === MEDIA_ADDON);
+    if (!media) return;
+    switch (media.state.type) {
+      case 'update_available':
+        this.notify(
+          `A newer ${media.name.toLowerCase()} is ready (${media.latest_version ?? 'a new version'}). Choose Update in Settings, Add-ons to install it.`,
+        );
+        break;
+      case 'installing':
+        this.notify(`Found a newer ${media.name.toLowerCase()}. It is being installed now.`);
+        break;
+      case 'installed':
+        this.notify(`The ${media.name.toLowerCase()} is up to date.`);
+        break;
+      case 'not_installed':
+        this.notify(
+          `The ${media.name.toLowerCase()} is not installed, so there is nothing to update.`,
+        );
+        break;
+      case 'failed':
+        this.fail(media.state.data.message);
+        break;
+    }
+  }
+
+  /** Stops an install or update in progress; an update keeps the installed version. */
+  async cancelAddonOperation(id: string): Promise<void> {
+    await this.#run(() => this.backend.cancelAddonOperation(id));
+  }
+
+  /**
+   * Puts the add-on prompt aside (Escape, the close button, a click outside, or Close and keep
+   * installing). Nothing is answered: what waits for the add-on still waits, and a note in the
+   * sidebar and the palette bring the prompt back.
+   */
+  hideAddonRequest(): void {
+    this.addonHidden = true;
+  }
+
+  /** Brings back the add-on prompt after it was put aside. */
+  showAddonRequest(): void {
+    this.paletteOpen = false;
+    this.addonHidden = false;
+  }
+
+  /** Closes the prompt once the add-on is installed; there is nothing left to answer. */
   closeAddonRequest(): void {
     this.addonRequest = null;
+    this.addonHidden = false;
+  }
+
+  /**
+   * Not now: the add-on is not wanted for this one. A quality picked here gets its picker back,
+   * so the person can pick a quality that does not need the add-on; a page that waited for the
+   * add-on is dropped (only that page), so it neither asks again after a reload nor turns into
+   * a failed download later.
+   */
+  declineAddonRequest(): void {
+    const asked = this.addonRequest;
+    this.closeAddonRequest();
+    if (!asked) return;
+    if (this.choiceAwaitingAddon?.id === asked.id) {
+      this.choiceAwaitingAddon = null;
+      return;
+    }
+    if (this.mediaChoices.some((c) => c.id === asked.id)) return;
+    this.#answering.add(asked.id);
+    void this.#run(() => this.backend.dismissMediaChoice(asked.id));
   }
 
   async setAskBeforeDownload(ask: boolean): Promise<void> {

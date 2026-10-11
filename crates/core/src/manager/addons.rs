@@ -45,6 +45,14 @@ const QUIET_UPDATE_AGE_MILLIS: i64 = 48 * 60 * 60 * 1000;
 /// Largest GitHub release description or checksum list read.
 const MAX_METADATA: u64 = 4 * 1024 * 1024;
 
+/// Why looking up the newest yt-dlp gave nothing.
+enum Lookup {
+    /// The release information could not be fetched (no connection, server error).
+    Unreachable(String),
+    /// It was fetched, but the release does not meet the rules and is not offered.
+    Refused(String),
+}
+
 /// The add-on as the manager tracks it.
 #[derive(Default)]
 pub(super) struct AddonSlot {
@@ -116,6 +124,44 @@ impl Manager {
     /// installed).
     pub async fn update_addon(&self, id: &str) -> Result<()> {
         self.install_addon(id).await
+    }
+
+    /// Stops an install or update in progress, the person's or a quiet one.
+    /// Nothing in progress is fine. An update leaves the version that was
+    /// installed before in place and working, and discards what it had
+    /// downloaded; a first install (or a repair of a damaged add-on) removes
+    /// everything it put down, so the add-on is not installed afterwards.
+    pub async fn cancel_addon_operation(&self, id: &str) -> Result<()> {
+        check_id(id)?;
+        let (ended, had_tools) = {
+            let state = self.lock_open()?;
+            let Some(op) = &state.addon.op else {
+                return Ok(());
+            };
+            op.cancel.cancel();
+            (op.ended.clone(), state.addon.tools.is_some())
+        };
+        ended.cancelled().await;
+        let dir = self.inner.addon_dir.clone();
+        // A working add-on keeps its files; only the staging folder goes.
+        let target = if had_tools { dir.join(".work") } else { dir };
+        let discarded = self
+            .blocking(move || match std::fs::remove_dir_all(&target) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(CoreError::Invalid(format!(
+                    "The install was stopped, but some of its files could not be deleted ({e}). Remove the media add-on in Settings, Add-ons to clean up."
+                ))),
+            })
+            .await;
+        {
+            let mut state = self.lock();
+            state.addon.failure = None;
+        }
+        // Show what is really on disk now.
+        self.rescan_addon(false).await;
+        self.emit_addons(&self.lock().addon);
+        discarded
     }
 
     /// Removes an add-on and its files, stopping an install in progress first.
@@ -196,6 +242,10 @@ impl Manager {
     /// Looks for a newer yt-dlp now (sites change often, and an old yt-dlp stops
     /// working with them). With `auto_update_addons` on, anything out of date is
     /// then updated quietly. Does nothing when the add-on is not installed.
+    ///
+    /// When the release could not be looked up, the check still counts (so the
+    /// daily check does not retry at once) and this fails with the reason, for
+    /// a person who asked to check.
     pub async fn check_addon_updates(&self) -> Result<()> {
         let (installed, record) = {
             let state = self.lock_open()?;
@@ -204,10 +254,17 @@ impl Manager {
         if !installed {
             return Ok(());
         }
+        let mut unreachable = None;
         let latest = match self.latest_ytdlp().await {
             Ok(latest) => latest,
-            Err(reason) => {
+            // A release that does not meet the rules is not offered; nothing to report.
+            Err(Lookup::Refused(reason)) => {
+                warn!(%reason, "a newer yt-dlp was refused");
+                None
+            }
+            Err(Lookup::Unreachable(reason)) => {
                 warn!(%reason, "could not check for a newer yt-dlp");
+                unreachable = Some(reason);
                 None
             }
         };
@@ -242,7 +299,12 @@ impl Manager {
         } else {
             self.emit_addons(&state.addon);
         }
-        Ok(())
+        match unreachable {
+            None => Ok(()),
+            Some(reason) => Err(CoreError::Invalid(format!(
+                "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
+            ))),
+        }
     }
 
     /// The add-on as the UI shows it.
@@ -581,12 +643,12 @@ impl Manager {
     /// left for the final security review (it needs a sizable OpenPGP library).
     async fn latest_ytdlp(
         &self,
-    ) -> std::result::Result<Option<(AddonComponent, Option<i64>)>, String> {
+    ) -> std::result::Result<Option<(AddonComponent, Option<i64>)>, Lookup> {
         let sources = self.inner.addon_sources.clone();
         let Some(api) = &sources.ytdlp_latest_release else {
             return Ok(None);
         };
-        let api = Url::parse(api).map_err(|e| e.to_string())?;
+        let api = Url::parse(api).map_err(|e| Lookup::Refused(e.to_string()))?;
         let cancel = self.inner.stopped.child_token();
         let mut options = DownloadOptions::default();
         options.headers.insert(
@@ -595,14 +657,14 @@ impl Manager {
         );
         let fetcher = Fetcher::new(&api, &options, cancel)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Lookup::Unreachable(e.to_string()))?;
         let body = fetcher
             .get(&api, None, MAX_METADATA)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .body;
-        let release: addons::Release =
-            serde_json::from_slice(&body).map_err(|e| format!("unreadable release ({e})"))?;
+        let release: addons::Release = serde_json::from_slice(&body)
+            .map_err(|e| Lookup::Refused(format!("unreadable release ({e})")))?;
         let version = release.tag_name.trim().to_string();
         // `newer` only reads plain dotted numbers, so the tag is safe in a path.
         if !addons::newer(&version, &sources.ytdlp.version) {
@@ -619,37 +681,38 @@ impl Manager {
             asset(&sources.ytdlp_asset),
             asset(&sources.ytdlp_checksums_asset),
         ) else {
-            return Err(format!(
+            return Err(Lookup::Refused(format!(
                 "release {version} lacks {} or its checksums",
                 sources.ytdlp_asset
-            ));
+            )));
         };
         for asset in [program, sums] {
             if asset.browser_download_url != format!("{folder}{}", asset.name) {
-                return Err(format!(
+                return Err(Lookup::Refused(format!(
                     "release {version} points {} somewhere other than yt-dlp's releases",
                     asset.name
-                ));
+                )));
             }
         }
         if program.size == 0 || program.size > MAX_UPDATE_SIZE {
-            return Err(format!(
+            return Err(Lookup::Refused(format!(
                 "release {version} gives {} an unusable size ({} bytes)",
                 program.name, program.size
-            ));
+            )));
         }
-        let sums_url = Url::parse(&sums.browser_download_url).map_err(|e| e.to_string())?;
+        let sums_url =
+            Url::parse(&sums.browser_download_url).map_err(|e| Lookup::Refused(e.to_string()))?;
         let list = fetcher
             .get(&sums_url, None, MAX_METADATA)
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .body;
         let list = String::from_utf8_lossy(&list);
         let sha256 = addons::checksum_for(&list, &sources.ytdlp_asset).ok_or_else(|| {
-            format!(
+            Lookup::Refused(format!(
                 "release {version} has no checksum for {}",
                 sources.ytdlp_asset
-            )
+            ))
         })?;
         let mut component = manifest::ytdlp_component(
             &version,

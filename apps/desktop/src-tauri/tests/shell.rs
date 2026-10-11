@@ -21,7 +21,6 @@ use wirecatch_desktop_lib::background::{
 };
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
-use wirecatch_desktop_lib::questions::Questions;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{EVENT_NAME, RESYNC_EVENT, tray};
 use wirecatch_protocol::app::{Category, PendingCapture, UiEvent, UserError};
@@ -38,7 +37,6 @@ fn app_with(core: Option<Core>) -> App<MockRuntime> {
     context.config_mut().app.windows = vec![main];
     let mut builder = mock_builder()
         .manage(Lifecycle::default())
-        .manage(Questions::default())
         .manage(ShownNotifications::default());
     if let Some(core) = core {
         builder = builder.manage(core);

@@ -14,7 +14,7 @@ use wirecatch_protocol::app::UiEvent;
 
 use crate::activity::{Activity, Finished, notification_text};
 use crate::autostart::{self, Action};
-use crate::questions::{Attention, Questions, attention};
+use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{EVENT_NAME, RESYNC_EVENT, tray, window};
 
@@ -37,9 +37,6 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
     loop {
         match events.recv().await {
             Ok(event) => {
-                if let Some(questions) = app.try_state::<Questions>() {
-                    questions.note(&event);
-                }
                 if app.get_webview_window(MAIN_WINDOW).is_none() {
                     match attention(&event) {
                         Attention::None => {}

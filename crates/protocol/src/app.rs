@@ -376,11 +376,27 @@ pub enum UiEvent {
     SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
+    /// Wirecatch started reading a captured page or stream to find its qualities, which can
+    /// take a few seconds. It ends with a [`MediaChoiceRequested`](Self::MediaChoiceRequested)
+    /// with the same id, or a [`ConfirmationClosed`](Self::ConfirmationClosed) with it
+    /// (dismissed, withdrawn by the browser, or it could not be read, in which case a failed
+    /// download says why).
+    MediaAnalysing {
+        #[ts(type = "number")]
+        id: u64,
+        url: String,
+    },
     AddonsChanged(Vec<AddonInfo>),
     /// A capture needs an add-on that is not installed; the UI offers to install it.
     AddonRequired {
         addon: AddonInfo,
         url: String,
+        /// The media that waits: a page waiting for the add-on (dismiss it with
+        /// `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
+        /// needs it. Shares the id space of [`ConfirmationClosed`](Self::ConfirmationClosed).
+        #[serde(default)]
+        #[ts(type = "number")]
+        id: u64,
     },
     /// A question the UI may be showing is no longer open, so its dialog should close:
     /// a [`PendingCapture`] or [`MediaChoice`] with this id was answered (perhaps in

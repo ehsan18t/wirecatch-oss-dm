@@ -1,7 +1,8 @@
 // Opening finished files: a program asks first; anything else opens at once.
 
 import { describe, expect, it } from 'vitest';
-import { isProgramName, MockBackend } from '../backend/mock';
+import { MockBackend } from '../backend/mock';
+import { isProgramName } from '../filetypes';
 import { AppState } from './app.svelte';
 
 const NOON = new Date(2026, 9, 10, 12, 0).getTime();
@@ -47,15 +48,26 @@ describe('opening a finished file', () => {
 
   it('refuses a program that skipped the question', async () => {
     const { app, backend, id } = await finished('https://example.com/install.sh');
-    await expect(backend.openFile(id)).rejects.toThrow(/is a program/);
+    await expect(backend.openFile(id)).rejects.toThrow(/can run code/);
     app.dispose();
   });
 
-  it('knows scripts and installers in any case', () => {
-    for (const name of ['a.exe', 'B.MSI', 'c.Ps1', 'd.bat', 'e.AppImage', 'f.lnk', 'g.jar']) {
+  it('asks for every type not known to be safe, in any case', () => {
+    const asks = ['a.exe', 'B.MSI', 'c.Ps1', 'd.bat', 'e.AppImage', 'f.lnk', 'g.jar'];
+    asks.push(
+      'h.msc',
+      'i.appref-ms',
+      'j.iso',
+      'k.vhd',
+      'l.docm',
+      'm.unknown',
+      'readme',
+      'n.pdf.exe',
+    );
+    for (const name of asks) {
       expect(isProgramName(name), name).toBe(true);
     }
-    for (const name of ['a.mp4', 'b.pdf', 'c.zip', 'exe', 'readme']) {
+    for (const name of ['a.mp4', 'b.PDF', 'c.zip', 'd.tar.gz', 'video.mp4.', 'song.mp3 ']) {
       expect(isProgramName(name), name).toBe(false);
     }
   });

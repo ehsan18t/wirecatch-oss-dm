@@ -8,14 +8,10 @@
 //! A storage failure is not a question but must not go unseen: with no window it becomes a
 //! system notification.
 //!
-//! A new window loads confirmations from the core. Media choices and add-on prompts are kept
-//! here until answered, so a window opened (or reloaded) after the event still shows them. Once
-//! the core offers `pending_media_choices()` (WP11), [`Questions::media_choices`] reads it from
-//! there instead.
+//! The core keeps every open question (`pending_confirmations`, `pending_media_choices`,
+//! `pending_addon_requests`), so a window opened or reloaded later loads them from there.
 
-use std::sync::Mutex;
-
-use wirecatch_protocol::app::{AddonInfo, AddonState, MediaChoice, UiEvent};
+use wirecatch_protocol::app::UiEvent;
 
 /// What a core event needs from the desktop when no window is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,78 +43,13 @@ pub fn attention(event: &UiEvent) -> Attention {
     }
 }
 
-/// A capture that needs an add-on, waiting for the person's answer.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct AddonRequest {
-    /// The add-on to offer.
-    pub addon: AddonInfo,
-    /// The page or link that needs it.
-    pub url: String,
-}
-
-/// Open media choices and the add-on prompt, kept until answered.
-#[derive(Default)]
-pub struct Questions {
-    media: Mutex<Vec<MediaChoice>>,
-    addon: Mutex<Option<AddonRequest>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-impl Questions {
-    /// Keeps track of the questions in `event`.
-    pub fn note(&self, event: &UiEvent) {
-        match event {
-            UiEvent::MediaChoiceRequested(choice) => {
-                let mut media = lock(&self.media);
-                if !media.iter().any(|c| c.id == choice.id) {
-                    media.push(choice.clone());
-                }
-            }
-            UiEvent::AddonRequired { addon, url } => {
-                *lock(&self.addon) = Some(AddonRequest {
-                    addon: addon.clone(),
-                    url: url.clone(),
-                });
-            }
-            UiEvent::AddonsChanged(addons) => {
-                let mut asked = lock(&self.addon);
-                let installed = asked.as_ref().is_some_and(|a| {
-                    addons
-                        .iter()
-                        .any(|x| x.id == a.addon.id && x.state == AddonState::Installed)
-                });
-                if installed {
-                    *asked = None;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// The media choices still open.
-    pub fn media_choices(&self) -> Vec<MediaChoice> {
-        lock(&self.media).clone()
-    }
-
-    /// Forgets a media choice once it is answered either way.
-    pub fn answered_media(&self, id: u64) {
-        lock(&self.media).retain(|c| c.id != id);
-    }
-
-    /// Hands the waiting add-on prompt over, once.
-    pub fn take_addon_request(&self) -> Option<AddonRequest> {
-        lock(&self.addon).take()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{Category, PendingCapture, UserError};
+    use wirecatch_protocol::app::{
+        AddonInfo, AddonState, Category, MediaChoice, PendingCapture, UserError,
+    };
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {
@@ -166,7 +97,8 @@ mod tests {
         assert_eq!(
             attention(&UiEvent::AddonRequired {
                 addon: addon(AddonState::NotInstalled),
-                url: "https://youtube.com/x".into()
+                url: "https://youtube.com/x".into(),
+                id: 1,
             }),
             Attention::OpenWindow
         );
@@ -179,34 +111,9 @@ mod tests {
             attention(&UiEvent::DownloadsRemoved(vec![])),
             Attention::None
         );
-    }
-
-    #[test]
-    fn open_questions_are_kept_until_answered() {
-        let q = Questions::default();
-        q.note(&UiEvent::MediaChoiceRequested(choice(1)));
-        q.note(&UiEvent::MediaChoiceRequested(choice(2)));
-        q.note(&UiEvent::MediaChoiceRequested(choice(1)));
-        assert_eq!(q.media_choices().len(), 2);
-        q.answered_media(1);
         assert_eq!(
-            q.media_choices().iter().map(|c| c.id).collect::<Vec<_>>(),
-            [2]
+            attention(&UiEvent::ConfirmationClosed { id: 1 }),
+            Attention::None
         );
-
-        q.note(&UiEvent::AddonRequired {
-            addon: addon(AddonState::NotInstalled),
-            url: "https://youtube.com/x".into(),
-        });
-        assert!(q.take_addon_request().is_some());
-        assert!(q.take_addon_request().is_none());
-
-        // Installing the add-on answers its prompt.
-        q.note(&UiEvent::AddonRequired {
-            addon: addon(AddonState::NotInstalled),
-            url: "https://youtube.com/x".into(),
-        });
-        q.note(&UiEvent::AddonsChanged(vec![addon(AddonState::Installed)]));
-        assert!(q.take_addon_request().is_none());
     }
 }

@@ -40,17 +40,19 @@
 //! | `open_folder` | `id: DownloadId` | nothing |
 //! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
 //! | `take_launch_links` | none | `Vec<String>`: links passed on the command line, handed over once |
-//! | `choose_media` | `id: u64`, `selection: MediaSelection` | nothing (pending, WP11) |
-//! | `dismiss_media_choice` | `id: u64` | nothing (the desktop forgets the choice; the core is told once it has media support) |
-//! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open (kept by the desktop until the core offers them, WP11) |
-//! | `take_addon_request` | none | `Option<{ addon: AddonInfo, url: String }>`: an add-on prompt that arrived with no window, handed over once |
-//! | `list_addons` | none | `Vec<AddonInfo>` (pending, WP11) |
-//! | `install_addon` | `id: String` | nothing (pending, WP11) |
-//! | `update_addon` | `id: String` | nothing (pending, WP11) |
-//! | `remove_addon` | `id: String` | nothing (pending, WP11) |
+//! | `choose_media` | `id: u64`, `selection: MediaSelection` | nothing; fails while an option that needs the media add-on lacks it (the core then sends `AddonRequired` and keeps the choice) |
+//! | `dismiss_media_choice` | `id: u64` | nothing |
+//! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open |
+//! | `pending_addon_requests` | none | `Vec<{ id: u64, addon: AddonInfo, url: String }>`: pages waiting for the add-on, oldest first; `dismiss_media_choice(id)` drops one |
+//! | `list_addons` | none | `Vec<AddonInfo>` |
+//! | `install_addon` | `id: String` | nothing; progress and the result arrive as `AddonsChanged` |
+//! | `update_addon` | `id: String` | nothing; like `install_addon` |
+//! | `remove_addon` | `id: String` | nothing |
+//! | `cancel_addon_operation` | `id: String` | nothing; stops an install or update, keeping an installed version working |
+//! | `check_addon_updates` | none | `Vec<AddonInfo>` after looking for a newer media add-on now; fails when the releases cannot be reached |
 //!
-//! "Pending" commands exist with their final names and types but answer
-//! [`api::NEXT_UPDATE`] until the core implements media and add-ons.
+//! Every command reaches the real core; none is pending. The core checks for add-on updates
+//! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
 //!
 //! # Events
 //!
@@ -166,7 +168,6 @@ pub fn run() {
                 .build(),
         )
         .manage(LaunchLinks::default())
-        .manage(questions::Questions::default())
         .manage(Lifecycle::default())
         .setup(move |app| setup(app, launch))
         .invoke_handler(tauri::generate_handler![
@@ -203,11 +204,13 @@ pub fn run() {
             commands::choose_media,
             commands::dismiss_media_choice,
             commands::pending_media_choices,
-            commands::take_addon_request,
+            commands::pending_addon_requests,
             commands::list_addons,
             commands::install_addon,
             commands::update_addon,
             commands::remove_addon,
+            commands::cancel_addon_operation,
+            commands::check_addon_updates,
         ])
         .build(context);
     match app {

@@ -2,6 +2,7 @@
   import Check from '@lucide/svelte/icons/check';
   import X from '@lucide/svelte/icons/x';
   import { getApp } from '$lib/state/app.svelte';
+  import AddonCard from './AddonCard.svelte';
   import Dialog from './Dialog.svelte';
 
   let { mode }: { mode: 'export' | 'import' } = $props();
@@ -15,9 +16,34 @@
     'Queues with their schedules and speed limits',
     'Folders by file type',
     'Sites to leave to the browser',
-    'Which add-ons are installed (they are installed again on import)',
+    'Which add-ons are installed (on import, Wirecatch asks before installing them)',
   ];
   const excluded = ['Download history', 'Saved site passwords'];
+
+  // What the import changed, as the core reported it.
+  const summary = $derived(app.lastImport);
+  // Add-ons the file lists that are not installed here. The core downloads nothing on import;
+  // the person decides here.
+  const offered = $derived(
+    (summary?.addons_to_offer ?? []).flatMap((id) => app.addons?.find((a) => a.id === id) ?? []),
+  );
+  let doneButton = $state<HTMLButtonElement>();
+  // The button that started the import is gone once it is done; Done takes the focus.
+  $effect(() => {
+    if (done) doneButton?.focus();
+  });
+  const moved = $derived(summary?.folders.filter((f) => f.used !== f.requested) ?? []);
+  const queuesLine = $derived.by(() => {
+    if (!summary) return '';
+    const plural = (n: number) => (n === 1 ? '1 queue' : `${n} queues`);
+    const parts = [
+      summary.queues_added > 0 ? `added ${plural(summary.queues_added)}` : '',
+      summary.queues_updated > 0 ? `updated ${plural(summary.queues_updated)}` : '',
+    ].filter(Boolean);
+    if (parts.length === 0) return '';
+    const text = parts.join(' and ');
+    return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+  });
 
   async function run() {
     busy = true;
@@ -42,6 +68,34 @@
         <strong>{done}</strong>
       </span>
     </p>
+    {#if mode === 'import' && summary}
+      {#if queuesLine}
+        <p class="note">{queuesLine}</p>
+      {/if}
+      {#each offered as addon (addon.id)}
+        <div class="offer">
+          <h3>{addon.name}</h3>
+          <p class="note" id="offer-{addon.id}">
+            The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing was
+            downloaded. Install it now, or later from Settings, Add-ons.
+          </p>
+          <AddonCard {addon} describedby="offer-{addon.id}" />
+        </div>
+      {/each}
+      {#if moved.length > 0}
+        <div class="moved">
+          <h3>Folders changed to fit this computer</h3>
+          <ul>
+            {#each moved as folder (folder.setting)}
+              <li class="folder">
+                <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
+                <span class="was">The file asked for {folder.requested}, which is not here.</span>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    {/if}
   {:else}
     <div class="lists">
       <div>
@@ -65,7 +119,9 @@
 
   {#snippet footer()}
     {#if done}
-      <button class="btn primary" data-autofocus onclick={() => app.closeDialog()}>Done</button>
+      <button class="btn primary" bind:this={doneButton} onclick={() => app.closeDialog()}
+        >Done</button
+      >
     {:else}
       <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
       <button class="btn primary" data-autofocus disabled={busy} onclick={run}>
@@ -118,6 +174,50 @@
     margin: 0;
     line-height: 1.5;
     overflow-wrap: anywhere;
+  }
+
+  .note {
+    margin: 10px 0 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  .moved {
+    margin-top: 14px;
+  }
+
+  .offer {
+    display: grid;
+    gap: 6px;
+    margin-top: 14px;
+  }
+
+  .offer h3,
+  .offer .note {
+    margin: 0;
+  }
+
+  /* The card sits on the right in Settings; here it follows the text. */
+  .offer :global(.addon),
+  .offer :global(.status) {
+    justify-items: start;
+    text-align: left;
+  }
+
+  li.folder {
+    display: grid;
+    gap: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  li.folder strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .was {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
   }
 
   .done :global(svg) {

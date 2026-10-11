@@ -23,7 +23,7 @@ import {
   COMMANDS,
   EVENT_NAME,
   SIGNAL_EVENTS,
-  type AddonRequest,
+  type AddonRequestItem,
   type Backend,
   type ShellSignal,
   type Unsubscribe,
@@ -163,8 +163,8 @@ export class TauriBackend implements Backend {
   pendingMediaChoices() {
     return this.#call<MediaChoice[]>(COMMANDS.pendingMediaChoices);
   }
-  takeAddonRequest() {
-    return this.#call<AddonRequest | null>(COMMANDS.takeAddonRequest);
+  pendingAddonRequests() {
+    return this.#call<AddonRequestItem[]>(COMMANDS.pendingAddonRequests);
   }
   listAddons() {
     return this.#call<AddonInfo[]>(COMMANDS.listAddons);
@@ -177,6 +177,12 @@ export class TauriBackend implements Backend {
   }
   removeAddon(id: string) {
     return this.#exec(COMMANDS.removeAddon, { id });
+  }
+  cancelAddonOperation(id: string) {
+    return this.#exec(COMMANDS.cancelAddonOperation, { id });
+  }
+  checkAddonUpdates() {
+    return this.#call<AddonInfo[]>(COMMANDS.checkAddonUpdates);
   }
 
   async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {

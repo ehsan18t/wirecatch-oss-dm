@@ -61,6 +61,59 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'capture toast');
   });
 
+  test(`media and add-on dialogs keep the keyboard inside, ${theme} theme`, async ({ page }) => {
+    await open(page, 'capture=0', { theme });
+    const inside = () =>
+      page.evaluate(() => document.activeElement?.closest('dialog[open]') !== null);
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('several qualities');
+    await page.keyboard.press('Enter');
+    const picker = page.getByRole('dialog', { name: 'Pick a quality' });
+    await picker.waitFor();
+    // The best quality has focus; Tab and Shift+Tab never leave the dialog.
+    await expect(picker.getByRole('radio').first()).toBeFocused();
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      expect(await inside()).toBe(true);
+    }
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Shift+Tab');
+      expect(await inside()).toBe(true);
+    }
+    // Escape puts it aside; the sidebar note brings it back.
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
+    await page.getByRole('button', { name: '1 video waits for you to pick a quality' }).click();
+    await expect(picker).toBeVisible();
+
+    // Answered somewhere else: the picker closes by itself and says why.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('answered somewhere else');
+    await page.keyboard.press('Enter');
+    await expect(
+      page.getByRole('button', { name: '1 video waits for you to pick a quality' }),
+    ).toBeHidden();
+
+    await page.keyboard.press('Control+K');
+    await page.keyboard.type('needs the media add-on');
+    await page.keyboard.press('Enter');
+    const prompt = page.getByRole('dialog', { name: /needs the media add-on/ });
+    await prompt.waitFor();
+    await expect(prompt.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('Tab');
+      expect(await inside()).toBe(true);
+    }
+    // Enter on Install: the buttons change, and the focus moves to the new main button.
+    await prompt.getByRole('button', { name: 'Install', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(prompt.getByRole('button', { name: 'Close and keep installing' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(prompt).toBeHidden();
+  });
+
   test(`media and add-on screens pass axe, ${theme} theme`, async ({ page }) => {
     await open(page, 'capture=0', { theme });
     await page.keyboard.press('Control+K');

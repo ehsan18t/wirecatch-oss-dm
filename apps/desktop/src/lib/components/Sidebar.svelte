@@ -10,8 +10,16 @@
   import Plus from '@lucide/svelte/icons/plus';
   import SettingsIcon from '@lucide/svelte/icons/settings';
   import type { Queue } from '@wirecatch/protocol';
+  import { MEDIA_ADDON } from '$lib/addons';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
-  import { CATEGORIES, CATEGORY_LABEL, formatRate, formatSchedule, formatSpeed } from '$lib/format';
+  import {
+    CATEGORIES,
+    CATEGORY_LABEL,
+    formatRate,
+    formatSchedule,
+    formatSpeed,
+    hostOf,
+  } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -91,13 +99,32 @@
       </span>
     </button>
   {/if}
-  {#if app.mediaChoices.length > 0 && app.mediaHidden}
+  {#each app.analysing as reading (reading.id)}
+    <p class="reading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Reading the video on {hostOf(reading.url)}</span>
+    </p>
+  {/each}
+  {#if app.addonRequest && app.addonHidden}
+    {@const state = app.addons?.find((a) => a.id === MEDIA_ADDON)?.state.type}
+    <button class="pending" onclick={() => app.showAddonRequest()}>
+      <Bell size={14} aria-hidden="true" />
+      <span>
+        {state === 'failed'
+          ? 'The media add-on did not install. A video waits for it'
+          : state === 'installing'
+            ? 'A video downloads once the media add-on is installed'
+            : 'A video waits for the media add-on'}
+      </span>
+    </button>
+  {/if}
+  {#if app.openMediaChoices.length > 0 && app.mediaHidden}
     <button class="pending" onclick={() => app.showMediaChoices()}>
       <Bell size={14} aria-hidden="true" />
       <span>
-        {app.mediaChoices.length === 1
+        {app.openMediaChoices.length === 1
           ? '1 video waits for you to pick a quality'
-          : `${app.mediaChoices.length} videos wait for you to pick a quality`}
+          : `${app.openMediaChoices.length} videos wait for you to pick a quality`}
       </span>
     </button>
   {/if}
@@ -560,6 +587,39 @@
     font-weight: 600;
     text-align: left;
     cursor: pointer;
+  }
+
+  .reading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 8px;
+    padding: 7px 10px;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .spinner {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--wire-track);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
 
   .pending :global(svg) {

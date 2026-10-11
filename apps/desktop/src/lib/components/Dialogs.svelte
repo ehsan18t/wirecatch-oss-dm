@@ -3,6 +3,7 @@
   import AddDialog from './AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
   import OpenProgramDialog from './OpenProgramDialog.svelte';
+  import RemoveAddonDialog from './RemoveAddonDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
   import RemoveDialog from './RemoveDialog.svelte';
@@ -31,6 +32,8 @@
       <ShortcutsDialog />
     {:else if d.kind === 'open-program'}
       <OpenProgramDialog id={d.id} />
+    {:else if d.kind === 'remove-addon'}
+      <RemoveAddonDialog id={d.id} />
     {/if}
   {/key}
 {/if}

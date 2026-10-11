@@ -2,6 +2,7 @@
 // shortcuts call the same `AppState` methods, so there is one behavior per action.
 
 import type { AppState } from './state/app.svelte';
+import { addonAction, isInstalled } from './addons';
 import { CATEGORIES, CATEGORY_LABEL } from './format';
 import { SETTINGS, SECTIONS } from './settings-schema';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
@@ -368,17 +369,64 @@ export function buildCommands(app: AppState): Command[] {
     });
   }
 
-  if (app.mediaChoices.length > 0) {
+  if (app.openMediaChoices.length > 0) {
     out.push({
       id: 'media.pick',
       group: 'Downloads',
       title:
-        app.mediaChoices.length === 1
+        app.openMediaChoices.length === 1
           ? 'Pick a quality for the video that is waiting'
-          : `Pick a quality for the ${app.mediaChoices.length} videos that are waiting`,
+          : `Pick a quality for the ${app.openMediaChoices.length} videos that are waiting`,
       keywords: 'media video quality resolution stream pending',
       run: () => app.showMediaChoices(),
     });
+  }
+
+  if (app.addonRequest && app.addonHidden) {
+    out.push({
+      id: 'addon.prompt',
+      group: 'Downloads',
+      title: 'Show the video that waits for the media add-on',
+      keywords: 'addon add-on install waiting video pending',
+      run: () => app.showAddonRequest(),
+    });
+  }
+
+  // The add-on's own actions, so it can be installed or removed without visiting Settings.
+  for (const addon of app.addons ?? []) {
+    const name = addon.name.toLowerCase();
+    const action = addonAction(addon);
+    const keywords = 'addon add-on yt-dlp ffmpeg deno youtube video media';
+    if (action) {
+      const verb = action === 'update' ? 'Update' : 'Install';
+      out.push({
+        id: `addon.${action}.${addon.id}`,
+        group: 'Settings',
+        title: `${verb} the ${name}`,
+        keywords,
+        run: () => {
+          app.openSettings('media_addon');
+          return action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id);
+        },
+      });
+    }
+    if (isInstalled(addon)) {
+      out.push({
+        id: `addon.check.${addon.id}`,
+        group: 'Settings',
+        title: `Check for ${name} updates`,
+        keywords: `${keywords} update newer version check`,
+        run: () => app.checkAddonUpdates(),
+      });
+      out.push({
+        id: `addon.remove.${addon.id}`,
+        group: 'Settings',
+        title: `Remove the ${name}`,
+        keywords: `${keywords} uninstall delete`,
+        // Removing stops video downloads, so the palette asks first.
+        run: () => app.openDialog({ kind: 'remove-addon', id: addon.id }),
+      });
+    }
   }
 
   // Only the mock backend has sample-data actions; they live in the mock module, so none of

@@ -15,26 +15,45 @@
   let busy = $state(false);
 
   async function install() {
+    if (busy) return;
     busy = true;
     await app.installAddon(addon.id);
     busy = false;
   }
+
+  // The footer's buttons change with the install (Install becomes Close, then Done). When the
+  // focused one goes away, the new main button takes the focus instead of nothing.
+  let body = $state<HTMLDivElement>();
+  $effect(() => {
+    void addon.state.type;
+    const dialog = body?.closest('dialog');
+    const active = document.activeElement;
+    if (dialog && (!active || active === document.body)) {
+      dialog.querySelector<HTMLElement>('footer [data-autofocus]')?.focus();
+    }
+  });
 </script>
 
 <Dialog
   title={installed
     ? `${addon.name} is installed`
-    : `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`}
-  onclose={() => app.closeAddonRequest()}
+    : url
+      ? `Downloading from ${hostOf(url)} needs the ${addon.name.toLowerCase()}`
+      : `This video needs the ${addon.name.toLowerCase()}`}
+  onclose={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
   width={460}
 >
-  <div class="body">
+  <div class="body" bind:this={body}>
     <p>{addon.description}</p>
+    <!-- Always mounted, so a screen reader hears the start, the progress and the end (or the
+         failure) of the install, not only what happens while it runs. -->
+    <p class="visually-hidden" aria-live="polite" data-testid="addon-live">
+      {addonAnnouncement(addon)}
+    </p>
     {#if installed}
       <p>Your download continues on its own.</p>
     {:else if installing}
       <p>{addonStatus(addon)}</p>
-      <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
       <div
         class="wire"
         role="progressbar"
@@ -47,7 +66,7 @@
       </div>
       <p class="muted">Your download starts as soon as it is ready. You can close this.</p>
     {:else if failed}
-      <p class="error" role="alert">{addonStatus(addon)}</p>
+      <p class="error">{addonStatus(addon)}</p>
     {:else}
       <p class="muted">
         One click installs it{addon.size === null ? '' : ` (${formatBytes(addon.size)})`}, then your
@@ -62,12 +81,17 @@
         type="button"
         class="btn primary"
         data-autofocus
-        onclick={() => app.closeAddonRequest()}>{installed ? 'Done' : 'Close'}</button
+        onclick={() => (installed ? app.closeAddonRequest() : app.hideAddonRequest())}
+        >{installed ? 'Done' : 'Close and keep installing'}</button
       >
     {:else}
-      <button type="button" class="btn" onclick={() => app.closeAddonRequest()}>Not now</button>
-      <button type="button" class="btn primary" data-autofocus disabled={busy} onclick={install}
-        >{failed ? 'Try again' : 'Install'}</button
+      <button type="button" class="btn" onclick={() => app.declineAddonRequest()}>Not now</button>
+      <button
+        type="button"
+        class="btn primary"
+        data-autofocus
+        aria-disabled={busy}
+        onclick={install}>{failed ? 'Try again' : 'Install'}</button
       >
     {/if}
   {/snippet}

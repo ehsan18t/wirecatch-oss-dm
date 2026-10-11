@@ -3,12 +3,14 @@
 // wirecatch-app as plain `wirecatch-bridge[.exe]`, which is where the bridge and the app look
 // for each other (D19).
 //
-// Usage: node scripts/prepare-bridge.mjs [--release]
+// Usage: node scripts/prepare-bridge.mjs [--release]. Without --release the bridge also trusts
+// the development extension (cargo feature dev-extension); with it, only the store extensions.
 
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bridgeCargoArgs } from './bridge-args.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = resolve(here, '..');
@@ -21,8 +23,12 @@ if (!host) {
   process.exit(1);
 }
 
-const args = ['build', '-p', 'wirecatch-bridge'];
-if (release) args.push('--release');
+// Debug builds also trust the development extension; release builds only the store ones.
+const args = bridgeCargoArgs(release);
+if (release && args.some((a) => a.includes('dev-extension'))) {
+  console.error('A release bridge must never be built with the dev-extension feature.');
+  process.exit(1);
+}
 execFileSync('cargo', args, { cwd: root, stdio: 'inherit' });
 
 const exe = process.platform === 'win32' ? '.exe' : '';

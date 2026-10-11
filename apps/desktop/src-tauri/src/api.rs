@@ -6,18 +6,15 @@
 
 use std::path::{Path, PathBuf};
 
-use wirecatch_core::{CoreError, Manager};
+use wirecatch_core::{AddonRequestItem, CoreError, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    MediaSelection, PendingCapture, Queue,
+    MediaChoice, MediaSelection, PendingCapture, Queue,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
 /// What a command answers: a value, or an error worded for a person.
 pub type CommandResult<T> = Result<T, String>;
-
-/// The answer of the media and add-on commands until the core implements them (WP11).
-pub const NEXT_UPDATE: &str = "This arrives in the next update of Wirecatch. Until then, downloads from video sites stay in the browser.";
 
 fn plain(err: CoreError) -> String {
     err.to_string()
@@ -158,82 +155,58 @@ pub async fn set_download_folder(m: &Manager, id: DownloadId, folder: &str) -> C
 }
 
 fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
-    m.list_downloads()
-        .into_iter()
-        .find(|row| row.id == id)
-        .ok_or_else(|| plain(CoreError::DownloadNotFound(id)))
+    m.get_download(id).map_err(plain)
 }
 
-/// File types that run code when opened: programs, installers, scripts, shortcuts and
-/// packages. Opening one of these needs the person's confirmation first.
-pub const PROGRAM_EXTENSIONS: &[&str] = &[
-    "exe",
-    "msi",
-    "msix",
-    "msixbundle",
-    "appx",
-    "appxbundle",
-    "msp",
-    "mst",
-    "bat",
-    "cmd",
-    "com",
-    "scr",
-    "pif",
-    "cpl",
-    "ps1",
-    "psm1",
-    "psd1",
-    "vbs",
-    "vbe",
-    "js",
-    "jse",
-    "wsf",
-    "wsh",
-    "ws",
-    "hta",
-    "lnk",
-    "url",
-    "scf",
-    "reg",
-    "inf",
-    "chm",
-    "application",
-    "gadget",
-    "jar",
-    "appimage",
-    "sh",
-    "bash",
-    "zsh",
-    "csh",
-    "ksh",
-    "run",
-    "bin",
-    "command",
-    "desktop",
-    "deb",
-    "rpm",
-    "apk",
-    "flatpakref",
-    "snap",
-    "py",
-    "pyw",
-    "pl",
-    "rb",
-    "dmg",
-    "pkg",
-    "app",
+/// File types that open directly, without asking first: common video, audio, image, document
+/// and archive types that do not run code when opened. Every other type, and a file with no
+/// extension, could run code (programs, installers, scripts, shortcuts, disk images, Office
+/// files with macros and many more), so opening it needs the person's confirmation. An
+/// allowlist fails safe: a type nobody thought of asks first.
+///
+/// In order: video, audio, subtitles, images, documents, archives. Left out on purpose among
+/// documents: Office files with macros (`docm` and friends), `rtf` (embedded objects), the
+/// OpenDocument formats (macros) and `csv` (formulas that run when a spreadsheet opens it).
+/// `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
+/// which carry the mark of the web, in Protected View.
+///
+/// The interface keeps a copy (`apps/desktop/src/lib/filetypes.ts`) for wording and the sample
+/// backend; a test checks the two lists are the same.
+pub const SAFE_EXTENSIONS: &[&str] = &[
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "3gp",
+    "ogv", "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "mka", "srt",
+    "vtt", "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif",
+    "pdf", "txt", "md", "docx", "xlsx", "pptx", "epub", "zip", "7z", "rar", "tar", "gz", "tgz",
+    "bz2", "xz", "zst",
 ];
 
-/// Whether opening `path` would run code: a program type by its extension (any case), or on
-/// Linux a file without an extension that is marked executable.
+/// The type of `name` as the system sees it: lower case, the last extension only (so
+/// `report.pdf.exe` is `exe`). `None` when the name has no extension.
+///
+/// On Windows trailing dots and spaces are dropped first, because Windows drops them and opens
+/// `video.mp4.` as an mp4. On Linux they are part of the name: `video.mp4.` has no extension
+/// there, and the desktop may pick a program for it by its content instead (a `.desktop`
+/// launcher, say), so it must ask, and trimming would wrongly call it an mp4.
+pub fn file_type(name: &str) -> Option<String> {
+    let name = if cfg!(windows) {
+        name.trim_end_matches(['.', ' '])
+    } else {
+        name
+    };
+    let (_, ext) = name.rsplit_once('.')?;
+    (!ext.is_empty()).then(|| ext.to_ascii_lowercase())
+}
+
+/// Whether opening `path` might run code, so the person must confirm first: any type not on
+/// [`SAFE_EXTENSIONS`], a file without an extension, and on Linux any file marked executable,
+/// whatever its name.
 pub fn is_program(path: &Path) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => PROGRAM_EXTENSIONS
-            .iter()
-            .any(|p| p.eq_ignore_ascii_case(ext)),
-        None => is_marked_executable(path),
-    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    let safe = file_type(&name).is_some_and(|ext| SAFE_EXTENSIONS.contains(&ext.as_str()));
+    !safe || is_marked_executable(path)
 }
 
 #[cfg(unix)]
@@ -280,7 +253,7 @@ pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> Command
     }
     if is_program(&path) && !allow_program {
         return Err(format!(
-            "{} is a program. Only open it if you trust {}. Use Show in folder to open it yourself.",
+            "{} is a type of file that can run code. Only open it if you trust {}. Use Show in folder to open it yourself.",
             row.file_name,
             site_of(&row.url)
         ));
@@ -314,51 +287,61 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
     }
 }
 
-fn not_yet<T>() -> CommandResult<T> {
-    Err(NEXT_UPDATE.to_owned())
+/// Downloads the chosen quality of a media choice. An option that needs the media add-on
+/// fails while it is not installed; the core then asks for it with `AddonRequired` and keeps
+/// the choice open.
+pub async fn choose_media(m: &Manager, id: u64, selection: MediaSelection) -> CommandResult<()> {
+    m.choose_media(id, selection).await.map_err(plain)
 }
 
-/// Downloads the chosen quality of a media choice. Pending until the core has media support.
-pub fn choose_media(_m: &Manager, _id: u64, _selection: MediaSelection) -> CommandResult<()> {
-    not_yet()
-}
-
-/// Drops a media choice the person did not want. Until the core has media support there is
-/// nothing to tell it; the desktop forgets the choice itself.
-pub fn dismiss_media_choice(_m: &Manager, _id: u64) -> CommandResult<()> {
-    Ok(())
+/// Drops a media choice the person did not want (or media still being read).
+pub fn dismiss_media_choice(m: &Manager, id: u64) -> CommandResult<()> {
+    m.dismiss_media_choice(id).map_err(plain)
 }
 
 /// Media choices still waiting for an answer, so a new or reloaded window shows them again.
-///
-/// Adapter: the core does not offer `pending_media_choices()` yet (WP11), so these are the ones
-/// the desktop saw arrive and has not seen answered. Once the core has it, this returns the
-/// core's list instead.
-pub fn pending_media_choices(
-    _m: &Manager,
-    questions: &crate::questions::Questions,
-) -> Vec<wirecatch_protocol::app::MediaChoice> {
-    questions.media_choices()
+pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
+    m.pending_media_choices()
 }
 
-/// Every add-on and its state. Pending until the core has the add-on manager.
-pub fn list_addons(_m: &Manager) -> CommandResult<Vec<AddonInfo>> {
-    not_yet()
+/// Pages waiting for the media add-on, so a new or reloaded window offers the install again.
+/// [`dismiss_media_choice`] with an item's id drops that page.
+pub fn pending_addon_requests(m: &Manager) -> Vec<AddonRequestItem> {
+    m.pending_addon_requests()
 }
 
-/// Installs an add-on. Pending, like [`list_addons`].
-pub fn install_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Every add-on and its state. Update checks run in the core: once a day while
+/// `auto_update_addons` is on.
+pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
+    m.list_addons()
 }
 
-/// Updates an add-on. Pending, like [`list_addons`].
-pub fn update_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Installs an add-on in the background; progress and the result arrive as `AddonsChanged`.
+pub async fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.install_addon(id).await.map_err(plain)
 }
 
-/// Removes an add-on. Pending, like [`list_addons`].
-pub fn remove_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Brings an add-on up to date in the background, like [`install_addon`].
+pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.update_addon(id).await.map_err(plain)
+}
+
+/// Looks for a newer media add-on now, as the person asked, and answers with the add-ons as
+/// they stand afterwards (up to date, an update offered, or one already installing quietly).
+pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
+    m.check_addon_updates().await.map_err(plain)?;
+    Ok(m.list_addons())
+}
+
+/// Stops an install or update in progress. An update keeps the installed version working; a
+/// first install removes what it put down.
+pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> {
+    m.cancel_addon_operation(id).await.map_err(plain)
+}
+
+/// Removes an add-on and its files, stopping an install in progress first.
+pub async fn remove_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.remove_addon(id).await.map_err(plain)
 }
 
 #[cfg(test)]
@@ -366,56 +349,126 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_pending_answer_is_plain() {
-        assert!(!NEXT_UPDATE.contains('\u{2014}'), "no em dashes");
-        assert!(NEXT_UPDATE.starts_with("This arrives in the next update"));
+    fn known_safe_types_open_directly_in_any_case() {
+        for name in [
+            "movie.mp4",
+            "MOVIE.MKV",
+            "song.mp3",
+            "photo.JPG",
+            "report.pdf",
+            "notes.txt",
+            "sheet.xlsx",
+            "book.epub",
+            "archive.zip",
+            "backup.tar.gz",
+            "data.7z",
+        ] {
+            assert!(!is_program(Path::new(name)), "{name} should open directly");
+        }
     }
 
     #[test]
-    fn programs_and_scripts_are_recognized_in_any_case() {
+    fn every_other_type_asks_first() {
         for name in [
             "setup.exe",
             "SETUP.EXE",
             "Installer.Msi",
             "run.bat",
-            "x.cmd",
             "x.ps1",
-            "x.vbs",
             "x.js",
             "x.hta",
             "x.lnk",
-            "x.reg",
-            "x.jar",
+            "x.url",
+            "console.msc",
+            "app.appref-ms",
+            "x.settingcontent-ms",
+            "x.website",
+            "x.xbap",
+            "x.wsc",
+            "x.sct",
+            "disk.iso",
+            "disk.img",
+            "disk.vhd",
+            "disk.vhdx",
+            "x.diagcab",
+            "x.library-ms",
+            "x.search-ms",
+            "x.xll",
+            "x.terminal",
+            "x.workflow",
+            "macros.docm",
+            "macros.xlsm",
+            "macros.pptm",
+            "letter.rtf",
+            "sheet.ods",
+            "text.odt",
+            "slides.odp",
+            "data.csv",
+            "page.html",
+            "drawing.svg",
             "Wirecatch.AppImage",
             "install.sh",
-            "x.run",
-            "x.bin",
             "x.deb",
-            "x.rpm",
+            "something.unknowntype",
+            "README",
+            "tool",
         ] {
             assert!(is_program(Path::new(name)), "{name} should need trust");
         }
-        for name in [
-            "movie.mp4",
-            "report.pdf",
-            "archive.zip",
-            "photo.JPG",
-            "notes.txt",
-        ] {
-            assert!(!is_program(Path::new(name)), "{name} is not a program");
-        }
+    }
+
+    #[test]
+    fn the_type_is_read_the_way_the_system_reads_it() {
+        assert_eq!(file_type("report.PDF"), Some("pdf".into()));
+        assert_eq!(file_type("report.pdf.exe"), Some("exe".into()));
+        assert_eq!(file_type("noext"), None);
+        assert_eq!(file_type("trailing."), None);
+        assert!(is_program(Path::new("report.pdf.exe")));
+        assert!(is_program(Path::new("setup.exe.")));
+        assert!(is_program(Path::new("setup.exe ")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_drops_trailing_dots_and_spaces() {
+        assert_eq!(file_type("video.mp4."), Some("mp4".into()));
+        assert_eq!(file_type("video.mp4 . "), Some("mp4".into()));
+        assert!(!is_program(Path::new("video.mp4.")));
+        assert!(!is_program(Path::new("video.mp4  ")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn elsewhere_trailing_dots_and_spaces_are_part_of_the_name() {
+        assert_eq!(file_type("video.mp4."), None);
+        assert_eq!(file_type("video.mp4 "), Some("mp4 ".into()));
+        assert!(is_program(Path::new("video.mp4.")));
+        assert!(is_program(Path::new("video.mp4 ")));
     }
 
     #[cfg(unix)]
     #[test]
-    fn a_file_without_an_extension_marked_executable_is_a_program() {
+    fn a_file_marked_executable_is_a_program_whatever_its_name() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("tool");
-        std::fs::write(&file, b"#!/bin/sh\n").unwrap();
-        assert!(!is_program(&file));
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(is_program(&file));
+        for name in ["tool", "movie.mp4"] {
+            let file = dir.path().join(name);
+            std::fs::write(&file, b"#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(is_program(&file), name == "tool", "{name} not executable");
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(is_program(&file), "{name} marked executable");
+        }
+    }
+
+    /// The interface tells this error from others by its start (`isAddonRequired` in
+    /// `src/lib/addons.ts`).
+    #[test]
+    fn the_add_on_required_error_keeps_its_wording() {
+        assert!(
+            plain(CoreError::AddonRequired).starts_with("This needs the media add-on"),
+            "update isAddonRequired in src/lib/addons.ts too"
+        );
     }
 
     #[test]

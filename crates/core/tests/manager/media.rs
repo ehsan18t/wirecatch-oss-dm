@@ -88,7 +88,15 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() {
     assert_eq!(reply.action, AddAction::AwaitingConfirmation);
     assert!(reply.id.is_none());
 
+    // The UI hears that the stream is being read, then gets the choice under the same id.
+    let (reading, url) = next_event(&mut ui, "MediaAnalysing", |e| match e {
+        UiEvent::MediaAnalysing { id, url } => Some((*id, url.clone())),
+        _ => None,
+    })
+    .await;
+    assert!(url.ends_with("hls/master.m3u8"), "{url}");
     let choice = choice_requested(&mut ui).await;
+    assert_eq!(choice.id, reading);
     assert_eq!(choice.title, "Holiday clip");
     let labels: Vec<&str> = choice.options.iter().map(|o| o.label.as_str()).collect();
     assert_eq!(labels, ["720p, TS", "360p, TS"]);
@@ -152,11 +160,13 @@ async fn joining_separate_audio_needs_the_add_on() {
         .await
         .unwrap_err();
     assert!(matches!(error, CoreError::AddonRequired), "{error}");
-    let (addon, url) = next_event(&mut ui, "AddonRequired", |e| match e {
-        UiEvent::AddonRequired { addon, url } => Some((addon.clone(), url.clone())),
+    let (addon, url, id) = next_event(&mut ui, "AddonRequired", |e| match e {
+        UiEvent::AddonRequired { addon, url, id } => Some((addon.clone(), url.clone(), *id)),
         _ => None,
     })
     .await;
+    assert_eq!(id, choice.id, "the choice that waits for the add-on");
+
     assert_eq!(addon.state, AddonState::NotInstalled);
     assert!(url.ends_with("master.m3u8"));
     // The choice is still there to make again.
@@ -365,11 +375,14 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
         .await
         .unwrap();
     assert_eq!(reply.action, AddAction::AwaitingConfirmation);
-    let (addon, url) = next_event(&mut ui, "AddonRequired", |e| match e {
-        UiEvent::AddonRequired { addon, url } => Some((addon.clone(), url.clone())),
+    let (addon, url, id) = next_event(&mut ui, "AddonRequired", |e| match e {
+        UiEvent::AddonRequired { addon, url, id } => Some((addon.clone(), url.clone(), *id)),
         _ => None,
     })
     .await;
+    // The id is the waiting page's, so the prompt can drop exactly that page.
+    assert_eq!(h.manager.pending_addon_requests()[0].id, id);
+
     assert_eq!((addon.id.as_str(), url.as_str()), ("media", page.as_str()));
     assert!(addon.size.is_some_and(|s| s > 0));
     assert!(h.manager.pending_media_choices().is_empty());
@@ -427,6 +440,7 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() {
     let h = harness(publish(&server, &Releases::fake(), "r")).await;
     assert_eq!(install(&h).await.state, AddonState::Installed);
     tell_tool(&h, "fail.txt", "[site] 42: Video unavailable.");
+    let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
             &server.url("watch/5"),
@@ -435,6 +449,17 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() {
         ))
         .await
         .unwrap();
+    // The reading the UI was told about ends, so its note can go.
+    let reading = next_event(&mut ui, "MediaAnalysing", |e| match e {
+        UiEvent::MediaAnalysing { id, .. } => Some(*id),
+        _ => None,
+    })
+    .await;
+    next_event(&mut ui, "the reading closed", |e| match e {
+        UiEvent::ConfirmationClosed { id } if *id == reading => Some(()),
+        _ => None,
+    })
+    .await;
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
     let row = h.wait_status(row.id, DownloadStatus::Failed).await;
     let error = row.error.unwrap();

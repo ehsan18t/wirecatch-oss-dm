@@ -55,13 +55,8 @@
     return el instanceof HTMLSelectElement;
   }
 
-  // A visible question (a dialog, or the ask-first dialog) takes the keyboard.
-  const blocked = $derived(
-    app.dialog !== null ||
-      (app.pending.length > 0 && !app.pendingHidden) ||
-      (app.mediaChoices.length > 0 && !app.mediaHidden) ||
-      app.addonRequest !== null,
-  );
+  // A visible dialog or question takes the keyboard.
+  const blocked = $derived(app.dialog !== null || app.question !== null);
 
   function onkeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;

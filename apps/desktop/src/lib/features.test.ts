@@ -216,4 +216,100 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.pending).toHaveLength(0);
     expect(app.downloads.size).toBe(before + 1);
   });
+
+  it('media add-on: Settings, then Install or Remove, 2 clicks', async () => {
+    const { app, backend, click, palette } = await setup();
+    expect(palette('addon.install.media')).toBe(true);
+    await click(button(/^Settings/));
+    await click(button('Install'));
+    expect(app.addons?.[0]?.state.type).toBe('installing');
+    backend.tick(4500);
+    await settle();
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(palette('addon.remove.media')).toBe(true);
+    await click(button('Remove the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+  });
+
+  it('check for add-on updates: Settings, then Check for updates, 2 clicks; the result in words', async () => {
+    const { app, backend, click, palette } = await setup();
+    await app.installAddon('media');
+    backend.tick(4500);
+    await click(button(/^Settings/));
+    expect(palette('addon.check.media')).toBe(true);
+    const note = () => app.toasts.at(-1);
+
+    await click(button('Check for updates'));
+    expect(note()).toMatchObject({ kind: 'info', message: 'The media add-on is up to date.' });
+
+    backend.nextUpdateCheck = 'unreachable';
+    await click(button('Check for updates'));
+    expect(note()?.kind).toBe('error');
+    expect(note()?.message).toMatch(/^Wirecatch could not check for a newer media add-on/);
+
+    backend.nextUpdateCheck = 'newer';
+    await click(button('Check for updates'));
+    expect(note()?.message).toMatch(/^A newer media add-on is ready \(yt-dlp 2026\.10\.30/);
+    expect(button('Update')).toBeInTheDocument();
+  });
+
+  it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
+    const { app, backend, click } = await setup();
+    await click(button(/^Settings/));
+    await click(button('Install'));
+    await click(button('Stop installing the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+
+    await click(button('Install'));
+    backend.tick(4500);
+    await settle();
+    const version = app.addons?.[0]?.installed_version;
+    expect(version).toBeTruthy();
+    await app.updateAddon('media');
+    await settle();
+    await click(button('Stop updating the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(app.addons?.[0]?.installed_version).toBe(version);
+  });
+
+  it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {
+    const { app, backend, click } = await setup();
+    await app.installAddon('media');
+    backend.tick(4500);
+    await app.exportSettings();
+    await app.removeAddon('media');
+    await settle();
+    app.openDialog({ kind: 'import' });
+    await settle();
+    await click(button('Choose a settings file'));
+    await settle();
+    const offer = within(dialog());
+    expect(offer.getByText(/The file lists the media add-on/)).toBeInTheDocument();
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+    // The button that started the import is gone; Done has the focus.
+    expect(offer.getByRole('button', { name: 'Done' })).toHaveFocus();
+    await click(offer.getByRole('button', { name: 'Install' }));
+    expect(app.addons?.[0]?.state.type).toBe('installing');
+    // The same button now stops the install, so the focus stays on it.
+    const stop = offer.getByRole('button', { name: 'Stop installing the media add-on' });
+    expect(stop).toHaveFocus();
+    backend.tick(4500);
+    await settle();
+    // Installed: Stop is gone, and the focus moves to the card's next button rather than being lost.
+    expect(offer.getByRole('button', { name: 'Check for updates' })).toHaveFocus();
+  });
+
+  it('quality picker: appears on its own; put aside, the sidebar note brings it back, 1 click', async () => {
+    const { app, backend, click, palette } = await setup();
+    backend.simulateMediaChoice();
+    await settle();
+    expect(within(dialog()).getByText('Pick a quality')).toBeInTheDocument();
+    await click(button('Close'));
+    expect(palette('media.pick')).toBe(true);
+    await click(button('1 video waits for you to pick a quality'));
+    await click(screen.getByRole('radio', { name: /720p/ }));
+    const before = app.downloads.size;
+    await click(button('Download'));
+    expect(app.downloads.size).toBe(before + 1);
+  });
 });
