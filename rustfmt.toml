@@ -1,0 +1,2 @@
+# Formatting follows the 2024 style edition whatever the toolchain default is.
+style_edition = "2024"

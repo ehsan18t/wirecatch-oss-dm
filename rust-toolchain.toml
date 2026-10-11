@@ -1,0 +1,5 @@
+# The Rust release every developer, script and CI job uses. Raise it on purpose, together with any fixes the new lints need.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

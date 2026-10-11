@@ -32,6 +32,25 @@ url = "2"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl"] }
 axum = "0.8"
 
+# Every crate opts in with `[lints] workspace = true`. Levels are `warn` so local builds keep going while you work; the gate (`cargo clippy ... -- -D warnings`) turns every one into an error. An exception is written in place as `#[expect(lint, reason = "...")]`, never `allow`.
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Selected `restriction` lints.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+expect_used = "warn"
+print_stdout = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

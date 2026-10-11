@@ -22,3 +22,6 @@ tracing-subscriber.workspace = true
 default = []
 # Experimental HTTP/3 (`--http3`). Off by default, like the engine's feature.
 http3 = ["wirecatch-engine/http3"]
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+# Tests may unwrap and print: a panic there is the failure report.
+# The MSRV comes from each crate's `rust-version`, so it is not repeated here.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
