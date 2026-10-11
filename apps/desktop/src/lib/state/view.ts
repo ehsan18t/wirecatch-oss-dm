@@ -10,6 +10,19 @@ import type {
 
 export type StatusGroup = 'active' | 'waiting' | 'paused' | 'finished' | 'failed' | 'cancelled';
 
+/**
+ * The fields of a row that `visibleIds` and `countRows` read. A change to one can change which rows are shown, their order or the sidebar counts, so the download list is rebuilt when one changes. A test checks this list against what they actually read.
+ */
+export const LIST_FIELDS = [
+  'status',
+  'queue',
+  'category',
+  'file_name',
+  'url',
+  'total',
+  'added_at',
+] as const satisfies readonly (keyof DownloadSummary)[];
+
 export type View =
   | { kind: 'all' }
   | { kind: 'status'; group: StatusGroup }

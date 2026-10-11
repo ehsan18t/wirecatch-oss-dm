@@ -1,6 +1,15 @@
 import type { DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
-import { countRows, groupOf, sameView, visibleIds } from './view';
+import {
+  countRows,
+  groupOf,
+  LIST_FIELDS,
+  SORT_LABEL,
+  type SortKey,
+  sameView,
+  type View,
+  visibleIds,
+} from './view';
 
 const rows: DownloadSummary[] = [
   ['b-video.mp4', 'video', 'downloading', 1, 500, 3],
@@ -29,6 +38,43 @@ const rows: DownloadSummary[] = [
 }));
 const order = rows.map((r) => r.id);
 const get = (id: number) => rows.find((r) => r.id === id);
+
+// The list was rebuilt only when a field in a hand-kept list changed, and that list missed the
+// address (which search matches) and the time added (the newest-first sort).
+describe('LIST_FIELDS', () => {
+  it('names every field the list and the counts read', () => {
+    const read = new Set<string | symbol>();
+    const watch = (id: number): DownloadSummary | undefined => {
+      const row = get(id);
+      return (
+        row &&
+        new Proxy(row, {
+          get(target, key, receiver) {
+            read.add(key);
+            const value: unknown = Reflect.get(target, key, receiver);
+            return value;
+          },
+        })
+      );
+    };
+    const views: View[] = [
+      { kind: 'all' },
+      { kind: 'status', group: 'failed' },
+      { kind: 'queue', id: 2 },
+      { kind: 'category', category: 'video' },
+    ];
+    const sorts = Object.keys(SORT_LABEL) as SortKey[];
+    for (const view of views) {
+      for (const sort of sorts) {
+        for (const search of ['', 'example']) visibleIds(order, watch, view, search, sort);
+      }
+    }
+    countRows(order, watch);
+    read.delete('id');
+    const listed = new Set<string | symbol>(LIST_FIELDS);
+    expect([...read].filter((field) => !listed.has(field))).toEqual([]);
+  });
+});
 
 describe('visibleIds', () => {
   it('filters by view', () => {

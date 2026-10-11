@@ -11,6 +11,7 @@
    row being its own reactive object, which is what keeps updates proportional to what changed. */
 
 import type { DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
+import { LIST_FIELDS } from './view';
 
 function reactive<T extends object>(value: T): T {
   const proxied = $state(value);
@@ -43,9 +44,6 @@ const ROW_FIELDS: Readonly<Record<RowField, true>> = {
 };
 
 const FIELDS = Object.keys(ROW_FIELDS) as readonly RowField[];
-
-/** Fields that decide which rows are shown and in what order; a change to one rebuilds the visible list. */
-const LIST_FIELDS: readonly RowField[] = ['status', 'queue', 'category', 'file_name', 'total'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
