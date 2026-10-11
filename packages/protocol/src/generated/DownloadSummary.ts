@@ -3,6 +3,7 @@ import type { Category } from "./Category";
 import type { DownloadId } from "./DownloadId";
 import type { DownloadStatus } from "./DownloadStatus";
 import type { MediaSummary } from "./MediaSummary";
+import type { ProcessingProgress } from "./ProcessingProgress";
 import type { QueueId } from "./QueueId";
 import type { UserError } from "./UserError";
 import type { WaitReason } from "./WaitReason";
@@ -30,4 +31,9 @@ media: MediaSummary | null,
 /**
  * Unix time in milliseconds.
  */
-added_at: number, completed_at: number | null, };
+added_at: number, completed_at: number | null, 
+/**
+ * What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
+ * `None` at any other time.
+ */
+processing: ProcessingProgress | null, };

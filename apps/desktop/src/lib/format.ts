@@ -6,6 +6,7 @@ import type {
   DownloadStatus,
   FixAction,
   MediaKind,
+  ProcessingStep,
   Schedule,
   TimeOfDay,
   WaitReason,
@@ -64,6 +65,18 @@ export function formatEta(seconds: number | null): string {
 export function progressFraction(done: number, total: number | null): number | null {
   if (total === null || total <= 0) return null;
   return Math.min(1, Math.max(0, done / total));
+}
+
+/**
+ * How far ffmpeg's step is (joining, finishing or converting) from 0 to 1, while a media
+ * download is processed and ffmpeg reports it (D24). `null` otherwise.
+ */
+export function processingFraction(
+  row: Pick<DownloadSummary, 'status' | 'processing'>,
+): number | null {
+  if (row.status !== 'processing') return null;
+  const perMille = row.processing?.per_mille;
+  return perMille === null || perMille === undefined ? null : Math.min(1, perMille / 1000);
 }
 
 /** Progress as a whole percentage string, for example `42%`. Empty when unknown. */
@@ -287,6 +300,7 @@ export const FIX_LABEL: Record<FixAction, string> = {
   refresh_link: 'Get a fresh link',
   choose_folder: 'Choose another folder',
   free_disk_space: 'Open the folder to free space',
+  keep_original: 'Keep the original',
 };
 
 /** Shorter button text for the fix inside a list row, where room is tight. */
@@ -295,6 +309,14 @@ export const FIX_SHORT: Record<FixAction, string> = {
   refresh_link: 'New link',
   choose_folder: 'Change folder',
   free_disk_space: 'Open folder',
+  keep_original: 'Keep original',
+};
+
+/** What ffmpeg does to a downloaded video, in a couple of words (D24). */
+export const PROCESSING_LABEL: Record<ProcessingStep, string> = {
+  joining: 'Joining video and audio',
+  finishing: 'Finishing the file',
+  converting: 'Converting',
 };
 
 /** 1st, 2nd, 3rd, 4th, 11th, 21st. */
@@ -334,21 +356,41 @@ export function shownWait(row: Pick<DownloadSummary, 'status' | 'waiting'>): Wai
   return w.type === 'server_refused' && row.status === 'connecting' ? w : null;
 }
 
-/** A download's status in a couple of words, as its list row shows it. */
-export function statusShort(row: Pick<DownloadSummary, 'status' | 'waiting'>): string {
+/**
+ * A download's status in a couple of words, as its list row shows it. While ffmpeg works on a
+ * media download it says which step, with how far it is when known ("Converting, 45%").
+ */
+export function statusShort(
+  row: Pick<DownloadSummary, 'status' | 'waiting'> & Partial<Pick<DownloadSummary, 'processing'>>,
+): string {
   const wait = shownWait(row);
-  return wait ? waitShort(wait) : STATUS_LABEL[row.status];
+  if (wait) return waitShort(wait);
+  if (row.status === 'processing' && row.processing) {
+    const label = PROCESSING_LABEL[row.processing.step];
+    const fraction = processingFraction({ status: row.status, processing: row.processing });
+    return fraction === null ? label : `${label}, ${Math.min(99, Math.floor(fraction * 100))}%`;
+  }
+  return STATUS_LABEL[row.status];
 }
+
+/** What each processing step is, in a sentence. */
+const PROCESSING_DETAIL: Record<ProcessingStep, string> = {
+  joining: 'The video and audio are downloaded; Wirecatch is joining them into one file.',
+  finishing:
+    'The download is done; Wirecatch is putting it into its file with what you chose to add. This takes seconds.',
+  converting:
+    'The download is done; Wirecatch is converting it to the format you chose. Pause stops it, and it starts again from the download, which is kept.',
+};
 
 /**
  * What a download is doing, in a sentence, when there is more to say than its status: why it
- * waits, or that its video and audio are being joined. `null` otherwise.
+ * waits, or what ffmpeg is doing to it. `null` otherwise.
  */
 export function statusDetail(row: DownloadSummary, queueName: string): string | null {
   const wait = shownWait(row);
   if (wait) return waitLong(wait, queueName);
   if (row.status === 'processing') {
-    return 'The video and audio are downloaded; Wirecatch is joining them into one file.';
+    return PROCESSING_DETAIL[row.processing?.step ?? 'joining'];
   }
   return null;
 }

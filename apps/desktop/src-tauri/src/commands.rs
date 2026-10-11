@@ -64,6 +64,11 @@ pub async fn refresh_link(core: CoreState<'_>, id: DownloadId, url: String) -> C
 }
 
 #[tauri::command]
+pub async fn keep_original(core: CoreState<'_>, id: DownloadId) -> CommandResult<()> {
+    api::keep_original(core.manager().await?, id)
+}
+
+#[tauri::command]
 pub async fn move_to_queue(
     core: CoreState<'_>,
     ids: Vec<DownloadId>,

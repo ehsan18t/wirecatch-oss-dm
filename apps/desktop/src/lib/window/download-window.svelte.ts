@@ -440,6 +440,9 @@ export class DownloadWindowState {
       case 'free_disk_space':
         await this.openFolder();
         break;
+      case 'keep_original':
+        await this.#onRow((id) => this.backend.keepOriginal(id));
+        break;
     }
   }
 

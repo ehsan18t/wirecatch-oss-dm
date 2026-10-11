@@ -18,6 +18,7 @@
 //! | `remove` | `ids: Vec<DownloadId>`, `delete_file: bool` | nothing |
 //! | `retry` | `id: DownloadId` | nothing |
 //! | `refresh_link` | `id: DownloadId`, `url: String` | nothing |
+//! | `keep_original` | `id: DownloadId` | nothing; a video whose conversion failed is saved as it was downloaded (D24) |
 //! | `move_to_queue` | `ids: Vec<DownloadId>`, `queue: QueueId` | nothing |
 //! | `reorder` | `queue: QueueId`, `ids_in_order: Vec<DownloadId>` | nothing |
 //! | `pause_all` | none | nothing |
@@ -195,6 +196,7 @@ pub fn run() {
             commands::remove,
             commands::retry,
             commands::refresh_link,
+            commands::keep_original,
             commands::move_to_queue,
             commands::reorder,
             commands::pause_all,

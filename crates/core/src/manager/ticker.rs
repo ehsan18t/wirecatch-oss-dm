@@ -143,12 +143,14 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
         row.speed,
         row.connections,
         row.eta_secs,
+        row.processing,
     );
-    row.status = if reading.processing {
+    row.status = if reading.processing.is_some() {
         DownloadStatus::Processing
     } else {
         DownloadStatus::Downloading
     };
+    row.processing = reading.processing;
     row.done = reading.done;
     row.total = reading.total;
     row.connections = u32::try_from(reading.connections).unwrap_or(u32::MAX);
@@ -162,5 +164,6 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
             row.speed,
             row.connections,
             row.eta_secs,
+            row.processing,
         )
 }

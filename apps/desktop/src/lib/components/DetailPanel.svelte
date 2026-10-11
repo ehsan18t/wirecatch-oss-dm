@@ -18,10 +18,12 @@
     folderOf,
     linkForDisplay,
     MEDIA_SOURCE_LABEL,
+    processingFraction,
     progressFraction,
     shownWait,
     STATUS_LABEL,
     statusDetail,
+    statusShort,
   } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -80,11 +82,13 @@
     </button>
   {/if}
   {#if one}
-    {@const fraction = progressFraction(one.done, one.total)}
+    {@const fraction = processingFraction(one) ?? progressFraction(one.done, one.total)}
     <header>
       <span class="cat"><CategoryIcon category={one.category} size={18} /></span>
       <h2>{one.file_name}</h2>
-      <p class="status {one.status}">{STATUS_LABEL[one.status]}</p>
+      <p class="status {one.status}">
+        {one.status === 'processing' ? statusShort(one) : STATUS_LABEL[one.status]}
+      </p>
     </header>
 
     {#if shownWait(one)}
@@ -103,7 +107,7 @@
       <p class="waiting">
         {one.media.quality}, {MEDIA_SOURCE_LABEL[one.media.source]}.
         {#if one.status === 'processing'}
-          The video and audio are downloaded; Wirecatch is joining them into one file.
+          {statusDetail(one, '')}
         {/if}
       </p>
     {/if}

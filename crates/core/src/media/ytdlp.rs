@@ -46,6 +46,67 @@ pub(crate) struct Info {
     pub ext: Option<String>,
     #[serde(default)]
     pub format_id: Option<String>,
+    /// Length in seconds.
+    #[serde(default, deserialize_with = "lenient")]
+    pub duration: Option<f64>,
+    /// The picture yt-dlp names as the video's thumbnail.
+    #[serde(default, deserialize_with = "lenient")]
+    pub thumbnail: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub uploader: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub channel: Option<String>,
+    /// For music, the performer.
+    #[serde(default, deserialize_with = "lenient")]
+    pub artist: Option<String>,
+    /// For music, the track's title.
+    #[serde(default, deserialize_with = "lenient")]
+    pub track: Option<String>,
+    /// Subtitles written by people, by language.
+    #[serde(default, deserialize_with = "lenient")]
+    pub subtitles: HashMap<String, Vec<SubtitleFile>>,
+    /// Subtitles made by speech recognition (and machine translations of them), by language.
+    #[serde(default, deserialize_with = "lenient")]
+    pub automatic_captions: HashMap<String, Vec<SubtitleFile>>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub chapters: Vec<Chapter>,
+}
+
+/// Reads a field that yt-dlp may leave out, set to `null` or fill with something
+/// unexpected: anything that does not read as `T` becomes `T`'s default, so one odd
+/// field never makes a whole page unreadable.
+fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+/// One file of a subtitle language, in one of the formats the site offers.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct SubtitleFile {
+    #[serde(default, deserialize_with = "lenient")]
+    pub ext: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub url: Option<String>,
+    /// The language in words, for example "English" or "English (Original)".
+    #[serde(default, deserialize_with = "lenient")]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub http_headers: HashMap<String, String>,
+}
+
+/// One chapter of a video.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct Chapter {
+    #[serde(default, deserialize_with = "lenient")]
+    pub start_time: Option<f64>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub end_time: Option<f64>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub title: Option<String>,
 }
 
 /// One format of a page.
@@ -70,6 +131,9 @@ pub(crate) struct Format {
     pub tbr: Option<f64>,
     #[serde(default)]
     pub abr: Option<f64>,
+    /// Video bit rate in kbps.
+    #[serde(default, deserialize_with = "lenient")]
+    pub vbr: Option<f64>,
     #[serde(default)]
     pub filesize: Option<u64>,
     #[serde(default)]

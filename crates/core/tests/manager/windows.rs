@@ -38,6 +38,11 @@ fn pick(option: &str, later: bool) -> MediaSelection {
         file_name: None,
         queue: None,
         later,
+        output: Default::default(),
+        audio_kbps: None,
+        subtitles: Vec::new(),
+        subtitle_files: false,
+        chapters: false,
     }
 }
 

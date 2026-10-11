@@ -7,18 +7,20 @@
 //! failing or restarting keeps them; a part finished in an earlier run is not
 //! downloaded again.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, RateLimiter, Url,
 };
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{FixAction, UserError};
+use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
 use wirecatch_protocol::extension::Header;
 use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
 
@@ -28,7 +30,11 @@ use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::MediaTools;
 use crate::clock::Clock;
+use crate::media::convert::{self, ConvertError, Converted};
 use crate::media::merge::{self, Joined};
+use crate::media::output::{
+    self, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
+};
 use crate::media::ytdlp::{self, Fetched, Format, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::store::Origin;
@@ -147,7 +153,18 @@ async fn run(
             format,
             video,
             audio,
-        } => run_page(&job, &format, video, audio, progress, cancel).await,
+            output,
+            keep_ext,
+        } => {
+            let page = PageJob {
+                format,
+                video,
+                audio,
+                output: output.map(|o| *o),
+                keep_ext,
+            };
+            run_page(&job, &page, progress, cancel).await
+        }
         MediaJob::Unreadable => return Err(media::unreadable()),
     };
     match result {
@@ -187,7 +204,9 @@ async fn run_stream(
     let stream = Arc::new(StreamProgress::default());
     progress.add_stream(stream.clone());
     match wirecatch_streams::download(request, stream, cancel.clone()).await {
-        Ok(wirecatch_streams::Outcome::Completed { path, .. }) => finish(&path, job, &work).await,
+        Ok(wirecatch_streams::Outcome::Completed { path, .. }) => {
+            finish(&path, job, &work, &[]).await
+        }
         Ok(_) | Err(wirecatch_streams::Error::Cancelled) => Ok(MediaDone::Paused),
         Err(e) => {
             note_missing_ffmpeg(job, &e);
@@ -220,21 +239,29 @@ impl From<UserError> for PageError {
     }
 }
 
+/// What a page's video downloads and how it is saved.
+struct PageJob {
+    /// yt-dlp's format selection, for example `137+140`.
+    format: String,
+    video: Option<String>,
+    audio: Option<String>,
+    output: Option<OutputJob>,
+    keep_ext: Option<String>,
+}
+
 /// Downloads a page's chosen formats. When the server refuses a format's
 /// address, the page is read again for fresh addresses and the download goes on
 /// by itself after each of [`Job::refresh_delays`], keeping the parts already
 /// finished; only when every try is used up does the person see an error.
 async fn run_page(
     job: &Job,
-    format: &str,
-    video: Option<String>,
-    audio: Option<String>,
+    page: &PageJob,
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, UserError> {
     let mut delays = job.refresh_delays.iter();
     loop {
-        let status = match page_attempt(job, format, &video, &audio, progress, cancel).await {
+        let status = match page_attempt(job, page, progress, cancel).await {
             Ok(done) => return Ok(done),
             Err(PageError::Failed(error)) => return Err(error),
             Err(PageError::Refused { status }) => status,
@@ -256,13 +283,15 @@ async fn run_page(
     }
 }
 
-/// One attempt at a page's video: reads the page for fresh format addresses
-/// and downloads the formats not finished yet.
+/// One attempt at a page's video. Unless an earlier attempt downloaded
+/// everything (its list is in the work folder), the page is read again for fresh
+/// format addresses and what is not finished yet is downloaded: the formats,
+/// and the subtitles, cover picture and metadata the output wants. Then the
+/// file is saved; a conversion that was paused or failed starts again from the
+/// downloaded parts, never from the download.
 async fn page_attempt(
     job: &Job,
-    format: &str,
-    video: &Option<String>,
-    audio: &Option<String>,
+    page: &PageJob,
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, PageError> {
@@ -271,6 +300,12 @@ async fn page_attempt(
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
+    if let Some((downloaded, bytes)) = Downloaded::read(&work).await {
+        progress.start_over();
+        progress.add_done(bytes);
+        return Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?);
+    }
+    let (format, video, audio) = (&page.format, &page.video, &page.audio);
     let cookies = cookie_header(&job.origin);
     let ctx = ytdlp::Context {
         tools,
@@ -295,17 +330,44 @@ async fn page_attempt(
         && found
             .iter()
             .all(|f| f.transport() != Transport::YtDlp && f.url.is_some());
-    if !ourselves {
+    let files = if ourselves {
+        match fetch_parts(job, &found, &work, progress, cancel).await? {
+            Some(files) => files,
+            None => return Ok(MediaDone::Paused),
+        }
+    } else {
         // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
-        return match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
-            Fetched::Done(file) => Ok(finish(&file, job, &work).await?),
-            Fetched::Cancelled => Ok(MediaDone::Paused),
-        };
+        match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
+            Fetched::Done(file) => vec![file],
+            Fetched::Cancelled => return Ok(MediaDone::Paused),
+        }
+    };
+    let mut downloaded = Downloaded::of_media(&files);
+    if let Some(output) = &page.output
+        && !fetch_extras(job, &info, output, &work, &mut downloaded, cancel).await
+    {
+        return Ok(MediaDone::Paused);
     }
+    downloaded
+        .write(&work)
+        .await
+        .map_err(|e| disk(&e, &job.output))?;
+    Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?)
+}
+
+/// Downloads the formats `found` side by side into `work`: their files, in the
+/// order found (video first), or `None` when stopped.
+async fn fetch_parts(
+    job: &Job,
+    found: &[&Format],
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<Option<Vec<PathBuf>>, PageError> {
     let mut rules = Vec::with_capacity(found.len());
-    for format in &found {
+    for format in found {
         let url = format
             .url
             .as_deref()
@@ -317,7 +379,7 @@ async fn page_attempt(
         .iter()
         .zip(ROLES)
         .zip(rules)
-        .map(|((f, role), rule)| fetch_part(job, f, role, rule, &work, progress, cancel));
+        .map(|((f, role), rule)| fetch_part(job, f, role, rule, work, progress, cancel));
     let results = futures_join(parts.collect()).await;
     // Stopped wins over any error, and an error a fresh address would not fix
     // wins over a refused address.
@@ -327,7 +389,7 @@ async fn page_attempt(
     for result in results {
         match result {
             Ok(Some(file)) => files.push(file),
-            Ok(None) => return Ok(MediaDone::Paused),
+            Ok(None) => return Ok(None),
             Err(PageError::Failed(error)) => failed = failed.or(Some(error)),
             Err(PageError::Refused { status }) => refused = refused.or(Some(status)),
         }
@@ -338,26 +400,471 @@ async fn page_attempt(
     if let Some(status) = refused {
         return Err(PageError::Refused { status });
     }
-    let file = match files.as_slice() {
-        [single] => single.clone(),
-        [video, audio] => {
-            let ext = job
-                .output
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("mkv");
-            let joined = work.join(format!("joined.{ext}"));
-            progress.set_processing(true);
-            let result = merge::join(tools, video, audio, &joined, cancel).await;
-            progress.set_processing(false);
-            match result? {
-                Joined::Done => joined,
-                Joined::Cancelled => return Ok(MediaDone::Paused),
+    Ok(Some(files))
+}
+
+/// The list of what a page's video downloaded into its work folder, written
+/// once everything is there, so a conversion that is paused or fails starts
+/// again from these files without reading the page or downloading anything.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Downloaded {
+    /// The video and the separate audio, or the one file.
+    media: Vec<String>,
+    #[serde(default)]
+    subtitles: Vec<DownloadedSubtitle>,
+    #[serde(default)]
+    cover: Option<(String, ImageFormat)>,
+    /// The ffmpeg metadata file (tags, chapters).
+    #[serde(default)]
+    metadata: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DownloadedSubtitle {
+    file: String,
+    format: SubtitleFormat,
+    pick: SubtitlePick,
+}
+
+/// The list's name in the work folder.
+const DOWNLOADED: &str = "downloaded.json";
+/// The largest subtitle file taken.
+const MAX_SUBTITLE_BYTES: u64 = 20 * 1024 * 1024;
+/// The largest cover picture taken.
+const MAX_COVER_BYTES: u64 = 10 * 1024 * 1024;
+
+impl Downloaded {
+    fn of_media(files: &[PathBuf]) -> Self {
+        Self {
+            media: files
+                .iter()
+                .filter_map(|f| f.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .collect(),
+            ..Self::default()
+        }
+    }
+
+    /// Every file name in the list.
+    fn names(&self) -> impl Iterator<Item = &str> {
+        self.media
+            .iter()
+            .map(String::as_str)
+            .chain(self.subtitles.iter().map(|s| s.file.as_str()))
+            .chain(self.cover.iter().map(|c| c.0.as_str()))
+            .chain(self.metadata.iter().map(String::as_str))
+    }
+
+    /// The list in `work`, with the size of the media files, when it is there
+    /// and every file it names is a file straight inside `work`.
+    async fn read(work: &Path) -> Option<(Downloaded, u64)> {
+        let text = tokio::fs::read(work.join(DOWNLOADED)).await.ok()?;
+        let list: Downloaded = serde_json::from_slice(&text).ok()?;
+        if list.media.is_empty() || !(1..=2).contains(&list.media.len()) {
+            return None;
+        }
+        for name in list.names() {
+            if !plain_name(name) {
+                return None;
+            }
+            let meta = tokio::fs::symlink_metadata(work.join(name)).await.ok()?;
+            if !meta.is_file() {
+                return None;
             }
         }
-        _ => return Err(addon_missing().into()),
+        let mut bytes = 0;
+        for name in &list.media {
+            bytes += tokio::fs::metadata(work.join(name)).await.ok()?.len();
+        }
+        Some((list, bytes))
+    }
+
+    async fn write(&self, work: &Path) -> std::io::Result<()> {
+        let json = serde_json::to_vec(self).map_err(std::io::Error::other)?;
+        tokio::fs::write(work.join(DOWNLOADED), json).await
+    }
+}
+
+/// A file name with no folder in it, nor anything Windows reads as a stream or
+/// a drive.
+fn plain_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', ':', '\0'])
+}
+
+/// Downloads what `output` adds to the file besides the video: the chosen
+/// subtitles, the cover picture and the metadata file, into `work`, and lists
+/// them in `downloaded`. None of it is worth failing the video for: a
+/// subtitle or picture that cannot be had is left out with a note in the log.
+/// Returns `false` when stopped.
+async fn fetch_extras(
+    job: &Job,
+    info: &ytdlp::Info,
+    output: &OutputJob,
+    work: &Path,
+    downloaded: &mut Downloaded,
+    cancel: &CancellationToken,
+) -> bool {
+    for (n, pick) in output.subtitles.iter().enumerate() {
+        let Some(file) = output::subtitle_files(info, pick) else {
+            warn!(language = %pick.language, "the page no longer offers these subtitles");
+            continue;
+        };
+        let Some(url) = file.url.as_deref().and_then(|u| Url::parse(u).ok()) else {
+            continue;
+        };
+        let ext = file.ext.as_deref().unwrap_or("vtt");
+        let path = work.join(format!("sub-{n}.{ext}"));
+        match fetch_small(
+            job,
+            &url,
+            &file.http_headers,
+            &path,
+            MAX_SUBTITLE_BYTES,
+            cancel,
+        )
+        .await
+        {
+            Fetch::Done => {}
+            Fetch::Stopped => return false,
+            Fetch::Failed(reason) => {
+                warn!(language = %pick.language, %reason, "could not download subtitles");
+                continue;
+            }
+        }
+        match SubtitleFormat::detect(&head(&path).await, ext) {
+            Some(format) => downloaded.subtitles.push(DownloadedSubtitle {
+                file: format!("sub-{n}.{ext}"),
+                format,
+                pick: pick.clone(),
+            }),
+            None => {
+                warn!(language = %pick.language, "the subtitles are not in the format they claim")
+            }
+        }
+    }
+    if output.wants_cover()
+        && let Some(url) = info.thumbnail.as_deref().and_then(|u| Url::parse(u).ok())
+    {
+        let path = work.join("cover.image");
+        match fetch_small(job, &url, &HashMap::new(), &path, MAX_COVER_BYTES, cancel).await {
+            Fetch::Done => match ImageFormat::detect(&head(&path).await) {
+                Some(format) => downloaded.cover = Some(("cover.image".into(), format)),
+                None => warn!("the video's picture is not a JPEG, PNG or WebP picture"),
+            },
+            Fetch::Stopped => return false,
+            Fetch::Failed(reason) => warn!(%reason, "could not download the video's picture"),
+        }
+    }
+    if output.wants_metadata() {
+        let tags = output.tags && output.container.tags();
+        let title = info.track.as_deref().or(info.title.as_deref());
+        let artist = info
+            .artist
+            .as_deref()
+            .or(info.uploader.as_deref())
+            .or(info.channel.as_deref());
+        let chapters: &[ytdlp::Chapter] = if output.chapters { &info.chapters } else { &[] };
+        let text = output::ffmetadata(
+            title.filter(|_| tags),
+            artist.filter(|_| tags),
+            chapters,
+            output.duration_ms,
+        );
+        match tokio::fs::write(work.join("metadata.txt"), text).await {
+            Ok(()) => downloaded.metadata = Some("metadata.txt".into()),
+            Err(e) => warn!(error = %e, "could not write the metadata file"),
+        }
+    }
+    true
+}
+
+/// The first bytes of a file, to recognise its format.
+async fn head(path: &Path) -> Vec<u8> {
+    use tokio::io::AsyncReadExt;
+    let mut buf = vec![0u8; 512];
+    let Ok(mut file) = tokio::fs::File::open(path).await else {
+        return Vec::new();
     };
-    Ok(finish(&file, job, &work).await?)
+    let mut len = 0;
+    while len < buf.len() {
+        match file.read(&mut buf[len..]).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => len += n,
+        }
+    }
+    buf.truncate(len);
+    buf
+}
+
+/// How downloading a small file ended.
+enum Fetch {
+    Done,
+    Stopped,
+    Failed(String),
+}
+
+/// Downloads a small file (subtitles, a picture) to `path` under the same rule
+/// for the local network as the video, with only its own headers, and stops it
+/// once it is larger than `limit` bytes.
+async fn fetch_small(
+    job: &Job,
+    url: &Url,
+    own_headers: &HashMap<String, String>,
+    path: &Path,
+    limit: u64,
+    cancel: &CancellationToken,
+) -> Fetch {
+    let rule = match network_rule(&job.url, url).await {
+        Ok(rule) => rule,
+        Err(e) => return Fetch::Failed(e.message),
+    };
+    let mut options = job.options.clone();
+    let list: Vec<Header> = own_headers
+        .iter()
+        .map(|(name, value)| Header {
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect();
+    options.headers = headers::to_map(&list);
+    options.connections = 1;
+    options.private_network = rule;
+    let mut request = DownloadRequest::new(url.clone(), path.parent().unwrap_or(Path::new(".")));
+    request.exact_path = Some(path.to_path_buf());
+    request.options = options;
+    let progress = Arc::new(Progress::default());
+    let stop = cancel.child_token();
+    let download = wirecatch_engine::download(request, progress.clone(), stop.clone());
+    tokio::pin!(download);
+    // A small file needs no progress events: its size is checked a few times a
+    // second until it is done.
+    let mut check = tokio::time::interval(Duration::from_millis(200));
+    let result = loop {
+        tokio::select! {
+            result = &mut download => break result,
+            _ = check.tick() => {
+                if progress.done() > limit || progress.total().is_some_and(|t| t > limit) {
+                    stop.cancel();
+                }
+            }
+        }
+    };
+    match result {
+        Ok(Outcome::Completed { .. }) => Fetch::Done,
+        _ if cancel.is_cancelled() => Fetch::Stopped,
+        Ok(_) | Err(EngineError::Cancelled) => {
+            Fetch::Failed(format!("it is larger than {} MB", limit / (1024 * 1024)))
+        }
+        Err(e) => Fetch::Failed(e.to_string()),
+    }
+}
+
+/// Saves what was downloaded into the file the person chose: as it came
+/// (joined, if it came as separate video and audio), or converted by ffmpeg,
+/// with subtitle files next to it when they do not go inside.
+async fn save(
+    job: &Job,
+    page: &PageJob,
+    tools: &MediaTools,
+    downloaded: &Downloaded,
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<MediaDone, UserError> {
+    let files: Vec<PathBuf> = downloaded.media.iter().map(|n| work.join(n)).collect();
+    let Some(output) = page.output.as_ref() else {
+        return match join_original(
+            tools,
+            &files,
+            page.keep_ext.as_deref(),
+            job,
+            work,
+            progress,
+            cancel,
+        )
+        .await?
+        {
+            Some(file) => finish(&file, job, work, &[]).await,
+            None => Ok(MediaDone::Paused),
+        };
+    };
+    let Some(sidecars) = subtitle_files(tools, output, downloaded, work, cancel).await? else {
+        return Ok(MediaDone::Paused);
+    };
+    let file = if output.needs_pass() {
+        let inputs = inputs_for(output, downloaded, &files, work).await?;
+        let target = work.join(format!("output.{}", output.container.ext()));
+        let result = convert::convert(tools, output, &inputs, &target, progress, cancel).await;
+        progress.set_step(None);
+        match result {
+            Ok(Converted::Done) => target,
+            Ok(Converted::Cancelled) => return Ok(MediaDone::Paused),
+            Err(ConvertError::Failed(reason)) => return Err(conversion_failed(output, &reason)),
+            Err(ConvertError::Start(e)) => {
+                tools.mark_broken();
+                return Err(ffmpeg_cannot_start(&e));
+            }
+        }
+    } else {
+        match join_original(
+            tools,
+            &files,
+            Some(output.original_ext.as_str()),
+            job,
+            work,
+            progress,
+            cancel,
+        )
+        .await?
+        {
+            Some(file) => file,
+            None => return Ok(MediaDone::Paused),
+        }
+    };
+    finish(&file, job, work, &sidecars).await
+}
+
+/// The downloaded file as it came: the one file, or the video and audio joined
+/// (copied, never re-encoded) into a file with extension `ext` (the planned
+/// file's when `None`). `None` when stopped.
+async fn join_original(
+    tools: &MediaTools,
+    files: &[PathBuf],
+    ext: Option<&str>,
+    job: &Job,
+    work: &Path,
+    progress: &MediaProgress,
+    cancel: &CancellationToken,
+) -> Result<Option<PathBuf>, UserError> {
+    match files {
+        [single] => Ok(Some(single.clone())),
+        [video, audio] => {
+            let ext = ext
+                .or_else(|| job.output.extension().and_then(|e| e.to_str()))
+                .unwrap_or("mkv");
+            let ext = safe_ext(Some(ext), Content::Unknown);
+            let joined = work.join(format!("joined.{ext}"));
+            progress.set_step(Some(ProcessingStep::Joining));
+            let result = merge::join(tools, video, audio, &joined, cancel).await;
+            progress.set_step(None);
+            match result? {
+                Joined::Done => Ok(Some(joined)),
+                Joined::Cancelled => Ok(None),
+            }
+        }
+        _ => Err(addon_missing()),
+    }
+}
+
+/// What ffmpeg reads for `output`: the downloaded media, each read only as the
+/// format it was recognised as, and the subtitles, metadata and cover picture.
+async fn inputs_for(
+    output: &OutputJob,
+    downloaded: &Downloaded,
+    files: &[PathBuf],
+    work: &Path,
+) -> Result<Inputs, UserError> {
+    let (video, audio) = match (files, output.video) {
+        ([video, audio], _) => (Some(video), Some(audio)),
+        ([single], VideoAction::None) => (None, Some(single)),
+        ([single], _) => (Some(single), None),
+        _ => return Err(addon_missing()),
+    };
+    let video = match video {
+        Some(path) => Some((merge::input_format(path, "video").await?, path.clone())),
+        None => None,
+    };
+    let audio = match audio {
+        Some(path) => Some((merge::input_format(path, "audio").await?, path.clone())),
+        None => None,
+    };
+    Ok(Inputs {
+        video,
+        audio,
+        subtitles: downloaded
+            .subtitles
+            .iter()
+            .map(|s| (s.format, work.join(&s.file), s.pick.clone()))
+            .collect(),
+        metadata: downloaded.metadata.as_ref().map(|m| work.join(m)),
+        cover: downloaded
+            .cover
+            .as_ref()
+            .map(|(f, format)| (*format, work.join(f))),
+    })
+}
+
+/// The subtitles saved next to the file, as SubRip files in `work` with their
+/// language, made with ffmpeg; nothing when they go inside the file. One that
+/// ffmpeg cannot read is left out. `None` when stopped.
+async fn subtitle_files(
+    tools: &MediaTools,
+    output: &OutputJob,
+    downloaded: &Downloaded,
+    work: &Path,
+    cancel: &CancellationToken,
+) -> Result<Option<Vec<(PathBuf, String)>>, UserError> {
+    let mut made = Vec::new();
+    if !output.sidecar_subtitles() {
+        return Ok(Some(made));
+    }
+    for (n, subtitle) in downloaded.subtitles.iter().enumerate() {
+        let target = work.join(format!("subtitle-{n}.srt"));
+        match convert::to_srt(
+            tools,
+            subtitle.format,
+            &work.join(&subtitle.file),
+            &target,
+            cancel,
+        )
+        .await
+        {
+            Ok(Converted::Done) => made.push((target, subtitle.pick.language.clone())),
+            Ok(Converted::Cancelled) => return Ok(None),
+            Err(ConvertError::Failed(reason)) => {
+                warn!(language = %subtitle.pick.language, %reason, "could not make a subtitle file");
+            }
+            Err(ConvertError::Start(e)) => {
+                tools.mark_broken();
+                return Err(ffmpeg_cannot_start(&e));
+            }
+        }
+    }
+    Ok(Some(made))
+}
+
+/// A conversion failed: the download is kept, Try again converts again, and
+/// "Keep the original" saves it as it was downloaded.
+fn conversion_failed(output: &OutputJob, reason: &str) -> UserError {
+    let what = if output.container.is_video() || output.video != VideoAction::None {
+        "video"
+    } else {
+        "audio"
+    };
+    let message = if output.original {
+        format!(
+            "Wirecatch downloaded the {what}, but could not add the subtitles or chapters to it ({reason}). The download is kept: Try again only does this step again, and Keep the original saves it without them."
+        )
+    } else {
+        format!(
+            "Wirecatch downloaded the {what}, but could not save it as {} ({reason}). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
+            output.container.label(),
+            output.original_ext.to_ascii_uppercase()
+        )
+    };
+    UserError {
+        message,
+        fix: Some(FixAction::KeepOriginal),
+    }
+}
+
+fn ffmpeg_cannot_start(error: &std::io::Error) -> UserError {
+    UserError {
+        message: format!(
+            "The media add-on's ffmpeg could not be started ({error}). Reinstall the media add-on in Settings, Add-ons, then try again."
+        ),
+        fix: Some(FixAction::Retry),
+    }
 }
 
 /// An ffmpeg that could not be started means the add-on needs looking at again.
@@ -466,8 +973,15 @@ async fn fetch_part(
 
 /// Moves the finished file from the work folder to its place and removes the
 /// work folders. The file keeps its own extension; if that differs from the
-/// planned one and the name is taken, a free name is used.
-async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserError> {
+/// planned one and the name is taken, a free name is used. Subtitle files
+/// (`sidecars`, each with its language) go next to it as
+/// `<name>.<language>.srt`, never replacing a file.
+async fn finish(
+    file: &Path,
+    job: &Job,
+    work: &Path,
+    sidecars: &[(PathBuf, String)],
+) -> Result<MediaDone, UserError> {
     let output = &job.output;
     let (file, planned, work) = (file.to_path_buf(), output.to_path_buf(), work.to_path_buf());
     let (url, referrer) = (
@@ -475,11 +989,20 @@ async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserEr
         headers::referrer(&job.origin.headers).map(str::to_string),
     );
     let reserve = job.reserve.clone();
+    let sidecars = sidecars.to_vec();
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
         // Marked before it is put in place, so it is never there unmarked.
         crate::zone::mark(&file, &url, referrer.as_deref());
         let target = place(&file, &planned, &reserve)?;
         let bytes = std::fs::metadata(&target)?.len();
+        let anywhere: Reserve = Arc::new(|_: &Path, _| true);
+        for (subtitle, language) in &sidecars {
+            crate::zone::mark(subtitle, &url, referrer.as_deref());
+            let beside = sidecar_path(&target, language);
+            if let Err(e) = place(subtitle, &beside, &anywhere) {
+                warn!(error = %e, "could not put a subtitle file next to the video");
+            }
+        }
         let _ = std::fs::remove_dir_all(&work);
         Ok((target, bytes))
     })
@@ -490,6 +1013,27 @@ async fn finish(file: &Path, job: &Job, work: &Path) -> Result<MediaDone, UserEr
     })?;
     let (path, bytes) = moved.map_err(|e| disk(&e, output))?;
     Ok(MediaDone::Completed { path, bytes })
+}
+
+/// Where a subtitle file in `language` goes next to `file`:
+/// `<file's name>.<language>.srt`, with the language reduced to letters,
+/// digits and dashes.
+fn sidecar_path(file: &Path, language: &str) -> PathBuf {
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "video".into());
+    let language: String = language
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(35)
+        .collect();
+    let language = if language.is_empty() {
+        "und".into()
+    } else {
+        language
+    };
+    file.with_file_name(format!("{stem}.{language}.srt"))
 }
 
 /// The request options for one format: the format's own headers only (the
@@ -935,7 +1479,7 @@ mod tests {
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
         };
-        let done = finish(&part, &job, &work).await.unwrap();
+        let done = finish(&part, &job, &work, &[]).await.unwrap();
         let MediaDone::Completed { path, .. } = done else {
             panic!("not completed: {done:?}");
         };

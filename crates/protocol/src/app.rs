@@ -38,6 +38,33 @@ pub struct DownloadSummary {
     pub added_at: i64,
     #[ts(type = "number | null")]
     pub completed_at: Option<i64>,
+    /// What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
+    /// `None` at any other time.
+    #[serde(default)]
+    pub processing: Option<ProcessingProgress>,
+}
+
+/// What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProcessingProgress {
+    pub step: ProcessingStep,
+    /// How much is done, in tenths of a percent (0 to 1000), when known.
+    pub per_mille: Option<u16>,
+}
+
+/// One step after a media download's bytes have arrived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ProcessingStep {
+    /// Separate video and audio are copied into one file.
+    Joining,
+    /// The file is copied into its final format with its subtitles, chapters or tags; nothing
+    /// is re-encoded, so it takes seconds.
+    Finishing,
+    /// The video or audio is re-encoded for the chosen format.
+    Converting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -53,7 +80,8 @@ pub enum DownloadStatus {
     Failed,
     /// Stopped by the user; the partial file is gone. Retry starts over.
     Cancelled,
-    /// Downloaded; ffmpeg is joining the video and audio into one file.
+    /// Downloaded; ffmpeg is joining the video and audio into one file, or converting it
+    /// (see [`DownloadSummary::processing`]).
     Processing,
 }
 
@@ -74,6 +102,8 @@ pub enum FixAction {
     RefreshLink,
     ChooseFolder,
     FreeDiskSpace,
+    /// Converting a downloaded video failed: save it as it was downloaded instead (D24).
+    KeepOriginal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -138,6 +168,17 @@ pub struct MediaChoice {
     /// Where it will be saved if the user just confirms.
     pub folder: String,
     pub queue: QueueId,
+    /// The subtitles the video has, human-written ones first, then auto-generated ones (D24).
+    /// Empty for streams and for videos without subtitles.
+    #[serde(default)]
+    pub subtitles: Vec<MediaSubtitle>,
+    /// The video has chapters, which can be added to the file (D24).
+    #[serde(default)]
+    pub chapters: bool,
+    /// How long the video is, in milliseconds, when known.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -153,6 +194,76 @@ pub struct MediaOption {
     pub size: Option<u64>,
     /// True when ffmpeg must join separate video and audio for this option.
     pub needs_ffmpeg: bool,
+    /// The quality alone, without the format, for example "1080p, 60 fps" or "Audio only".
+    #[serde(default)]
+    pub quality: String,
+    /// What each "Save as" choice means for this quality (D24). The first is always
+    /// [`OutputFormat::Original`]; a stream offers only that one.
+    #[serde(default)]
+    pub outputs: Vec<OutputFit>,
+}
+
+/// What a media download is saved as (D24). `Original` keeps the format the site sends;
+/// the others are for videos (`Mp4`, `Mkv`, `Webm`) or for audio only (the rest).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum OutputFormat {
+    #[default]
+    Original,
+    Mp4,
+    Mkv,
+    Webm,
+    Mp3,
+    M4a,
+    Opus,
+    Flac,
+    Wav,
+}
+
+/// How one quality is saved as one [`OutputFormat`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutputFit {
+    pub format: OutputFormat,
+    /// The file's extension, without the dot, for example `mp4`.
+    pub ext: String,
+    /// The video must be re-encoded: it takes longer and keeps the processor or graphics
+    /// chip busy. `false` when the video is copied as is (seconds) or there is none.
+    pub converts_video: bool,
+    /// The audio must be re-encoded with the default audio quality (quick). Picking an audio
+    /// quality for an audio format always re-encodes it.
+    pub converts_audio: bool,
+    /// The video codec saved, in plain words ("H.264", "VP9", "AV1"), when there is video.
+    pub video_codec: Option<String>,
+    /// The downloaded audio's codec, in plain words ("AAC", "Opus").
+    pub audio_codec: Option<String>,
+    /// The downloaded audio's bit rate in kbps, when the site says.
+    pub audio_kbps: Option<u32>,
+    /// The downloaded audio is lossless (FLAC, ALAC, PCM), so a lossless format keeps all of it.
+    pub lossless_source: bool,
+    /// Estimated size of the saved file, when known.
+    #[ts(type = "number | null")]
+    pub size: Option<u64>,
+    /// Subtitles go inside the file as tracks; otherwise they are saved as `.srt` files next
+    /// to it.
+    pub embeds_subtitles: bool,
+    /// The format can hold chapters.
+    pub chapters: bool,
+}
+
+/// One subtitle language a video has (D24).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaSubtitle {
+    /// Identifies it in [`MediaSelection::subtitles`].
+    pub id: String,
+    /// The language code the site gives, for example `en` or `pt-BR`.
+    pub language: String,
+    /// The language in words, for example "English".
+    pub name: String,
+    /// Made by speech recognition rather than written by a person.
+    pub auto: bool,
 }
 
 /// The user's pick for a [`MediaChoice`]; absent fields keep the proposal.
@@ -166,6 +277,57 @@ pub struct MediaSelection {
     /// Download later: add it to its queue paused instead of starting it (D23).
     #[serde(default)]
     pub later: bool,
+    /// What to save it as; one of the chosen option's [`MediaOption::outputs`] (D24).
+    #[serde(default)]
+    pub output: OutputFormat,
+    /// Audio quality in kbps for a lossy audio format (MP3, M4A, Opus); `None` keeps the
+    /// downloaded audio when it fits, or uses the format's usual quality.
+    #[serde(default)]
+    pub audio_kbps: Option<u32>,
+    /// Ids of the [`MediaChoice::subtitles`] to save.
+    #[serde(default)]
+    pub subtitles: Vec<String>,
+    /// Save the subtitles as `.srt` files next to a video instead of inside it. Audio formats
+    /// always save them as files.
+    #[serde(default)]
+    pub subtitle_files: bool,
+    /// Add the video's chapters to the file, when the format can hold them.
+    #[serde(default)]
+    pub chapters: bool,
+}
+
+/// What the quality window starts from (D24): the last choices, kept separately for videos
+/// and for audio only. Also in Settings, Media, and in the settings profile.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaDefaults {
+    #[serde(default)]
+    pub video: OutputDefaults,
+    #[serde(default)]
+    pub audio: OutputDefaults,
+}
+
+/// The starting choices for one kind of media download.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OutputDefaults {
+    #[serde(default)]
+    pub format: OutputFormat,
+    /// Audio quality in kbps for a lossy audio format; `None` is the format's usual quality.
+    #[serde(default)]
+    pub audio_kbps: Option<u32>,
+    /// Subtitle languages to tick, for example `["en", "fr"]`.
+    #[serde(default)]
+    pub subtitle_languages: Vec<String>,
+    /// Tick a language's auto-generated subtitles when it has no human-written ones.
+    #[serde(default)]
+    pub auto_subtitles: bool,
+    /// Save subtitles as `.srt` files next to a video instead of inside it.
+    #[serde(default)]
+    pub subtitle_files: bool,
+    /// Add chapters to the file.
+    #[serde(default)]
+    pub chapters: bool,
 }
 
 /// An optional component (D2): ffmpeg, the yt-dlp media add-on.
@@ -313,6 +475,9 @@ pub struct AppSettings {
     /// (D23). Off: the window closes when the download starts.
     #[serde(default = "default_true")]
     pub show_progress_windows: bool,
+    /// What the quality window for a video starts from (D24).
+    #[serde(default)]
+    pub media: MediaDefaults,
 }
 
 fn default_true() -> bool {
@@ -489,4 +654,47 @@ pub struct ImportPreview {
     /// Ids of add-ons the profile lists that are not installed here, to offer
     /// after the import. Nothing is downloaded on import.
     pub addons_to_offer: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A selection from a client that knows nothing of output formats keeps today's
+    /// behaviour: the original format, no subtitles, no chapters.
+    #[test]
+    fn an_older_selection_keeps_the_original_format() {
+        let selection: MediaSelection = serde_json::from_str(
+            r#"{"option_id":"137+140","folder":null,"file_name":null,"queue":null}"#,
+        )
+        .unwrap();
+        assert_eq!(selection.output, OutputFormat::Original);
+        assert_eq!(selection.audio_kbps, None);
+        assert!(selection.subtitles.is_empty() && !selection.subtitle_files && !selection.chapters);
+    }
+
+    #[test]
+    fn output_formats_are_snake_case_words() {
+        let all = [
+            (OutputFormat::Original, "original"),
+            (OutputFormat::Mp4, "mp4"),
+            (OutputFormat::Mkv, "mkv"),
+            (OutputFormat::Webm, "webm"),
+            (OutputFormat::Mp3, "mp3"),
+            (OutputFormat::M4a, "m4a"),
+            (OutputFormat::Opus, "opus"),
+            (OutputFormat::Flac, "flac"),
+            (OutputFormat::Wav, "wav"),
+        ];
+        for (format, word) in all {
+            assert_eq!(
+                serde_json::to_string(&format).unwrap(),
+                format!("\"{word}\"")
+            );
+        }
+        assert_eq!(
+            MediaDefaults::default().video.format,
+            OutputFormat::Original
+        );
+    }
 }

@@ -7,6 +7,7 @@
     formatPercent,
     formatSize,
     formatSpeed,
+    processingFraction,
     progressFraction,
     statusShort,
   } from '$lib/format';
@@ -26,6 +27,8 @@
   const selected = $derived(app.selection.has(id));
   const active = $derived(app.active === id);
   const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
+  // While ffmpeg converts or joins, the wire shows that step's progress when it is known.
+  const processed = $derived(row ? processingFraction(row) : null);
   const statusText = $derived(row ? statusShort(row) : '');
 </script>
 
@@ -77,7 +80,9 @@
     {/if}
     <span class="status" role="gridcell" title={statusText}>{statusText}</span>
     <span class="wire" aria-hidden="true">
-      {#if row.status === 'processing' || (fraction === null && (row.status === 'downloading' || row.status === 'connecting'))}
+      {#if processed !== null}
+        <span class="fill" style:transform="scaleX({processed})"></span>
+      {:else if row.status === 'processing' || (fraction === null && (row.status === 'downloading' || row.status === 'connecting'))}
         <span class="fill unknown"></span>
       {:else}
         <span

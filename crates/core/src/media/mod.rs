@@ -3,18 +3,22 @@
 //! needs to run and to resume after a restart.
 
 pub(crate) mod choice;
+pub(crate) mod convert;
 pub(crate) mod merge;
+pub(crate) mod output;
 pub(crate) mod process;
 pub(crate) mod ytdlp;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Progress;
-use wirecatch_protocol::app::MediaSummary;
+use wirecatch_protocol::app::{MediaSummary, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
+
+use output::OutputJob;
 
 /// Next to a media download's file while it runs: the folder for its parts
 /// (video, audio, yt-dlp's own files) until they are joined.
@@ -47,6 +51,15 @@ pub(crate) enum MediaJob {
         video: Option<String>,
         /// The audio format id, when separate from the video.
         audio: Option<String>,
+        /// How the downloaded video or audio is saved (D24); `None` keeps it
+        /// as downloaded.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<Box<OutputJob>>,
+        /// The extension the joined video gets when it is kept as downloaded
+        /// after a conversion failed ("Keep the original"); `None` takes the
+        /// planned file's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keep_ext: Option<String>,
     },
     /// What to download was stored but cannot be read back (a damaged
     /// database). It never runs: downloading the link as a plain file would
@@ -87,11 +100,13 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 /// The progress of a media download, made of the progress of its parts.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct MediaProgress {
     parts: Mutex<Vec<Part>>,
-    /// Joining or remuxing with ffmpeg.
-    processing: AtomicBool,
+    /// What ffmpeg does now: one of the `STEP_` values.
+    step: AtomicU8,
+    /// Tenths of a percent of that step done; [`UNKNOWN`] when not known.
+    per_mille: AtomicU16,
     /// Progress reported by yt-dlp when it downloads by itself.
     own_done: AtomicU64,
     own_total: AtomicU64,
@@ -99,6 +114,27 @@ pub(crate) struct MediaProgress {
     /// When the next try with fresh addresses from the page starts, in Unix
     /// milliseconds; 0 while not waiting.
     retry_at: AtomicI64,
+}
+
+const STEP_NONE: u8 = 0;
+const STEP_JOINING: u8 = 1;
+const STEP_FINISHING: u8 = 2;
+const STEP_CONVERTING: u8 = 3;
+/// How far a step is, when that is not known.
+const UNKNOWN: u16 = u16::MAX;
+
+impl Default for MediaProgress {
+    fn default() -> Self {
+        Self {
+            parts: Mutex::default(),
+            step: AtomicU8::new(STEP_NONE),
+            per_mille: AtomicU16::new(UNKNOWN),
+            own_done: AtomicU64::default(),
+            own_total: AtomicU64::default(),
+            own: AtomicBool::default(),
+            retry_at: AtomicI64::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -118,7 +154,8 @@ pub(crate) struct Reading {
     pub done: u64,
     pub total: Option<u64>,
     pub connections: usize,
-    pub processing: bool,
+    /// What ffmpeg does now, if anything, and how far it is.
+    pub processing: Option<ProcessingProgress>,
     /// Waiting to try again (a server refused, and the page is read again
     /// for fresh addresses) at this Unix time in milliseconds; nothing is being
     /// received meanwhile.
@@ -138,8 +175,34 @@ impl MediaProgress {
         self.lock().push(Part::Done(bytes));
     }
 
-    pub fn set_processing(&self, on: bool) {
-        self.processing.store(on, Ordering::Relaxed);
+    /// Marks ffmpeg as doing `step` now (with nothing of it known done yet), or,
+    /// with `None`, as done.
+    pub fn set_step(&self, step: Option<ProcessingStep>) {
+        let value = match step {
+            None => STEP_NONE,
+            Some(ProcessingStep::Joining) => STEP_JOINING,
+            Some(ProcessingStep::Finishing) => STEP_FINISHING,
+            Some(ProcessingStep::Converting) => STEP_CONVERTING,
+        };
+        self.per_mille.store(UNKNOWN, Ordering::Relaxed);
+        self.step.store(value, Ordering::Relaxed);
+    }
+
+    /// How far the current step is, in tenths of a percent, when known.
+    pub fn set_per_mille(&self, done: Option<u16>) {
+        self.per_mille
+            .store(done.map_or(UNKNOWN, |d| d.min(1000)), Ordering::Relaxed);
+    }
+
+    fn processing(&self) -> Option<ProcessingProgress> {
+        let step = match self.step.load(Ordering::Relaxed) {
+            STEP_JOINING => ProcessingStep::Joining,
+            STEP_FINISHING => ProcessingStep::Finishing,
+            STEP_CONVERTING => ProcessingStep::Converting,
+            _ => return None,
+        };
+        let per_mille = Some(self.per_mille.load(Ordering::Relaxed)).filter(|p| *p != UNKNOWN);
+        Some(ProcessingProgress { step, per_mille })
     }
 
     /// Marks the download as waiting to try again at `at` (Unix milliseconds),
@@ -157,7 +220,7 @@ impl MediaProgress {
         self.own.store(false, Ordering::Relaxed);
         self.own_done.store(0, Ordering::Relaxed);
         self.own_total.store(0, Ordering::Relaxed);
-        self.processing.store(false, Ordering::Relaxed);
+        self.set_step(None);
         self.retry_at.store(0, Ordering::Relaxed);
     }
 
@@ -174,10 +237,11 @@ impl MediaProgress {
 
     pub fn read(&self) -> Reading {
         let mut reading = Reading {
-            processing: self.processing.load(Ordering::Relaxed),
+            processing: self.processing(),
             retry_at: Some(self.retry_at.load(Ordering::Relaxed)).filter(|t| *t > 0),
             ..Reading::default()
         };
+        let mut stream_joining = false;
         let mut total = Some(0u64);
         let parts = self.lock();
         for part in parts.iter() {
@@ -209,8 +273,14 @@ impl MediaProgress {
             reading.done += done;
             reading.connections += connections;
             reading.answered |= answered;
-            reading.processing |= joining;
+            stream_joining |= joining;
             total = total.zip(part_total).map(|(a, b)| a + b);
+        }
+        if stream_joining && reading.processing.is_none() {
+            reading.processing = Some(ProcessingProgress {
+                step: ProcessingStep::Joining,
+                per_mille: None,
+            });
         }
         if parts.is_empty() {
             total = None;
@@ -225,7 +295,7 @@ impl MediaProgress {
                 (false, own) => total.map(|t| t + own),
             };
         }
-        reading.total = total.filter(|t| *t >= reading.done || reading.processing);
+        reading.total = total.filter(|t| *t >= reading.done || reading.processing.is_some());
         reading
     }
 }
@@ -322,9 +392,44 @@ mod tests {
             format: "137+140".into(),
             video: Some("137".into()),
             audio: Some("140".into()),
+            output: None,
+            keep_ext: None,
         };
         let json = serde_json::to_string(&job).unwrap();
+        // Stored as before output formats existed, and read back.
+        assert_eq!(
+            json,
+            r#"{"type":"page","format":"137+140","video":"137","audio":"140"}"#
+        );
         assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), job);
+        let converting = MediaJob::Page {
+            format: "313+140".into(),
+            video: Some("313".into()),
+            audio: Some("140".into()),
+            output: Some(Box::new(OutputJob {
+                container: output::Container::Mp4,
+                video: output::VideoAction::Encode {
+                    codec: output::VideoCodec::H264,
+                    kbps: 8000,
+                },
+                audio: output::AudioAction::Copy,
+                subtitles: vec![output::SubtitlePick {
+                    key: "en-orig".into(),
+                    auto: true,
+                    language: "en".into(),
+                    name: "English".into(),
+                }],
+                subtitle_files: false,
+                chapters: true,
+                tags: false,
+                duration_ms: Some(1000),
+                original_ext: "webm".into(),
+                original: false,
+            })),
+            keep_ext: None,
+        };
+        let json = serde_json::to_string(&converting).unwrap();
+        assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), converting);
         let job = MediaJob::Stream {
             video: Pick::Track("v1".into()),
             audio: Pick::Skip,

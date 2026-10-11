@@ -15,7 +15,9 @@
 //!   lines in the format Wirecatch asks for, and prints the file's path.
 //! - `ffmpeg`: checks every `-i file:<path>` input exists, waits
 //!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
-//!   one per line, into the output (its last argument, `file:<path>`).
+//!   one per line, into the output (its last argument, `file:<path>`). Asked
+//!   for `-progress` (a conversion), it first reports half of a two-second
+//!   media done, and fails with the text of `ffmpeg-fail.txt` if that exists.
 //! - `deno`: prints a version.
 //!
 //! With `spawn-child` present, the `-J` call first starts a copy of itself that
@@ -168,7 +170,17 @@ fn ffmpeg(dir: &Path, args: &[String]) -> ExitCode {
             }
         }
     }
+    if args.iter().any(|a| a == "-progress") {
+        // Half of a two-second media done, as ffmpeg reports it.
+        println!("out_time_us=1000000");
+        println!("progress=continue");
+    }
     wait(&dir.join("ffmpeg-delay-ms"));
+    let converting = args.iter().any(|a| a == "-progress");
+    if converting && let Ok(reason) = std::fs::read_to_string(dir.join("ffmpeg-fail.txt")) {
+        eprintln!("{}", reason.trim());
+        return ExitCode::from(1);
+    }
     match std::fs::write(output, args.join("\n")) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

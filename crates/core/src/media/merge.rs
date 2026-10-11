@@ -55,7 +55,10 @@ pub(crate) fn arguments(
 /// The format ffmpeg may read the downloaded `role` (`video` or `audio`) as,
 /// recognized from its first bytes. A file that is none of the expected
 /// formats is refused before ffmpeg starts.
-async fn input_format(path: &Path, role: &'static str) -> Result<InputFormat, UserError> {
+pub(crate) async fn input_format(
+    path: &Path,
+    role: &'static str,
+) -> Result<InputFormat, UserError> {
     let owned = path.to_path_buf();
     let detected = tokio::task::spawn_blocking(move || InputFormat::detect(&owned))
         .await

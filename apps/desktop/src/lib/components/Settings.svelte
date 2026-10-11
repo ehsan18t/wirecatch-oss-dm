@@ -1,9 +1,10 @@
 <script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Search from '@lucide/svelte/icons/search';
-  import type { AppSettings, Category, Theme } from '@wirecatch/protocol';
+  import type { AppSettings, Category, OutputFormat, Theme } from '@wirecatch/protocol';
   import { tick } from 'svelte';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
+  import { FORMAT_LABEL, KBPS_CHOICES, nearestKbps } from '$lib/media-output';
   import {
     SECTIONS,
     searchSettings,
@@ -51,6 +52,9 @@
       app.settingsFocus = null;
     });
   });
+
+  const VIDEO_FORMATS: OutputFormat[] = ['original', 'mp4', 'mkv', 'webm'];
+  const AUDIO_FORMATS: OutputFormat[] = ['original', 'mp3', 'm4a', 'opus', 'flac', 'wav'];
 
   const THEMES: Array<{ value: Theme; label: string }> = [
     { value: 'system', label: 'Match system' },
@@ -366,6 +370,96 @@
               <option value={q.id}>{q.name}</option>
             {/each}
           </select>
+        {:else if def.id === 'media'}
+          <select
+            class="field"
+            aria-labelledby="label-media"
+            aria-describedby={help}
+            value={s.media.video.format}
+            onchange={(e) => {
+              const v = e.currentTarget.value as OutputFormat;
+              save((d) => void (d.media.video.format = v));
+            }}
+          >
+            {#each VIDEO_FORMATS as f (f)}
+              <option value={f}>{f === 'original' ? 'Original' : FORMAT_LABEL[f]}</option>
+            {/each}
+          </select>
+        {:else if def.id === 'media_subtitles' || def.id === 'media_audio_subtitles'}
+          {@const kind = def.id === 'media_subtitles' ? 'video' : 'audio'}
+          <ListEditor
+            label={def.label}
+            describedby={help}
+            placeholder="en, fr"
+            items={s.media[kind].subtitle_languages}
+            normalize={(x) =>
+              x
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]/g, '')}
+            onchange={(items) => save((d) => void (d.media[kind].subtitle_languages = items))}
+          />
+        {:else if def.id === 'media_auto_subtitles' || def.id === 'media_audio_auto_subtitles'}
+          {@const kind = def.id === 'media_auto_subtitles' ? 'video' : 'audio'}
+          <Toggle
+            label={def.label}
+            describedby={help}
+            checked={s.media[kind].auto_subtitles}
+            onchange={(v) => save((d) => void (d.media[kind].auto_subtitles = v))}
+          />
+        {:else if def.id === 'media_subtitle_files'}
+          <Toggle
+            label={def.label}
+            describedby={help}
+            checked={s.media.video.subtitle_files}
+            onchange={(v) => save((d) => void (d.media.video.subtitle_files = v))}
+          />
+        {:else if def.id === 'media_chapters' || def.id === 'media_audio_chapters'}
+          {@const kind = def.id === 'media_chapters' ? 'video' : 'audio'}
+          <Toggle
+            label={def.label}
+            describedby={help}
+            checked={s.media[kind].chapters}
+            onchange={(v) => save((d) => void (d.media[kind].chapters = v))}
+          />
+        {:else if def.id === 'media_audio'}
+          {@const audio = s.media.audio}
+          {@const kbpsList = KBPS_CHOICES[audio.format]}
+          <select
+            class="field"
+            aria-labelledby="label-media_audio"
+            aria-describedby={help}
+            value={audio.format}
+            onchange={(e) => {
+              const v = e.currentTarget.value as OutputFormat;
+              save((d) => {
+                d.media.audio.format = v;
+                const list = KBPS_CHOICES[v];
+                const kbps = d.media.audio.audio_kbps;
+                d.media.audio.audio_kbps = list && kbps !== null ? nearestKbps(list, kbps) : null;
+              });
+            }}
+          >
+            {#each AUDIO_FORMATS as f (f)}
+              <option value={f}>{f === 'original' ? 'Original' : FORMAT_LABEL[f]}</option>
+            {/each}
+          </select>
+          {#if kbpsList}
+            <select
+              class="field"
+              aria-label="Audio quality"
+              value={audio.audio_kbps === null ? '' : String(audio.audio_kbps)}
+              onchange={(e) => {
+                const v = e.currentTarget.value;
+                save((d) => void (d.media.audio.audio_kbps = v === '' ? null : Number(v)));
+              }}
+            >
+              <option value="">Usual quality</option>
+              {#each kbpsList as k (k)}
+                <option value={String(k)}>{k} kbps</option>
+              {/each}
+            </select>
+          {/if}
         {:else if def.id === 'global_speed_limit'}
           <Toggle
             label="Limit total speed"

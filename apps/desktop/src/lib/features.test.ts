@@ -154,7 +154,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
   it('status and file type filters: 1 click', async () => {
     const { app, click, palette } = await setup();
     await click(screen.getByRole('button', { name: /^Needs attention/ }));
-    expect(app.visible.length).toBe(5);
+    expect(app.visible.length).toBe(6);
     await click(screen.getByRole('button', { name: /^Video/ }));
     expect(app.view).toEqual({ kind: 'category', category: 'video' });
     expect(palette('show.status.failed') && palette('show.category.video')).toBe(true);

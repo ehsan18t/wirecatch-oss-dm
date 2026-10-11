@@ -477,6 +477,7 @@ impl Manager {
                 completed_at: None,
                 waiting: None,
                 media: new.media.as_ref().map(|m| m.summary.clone()),
+                processing: None,
             };
             let media_job = new.media.as_ref().and_then(|m| m.job.clone());
             // The path is a guess until the server answers with its own name; a

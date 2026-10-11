@@ -21,6 +21,8 @@
     formatSpeed,
     hostOf,
     MEDIA_SOURCE_LABEL,
+    PROCESSING_LABEL,
+    processingFraction,
     progressFraction,
     statusDetail,
     statusShort,
@@ -43,7 +45,9 @@
       row.status === 'processing',
   );
   const finished = $derived(row.status === 'completed');
-  const fraction = $derived(progressFraction(row.done, row.total));
+  // While ffmpeg converts or joins (D24), the bar shows that step when its progress is known.
+  const processed = $derived(processingFraction(row));
+  const fraction = $derived(processed ?? progressFraction(row.done, row.total));
   const percent = $derived(finished ? '' : formatPercent(row.done, row.total));
   const detail = $derived(statusDetail(row, win.queueName(row.queue)));
   /** "1.2 GB of 4.7 GB, 25%", or the size once finished, or what is known so far. */
@@ -53,7 +57,7 @@
     return percent ? `${of}, ${percent}` : of;
   });
   const indeterminate = $derived(
-    row.status === 'processing' ||
+    (row.status === 'processing' && processed === null) ||
       (fraction === null && (row.status === 'downloading' || row.status === 'connecting')),
   );
 
@@ -139,7 +143,9 @@
         <div
           class="wire {row.status}"
           role="progressbar"
-          aria-label="Downloaded"
+          aria-label={row.status === 'processing' && row.processing
+            ? PROCESSING_LABEL[row.processing.step]
+            : 'Downloaded'}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={finished

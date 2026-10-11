@@ -689,6 +689,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<Option<StoredDownload>> {
             completed_at: row.get(11)?,
             waiting: None,
             media: media.as_ref().map(|m| m.summary.clone()),
+            processing: None,
         },
         position: row.get(4)?,
         origin,
@@ -777,6 +778,7 @@ mod tests {
                 completed_at: None,
                 waiting: None,
                 media: None,
+                processing: None,
             },
             position: 3,
             origin: Origin {
@@ -891,6 +893,8 @@ mod tests {
                 format: "137+140".into(),
                 video: Some("137".into()),
                 audio: Some("140".into()),
+                output: None,
+                keep_ext: None,
             }),
         };
         row.summary.media = Some(media.summary.clone());

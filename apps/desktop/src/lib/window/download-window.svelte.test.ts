@@ -28,6 +28,15 @@ async function open(b: MockBackend, target: Target) {
 
 const keep = { fileName: null, folder: null, queue: null };
 const keepAnswer = { folder: null, file_name: null, queue: null };
+/** The same for a video, saved as it comes. */
+const keepMedia = {
+  ...keepAnswer,
+  output: 'original' as const,
+  audio_kbps: null,
+  subtitles: [],
+  subtitle_files: false,
+  chapters: false,
+};
 
 describe('a browser file', () => {
   it('Download now turns the window into the download’s progress window', async () => {
@@ -201,14 +210,14 @@ describe('a video', () => {
     const [choice] = await b.pendingMediaChoices();
     const { win, host } = await open(b, { question: choice?.id ?? -1 });
     const best = choice?.options.find((o) => o.needs_ffmpeg);
-    expect(await win.choose({ ...keepAnswer, option_id: best?.id ?? '', later: false })).toBe(true);
+    expect(await win.choose({ ...keepMedia, option_id: best?.id ?? '', later: false })).toBe(true);
     expect(win.awaitingAddon).not.toBeNull();
     expect(win.addon?.state.type).toBe('installing');
     expect(host.becameDownload).not.toHaveBeenCalled();
     b.tick(4500);
     await vi.waitFor(() => expect(win.phase).toBe('progress'));
     expect(win.awaitingAddon).toBeNull();
-    expect(win.row?.media?.quality).toBe('4K (2160p)');
+    expect(win.row?.media?.quality).toBe('2160p');
     win.dispose();
   });
 
@@ -217,10 +226,10 @@ describe('a video', () => {
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
     const { win } = await open(b, { question: choice?.id ?? -1 });
-    await win.choose({ ...keepAnswer, option_id: '1080', later: false });
+    await win.choose({ ...keepMedia, option_id: '1080', later: false });
     await win.stopAddonInstall();
     expect(win.awaitingAddon).toBeNull();
-    await win.choose({ ...keepAnswer, option_id: '1080', later: false });
+    await win.choose({ ...keepMedia, option_id: '1080', later: false });
     await win.declineAddon();
     expect(win.awaitingAddon).toBeNull();
     expect(win.phase).toBe('ask');
@@ -246,7 +255,7 @@ describe('a video', () => {
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
     const { win, host } = await open(b, { question: choice?.id ?? -1 });
-    await win.choose({ ...keepAnswer, option_id: '720', later: true });
+    await win.choose({ ...keepMedia, option_id: '720', later: true });
     expect(host.close).toHaveBeenCalledTimes(1);
     const id = host.becameDownload.mock.calls[0]?.[0] as number;
     expect((await b.getDownload(id)).status).toBe('paused');

@@ -26,7 +26,7 @@
   const joining = $derived(app.counts.joining);
   /** What the readout says when nothing is moving bytes. */
   const headline = $derived(
-    active === 0 ? 'Idle' : joining === active ? 'Joining video and audio' : 'Starting',
+    active === 0 ? 'Idle' : joining === active ? 'Finishing videos' : 'Starting',
   );
 
   function current(view: View): boolean {
@@ -72,7 +72,7 @@
       {:else}
         {[
           active - joining > 0 || joining === 0 ? `${active - joining} downloading` : '',
-          joining > 0 ? `${joining} joining video and audio` : '',
+          joining > 0 ? `${joining} being joined or converted` : '',
           waiting > 0 ? `${waiting} waiting` : '',
         ]
           .filter(Boolean)
