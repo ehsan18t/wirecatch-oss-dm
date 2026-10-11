@@ -239,3 +239,31 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
     assert_eq!(requests(&h3), 1);
     assert_eq!(requests(&tcp), 2, "the broken range went on over TCP");
 }
+
+/// With a limit on the size of one request, requests over HTTP/3 keep to it
+/// too, and so does the first one over TCP.
+#[tokio::test]
+async fn http3_requests_keep_to_the_request_limit() {
+    let data = test_data(8 * MIB + 777);
+    let cert = Cert::new();
+    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    let limit = MIB as u64 / 2;
+    let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "limited", |o| {
+        o.max_request_bytes = Some(limit);
+    })
+    .await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
+    assert!(requests(&h3) >= 8, "the rest came in pieces over HTTP/3");
+    for (name, counts) in [("TCP", &tcp), ("HTTP/3", &h3)] {
+        let largest = counts.largest_ask.load(Ordering::SeqCst);
+        assert!(
+            largest <= limit,
+            "a request over {name} asked for {largest} bytes"
+        );
+    }
+}

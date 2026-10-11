@@ -216,6 +216,22 @@ impl SegmentTable {
     }
 }
 
+/// The end (exclusive) of the next request for the range `[from, to)` when no
+/// request may ask for more than `limit` bytes: `to` itself without a limit, and
+/// for a range of unknown length, whose end is not known to stop at.
+///
+/// A connection asks for `[from, request_end)`, and once that has arrived asks
+/// for the next piece from where it got to, until the segment is done. As the
+/// segment's end can only move down (when another connection takes part of it),
+/// the requests always stay within it, and their ends never pass the end the
+/// segment had when each was sent.
+pub fn request_end(from: u64, to: u64, limit: Option<u64>) -> u64 {
+    match limit {
+        Some(limit) if limit > 0 && to != UNKNOWN_END => to.min(from.saturating_add(limit)),
+        _ => to,
+    }
+}
+
 /// Rounds a split point down to a 64 KiB boundary so writes stay page aligned,
 /// unless that would fall at or below `floor`.
 fn align_down(at: u64, floor: u64) -> u64 {

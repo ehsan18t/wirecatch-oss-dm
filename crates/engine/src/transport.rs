@@ -61,6 +61,10 @@ impl Connection {
     /// Starts receiving `[from, to)`. Returns the body and how many bytes at
     /// its start belong before `from` and must be skipped (a server without
     /// byte ranges always sends from the start).
+    ///
+    /// For HTTP, `to` is the end of this one request, which may stop short of
+    /// the segment's end (see [`Shared::request_end`]); FTP sends from `from`
+    /// to the end of the file whatever `to` is.
     pub async fn open(
         &mut self,
         shared: &Shared,
@@ -255,7 +259,8 @@ async fn open_http(
     let (mut session, url) = Session::new(url, opts, cancel.clone());
     session.guard = guard;
     let client = clients.build()?;
-    let probe = with_retries(opts, cancel, || http::probe(&client, &url, &session)).await?;
+    let limit = opts.request_limit();
+    let probe = with_retries(opts, cancel, || http::probe(&client, &url, &session, limit)).await?;
     #[cfg(feature = "http3")]
     let h3 = if opts.http3 {
         http3::Origin::advertised(

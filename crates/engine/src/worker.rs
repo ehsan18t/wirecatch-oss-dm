@@ -39,6 +39,10 @@ enum Ended {
     /// HTTP/3 failed and was given up for the download; the segment carries
     /// on over TCP from where it got to, without counting as a failed attempt.
     SwitchedProtocol,
+    /// Everything one request asked for arrived, but the segment goes on past
+    /// it ([`DownloadOptions::max_request_bytes`](crate::DownloadOptions::max_request_bytes)):
+    /// the next request continues from there on the same connection.
+    RequestDone,
 }
 
 pub(crate) async fn run(
@@ -74,8 +78,9 @@ pub(crate) async fn run(
         )
         .await;
         match result {
-            // `run_assignment` deals with a protocol switch itself.
-            Ok(Ended::Done) | Ok(Ended::SwitchedProtocol) => continue,
+            // `run_assignment` deals with a protocol switch and the end of one
+            // request itself.
+            Ok(Ended::Done) | Ok(Ended::SwitchedProtocol) | Ok(Ended::RequestDone) => continue,
             Ok(Ended::SteppedBack) => return Ok(()),
             Ok(Ended::Cancelled) | Ok(Ended::Eof) => {
                 shared.table.lock().unwrap().release(assignment.index);
@@ -90,6 +95,8 @@ pub(crate) async fn run(
 }
 
 /// Downloads one segment, retrying transient failures from wherever it got to.
+/// With a limit on the size of one request, the segment is fetched as a series
+/// of requests, each sent once the one before has arrived in full.
 ///
 /// A 429 or 503 with `Retry-After` is retried no sooner than the server asked.
 /// When the server keeps refusing this connection (or asks it to wait) while
@@ -112,19 +119,24 @@ async fn run_assignment(
         if from >= to {
             return Ok(Ended::Done);
         }
+        // A response handed over with the assignment (the first request's)
+        // asked for the same: it started at `from` with the same limit.
+        let end = shared.request_end(from, to);
 
         let attempt = async {
             let (mut body, skip) = match response.take() {
                 Some(body) => (body, 0),
-                None => connection.open(shared, from, to).await?,
+                None => connection.open(shared, from, end).await?,
             };
-            let ended = stream(shared, writer, index, from, &mut body, skip).await;
+            let ended = stream(shared, writer, index, from, end, &mut body, skip).await;
             connection.finish(body, &shared.cancel).await;
             Ok::<_, Failure>(ended?)
         };
 
         match attempt.await {
             Ok(Ended::SwitchedProtocol) => continue,
+            // Progress: failures before it no longer count.
+            Ok(Ended::RequestDone) => attempts = Attempts::default(),
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
             Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
@@ -219,11 +231,14 @@ impl Attempts {
 
 /// Streams a response body into the segment until it is fully claimed, the body
 /// ends, or the download is cancelled. Whatever arrived is written before returning.
+/// `request_end` is where the request for the body ended; a body that ends there
+/// before the segment does is complete ([`Ended::RequestDone`]), not cut short.
 async fn stream(
     shared: &Shared,
     writer: &mut Writer,
     index: usize,
     from: u64,
+    request_end: u64,
     body: &mut Body,
     mut skip: u64,
 ) -> Result<Ended> {
@@ -293,6 +308,8 @@ async fn stream(
                 Ok(Ended::Done)
             } else if at >= end {
                 Ok(Ended::Done)
+            } else if at >= request_end {
+                Ok(Ended::RequestDone)
             } else {
                 Err(Error::PrematureEof { at, end })
             }

@@ -16,7 +16,7 @@ use crate::fetch::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::http::Clients;
 use crate::limiter::RateLimiter;
 use crate::progress::Progress;
-use crate::segment::SegmentTable;
+use crate::segment::{self, SegmentTable};
 use crate::state::ResumeState;
 use crate::transport::{self, Opened, Remote};
 use crate::{ftp, naming, storage, worker};
@@ -121,6 +121,24 @@ pub struct DownloadOptions {
     /// download started. HTTP/3 is not used then, as QUIC connections do not go
     /// through that filter. `ftp` links are not covered.
     pub private_network: PrivateNetwork,
+    /// The most bytes one HTTP request may ask for (default `None`: no limit).
+    ///
+    /// Some servers slow down any request for more than a certain amount; video
+    /// sites do this to make players fetch a little at a time (yt-dlp reports
+    /// it as a format's `http_chunk_size`). With `Some(n)`, no request over
+    /// HTTP/1.1, HTTP/2 or HTTP/3 asks for more than `n` bytes: the first
+    /// request asks for `bytes=0-(n-1)` and learns the size from its
+    /// `Content-Range`, and each connection fetches a larger range as a series
+    /// of requests of at most `n` bytes, one after the other on the same
+    /// connection. Splitting, resuming, retries, speed limits and the stall
+    /// timeout work exactly as without it.
+    ///
+    /// A server that does not accept byte ranges is downloaded in one request
+    /// as before, and so is a file whose size the server does not say. FTP
+    /// ignores this option. `Some(0)` is the same as `None`. Only
+    /// [`download`] uses it: a [`Fetcher`](crate::Fetcher) sends the requests
+    /// its caller asks for.
+    pub max_request_bytes: Option<u64>,
 }
 
 impl Default for DownloadOptions {
@@ -139,7 +157,16 @@ impl Default for DownloadOptions {
             allow_insecure_redirects: false,
             http3: false,
             private_network: PrivateNetwork::Allow,
+            max_request_bytes: None,
         }
+    }
+}
+
+impl DownloadOptions {
+    /// [`max_request_bytes`](Self::max_request_bytes) as a limit, `None` when
+    /// there is none.
+    pub(crate) fn request_limit(&self) -> Option<u64> {
+        self.max_request_bytes.filter(|&n| n > 0)
     }
 }
 
@@ -282,6 +309,19 @@ pub(crate) struct Shared {
     pub opts: DownloadOptions,
     /// Connections currently streaming a response body.
     pub receiving: AtomicUsize,
+}
+
+impl Shared {
+    /// Where the next request for `[from, to)` ends: cut to
+    /// [`DownloadOptions::max_request_bytes`] for HTTP with byte ranges, the
+    /// whole range otherwise (FTP, or a server without ranges).
+    pub fn request_end(&self, from: u64, to: u64) -> u64 {
+        let limit = match self.remote {
+            Remote::Http { .. } if self.ranged => self.opts.request_limit(),
+            _ => None,
+        };
+        segment::request_end(from, to, limit)
+    }
 }
 
 struct Target {
