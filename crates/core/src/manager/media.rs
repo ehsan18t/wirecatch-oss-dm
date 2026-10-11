@@ -166,7 +166,7 @@ impl Manager {
             let addon = self.addon_info(&state.addon);
             self.emit(UiEvent::AddonRequired {
                 addon,
-                url: url.to_string(),
+                url: crate::redact::url_for_display(url.as_str()),
                 id,
             });
         } else {
@@ -217,7 +217,7 @@ impl Manager {
                 let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
                     addon,
-                    url: choice_url,
+                    url: crate::redact::url_for_display(&choice_url),
                     id,
                 });
                 return Err(CoreError::AddonRequired);
@@ -323,7 +323,7 @@ impl Manager {
             .map(|(id, m)| AddonRequestItem {
                 id: *id,
                 addon: addon.clone(),
-                url: m.source.url.to_string(),
+                url: crate::redact::url_for_display(m.source.url.as_str()),
             })
             .collect()
     }
@@ -391,7 +391,7 @@ impl Manager {
         };
         self.emit(UiEvent::MediaAnalysing {
             id,
-            url: source.url.to_string(),
+            url: crate::redact::url_for_display(source.url.as_str()),
         });
         let found = match source.kind {
             MediaKind::Page => match &tools {

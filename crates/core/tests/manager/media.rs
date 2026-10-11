@@ -832,3 +832,37 @@ async fn a_stale_wait_never_pops_a_question_later() {
     }
     assert!(ytdlp_calls(&h).is_empty(), "the stale page was read");
 }
+
+/// A password in a video's link is never shown while the video is read or
+/// offered; the stream is still read from the real link.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_password_in_a_video_link_is_never_shown() {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await;
+    let mut ui = h.manager.subscribe();
+    let url = server
+        .url("hls/master.m3u8")
+        .replacen("http://", "http://ada:s3cret@", 1);
+    let mut capture = media_capture(&url, MediaKind::Hls, Some("Clip"));
+    capture.page_url = Some("https://ada:pagepass@example.com/watch".into());
+    h.manager.add_capture(capture).await.unwrap();
+    let (_, analysing) = next_event(&mut ui, "MediaAnalysing", |e| match e {
+        UiEvent::MediaAnalysing { id, url } => Some((*id, url.clone())),
+        _ => None,
+    })
+    .await;
+    assert!(analysing.starts_with("http://ada:***@"), "{analysing}");
+    let choice = choice_requested(&mut ui).await;
+    assert_eq!(
+        choice.page_url.as_deref(),
+        Some("https://ada:***@example.com/watch")
+    );
+    for listed in h.manager.pending_media_choices() {
+        let text = serde_json::to_string(&listed).unwrap();
+        assert!(
+            !text.contains("s3cret") && !text.contains("pagepass"),
+            "{text}"
+        );
+    }
+}
