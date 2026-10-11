@@ -11,6 +11,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use bytes::Bytes;
 use hyper::body::Incoming;
@@ -185,15 +186,16 @@ impl hyper::body::Body for Full {
 
 /// An HTTP/3 server on a UDP port of its own. Returns the port.
 pub async fn start_h3(data: Bytes, cert: &Cert) -> (u16, Arc<Counts>) {
-    start_h3_breaking(data, cert, None).await
+    start_h3_breaking(data, cert, None, Duration::ZERO).await
 }
 
 /// Like [`start_h3`], but every response stream is reset after
-/// `break_after` bytes, as a broken QUIC path would.
+/// `break_after` bytes and a pause of `pause`, as a broken QUIC path would.
 pub async fn start_h3_breaking(
     data: Bytes,
     cert: &Cert,
     break_after: Option<usize>,
+    pause: Duration,
 ) -> (u16, Arc<Counts>) {
     let tls = cert.server_config(&[b"h3"]);
     let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls).unwrap();
@@ -232,6 +234,7 @@ pub async fn start_h3_breaking(
                         if let Some(limit) = break_after {
                             let cut = body.slice(..limit.min(body.len()));
                             let _ = stream.send_data(cut).await;
+                            tokio::time::sleep(pause).await;
                             stream.stop_stream(h3::error::Code::H3_INTERNAL_ERROR);
                             return;
                         }

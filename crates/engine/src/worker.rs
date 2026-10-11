@@ -36,6 +36,9 @@ enum Ended {
     /// The server refuses this extra connection; the segment was handed back
     /// to the connections that are working.
     SteppedBack,
+    /// HTTP/3 failed and was given up for the download; the segment carries
+    /// on over TCP from where it got to, without counting as a failed attempt.
+    SwitchedProtocol,
 }
 
 pub(crate) async fn run(
@@ -71,7 +74,8 @@ pub(crate) async fn run(
         )
         .await;
         match result {
-            Ok(Ended::Done) => continue,
+            // `run_assignment` deals with a protocol switch itself.
+            Ok(Ended::Done) | Ok(Ended::SwitchedProtocol) => continue,
             Ok(Ended::SteppedBack) => return Ok(()),
             Ok(Ended::Cancelled) | Ok(Ended::Eof) => {
                 shared.table.lock().unwrap().release(assignment.index);
@@ -121,6 +125,7 @@ async fn run_assignment(
         };
 
         match attempt.await {
+            Ok(Ended::SwitchedProtocol) => continue,
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
             Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
@@ -173,6 +178,8 @@ async fn stream(
     let _receiving = Receiving::new(&shared.receiving);
     writer.start(index, from);
     let stall = shared.opts.stall_timeout;
+    // Whether receiving failed (rather than, say, writing to disk).
+    let mut body_failed = false;
 
     let outcome: Result<Ended> = loop {
         let next = tokio::select! {
@@ -181,9 +188,15 @@ async fn stream(
             next = tokio::time::timeout(stall, body.next()) => next,
         };
         let mut data = match next {
-            Err(_) => break Err(Error::Stalled(stall.as_secs())),
+            Err(_) => {
+                body_failed = true;
+                break Err(Error::Stalled(stall.as_secs()));
+            }
             Ok(Ok(None)) => break Ok(Ended::Eof),
-            Ok(Err(e)) => break Err(e),
+            Ok(Err(e)) => {
+                body_failed = true;
+                break Err(e);
+            }
             Ok(Ok(Some(chunk))) => chunk,
         };
 
@@ -213,6 +226,11 @@ async fn stream(
 
     writer.finish(&shared.table).await?;
 
+    // A failure of HTTP/3 itself: the range carries on over TCP.
+    let outcome = match outcome {
+        Err(e) if body_failed && body.abandon_http3(&e) => Ok(Ended::SwitchedProtocol),
+        other => other,
+    };
     match outcome? {
         Ended::Eof => {
             let mut table = shared.table.lock().unwrap();

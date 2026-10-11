@@ -47,8 +47,9 @@ fn test_data(len: usize) -> Bytes {
 const MIB: usize = 1024 * 1024;
 
 /// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
+/// No retries are allowed: falling back from HTTP/3 must never need one.
 async fn fetch(cert: &Cert, tcp_port: u16, http3: bool, test: &str) -> (Vec<u8>, Duration) {
-    fetch_from(cert, "127.0.0.1", tcp_port, http3, test).await
+    fetch_from(cert, "127.0.0.1", tcp_port, http3, test, |_| {}).await
 }
 
 async fn fetch_from(
@@ -57,6 +58,7 @@ async fn fetch_from(
     tcp_port: u16,
     http3: bool,
     test: &str,
+    tune: impl FnOnce(&mut crate::download::DownloadOptions),
 ) -> (Vec<u8>, Duration) {
     let dir = std::env::temp_dir().join(format!("wirecatch-h3-{test}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -64,6 +66,8 @@ async fn fetch_from(
     let mut request = DownloadRequest::new(url, &dir);
     request.options.connections = 4;
     request.options.http3 = http3;
+    request.options.max_retries = 0;
+    tune(&mut request.options);
     let clients = Clients::with_roots(&request.options, cert.roots.clone());
     let started = Instant::now();
     let outcome = download_with(
@@ -112,7 +116,7 @@ async fn quic_goes_to_the_address_the_first_request_reached() {
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost").await;
+    let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost", |_| {}).await;
 
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
@@ -163,7 +167,8 @@ async fn falls_back_to_tcp_when_quic_is_blocked() {
 async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
     let data = test_data(8 * MIB);
     let cert = Cert::new();
-    let (h3_port, h3) = h3_server::start_h3_breaking(data.clone(), &cert, Some(100_000)).await;
+    let (h3_port, h3) =
+        h3_server::start_h3_breaking(data.clone(), &cert, Some(100_000), Duration::ZERO).await;
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
@@ -172,4 +177,30 @@ async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
     assert!(bytes == data, "downloaded bytes differ");
     assert!(requests(&h3) >= 1, "HTTP/3 was tried");
     assert!(requests(&tcp) >= 2, "and abandoned for TCP");
+}
+
+/// The HTTP/3 connection breaks late in its range, after the only other
+/// connection has finished and stopped. With no retries allowed, the range
+/// must still finish over TCP: a switch of protocol is not a failed attempt.
+#[tokio::test]
+async fn falling_back_mid_stream_does_not_use_up_a_retry() {
+    let data = test_data(16 * MIB);
+    let cert = Cert::new();
+    let (h3_port, h3) =
+        h3_server::start_h3_breaking(data.clone(), &cert, Some(7 * MIB), Duration::from_secs(1))
+            .await;
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+
+    // Two connections, 8 MiB each, and parts too big to split again: the TCP
+    // connection finishes its half and stops before HTTP/3 breaks.
+    let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
+        o.connections = 2;
+        o.min_split = 4 * MIB as u64;
+    })
+    .await;
+
+    assert!(bytes == data, "downloaded bytes differ");
+    assert_eq!(requests(&h3), 1);
+    assert_eq!(requests(&tcp), 2, "the broken range went on over TCP");
 }

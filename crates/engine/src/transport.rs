@@ -40,7 +40,7 @@ impl Remote {
                 #[cfg(feature = "http3")]
                 h3: None,
             },
-            Remote::Ftp(server) => Connection::Ftp(ftp::Connection::new(server.clone())),
+            Remote::Ftp(server) => Connection::Ftp(Box::new(ftp::Connection::new(server.clone()))),
         })
     }
 }
@@ -54,7 +54,7 @@ pub(crate) enum Connection {
         #[cfg(feature = "http3")]
         h3: Option<http3::Connection>,
     },
-    Ftp(ftp::Connection),
+    Ftp(Box<ftp::Connection>),
 }
 
 impl Connection {
@@ -149,6 +149,23 @@ impl Body {
         }
     }
 
+    /// For a body arriving over HTTP/3: gives up HTTP/3 for the rest of the
+    /// download because of `why`, and returns true, so the caller carries on
+    /// over TCP. False for any other body.
+    pub fn abandon_http3(&self, why: &dyn std::fmt::Display) -> bool {
+        match self {
+            #[cfg(feature = "http3")]
+            Body::Http3(body) => {
+                body.abandon(why);
+                true
+            }
+            _ => {
+                let _ = why;
+                false
+            }
+        }
+    }
+
     /// The next piece of the body, or `None` once it ended normally.
     pub async fn next(&mut self) -> Result<Option<&[u8]>> {
         match self {
@@ -207,7 +224,7 @@ pub(crate) async fn open(
                 file_name: None,
                 content_type: None,
                 body: Body::Ftp(probe.transfer),
-                connection: Connection::Ftp(probe.connection),
+                connection: Connection::Ftp(Box::new(probe.connection)),
                 remote: Remote::Ftp(probe.server),
             })
         }

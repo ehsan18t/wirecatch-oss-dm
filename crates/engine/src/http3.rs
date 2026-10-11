@@ -355,11 +355,13 @@ impl Body {
                 Ok(Some(&self.chunk[..]))
             }
             Ok(None) => Ok(None),
-            Err(e) => {
-                self.origin.mark_broken(&e);
-                Err(Error::transport("the HTTP/3 stream failed", e, false))
-            }
+            Err(e) => Err(Error::transport("the HTTP/3 stream failed", e, false)),
         }
+    }
+
+    /// Gives up HTTP/3 for the rest of the download.
+    pub fn abandon(&self, why: &dyn std::fmt::Display) {
+        self.origin.mark_broken(why);
     }
 }
 
