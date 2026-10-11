@@ -24,10 +24,18 @@ const QUIT_PATIENCE: Duration = Duration::from_secs(15);
 pub struct Lifecycle {
     quitting: AtomicBool,
     finished: AtomicBool,
+    /// The tray icon could not be made, so closing the window quits.
+    no_tray: AtomicBool,
     tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl Lifecycle {
+    /// Records that there is no tray icon: with nothing to come back through, closing the window
+    /// quits, as if `close_to_tray` were off.
+    pub fn without_tray(&self) {
+        self.no_tray.store(true, Ordering::SeqCst);
+    }
+
     /// Keeps a background task so quitting can stop it.
     pub fn keep(&self, task: JoinHandle<()>) {
         self.tasks
@@ -85,11 +93,21 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-/// Whether closing the last window should leave the app running in the tray.
-fn keeps_running<R: Runtime>(app: &AppHandle<R>) -> bool {
-    app.try_state::<Core>()
-        .and_then(|core| core.get().map(|m| m.get_settings().close_to_tray))
-        .unwrap_or(true)
+/// Whether closing the last window should leave the app running: only with a tray icon to come
+/// back through, and when `close_to_tray` is on (`None`, while the manager is still opening,
+/// counts as on, the default).
+pub fn keeps_running(has_tray: bool, close_to_tray: Option<bool>) -> bool {
+    has_tray && close_to_tray.unwrap_or(true)
+}
+
+fn keeps_running_now<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let has_tray = app
+        .try_state::<Lifecycle>()
+        .is_some_and(|life| !life.no_tray.load(Ordering::SeqCst));
+    let close_to_tray = app
+        .try_state::<Core>()
+        .and_then(|core| core.get().map(|m| m.get_settings().close_to_tray));
+    keeps_running(has_tray, close_to_tray)
 }
 
 /// Handles the app's run events.
@@ -104,8 +122,22 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
         }
         api.prevent_exit();
         // `None` means the last window closed; anything else is a request to exit.
-        if code.is_some() || !keeps_running(app) {
+        if code.is_some() || !keeps_running_now(app) {
             quit(app);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_the_window_keeps_running_only_with_a_tray_and_close_to_tray_on() {
+        assert!(keeps_running(true, Some(true)));
+        assert!(keeps_running(true, None), "the default while opening is on");
+        assert!(!keeps_running(true, Some(false)));
+        assert!(!keeps_running(false, Some(true)), "no tray, no way back");
+        assert!(!keeps_running(false, None));
     }
 }

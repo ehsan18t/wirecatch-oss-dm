@@ -55,9 +55,11 @@
     "linux": {
       "deb": {
         "section": "net",
+        "depends": ["libayatana-appindicator3-1"],
         "preRemoveScript": "linux/prerm.sh"
       },
       "rpm": {
+        "depends": ["libayatana-appindicator-gtk3"],
         "preRemoveScript": "linux/prerm.sh"
       }
     }

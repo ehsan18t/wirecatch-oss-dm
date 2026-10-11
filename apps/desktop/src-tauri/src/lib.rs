@@ -228,7 +228,12 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
     let config = ManagerConfig::new(data_dir.clone(), host::known_folders(&home));
     app.manage(Core::new(config));
 
-    tray::create(&handle)?;
+    if let Err(e) = tray::create(&handle) {
+        // Some Linux desktops have no tray. Downloads matter more than the icon: keep going,
+        // and let closing the window quit, since there would be no way back to it.
+        tracing::warn!("could not put Wirecatch in the tray ({e}); closing the window will quit");
+        app.state::<Lifecycle>().without_tray();
+    }
     let starting = handle.clone();
     let task = tauri::async_runtime::spawn(async move { start(starting, listener).await });
     app.state::<Lifecycle>().keep(task);
