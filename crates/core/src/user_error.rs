@@ -143,12 +143,14 @@ pub(crate) fn list_recovered(recovery: &Recovery) -> StartupNotice {
                 kept_at.display()
             ),
         },
-        Recovery::UnreadableRemoved(count) => StartupNotice {
-            title: "Some downloads were removed from the list".to_owned(),
+        Recovery::UnreadableKept(count) => StartupNotice {
+            title: "Some downloads are hidden from the list".to_owned(),
             message: format!(
-                "Wirecatch could not read {count} {} in its list and removed {}. Files already downloaded are still in their folders.",
+                "Wirecatch could not read {count} {} in its list, perhaps saved by a newer version. {} kept for a version that can read {}, without {} sign-in. Files already downloaded are still in their folders.",
                 if *count == 1 { "download" } else { "downloads" },
+                if *count == 1 { "It is" } else { "They are" },
                 if *count == 1 { "it" } else { "them" },
+                if *count == 1 { "its" } else { "their" },
             ),
         },
     }

@@ -159,7 +159,8 @@ pub(crate) enum Recovery {
         kept_at: PathBuf,
     },
     /// This many downloads could not be read and were deleted, since their rows may still hold cookies.
-    UnreadableRemoved(usize),
+    /// This many downloads could not be read (a newer version may have saved them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
+    UnreadableKept(usize),
 }
 
 /// Suffix of a damaged database moved aside, followed by the Unix time in milliseconds.
@@ -652,17 +653,33 @@ fn load(conn: &Connection) -> Result<Snapshot> {
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
-    let mut unreadable = Vec::new();
+    let mut newly_unreadable = 0;
     for row in stmt.query_map([], read_download)? {
         match row? {
-            StoredRow::Readable(download) => downloads.push(*download),
-            StoredRow::Unreadable(id) => unreadable.push(id),
+            StoredRow::Readable {
+                download,
+                origin_damaged,
+            } => {
+                if origin_damaged {
+                    // Rewritten at once, so the damaged text, which may hold cookies, is gone.
+                    conn.execute(
+                        "UPDATE downloads SET origin = ?2 WHERE id = ?1",
+                        params![download.summary.id.0, to_json(&download.origin)],
+                    )?;
+                }
+                downloads.push(*download);
+            }
+            StoredRow::Unreadable { id, origin } => {
+                let (kept, first_seen) = without_sign_in(&origin);
+                conn.execute(
+                    "UPDATE downloads SET origin = ?2 WHERE id = ?1",
+                    params![id.0, kept],
+                )?;
+                if first_seen {
+                    newly_unreadable += 1;
+                }
+            }
         }
-    }
-    // The rows may still hold cookies, and nothing can ever show or resume them.
-    let mut delete = conn.prepare("DELETE FROM downloads WHERE id = ?1")?;
-    for id in &unreadable {
-        delete.execute([id.0])?;
     }
 
     Ok(Snapshot {
@@ -670,8 +687,33 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         last_ids,
         queues,
         downloads,
-        recovery: (!unreadable.is_empty()).then_some(Recovery::UnreadableRemoved(unreadable.len())),
+        recovery: (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
     })
+}
+
+/// The stored origin of a row this build cannot read, without its sign-in, and whether this is the first start that found the row. Such a row is kept for a version that can read it (after going back to an older version, say), but nothing here can resume it or forget its sign-in after a week (D17), so it must not keep one. It is marked as having forgotten its sign-in, which also tells a later start it was already counted.
+fn without_sign_in(origin: &str) -> (String, bool) {
+    let mut value = match serde_json::from_str::<serde_json::Value>(origin) {
+        Ok(value @ serde_json::Value::Object(_)) => value,
+        _ => return (to_json(&forgotten_origin()), true),
+    };
+    let first_seen = value.get("forgot_sign_in") != Some(&serde_json::Value::Bool(true));
+    let headers = value
+        .get("headers")
+        .and_then(|h| serde_json::from_value::<Vec<Header>>(h.clone()).ok())
+        .map(|h| crate::headers::without_sign_in(&h).unwrap_or(h))
+        .unwrap_or_default();
+    value["headers"] = serde_json::to_value(headers).unwrap_or_default();
+    value["forgot_sign_in"] = serde_json::Value::Bool(true);
+    (value.to_string(), first_seen)
+}
+
+/// An origin that holds nothing, for a row whose stored origin was damaged.
+fn forgotten_origin() -> Origin {
+    Origin {
+        forgot_sign_in: true,
+        ..Origin::default()
+    }
 }
 
 fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
@@ -742,23 +784,37 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     Ok(())
 }
 
-/// One stored download row, or the id of a row that cannot be understood.
+/// One stored download row, or a row that cannot be understood.
 enum StoredRow {
-    Readable(Box<StoredDownload>),
-    Unreadable(DownloadId),
+    Readable {
+        download: Box<StoredDownload>,
+        /// Its stored origin could not be read and was replaced by [`forgotten_origin`].
+        origin_damaged: bool,
+    },
+    Unreadable {
+        id: DownloadId,
+        /// The stored origin, as it is.
+        origin: String,
+    },
 }
 
-/// A row that cannot be understood is reported rather than failing the whole start.
+/// A row that cannot be understood is reported rather than failing the whole start. A damaged origin costs only the sign-in it held.
 fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     let id = DownloadId(row.get(0)?);
     let path: String = row.get(2)?;
     let category = from_text(&row.get::<_, String>(5)?);
     let status = from_text(&row.get::<_, String>(6)?);
-    let origin = from_json(&row.get::<_, String>(12)?, "download origin");
-    let (Some(category), Some(status), Some(origin)) = (category, status, origin) else {
+    let stored_origin: String = row.get(12)?;
+    let (Some(category), Some(status)) = (category, status) else {
         warn!(id = id.0, "a stored download cannot be read");
-        return Ok(StoredRow::Unreadable(id));
+        return Ok(StoredRow::Unreadable {
+            id,
+            origin: stored_origin,
+        });
     };
+    let parsed: Option<Origin> = from_json(&stored_origin, "download origin");
+    let origin_damaged = parsed.is_none();
+    let origin = parsed.unwrap_or_else(forgotten_origin);
     let mut status = status;
     let mut error = row
         .get::<_, Option<String>>(9)?
@@ -792,36 +848,39 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Ok(StoredRow::Readable(Box::new(StoredDownload {
-        summary: DownloadSummary {
-            id,
-            url: row.get(1)?,
-            file_name,
-            path,
-            queue: QueueId(row.get(3)?),
-            category,
-            status,
-            total: row.get::<_, Option<i64>>(7)?.map(to_u64),
-            done: to_u64(row.get(8)?),
-            speed: 0,
-            connections: 0,
-            eta_secs: None,
-            error,
-            added_at: row.get(10)?,
-            completed_at: row.get(11)?,
-            waiting: None,
-            media: media.as_ref().map(|m| m.summary.clone()),
-            processing: None,
-        },
-        position: row.get(4)?,
-        origin,
-        naming: NameChoice {
-            settled: row.get(13)?,
-            name: row.get(14)?,
-            folder: row.get(15)?,
-        },
-        media,
-    })))
+    Ok(StoredRow::Readable {
+        origin_damaged,
+        download: Box::new(StoredDownload {
+            summary: DownloadSummary {
+                id,
+                url: row.get(1)?,
+                file_name,
+                path,
+                queue: QueueId(row.get(3)?),
+                category,
+                status,
+                total: row.get::<_, Option<i64>>(7)?.map(to_u64),
+                done: to_u64(row.get(8)?),
+                speed: 0,
+                connections: 0,
+                eta_secs: None,
+                error,
+                added_at: row.get(10)?,
+                completed_at: row.get(11)?,
+                waiting: None,
+                media: media.as_ref().map(|m| m.summary.clone()),
+                processing: None,
+            },
+            position: row.get(4)?,
+            origin,
+            naming: NameChoice {
+                settled: row.get(13)?,
+                name: row.get(14)?,
+                folder: row.get(15)?,
+            },
+            media,
+        }),
+    })
 }
 
 /// Unit-like enums are stored as their snake_case serde name.
@@ -1195,24 +1254,79 @@ mod tests {
         );
     }
 
-    // Unreadable rows used to stay in the table forever, still holding their cookies, and nobody was told.
+    // Rows this build could not read were deleted for good, including rows a newer version wrote
+    // with a status this one does not know, which going back to an older version then lost.
     #[tokio::test]
-    async fn unreadable_downloads_are_removed_and_counted() {
+    async fn unreadable_downloads_are_kept_without_their_sign_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut signed_in = download(2);
+        signed_in.origin.headers = vec![
+            Header {
+                name: "Cookie".into(),
+                value: "session=secret".into(),
+            },
+            Header {
+                name: "Referer".into(),
+                value: "https://example.com/".into(),
+            },
+        ];
+        store.save_downloads(vec![download(1), signed_in]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute(
+            "UPDATE downloads SET status = 'from_a_newer_version' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.recovery, Some(Recovery::UnreadableKept(1)));
+        assert_eq!(snapshot.downloads, vec![download(1)]);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let origin: String = conn
+            .query_row("SELECT origin FROM downloads WHERE id = 2", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        drop(conn);
+        assert!(!origin.contains("secret"), "{origin}");
+        assert!(origin.contains("Referer"), "{origin}");
+
+        let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(again.recovery, None, "told once");
+        assert_eq!(again.downloads, vec![download(1)]);
+    }
+
+    #[tokio::test]
+    async fn a_damaged_origin_costs_only_the_sign_in() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
         store.save_downloads(vec![download(1), download(2)]);
         store.flush().await;
         drop(store);
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
-        conn.execute("UPDATE downloads SET origin = 'not json' WHERE id = 2", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE downloads SET origin = 'Cookie: session=secret' WHERE id = 2",
+            [],
+        )
+        .unwrap();
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(snapshot.recovery, Some(Recovery::UnreadableRemoved(1)));
-        assert_eq!(snapshot.downloads, vec![download(1)]);
-        let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(again.recovery, None, "the unreadable row is gone for good");
+        assert_eq!(snapshot.recovery, None);
+        let mut recovered = download(2);
+        recovered.origin = forgotten_origin();
+        assert_eq!(snapshot.downloads, vec![download(1), recovered]);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let origin: String = conn
+            .query_row("SELECT origin FROM downloads WHERE id = 2", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(!origin.contains("secret"), "{origin}");
     }
 
     #[test]
