@@ -384,9 +384,13 @@ impl Manager {
         }
         self.emit_addons(&state.addon);
         let ready = state.addon.tools.is_some();
+        let failed = !ready && !cancelled && !quiet;
         drop(state);
         if ready {
             self.media_addon_ready();
+        } else if failed {
+            // The pages waiting for it would otherwise wait for good.
+            self.media_addon_failed();
         }
     }
 
@@ -672,6 +676,7 @@ impl Manager {
             if due && let Err(e) = manager.check_addon_updates().await {
                 warn!(error = %e, "the add-on update check failed");
             }
+            manager.expire_addon_waits();
             drop(manager);
             tokio::select! {
                 _ = tokio::time::sleep(LOOK_EVERY) => {}

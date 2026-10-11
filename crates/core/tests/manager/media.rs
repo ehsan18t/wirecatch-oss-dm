@@ -703,3 +703,85 @@ async fn stopping_yt_dlp_stops_what_it_started() {
         "{cwd}"
     );
 }
+
+/// Pages waiting for the add-on can be listed again (a reloaded window offers
+/// the install again) and dismissed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    let page = server.url("watch/11");
+    h.manager
+        .add_capture(media_capture(&page, MediaKind::Page, None))
+        .await
+        .unwrap();
+    let waiting = h.manager.pending_addon_requests();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        (waiting[0].url.as_str(), waiting[0].addon.id.as_str()),
+        (page.as_str(), "media")
+    );
+    h.manager.dismiss_media_choice(waiting[0].id).unwrap();
+    assert!(h.manager.pending_addon_requests().is_empty());
+}
+
+/// When the install the person started fails, the waiting pages say so in the
+/// list instead of waiting for good.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_install_turns_waiting_pages_into_failed_downloads() {
+    let server = FileServer::start().await;
+    let mut sources = publish(&server, &Releases::fake(), "bad");
+    sources.deno.sha256 = crate::media_support::sha256(b"not it");
+    let h = harness(sources).await;
+    h.manager
+        .add_capture(media_capture(
+            &server.url("watch/12"),
+            MediaKind::Page,
+            Some("Waiting"),
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(install(&h).await.state, AddonState::Failed { .. }));
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let error = row.error.unwrap();
+    assert!(
+        error.message.contains("could not be installed"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.fix, Some(FixAction::Retry));
+    assert!(h.manager.pending_addon_requests().is_empty());
+}
+
+/// A page that waited half an hour is not turned into a question once the
+/// add-on arrives: it becomes a failed download instead.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stale_wait_never_pops_a_question_later() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    h.manager
+        .add_capture(media_capture(
+            &server.url("watch/13"),
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    h.clock.advance(chrono::TimeDelta::minutes(31));
+    let mut ui = h.manager.subscribe();
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    assert!(row.error.unwrap().message.contains("waited"));
+    assert!(h.manager.pending_media_choices().is_empty());
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    while let Ok(event) = ui.try_recv() {
+        assert!(
+            !matches!(event, UiEvent::MediaChoiceRequested(_)),
+            "a stale question was asked"
+        );
+    }
+    assert!(ytdlp_calls(&h).is_empty(), "the stale page was read");
+}
