@@ -81,6 +81,39 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             "The download stopped before it began. Try again.",
             FixAction::Retry,
         ),
+        EngineError::FtpReply { code, message, .. } => ftp_reply(*code, message),
+        EngineError::FtpLoginRefused {
+            host,
+            code,
+            message,
+            anonymous,
+            ..
+        } => fix(
+            if *anonymous {
+                format!(
+                    "The FTP server {host} does not allow anonymous downloads (it answered \"{code} {}\"). Refresh the link with one that includes your user name and password, like ftp://name:password@{host}/file.",
+                    message.trim().trim_end_matches('.')
+                )
+            } else {
+                format!(
+                    "The FTP server {host} did not accept the user name or password in the link (it answered \"{code} {}\"). Refresh the link with the right ones.",
+                    message.trim().trim_end_matches('.')
+                )
+            },
+            FixAction::RefreshLink,
+        ),
+        EngineError::FtpTlsUnavailable { host, .. } => fix(
+            format!(
+                "The FTP server {host} does not offer encryption, so Wirecatch stopped rather than download without it. If an unencrypted download is acceptable, refresh the link with one that starts with ftp:// instead."
+            ),
+            FixAction::RefreshLink,
+        ),
+        EngineError::FtpProxyUnsupported { variable, .. } => fix(
+            format!(
+                "FTP downloads cannot go through a proxy yet, and the {variable} setting on this computer asks for one. Remove {variable} from the environment to download this link directly, then try again."
+            ),
+            FixAction::Retry,
+        ),
         // A kind of error added to the engine after this was written.
         other => fix(
             format!("The download failed ({other}). Try again."),
@@ -105,6 +138,39 @@ pub(crate) fn stopped_unexpectedly() -> UserError {
         "The download stopped unexpectedly. Try again; the part already downloaded is kept.",
         FixAction::Retry,
     )
+}
+
+/// An FTP server's error reply: 550 and friends mean the file is not there or not
+/// readable, 4xx a temporary problem.
+fn ftp_reply(code: u16, message: &str) -> UserError {
+    let said = message.trim().trim_end_matches('.');
+    let lower = said.to_ascii_lowercase();
+    match code {
+        550 if lower.contains("permission") || lower.contains("denied") => fix(
+            format!(
+                "The FTP server does not allow reading this file (\"{code} {said}\"). Refresh the link with one that includes a user name and password that may read it."
+            ),
+            FixAction::RefreshLink,
+        ),
+        550 => fix(
+            format!(
+                "The FTP server says this file does not exist (\"{code} {said}\"). Check the link, or refresh it with one copied from the page."
+            ),
+            FixAction::RefreshLink,
+        ),
+        400..=499 => fix(
+            format!(
+                "The FTP server is busy or had a temporary problem (\"{code} {said}\"). Try again in a few minutes."
+            ),
+            FixAction::Retry,
+        ),
+        _ => fix(
+            format!(
+                "The FTP server refused the download (\"{code} {said}\"). Try again, or refresh the link if it keeps happening."
+            ),
+            FixAction::Retry,
+        ),
+    }
 }
 
 fn http_status(status: u16, previously_worked: bool) -> UserError {
@@ -200,6 +266,32 @@ mod tests {
 
     fn action(error: &EngineError, worked: bool) -> Option<FixAction> {
         describe(error, Path::new("/downloads"), worked).fix
+    }
+
+    #[test]
+    fn ftp_replies_say_what_happened_and_offer_a_fix() {
+        let missing = ftp_reply(550, "No such file or directory.");
+        assert_eq!(missing.fix, Some(FixAction::RefreshLink));
+        assert!(
+            missing.message.contains("does not exist"),
+            "{}",
+            missing.message
+        );
+        assert!(
+            missing
+                .message
+                .contains("\"550 No such file or directory\"")
+        );
+        let denied = ftp_reply(550, "Permission denied");
+        assert!(denied.message.contains("does not allow reading"));
+        let busy = ftp_reply(421, "Too many connections");
+        assert_eq!(busy.fix, Some(FixAction::Retry));
+        assert!(busy.message.contains("busy"));
+        let other = ftp_reply(502, "Command not implemented");
+        assert_eq!(other.fix, Some(FixAction::Retry));
+        for e in [missing, denied, busy, other] {
+            assert!(e.message.ends_with('.') && !e.message.contains('\u{2014}'));
+        }
     }
 
     #[test]

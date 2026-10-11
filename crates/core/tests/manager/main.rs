@@ -3,6 +3,7 @@
 
 mod addons;
 mod common;
+mod ftp;
 mod lifecycle;
 mod limits;
 mod media;
