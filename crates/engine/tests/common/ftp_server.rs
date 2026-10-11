@@ -62,6 +62,11 @@ pub struct FtpConfig {
     pub refuse_prot_p: bool,
     /// Answers `EPSV` with a `229` that names no port.
     pub epsv_garbage: bool,
+    /// Names that are not ASCII are only found after `OPTS UTF8 ON`, as on
+    /// servers that otherwise read paths in a legacy encoding.
+    pub utf8_after_opts: bool,
+    /// Answers `OPTS` with `501`.
+    pub refuse_opts: bool,
 }
 
 impl Default for FtpConfig {
@@ -84,6 +89,8 @@ impl Default for FtpConfig {
             inject_after_auth: false,
             refuse_prot_p: false,
             epsv_garbage: false,
+            utf8_after_opts: false,
+            refuse_opts: false,
         }
     }
 }
@@ -268,6 +275,7 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
     let mut rest = 0u64;
     let mut passive: Option<TcpListener> = None;
     let mut last_aborted = false;
+    let mut utf8 = false;
     let mut line = String::new();
     loop {
         line.clear();
@@ -328,6 +336,13 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                 return Ok(());
             }
             "NOOP" => reply(&mut control, "200 NOOP ok.").await?,
+            "OPTS" if config.refuse_opts => {
+                reply(&mut control, "501 Option not understood.").await?
+            }
+            "OPTS" if arg.eq_ignore_ascii_case("UTF8 ON") => {
+                utf8 = true;
+                reply(&mut control, "200 Always in UTF8 mode.").await?
+            }
             _ if !logged_in => reply(&mut control, "530 Please login with USER and PASS.").await?,
             "PBSZ" => reply(&mut control, "200 PBSZ=0").await?,
             "PROT" if config.refuse_prot_p => {
@@ -409,7 +424,8 @@ async fn session(tcp: TcpStream, config: FtpConfig, stats: Arc<FtpStats>) -> std
                     reply(&mut control, "425 Use PASV or EPSV first.").await?;
                     continue;
                 };
-                let Some(file) = find(&config, &arg) else {
+                let readable = utf8 || !config.utf8_after_opts || arg.is_ascii();
+                let Some(file) = find(&config, &arg).filter(|_| readable) else {
                     reply(
                         &mut control,
                         "550 Failed to open file: no such file or directory.",

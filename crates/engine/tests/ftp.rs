@@ -415,6 +415,52 @@ async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
 }
 
 #[tokio::test]
+async fn paths_are_sent_as_utf8() {
+    let data = test_data(2 * MIB);
+    let mut config = serving(&data);
+    config.files = vec![(
+        "pub/\u{fc}bung \u{2013} 1.bin".to_string(),
+        Arc::new(data.clone()),
+    )];
+    config.utf8_after_opts = true;
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("utf8");
+
+    let url = server.url("ftp", "", "pub/%C3%BCbung%20%E2%80%93%201.bin");
+    let (path, _, _) = completed(run(request(&url, &dir, 2)).await.unwrap());
+
+    assert_eq!(path, dir.join("\u{fc}bung \u{2013} 1.bin"));
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    assert!(server.stats.count("OPTS UTF8 ON") >= 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn a_server_refusing_utf8_mode_still_downloads() {
+    let data = test_data(MIB);
+    let mut config = serving(&data);
+    config.refuse_opts = true;
+    let server = FtpServer::start(config).await;
+    let dir = temp_dir("no-opts");
+
+    let (path, _, _) = completed(
+        run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 2))
+            .await
+            .unwrap(),
+    );
+
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    assert!(server.stats.count("OPTS UTF8 ON") >= 1);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
 async fn a_server_without_rest_is_downloaded_over_one_connection() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);

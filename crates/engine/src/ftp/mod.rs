@@ -318,6 +318,10 @@ impl Target {
         if !reply.is_success() {
             return Err(self.reply_failure(&reply));
         }
+        // Paths are sent as UTF-8 (RFC 2640). Some servers only read them so
+        // when asked; servers that do not know the option say so, which is
+        // fine.
+        control.command("OPTS UTF8 ON", "OPTS UTF8 ON").await?;
         Ok(())
     }
 
