@@ -141,9 +141,14 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('Control+K');
       await page.keyboard.type('several qualities');
       await page.keyboard.press('Enter');
-      // 1080p comes as separate video and audio, so it is joined after downloading.
+      // 1080p comes as separate video and audio, so it is joined after downloading. That needs
+      // the media add-on: it installs first, then the video downloads by itself.
       await page.getByRole('radio', { name: /1080p/ }).check();
-      await page.getByRole('button', { name: 'Download', exact: true }).click();
+      await page.getByRole('button', { name: 'Install add-on and download' }).click();
+      await page.getByRole('progressbar').waitFor();
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: `${dir}/${theme}-20-addon-for-a-quality.png` });
+      await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 15_000 });
       await page.getByRole('searchbox', { name: 'Search downloads' }).fill('Northern lights');
       await row(page, 'Northern lights').click();
       await expect(row(page, 'Northern lights')).toContainText('Joining video and audio', {
