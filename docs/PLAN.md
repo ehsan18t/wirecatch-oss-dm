@@ -126,4 +126,4 @@ Same rules as Wave 1: own folder only, D18, independent review, fix round, merge
 
 ## Wave 3: Release readiness
 
-Release build of the installers on Windows; Linux verification through CI (and a real distribution when available); benchmark rerun on a quiet machine; README, user guide and contributor guide; a final security review of everything that handles cookies, credentials or downloaded executables (add-ons). Last step, once every branch is merged: rewrite the subjects of the commits made before the Conventional Commits rule into that format, keeping every tree identical (verified commit by commit).
+Release build of the installers on Windows; Linux verification through CI (and a real distribution when available); benchmark rerun on a quiet machine; README, user guide and contributor guide; a final security review of everything that handles cookies, credentials or downloaded executables (add-ons). Commit history: done on 2026-10-11; every subject rewritten to Conventional Commits and every co-author trailer removed, with all 302 trees verified identical.
