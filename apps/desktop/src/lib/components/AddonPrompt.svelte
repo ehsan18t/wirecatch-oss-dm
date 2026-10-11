@@ -45,11 +45,15 @@
 >
   <div class="body" bind:this={body}>
     <p>{addon.description}</p>
+    <!-- Always mounted, so a screen reader hears the start, the progress and the end (or the
+         failure) of the install, not only what happens while it runs. -->
+    <p class="visually-hidden" aria-live="polite" data-testid="addon-live">
+      {addonAnnouncement(addon)}
+    </p>
     {#if installed}
       <p>Your download continues on its own.</p>
     {:else if installing}
       <p>{addonStatus(addon)}</p>
-      <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
       <div
         class="wire"
         role="progressbar"
@@ -62,7 +66,7 @@
       </div>
       <p class="muted">Your download starts as soon as it is ready. You can close this.</p>
     {:else if failed}
-      <p class="error" role="alert">{addonStatus(addon)}</p>
+      <p class="error">{addonStatus(addon)}</p>
     {:else}
       <p class="muted">
         One click installs it{addon.size === null ? '' : ` (${formatBytes(addon.size)})`}, then your
