@@ -441,6 +441,8 @@ mod tests {
     use wirecatch_protocol::app::AddRequest;
 
     /// A file served at `/file.bin` on a local server; returns its address.
+    /// Only the Windows Mark-of-the-Web test needs it.
+    #[cfg(windows)]
     async fn serve_file(body: Vec<u8>) -> String {
         let app = axum::Router::new().route(
             "/file.bin",
