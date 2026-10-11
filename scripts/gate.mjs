@@ -40,7 +40,7 @@ const MAX_SUBJECT_LENGTH = 72;
 /** Lines that credit a tool or an AI as an author. Commits are authored by the person who owns the repository. */
 const FORBIDDEN_TRAILERS = [/^co-authored-by:/im, /^generated (with|by)\b/im, /noreply@anthropic\.com/i];
 
-const EM_DASH = '—';
+const EM_DASH = '\u2014';
 /** Tracked files the text check skips: lockfiles and binary formats. */
 const TEXT_SKIP = /(^|\/)(Cargo\.lock|pnpm-lock\.yaml)$|\.(png|ico|icns|jpg|jpeg|gif|webp|woff2?|ttf|zip|pem|der|bin)$/i;
 
