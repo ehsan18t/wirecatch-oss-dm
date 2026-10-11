@@ -19,6 +19,7 @@ use wirecatch_desktop_lib::autostart::{Action, EntryState};
 use wirecatch_desktop_lib::background::{
     Launcher, ShownNotifications, apply_autostart, forward, notify,
 };
+use wirecatch_desktop_lib::download_windows::DownloadWindows;
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
@@ -37,6 +38,7 @@ fn app_with(core: Option<Core>) -> App<MockRuntime> {
     context.config_mut().app.windows = vec![main];
     let mut builder = mock_builder()
         .manage(Lifecycle::default())
+        .manage(DownloadWindows::default())
         .manage(ShownNotifications::default());
     if let Some(core) = core {
         builder = builder.manage(core);
@@ -102,7 +104,7 @@ fn capture() -> PendingCapture {
 }
 
 #[test]
-fn with_no_window_a_question_opens_one_and_a_storage_failure_notifies() {
+fn a_question_opens_its_own_window_and_a_storage_failure_notifies() {
     let app = app_with(None);
     let handle = app.handle().clone();
     let (sender, receiver) = broadcast::channel(16);
@@ -127,12 +129,78 @@ fn with_no_window_a_question_opens_one_and_a_storage_failure_notifies() {
     assert!(title.contains("could not save"));
     assert_eq!(body, "The disk is full.");
 
+    // A question opens its own download window (D23), not the main window.
     sender
         .send(UiEvent::ConfirmationRequested(capture()))
         .unwrap();
     wait_until("the window to open for the question", || {
-        handle.get_webview_window(MAIN_WINDOW).is_some()
+        handle.get_webview_window("download-q1").is_some()
     });
+    assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
+    // Its next steps reuse the window instead of opening another.
+    sender
+        .send(UiEvent::ConfirmationRequested(capture()))
+        .unwrap();
+    // With the main window open, it shows a storage failure itself: no notification.
+    wirecatch_desktop_lib::window::show_main_window(&handle);
+    sender
+        .send(UiEvent::StorageFailed(UserError {
+            message: "Still full.".into(),
+            fix: None,
+        }))
+        .unwrap();
+    sender.send(UiEvent::ConfirmationClosed { id: 1 }).unwrap();
+    wait_until("the events to be handled", || {
+        handle.state::<DownloadWindows>().snapshot().len() == 1
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        handle.state::<ShownNotifications>().0.lock().unwrap().len(),
+        1
+    );
+    assert_eq!(handle.state::<DownloadWindows>().snapshot().len(), 1);
+    task.abort();
+}
+
+#[test]
+fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() {
+    let app = app_with(None);
+    let handle = app.handle().clone();
+    let (sender, receiver) = broadcast::channel(16);
+    let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
+    for id in 1..=6 {
+        sender
+            .send(UiEvent::ConfirmationRequested(PendingCapture {
+                id,
+                ..capture()
+            }))
+            .unwrap();
+    }
+    wait_until("five windows", || {
+        (1..=5).all(|id| {
+            handle
+                .get_webview_window(&format!("download-q{id}"))
+                .is_some()
+        })
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(handle.get_webview_window("download-q6").is_none());
+
+    // A window closing makes room for the next question.
+    wirecatch_desktop_lib::download_windows::window_gone(&handle, "download-q2");
+    wait_until("the sixth window", || {
+        handle.get_webview_window("download-q6").is_some()
+    });
+    let slots: Vec<usize> = handle
+        .state::<DownloadWindows>()
+        .snapshot()
+        .iter()
+        .map(|w| w.slot)
+        .collect();
+    assert!(
+        slots.contains(&1),
+        "the closed window's place is used again: {slots:?}"
+    );
     task.abort();
 }
 

@@ -13,6 +13,8 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
+use crate::questions::Question;
+
 /// What a command answers: a value, or an error worded for a person.
 pub type CommandResult<T> = Result<T, String>;
 
@@ -141,12 +143,13 @@ pub fn pending_confirmations(m: &Manager) -> Vec<PendingCapture> {
     m.pending_confirmations()
 }
 
-/// Starts a captured download the person confirmed.
+/// Starts a captured download the person confirmed, or adds it paused for later; returns the
+/// new download's id.
 pub async fn confirm_capture(
     m: &Manager,
     id: u64,
     confirmation: CaptureConfirmation,
-) -> CommandResult<()> {
+) -> CommandResult<DownloadId> {
     m.confirm_capture(id, confirmation).await.map_err(plain)
 }
 
@@ -296,8 +299,41 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
 /// Downloads the chosen quality of a media choice. An option that needs the media add-on
 /// fails while it is not installed; the core then asks for it with `AddonRequired` and keeps
 /// the choice open.
-pub async fn choose_media(m: &Manager, id: u64, selection: MediaSelection) -> CommandResult<()> {
+pub async fn choose_media(
+    m: &Manager,
+    id: u64,
+    selection: MediaSelection,
+) -> CommandResult<DownloadId> {
     m.choose_media(id, selection).await.map_err(plain)
+}
+
+/// The open question `id`, for its download window; `None` once it is answered, dismissed or
+/// withdrawn by the browser.
+pub fn question(m: &Manager, id: u64) -> Option<Question> {
+    if let Some(capture) = m.pending_confirmations().into_iter().find(|c| c.id == id) {
+        return Some(Question::Capture(capture));
+    }
+    if let Some(choice) = m.pending_media_choices().into_iter().find(|c| c.id == id) {
+        return Some(Question::Choice(choice));
+    }
+    if let Some(page) = m.pending_addon_requests().into_iter().find(|p| p.id == id) {
+        return Some(Question::Addon(page));
+    }
+    m.media_being_read()
+        .into_iter()
+        .find(|r| r.id == id)
+        .map(Question::Reading)
+}
+
+/// One download, for its progress window.
+pub fn get_download(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
+    find(m, id)
+}
+
+/// The newest download in the list that question `id` is about again, so its window can say
+/// so without blocking anything.
+pub fn earlier_download(m: &Manager, id: u64) -> Option<DownloadSummary> {
+    m.earlier_download(id)
 }
 
 /// Drops a media choice the person did not want (or media still being read).

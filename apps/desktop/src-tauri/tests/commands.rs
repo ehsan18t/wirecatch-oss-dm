@@ -7,9 +7,13 @@ use common::{Sandbox, TestServer, request, row, running, wait_for, wait_status};
 use wirecatch_desktop_lib::api::{self, Reveal};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
+use wirecatch_desktop_lib::questions::Question;
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{AddonState, DownloadStatus, MediaSelection, Theme};
+use wirecatch_protocol::app::{
+    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, Theme,
+};
+use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
 /// A file big and slow enough to still be running while the test pauses and moves it.
 const SLOW_LEN: usize = 4 * 1024 * 1024;
@@ -217,6 +221,7 @@ async fn media_and_addon_commands_reach_the_core() {
         folder: None,
         file_name: None,
         queue: None,
+        later: false,
     };
     let gone = api::choose_media(&m, 99, selection).await.unwrap_err();
     assert!(gone.contains("already confirmed or dismissed"), "{gone}");
@@ -241,5 +246,59 @@ async fn media_and_addon_commands_reach_the_core() {
     let missing = api::file_to_open(&m, DownloadId(4242), false).unwrap_err();
     assert!(missing.contains("no longer exists"), "{missing}");
     assert!(api::download_is_program(&m, DownloadId(4242)).is_err());
+    m.shutdown().await;
+}
+
+/// D23: a download window finds its question, says when the file is already in the list, and
+/// Download later adds it paused, answering with the new download's id.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_window_finds_its_question_and_its_download() {
+    let sandbox = Sandbox::new();
+    let fast = TestServer::start(64 * 1024, None).await;
+    let m = sandbox.open().await;
+    assert!(
+        api::get_settings(&m).extension.ask_before_download,
+        "a window shows first on a fresh install"
+    );
+    let capture = |handover: &str| NewDownload {
+        handover_id: handover.into(),
+        url: fast.url("report.pdf"),
+        referrer: None,
+        page_url: Some("https://example.com/page".into()),
+        suggested_name: None,
+        mime: None,
+        size_hint: Some(64 * 1024),
+        cookies: None,
+        user_agent: None,
+        extra_headers: vec![],
+        source: CaptureSource::BrowserDownload,
+        queue: None,
+        media: None,
+    };
+    m.add_capture(capture("first")).await.unwrap();
+    let asked = api::pending_confirmations(&m).remove(0);
+    let Some(Question::Capture(found)) = api::question(&m, asked.id) else {
+        panic!("the window cannot find its question")
+    };
+    assert_eq!(found, asked);
+    assert!(api::earlier_download(&m, asked.id).is_none());
+    assert!(api::question(&m, 4242).is_none());
+
+    let later = CaptureConfirmation {
+        later: true,
+        ..CaptureConfirmation::default()
+    };
+    let id = api::confirm_capture(&m, asked.id, later).await.unwrap();
+    assert!(
+        api::question(&m, asked.id).is_none(),
+        "answered: never asked again"
+    );
+    let row = api::get_download(&m, id).unwrap();
+    assert_eq!(row.status, DownloadStatus::Paused);
+
+    m.add_capture(capture("second")).await.unwrap();
+    let again = api::pending_confirmations(&m).remove(0);
+    assert_eq!(api::earlier_download(&m, again.id).map(|r| r.id), Some(id));
+    assert!(api::get_download(&m, DownloadId(4242)).is_err());
     m.shutdown().await;
 }

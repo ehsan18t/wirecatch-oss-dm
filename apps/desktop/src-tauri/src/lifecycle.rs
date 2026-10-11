@@ -1,19 +1,22 @@
 //! Staying alive in the tray and quitting cleanly (D13).
 //!
-//! Closing the window destroys it, which frees the webview's memory. With `close_to_tray` on,
-//! the process keeps running (Tauri asks to exit when the last window closes; that request is
-//! refused). With it off, closing the window quits like the tray's Quit: every download stops
-//! so it can continue on the next start, the database is flushed, then the process exits.
+//! Closing the main window destroys it, which frees the webview's memory. With `close_to_tray`
+//! on, the process keeps running (Tauri asks to exit when the last window closes; that request
+//! is always refused). With it off, closing the main window quits like the tray's Quit: every
+//! download stops so it can continue on the next start, the database is flushed, then the
+//! process exits. Closing a download window (D23) never quits, even when it is the last one.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::async_runtime::JoinHandle;
-use tauri::{AppHandle, Manager as _, RunEvent, Runtime};
+use tauri::{AppHandle, Manager as _, RunEvent, Runtime, WindowEvent};
 use wirecatch_core::Manager;
 
+use crate::download_windows::{self, is_download_window};
 use crate::host::Core;
+use crate::window::MAIN_WINDOW;
 
 /// The longest a quit waits for downloads to stop before exiting anyway. The manager already
 /// abandons a stuck download after its own stop timeout; this is the backstop.
@@ -193,14 +196,21 @@ pub fn keeps_running(has_tray: bool, close_to_tray: Option<bool>) -> bool {
     has_tray && close_to_tray.unwrap_or(true)
 }
 
-fn keeps_running_now<R: Runtime>(app: &AppHandle<R>) -> bool {
+fn closing_quits_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     let has_tray = app
         .try_state::<Lifecycle>()
         .is_some_and(|life| !life.no_tray.load(Ordering::SeqCst));
     let close_to_tray = app
         .try_state::<Core>()
         .and_then(|core| core.get().map(|m| m.get_settings().close_to_tray));
-    keeps_running(has_tray, close_to_tray)
+    closing_quits(label, has_tray, close_to_tray)
+}
+
+/// What closing the window `label` does: only closing the main window can quit (with no tray,
+/// or with `close_to_tray` off). A download window is only a view of one download (D23), so
+/// closing it never quits, even when it was the last window.
+pub fn closing_quits(label: &str, has_tray: bool, close_to_tray: Option<bool>) -> bool {
+    label == MAIN_WINDOW && !keeps_running(has_tray, close_to_tray)
 }
 
 /// Handles the app's run events.
@@ -215,8 +225,20 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
                 return;
             }
             api.prevent_exit();
-            // `None` means the last window closed; anything else is a request to exit.
-            if code.is_some() || !keeps_running_now(app) {
+            // `None` means the last window closed, which is handled when the main window is
+            // destroyed (below); anything else is a request to exit.
+            if code.is_some() {
+                quit(app);
+            }
+        }
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Destroyed,
+            ..
+        } => {
+            if is_download_window(&label) {
+                download_windows::window_gone(app, &label);
+            } else if closing_quits_now(app, &label) {
                 quit(app);
             }
         }
@@ -258,5 +280,17 @@ mod tests {
         assert!(!keeps_running(true, Some(false)));
         assert!(!keeps_running(false, Some(true)), "no tray, no way back");
         assert!(!keeps_running(false, None));
+    }
+
+    #[test]
+    fn only_closing_the_main_window_can_quit() {
+        assert!(closing_quits(MAIN_WINDOW, true, Some(false)));
+        assert!(closing_quits(MAIN_WINDOW, false, Some(true)));
+        assert!(!closing_quits(MAIN_WINDOW, true, Some(true)));
+        // The last download window closing, with the main window long gone: keep running.
+        for (tray, to_tray) in [(true, Some(false)), (false, None), (true, None)] {
+            assert!(!closing_quits("download-q3", tray, to_tray));
+            assert!(!closing_quits("download-d9", tray, to_tray));
+        }
     }
 }
