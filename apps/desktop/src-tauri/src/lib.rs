@@ -260,7 +260,8 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
         app.state::<Lifecycle>().keep(checking);
     }
 
-    let data_dir = host::data_dir(&app.path().data_dir()?);
+    // Moves a data folder an earlier version kept in the roaming profile, before anything opens it.
+    let data_dir = host::data_dir(&app.path().local_data_dir()?, &app.path().data_dir()?);
     let home = app.path().home_dir().unwrap_or_else(|_| data_dir.clone());
     let config = ManagerConfig::new(data_dir.clone(), host::known_folders(&home));
     app.manage(Core::new(config));
