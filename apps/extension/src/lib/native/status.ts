@@ -37,20 +37,56 @@ export type ConnectionStatus =
  *   `allowed_origins` does not list this extension.
  * - "Native host has exited." and "Error when communicating with the native messaging host.":
  *   the bridge started and then stopped (for example because the app closed) or broke the protocol.
- * Firefox: "No such native application ...".
+ *
+ * Firefox (toolkit/components/extensions/NativeMessaging.sys.mjs and NativeManifests.sys.mjs,
+ * and toolkit/modules/subprocess), read from `port.error` because Firefox does not set
+ * `runtime.lastError` for ports:
+ * - "No such native application app.wirecatch.bridge": deliberately the same message for no
+ *   manifest, an unreadable manifest, and a manifest whose `allowed_extensions` leaves this add-on
+ *   out (that reason only goes to the browser console). Our Firefox add-on always has the id every
+ *   bridge lists, so for us it means Wirecatch is not installed or not registered.
+ * - 'File at path "..." does not exist, or is not executable' (Linux and macOS), '... or is not
+ *   a normal file' (Windows) and "Executable not found: ...": registered, but the program is gone.
+ * - No error at all (`port.error` null) when the bridge exits, like Chromium's "Native host has
+ *   exited.".
+ * - "This extension does not have permission to use native ...": what Firefox logs when the id is
+ *   not allowed. Current versions keep it in the console, but a fork or an older version that
+ *   passes it on means the same as Chromium's "forbidden".
  */
 export function classifyDisconnect(message: string | null): ProblemKind {
   if (message === null) return 'disconnected';
   const text = message.toLowerCase();
-  if (text.includes('native messaging host is forbidden')) return 'host_untrusted';
+  if (
+    text.includes('native messaging host is forbidden') ||
+    text.includes('does not have permission to use native')
+  ) {
+    return 'host_untrusted';
+  }
   if (
     text.includes('native messaging host not found') ||
     text.includes('no such native application') ||
-    text.includes('failed to start native messaging host')
+    text.includes('failed to start native messaging host') ||
+    /^file at path ".*" does not exist, or is not /.test(text) ||
+    text.startsWith('executable not found: ')
   ) {
     return 'host_missing';
   }
   return 'disconnected';
+}
+
+/**
+ * Why a native port closed, in the shape each browser reports it: Chromium sets
+ * `runtime.lastError` while the disconnect listener runs, Firefox sets `port.error` (an Error,
+ * or null when the host simply exited). Anything else counts as no reason.
+ */
+export function disconnectMessage(lastError: unknown, port: unknown): string | null {
+  return messageOf(lastError) ?? messageOf((port as { error?: unknown } | null)?.error);
+}
+
+function messageOf(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const message = (value as { message?: unknown }).message;
+  return typeof message === 'string' && message !== '' ? message : null;
 }
 
 export interface ProblemText {

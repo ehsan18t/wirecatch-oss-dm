@@ -4,7 +4,12 @@ import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
 import { asPopupRequest } from '../src/lib/messages';
-import { classifyDisconnect, describeProblem, type ProblemKind } from '../src/lib/native/status';
+import {
+  classifyDisconnect,
+  describeProblem,
+  disconnectMessage,
+  type ProblemKind,
+} from '../src/lib/native/status';
 import { applyPatch, isConfirmed, patchOf } from '../src/lib/protocol';
 import { originPattern } from '../src/lib/site-access';
 import { splitSize, toBytes } from '../src/lib/size';
@@ -136,6 +141,49 @@ describe('connection problems', () => {
     ['Error when communicating with the native messaging host.', 'disconnected'],
   ] as const)('sorts the Chromium message "%s" as %s', (message, kind) => {
     expect(classifyDisconnect(message)).toBe(kind);
+  });
+
+  // The exact strings Firefox reports (NativeMessaging.sys.mjs and the subprocess module).
+  it.each([
+    // No manifest, an unreadable one, or one that leaves this add-on out: one generic message.
+    ['No such native application app.wirecatch.bridge', 'host_missing'],
+    // Registered, but the program it names is gone.
+    [
+      'File at path "/home/u/.local/share/wirecatch/bin/wirecatch-bridge" does not exist, or is not executable',
+      'host_missing',
+    ],
+    [
+      String.raw`File at path "C:\Users\u\AppData\Local\Wirecatch\wirecatch-bridge.exe" does not exist, or is not a normal file`,
+      'host_missing',
+    ],
+    ['Executable not found: wirecatch-bridge', 'host_missing'],
+    // What Firefox logs when the id is not allowed, in case a version passes it on.
+    [
+      'This extension does not have permission to use native manifest /usr/lib/mozilla/native-messaging-hosts/app.wirecatch.bridge.json',
+      'host_untrusted',
+    ],
+    [
+      'This extension does not have permission to use native application app.wirecatch.bridge (or the application is not installed)',
+      'host_untrusted',
+    ],
+  ] as const)('sorts the Firefox message "%s" as %s', (message, kind) => {
+    expect(classifyDisconnect(message)).toBe(kind);
+  });
+
+  it('reads the reason where each browser puts it', () => {
+    const missing = 'No such native application app.wirecatch.bridge';
+    // Firefox: port.error is an Error; runtime.lastError is not set for ports.
+    expect(disconnectMessage(undefined, { error: new Error(missing) })).toBe(missing);
+    // Firefox, host exited: port.error is null.
+    expect(disconnectMessage(undefined, { error: null })).toBeNull();
+    // Chromium: runtime.lastError while the listener runs; the port has no error field.
+    expect(
+      disconnectMessage({ message: 'Access to the specified native messaging host is forbidden.' }, {}),
+    ).toBe('Access to the specified native messaging host is forbidden.');
+    expect(disconnectMessage(null, null)).toBeNull();
+    expect(disconnectMessage({ message: '' }, { error: { message: 42 } })).toBeNull();
+    // Firefox's host exit reaches the popup as a lost connection, never as "not installed".
+    expect(classifyDisconnect(disconnectMessage(undefined, { error: null }))).toBe('disconnected');
   });
 
   it('recognizes a missing native host in Firefox and a port closed without a reason', () => {
