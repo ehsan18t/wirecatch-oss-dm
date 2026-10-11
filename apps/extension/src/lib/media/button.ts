@@ -236,8 +236,11 @@ export class MediaButton {
     { src: string | null; show: boolean; at: number }
   >();
   readonly #asking = new WeakSet<HTMLMediaElement>();
+  /** Removes the listeners that watch the page; run when the setting goes off. */
   readonly #cleanups: Array<() => void> = [];
   #enabled = false;
+  /** Whether the page is being watched: only while the setting is on. */
+  #watching = false;
   #hovered: HTMLMediaElement | null = null;
   #playing: HTMLMediaElement | null = null;
   #target: HTMLMediaElement | null = null;
@@ -285,8 +288,21 @@ export class MediaButton {
     this.button.addEventListener('focus', () => this.#update());
     this.button.addEventListener('blur', () => this.#update());
     this.button.addEventListener('keydown', (e) => this.#onButtonKey(e));
+  }
 
-    for (const el of findMedia(doc)) this.#track(el);
+  /**
+   * Starts watching the page: finds its media, and follows playback, the pointer, focus and scrolling. Only while the setting is on, because the script runs in every frame of every page and this work (a page-wide search, layout reads on pointer moves) would otherwise cost every page, for everyone, also with the button turned off.
+   */
+  #watch(): void {
+    const doc = this.#doc;
+    for (const el of findMedia(doc)) {
+      const tracked = this.#track(el);
+      // Already playing when the setting came on: no `play` event will say so.
+      if (tracked !== null && !tracked.paused && isCandidate(tracked) && !isDecorative(tracked)) {
+        this.#playing = tracked;
+        this.#lastActive = this.#now();
+      }
+    }
     this.#listen(doc, 'play', (e) => this.#onPlay(e), true);
     this.#listen(doc, 'pause', (e) => this.#onStop(e), true);
     this.#listen(doc, 'ended', (e) => this.#onStop(e), true);
@@ -330,15 +346,35 @@ export class MediaButton {
     else view.requestAnimationFrame(say);
   }
 
-  /** Follows the "Show download button on videos" setting; off hides the button at once. */
+  /** Follows the "Show download button on videos" setting; off hides the button at once and stops watching the page. */
   setEnabled(on: boolean): void {
     this.#enabled = on;
+    if (on && !this.#watching) {
+      this.#watching = true;
+      this.#watch();
+    } else if (!on && this.#watching) {
+      this.#unwatch();
+    }
     this.#update();
+  }
+
+  /** Stops watching the page and forgets its media. */
+  #unwatch(): void {
+    this.#watching = false;
+    for (const cleanup of this.#cleanups.splice(0)) cleanup();
+    this.#tracked.clear();
+    this.#hovered = null;
+    this.#playing = null;
+    this.#pointer = null;
+    if (this.#frame !== 0) {
+      this.#doc.defaultView?.cancelAnimationFrame(this.#frame);
+      this.#frame = 0;
+    }
   }
 
   /** Removes the button and every listener. */
   destroy(): void {
-    for (const cleanup of this.#cleanups.splice(0)) cleanup();
+    this.#unwatch();
     if (this.#timer !== null) clearTimeout(this.#timer);
     if (this.#statusTimer !== null) clearTimeout(this.#statusTimer);
     this.host.remove();

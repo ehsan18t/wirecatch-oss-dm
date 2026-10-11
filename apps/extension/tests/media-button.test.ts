@@ -159,6 +159,29 @@ afterEach(() => {
 });
 
 describe('MediaButton', () => {
+  // The script runs in every frame of every page. With the button turned off it used to search
+  // the whole page and read layout on every pointer move anyway.
+  it('does no work on the page while the setting is off', () => {
+    const fake = fakeDeps();
+    media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
+    const listen = vi.spyOn(document, 'addEventListener');
+    const search = vi.spyOn(document, 'querySelectorAll');
+
+    const b = start(fake, false);
+
+    expect(listen).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+
+    b.setEnabled(true);
+    expect(listen.mock.calls.map(([type]) => type)).toContain('pointermove');
+    const unlisten = vi.spyOn(document, 'removeEventListener');
+    b.setEnabled(false);
+    expect(unlisten.mock.calls.map(([type]) => type)).toContain('pointermove');
+    listen.mockRestore();
+    search.mockRestore();
+    unlisten.mockRestore();
+  });
+
   it('shows over a playing video once the background knows something to download, in a closed shadow root', async () => {
     const fake = fakeDeps();
     const video = media('video', box(100, 50, 640, 360), {
@@ -201,6 +224,8 @@ describe('MediaButton', () => {
     const fake = fakeDeps();
     const video = media('video', box(0, 0, 640, 360), { src: 'https://e.com/a.mp4' });
     const b = start(fake, false);
+    // Playing while the setting is off: a browser reports it through `paused`.
+    Object.defineProperty(video, 'paused', { value: false, configurable: true });
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(b.state).toBe('none');
