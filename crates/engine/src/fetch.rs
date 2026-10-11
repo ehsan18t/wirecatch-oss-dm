@@ -21,8 +21,9 @@
 //!   as a failed attempt, and cancelling the token stops every request at once.
 //! - Every byte counts against [`DownloadOptions::rate_limiters`].
 //! - When the URL it was created with is on the internet, requests to the
-//!   local network (loopback, private, link-local and unspecified addresses,
-//!   whether written as an IP or reached through a name or a redirect) are
+//!   local network (loopback, private, link-local, shared CGNAT and other
+//!   non-public addresses, whether written as an IP, also inside an IPv6
+//!   address, or reached through a name or a redirect) are
 //!   refused with [`Error::PrivateNetwork`]: a playlist from a website must
 //!   not make Wirecatch reach the router or other devices at home. See
 //!   [`PrivateNetwork`].
@@ -74,11 +75,42 @@ use crate::worker;
 /// Size of the write buffer used by [`Fetcher::save`].
 const SAVE_BUFFER: usize = 256 * 1024;
 
-/// Whether a [`Fetcher`] may send requests to the local network: loopback
-/// (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`,
-/// `192.168.0.0/16`, `fc00::/7`), link-local (`169.254.0.0/16`, `fe80::/10`)
-/// and unspecified (`0.0.0.0/8`, `::`) addresses. The origin the fetcher was
-/// created for is always allowed.
+/// Whether a [`Fetcher`] may send requests to the local network. These
+/// addresses count as local:
+///
+/// - loopback (`127.0.0.0/8`, `::1`) and unspecified (`0.0.0.0/8`, `::`);
+/// - private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`,
+///   and the old site-local `fec0::/10`);
+/// - link-local (`169.254.0.0/16`, `fe80::/10`);
+/// - shared address space (`100.64.0.0/10`), used by carrier-grade NAT and by
+///   VPNs such as Tailscale;
+/// - benchmarking (`198.18.0.0/15`), multicast (`224.0.0.0/4`, `ff00::/8`),
+///   and reserved and broadcast (`240.0.0.0/4`, so `255.255.255.255` too);
+/// - local-use NAT64 (`64:ff9b:1::/48`);
+/// - an IPv6 address that only carries an IPv4 one counts as that IPv4
+///   address: IPv4-mapped (`::ffff:10.0.0.1`), IPv4-compatible (`::10.0.0.1`),
+///   NAT64 (`64:ff9b::10.0.0.1`) and 6to4 (`2002:0a00:0001::`).
+///
+/// The origin the fetcher was created for is always allowed.
+///
+/// # With a proxy
+///
+/// When a proxy is set in the environment (`HTTP_PROXY`, `HTTPS_PROXY` or
+/// `ALL_PROXY`, in upper or lower case), requests go through it, and the
+/// proxy, not Wirecatch, looks up each name and connects. The guard then
+/// still refuses, before every request and redirect hop, a target written as a
+/// local address and a target whose name resolves only to local addresses on
+/// this computer. It cannot see how the proxy resolves a name, so a name that
+/// the proxy resolves to a local address (because it changed after the check,
+/// or because only the proxy knows it, such as an intranet host) is not
+/// caught. The proxy itself is trusted, since the user or their administrator
+/// set it, not a website: its own address may be local.
+///
+/// Requests are not refused outright while a proxy is set, because on
+/// networks that need one, every stream would then fail; such a proxy is the
+/// network's own gateway and applies its own rules. Use
+/// [`PrivateNetwork::Allow`] if those rules should decide alone, or unset the
+/// proxy for full protection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PrivateNetwork {
@@ -555,28 +587,61 @@ impl Sink {
     }
 }
 
-/// Whether an address is on the local network: loopback, private,
-/// link-local or unspecified (an IPv4 address mapped into IPv6 counts as
-/// itself).
+/// Whether an address is on the local network or otherwise not a public
+/// internet host; see [`PrivateNetwork`] for the list. An IPv6 address that
+/// carries an IPv4 one (mapped, compatible, NAT64 or 6to4) counts as that
+/// IPv4 address.
 pub(crate) fn is_private(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.octets()[0] == 0
+            let [a, b, ..] = v4.octets();
+            a == 0 // "this network", 0.0.0.0/8
+                || v4.is_loopback() // 127.0.0.0/8
+                || v4.is_private() // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local() // 169.254.0.0/16
+                || (a == 100 && b & 0xc0 == 64) // shared (CGNAT, Tailscale), 100.64.0.0/10
+                || (a == 198 && b & 0xfe == 18) // benchmarking, 198.18.0.0/15
+                || v4.is_multicast() // 224.0.0.0/4
+                || a >= 240 // reserved and broadcast, 240.0.0.0/4
         }
-        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-            Some(v4) => is_private(IpAddr::V4(v4)),
-            None => {
-                let first = v6.segments()[0];
-                v6.is_loopback()
-                    || v6.is_unspecified()
-                    || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
-                    || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
+        IpAddr::V6(v6) => {
+            if let Some(v4) = embedded_ipv4(v6) {
+                return is_private(IpAddr::V4(v4));
             }
-        },
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast() // ff00::/8
+                || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
+                || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
+                || (first & 0xffc0) == 0xfec0 // old site-local, fec0::/10
+                // Local-use NAT64, 64:ff9b:1::/48: translated by a gateway on
+                // the local network, to wherever it was set up for.
+                || v6.segments()[..3] == [0x64, 0xff9b, 1]
+        }
+    }
+}
+
+/// The IPv4 address inside an IPv6 one that is only a way of writing or
+/// reaching it: IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`,
+/// NAT64 `64:ff9b::a.b.c.d` and 6to4 `2002:aabb:ccdd::/48`.
+fn embedded_ipv4(v6: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+    let s = v6.segments();
+    let last = |hi: u16, lo: u16| {
+        let [a, b] = hi.to_be_bytes();
+        let [c, d] = lo.to_be_bytes();
+        std::net::Ipv4Addr::new(a, b, c, d)
+    };
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return Some(v4);
+    }
+    match s {
+        // `::` and `::1` are themselves, not IPv4 addresses.
+        [0, 0, 0, 0, 0, 0, 0, 0 | 1] => None,
+        [0, 0, 0, 0, 0, 0, hi, lo] => Some(last(hi, lo)),
+        [0x64, 0xff9b, 0, 0, 0, 0, hi, lo] => Some(last(hi, lo)),
+        [0x2002, hi, lo, ..] => Some(last(hi, lo)),
+        _ => None,
     }
 }
 
@@ -664,8 +729,47 @@ pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -
         resolver: Arc::new(FilteringResolver {
             exempt: url.host_str().map(str::to_string),
             pinned: pinned_addresses(start_addrs),
+            proxies: proxy_hosts(&|name| std::env::var_os(name)),
         }),
     }
+}
+
+/// The variables the HTTP client takes a proxy from.
+const PROXY_VARIABLES: &[&str] = &[
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+];
+
+/// The host names of the proxies set in the environment, as `env` reads it.
+/// The HTTP client connects to these itself, so their names reach the
+/// resolver; a proxy given as an IP address needs no entry.
+fn proxy_hosts(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<String> {
+    let mut hosts = Vec::new();
+    for name in PROXY_VARIABLES {
+        let Some(value) = env(name) else { continue };
+        let value = value.to_string_lossy();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        // Like the HTTP client, a value without a scheme is an http proxy.
+        let parsed = if value.contains("://") {
+            Url::parse(value)
+        } else {
+            Url::parse(&format!("http://{value}"))
+        };
+        if let Ok(url) = parsed
+            && let Some(Host::Domain(host)) = url.host()
+            && !hosts.iter().any(|h| h == host)
+        {
+            hosts.push(host.to_string());
+        }
+    }
+    hosts
 }
 
 /// Refuses requests to the local network, before they are sent; checked for
@@ -739,11 +843,16 @@ pub(crate) struct FilteringResolver {
     /// the only local addresses it may use. Empty when it started public, so a
     /// later switch to a local address is filtered (DNS rebinding).
     pinned: Vec<IpAddr>,
+    /// The proxies the user set (see [`proxy_hosts`]), resolved without the
+    /// filter: the connection to a proxy is the user's choice, and a request
+    /// that names one as its target is still checked by the [`NetworkGuard`].
+    proxies: Vec<String>,
 }
 
 impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
+        let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
         let pinned = if self.exempt.as_deref() == Some(host.as_str()) {
             self.pinned.clone()
         } else {
@@ -752,7 +861,7 @@ impl Resolve for FilteringResolver {
         Box::pin(async move {
             let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
                 .await?
-                .filter(|a| !is_private(a.ip()) || pinned.contains(&a.ip()))
+                .filter(|a| trusted || !is_private(a.ip()) || pinned.contains(&a.ip()))
                 .collect();
             if addrs.is_empty() {
                 return Err(format!(
@@ -827,6 +936,35 @@ mod tests {
             "fe80::1",
             "::ffff:192.168.0.1",
             "::ffff:127.0.0.1",
+            // Shared address space: carrier-grade NAT, Tailscale.
+            "100.64.0.1",
+            "100.100.100.100",
+            "100.127.255.255",
+            // Benchmarking.
+            "198.18.0.1",
+            "198.19.255.255",
+            // Multicast, reserved and broadcast.
+            "224.0.0.1",
+            "239.255.255.250",
+            "240.0.0.1",
+            "255.255.255.255",
+            "ff02::1",
+            "ff05::1:3",
+            // Old site-local IPv6.
+            "fec0::1",
+            // IPv4 inside IPv6: compatible, NAT64, local-use NAT64, 6to4.
+            "::127.0.0.1",
+            "::10.0.0.1",
+            "::0.0.0.2",
+            "64:ff9b::7f00:1",
+            "64:ff9b::192.168.1.1",
+            "64:ff9b::100.64.0.1",
+            "64:ff9b:1::1",
+            "64:ff9b:1:abcd::8.8.8.8",
+            "2002:7f00:1::",
+            "2002:c0a8:0101::1",
+            "2002:a9fe:a9fe:1::5",
+            "2002:6440:1::",
         ] {
             assert!(is_private(private.parse().unwrap()), "{private}");
         }
@@ -834,9 +972,19 @@ mod tests {
             "8.8.8.8",
             "172.32.0.1",
             "192.169.0.1",
-            "100.64.0.1",
+            "100.63.255.255",
+            "100.128.0.1",
+            "198.17.255.255",
+            "198.20.0.1",
+            "223.255.255.255",
             "2001:4860:4860::8888",
             "::ffff:8.8.8.8",
+            "::8.8.8.8",
+            "64:ff9b::8.8.8.8",
+            "64:ff9b::93.184.215.14",
+            "2002:0808:0808::1",
+            "fe00::1",
+            "2606:4700::1111",
         ] {
             assert!(!is_private(public.parse().unwrap()), "{public}");
         }
@@ -861,6 +1009,11 @@ mod tests {
             "http://[fe80::1]/k",
             "https://192.168.1.1/key",
             "http://localhost:8000/seg.ts",
+            "http://100.100.100.100/",
+            "http://[64:ff9b::a9fe:a9fe]/latest/meta-data",
+            "http://[2002:c0a8:101::1]/admin",
+            "http://[::192.168.1.1]/",
+            "http://255.255.255.255/",
         ] {
             let error = guard.check(&ok(refused)).await.unwrap_err();
             assert!(matches!(error, Error::PrivateNetwork { .. }), "{refused}");
@@ -879,6 +1032,7 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("own-host.invalid".into()),
             pinned: Vec::new(),
+            proxies: Vec::new(),
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
@@ -896,6 +1050,7 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("localhost".into()),
             pinned: start.clone(),
+            proxies: Vec::new(),
         };
         let addrs: Vec<_> = resolver
             .resolve(Name::from_str("localhost").unwrap())
@@ -969,12 +1124,51 @@ mod tests {
         let resolver = FilteringResolver {
             exempt: Some("localhost".into()),
             pinned: Vec::new(),
+            proxies: Vec::new(),
         };
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
             Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
             Err(error) => error,
         };
         assert!(error.to_string().contains("blocks for safety"), "{error}");
+    }
+
+    #[test]
+    fn proxy_host_names_come_from_the_environment() {
+        let env = |values: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                values
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map(|(_, v)| std::ffi::OsString::from(v))
+            }
+        };
+        let hosts = proxy_hosts(&env(&[
+            ("HTTPS_PROXY", "http://user:secret@Proxy.Corp.example:8080"),
+            ("http_proxy", "proxy.corp.example:3128"),
+            ("ALL_PROXY", "socks5://socks.lan:1080"),
+            ("all_proxy", "http://10.0.0.5:8080"),
+            ("HTTP_PROXY", "  "),
+            ("https_proxy", "http://[::1]:8080"),
+        ]));
+        assert_eq!(hosts, ["socks.lan", "proxy.corp.example"]);
+        assert!(proxy_hosts(&env(&[("NO_PROXY", "localhost")])).is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_proxy_the_user_set_may_be_local() {
+        use std::str::FromStr;
+        let resolver = FilteringResolver {
+            exempt: Some("own-host.invalid".into()),
+            pinned: Vec::new(),
+            proxies: vec!["localhost".into()],
+        };
+        let addrs: Vec<_> = resolver
+            .resolve(Name::from_str("localhost").unwrap())
+            .await
+            .unwrap()
+            .collect();
+        assert!(!addrs.is_empty() && addrs.iter().all(|a| a.ip().is_loopback()));
     }
 
     #[test]
