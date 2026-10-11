@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildCommands } from './commands';
 import type { AppState } from './state/app.svelte';
-import { renderApp, rowByName, settle } from './testing/setup';
+import { downloadWindow, renderApp, rowByName, settle } from './testing/setup';
 
 let current: { app: AppState; unmount: () => void } | undefined;
 afterEach(() => {
@@ -168,7 +168,8 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
       'Start Wirecatch when you sign in',
       'Download folder',
       'Folders by file type',
-      'Ask before each download',
+      'Show a window before each download',
+      'Keep the window open to show progress',
       'Sites to leave to the browser',
       'Speed limit',
       'Connections per download',
@@ -193,28 +194,43 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     ).toBeInTheDocument();
   });
 
-  it('browser capture: toast with Change and Open folder, 1 click each', async () => {
-    const { backend, click } = await setup();
+  it('browser capture without a window: toast with Change and Open folder, 1 click each', async () => {
+    const { app, backend, click } = await setup();
+    await app.setAskBeforeDownload(false);
     backend.simulateCapture();
     await settle();
     const toasts = screen.getByRole('region', { name: 'Notifications' });
     expect(within(toasts).getByText(/^Downloading/)).toBeInTheDocument();
     const inToast = (name: string) => within(toasts).getByRole('button', { name });
     expect(inToast('Open folder')).toBeInTheDocument();
-    expect(inToast('Ask me first next time')).toBeInTheDocument();
+    expect(inToast('Show a window first next time')).toBeInTheDocument();
     await click(inToast('Change'));
     expect(screen.getByText(/Saving to/)).toBeInTheDocument();
   });
 
-  it('ask before downloading: the confirmation dialog appears on its own', async () => {
+  it('a browser file opens its own window, which then shows its progress, 1 click', async () => {
     const { app, backend, click } = await setup();
     backend.simulateConfirmation();
-    await settle();
-    expect(within(dialog()).getByText('Download this file?')).toBeInTheDocument();
+    const window = within(await downloadWindow());
+    expect(window.getByRole('heading', { name: 'Download this file?' })).toBeInTheDocument();
+    // Never a dialog in the main window.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const before = app.downloads.size;
-    await click(button('Download'));
+    await click(window.getByRole('button', { name: 'Download now' }));
     expect(app.pending).toHaveLength(0);
     expect(app.downloads.size).toBe(before + 1);
+    expect(window.getByRole('heading', { name: 'app-setup-3.2.0.exe' })).toBeInTheDocument();
+    expect(window.getByRole('progressbar', { name: 'Downloaded' })).toBeInTheDocument();
+    expect(window.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+  });
+
+  it('a progress window for any download: row, then Show progress window, 2 clicks', async () => {
+    const { click, palette } = await setup();
+    await click(rowByName('ubuntu-24.04.3'));
+    expect(palette('sel.progress')).toBe(true);
+    await click(button('Show progress window'));
+    const window = within(await downloadWindow());
+    expect(window.getByRole('heading', { level: 1 })).toHaveTextContent('ubuntu-24.04.3');
   });
 
   it('media add-on: Settings, then Install or Remove, 2 clicks', async () => {
@@ -356,17 +372,20 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(offer.getByRole('button', { name: 'Check for updates' })).toHaveFocus();
   });
 
-  it('quality picker: appears on its own; put aside, the sidebar note brings it back, 1 click', async () => {
+  it('quality picker: its own window; closed, Waiting for you brings it back, 1 click', async () => {
     const { app, backend, click, palette } = await setup();
     backend.simulateMediaChoice();
-    await settle();
-    expect(within(dialog()).getByText('Pick a quality')).toBeInTheDocument();
-    await click(button('Close'));
-    expect(palette('media.pick')).toBe(true);
-    await click(button('1 video waits for you to pick a quality'));
-    await click(screen.getByRole('radio', { name: /720p/ }));
+    let window = within(await downloadWindow());
+    expect(window.getByRole('heading', { name: 'Pick a quality' })).toBeInTheDocument();
+    await click(window.getByRole('button', { name: 'Close this window' }));
+    expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
+    // Closing is not an answer: it waits, counted in the sidebar and offered in the palette.
+    expect(palette('questions.show')).toBe(true);
+    await click(button(/Waiting for you/));
+    window = within(await downloadWindow());
+    await click(window.getByRole('radio', { name: /720p/ }));
     const before = app.downloads.size;
-    await click(button('Download'));
+    await click(window.getByRole('button', { name: 'Download now' }));
     expect(app.downloads.size).toBe(before + 1);
   });
 });

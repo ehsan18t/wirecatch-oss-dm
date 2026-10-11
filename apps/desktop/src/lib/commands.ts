@@ -113,6 +113,13 @@ export function buildCommands(app: AppState): Command[] {
           run: () => app.openFolder(first.id),
         },
         {
+          id: 'sel.progress',
+          group: g,
+          title: `Show the progress window of ${n}`,
+          keywords: 'window progress speed open',
+          run: () => app.showProgressWindow(first.id),
+        },
+        {
           id: 'sel.refresh',
           group: g,
           title: `Give ${n} a fresh link`,
@@ -307,15 +314,27 @@ export function buildCommands(app: AppState): Command[] {
           : app.openSettings(s.id),
     });
   }
-  const ask = app.settings?.extension.ask_before_download ?? false;
+  const ask = app.settings?.extension.ask_before_download ?? true;
+  const progress = app.settings?.show_progress_windows ?? true;
   const capture = app.settings?.extension.capture_enabled ?? true;
   out.push(
     {
       id: 'toggle.ask',
       group: 'Settings',
-      title: ask ? 'Stop asking before each browser download' : 'Ask before each browser download',
-      keywords: 'confirm prompt',
+      title: ask
+        ? 'Start browser downloads without asking'
+        : 'Show a window before each browser download',
+      keywords: 'confirm prompt ask window question',
       run: () => app.setAskBeforeDownload(!ask),
+    },
+    {
+      id: 'toggle.progress',
+      group: 'Settings',
+      title: progress
+        ? 'Close download windows when downloads start'
+        : 'Keep download windows open to show progress',
+      keywords: 'progress window close keep',
+      run: () => app.setShowProgressWindows(!progress),
     },
     {
       id: 'toggle.capture',
@@ -356,39 +375,16 @@ export function buildCommands(app: AppState): Command[] {
     run: () => app.openDialog({ kind: 'shortcuts' }),
   });
 
-  if (app.pending.length > 0) {
+  if (app.waitingCount > 0) {
     out.push({
-      id: 'pending.answer',
+      id: 'questions.show',
       group: 'Downloads',
       title:
-        app.pending.length === 1
-          ? 'Answer the browser download that is waiting'
-          : `Answer the ${app.pending.length} browser downloads that are waiting`,
-      keywords: 'ask confirm pending capture',
-      run: () => app.showPending(),
-    });
-  }
-
-  if (app.openMediaChoices.length > 0) {
-    out.push({
-      id: 'media.pick',
-      group: 'Downloads',
-      title:
-        app.openMediaChoices.length === 1
-          ? 'Pick a quality for the video that is waiting'
-          : `Pick a quality for the ${app.openMediaChoices.length} videos that are waiting`,
-      keywords: 'media video quality resolution stream pending',
-      run: () => app.showMediaChoices(),
-    });
-  }
-
-  if (app.addonRequest && app.addonHidden) {
-    out.push({
-      id: 'addon.prompt',
-      group: 'Downloads',
-      title: 'Show the video that waits for the media add-on',
-      keywords: 'addon add-on install waiting video pending',
-      run: () => app.showAddonRequest(),
+        app.waitingCount === 1
+          ? 'Show the download that is waiting for you'
+          : `Show the ${app.waitingCount} downloads that are waiting for you`,
+      keywords: 'waiting answer ask confirm pending capture video quality window add-on',
+      run: () => app.showQuestionWindows(),
     });
   }
 

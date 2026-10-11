@@ -94,10 +94,10 @@ describe('keyboard only', () => {
   it('jumps from the palette straight to a setting and focuses it', async () => {
     const { app, press } = await setup();
     await press('{Control>}k{/Control}');
-    await press('ask before');
+    await press('window before');
     const option = screen
       .getAllByRole('option')
-      .find((o) => o.textContent?.includes('Browser: Ask before each download'));
+      .find((o) => o.textContent?.includes('Browser: Show a window before each download'));
     expect(option).toBeDefined();
     while (
       screen
@@ -108,10 +108,10 @@ describe('keyboard only', () => {
     }
     await press('{Enter}');
     expect(app.screen).toBe('settings');
-    const toggle = screen.getByRole('switch', { name: 'Ask before each download' });
+    const toggle = screen.getByRole('switch', { name: 'Show a window before each download' });
     expect(document.activeElement).toBe(toggle);
     await press(' ');
-    expect(app.settings?.extension.ask_before_download).toBe(true);
+    expect(app.settings?.extension.ask_before_download).toBe(false);
   });
 
   it('has shortcuts for add, settings, search and help', async () => {

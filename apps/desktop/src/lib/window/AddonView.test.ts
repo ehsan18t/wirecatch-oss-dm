@@ -1,11 +1,12 @@
-// The add-on prompt announces the install from a live region that is there before it starts, so
-// screen readers hear the start; a region inserted together with its text is often not read.
+// The add-on offer in a video's own window announces the install from a live region that is
+// there before it starts, so screen readers hear the start; a region inserted together with its
+// text is often not read.
 
-import { screen, within } from '@testing-library/svelte';
+import { within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppState } from '$lib/state/app.svelte';
-import { renderApp, settle } from '$lib/testing/setup';
+import { downloadWindow, renderApp, settle } from '$lib/testing/setup';
 
 let current: { app: AppState; unmount: () => void } | undefined;
 afterEach(() => {
@@ -14,21 +15,23 @@ afterEach(() => {
   current = undefined;
 });
 
-describe('the add-on prompt', () => {
+describe('the add-on offer', () => {
   it('keeps one live region from before the install starts', async () => {
     const r = await renderApp({ empty: true });
     current = r;
     r.backend.simulateAddonRequired();
-    await settle();
-    const dialog = within(screen.getByRole('dialog'));
-    const live = dialog.getByTestId('addon-live');
+    const window = within(await downloadWindow());
+    expect(window.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Downloading from www.youtube.com needs the media add-on',
+    );
+    const live = window.getByTestId('addon-live');
     expect(live).toHaveAttribute('aria-live', 'polite');
     expect(live.textContent?.trim()).toBe('');
 
-    await userEvent.setup().click(dialog.getByRole('button', { name: /^Install$/ }));
+    await userEvent.setup().click(window.getByRole('button', { name: /^Install$/ }));
     await settle();
     // The same element, now with the start of the install in it.
-    expect(dialog.getByTestId('addon-live')).toBe(live);
+    expect(window.getByTestId('addon-live')).toBe(live);
     expect(live.textContent?.trim()).toBe('Installing the media add-on.');
   });
 });

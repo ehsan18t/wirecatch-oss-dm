@@ -21,6 +21,7 @@ import type {
   WaitReason,
 } from '@wirecatch/protocol';
 import { isProgramName } from '../filetypes';
+import { WindowRegistry } from '../window/registry';
 import { fileNameFromUrl, folderOf, hostOf, scheduleAllows } from '../format';
 import {
   bulkItem,
@@ -36,6 +37,8 @@ import {
   BackendError,
   type AddonRequestItem,
   type Backend,
+  type MediaReading,
+  type Question,
   type SampleData,
   type ShellSignal,
   type Unsubscribe,
@@ -128,7 +131,13 @@ function sameWait(a: WaitReason | null, b: WaitReason | null): boolean {
 
 export class MockBackend implements Backend {
   readonly kind = 'mock';
+  /**
+   * The download windows (D23). A browser tab cannot open real windows that share this sample
+   * data, so the page shows them inside itself (`MockWindows.svelte`), with the desktop's rules.
+   */
+  readonly windows = new WindowRegistry();
   readonly sampleData: SampleData = {
+    windows: this.windows,
     commands: [
       {
         id: 'mock.capture',
@@ -178,6 +187,8 @@ export class MockBackend implements Backend {
   #pending: PendingCapture[] = [];
   #mediaChoices: MediaChoice[] = [];
   #addons: AddonInfo[] = [mediaAddon()];
+  /** Pages being read for their qualities. */
+  #reading: MediaReading[] = [];
   /** Pages that asked for the media add-on; they continue once it is installed. */
   #waitingForAddon: Array<{ id: number; url: string }> = [];
   #mediaIndex = 0;
@@ -292,6 +303,18 @@ export class MockBackend implements Backend {
 
   #emit(event: UiEvent) {
     for (const l of this.#listeners) l(event);
+    // Like the desktop shell: every question opens its own window.
+    switch (event.type) {
+      case 'confirmation_requested':
+      case 'media_choice_requested':
+      case 'media_analysing':
+      case 'addon_required':
+        this.windows.ask(event.data.id);
+        break;
+      case 'confirmation_closed':
+        this.windows.closed(event.data.id);
+        break;
+    }
   }
 
   #changed(rows: DownloadSummary[]) {
@@ -826,10 +849,62 @@ export class MockBackend implements Backend {
       queue: confirmation.queue ?? p.queue,
       folder: confirmation.folder ?? p.folder,
       fileName: confirmation.file_name ?? p.file_name,
-      start: true,
+      start: !confirmation.later,
       size: p.size,
     });
     this.#changed([row]);
+    return row.id;
+  }
+
+  async getQuestion(id: number): Promise<Question | null> {
+    const capture = this.#pending.find((p) => p.id === id);
+    if (capture) return { kind: 'capture', data: { ...capture } };
+    const choice = this.#mediaChoices.find((c) => c.id === id);
+    if (choice) return { kind: 'choice', data: structuredClone(choice) };
+    const page = this.#waitingForAddon.find((w) => w.id === id);
+    if (page) {
+      return { kind: 'addon', data: { ...page, addon: structuredClone(this.#addon('media')) } };
+    }
+    const reading = this.#reading.find((r) => r.id === id);
+    if (reading) return { kind: 'reading', data: { ...reading } };
+    return null;
+  }
+
+  async getDownload(id: DownloadId) {
+    return { ...this.#row(id) };
+  }
+
+  async earlierDownload(id: number): Promise<DownloadSummary | null> {
+    const link =
+      this.#pending.find((p) => p.id === id)?.url ??
+      this.#mediaChoices.find((c) => c.id === id)?.page_url;
+    if (!link) return null;
+    let newest: DownloadSummary | undefined;
+    for (const rowId of this.#order) {
+      const row = this.#rows.get(rowId);
+      if (row?.url === link && (!newest || row.added_at >= newest.added_at)) newest = row;
+    }
+    return newest ? { ...newest } : null;
+  }
+
+  /** Every open question, oldest first, as the desktop lists them. */
+  #openQuestions(): number[] {
+    const ids = [
+      ...this.#pending.map((p) => p.id),
+      ...this.#mediaChoices.map((c) => c.id),
+      ...this.#waitingForAddon.map((w) => w.id),
+      ...this.#reading.map((r) => r.id),
+    ];
+    return ids.filter((id, i) => ids.indexOf(id) === i).sort((a, b) => a - b);
+  }
+
+  async showQuestionWindows() {
+    this.windows.showAll(this.#openQuestions());
+  }
+
+  async showProgressWindow(id: DownloadId) {
+    this.#row(id);
+    this.windows.showDownload(id);
   }
 
   async rejectCapture(id: number) {
@@ -942,6 +1017,7 @@ export class MockBackend implements Backend {
     };
     // Like the core: the reading is announced, then the choice comes under the same id.
     this.#emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
+    this.#reading = this.#reading.filter((r) => r.id !== choice.id);
     this.#mediaChoices.push(choice);
     this.#emit({ type: 'media_choice_requested', data: structuredClone(choice) });
   }
@@ -950,6 +1026,7 @@ export class MockBackend implements Backend {
   simulateSlowReading(): void {
     const id = this.#nextPendingId++;
     const page = 'https://video.example.com/watch/slow-page';
+    this.#reading.push({ id, url: page });
     this.#emit({ type: 'media_analysing', data: { id, url: page } });
     setTimeout(() => this.simulateMediaChoice(page, id), 3000);
   }
@@ -1001,12 +1078,13 @@ export class MockBackend implements Backend {
       queue: selection.queue ?? choice.queue,
       folder: selection.folder ?? choice.folder,
       fileName: name,
-      start: true,
+      start: !selection.later,
       size: option.size ?? 48 * 1024 * 1024,
     });
     row.media = {
       quality: option.label.split(',')[0] ?? option.label,
       source: MEDIA_SAMPLES.find((s) => s.title === choice.title)?.source ?? 'page',
+      video_key: null,
     };
     const sim = this.#sim.get(row.id);
     if (sim) {
@@ -1015,12 +1093,16 @@ export class MockBackend implements Backend {
       sim.rate = (row.total ?? 48 * 1024 * 1024) / 8;
     }
     this.#changed([row]);
+    return row.id;
   }
 
   async dismissMediaChoice(id: number) {
     // Like the core, this drops a quality choice or a page still waiting for the add-on.
     const known =
-      this.#mediaChoices.some((c) => c.id === id) || this.#waitingForAddon.some((w) => w.id === id);
+      this.#mediaChoices.some((c) => c.id === id) ||
+      this.#waitingForAddon.some((w) => w.id === id) ||
+      this.#reading.some((r) => r.id === id);
+    this.#reading = this.#reading.filter((r) => r.id !== id);
     if (!known) throw new BackendError(ALREADY_ANSWERED);
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
     this.#waitingForAddon = this.#waitingForAddon.filter((w) => w.id !== id);

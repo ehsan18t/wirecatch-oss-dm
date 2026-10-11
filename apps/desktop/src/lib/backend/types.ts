@@ -16,6 +16,7 @@ import type {
   QueueId,
   UiEvent,
 } from '@wirecatch/protocol';
+import type { WindowRegistry } from '../window/registry';
 
 export type Unsubscribe = () => void;
 
@@ -33,6 +34,23 @@ export interface AddonRequestItem extends AddonRequest {
   id: number;
 }
 
+/** A stream or video page still being read for its qualities. */
+export interface MediaReading {
+  id: number;
+  url: string;
+}
+
+/**
+ * One open question, as its download window shows it (D23). Mirrors `questions::Question` in
+ * `src-tauri`: a browser file to confirm, a video being read, a quality to pick, or a video page
+ * waiting for the media add-on.
+ */
+export type Question =
+  | { kind: 'capture'; data: PendingCapture }
+  | { kind: 'reading'; data: MediaReading }
+  | { kind: 'choice'; data: MediaChoice }
+  | { kind: 'addon'; data: AddonRequestItem };
+
 /**
  * Signals from the desktop shell that are not core events. `resync`: some events were missed,
  * so everything must be loaded again. `links`: links arrived from the command line (a second
@@ -45,6 +63,8 @@ export interface SampleData {
   commands: ReadonlyArray<{ id: string; title: string; keywords: string; run: () => void }>;
   /** The sample clock, so schedule labels agree with the simulation. */
   now: () => number;
+  /** The download windows, which the sample page shows inside itself. */
+  windows: WindowRegistry;
 }
 
 export interface Backend {
@@ -85,8 +105,20 @@ export interface Backend {
   importSettings(path: string): Promise<void>;
 
   pendingConfirmations(): Promise<PendingCapture[]>;
-  confirmCapture(id: number, confirmation: CaptureConfirmation): Promise<void>;
+  /** Starts (or with `later`, adds paused) a confirmed capture; the new download's id. */
+  confirmCapture(id: number, confirmation: CaptureConfirmation): Promise<DownloadId>;
   rejectCapture(id: number): Promise<void>;
+
+  /** The open question `id`, or `null` once it is answered, dismissed or taken back. */
+  getQuestion(id: number): Promise<Question | null>;
+  /** One download, for its progress window. */
+  getDownload(id: DownloadId): Promise<DownloadSummary>;
+  /** The download in the list that question `id` is about again, if any. */
+  earlierDownload(id: number): Promise<DownloadSummary | null>;
+  /** Brings every open question's window to the front, opening closed ones again. */
+  showQuestionWindows(): Promise<void>;
+  /** Opens (or brings forward) the progress window of a download. */
+  showProgressWindow(id: DownloadId): Promise<void>;
 
   /**
    * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
@@ -102,8 +134,8 @@ export interface Backend {
   /** Links passed on the command line that the interface has not shown yet, handed over once. */
   takeLaunchLinks(): Promise<string[]>;
 
-  /** Downloads the chosen quality of a media choice. */
-  chooseMedia(id: number, selection: MediaSelection): Promise<void>;
+  /** Downloads (or with `later`, adds paused) the chosen quality; the new download's id. */
+  chooseMedia(id: number, selection: MediaSelection): Promise<DownloadId>;
   /** Drops a media choice the person did not want. */
   dismissMediaChoice(id: number): Promise<void>;
   /** Media choices still open, so a new or reloaded window asks them again. */
@@ -178,6 +210,12 @@ export const COMMANDS = {
   removeAddon: 'remove_addon',
   cancelAddonOperation: 'cancel_addon_operation',
   checkAddonUpdates: 'check_addon_updates',
+  getQuestion: 'get_question',
+  getDownload: 'get_download',
+  earlierDownload: 'earlier_download',
+  showQuestionWindows: 'show_question_windows',
+  showProgressWindow: 'show_progress_window',
+  closeDownloadWindow: 'close_download_window',
 } as const;
 
 /** The single Tauri event that carries every `UiEvent`. */

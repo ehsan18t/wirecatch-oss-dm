@@ -47,6 +47,12 @@ const FIXED = [
   'remove_addon',
   'cancel_addon_operation',
   'check_addon_updates',
+  'get_question',
+  'get_download',
+  'earlier_download',
+  'show_question_windows',
+  'show_progress_window',
+  'close_download_window',
 ];
 
 describe('Tauri command names', () => {
@@ -89,10 +95,22 @@ describe('TauriBackend', () => {
       file_name: null,
       start: true,
     });
-    await b.confirmCapture(9, { folder: null, file_name: 'a', queue: null });
+    await b.confirmCapture(9, { folder: null, file_name: 'a', queue: null, later: true });
     await b.pauseAll();
-    await b.chooseMedia(4, { option_id: 'hd', folder: null, file_name: null, queue: null });
+    await b.chooseMedia(4, {
+      option_id: 'hd',
+      folder: null,
+      file_name: null,
+      queue: null,
+      later: false,
+    });
     await b.installAddon('media');
+    await b.getQuestion(5);
+    await b.earlierDownload(5);
+    await b.getDownload(6);
+    await b.showQuestionWindows();
+    await b.showProgressWindow(6);
+    await b.closeDownloadWindow();
     expect(invoke.mock.calls).toEqual([
       ['remove', { ids: [1, 2], deleteFile: true }],
       ['reorder', { queue: 3, idsInOrder: [2, 1] }],
@@ -100,13 +118,25 @@ describe('TauriBackend', () => {
         'add_download',
         { request: { url: 'https://x', queue: null, folder: null, file_name: null, start: true } },
       ],
-      ['confirm_capture', { id: 9, confirmation: { folder: null, file_name: 'a', queue: null } }],
+      [
+        'confirm_capture',
+        { id: 9, confirmation: { folder: null, file_name: 'a', queue: null, later: true } },
+      ],
       ['pause_all', undefined],
       [
         'choose_media',
-        { id: 4, selection: { option_id: 'hd', folder: null, file_name: null, queue: null } },
+        {
+          id: 4,
+          selection: { option_id: 'hd', folder: null, file_name: null, queue: null, later: false },
+        },
       ],
       ['install_addon', { id: 'media' }],
+      ['get_question', { id: 5 }],
+      ['earlier_download', { id: 5 }],
+      ['get_download', { id: 6 }],
+      ['show_question_windows', undefined],
+      ['show_progress_window', { id: 6 }],
+      ['close_download_window', undefined],
     ]);
   });
 

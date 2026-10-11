@@ -15,7 +15,7 @@
     toast.downloadId === undefined ? undefined : app.downloads.get(toast.downloadId),
   );
   const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
-  const ask = $derived(app.settings?.extension.ask_before_download ?? false);
+  const ask = $derived(app.settings?.extension.ask_before_download ?? true);
 
   // Count down only while the person is not looking at or using the note.
   $effect(() => {
@@ -41,7 +41,7 @@
         <button class="btn small" onclick={() => app.chooseFolderFor(row.id)}>Change</button>
         <button class="btn small" onclick={() => app.openFolder(row.id)}>Open folder</button>
         <button class="btn ghost small" onclick={() => app.setAskBeforeDownload(!ask)}>
-          {ask ? 'Stop asking first' : 'Ask me first next time'}
+          {ask ? 'Start without asking' : 'Show a window first next time'}
         </button>
       </div>
     </div>

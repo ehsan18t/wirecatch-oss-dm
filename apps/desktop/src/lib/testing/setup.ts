@@ -27,6 +27,24 @@ export async function settle(): Promise<void> {
   }
 }
 
+/**
+ * The sample app's download windows (D23), which float in the page, newest last. Waits for at
+ * least one: they load in the background.
+ */
+export async function downloadWindows(): Promise<HTMLElement[]> {
+  const found = await screen.findAllByRole('region', { name: /^Wirecatch download window/ });
+  await settle();
+  return found;
+}
+
+/** The newest sample download window. */
+export async function downloadWindow(): Promise<HTMLElement> {
+  const found = await downloadWindows();
+  const last = found.at(-1);
+  if (!last) throw new Error('no download window');
+  return last;
+}
+
 export function rowByName(name: string): HTMLElement {
   const el = screen.getAllByRole('row').find((o) => o.textContent?.includes(name));
   if (!el) throw new Error(`no row named ${name}`);

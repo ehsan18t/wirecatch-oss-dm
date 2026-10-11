@@ -2,6 +2,7 @@
 
 import type {
   Category,
+  DownloadSummary,
   DownloadStatus,
   FixAction,
   MediaKind,
@@ -311,6 +312,54 @@ export function waitShort(w: WaitReason): string {
       return 'Overall limit';
     case 'in_line':
       return `${ordinal(w.data.position)} in line`;
+  }
+}
+
+/** A download's status in a couple of words, as its list row shows it. */
+export function statusShort(row: Pick<DownloadSummary, 'status' | 'waiting'>): string {
+  return row.status === 'queued' && row.waiting ? waitShort(row.waiting) : STATUS_LABEL[row.status];
+}
+
+/**
+ * What a download is doing, in a sentence, when there is more to say than its status: why it
+ * waits, or that its video and audio are being joined. `null` otherwise.
+ */
+export function statusDetail(row: DownloadSummary, queueName: string): string | null {
+  if (row.status === 'queued' && row.waiting) return waitLong(row.waiting, queueName);
+  if (row.status === 'processing') {
+    return 'The video and audio are downloaded; Wirecatch is joining them into one file.';
+  }
+  return null;
+}
+
+/** "today at 18:38", "yesterday at 09:05" or "on 3 Oct 2026". */
+function whenSaid(ms: number, now: Date): string {
+  const date = formatDate(ms, now);
+  if (date.startsWith('Today, ')) return `today at ${date.slice(7)}`;
+  if (date.startsWith('Yesterday, ')) return `yesterday at ${date.slice(11)}`;
+  return `on ${date.slice(0, date.lastIndexOf(','))}`;
+}
+
+/**
+ * One line for a download window whose download is already in the list (D23), for example
+ * "You downloaded this today at 18:38." or "This is already downloading."
+ */
+export function earlierNote(row: DownloadSummary, now: Date = new Date()): string {
+  switch (row.status) {
+    case 'completed':
+      return `You downloaded this ${whenSaid(row.completed_at ?? row.added_at, now)}.`;
+    case 'connecting':
+    case 'downloading':
+    case 'processing':
+      return 'This is already downloading.';
+    case 'queued':
+      return 'This is already in your list, waiting to start.';
+    case 'paused':
+      return 'This is already in your list, paused.';
+    case 'failed':
+      return 'This is already in your list and needs attention there.';
+    case 'cancelled':
+      return `You started this ${whenSaid(row.added_at, now)} and cancelled it.`;
   }
 }
 

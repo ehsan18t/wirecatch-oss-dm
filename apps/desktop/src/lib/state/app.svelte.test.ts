@@ -19,6 +19,7 @@ describe('AppState', () => {
     expect(app.ready).toBe(true);
     expect(app.queues.length).toBe(3);
     expect(app.downloads.size).toBe(app.counts.all);
+    await app.setAskBeforeDownload(false);
     backend.simulateCapture();
     expect(app.toasts.at(-1)?.kind).toBe('capture');
     app.dispose();
@@ -121,14 +122,21 @@ describe('AppState', () => {
     app.dispose();
   });
 
-  it('confirms and rejects browser captures', async () => {
+  it('counts browser captures until their windows answer them', async () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();
     backend.simulateConfirmation();
     expect(app.pending).toHaveLength(2);
-    await app.rejectCapture(app.pending[0]?.id ?? -1);
-    await app.confirmCapture(app.pending[0]?.id ?? -1, { folder: null, file_name: null, queue: 3 });
+    expect(app.waitingCount).toBe(2);
+    await backend.rejectCapture(app.pending[0]?.id ?? -1);
+    await backend.confirmCapture(app.pending[0]?.id ?? -1, {
+      folder: null,
+      file_name: null,
+      queue: 3,
+      later: false,
+    });
     expect(app.pending).toHaveLength(0);
+    expect(app.waitingCount).toBe(0);
     app.dispose();
   });
 

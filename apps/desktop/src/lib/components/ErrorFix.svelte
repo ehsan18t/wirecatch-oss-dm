@@ -1,11 +1,19 @@
 <script lang="ts">
+  // A download's error, worded for a person, with its fix as a button (D3, rule 4). Used by the
+  // detail panel and by download windows, which each run the fix their own way.
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
-  import type { DownloadSummary } from '@wirecatch/protocol';
+  import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
   import { FIX_LABEL } from '$lib/format';
-  import { getApp } from '$lib/state/app.svelte';
 
-  let { row }: { row: DownloadSummary } = $props();
-  const app = getApp();
+  let {
+    row,
+    onfix,
+    onretry,
+  }: {
+    row: DownloadSummary;
+    onfix: (fix: FixAction) => unknown;
+    onretry: () => unknown;
+  } = $props();
 </script>
 
 {#if row.error}
@@ -17,10 +25,10 @@
     <div class="actions">
       {#if row.error.fix}
         {@const fix = row.error.fix}
-        <button class="btn primary" onclick={() => app.fix(row.id, fix)}>{FIX_LABEL[fix]}</button>
+        <button class="btn primary" onclick={() => onfix(fix)}>{FIX_LABEL[fix]}</button>
       {/if}
       {#if row.error.fix !== 'retry'}
-        <button class="btn" onclick={() => app.retry([row.id])}>Try again</button>
+        <button class="btn" onclick={() => onretry()}>Try again</button>
       {/if}
     </div>
   </div>

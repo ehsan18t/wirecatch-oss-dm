@@ -294,6 +294,13 @@
             checked={s.extension.ask_before_download}
             onchange={(v) => save((d) => void (d.extension.ask_before_download = v))}
           />
+        {:else if def.id === 'show_progress_windows'}
+          <Toggle
+            label={def.label}
+            describedby={help}
+            checked={s.show_progress_windows}
+            onchange={(v) => save((d) => void (d.show_progress_windows = v))}
+          />
         {:else if def.id === 'show_media_button'}
           <Toggle
             label={def.label}

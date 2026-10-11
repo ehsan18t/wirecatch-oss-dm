@@ -50,7 +50,13 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.type('asks first');
     await page.keyboard.press('Enter');
     await audit(page, 'confirmation');
-    await page.getByRole('button', { name: 'Download', exact: true }).click();
+    await page.getByRole('button', { name: 'Download now', exact: true }).click();
+    // The window now shows progress; Escape closes it and the main window has the keys again.
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+K');
+    // Files then start at once, with the toast.
+    await page.keyboard.type('start browser downloads without asking');
+    await page.keyboard.press('Enter');
     await page.keyboard.press('Control+K');
     await page.keyboard.type('pretend the browser sent a download');
     await page.keyboard.press('Enter');
@@ -61,55 +67,39 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'capture toast');
   });
 
-  test(`media and add-on dialogs keep the keyboard inside, ${theme} theme`, async ({ page }) => {
+  test(`media and add-on windows work with the keyboard, ${theme} theme`, async ({ page }) => {
     await open(page, 'capture=0', { theme });
-    const inside = () =>
-      page.evaluate(() => document.activeElement?.closest('dialog[open]') !== null);
+    const windows = page.getByRole('region', { name: /^Wirecatch download window/ });
 
     await page.keyboard.press('Control+K');
     await page.keyboard.type('several qualities');
     await page.keyboard.press('Enter');
-    const picker = page.getByRole('dialog', { name: 'Pick a quality' });
+    const picker = windows.filter({ hasText: 'Pick a quality' });
     await picker.waitFor();
-    // The best quality has focus; Tab and Shift+Tab never leave the dialog.
-    await expect(picker.getByRole('radio').first()).toBeFocused();
-    for (let i = 0; i < 12; i++) {
-      await page.keyboard.press('Tab');
-      expect(await inside()).toBe(true);
-    }
-    for (let i = 0; i < 12; i++) {
-      await page.keyboard.press('Shift+Tab');
-      expect(await inside()).toBe(true);
-    }
-    // Escape puts it aside; the sidebar note brings it back.
+    // The main button has the focus, so Enter downloads; it says the add-on comes first.
+    await expect(picker.getByRole('button', { name: 'Install add-on and download' })).toBeFocused();
+    // Escape closes the window without answering; Waiting for you brings it back.
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();
-    await page.getByRole('button', { name: '1 video waits for you to pick a quality' }).click();
+    await page.getByRole('button', { name: /Waiting for you/ }).click();
     await expect(picker).toBeVisible();
 
-    // Answered somewhere else: the picker closes by itself and says why.
+    // Answered somewhere else: the window says so and the count goes.
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+K');
     await page.keyboard.type('answered somewhere else');
     await page.keyboard.press('Enter');
-    await expect(
-      page.getByRole('button', { name: '1 video waits for you to pick a quality' }),
-    ).toBeHidden();
+    await expect(page.getByRole('button', { name: /Waiting for you/ })).toBeHidden();
 
     await page.keyboard.press('Control+K');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
-    const prompt = page.getByRole('dialog', { name: /needs the media add-on/ });
+    const prompt = windows.filter({ hasText: /needs the media add-on/ });
     await prompt.waitFor();
     await expect(prompt.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
-    for (let i = 0; i < 4; i++) {
-      await page.keyboard.press('Tab');
-      expect(await inside()).toBe(true);
-    }
     // Enter on Install: the buttons change, and the focus moves to the new main button.
-    await prompt.getByRole('button', { name: 'Install', exact: true }).focus();
     await page.keyboard.press('Enter');
-    await expect(prompt.getByRole('button', { name: 'Close and keep installing' })).toBeFocused();
+    await expect(prompt.getByRole('button', { name: 'Hide' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(prompt).toBeHidden();
   });
@@ -119,16 +109,16 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Control+K');
     await page.keyboard.type('several qualities');
     await page.keyboard.press('Enter');
-    await page.getByRole('dialog', { name: 'Pick a quality' }).waitFor();
+    await page.getByRole('heading', { name: 'Pick a quality' }).waitFor();
     await audit(page, 'quality picker');
-    await page.getByRole('button', { name: "Don't download" }).click();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     await page.keyboard.press('Control+K');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
     await audit(page, 'add-on prompt');
-    await page.getByRole('button', { name: 'Not now' }).click();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     await page.getByRole('button', { name: /^Settings/ }).click();
     await page.getByRole('searchbox', { name: 'Search settings' }).fill('add-on');

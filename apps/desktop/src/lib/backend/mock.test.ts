@@ -161,20 +161,32 @@ describe('MockBackend', () => {
     );
   });
 
-  it('captures with a toast, or asks first when the setting is on', async () => {
+  it('asks first in its own window by default, or captures with a toast', async () => {
     const { mock, events } = make({ empty: true });
+    const s = await mock.getSettings();
+    expect(s.extension.ask_before_download).toBe(true);
+    await mock.updateSettings({ ...s, extension: { ...s.extension, ask_before_download: false } });
     mock.simulateCapture();
     expect(events.some((e) => e.type === 'captured')).toBe(true);
-    const s = await mock.getSettings();
-    await mock.updateSettings({ ...s, extension: { ...s.extension, ask_before_download: true } });
+    expect(mock.windows.windows).toHaveLength(0);
+    await mock.updateSettings(s);
     mock.simulateCapture();
     const asked = events.find((e) => e.type === 'confirmation_requested');
     expect(asked?.type).toBe('confirmation_requested');
     const pending = await mock.pendingConfirmations();
     expect(pending).toHaveLength(1);
     const id = pending[0]?.id ?? -1;
-    await mock.confirmCapture(id, { folder: 'D:\\Media', file_name: 'renamed.pdf', queue: null });
+    expect(mock.windows.windows.map((w) => w.shows)).toEqual([{ kind: 'question', id }]);
+    expect(await mock.getQuestion(id)).toEqual({ kind: 'capture', data: pending[0] });
+    const confirmed = await mock.confirmCapture(id, {
+      folder: 'D:\\Media',
+      file_name: 'renamed.pdf',
+      queue: null,
+      later: false,
+    });
     expect(await mock.pendingConfirmations()).toHaveLength(0);
+    expect(await mock.getQuestion(id)).toBeNull();
+    expect((await mock.getDownload(confirmed)).file_name).toBe('renamed.pdf');
     const added = (await mock.listDownloads()).at(-1);
     expect(added?.path).toBe('D:\\Media\\renamed.pdf');
   });
