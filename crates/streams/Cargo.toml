@@ -10,7 +10,7 @@ rust-version.workspace = true
 wirecatch-engine.workspace = true
 # HLS "METHOD=AES-128" is AES-128 in CBC mode with PKCS#7 padding.
 aes = "0.8.4"
-cbc = "0.1.2"
+cbc = "0.2.1"
 # A small, dependency-free XML reader for DASH manifests.
 roxmltree = "0.21.1"
 thiserror.workspace = true
@@ -22,5 +22,5 @@ url.workspace = true
 [dev-dependencies]
 axum.workspace = true
 bytes.workspace = true
-cbc = { version = "0.1.2", features = ["alloc"] }
+cbc = { version = "0.2.1", features = ["alloc"] }
 tokio = { workspace = true, features = ["test-util"] }
