@@ -216,4 +216,32 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(app.pending).toHaveLength(0);
     expect(app.downloads.size).toBe(before + 1);
   });
+
+  it('media add-on: Settings, then Install or Remove, 2 clicks', async () => {
+    const { app, backend, click, palette } = await setup();
+    expect(palette('addon.install.media')).toBe(true);
+    await click(button(/^Settings/));
+    await click(button('Install'));
+    expect(app.addons?.[0]?.state.type).toBe('installing');
+    backend.tick(4500);
+    await settle();
+    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(palette('addon.remove.media')).toBe(true);
+    await click(button('Remove the media add-on'));
+    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+  });
+
+  it('quality picker: appears on its own; put aside, the sidebar note brings it back, 1 click', async () => {
+    const { app, backend, click, palette } = await setup();
+    backend.simulateMediaChoice();
+    await settle();
+    expect(within(dialog()).getByText('Pick a quality')).toBeInTheDocument();
+    await click(button('Close'));
+    expect(palette('media.pick')).toBe(true);
+    await click(button('1 video waits for you to pick a quality'));
+    await click(screen.getByRole('radio', { name: /720p/ }));
+    const before = app.downloads.size;
+    await click(button('Download'));
+    expect(app.downloads.size).toBe(before + 1);
+  });
 });

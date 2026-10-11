@@ -2,6 +2,7 @@
 // shortcuts call the same `AppState` methods, so there is one behavior per action.
 
 import type { AppState } from './state/app.svelte';
+import { addonAction, isInstalled } from './addons';
 import { CATEGORIES, CATEGORY_LABEL } from './format';
 import { SETTINGS, SECTIONS } from './settings-schema';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
@@ -379,6 +380,35 @@ export function buildCommands(app: AppState): Command[] {
       keywords: 'media video quality resolution stream pending',
       run: () => app.showMediaChoices(),
     });
+  }
+
+  // The add-on's own actions, so it can be installed or removed without visiting Settings.
+  for (const addon of app.addons ?? []) {
+    const name = addon.name.toLowerCase();
+    const action = addonAction(addon);
+    const keywords = 'addon add-on yt-dlp ffmpeg deno youtube video media';
+    if (action) {
+      const verb = action === 'update' ? 'Update' : 'Install';
+      out.push({
+        id: `addon.${action}.${addon.id}`,
+        group: 'Settings',
+        title: `${verb} the ${name}`,
+        keywords,
+        run: () => {
+          app.openSettings('media_addon');
+          return action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id);
+        },
+      });
+    }
+    if (isInstalled(addon)) {
+      out.push({
+        id: `addon.remove.${addon.id}`,
+        group: 'Settings',
+        title: `Remove the ${name}`,
+        keywords: `${keywords} uninstall delete`,
+        run: () => app.removeAddon(addon.id),
+      });
+    }
   }
 
   // Only the mock backend has sample-data actions; they live in the mock module, so none of
