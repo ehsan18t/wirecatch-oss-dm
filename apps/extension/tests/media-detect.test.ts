@@ -43,6 +43,7 @@ describe('classifyResponse', () => {
     ['https://cdn.example.com/a/master.m3u8?token=1', 'text/plain', 'hls'],
     ['https://cdn.example.com/a/manifest.mpd', 'application/octet-stream', 'dash'],
     ['https://cdn.example.com/a/stream.M3U8', undefined, 'hls'],
+    ['https://cdn.example.com/a/manifest.mpd', 'application/xml', 'dash'],
   ])('spots a manifest by its extension when the type is generic (%s)', (url, contentType, kind) => {
     expect(classifyResponse(response({ url, contentType }))?.kind).toBe(kind);
   });
@@ -135,6 +136,17 @@ describe('classifyResponse', () => {
         response({ url: 'https://e.com/app.js', type: 'script', contentType: 'text/javascript' }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('manifest addresses with the wrong kind of answer', () => {
+  it.each([
+    ['https://cdn.example.com/a/master.m3u8', 'text/html'],
+    ['https://cdn.example.com/a/master.m3u8', 'application/json'],
+    ['https://cdn.example.com/a/manifest.mpd', 'text/html'],
+    ['https://cdn.example.com/a/manifest.mpd', 'application/json'],
+  ])('does not take %s answered as %s for a manifest', (url, contentType) => {
+    expect(classifyResponse(response({ url, contentType }))).toBeNull();
   });
 });
 

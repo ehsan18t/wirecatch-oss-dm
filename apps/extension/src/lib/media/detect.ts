@@ -153,10 +153,13 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
   const byUrl = classifyUrl(response.url);
   const ext = extensionOf(response.url);
 
-  if ((mime !== null && HLS_TYPES.has(mime)) || (byUrl?.kind === 'hls' && !isMediaMime(mime))) {
+  if ((mime !== null && HLS_TYPES.has(mime)) || (byUrl?.kind === 'hls' && isPlainText(mime))) {
     return { kind: 'hls', url: response.url, mime, size: null, audio: false };
   }
-  if ((mime !== null && DASH_TYPES.has(mime)) || (byUrl?.kind === 'dash' && !isMediaMime(mime))) {
+  if (
+    (mime !== null && DASH_TYPES.has(mime)) ||
+    (byUrl?.kind === 'dash' && (isPlainText(mime) || mime === 'application/xml' || mime === 'text/xml'))
+  ) {
     return { kind: 'dash', url: response.url, mime, size: null, audio: false };
   }
 
@@ -181,6 +184,15 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
 
 function isMediaMime(mime: string | null): boolean {
   return mime !== null && (mime.startsWith('video/') || mime.startsWith('audio/'));
+}
+
+/**
+ * Types a server sends when it does not know better, so the address extension may
+ * decide. A page (`text/html`) or an API answer (`application/json`) at an address
+ * ending in `.m3u8` is an error page or a wrapper, not a manifest.
+ */
+function isPlainText(mime: string | null): boolean {
+  return isGenericMime(mime) || mime === 'text/plain';
 }
 
 function isGenericMime(mime: string | null): boolean {
