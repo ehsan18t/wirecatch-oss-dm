@@ -385,7 +385,7 @@ export class Hub {
         handover_id: handoverId,
         url,
         // What the browser itself would send (strict-origin-when-cross-origin), never more.
-        referrer: refererFor(url, click.frameUrl ?? click.pageUrl),
+        referrer: refererFor(url, click.frameUrl ?? click.pageUrl ?? null),
         page_url: click.pageUrl ?? null,
         suggested_name: null,
         mime: null,

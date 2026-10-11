@@ -37,8 +37,8 @@ export function hostOf(url: string): string | null {
 }
 
 /** The site to ignore when the person clicks "Ignore this site" on a page: its host without `www.`. */
-export function siteForPage(url: string | null | undefined): string | null {
-  if (url == null) return null;
+export function siteForPage(url: string | null): string | null {
+  if (url === null) return null;
   if (!/^https?:/i.test(url)) return null;
   const host = hostOf(url);
   if (host === null) return null;

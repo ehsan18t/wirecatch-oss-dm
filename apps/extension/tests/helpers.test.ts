@@ -32,7 +32,6 @@ describe('sites', () => {
     expect(siteForPage('http://sub.example.com/')).toBe('sub.example.com');
     expect(siteForPage('chrome://newtab/')).toBeNull();
     expect(siteForPage(null)).toBeNull();
-    expect(siteForPage(undefined)).toBeNull();
   });
 
   it('matches a host and its subdomains only', () => {

@@ -55,8 +55,8 @@ export const PAGE_SITES: readonly PageSite[] = [
 ];
 
 /** The site's name when `url` is a page the media add-on may be able to read, otherwise null. */
-export function pageSiteFor(url: string | null | undefined): string | null {
-  if (url == null) return null;
+export function pageSiteFor(url: string | null): string | null {
+  if (url === null) return null;
   let parsed: URL;
   try {
     parsed = new URL(url);

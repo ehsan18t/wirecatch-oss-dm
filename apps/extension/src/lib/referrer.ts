@@ -8,8 +8,8 @@
  *
  * Returns null when there is no page, or it is not a web page.
  */
-export function refererFor(target: string, page: string | null | undefined): string | null {
-  if (page == null) return null;
+export function refererFor(target: string, page: string | null): string | null {
+  if (page === null) return null;
   let from: URL;
   let to: URL;
   try {

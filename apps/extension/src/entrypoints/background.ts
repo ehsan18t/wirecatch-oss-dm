@@ -23,8 +23,8 @@ import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/me
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
-import { NativeClient, type NativePort } from '@/lib/native/client';
-import { disconnectMessage } from '@/lib/native/status';
+import { NativeClient } from '@/lib/native/client';
+import { browserTransport } from '@/lib/native/port';
 import { originPattern } from '@/lib/site-access';
 
 const MENU_ID = 'wirecatch-download';
@@ -140,10 +140,7 @@ function makeBadge(): Badge {
 
 export default defineBackground(() => {
   const client = new NativeClient({
-    transport: {
-      connect: (): NativePort => browser.runtime.connectNative(__NATIVE_HOST_NAME__),
-      disconnectReason: (port) => disconnectMessage(browser.runtime.lastError, port),
-    },
+    transport: browserTransport(),
     hello: async (): Promise<Omit<Hello, 'start_app'>> => ({
       client: 'extension',
       client_version: browser.runtime.getManifest().version,

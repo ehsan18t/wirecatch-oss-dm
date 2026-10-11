@@ -140,8 +140,8 @@ function mimeOf(response: ObservedResponse): string | null {
 function sizeOf(response: ObservedResponse): number | null {
   if (response.statusCode === HTTP_PARTIAL_CONTENT) {
     const range = header(response, 'content-range');
-    const total = range === null ? null : /\/(\d+)\s*$/.exec(range)?.[1];
-    return total == null ? null : Number(total);
+    const total = range === null ? undefined : /\/(\d+)\s*$/.exec(range)?.[1];
+    return total === undefined ? null : Number(total);
   }
   const length = header(response, 'content-length');
   if (length === null || !/^\d+$/.test(length.trim())) return null;
@@ -221,7 +221,7 @@ export function classifyResponse(response: ObservedResponse): Detection | null {
       audio: byUrl.audio,
     };
   }
-  if (direct?.size != null && direct.size < MIN_DIRECT_MEDIA_BYTES) return null;
+  if (direct !== null && direct.size !== null && direct.size < MIN_DIRECT_MEDIA_BYTES) return null;
   return direct;
 }
 

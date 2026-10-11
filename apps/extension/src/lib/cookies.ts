@@ -125,8 +125,8 @@ function suffixLabels(labels: readonly string[]): number {
 }
 
 /** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */
-export function siteOf(url: string | null | undefined): string | null {
-  if (url == null) return null;
+export function siteOf(url: string | null): string | null {
+  if (url === null) return null;
   try {
     const u = new URL(url);
     if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.hostname === '') return null;
@@ -147,9 +147,10 @@ export function isCrossSite(url: string, context: CookieContext): boolean {
   if (target === null) return true;
   const initiator = siteOf(context.initiator);
   if (initiator !== target) return true;
-  if (context.originalUrl != null && siteOf(context.originalUrl) !== target) return true;
-  if (context.topLevel != null && siteOf(context.topLevel) !== target) return true;
-  return false;
+  const originalUrl = context.originalUrl ?? null;
+  if (originalUrl !== null && siteOf(originalUrl) !== target) return true;
+  const topLevel = context.topLevel ?? null;
+  return topLevel !== null && siteOf(topLevel) !== target;
 }
 
 /**
@@ -187,7 +188,7 @@ export function cookieQueries(
   context: CookieContext,
 ): CookieQuery[] {
   const base: CookieQuery = storeId === null ? { url } : { url, storeId };
-  const topLevel = context.navigation ? null : siteOf(context.topLevel);
+  const topLevel = context.navigation ? null : siteOf(context.topLevel ?? null);
   const firstParty = topLevel ?? siteOf(url);
   const firstPartyDomain = firstParty === null ? null : firstParty.replace(/^https?:\/\//, '');
   const partitioned = topLevel !== null && topLevel !== siteOf(url);

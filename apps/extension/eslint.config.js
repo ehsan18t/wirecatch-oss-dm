@@ -1,7 +1,8 @@
 import { globals, wirecatch } from '@wirecatch/eslint-config';
 import svelteConfig from './svelte.config.js';
 
-const NATIVE_ONLY = 'Talk to the app through `src/lib/native/client.ts` only.';
+const NATIVE_ONLY =
+  'Talk to the app through `src/lib/native` only: `port.ts` opens the connection and `client.ts` uses it.';
 
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
@@ -10,7 +11,7 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
-      // Only the native client opens the connection to the app, so there is one place that owns its lifecycle and errors.
+      // Only `src/lib/native` opens the connection to the app, so there is one place that owns its lifecycle and errors.
       files: ['src/**'],
       ignores: ['src/lib/native/**'],
       rules: {

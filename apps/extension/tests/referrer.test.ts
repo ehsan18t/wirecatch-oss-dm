@@ -30,7 +30,6 @@ describe('refererFor (strict-origin-when-cross-origin)', () => {
 
   it('sends nothing without a web page', () => {
     expect(refererFor('https://example.com/a.zip', null)).toBeNull();
-    expect(refererFor('https://example.com/a.zip', undefined)).toBeNull();
     expect(refererFor('https://example.com/a.zip', 'about:blank')).toBeNull();
     expect(refererFor('https://example.com/a.zip', 'not a url')).toBeNull();
   });

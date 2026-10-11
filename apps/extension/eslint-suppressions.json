@@ -12,9 +12,6 @@
   "src/entrypoints/background.ts": {
     "max-lines-per-function": {
       "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/lib/capture/handover.ts": {
@@ -25,11 +22,6 @@
   "src/lib/capture/should-capture.ts": {
     "complexity": {
       "count": 1
-    }
-  },
-  "src/lib/cookies.ts": {
-    "eqeqeq": {
-      "count": 3
     }
   },
   "src/lib/hub.ts": {
@@ -57,18 +49,10 @@
   "src/lib/media/detect.ts": {
     "complexity": {
       "count": 1
-    },
-    "eqeqeq": {
-      "count": 2
     }
   },
   "src/lib/media/messages.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/media/page-sites.ts": {
-    "eqeqeq": {
       "count": 1
     }
   },
@@ -84,16 +68,6 @@
   },
   "src/lib/native/client.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/referrer.ts": {
-    "eqeqeq": {
-      "count": 1
-    }
-  },
-  "src/lib/sites.ts": {
-    "eqeqeq": {
       "count": 1
     }
   },
