@@ -1,7 +1,7 @@
 //! `wirecatch-bridge install` and `uninstall`: register the bridge as a native
-//! messaging host for the current user in every supported browser.
+//! messaging host in every supported browser, for the current user or, on Windows, for every user of the computer (`--all-users`).
 //!
-//! Everything is per user; nothing needs administrator rights.
+//! The per-machine installer registers for all users (D25): the manifests go to a `NativeMessagingHosts` folder next to the bridge in `Program Files`, which only administrators can change, and the keys go under `HKEY_LOCAL_MACHINE`. A per-user `install`, which the app runs on every start, then does nothing for a bridge the machine registration already covers, so an uninstall never leaves other users with a registration pointing at removed files. Without a machine registration (a portable copy, Linux) everything is per user and needs no administrator rights.
 //!
 //! - **Windows**: two manifests (one for Chromium browsers, one for Firefox) are
 //!   written to `%LOCALAPPDATA%\Wirecatch\NativeMessagingHosts`, and each browser
@@ -263,6 +263,11 @@ pub(crate) enum Layout {
         /// The per-user local app data folder (`%LOCALAPPDATA%`).
         local_app_data: PathBuf,
     },
+    /// Windows, for every user of the computer: manifests next to the bridge, keys under `HKEY_LOCAL_MACHINE`. Writing it needs administrator rights.
+    WindowsMachine {
+        /// The bridge executable the manifests point to.
+        exe: PathBuf,
+    },
     /// Linux paths.
     Linux {
         /// The bridge executable the manifests point to.
@@ -302,9 +307,22 @@ impl Layout {
         }
     }
 
+    /// The layout for every user of this computer and this executable (Windows only).
+    pub(crate) fn current_machine() -> anyhow::Result<Self> {
+        if !cfg!(windows) {
+            bail!(
+                "Registering for every user is only needed on Windows; on Linux the packages and each user's first start register the bridge"
+            );
+        }
+        let exe = std::env::current_exe().context("Could not find the bridge executable")?;
+        Ok(Self::WindowsMachine { exe })
+    }
+
     fn exe(&self) -> &Path {
         match self {
-            Self::Windows { exe, .. } | Self::Linux { exe, .. } => exe,
+            Self::Windows { exe, .. } | Self::WindowsMachine { exe } | Self::Linux { exe, .. } => {
+                exe
+            }
         }
     }
 }
@@ -327,8 +345,28 @@ pub(crate) struct ManifestFile {
 }
 
 /// A registry key under HKCU whose default value is a manifest path.
+/// The registry root a key lives under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Hive {
+    /// `HKEY_CURRENT_USER`: the current user only.
+    CurrentUser,
+    /// `HKEY_LOCAL_MACHINE`: every user of the computer.
+    LocalMachine,
+}
+
+impl Hive {
+    /// The root's name as Windows tools show it.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::CurrentUser => "HKEY_CURRENT_USER",
+            Self::LocalMachine => "HKEY_LOCAL_MACHINE",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegistryEntry {
+    pub(crate) hive: Hive,
     pub(crate) key: String,
     /// The manifest path.
     pub(crate) value: String,
@@ -414,57 +452,14 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
             let dir = local_app_data
                 .join("Wirecatch")
                 .join("NativeMessagingHosts");
-            for engine in [Engine::Chromium, Engine::Firefox] {
-                let suffix = match engine {
-                    Engine::Chromium => "chromium",
-                    Engine::Firefox => "firefox",
-                };
-                let path = dir.join(format!("{host}.{suffix}.json"));
-                let value = path
-                    .to_str()
-                    .with_context(|| format!("The folder {} has an unusual name", dir.display()))?
-                    .to_string();
-                let contents = manifest(config, exe_text, engine)?;
-                plan.files.push(ManifestFile {
-                    path,
-                    contents: contents.clone(),
-                    browsers: Vec::new(),
-                    hosts_dir: dir.clone(),
-                });
-                for browser in BROWSERS.iter().filter(|b| b.engine == engine) {
-                    let Some(root) = browser.windows_root else {
-                        continue;
-                    };
-                    if let Some(file) = plan.files.last_mut() {
-                        file.browsers.push(browser.name);
-                    }
-                    let hosts_key = format!(r"{root}\NativeMessagingHosts");
-                    let key = format!(r"{hosts_key}\{host}");
-                    if let Some(entry) = plan.keys.iter_mut().find(|e| e.key == key) {
-                        entry.browsers.push(browser.name);
-                        continue;
-                    }
-                    plan.keys.push(RegistryEntry {
-                        key,
-                        value: value.clone(),
-                        manifest_contents: contents.clone(),
-                        browsers: vec![browser.name],
-                        hosts_key,
-                    });
-                }
-                if engine == Engine::Chromium {
-                    for root in RETIRED_WINDOWS_ROOTS {
-                        let hosts_key = format!(r"{root}\NativeMessagingHosts");
-                        plan.retired_keys.push(RegistryEntry {
-                            key: format!(r"{hosts_key}\{host}"),
-                            value: value.clone(),
-                            manifest_contents: contents.clone(),
-                            browsers: Vec::new(),
-                            hosts_key,
-                        });
-                    }
-                }
-            }
+            plan_windows(&mut plan, config, exe_text, &dir, Hive::CurrentUser)?;
+        }
+        Layout::WindowsMachine { exe } => {
+            let dir = exe
+                .parent()
+                .context("The bridge has no folder")?
+                .join("NativeMessagingHosts");
+            plan_windows(&mut plan, config, exe_text, &dir, Hive::LocalMachine)?;
         }
         Layout::Linux {
             home, config_home, ..
@@ -496,6 +491,71 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
     Ok(plan)
 }
 
+/// The Windows part of [`plan`]: two manifests in `dir` and a key per browser under `hive`.
+fn plan_windows(
+    plan: &mut Plan,
+    config: &Config,
+    exe_text: &str,
+    dir: &Path,
+    hive: Hive,
+) -> anyhow::Result<()> {
+    let host = &config.native_host_name;
+    for engine in [Engine::Chromium, Engine::Firefox] {
+        let suffix = match engine {
+            Engine::Chromium => "chromium",
+            Engine::Firefox => "firefox",
+        };
+        let path = dir.join(format!("{host}.{suffix}.json"));
+        let value = path
+            .to_str()
+            .with_context(|| format!("The folder {} has an unusual name", dir.display()))?
+            .to_string();
+        let contents = manifest(config, exe_text, engine)?;
+        plan.files.push(ManifestFile {
+            path,
+            contents: contents.clone(),
+            browsers: Vec::new(),
+            hosts_dir: dir.to_path_buf(),
+        });
+        for browser in BROWSERS.iter().filter(|b| b.engine == engine) {
+            let Some(root) = browser.windows_root else {
+                continue;
+            };
+            if let Some(file) = plan.files.last_mut() {
+                file.browsers.push(browser.name);
+            }
+            let hosts_key = format!(r"{root}\NativeMessagingHosts");
+            let key = format!(r"{hosts_key}\{host}");
+            if let Some(entry) = plan.keys.iter_mut().find(|e| e.key == key) {
+                entry.browsers.push(browser.name);
+                continue;
+            }
+            plan.keys.push(RegistryEntry {
+                hive,
+                key,
+                value: value.clone(),
+                manifest_contents: contents.clone(),
+                browsers: vec![browser.name],
+                hosts_key,
+            });
+        }
+        if engine == Engine::Chromium {
+            for root in RETIRED_WINDOWS_ROOTS {
+                let hosts_key = format!(r"{root}\NativeMessagingHosts");
+                plan.retired_keys.push(RegistryEntry {
+                    hive,
+                    key: format!(r"{hosts_key}\{host}"),
+                    value: value.clone(),
+                    manifest_contents: contents.clone(),
+                    browsers: Vec::new(),
+                    hosts_key,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// File system and registry access, behind a trait so tests can run against a
 /// temporary folder and an in-memory registry.
 pub(crate) trait Host {
@@ -507,15 +567,15 @@ pub(crate) trait Host {
     fn remove_file(&mut self, path: &Path) -> io::Result<()>;
     /// Removes the folder if it exists and is empty. Returns whether it did.
     fn remove_dir_if_empty(&mut self, path: &Path) -> io::Result<bool>;
-    /// The default value of an HKCU key, or `None` if the key or value is missing.
-    fn registry_value(&self, key: &str) -> io::Result<Option<String>>;
-    /// Creates the HKCU key (and missing parents) and sets its default value.
-    fn set_registry_value(&mut self, key: &str, value: &str) -> io::Result<()>;
-    /// Deletes the HKCU key, which must have no subkeys. Missing is fine.
-    fn delete_registry_key(&mut self, key: &str) -> io::Result<()>;
-    /// Deletes the HKCU key if it exists with no subkeys and no values. Returns
+    /// The default value of a key, or `None` if the key or value is missing.
+    fn registry_value(&self, hive: Hive, key: &str) -> io::Result<Option<String>>;
+    /// Creates the key (and missing parents) and sets its default value.
+    fn set_registry_value(&mut self, hive: Hive, key: &str, value: &str) -> io::Result<()>;
+    /// Deletes the key, which must have no subkeys. Missing is fine.
+    fn delete_registry_key(&mut self, hive: Hive, key: &str) -> io::Result<()>;
+    /// Deletes the key if it exists with no subkeys and no values. Returns
     /// whether it did.
-    fn delete_registry_key_if_empty(&mut self, key: &str) -> io::Result<bool>;
+    fn delete_registry_key_if_empty(&mut self, hive: Hive, key: &str) -> io::Result<bool>;
 }
 
 /// The real file system and (on Windows) registry.
@@ -584,20 +644,20 @@ impl Host for RealHost {
         files::remove_dir_if_empty(path)
     }
 
-    fn registry_value(&self, key: &str) -> io::Result<Option<String>> {
-        registry::value(key)
+    fn registry_value(&self, hive: Hive, key: &str) -> io::Result<Option<String>> {
+        registry::value(hive, key)
     }
 
-    fn set_registry_value(&mut self, key: &str, value: &str) -> io::Result<()> {
-        registry::set_value(key, value)
+    fn set_registry_value(&mut self, hive: Hive, key: &str, value: &str) -> io::Result<()> {
+        registry::set_value(hive, key, value)
     }
 
-    fn delete_registry_key(&mut self, key: &str) -> io::Result<()> {
-        registry::delete_key(key)
+    fn delete_registry_key(&mut self, hive: Hive, key: &str) -> io::Result<()> {
+        registry::delete_key(hive, key)
     }
 
-    fn delete_registry_key_if_empty(&mut self, key: &str) -> io::Result<bool> {
-        registry::delete_key_if_empty(key)
+    fn delete_registry_key_if_empty(&mut self, hive: Hive, key: &str) -> io::Result<bool> {
+        registry::delete_key_if_empty(hive, key)
     }
 }
 
@@ -607,6 +667,8 @@ mod registry {
 
     use std::io;
 
+    use super::Hive;
+
     fn unsupported() -> io::Error {
         io::Error::new(
             io::ErrorKind::Unsupported,
@@ -614,33 +676,42 @@ mod registry {
         )
     }
 
-    pub(crate) fn value(_key: &str) -> io::Result<Option<String>> {
+    pub(crate) fn value(_hive: Hive, _key: &str) -> io::Result<Option<String>> {
         Err(unsupported())
     }
-    pub(crate) fn set_value(_key: &str, _value: &str) -> io::Result<()> {
+    pub(crate) fn set_value(_hive: Hive, _key: &str, _value: &str) -> io::Result<()> {
         Err(unsupported())
     }
-    pub(crate) fn delete_key(_key: &str) -> io::Result<()> {
+    pub(crate) fn delete_key(_hive: Hive, _key: &str) -> io::Result<()> {
         Err(unsupported())
     }
-    pub(crate) fn delete_key_if_empty(_key: &str) -> io::Result<bool> {
+    pub(crate) fn delete_key_if_empty(_hive: Hive, _key: &str) -> io::Result<bool> {
         Err(unsupported())
     }
 }
 
 #[cfg(windows)]
 mod registry {
-    //! The per-user registry (HKEY_CURRENT_USER) through the Win32 API.
+    //! The registry (HKEY_CURRENT_USER or HKEY_LOCAL_MACHINE) through the Win32 API.
 
     use std::io;
     use std::ptr;
 
+    use super::Hive;
+
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
-        RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteKeyW, RegGetValueW, RegOpenKeyExW,
-        RegQueryInfoKeyW, RegSetValueExW,
+        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE,
+        REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW,
+        RegDeleteKeyW, RegGetValueW, RegOpenKeyExW, RegQueryInfoKeyW, RegSetValueExW,
     };
+
+    fn root(hive: Hive) -> HKEY {
+        match hive {
+            Hive::CurrentUser => HKEY_CURRENT_USER,
+            Hive::LocalMachine => HKEY_LOCAL_MACHINE,
+        }
+    }
 
     fn wide(text: &str) -> Vec<u16> {
         text.encode_utf16().chain(std::iter::once(0)).collect()
@@ -664,7 +735,7 @@ mod registry {
         }
     }
 
-    pub(crate) fn value(key: &str) -> io::Result<Option<String>> {
+    pub(crate) fn value(hive: Hive, key: &str) -> io::Result<Option<String>> {
         let key = wide(key);
         let mut buf: Vec<u16> = vec![0; 260];
         // The value can change size between calls; retry a few times.
@@ -673,7 +744,7 @@ mod registry {
             // SAFETY: `key` is NUL-terminated; `buf` is writable for `size` bytes.
             let status = unsafe {
                 RegGetValueW(
-                    HKEY_CURRENT_USER,
+                    root(hive),
                     key.as_ptr(),
                     ptr::null(),
                     RRF_RT_REG_SZ,
@@ -699,13 +770,13 @@ mod registry {
         Err(io::Error::other("the registry value kept changing size"))
     }
 
-    pub(crate) fn set_value(key: &str, value: &str) -> io::Result<()> {
+    pub(crate) fn set_value(hive: Hive, key: &str, value: &str) -> io::Result<()> {
         let key = wide(key);
         let mut handle: HKEY = ptr::null_mut();
         // SAFETY: `key` is NUL-terminated; on success `handle` is a key we own.
         check(unsafe {
             RegCreateKeyExW(
-                HKEY_CURRENT_USER,
+                root(hive),
                 key.as_ptr(),
                 0,
                 ptr::null(),
@@ -733,22 +804,22 @@ mod registry {
         })
     }
 
-    pub(crate) fn delete_key(key: &str) -> io::Result<()> {
+    pub(crate) fn delete_key(hive: Hive, key: &str) -> io::Result<()> {
         let key = wide(key);
         // SAFETY: `key` is NUL-terminated.
-        match unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, key.as_ptr()) } {
+        match unsafe { RegDeleteKeyW(root(hive), key.as_ptr()) } {
             ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
             other => Err(io::Error::from_raw_os_error(other as i32)),
         }
     }
 
-    pub(crate) fn delete_key_if_empty(key: &str) -> io::Result<bool> {
+    pub(crate) fn delete_key_if_empty(hive: Hive, key: &str) -> io::Result<bool> {
         let wide_key = wide(key);
         let mut handle: HKEY = ptr::null_mut();
         // SAFETY: `wide_key` is NUL-terminated; on success `handle` is ours.
         match unsafe {
             RegOpenKeyExW(
-                HKEY_CURRENT_USER,
+                root(hive),
                 wide_key.as_ptr(),
                 0,
                 KEY_QUERY_VALUE,
@@ -783,7 +854,7 @@ mod registry {
         if subkeys != 0 || values != 0 {
             return Ok(false);
         }
-        delete_key(key)?;
+        delete_key(hive, key)?;
         Ok(true)
     }
 }
@@ -820,16 +891,10 @@ pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
         }
     }
     for entry in &plan.keys {
-        match host.set_registry_value(&entry.key, &entry.value) {
-            Ok(()) => report.ok(format!(
-                r"Registered HKEY_CURRENT_USER\{} ({})",
-                entry.key,
-                entry.browsers.join(", ")
-            )),
-            Err(e) => report.fail(format!(
-                r"Could not register HKEY_CURRENT_USER\{}: {e}",
-                entry.key
-            )),
+        let name = format!(r"{}\{}", entry.hive.name(), entry.key);
+        match host.set_registry_value(entry.hive, &entry.key, &entry.value) {
+            Ok(()) => report.ok(format!("Registered {name} ({})", entry.browsers.join(", "))),
+            Err(e) => report.fail(format!("Could not register {name}: {e}")),
         }
     }
     // After the manifests, so a key an earlier version wrote is recognized as
@@ -838,6 +903,32 @@ pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
         remove_key(entry, host, &mut report);
     }
     report
+}
+
+/// Whether the machine registration in `machine` is in place for this very bridge: every key points at its manifest and every manifest holds what this bridge writes. Then the browsers of every user already reach this bridge.
+pub(crate) fn covered_by_machine(machine: &Plan, host: &dyn Host) -> bool {
+    let keys = machine.keys.iter().all(|entry| {
+        matches!(host.registry_value(entry.hive, &entry.key), Ok(Some(value)) if value == entry.value)
+    });
+    let files = machine.files.iter().all(|file| {
+        matches!(host.read_file(&file.path), Ok(Some(bytes)) if bytes == file.contents.as_bytes())
+    });
+    !machine.keys.is_empty() && keys && files
+}
+
+/// The per-user install the app runs on every start. When the per-machine installer already registered this bridge for every user, it removes any registration of its own for this user instead of adding one: a per-user copy would outlive an uninstall, which can only clean up the account that runs it.
+pub(crate) fn install_for_user(user: &Plan, machine: Option<&Plan>, host: &mut dyn Host) -> Report {
+    match machine {
+        Some(machine) if covered_by_machine(machine, host) => {
+            let mut report = uninstall(user, host);
+            report.ok(
+                "Registered for every user of this computer; nothing to add for this account."
+                    .to_owned(),
+            );
+            report
+        }
+        _ => install(user, host),
+    }
 }
 
 /// Removes what [`install`] wrote from this copy of the bridge, leaving anything
@@ -876,8 +967,8 @@ pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
 /// Removes a registry key if it is this copy's: it points to this copy's
 /// manifest path, and that manifest holds what this copy writes or is gone.
 fn remove_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
-    let name = format!(r"HKEY_CURRENT_USER\{}", entry.key);
-    let value = match host.registry_value(&entry.key) {
+    let name = format!(r"{}\{}", entry.hive.name(), entry.key);
+    let value = match host.registry_value(entry.hive, &entry.key) {
         Ok(None) => return,
         Ok(Some(value)) => value,
         Err(e) => {
@@ -907,12 +998,13 @@ fn remove_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
             return;
         }
     }
-    match host.delete_registry_key(&entry.key) {
+    match host.delete_registry_key(entry.hive, &entry.key) {
         Ok(()) => {
             report.ok(format!("Removed {name}"));
-            if let Err(e) = host.delete_registry_key_if_empty(&entry.hosts_key) {
+            if let Err(e) = host.delete_registry_key_if_empty(entry.hive, &entry.hosts_key) {
                 report.fail(format!(
-                    r"Could not tidy HKEY_CURRENT_USER\{}: {e}",
+                    r"Could not tidy {}\{}: {e}",
+                    entry.hive.name(),
                     entry.hosts_key
                 ));
             }
@@ -930,33 +1022,68 @@ pub(crate) enum Command {
     Uninstall,
 }
 
-/// Runs `install` or `uninstall` for the current user and prints what happened.
-#[allow(clippy::print_stdout)] // a terminal command, not native messaging mode
-pub(crate) fn run(command: Command) -> ExitCode {
-    let planned = Config::embedded().and_then(|config| plan(&config, &Layout::current()?));
-    let plan = match planned {
-        Ok(planned) => planned,
+/// Whose registration a command changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Scope {
+    /// The current user.
+    User,
+    /// Every user of the computer (`--all-users`, Windows, administrator rights).
+    Machine,
+}
+
+/// Runs `install` or `uninstall` and prints what happened.
+#[expect(
+    clippy::print_stdout,
+    reason = "a terminal command, not native messaging mode"
+)]
+pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
+    let report = match planned_report(command, scope) {
+        Ok(report) => report,
         Err(e) => {
             crate::log!("{e:#}");
             return ExitCode::FAILURE;
         }
     };
-    let report = match command {
-        Command::Install => install(&plan, &mut RealHost),
-        Command::Uninstall => uninstall(&plan, &mut RealHost),
-    };
     for line in &report.lines {
         println!("{line}");
     }
     if report.failures > 0 {
-        ExitCode::FAILURE
-    } else {
-        match command {
-            Command::Install => println!("The Wirecatch browser bridge is registered."),
-            Command::Uninstall => println!("The Wirecatch browser bridge is no longer registered."),
-        }
-        ExitCode::SUCCESS
+        return ExitCode::FAILURE;
     }
+    match (command, scope) {
+        (Command::Install, Scope::User) => println!("The Wirecatch browser bridge is registered."),
+        (Command::Install, Scope::Machine) => {
+            println!("The Wirecatch browser bridge is registered for every user of this computer.");
+        }
+        (Command::Uninstall, _) => {
+            println!("The Wirecatch browser bridge is no longer registered.")
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+fn planned_report(command: Command, scope: Scope) -> anyhow::Result<Report> {
+    let config = Config::embedded()?;
+    let report = match (command, scope) {
+        (Command::Install, Scope::User) => {
+            let user = plan(&config, &Layout::current()?)?;
+            let machine = Layout::current_machine()
+                .ok()
+                .map(|layout| plan(&config, &layout))
+                .transpose()?;
+            install_for_user(&user, machine.as_ref(), &mut RealHost)
+        }
+        (Command::Uninstall, Scope::User) => {
+            uninstall(&plan(&config, &Layout::current()?)?, &mut RealHost)
+        }
+        (Command::Install, Scope::Machine) => {
+            install(&plan(&config, &Layout::current_machine()?)?, &mut RealHost)
+        }
+        (Command::Uninstall, Scope::Machine) => {
+            uninstall(&plan(&config, &Layout::current_machine()?)?, &mut RealHost)
+        }
+    };
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -992,16 +1119,33 @@ mod tests {
     /// deleting a key with subkeys fails.
     #[derive(Default)]
     struct FakeHost {
-        /// Lowercased key path to (original spelling, default value).
+        /// The current user's registry: lowercased key path to (original spelling, default value).
         registry: BTreeMap<String, (String, Option<String>)>,
+        /// The machine's registry, the same way.
+        machine: BTreeMap<String, (String, Option<String>)>,
     }
 
     impl FakeHost {
-        fn has_subkeys(&self, key: &str) -> bool {
-            let prefix = format!(r"{}\", key.to_lowercase());
-            self.registry.keys().any(|k| k.starts_with(&prefix))
+        fn hive(&self, hive: Hive) -> &BTreeMap<String, (String, Option<String>)> {
+            match hive {
+                Hive::CurrentUser => &self.registry,
+                Hive::LocalMachine => &self.machine,
+            }
         }
 
+        fn hive_mut(&mut self, hive: Hive) -> &mut BTreeMap<String, (String, Option<String>)> {
+            match hive {
+                Hive::CurrentUser => &mut self.registry,
+                Hive::LocalMachine => &mut self.machine,
+            }
+        }
+
+        fn has_subkeys(&self, hive: Hive, key: &str) -> bool {
+            let prefix = format!(r"{}\", key.to_lowercase());
+            self.hive(hive).keys().any(|k| k.starts_with(&prefix))
+        }
+
+        /// The current user's registry.
         fn snapshot(&self) -> BTreeMap<String, Option<String>> {
             self.registry
                 .values()
@@ -1023,39 +1167,40 @@ mod tests {
         fn remove_dir_if_empty(&mut self, path: &Path) -> io::Result<bool> {
             files::remove_dir_if_empty(path)
         }
-        fn registry_value(&self, key: &str) -> io::Result<Option<String>> {
+        fn registry_value(&self, hive: Hive, key: &str) -> io::Result<Option<String>> {
             Ok(self
-                .registry
+                .hive(hive)
                 .get(&key.to_lowercase())
                 .and_then(|(_, value)| value.clone()))
         }
-        fn set_registry_value(&mut self, key: &str, value: &str) -> io::Result<()> {
+        fn set_registry_value(&mut self, hive: Hive, key: &str, value: &str) -> io::Result<()> {
             let parts: Vec<&str> = key.split('\\').collect();
+            let registry = self.hive_mut(hive);
             for depth in 1..parts.len() {
                 let parent = parts[..depth].join("\\");
-                self.registry
+                registry
                     .entry(parent.to_lowercase())
                     .or_insert((parent, None));
             }
-            self.registry.insert(
+            registry.insert(
                 key.to_lowercase(),
                 (key.to_string(), Some(value.to_string())),
             );
             Ok(())
         }
-        fn delete_registry_key(&mut self, key: &str) -> io::Result<()> {
-            if self.has_subkeys(key) {
+        fn delete_registry_key(&mut self, hive: Hive, key: &str) -> io::Result<()> {
+            if self.has_subkeys(hive, key) {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
-            self.registry.remove(&key.to_lowercase());
+            self.hive_mut(hive).remove(&key.to_lowercase());
             Ok(())
         }
-        fn delete_registry_key_if_empty(&mut self, key: &str) -> io::Result<bool> {
+        fn delete_registry_key_if_empty(&mut self, hive: Hive, key: &str) -> io::Result<bool> {
             let lower = key.to_lowercase();
-            let empty =
-                matches!(self.registry.get(&lower), Some((_, None))) && !self.has_subkeys(key);
+            let empty = matches!(self.hive(hive).get(&lower), Some((_, None)))
+                && !self.has_subkeys(hive, key);
             if empty {
-                self.registry.remove(&lower);
+                self.hive_mut(hive).remove(&lower);
             }
             Ok(empty)
         }
@@ -1109,10 +1254,18 @@ mod tests {
         // Things that were there before and must survive.
         fs::create_dir_all(local.join("Wirecatch")).unwrap();
         fs::write(local.join("Wirecatch").join("downloads.db"), b"keep").unwrap();
-        host.set_registry_value(r"Software\Google\Chrome\PreferenceMACs", "keep")
-            .unwrap();
-        host.set_registry_value(r"Software\Microsoft\Edge\BLBeacon", "keep")
-            .unwrap();
+        host.set_registry_value(
+            Hive::CurrentUser,
+            r"Software\Google\Chrome\PreferenceMACs",
+            "keep",
+        )
+        .unwrap();
+        host.set_registry_value(
+            Hive::CurrentUser,
+            r"Software\Microsoft\Edge\BLBeacon",
+            "keep",
+        )
+        .unwrap();
         // An empty browser key that was already there must not be removed.
         host.registry.insert(
             r"software\mozilla".into(),
@@ -1166,7 +1319,9 @@ mod tests {
         ];
         for (key, value) in expected {
             assert_eq!(
-                host.registry_value(key).unwrap().as_deref(),
+                host.registry_value(Hive::CurrentUser, key)
+                    .unwrap()
+                    .as_deref(),
                 Some(value),
                 "{key}"
             );
@@ -1215,7 +1370,11 @@ mod tests {
             r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge",
             r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge",
         ] {
-            assert_eq!(host.registry_value(retired).unwrap(), None, "{retired}");
+            assert_eq!(
+                host.registry_value(Hive::CurrentUser, retired).unwrap(),
+                None,
+                "{retired}"
+            );
         }
 
         // Installing again changes nothing.
@@ -1264,8 +1423,9 @@ mod tests {
         // and a Brave key pointing to it; a Vivaldi key someone else points elsewhere.
         fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
         fs::write(&manifest_path, br#"{"allowed_origins": []}"#).unwrap();
-        host.set_registry_value(brave, ours).unwrap();
-        host.set_registry_value(vivaldi, r"C:\Other\host.json")
+        host.set_registry_value(Hive::CurrentUser, brave, ours)
+            .unwrap();
+        host.set_registry_value(Hive::CurrentUser, vivaldi, r"C:\Other\host.json")
             .unwrap();
         assert_eq!(
             plan.retired_keys
@@ -1279,24 +1439,31 @@ mod tests {
         // removed with its empty hosts key; the Vivaldi key is left alone.
         let report = install(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert_eq!(host.registry_value(brave).unwrap(), None);
+        assert_eq!(host.registry_value(Hive::CurrentUser, brave).unwrap(), None);
         assert!(
             !host
                 .snapshot()
                 .contains_key(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts")
         );
         assert_eq!(
-            host.registry_value(vivaldi).unwrap().as_deref(),
+            host.registry_value(Hive::CurrentUser, vivaldi)
+                .unwrap()
+                .as_deref(),
             Some(r"C:\Other\host.json")
         );
         assert!(plan.keys.iter().all(|k| k.key != brave && k.key != vivaldi));
 
         // Uninstall removes one that came back, and still leaves the other.
-        host.set_registry_value(brave, ours).unwrap();
+        host.set_registry_value(Hive::CurrentUser, brave, ours)
+            .unwrap();
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert_eq!(host.registry_value(brave).unwrap(), None);
-        assert!(host.registry_value(vivaldi).unwrap().is_some());
+        assert_eq!(host.registry_value(Hive::CurrentUser, brave).unwrap(), None);
+        assert!(
+            host.registry_value(Hive::CurrentUser, vivaldi)
+                .unwrap()
+                .is_some()
+        );
     }
 
     /// `after` holds everything `before` did, unchanged, plus only empty entries
@@ -1523,7 +1690,10 @@ mod tests {
         // Their own uninstall still removes everything.
         assert_eq!(uninstall(&theirs, &mut host).failures, 0);
         for entry in &theirs.keys {
-            assert_eq!(host.registry_value(&entry.key).unwrap(), None);
+            assert_eq!(
+                host.registry_value(Hive::CurrentUser, &entry.key).unwrap(),
+                None
+            );
         }
     }
 
@@ -1545,7 +1715,10 @@ mod tests {
         }
         assert_eq!(uninstall(&plan, &mut host).failures, 0);
         for entry in &plan.keys {
-            assert_eq!(host.registry_value(&entry.key).unwrap(), None);
+            assert_eq!(
+                host.registry_value(Hive::CurrentUser, &entry.key).unwrap(),
+                None
+            );
         }
     }
 
@@ -1565,17 +1738,19 @@ mod tests {
         let root = format!(r"Software\WirecatchBridgeTest-{}", std::process::id());
         let key = format!(r"{root}\NativeMessagingHosts\app.wirecatch.bridge");
         let mut host = RealHost;
-        assert_eq!(host.registry_value(&key).unwrap(), None);
-        host.set_registry_value(&key, r"C:\path\manifest.json")
+        assert_eq!(host.registry_value(Hive::CurrentUser, &key).unwrap(), None);
+        host.set_registry_value(Hive::CurrentUser, &key, r"C:\path\manifest.json")
             .unwrap();
-        let read_back = host.registry_value(&key);
+        let read_back = host.registry_value(Hive::CurrentUser, &key);
         // A key with a subkey is not empty, so it stays.
-        let kept = host.delete_registry_key_if_empty(&root);
-        let deleted = host.delete_registry_key(&key);
-        let hosts_pruned =
-            host.delete_registry_key_if_empty(&format!(r"{root}\NativeMessagingHosts"));
-        let root_pruned = host.delete_registry_key_if_empty(&root);
-        let missing = host.delete_registry_key_if_empty(&root);
+        let kept = host.delete_registry_key_if_empty(Hive::CurrentUser, &root);
+        let deleted = host.delete_registry_key(Hive::CurrentUser, &key);
+        let hosts_pruned = host.delete_registry_key_if_empty(
+            Hive::CurrentUser,
+            &format!(r"{root}\NativeMessagingHosts"),
+        );
+        let root_pruned = host.delete_registry_key_if_empty(Hive::CurrentUser, &root);
+        let missing = host.delete_registry_key_if_empty(Hive::CurrentUser, &root);
         assert_eq!(
             read_back.unwrap().as_deref(),
             Some(r"C:\path\manifest.json")
@@ -1585,6 +1760,132 @@ mod tests {
         assert!(hosts_pruned.unwrap());
         assert!(root_pruned.unwrap());
         assert!(!missing.unwrap());
-        assert_eq!(host.registry_value(&key).unwrap(), None);
+        assert_eq!(host.registry_value(Hive::CurrentUser, &key).unwrap(), None);
+    }
+
+    /// A per-machine install: the bridge in Program Files, registered for every user, and the same user plan the app runs on each start.
+    fn machine_and_user(temp: &TempDir, exe: &Path) -> (Plan, Plan) {
+        let machine = plan(
+            &config(),
+            &Layout::WindowsMachine {
+                exe: exe.to_path_buf(),
+            },
+        )
+        .unwrap();
+        let user = plan(
+            &config(),
+            &Layout::Windows {
+                exe: exe.to_path_buf(),
+                local_app_data: temp.0.join("LocalAppData"),
+            },
+        )
+        .unwrap();
+        (machine, user)
+    }
+
+    #[test]
+    fn a_machine_registration_lives_next_to_the_bridge_and_under_local_machine() {
+        let temp = TempDir::new();
+        let exe = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let (machine, user) = machine_and_user(&temp, &exe);
+        let hosts = exe.parent().unwrap().join("NativeMessagingHosts");
+        assert!(
+            machine
+                .files
+                .iter()
+                .all(|f| f.path.parent() == Some(hosts.as_path()))
+        );
+        assert!(machine.keys.iter().all(|k| k.hive == Hive::LocalMachine));
+        let names = |p: &Plan| p.keys.iter().map(|k| k.key.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            names(&machine),
+            names(&user),
+            "the same browsers, in the other hive"
+        );
+
+        let mut host = FakeHost::default();
+        let report = install(&machine, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(covered_by_machine(&machine, &host));
+        assert!(
+            host.registry.is_empty(),
+            "nothing is written for the current user"
+        );
+
+        let report = uninstall(&machine, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(
+            host.machine.values().all(|(_, value)| value.is_none()),
+            "every key the install set is gone"
+        );
+        assert!(!hosts.exists(), "the manifests and their folder are gone");
+    }
+
+    // Under a per-machine install the app used to register the bridge for each user too. An uninstall
+    // only cleans up the account that runs it, so every other user kept a registration pointing at
+    // removed files.
+    #[test]
+    fn a_user_install_steps_aside_for_the_machine_registration() {
+        let temp = TempDir::new();
+        let exe = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let (machine, user) = machine_and_user(&temp, &exe);
+        let mut host = FakeHost::default();
+        // This user registered on an earlier start.
+        assert_eq!(install(&user, &mut host).failures, 0);
+        assert_eq!(install(&machine, &mut host).failures, 0);
+
+        let report = install_for_user(&user, Some(&machine), &mut host);
+
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(
+            user.keys.iter().all(|k| host
+                .registry_value(Hive::CurrentUser, &k.key)
+                .unwrap()
+                .is_none()),
+            "the user registration is removed: {:?}",
+            host.snapshot()
+        );
+        assert!(user.files.iter().all(|f| !f.path.exists()));
+        assert!(
+            covered_by_machine(&machine, &host),
+            "the machine registration stays"
+        );
+    }
+
+    #[test]
+    fn a_user_install_registers_when_no_machine_registration_covers_this_bridge() {
+        let temp = TempDir::new();
+        let installed = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let portable = temp.0.join("Portable").join("wirecatch-bridge.exe");
+        let (machine, _) = machine_and_user(&temp, &installed);
+        let (portable_machine, portable_user) = machine_and_user(&temp, &portable);
+        let mut host = FakeHost::default();
+        assert_eq!(install(&machine, &mut host).failures, 0);
+
+        // A portable copy elsewhere is not covered by the installed copy.
+        assert!(!covered_by_machine(&portable_machine, &host));
+        let report = install_for_user(&portable_user, Some(&portable_machine), &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(portable_user.keys.iter().all(|k| {
+            host.registry_value(Hive::CurrentUser, &k.key)
+                .unwrap()
+                .as_deref()
+                == Some(k.value.as_str())
+        }));
+        // Without any machine plan (Linux), a user install is a plain install.
+        let alone = install_for_user(&portable_user, None, &mut host);
+        assert_eq!(alone.failures, 0, "{:?}", alone.lines);
     }
 }

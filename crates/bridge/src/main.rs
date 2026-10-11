@@ -5,8 +5,7 @@
 //!   relays length-prefixed JSON frames between stdin/stdout and the app's
 //!   per-user local socket, starting the app with `--background` when needed. In
 //!   this mode stdout carries only frames; every log line goes to stderr.
-//! - `wirecatch-bridge install` / `uninstall`: register or remove the host for the
-//!   current user in every supported browser.
+//! - `wirecatch-bridge install` / `uninstall`: register or remove the host in every supported browser, for the current user or, with `--all-users` (Windows, administrator rights), for every user of the computer.
 
 // Stdout belongs to the browser in native messaging mode. Printing to it anywhere
 // else is a bug, so it is denied except in the install command.
@@ -44,22 +43,33 @@ use raw_frame::RawFrame;
 /// a slow side slows the other down instead of growing memory.
 const QUEUE_LEN: usize = 4;
 
+/// The flag that registers for every user of the computer.
+const ALL_USERS: &str = "--all-users";
+
 const USAGE: &str = "\
 wirecatch-bridge connects the Wirecatch browser extension to the Wirecatch app.
 Browsers start it on their own; you do not need to run it.
 
 Usage:
-  wirecatch-bridge install     Register the bridge with your browsers (current user)
-  wirecatch-bridge uninstall   Remove that registration
+  wirecatch-bridge install [--all-users]     Register the bridge with your browsers
+  wirecatch-bridge uninstall [--all-users]   Remove that registration
+
+--all-users registers for every user of this computer (Windows; needs
+administrator rights). The installer does this.
 ";
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let first = args.first().and_then(|arg| arg.to_str());
-    match (first, args.len()) {
-        (Some("install"), 1) => install::run(install::Command::Install),
-        (Some("uninstall"), 1) => install::run(install::Command::Uninstall),
-        (Some("--help" | "-h" | "help"), 1) => {
+    let scope = match args.get(1).and_then(|arg| arg.to_str()) {
+        Some(ALL_USERS) => Some(install::Scope::Machine),
+        None => Some(install::Scope::User),
+        Some(_) => None,
+    };
+    match (first, args.len(), scope) {
+        (Some("install"), 1..=2, Some(scope)) => install::run(install::Command::Install, scope),
+        (Some("uninstall"), 1..=2, Some(scope)) => install::run(install::Command::Uninstall, scope),
+        (Some("--help" | "-h" | "help"), 1, _) => {
             let _ = io::stdout().write_all(USAGE.as_bytes());
             ExitCode::SUCCESS
         }
