@@ -4,6 +4,10 @@ import prettier from 'eslint-config-prettier';
 import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import ts from 'typescript-eslint';
+import { noMagicNumbers } from './rules/no-magic-numbers.js';
+
+/** Rules of our own, used as `wirecatch/<name>`. */
+const plugin = { meta: { name: '@wirecatch/eslint-config' }, rules: { 'no-magic-numbers': noMagicNumbers } };
 
 /** Numbers that read as themselves and never need a name. */
 const OBVIOUS_NUMBERS = [-1, 0, 1, 2];
@@ -44,6 +48,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
         globals: runtimeGlobals,
         parserOptions: { projectService: true, tsconfigRootDir, extraFileExtensions: ['.svelte'] },
       },
+      plugins: { wirecatch: plugin },
       linterOptions: { reportUnusedDisableDirectives: 'error' },
       rules: {
         // Correctness. TypeScript already reports undefined names, and `no-undef` does not understand type-only globals.
@@ -58,9 +63,9 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
         '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
         // `onclick={() => model.reconnect()}` is clearer than wrapping every handler in braces.
         '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
-        // Every number that is not obvious gets a name that says what it means.
+        // Every number that is not obvious gets a name that says what it means; the value of a module constant may be written the way it reads (`8 * 1024`).
         'no-magic-numbers': 'off',
-        '@typescript-eslint/no-magic-numbers': [
+        'wirecatch/no-magic-numbers': [
           'error',
           {
             ignore: OBVIOUS_NUMBERS,
@@ -97,7 +102,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
       // Tests name their fixtures inline and may be as long as the scenario needs.
       files: TEST_FILES,
       rules: {
-        '@typescript-eslint/no-magic-numbers': 'off',
+        'wirecatch/no-magic-numbers': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',
         'max-lines-per-function': 'off',
         'max-lines': 'off',
@@ -106,7 +111,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
     {
       files: TOOLING_FILES,
       languageOptions: { globals: globals.node },
-      rules: { 'no-console': 'off', '@typescript-eslint/no-magic-numbers': 'off' },
+      rules: { 'no-console': 'off', 'wirecatch/no-magic-numbers': 'off' },
     },
     { files: UNTYPED_FILES, ...ts.configs.disableTypeChecked },
     ...layers,

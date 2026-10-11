@@ -21,7 +21,7 @@
     }
   },
   "src/lib/addons.ts": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 4
     }
   },
@@ -29,11 +29,11 @@
     "@typescript-eslint/array-type": {
       "count": 1
     },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 60
-    },
     "max-lines": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 25
     }
   },
   "src/lib/backend/mock.test.ts": {
@@ -47,9 +47,6 @@
     },
     "@typescript-eslint/no-empty-function": {
       "count": 1
-    },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 94
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
@@ -80,6 +77,9 @@
     },
     "max-params": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 94
     }
   },
   "src/lib/backend/tauri.test.ts": {
@@ -102,9 +102,6 @@
     "@typescript-eslint/array-type": {
       "count": 2
     },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 5
-    },
     "@typescript-eslint/prefer-string-starts-ends-with": {
       "count": 1
     },
@@ -116,17 +113,17 @@
     },
     "max-lines-per-function": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 5
     }
   },
   "src/lib/components/AddDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 3
     }
   },
   "src/lib/components/AddonCard.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 2
-    },
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
     },
@@ -135,30 +132,30 @@
     },
     "svelte/button-has-type": {
       "count": 3
-    }
-  },
-  "src/lib/components/CancelDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 1
     },
-    "svelte/button-has-type": {
+    "wirecatch/no-magic-numbers": {
       "count": 2
     }
   },
+  "src/lib/components/CancelDialog.svelte": {
+    "svelte/button-has-type": {
+      "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 1
+    }
+  },
   "src/lib/components/CategoryIcon.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/ContextMenu.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 5
     }
   },
   "src/lib/components/DetailPanel.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 16
-    },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
     },
@@ -170,13 +167,16 @@
     },
     "svelte/button-has-type": {
       "count": 17
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 16
     }
   },
   "src/lib/components/Dialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "svelte/button-has-type": {
       "count": 1
     },
-    "svelte/button-has-type": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
@@ -191,9 +191,6 @@
     }
   },
   "src/lib/components/DownloadList.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 2
     },
@@ -202,35 +199,38 @@
     },
     "svelte/button-has-type": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 3
     }
   },
   "src/lib/components/EmptyState.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 2
-    },
     "svelte/button-has-type": {
       "count": 6
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 2
     }
   },
   "src/lib/components/ErrorFix.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 1
     }
   },
   "src/lib/components/ListEditor.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/OpenProgramDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "svelte/button-has-type": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 3
     }
   },
   "src/lib/components/OpenProgramDialog.test.ts": {
@@ -239,14 +239,11 @@
     }
   },
   "src/lib/components/PaletteBody.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/QueueDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 8
-    },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 2
     },
@@ -258,27 +255,30 @@
     },
     "eqeqeq": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 6
     }
   },
   "src/lib/components/RefreshDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/RemoveAddonDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 1
     }
   },
   "src/lib/components/RemoveDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 1
     }
   },
   "src/lib/components/Settings.svelte": {
@@ -287,9 +287,6 @@
     },
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
-    },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 14
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
@@ -311,12 +308,12 @@
     },
     "svelte/button-has-type": {
       "count": 7
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 12
     }
   },
   "src/lib/components/Shell.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 2
     },
@@ -328,57 +325,57 @@
     }
   },
   "src/lib/components/ShortcutsDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "svelte/button-has-type": {
       "count": 1
     },
-    "svelte/button-has-type": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/Sidebar.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 14
-    },
     "max-lines": {
       "count": 1
     },
     "svelte/button-has-type": {
       "count": 12
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 14
     }
   },
   "src/lib/components/StorageBanner.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 1
     }
   },
   "src/lib/components/ToastItem.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 2
-    },
     "svelte/button-has-type": {
       "count": 4
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 2
     }
   },
   "src/lib/components/Toolbar.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 9
-    },
     "svelte/button-has-type": {
       "count": 8
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 9
     }
   },
   "src/lib/components/TransferDialog.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 4
-    },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     },
     "svelte/button-has-type": {
       "count": 5
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 4
     }
   },
   "src/lib/contrast.test.ts": {
@@ -398,11 +395,11 @@
     }
   },
   "src/lib/format.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 41
-    },
     "@typescript-eslint/non-nullable-type-assertion-style": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 41
     }
   },
   "src/lib/keyboard.test.ts": {
@@ -414,10 +411,10 @@
     }
   },
   "src/lib/media-output.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 12
-    },
     "complexity": {
+      "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
@@ -452,9 +449,6 @@
     }
   },
   "src/lib/state/app.svelte.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 2
-    },
     "@typescript-eslint/non-nullable-type-assertion-style": {
       "count": 2
     },
@@ -469,6 +463,9 @@
     },
     "no-restricted-imports": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 2
     }
   },
   "src/lib/state/downloads.svelte.test.ts": {
@@ -505,11 +502,11 @@
     }
   },
   "src/lib/window/AddonView.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 3
     }
   },
   "src/lib/window/AddonView.test.ts": {
@@ -529,7 +526,7 @@
     }
   },
   "src/lib/window/FileQuestion.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
@@ -544,14 +541,14 @@
     }
   },
   "src/lib/window/MockWindow.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "no-restricted-imports": {
       "count": 1
     },
     "svelte/button-has-type": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 3
     }
   },
   "src/lib/window/MockWindows.svelte": {
@@ -563,11 +560,11 @@
     }
   },
   "src/lib/window/ProgressView.svelte": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 5
-    },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 5
     }
   },
   "src/lib/window/WindowFrame.svelte": {

@@ -36,30 +36,27 @@
     }
   },
   "src/lib/cookies.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 4
-    },
     "eqeqeq": {
       "count": 3
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 4
     }
   },
   "src/lib/hub.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 3
-    },
     "complexity": {
       "count": 3
     },
     "max-lines": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 3
     }
   },
   "src/lib/media/button.ts": {
     "@typescript-eslint/array-type": {
       "count": 1
-    },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 7
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
@@ -78,16 +75,19 @@
     },
     "no-param-reassign": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 7
     }
   },
   "src/lib/media/center.ts": {
     "@typescript-eslint/array-type": {
       "count": 1
     },
-    "@typescript-eslint/no-magic-numbers": {
+    "@typescript-eslint/prefer-optional-chain": {
       "count": 1
     },
-    "@typescript-eslint/prefer-optional-chain": {
+    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
@@ -95,14 +95,14 @@
     "@typescript-eslint/array-type": {
       "count": 1
     },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 9
-    },
     "complexity": {
       "count": 1
     },
     "eqeqeq": {
       "count": 2
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 5
     }
   },
   "src/lib/media/messages.ts": {
@@ -119,11 +119,11 @@
     "@typescript-eslint/array-type": {
       "count": 1
     },
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 4
-    },
     "complexity": {
       "count": 3
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 2
     }
   },
   "src/lib/messages.ts": {
@@ -132,11 +132,11 @@
     }
   },
   "src/lib/native/client.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 10
-    },
     "complexity": {
       "count": 1
+    },
+    "wirecatch/no-magic-numbers": {
+      "count": 2
     }
   },
   "src/lib/popup/model.svelte.ts": {
@@ -155,8 +155,8 @@
     }
   },
   "src/lib/size.ts": {
-    "@typescript-eslint/no-magic-numbers": {
-      "count": 14
+    "wirecatch/no-magic-numbers": {
+      "count": 11
     }
   },
   "tests/fakes.ts": {

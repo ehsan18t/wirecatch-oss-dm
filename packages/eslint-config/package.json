@@ -17,5 +17,8 @@
     "eslint-plugin-svelte": "catalog:",
     "globals": "catalog:",
     "typescript-eslint": "catalog:"
+  },
+  "scripts": {
+    "test": "node --test \"rules/*.test.js\""
   }
 }
