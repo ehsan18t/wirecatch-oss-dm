@@ -168,6 +168,30 @@ describe('media and add-ons', () => {
     app.dispose();
   });
 
+  it('drops the pages that wait for the add-on when it is declined', async () => {
+    const { app, backend } = await make();
+    backend.simulateAddonRequired();
+    // The prompt learns the waiting page's id from the core's list.
+    await vi.waitFor(() => expect(app.addonRequest?.id).not.toBeNull());
+    app.closeAddonRequest();
+    expect(app.question).toBeNull();
+    await vi.waitFor(async () => expect(await backend.pendingAddonRequests()).toHaveLength(0));
+    expect(app.toasts).toHaveLength(0);
+    app.dispose();
+  });
+
+  it('closes the add-on prompt when its page goes away, and says so', async () => {
+    const { app, backend } = await make();
+    backend.simulateAddonRequired();
+    await vi.waitFor(() => expect(app.addonRequest?.id).not.toBeNull());
+    backend.simulateAnsweredElsewhere();
+    expect(app.addonRequest).toBeNull();
+    expect(app.toasts.at(-1)?.message).toBe(
+      'The video from www.youtube.com no longer waits for the media add-on.',
+    );
+    app.dispose();
+  });
+
   it('drops a dismissed choice at once', async () => {
     const { app, backend } = await make();
     backend.simulateMediaChoice();
@@ -208,11 +232,17 @@ describe('questions asked while no window was open', () => {
     await app.init();
     await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
     await vi.waitFor(() => expect(app.addonRequest?.addon.id).toBe('media'));
+    expect(app.addonRequest?.url).toMatch(/youtube/);
+    expect(app.addonRequest?.id).not.toBeNull();
 
-    // A reload restores the open choice without doubling it; the add-on prompt is handed
-    // over once.
+    // A reload restores both from the core, without doubling the choice.
+    const fresh = new AppState(backend);
+    await fresh.init();
+    await vi.waitFor(() => expect(fresh.mediaChoices).toHaveLength(1));
+    await vi.waitFor(() => expect(fresh.addonRequest?.url).toMatch(/youtube/));
     await app.init();
     await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
+    fresh.dispose();
     app.dispose();
   });
 });

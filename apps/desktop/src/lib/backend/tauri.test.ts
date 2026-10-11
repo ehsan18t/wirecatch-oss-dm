@@ -39,7 +39,7 @@ const FIXED = [
   'choose_media',
   'dismiss_media_choice',
   'pending_media_choices',
-  'take_addon_request',
+  'pending_addon_requests',
   'list_addons',
   'install_addon',
   'update_addon',

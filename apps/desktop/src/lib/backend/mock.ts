@@ -31,7 +31,7 @@ import {
 } from './mock-data';
 import {
   BackendError,
-  type AddonRequest,
+  type AddonRequestItem,
   type Backend,
   type SampleData,
   type ShellSignal,
@@ -193,7 +193,7 @@ export class MockBackend implements Backend {
   #mediaChoices: MediaChoice[] = [];
   #addons: AddonInfo[] = [mediaAddon()];
   /** Pages that asked for the media add-on; they continue once it is installed. */
-  #waitingForAddon: string[] = [];
+  #waitingForAddon: Array<{ id: number; url: string }> = [];
   #mediaIndex = 0;
   readonly #listeners = new Set<(e: UiEvent) => void>();
   readonly #files = new Map<string, SettingsProfile>();
@@ -807,10 +807,11 @@ export class MockBackend implements Backend {
    * the browser took the download back), so the core closes it.
    */
   simulateAnsweredElsewhere(): void {
-    const question = this.#pending[0] ?? this.#mediaChoices[0];
+    const question = this.#pending[0] ?? this.#mediaChoices[0] ?? this.#waitingForAddon[0];
     if (!question) return;
     this.#pending = this.#pending.filter((x) => x.id !== question.id);
     this.#mediaChoices = this.#mediaChoices.filter((x) => x.id !== question.id);
+    this.#waitingForAddon = this.#waitingForAddon.filter((x) => x.id !== question.id);
     this.#emit({ type: 'confirmation_closed', data: { id: question.id } });
   }
 
@@ -858,12 +859,12 @@ export class MockBackend implements Backend {
   // ---- Media and add-ons ----
 
   /** Sample data only: the browser found media with several qualities. */
-  simulateMediaChoice(page?: string): void {
+  simulateMediaChoice(page?: string, id?: number): void {
     const sample = MEDIA_SAMPLES[this.#mediaIndex++ % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
     if (!sample) return;
     const MB = 1024 * 1024;
     const choice: MediaChoice = {
-      id: this.#nextPendingId++,
+      id: id ?? this.#nextPendingId++,
       title: sample.title,
       page_url: page ?? sample.page,
       options: [
@@ -915,21 +916,17 @@ export class MockBackend implements Backend {
       this.simulateMediaChoice(page);
       return;
     }
-    this.#waitingForAddon.push(page);
-    this.#addonRequest = { addon: structuredClone(addon), url: page };
-    this.#emit({ type: 'addon_required', data: structuredClone(this.#addonRequest) });
+    this.#waitingForAddon.push({ id: this.#nextPendingId++, url: page });
+    this.#emit({ type: 'addon_required', data: { addon: structuredClone(addon), url: page } });
   }
-
-  #addonRequest: AddonRequest | null = null;
 
   async pendingMediaChoices() {
     return structuredClone(this.#mediaChoices);
   }
 
-  async takeAddonRequest() {
-    const request = this.#addonRequest;
-    this.#addonRequest = null;
-    return request;
+  async pendingAddonRequests(): Promise<AddonRequestItem[]> {
+    const addon = this.#addon('media');
+    return this.#waitingForAddon.map((w) => ({ ...w, addon: structuredClone(addon) }));
   }
 
   async chooseMedia(id: number, selection: MediaSelection) {
@@ -974,8 +971,12 @@ export class MockBackend implements Backend {
   }
 
   async dismissMediaChoice(id: number) {
-    if (!this.#mediaChoices.some((c) => c.id === id)) throw new BackendError(ALREADY_ANSWERED);
+    // Like the core, this drops a quality choice or a page still waiting for the add-on.
+    const known =
+      this.#mediaChoices.some((c) => c.id === id) || this.#waitingForAddon.some((w) => w.id === id);
+    if (!known) throw new BackendError(ALREADY_ANSWERED);
     this.#mediaChoices = this.#mediaChoices.filter((c) => c.id !== id);
+    this.#waitingForAddon = this.#waitingForAddon.filter((w) => w.id !== id);
     this.#emit({ type: 'confirmation_closed', data: { id } });
   }
 
@@ -1024,13 +1025,12 @@ export class MockBackend implements Backend {
         continue;
       }
       addon.state = { type: 'installed' };
-      this.#addonRequest = null;
       addon.installed_version = addon.latest_version;
-      // What asked for the add-on continues on its own.
+      // What asked for the add-on continues on its own, under the same id.
       const waiting = this.#waitingForAddon;
       this.#waitingForAddon = [];
       queueMicrotask(() => {
-        for (const page of waiting) this.simulateMediaChoice(page);
+        for (const page of waiting) this.simulateMediaChoice(page.url, page.id);
       });
     }
     if (changed) this.#addonsChanged();

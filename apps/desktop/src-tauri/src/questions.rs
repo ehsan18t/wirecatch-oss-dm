@@ -8,13 +8,10 @@
 //! A storage failure is not a question but must not go unseen: with no window it becomes a
 //! system notification.
 //!
-//! A new window loads confirmations and media choices from the core. The core keeps no list of
-//! add-on prompts, so the latest one is kept here until the add-on is installed or a window has
-//! taken it, so a window opened after the event still shows it.
+//! The core keeps every open question (`pending_confirmations`, `pending_media_choices`,
+//! `pending_addon_requests`), so a window opened or reloaded later loads them from there.
 
-use std::sync::Mutex;
-
-use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
+use wirecatch_protocol::app::UiEvent;
 
 /// What a core event needs from the desktop when no window is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,61 +43,13 @@ pub fn attention(event: &UiEvent) -> Attention {
     }
 }
 
-/// A capture that needs an add-on, waiting for the person's answer.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct AddonRequest {
-    /// The add-on to offer.
-    pub addon: AddonInfo,
-    /// The page or link that needs it.
-    pub url: String,
-}
-
-/// The add-on prompt, kept until answered.
-#[derive(Default)]
-pub struct Questions {
-    addon: Mutex<Option<AddonRequest>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-impl Questions {
-    /// Keeps track of the add-on prompt in `event`.
-    pub fn note(&self, event: &UiEvent) {
-        match event {
-            UiEvent::AddonRequired { addon, url } => {
-                *lock(&self.addon) = Some(AddonRequest {
-                    addon: addon.clone(),
-                    url: url.clone(),
-                });
-            }
-            UiEvent::AddonsChanged(addons) => {
-                let mut asked = lock(&self.addon);
-                let installed = asked.as_ref().is_some_and(|a| {
-                    addons
-                        .iter()
-                        .any(|x| x.id == a.addon.id && x.state == AddonState::Installed)
-                });
-                if installed {
-                    *asked = None;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Hands the waiting add-on prompt over, once.
-    pub fn take_addon_request(&self) -> Option<AddonRequest> {
-        lock(&self.addon).take()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{Category, MediaChoice, PendingCapture, UserError};
+    use wirecatch_protocol::app::{
+        AddonInfo, AddonState, Category, MediaChoice, PendingCapture, UserError,
+    };
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {
@@ -161,30 +110,9 @@ mod tests {
             attention(&UiEvent::DownloadsRemoved(vec![])),
             Attention::None
         );
-    }
-
-    #[test]
-    fn the_addon_prompt_is_kept_until_taken_or_installed() {
-        let q = Questions::default();
-        q.note(&UiEvent::MediaChoiceRequested(choice(1)));
-        assert!(
-            q.take_addon_request().is_none(),
-            "media choices live in the core"
+        assert_eq!(
+            attention(&UiEvent::ConfirmationClosed { id: 1 }),
+            Attention::None
         );
-
-        q.note(&UiEvent::AddonRequired {
-            addon: addon(AddonState::NotInstalled),
-            url: "https://youtube.com/x".into(),
-        });
-        assert!(q.take_addon_request().is_some());
-        assert!(q.take_addon_request().is_none());
-
-        // Installing the add-on answers its prompt.
-        q.note(&UiEvent::AddonRequired {
-            addon: addon(AddonState::NotInstalled),
-            url: "https://youtube.com/x".into(),
-        });
-        q.note(&UiEvent::AddonsChanged(vec![addon(AddonState::Installed)]));
-        assert!(q.take_addon_request().is_none());
     }
 }

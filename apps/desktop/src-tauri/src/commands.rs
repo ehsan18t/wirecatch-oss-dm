@@ -11,7 +11,8 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::api::{self, CommandResult, Reveal};
 use crate::host::Core;
-use crate::questions::{AddonRequest, Questions};
+use wirecatch_core::AddonRequestItem;
+
 use crate::window::LaunchLinks;
 
 type CoreState<'a> = State<'a, Core>;
@@ -236,8 +237,8 @@ pub async fn pending_media_choices(core: CoreState<'_>) -> CommandResult<Vec<Med
 }
 
 #[tauri::command]
-pub fn take_addon_request(questions: State<'_, Questions>) -> Option<AddonRequest> {
-    questions.take_addon_request()
+pub async fn pending_addon_requests(core: CoreState<'_>) -> CommandResult<Vec<AddonRequestItem>> {
+    Ok(api::pending_addon_requests(core.manager().await?))
 }
 
 #[tauri::command]
@@ -247,12 +248,12 @@ pub async fn list_addons(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
 
 #[tauri::command]
 pub async fn install_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::install_addon(core.manager().await?, &id)
+    api::install_addon(core.manager().await?, &id).await
 }
 
 #[tauri::command]
 pub async fn update_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::update_addon(core.manager().await?, &id)
+    api::update_addon(core.manager().await?, &id).await
 }
 
 #[tauri::command]

@@ -211,6 +211,7 @@ async fn media_and_addon_commands_reach_the_core() {
     );
 
     assert!(api::pending_media_choices(&m).is_empty());
+    assert!(api::pending_addon_requests(&m).is_empty());
     let selection = MediaSelection {
         option_id: "best".into(),
         folder: None,
@@ -222,9 +223,9 @@ async fn media_and_addon_commands_reach_the_core() {
     let gone = api::dismiss_media_choice(&m, 99).unwrap_err();
     assert!(gone.contains("already confirmed or dismissed"), "{gone}");
 
-    let unknown = api::install_addon(&m, "flash").unwrap_err();
+    let unknown = api::install_addon(&m, "flash").await.unwrap_err();
     assert!(unknown.contains("no add-on called"), "{unknown}");
-    let unknown = api::update_addon(&m, "flash").unwrap_err();
+    let unknown = api::update_addon(&m, "flash").await.unwrap_err();
     assert!(unknown.contains("no add-on called"), "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
     api::remove_addon(&m, "media").await.unwrap();

@@ -20,8 +20,8 @@ import type {
 import { getContext, setContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { isInstalled, MEDIA_ADDON } from '../addons';
-import type { Backend } from '../backend/types';
-import { extractUrls, formatTime, scheduleAllows } from '../format';
+import type { AddonRequestItem, Backend } from '../backend/types';
+import { extractUrls, formatTime, hostOf, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadStore } from './downloads.svelte';
 import { Hints } from './hints.svelte';
@@ -29,10 +29,20 @@ import { countRows, visibleIds, type SortKey, type View } from './view';
 
 export type Screen = 'downloads' | 'settings';
 
+/**
+ * The add-on prompt: what needs the add-on (a page, or a quality picked here, whose `url` may be
+ * empty) and, for a page, the id of its wait in the core once known.
+ */
+export interface AddonPrompt {
+  addon: AddonInfo;
+  url: string;
+  id: number | null;
+}
+
 /** A question the core asked, as shown on screen. `waiting` counts the ones queued behind it. */
 export type Question =
   | { kind: 'capture'; capture: PendingCapture; waiting: number }
-  | { kind: 'addon'; request: { addon: AddonInfo; url: string } }
+  | { kind: 'addon'; request: AddonPrompt }
   | { kind: 'media'; choice: MediaChoice; waiting: number };
 
 export type Dialog =
@@ -127,7 +137,7 @@ export class AppState {
   /** Why the add-ons could not be listed, shown in their settings section. */
   addonsError = $state<string | null>(null);
   /** A capture that needs an add-on; the prompt offers to install it. */
-  addonRequest = $state<{ addon: AddonInfo; url: string } | null>(null);
+  addonRequest = $state<AddonPrompt | null>(null);
   /**
    * A quality the person picked that needs the media add-on first: it downloads by itself once
    * the add-on is installed, and its picker stays out of the way meanwhile.
@@ -338,10 +348,29 @@ export class AppState {
       // The events still bring new choices.
     }
     try {
-      const request = await this.backend.takeAddonRequest();
-      if (request) this.addonRequest = request;
+      // Pages that wait for the add-on: offer the install again, for the oldest one.
+      const [waiting] = await this.backend.pendingAddonRequests();
+      if (waiting && !this.addonRequest) this.addonRequest = { ...waiting };
     } catch {
       // Same: the event still brings a new prompt.
+    }
+  }
+
+  /**
+   * `addon_required` names the page but not its id; the core's list of waiting pages has it, so
+   * the prompt can drop the page on Not now and close when the page goes away.
+   */
+  async #findAddonRequestId(url: string): Promise<void> {
+    let waiting: AddonRequestItem[];
+    try {
+      waiting = await this.backend.pendingAddonRequests();
+    } catch {
+      return;
+    }
+    const page = waiting.find((w) => w.url === url);
+    const asked = this.addonRequest;
+    if (page && asked && asked.url === url && asked.id === null) {
+      this.addonRequest = { ...asked, id: page.id };
     }
   }
 
@@ -442,9 +471,15 @@ export class AppState {
         }
         break;
       }
-      case 'addon_required':
-        this.addonRequest = event.data;
+      case 'addon_required': {
+        const same = this.addonRequest?.url === event.data.url ? this.addonRequest.id : null;
+        this.addonRequest = { ...event.data, id: same };
+        // A quality picked in this window waits too, but is not a waiting page.
+        if (same === null && !this.choiceAwaitingAddon) {
+          void this.#findAddonRequestId(event.data.url);
+        }
         break;
+      }
       case 'confirmation_closed':
         this.#questionClosed(event.data.id);
         break;
@@ -960,7 +995,7 @@ export class AppState {
     const media = this.addons?.find((a) => a.id === MEDIA_ADDON);
     if (choice && needsAddon && media && !isInstalled(media)) {
       this.choiceAwaitingAddon = { id, selection };
-      this.addonRequest = { addon: media, url: choice.page_url ?? '' };
+      this.addonRequest = { addon: media, url: choice.page_url ?? '', id: null };
       if (media.state.type !== 'installing') void this.installAddon(media.id);
       return true;
     }
@@ -1000,7 +1035,15 @@ export class AppState {
     if (capture) this.pending = this.pending.filter((p) => p.id !== id);
     if (choice) this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
     if (this.choiceAwaitingAddon?.id === id) this.choiceAwaitingAddon = null;
+    const page = this.addonRequest?.id === id ? this.addonRequest : null;
     if (this.#answering.delete(id)) return;
+    // The page that asked for the add-on is gone (taken back by the browser, or waited too
+    // long). A failed install keeps its prompt, which offers Try again.
+    if (page && page.addon.state.type !== 'failed') {
+      this.addonRequest = null;
+      this.notify(`The video from ${hostOf(page.url)} no longer waits for the media add-on.`);
+      return;
+    }
     const onScreen =
       (shown?.kind === 'capture' && shown.capture.id === id) ||
       (shown?.kind === 'media' && shown.choice.id === id);
@@ -1032,11 +1075,18 @@ export class AppState {
    * picker back, so the person can pick a quality that does not need the add-on.
    */
   closeAddonRequest(): void {
-    const state = this.addonRequest?.addon.state.type;
-    if (state !== 'installing' && !isInstalled(this.addonRequest?.addon)) {
-      this.choiceAwaitingAddon = null;
-    }
+    const asked = this.addonRequest;
     this.addonRequest = null;
+    if (!asked || asked.addon.state.type === 'installing' || isInstalled(asked.addon)) return;
+    this.choiceAwaitingAddon = null;
+    // Declined: the pages that waited for the add-on are dropped, so they do not turn into
+    // failed downloads later or ask again after a reload.
+    void this.#run(async () => {
+      for (const page of await this.backend.pendingAddonRequests()) {
+        this.#answering.add(page.id);
+        await this.backend.dismissMediaChoice(page.id);
+      }
+    });
   }
 
   async setAskBeforeDownload(ask: boolean): Promise<void> {

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use wirecatch_core::{CoreError, Manager};
+use wirecatch_core::{AddonRequestItem, CoreError, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadStatus, DownloadSummary,
     MediaChoice, MediaSelection, PendingCapture, Queue,
@@ -290,6 +290,12 @@ pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
     m.pending_media_choices()
 }
 
+/// Pages waiting for the media add-on, so a new or reloaded window offers the install again.
+/// [`dismiss_media_choice`] with an item's id drops that page.
+pub fn pending_addon_requests(m: &Manager) -> Vec<AddonRequestItem> {
+    m.pending_addon_requests()
+}
+
 /// Every add-on and its state. Update checks run in the core: once a day while
 /// `auto_update_addons` is on.
 pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
@@ -297,13 +303,13 @@ pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
 }
 
 /// Installs an add-on in the background; progress and the result arrive as `AddonsChanged`.
-pub fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
-    m.install_addon(id).map_err(plain)
+pub async fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.install_addon(id).await.map_err(plain)
 }
 
 /// Brings an add-on up to date in the background, like [`install_addon`].
-pub fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
-    m.update_addon(id).map_err(plain)
+pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.update_addon(id).await.map_err(plain)
 }
 
 /// Removes an add-on and its files, stopping an install in progress first.

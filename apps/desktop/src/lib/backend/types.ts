@@ -25,6 +25,14 @@ export interface AddonRequest {
 }
 
 /**
+ * A page waiting for an add-on, as the core lists it. `dismissMediaChoice(id)` drops it; the
+ * id is the one its quality choice gets once the add-on is in.
+ */
+export interface AddonRequestItem extends AddonRequest {
+  id: number;
+}
+
+/**
  * Signals from the desktop shell that are not core events. `resync`: some events were missed,
  * so everything must be loaded again. `links`: links arrived from the command line (a second
  * launch, `wirecatch-app https://...`); fetch them with `takeLaunchLinks`.
@@ -97,8 +105,8 @@ export interface Backend {
   dismissMediaChoice(id: number): Promise<void>;
   /** Media choices still open, so a new or reloaded window asks them again. */
   pendingMediaChoices(): Promise<MediaChoice[]>;
-  /** An add-on prompt that arrived while no window was open, handed over once. */
-  takeAddonRequest(): Promise<AddonRequest | null>;
+  /** Pages waiting for an add-on, oldest first, so a new or reloaded window offers it again. */
+  pendingAddonRequests(): Promise<AddonRequestItem[]>;
 
   /** Optional components (D2, D20): one media add-on with yt-dlp, ffmpeg and Deno. */
   listAddons(): Promise<AddonInfo[]>;
@@ -155,7 +163,7 @@ export const COMMANDS = {
   chooseMedia: 'choose_media',
   dismissMediaChoice: 'dismiss_media_choice',
   pendingMediaChoices: 'pending_media_choices',
-  takeAddonRequest: 'take_addon_request',
+  pendingAddonRequests: 'pending_addon_requests',
   listAddons: 'list_addons',
   installAddon: 'install_addon',
   updateAddon: 'update_addon',

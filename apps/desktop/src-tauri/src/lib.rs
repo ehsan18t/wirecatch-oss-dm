@@ -43,7 +43,7 @@
 //! | `choose_media` | `id: u64`, `selection: MediaSelection` | nothing; fails while an option that needs the media add-on lacks it (the core then sends `AddonRequired` and keeps the choice) |
 //! | `dismiss_media_choice` | `id: u64` | nothing |
 //! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open |
-//! | `take_addon_request` | none | `Option<{ addon: AddonInfo, url: String }>`: an add-on prompt that arrived with no window, handed over once |
+//! | `pending_addon_requests` | none | `Vec<{ id: u64, addon: AddonInfo, url: String }>`: pages waiting for the add-on, oldest first; `dismiss_media_choice(id)` drops one |
 //! | `list_addons` | none | `Vec<AddonInfo>` |
 //! | `install_addon` | `id: String` | nothing; progress and the result arrive as `AddonsChanged` |
 //! | `update_addon` | `id: String` | nothing; like `install_addon` |
@@ -166,7 +166,6 @@ pub fn run() {
                 .build(),
         )
         .manage(LaunchLinks::default())
-        .manage(questions::Questions::default())
         .manage(Lifecycle::default())
         .setup(move |app| setup(app, launch))
         .invoke_handler(tauri::generate_handler![
@@ -203,7 +202,7 @@ pub fn run() {
             commands::choose_media,
             commands::dismiss_media_choice,
             commands::pending_media_choices,
-            commands::take_addon_request,
+            commands::pending_addon_requests,
             commands::list_addons,
             commands::install_addon,
             commands::update_addon,
