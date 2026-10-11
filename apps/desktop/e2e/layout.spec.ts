@@ -1,4 +1,4 @@
-// Review blocker 1: the window works at 960x600, 1280x800 and 1440x900, in both themes. Names
+// Review blocker 1: the window works at 960x600, 1280x800, 1440x900 and 1600x1000, in both themes. Names
 // keep real room, the toolbar stays on one line, nothing scrolls sideways, and the detail panel
 // floats over the list in narrower windows.
 
@@ -9,7 +9,25 @@ const SIZES = [
   { width: 960, height: 600 },
   { width: 1280, height: 800 },
   { width: 1440, height: 900 },
+  { width: 1600, height: 1000 },
 ] as const;
+
+/** From this window width the detail panel docks beside the list (`DOCK_WIDTH` in Shell). */
+const DOCK_WIDTH = 1152;
+
+/** With the panel docked, Name, Size, Done and Status stay in view, left of the panel. */
+async function checkColumnsBesidePanel(page: Page) {
+  const panel = await page.getByRole('complementary', { name: 'Selected download' }).boundingBox();
+  expect(panel, 'panel shown').not.toBeNull();
+  for (const name of ['Name', 'Size', 'Done', 'Status']) {
+    const cell = await page
+      .locator('.header span', { hasText: new RegExp(`^${name}$`) })
+      .boundingBox();
+    expect(cell, `${name} column shown`).not.toBeNull();
+    const right = (cell?.x ?? 0) + (cell?.width ?? 0);
+    expect(right, `${name} column left of the panel`).toBeLessThanOrEqual((panel?.x ?? 0) + 1);
+  }
+}
 
 async function checkLayout(page: Page) {
   const header = page.locator('.header span', { hasText: /^Name$/ });
@@ -49,8 +67,9 @@ for (const theme of ['light', 'dark'] as const) {
       const panel = page.getByRole('complementary', { name: 'Selected download' });
       await expect(panel).toBeVisible();
       const docked = await panel.evaluate((el) => !el.classList.contains('overlay'));
-      expect(docked, 'docked only in wide windows').toBe(size.width >= 1360);
+      expect(docked, 'docked whenever there is room').toBe(size.width >= DOCK_WIDTH);
       await checkLayout(page);
+      if (docked) await checkColumnsBesidePanel(page);
       await page.screenshot({
         path: `docs/screenshots/${theme}-layout-${size.width}x${size.height}-selected.png`,
       });
