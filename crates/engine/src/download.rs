@@ -107,7 +107,8 @@ pub struct DownloadOptions {
     /// already as fast, and QUIC costs more processor time per byte.
     pub http3: bool,
     /// Whether an `http` or `https` download may reach the local network
-    /// (loopback, private, link-local and unspecified addresses). Default
+    /// (loopback, private, link-local, shared CGNAT and the other addresses
+    /// [`PrivateNetwork`] lists). Default
     /// [`PrivateNetwork::Allow`]: a link the user gave may point anywhere.
     ///
     /// With [`PrivateNetwork::Block`], or [`PrivateNetwork::Auto`] when the

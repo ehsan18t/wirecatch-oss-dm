@@ -59,9 +59,9 @@
 //!
 //! A stream from the internet may not point Wirecatch at the local network:
 //! segments, keys, init sections and DASH base addresses that are (or resolve
-//! to, or redirect to) loopback, private, link-local or unspecified addresses
-//! are refused with [`Error::PrivateNetwork`] (see
-//! [`StreamRequest::private_network`]).
+//! to, or redirect to) loopback, private, link-local, shared CGNAT or other
+//! non-public addresses are refused with [`Error::PrivateNetwork`] (see
+//! [`PrivateNetwork`] for the full list and [`StreamRequest::private_network`]).
 //!
 //! # Joining
 //!
