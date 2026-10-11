@@ -100,6 +100,7 @@ pub mod background;
 pub mod bridge;
 mod commands;
 pub mod download_windows;
+pub mod elevation;
 pub mod host;
 pub mod lifecycle;
 pub mod questions;
@@ -152,6 +153,15 @@ fn init_logging() {
 /// Starts the app.
 pub fn run() {
     init_logging();
+    if elevation::decide(wirecatch_ipc::is_elevated()) == elevation::Start::Refuse {
+        // Developers often work in an elevated terminal, and a debug build has its own endpoint, still labelled at its integrity level.
+        if host::DEV_BUILD {
+            tracing::warn!("running as administrator; a release build would refuse to start");
+        } else {
+            elevation::explain_refusal();
+            return;
+        }
+    }
     let args: Vec<String> = std::env::args().collect();
     let launch = Launch::from_args(&args);
 

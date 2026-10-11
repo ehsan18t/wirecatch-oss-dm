@@ -22,7 +22,8 @@ use windows_sys::Win32::Security::Authorization::{
 };
 use windows_sys::Win32::Security::{
     CopySid, GetLengthSid, GetTokenInformation, IsValidSid, OWNER_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, SID_AND_ATTRIBUTES, TOKEN_ELEVATION,
+    TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenIntegrityLevel, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -53,7 +54,14 @@ pub(crate) struct Sid {
 impl Sid {
     /// The user the current process runs as.
     pub(crate) fn current_user() -> Result<Self, IpcError> {
-        current_user_sid().map_err(|e| IpcError::io("Could not read your user account", e))
+        process_token_sid(TokenUser)
+            .map_err(|e| IpcError::io("Could not read your user account", e))
+    }
+
+    /// The integrity level the current process runs at, as its mandatory label SID: `S-1-16-8192` for a normal (medium) process, `S-1-16-12288` for an elevated (high) one.
+    pub(crate) fn current_integrity() -> Result<Self, IpcError> {
+        process_token_sid(TokenIntegrityLevel)
+            .map_err(|e| IpcError::io("Could not read how this program was started", e))
     }
 
     /// Copies the SID at `psid`.
@@ -133,7 +141,8 @@ impl fmt::Debug for Sid {
     }
 }
 
-fn current_user_sid() -> io::Result<Sid> {
+/// The current process's access token, for reading only.
+fn process_token() -> io::Result<OwnedHandle> {
     let mut raw: HANDLE = ptr::null_mut();
     // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing; on
     // success `raw` is a new token handle that we own.
@@ -141,25 +150,31 @@ fn current_user_sid() -> io::Result<Sid> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: `raw` is a valid handle we own and nothing else closes it.
-    let token = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+    Ok(unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) })
+}
+
+/// The SID that a token information class names. `TokenUser` gives a `TOKEN_USER` and `TokenIntegrityLevel` a `TOKEN_MANDATORY_LABEL`; both are a single `SID_AND_ATTRIBUTES`, so one reader serves both.
+fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
+    debug_assert!(class == TokenUser || class == TokenIntegrityLevel);
+    let token = process_token()?;
     let handle = token.as_raw_handle() as HANDLE;
 
     let mut needed = 0u32;
     // SAFETY: a size query with a null buffer; it fails by design and reports the
     // size in `needed`.
-    unsafe { GetTokenInformation(handle, TokenUser, ptr::null_mut(), 0, &mut needed) };
+    unsafe { GetTokenInformation(handle, class, ptr::null_mut(), 0, &mut needed) };
     if needed == 0 {
         return Err(io::Error::last_os_error());
     }
-    // u64 elements give the 8-byte alignment TOKEN_USER (which holds a pointer)
-    // needs.
+    // u64 elements give the 8-byte alignment SID_AND_ATTRIBUTES (which holds a
+    // pointer) needs.
     let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
     let capacity = u32::try_from(buf.len() * 8).unwrap_or(u32::MAX);
     // SAFETY: `buf` is writable for `capacity` bytes.
     if unsafe {
         GetTokenInformation(
             handle,
-            TokenUser,
+            class,
             buf.as_mut_ptr().cast(),
             capacity,
             &mut needed,
@@ -168,11 +183,35 @@ fn current_user_sid() -> io::Result<Sid> {
     {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: the call above filled `buf` with a TOKEN_USER, and `buf` is aligned
-    // for it. Its SID pointer points inside `buf`, which outlives the copy.
-    let user = unsafe { &*(buf.as_ptr() as *const TOKEN_USER) };
+    // SAFETY: for both classes the call above filled `buf` with a structure whose
+    // only field is a SID_AND_ATTRIBUTES, and `buf` is aligned for it. Its SID
+    // pointer points inside `buf`, which outlives the copy.
+    let entry = unsafe { &*(buf.as_ptr() as *const SID_AND_ATTRIBUTES) };
     // SAFETY: see above.
-    unsafe { Sid::copy_from(user.User.Sid) }
+    unsafe { Sid::copy_from(entry.Sid) }
+}
+
+/// Whether the current process runs elevated ("Run as administrator").
+pub(crate) fn is_elevated() -> io::Result<bool> {
+    let token = process_token()?;
+    let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+    let size = u32::try_from(mem::size_of::<TOKEN_ELEVATION>()).unwrap_or(u32::MAX);
+    let mut returned = 0u32;
+    // SAFETY: `elevation` is a TOKEN_ELEVATION, writable for `size` bytes, which is
+    // exactly what TokenElevation fills.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle() as HANDLE,
+            TokenElevation,
+            ptr::addr_of_mut!(elevation).cast(),
+            size,
+            &mut returned,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(elevation.TokenIsElevated != 0)
 }
 
 /// Frees a block that Windows allocated with LocalAlloc.
@@ -197,12 +236,9 @@ fn to_wide(text: &OsStr) -> Vec<u16> {
 /// - `O:` owned by `sid`;
 /// - `D:P(A;;FA;;;sid)`: a protected DACL (nothing inherited) that grants full
 ///   file access to `sid` and nothing to anyone else;
-/// - `S:(ML;;NWNR;;;ME)`: a medium mandatory label with no-write-up and
-///   no-read-up, so a low-integrity process (a sandboxed renderer, for example)
-///   cannot open it even though it runs as the same user. Without a label Windows
-///   applies medium no-write-up only, which still lets such a process read.
-pub(crate) fn owner_only_sddl(sid: &str) -> String {
-    format!("O:{sid}D:P(A;;FA;;;{sid})S:(ML;;NWNR;;;ME)")
+/// - `S:(ML;;NWNR;;;integrity)`: a mandatory label at the server's own integrity level with no-write-up and no-read-up, so only a process at that level or above can open it, even though every process of the user matches the DACL. A normal server is medium, which keeps out low-integrity processes (a sandboxed renderer, for example); an elevated one is high, which keeps out every unelevated process, so the pipe can never be a way around UAC. Without a label Windows applies medium no-write-up only, which still lets lower processes read.
+pub(crate) fn owner_only_sddl(sid: &str, integrity: &str) -> String {
+    format!("O:{sid}D:P(A;;FA;;;{sid})S:(ML;;NWNR;;;{integrity})")
 }
 
 /// A self-relative security descriptor, normally built from [`owner_only_sddl`].
@@ -215,8 +251,11 @@ unsafe impl Send for OwnerOnlyDescriptor {}
 unsafe impl Sync for OwnerOnlyDescriptor {}
 
 impl OwnerOnlyDescriptor {
-    fn new(user: &Sid) -> io::Result<Self> {
-        Self::from_sddl(&owner_only_sddl(&user.to_string_form()?))
+    fn new(user: &Sid, integrity: &Sid) -> io::Result<Self> {
+        Self::from_sddl(&owner_only_sddl(
+            &user.to_string_form()?,
+            &integrity.to_string_form()?,
+        ))
     }
 
     fn from_sddl(sddl: &str) -> io::Result<Self> {
@@ -325,7 +364,8 @@ pub(crate) struct PipeListener {
 impl PipeListener {
     pub(crate) fn bind(endpoint: &Endpoint) -> Result<Self, IpcError> {
         let user = Sid::current_user()?;
-        let descriptor = OwnerOnlyDescriptor::new(&user).map_err(|e| {
+        let integrity = Sid::current_integrity()?;
+        let descriptor = OwnerOnlyDescriptor::new(&user, &integrity).map_err(|e| {
             IpcError::io("Could not prepare the access rules for the connection", e)
         })?;
         let next = match create_instance(endpoint, &descriptor, true) {
@@ -635,10 +675,10 @@ mod tests {
             [AceInfo {
                 ace_type: SYSTEM_MANDATORY_LABEL_ACE_TYPE,
                 mask: SYSTEM_MANDATORY_LABEL_NO_WRITE_UP | SYSTEM_MANDATORY_LABEL_NO_READ_UP,
-                // Medium integrity.
-                sid: Sid::parse("S-1-16-8192").unwrap(),
+                // The server's own integrity: medium normally, high when the tests run elevated.
+                sid: Sid::current_integrity().unwrap(),
             }],
-            "medium label with no-write-up and no-read-up"
+            "a label at the server's own integrity, with no-write-up and no-read-up"
         );
     }
 
@@ -928,10 +968,31 @@ mod tests {
     }
 
     #[test]
-    fn sddl_grants_only_the_owner() {
+    fn sddl_grants_only_the_owner_at_its_own_integrity() {
         assert_eq!(
-            owner_only_sddl("S-1-5-21-9"),
-            "O:S-1-5-21-9D:P(A;;FA;;;S-1-5-21-9)S:(ML;;NWNR;;;ME)"
+            owner_only_sddl("S-1-5-21-9", "S-1-16-8192"),
+            "O:S-1-5-21-9D:P(A;;FA;;;S-1-5-21-9)S:(ML;;NWNR;;;S-1-16-8192)"
         );
+    }
+
+    // An elevated app used to label its pipe medium, so any unelevated program of the
+    // same user could drive it: a way around UAC.
+    #[test]
+    fn an_elevated_server_labels_its_pipe_high() {
+        let sddl = owner_only_sddl("S-1-5-21-9", "S-1-16-12288");
+        assert!(sddl.ends_with("S:(ML;;NWNR;;;S-1-16-12288)"), "{sddl}");
+        OwnerOnlyDescriptor::from_sddl(&sddl).expect("Windows accepts the descriptor");
+    }
+
+    #[test]
+    fn the_process_integrity_matches_its_elevation() {
+        let integrity = Sid::current_integrity().unwrap().to_string_form().unwrap();
+        assert!(integrity.starts_with("S-1-16-"), "{integrity}");
+        // Elevated processes run at high integrity (S-1-16-12288) or above.
+        let high = !matches!(
+            integrity.as_str(),
+            "S-1-16-4096" | "S-1-16-8192" | "S-1-16-8448"
+        );
+        assert_eq!(is_elevated().unwrap(), high, "{integrity}");
     }
 }

@@ -182,6 +182,24 @@ pub fn endpoint() -> Result<Endpoint, IpcError> {
     }
 }
 
+/// Whether the current process runs elevated ("Run as administrator" on Windows).
+///
+/// The app must not serve its endpoint elevated: every program of the user could then drive a process with administrator rights. The listener already keeps unelevated programs out of an elevated server's pipe; the app also refuses to start elevated, since the browser extension could not reach it either. On Linux an elevated process (root) is another user, whose socket the user's programs cannot open, so this is always `false` there.
+///
+/// # Errors
+///
+/// Fails when Windows cannot report the process's token.
+pub fn is_elevated() -> io::Result<bool> {
+    #[cfg(windows)]
+    {
+        windows::is_elevated()
+    }
+    #[cfg(unix)]
+    {
+        Ok(false)
+    }
+}
+
 /// Listens for connections from the current user's clients.
 ///
 /// Dropping the listener stops listening (on Linux it also removes the socket file
