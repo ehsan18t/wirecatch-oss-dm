@@ -7,7 +7,7 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import Trash from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
-  import type { DownloadSummary, QueueId } from '@wirecatch/protocol';
+  import type { DownloadSummary, FixAction, QueueId } from '@wirecatch/protocol';
   import {
     formatDate,
     formatEta,
@@ -97,7 +97,7 @@
     {#if one.status === 'failed' && one.error}
       <ErrorFix
         row={one}
-        onfix={(fix) => app.fix(one.id, fix)}
+        onfix={(fix: FixAction) => app.fix(one.id, fix)}
         onretry={() => app.retry([one.id])}
       />
     {/if}

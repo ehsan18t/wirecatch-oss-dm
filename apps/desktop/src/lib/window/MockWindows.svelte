@@ -2,6 +2,7 @@
   // The sample app's download windows (D23). A browser tab cannot open real windows that share
   // the sample data, so each one floats inside the page, in the same cascade and with the same
   // rules as the desktop's. Loaded only with the sample backend.
+  import type { DownloadId } from '@wirecatch/protocol';
   import type { Backend } from '$lib/backend/types';
   import type { OpenWindow, WindowRegistry } from './registry';
   import MockWindow from './MockWindow.svelte';
@@ -26,6 +27,6 @@
     front={front === window.label}
     onfocus={() => registry.focus(window.label)}
     onclose={() => registry.gone(window.label)}
-    onbecame={(id) => registry.becameDownload(window.label, id)}
+    onbecame={(id: DownloadId) => registry.becameDownload(window.label, id)}
   />
 {/each}

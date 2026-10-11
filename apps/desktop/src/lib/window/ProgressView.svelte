@@ -1,14 +1,9 @@
-<script lang="ts" module>
-  /** How long a finished download's window stays before closing by itself. */
-  export const CLOSE_AFTER_MS = 5000;
-</script>
-
 <script lang="ts">
   // One download's progress, in its own window (D23): name, status and why it waits, progress,
   // speed, time left, connections, any error with its fix, and Pause or Resume, Cancel and Hide.
   // Once finished: Open and Show in folder, and the window closes by itself after a few seconds
   // unless the pointer is over it or it has the keyboard focus.
-  import type { DownloadSummary } from '@wirecatch/protocol';
+  import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
   import ErrorFix from '$lib/components/ErrorFix.svelte';
   import CategoryIcon from '$lib/components/CategoryIcon.svelte';
   import {
@@ -26,7 +21,7 @@
     statusShort,
   } from '$lib/format';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
-  import type { DownloadWindowState } from './download-window.svelte';
+  import { CLOSE_AFTER_MS, type DownloadWindowState } from './download-window.svelte';
   import WindowFrame from './WindowFrame.svelte';
 
   let { win, row }: { win: DownloadWindowState; row: DownloadSummary } = $props();
@@ -133,7 +128,7 @@
       {#if row.status === 'failed' && row.error}
         <ErrorFix
           {row}
-          onfix={(fix) => win.fix(fix, () => (asking = 'link'))}
+          onfix={(fix: FixAction) => win.fix(fix, () => (asking = 'link'))}
           onretry={() => win.retry()}
         />
       {/if}

@@ -53,6 +53,9 @@ export const ANSWERED_ELSEWHERE =
 export const READING_ENDED =
   'This video is no longer being read here. Another window may already ask about it, or it could not be read, in which case the download list says why and offers Try again.';
 
+/** How long a finished download's window stays before closing by itself. */
+export const CLOSE_AFTER_MS = 5000;
+
 export class DownloadWindowState {
   readonly backend: Backend;
   readonly #host: WindowHost;

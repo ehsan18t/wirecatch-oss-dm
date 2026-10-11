@@ -58,9 +58,6 @@
     }
   },
   "src/lib/components/DetailPanel.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
     "max-lines": {
       "count": 1
     },
@@ -159,18 +156,6 @@
   "src/lib/components/Settings.svelte": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 14
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 10
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 3
     },
     "max-lines": {
       "count": 1
@@ -294,14 +279,6 @@
       "count": 3
     }
   },
-  "src/lib/window/DownloadWindow.test.ts": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/restrict-plus-operands": {
-      "count": 1
-    }
-  },
   "src/lib/window/FileQuestion.svelte": {
     "wirecatch/no-magic-numbers": {
       "count": 1
@@ -324,17 +301,11 @@
     }
   },
   "src/lib/window/MockWindows.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 1
     }
   },
   "src/lib/window/ProgressView.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
     "wirecatch/no-magic-numbers": {
       "count": 5
     }

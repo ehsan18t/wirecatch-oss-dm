@@ -194,21 +194,21 @@
             label={def.label}
             describedby={help}
             checked={s.start_with_system}
-            onchange={(v) => save((d) => void (d.start_with_system = v))}
+            onchange={(v: boolean) => save((d) => void (d.start_with_system = v))}
           />
         {:else if def.id === 'close_to_tray'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.close_to_tray}
-            onchange={(v) => save((d) => void (d.close_to_tray = v))}
+            onchange={(v: boolean) => save((d) => void (d.close_to_tray = v))}
           />
         {:else if def.id === 'notify_on_complete'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.notify_on_complete}
-            onchange={(v) => save((d) => void (d.notify_on_complete = v))}
+            onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
           />
         {:else if def.id === 'media_addon'}
           {@const addon = app.addons?.find((a) => a.id === MEDIA_ADDON)}
@@ -227,7 +227,7 @@
             label={def.label}
             describedby={help}
             checked={s.auto_update_addons}
-            onchange={(v) => save((d) => void (d.auto_update_addons = v))}
+            onchange={(v: boolean) => save((d) => void (d.auto_update_addons = v))}
           />
         {:else if def.id === 'default_folder'}
           <span class="path">{displayPath(s.default_folder)}</span>
@@ -289,28 +289,28 @@
             label={def.label}
             describedby={help}
             checked={s.extension.capture_enabled}
-            onchange={(v) => save((d) => void (d.extension.capture_enabled = v))}
+            onchange={(v: boolean) => save((d) => void (d.extension.capture_enabled = v))}
           />
         {:else if def.id === 'ask_before_download'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.extension.ask_before_download}
-            onchange={(v) => save((d) => void (d.extension.ask_before_download = v))}
+            onchange={(v: boolean) => save((d) => void (d.extension.ask_before_download = v))}
           />
         {:else if def.id === 'show_progress_windows'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.show_progress_windows}
-            onchange={(v) => save((d) => void (d.show_progress_windows = v))}
+            onchange={(v: boolean) => save((d) => void (d.show_progress_windows = v))}
           />
         {:else if def.id === 'show_media_button'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.extension.show_media_button}
-            onchange={(v) => save((d) => void (d.extension.show_media_button = v))}
+            onchange={(v: boolean) => save((d) => void (d.extension.show_media_button = v))}
           />
         {:else if def.id === 'ignored_sites'}
           <ListEditor
@@ -318,13 +318,13 @@
             describedby={help}
             placeholder="example.com"
             items={s.extension.ignored_sites}
-            normalize={(x) =>
+            normalize={(x: string) =>
               x
                 .trim()
                 .toLowerCase()
                 .replace(/^https?:\/\//, '')
                 .replace(/\/.*$/, '')}
-            onchange={(items) => save((d) => void (d.extension.ignored_sites = items))}
+            onchange={(items: string[]) => save((d) => void (d.extension.ignored_sites = items))}
           />
         {:else if def.id === 'capture_extensions'}
           <ListEditor
@@ -332,8 +332,9 @@
             describedby={help}
             placeholder="zip, mp4, pdf"
             items={s.extension.capture_extensions}
-            normalize={(x) => x.trim().toLowerCase().replace(/^\./, '')}
-            onchange={(items) => save((d) => void (d.extension.capture_extensions = items))}
+            normalize={(x: string) => x.trim().toLowerCase().replace(/^\./, '')}
+            onchange={(items: string[]) =>
+              save((d) => void (d.extension.capture_extensions = items))}
           />
         {:else if def.id === 'min_capture_size'}
           <input
@@ -392,12 +393,13 @@
             describedby={help}
             placeholder="en, fr"
             items={s.media[kind].subtitle_languages}
-            normalize={(x) =>
+            normalize={(x: string) =>
               x
                 .trim()
                 .toLowerCase()
                 .replace(/[^a-z0-9_-]/g, '')}
-            onchange={(items) => save((d) => void (d.media[kind].subtitle_languages = items))}
+            onchange={(items: string[]) =>
+              save((d) => void (d.media[kind].subtitle_languages = items))}
           />
         {:else if def.id === 'media_auto_subtitles' || def.id === 'media_audio_auto_subtitles'}
           {@const kind = def.id === 'media_auto_subtitles' ? 'video' : 'audio'}
@@ -405,14 +407,14 @@
             label={def.label}
             describedby={help}
             checked={s.media[kind].auto_subtitles}
-            onchange={(v) => save((d) => void (d.media[kind].auto_subtitles = v))}
+            onchange={(v: boolean) => save((d) => void (d.media[kind].auto_subtitles = v))}
           />
         {:else if def.id === 'media_subtitle_files'}
           <Toggle
             label={def.label}
             describedby={help}
             checked={s.media.video.subtitle_files}
-            onchange={(v) => save((d) => void (d.media.video.subtitle_files = v))}
+            onchange={(v: boolean) => save((d) => void (d.media.video.subtitle_files = v))}
           />
         {:else if def.id === 'media_chapters' || def.id === 'media_audio_chapters'}
           {@const kind = def.id === 'media_chapters' ? 'video' : 'audio'}
@@ -420,7 +422,7 @@
             label={def.label}
             describedby={help}
             checked={s.media[kind].chapters}
-            onchange={(v) => save((d) => void (d.media[kind].chapters = v))}
+            onchange={(v: boolean) => save((d) => void (d.media[kind].chapters = v))}
           />
         {:else if def.id === 'media_audio'}
           {@const audio = s.media.audio}
@@ -465,7 +467,7 @@
             label="Limit total speed"
             describedby={help}
             checked={s.global_speed_limit !== null}
-            onchange={(v) => save((d) => void (d.global_speed_limit = v ? 5 * MB : null))}
+            onchange={(v: boolean) => save((d) => void (d.global_speed_limit = v ? 5 * MB : null))}
           />
           {#if s.global_speed_limit !== null}
             <input
