@@ -221,32 +221,18 @@ pub async fn choose_media(
     core: CoreState<'_>,
     id: u64,
     selection: MediaSelection,
-    questions: State<'_, Questions>,
 ) -> CommandResult<()> {
-    api::choose_media(core.manager().await?, id, selection)?;
-    questions.answered_media(id);
-    Ok(())
+    api::choose_media(core.manager().await?, id, selection).await
 }
 
 #[tauri::command]
-pub async fn dismiss_media_choice(
-    core: CoreState<'_>,
-    id: u64,
-    questions: State<'_, Questions>,
-) -> CommandResult<()> {
-    questions.answered_media(id);
+pub async fn dismiss_media_choice(core: CoreState<'_>, id: u64) -> CommandResult<()> {
     api::dismiss_media_choice(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn pending_media_choices(
-    core: CoreState<'_>,
-    questions: State<'_, Questions>,
-) -> CommandResult<Vec<MediaChoice>> {
-    Ok(api::pending_media_choices(
-        core.manager().await?,
-        &questions,
-    ))
+pub async fn pending_media_choices(core: CoreState<'_>) -> CommandResult<Vec<MediaChoice>> {
+    Ok(api::pending_media_choices(core.manager().await?))
 }
 
 #[tauri::command]
@@ -256,7 +242,7 @@ pub fn take_addon_request(questions: State<'_, Questions>) -> Option<AddonReques
 
 #[tauri::command]
 pub async fn list_addons(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
-    api::list_addons(core.manager().await?)
+    Ok(api::list_addons(core.manager().await?))
 }
 
 #[tauri::command]
@@ -271,5 +257,5 @@ pub async fn update_addon(core: CoreState<'_>, id: String) -> CommandResult<()> 
 
 #[tauri::command]
 pub async fn remove_addon(core: CoreState<'_>, id: String) -> CommandResult<()> {
-    api::remove_addon(core.manager().await?, &id)
+    api::remove_addon(core.manager().await?, &id).await
 }

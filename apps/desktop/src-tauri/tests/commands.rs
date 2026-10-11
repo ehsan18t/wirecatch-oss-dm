@@ -8,7 +8,8 @@ use wirecatch_desktop_lib::api::{self, Reveal};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
-use wirecatch_protocol::app::{DownloadStatus, Theme};
+use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::app::{AddonState, DownloadStatus, MediaSelection, Theme};
 
 /// A file big and slow enough to still be running while the test pauses and moves it.
 const SLOW_LEN: usize = 4 * 1024 * 1024;
@@ -190,5 +191,48 @@ async fn quit_stops_the_manager_before_exiting() {
     // The running download continues on the next start.
     let m = sandbox.open().await;
     wait_for(&m, id, "running after the restart", running).await;
+    m.shutdown().await;
+}
+
+/// WP12: the media and add-on commands reach the real core, not a stand-in. Nothing here
+/// installs the add-on, so the test stays off the internet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn media_and_addon_commands_reach_the_core() {
+    let sandbox = Sandbox::new();
+    let m = sandbox.open().await;
+
+    let addons = api::list_addons(&m);
+    assert_eq!(addons.len(), 1);
+    assert_eq!(addons[0].id, "media");
+    assert_eq!(addons[0].state, AddonState::NotInstalled);
+    assert!(
+        addons[0].size.is_some(),
+        "the download size is known before installing"
+    );
+
+    assert!(api::pending_media_choices(&m).is_empty());
+    let selection = MediaSelection {
+        option_id: "best".into(),
+        folder: None,
+        file_name: None,
+        queue: None,
+    };
+    let gone = api::choose_media(&m, 99, selection).await.unwrap_err();
+    assert!(gone.contains("already confirmed or dismissed"), "{gone}");
+    let gone = api::dismiss_media_choice(&m, 99).unwrap_err();
+    assert!(gone.contains("already confirmed or dismissed"), "{gone}");
+
+    let unknown = api::install_addon(&m, "flash").unwrap_err();
+    assert!(unknown.contains("no add-on called"), "{unknown}");
+    let unknown = api::update_addon(&m, "flash").unwrap_err();
+    assert!(unknown.contains("no add-on called"), "{unknown}");
+    // Removing one that is not installed is fine and leaves it not installed.
+    api::remove_addon(&m, "media").await.unwrap();
+    assert_eq!(api::list_addons(&m)[0].state, AddonState::NotInstalled);
+
+    // Opening looks the download up in the core by id.
+    let missing = api::file_to_open(&m, DownloadId(4242), false).unwrap_err();
+    assert!(missing.contains("no longer exists"), "{missing}");
+    assert!(api::download_is_program(&m, DownloadId(4242)).is_err());
     m.shutdown().await;
 }

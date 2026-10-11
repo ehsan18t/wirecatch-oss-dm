@@ -8,14 +8,13 @@
 //! A storage failure is not a question but must not go unseen: with no window it becomes a
 //! system notification.
 //!
-//! A new window loads confirmations from the core. Media choices and add-on prompts are kept
-//! here until answered, so a window opened (or reloaded) after the event still shows them. Once
-//! the core offers `pending_media_choices()` (WP11), [`Questions::media_choices`] reads it from
-//! there instead.
+//! A new window loads confirmations and media choices from the core. The core keeps no list of
+//! add-on prompts, so the latest one is kept here until the add-on is installed or a window has
+//! taken it, so a window opened after the event still shows it.
 
 use std::sync::Mutex;
 
-use wirecatch_protocol::app::{AddonInfo, AddonState, MediaChoice, UiEvent};
+use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
 
 /// What a core event needs from the desktop when no window is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,10 +55,9 @@ pub struct AddonRequest {
     pub url: String,
 }
 
-/// Open media choices and the add-on prompt, kept until answered.
+/// The add-on prompt, kept until answered.
 #[derive(Default)]
 pub struct Questions {
-    media: Mutex<Vec<MediaChoice>>,
     addon: Mutex<Option<AddonRequest>>,
 }
 
@@ -68,15 +66,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Questions {
-    /// Keeps track of the questions in `event`.
+    /// Keeps track of the add-on prompt in `event`.
     pub fn note(&self, event: &UiEvent) {
         match event {
-            UiEvent::MediaChoiceRequested(choice) => {
-                let mut media = lock(&self.media);
-                if !media.iter().any(|c| c.id == choice.id) {
-                    media.push(choice.clone());
-                }
-            }
             UiEvent::AddonRequired { addon, url } => {
                 *lock(&self.addon) = Some(AddonRequest {
                     addon: addon.clone(),
@@ -98,16 +90,6 @@ impl Questions {
         }
     }
 
-    /// The media choices still open.
-    pub fn media_choices(&self) -> Vec<MediaChoice> {
-        lock(&self.media).clone()
-    }
-
-    /// Forgets a media choice once it is answered either way.
-    pub fn answered_media(&self, id: u64) {
-        lock(&self.media).retain(|c| c.id != id);
-    }
-
     /// Hands the waiting add-on prompt over, once.
     pub fn take_addon_request(&self) -> Option<AddonRequest> {
         lock(&self.addon).take()
@@ -118,7 +100,7 @@ impl Questions {
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{Category, PendingCapture, UserError};
+    use wirecatch_protocol::app::{Category, MediaChoice, PendingCapture, UserError};
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {
@@ -182,16 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn open_questions_are_kept_until_answered() {
+    fn the_addon_prompt_is_kept_until_taken_or_installed() {
         let q = Questions::default();
         q.note(&UiEvent::MediaChoiceRequested(choice(1)));
-        q.note(&UiEvent::MediaChoiceRequested(choice(2)));
-        q.note(&UiEvent::MediaChoiceRequested(choice(1)));
-        assert_eq!(q.media_choices().len(), 2);
-        q.answered_media(1);
-        assert_eq!(
-            q.media_choices().iter().map(|c| c.id).collect::<Vec<_>>(),
-            [2]
+        assert!(
+            q.take_addon_request().is_none(),
+            "media choices live in the core"
         );
 
         q.note(&UiEvent::AddonRequired {

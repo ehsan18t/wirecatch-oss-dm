@@ -9,15 +9,12 @@ use std::path::{Path, PathBuf};
 use wirecatch_core::{CoreError, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    MediaSelection, PendingCapture, Queue,
+    MediaChoice, MediaSelection, PendingCapture, Queue,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
 /// What a command answers: a value, or an error worded for a person.
 pub type CommandResult<T> = Result<T, String>;
-
-/// The answer of the media and add-on commands until the core implements them (WP11).
-pub const NEXT_UPDATE: &str = "This arrives in the next update of Wirecatch. Until then, downloads from video sites stay in the browser.";
 
 fn plain(err: CoreError) -> String {
     err.to_string()
@@ -158,10 +155,7 @@ pub async fn set_download_folder(m: &Manager, id: DownloadId, folder: &str) -> C
 }
 
 fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
-    m.list_downloads()
-        .into_iter()
-        .find(|row| row.id == id)
-        .ok_or_else(|| plain(CoreError::DownloadNotFound(id)))
+    m.get_download(id).map_err(plain)
 }
 
 /// File types that open directly, without asking first: common video, audio, image, document
@@ -279,62 +273,47 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
     }
 }
 
-fn not_yet<T>() -> CommandResult<T> {
-    Err(NEXT_UPDATE.to_owned())
+/// Downloads the chosen quality of a media choice. An option that needs the media add-on
+/// fails while it is not installed; the core then asks for it with `AddonRequired` and keeps
+/// the choice open.
+pub async fn choose_media(m: &Manager, id: u64, selection: MediaSelection) -> CommandResult<()> {
+    m.choose_media(id, selection).await.map_err(plain)
 }
 
-/// Downloads the chosen quality of a media choice. Pending until the core has media support.
-pub fn choose_media(_m: &Manager, _id: u64, _selection: MediaSelection) -> CommandResult<()> {
-    not_yet()
-}
-
-/// Drops a media choice the person did not want. Until the core has media support there is
-/// nothing to tell it; the desktop forgets the choice itself.
-pub fn dismiss_media_choice(_m: &Manager, _id: u64) -> CommandResult<()> {
-    Ok(())
+/// Drops a media choice the person did not want (or media still being read).
+pub fn dismiss_media_choice(m: &Manager, id: u64) -> CommandResult<()> {
+    m.dismiss_media_choice(id).map_err(plain)
 }
 
 /// Media choices still waiting for an answer, so a new or reloaded window shows them again.
-///
-/// Adapter: the core does not offer `pending_media_choices()` yet (WP11), so these are the ones
-/// the desktop saw arrive and has not seen answered. Once the core has it, this returns the
-/// core's list instead.
-pub fn pending_media_choices(
-    _m: &Manager,
-    questions: &crate::questions::Questions,
-) -> Vec<wirecatch_protocol::app::MediaChoice> {
-    questions.media_choices()
+pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
+    m.pending_media_choices()
 }
 
-/// Every add-on and its state. Pending until the core has the add-on manager.
-pub fn list_addons(_m: &Manager) -> CommandResult<Vec<AddonInfo>> {
-    not_yet()
+/// Every add-on and its state. Update checks run in the core: once a day while
+/// `auto_update_addons` is on.
+pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
+    m.list_addons()
 }
 
-/// Installs an add-on. Pending, like [`list_addons`].
-pub fn install_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Installs an add-on in the background; progress and the result arrive as `AddonsChanged`.
+pub fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.install_addon(id).map_err(plain)
 }
 
-/// Updates an add-on. Pending, like [`list_addons`].
-pub fn update_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Brings an add-on up to date in the background, like [`install_addon`].
+pub fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.update_addon(id).map_err(plain)
 }
 
-/// Removes an add-on. Pending, like [`list_addons`].
-pub fn remove_addon(_m: &Manager, _id: &str) -> CommandResult<()> {
-    not_yet()
+/// Removes an add-on and its files, stopping an install in progress first.
+pub async fn remove_addon(m: &Manager, id: &str) -> CommandResult<()> {
+    m.remove_addon(id).await.map_err(plain)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_pending_answer_is_plain() {
-        assert!(!NEXT_UPDATE.contains('\u{2014}'), "no em dashes");
-        assert!(NEXT_UPDATE.starts_with("This arrives in the next update"));
-    }
 
     #[test]
     fn known_safe_types_open_directly_in_any_case() {
