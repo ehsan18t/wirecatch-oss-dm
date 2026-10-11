@@ -1,6 +1,7 @@
 import type { DownloadSummary, UiEvent } from '@wirecatch/protocol';
-import { describe, expect, it } from 'vitest';
-import { MockBackend } from './mock';
+import { describe, expect, it, vi } from 'vitest';
+import { BackendError } from '../types';
+import { MockBackend } from '.';
 
 // Noon on Saturday 10 October 2026: the Overnight queue (01:00 to 07:00) is closed.
 const NOON = new Date(2026, 9, 10, 12, 0).getTime();
@@ -13,7 +14,7 @@ function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
   return {
     mock,
     events,
-    advance(ms: number) {
+    advance: (ms: number) => {
       now += ms;
       mock.tick(ms);
     },
@@ -198,5 +199,44 @@ describe('MockBackend', () => {
     const rows = await mock.listDownloads();
     expect(rows).toHaveLength(10_000);
     expect(new Set(rows.map((r) => r.id)).size).toBe(10_000);
+  });
+
+  it('answers after the configured latency, once its events have arrived', async () => {
+    vi.useFakeTimers();
+    try {
+      const { mock, events } = make({ empty: true, latencyMs: 200 });
+      let answered: number | null = null;
+      void mock
+        .addDownload({
+          url: 'https://x.org/a.zip',
+          queue: null,
+          folder: null,
+          file_name: null,
+          start: true,
+        })
+        .then((id) => (answered = id));
+      expect(events.some((e) => e.type === 'downloads_changed')).toBe(true);
+      await vi.advanceTimersByTimeAsync(199);
+      expect(answered).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(answered).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails after the configured latency too', async () => {
+    vi.useFakeTimers();
+    try {
+      const { mock } = make({ empty: true, latencyMs: 50 });
+      let error: unknown = null;
+      void mock.pause(42).catch((e: unknown) => (error = e));
+      await vi.advanceTimersByTimeAsync(49);
+      expect(error).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(error).toBeInstanceOf(BackendError);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -25,61 +25,9 @@
       "count": 4
     }
   },
-  "src/lib/backend/mock-data.ts": {
-    "@typescript-eslint/array-type": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
+  "src/lib/backend/mock/simulator.ts": {
     "wirecatch/no-magic-numbers": {
-      "count": 25
-    }
-  },
-  "src/lib/backend/mock.test.ts": {
-    "@typescript-eslint/unbound-method": {
-      "count": 3
-    }
-  },
-  "src/lib/backend/mock.ts": {
-    "@typescript-eslint/array-type": {
       "count": 2
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 3
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 1
-    },
-    "@typescript-eslint/require-await": {
-      "count": 51
-    },
-    "@typescript-eslint/switch-exhaustiveness-check": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "max-params": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 94
     }
   },
   "src/lib/backend/tauri.test.ts": {

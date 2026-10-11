@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultSettings } from './backend/mock-data';
+import { defaultSettings } from './backend/mock';
 import { SECTIONS, SETTINGS, searchSettings } from './settings-schema';
 
 describe('settings schema', () => {

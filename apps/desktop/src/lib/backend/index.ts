@@ -22,7 +22,7 @@ function clockFrom(at: string | null): (() => number) | undefined {
 
 /**
  * Reads mock options from the address bar, so reviewers and tests can set up a scenario:
- * `?count=10000&active=60`, `?empty`, `?capture=0`, `?seed=3`, `?at=12:00`.
+ * `?count=10000&active=60`, `?empty`, `?capture=0`, `?seed=3`, `?at=12:00`, `?latency=300`.
  */
 export function mockOptionsFromUrl(search: string): MockOptions {
   const params = new URLSearchParams(search);
@@ -34,6 +34,7 @@ export function mockOptionsFromUrl(search: string): MockOptions {
     count: num('count'),
     active: num('active'),
     seed: num('seed'),
+    latencyMs: num('latency'),
     now: clockFrom(params.get('at')),
     empty: params.has('empty'),
     autoCapture: params.get('capture') !== '0',
