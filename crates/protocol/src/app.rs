@@ -382,6 +382,15 @@ pub enum UiEvent {
         addon: AddonInfo,
         url: String,
     },
+    /// A question the UI may be showing is no longer open, so its dialog should close:
+    /// a [`PendingCapture`] or [`MediaChoice`] with this id was answered (perhaps in
+    /// another window), withdrawn by the browser, or replaced by another question (for
+    /// example a [`MediaChoice`] that follows an add-on install). Pending captures and
+    /// media choices share one id space, so the id is never ambiguous.
+    ConfirmationClosed {
+        #[ts(type = "number")]
+        id: u64,
+    },
 }
 
 /// What importing a settings profile changed.
