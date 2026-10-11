@@ -4,7 +4,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { detectBrowser, type Brand } from '@/lib/browser-info';
 import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
-import { cookieHeader } from '@/lib/cookies';
+import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '@/lib/cookies';
 import { Hub, type Badge, type BrowserDownloads, type InFlightStore, type MenuTab } from '@/lib/hub';
 import { MediaCenter, type MediaSendResult, type MediaStore, type TabInfo } from '@/lib/media/center';
 import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
@@ -40,14 +40,22 @@ async function browserInfo(): Promise<BrowserInfo> {
   });
 }
 
-async function cookieHeaderFor(url: string, storeId: string | null): Promise<string | null> {
-  try {
-    const cookies = await browser.cookies.getAll(storeId === null ? { url } : { url, storeId });
-    return cookieHeader(cookies);
-  } catch {
-    // Without cookies the app still tries; downloads that need a login then report it in the app.
-    return null;
+/** The cookies the browser would send with the request, read the way this browser supports. */
+async function cookieHeaderFor(
+  url: string,
+  storeId: string | null,
+  context: CookieContext,
+): Promise<string | null> {
+  for (const query of cookieQueries(url, storeId, context)) {
+    try {
+      const cookies = await browser.cookies.getAll(query);
+      return cookieHeader(cookiesToSend(cookies, url, context));
+    } catch {
+      // This browser rejects the query (first-party isolation, or no partitioned cookies): try the next.
+    }
   }
+  // Without cookies the app still tries; downloads that need a login then report it in the app.
+  return null;
 }
 
 async function hasSiteAccess(url: string): Promise<boolean> {
@@ -139,7 +147,7 @@ export default defineBackground(() => {
     },
     state: async (id) => {
       const [item] = await browser.downloads.search({ id });
-      return item === undefined ? null : { state: item.state, paused: item.paused };
+      return item === undefined ? null : { state: item.state, paused: item.paused, danger: item.danger };
     },
     start: async (url) => {
       await browser.downloads.download({ url });

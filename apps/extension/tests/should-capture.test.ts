@@ -15,6 +15,7 @@ function candidate(overrides: Partial<CaptureCandidate> = {}): CaptureCandidate 
     incognito: false,
     startedByExtension: false,
     inProgress: true,
+    danger: 'safe',
     ...overrides,
   };
 }
@@ -240,6 +241,86 @@ describe('shouldCapture', () => {
     });
   });
 
+  describe('browser protection', () => {
+    it.each(['safe', 'accepted'])('captures a download the browser calls %s', (danger) => {
+      expect(shouldCapture(candidate({ danger }), settings())).toEqual({ capture: true });
+    });
+
+    it('captures when the browser gives no verdict (Firefox)', () => {
+      expect(shouldCapture(candidate({ danger: null }), settings())).toEqual({ capture: true });
+    });
+
+    it.each(['file', 'url', 'content', 'uncommon', 'host', 'unwanted', 'asyncScanning', 'blockedTooLarge'])(
+      'never captures a download the browser flags as %s, so its warning applies',
+      (danger) => {
+        expect(shouldCapture(candidate({ danger }), settings())).toEqual({
+          capture: false,
+          reason: 'browser_flagged',
+        });
+      },
+    );
+
+    it.each([
+      'setup.exe',
+      'Setup.EXE',
+      'installer.msi',
+      'run.bat',
+      'run.cmd',
+      'old.com',
+      'saver.scr',
+      'script.ps1',
+      'script.vbs',
+      'script.js',
+      'script.jse',
+      'script.wsf',
+      'app.hta',
+      'shortcut.lnk',
+      'tweak.reg',
+      'tool.jar',
+      'tool.AppImage',
+      'pkg.deb',
+      'pkg.rpm',
+      'install.sh',
+      'install.run',
+      'app.apk',
+      'app.dmg',
+      'app.pkg',
+      'archive.zip.exe',
+      'evil.exe.',
+      'evil.exe. . ',
+    ])('keeps the program %s in the browser by default', (fileName) => {
+      expect(shouldCapture(candidate({ fileName }), settings())).toEqual({
+        capture: false,
+        reason: 'program',
+      });
+    });
+
+    it('keeps a program even when the file type list names it', () => {
+      const s = settings({ capture_extensions: ['exe'] });
+      expect(shouldCapture(candidate({ fileName: 'setup.exe' }), s)).toEqual({
+        capture: false,
+        reason: 'program',
+      });
+    });
+
+    it('spots a program by the name in the address when the browser has none', () => {
+      const item = candidate({ fileName: null, url: 'https://example.com/get/setup.exe?v=2' });
+      expect(shouldCapture(item, settings())).toEqual({ capture: false, reason: 'program' });
+    });
+
+    it('spots a program by its media type when the name says nothing', () => {
+      const item = candidate({ fileName: 'download', mime: 'application/x-msdownload' });
+      expect(shouldCapture(item, settings())).toEqual({ capture: false, reason: 'program' });
+    });
+
+    it.each(['setup.exe.zip', 'notes.txt', 'movie.mp4', 'exe', 'program.exe.pdf', 'disk.iso'])(
+      'captures %s, which is not a program',
+      (fileName) => {
+        expect(shouldCapture(candidate({ fileName, mime: null }), settings())).toEqual({ capture: true });
+      },
+    );
+  });
+
   it('checks rules in order: capture off wins over everything else', () => {
     const s = settings({ capture_enabled: false, ignored_sites: ['example.com'] });
     expect(shouldCapture(candidate({ url: 'blob:x', incognito: true }), s)).toEqual({
@@ -271,6 +352,7 @@ describe('candidateFromItem', () => {
       incognito: false,
       startedByExtension: false,
       inProgress: true,
+      danger: null,
     });
   });
 
@@ -296,6 +378,11 @@ describe('candidateFromItem', () => {
       size: 1234,
       incognito: true,
     });
+  });
+
+  it('reads the browser verdict', () => {
+    expect(candidateFromItem(downloadItem({ danger: 'url' })).danger).toBe('url');
+    expect(candidateFromItem(downloadItem({ danger: 'safe' })).danger).toBe('safe');
   });
 
   it('marks finished items and extension downloads', () => {
