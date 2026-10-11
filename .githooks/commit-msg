@@ -1,0 +1,3 @@
+#!/bin/sh
+# Checks the message against the commit rules in CLAUDE.md before the commit is made.
+exec node scripts/gate.mjs commit-msg "$1"

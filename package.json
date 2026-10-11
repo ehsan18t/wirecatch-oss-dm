@@ -7,6 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "gate": "node scripts/gate.mjs",
+    "prepare": "git config core.hooksPath .githooks",
     "protocol:generate": "pnpm --filter @wirecatch/protocol generate",
     "check": "pnpm -r --if-present check",
     "lint": "pnpm -r --if-present lint",

@@ -1,4 +1,4 @@
-# Every D18 check (docs/DECISIONS.md) on Windows and Ubuntu.
+# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. The gate script holds every command; this file only decides where each check runs.
 # Actions are pinned to commit SHAs; the version each SHA belongs to is in the comment.
 name: CI
 
@@ -19,11 +19,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  # Pinned so a new Rust release cannot turn the build red on its own (new lints).
-  # Raise it on purpose, together with any fixes it needs.
-  RUST_TOOLCHAIN: "1.99.0"
-  # The oldest Rust the published engine crate promises to build with
-  # (rust-version in Cargo.toml).
+  # The oldest Rust the published engine crate promises to build with (rust-version in Cargo.toml).
   RUST_MSRV: "1.88.0"
   NODE_VERSION: "22"
 
@@ -39,18 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux.
-      # Windows runners already have WebView2.
+      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux. Windows runners already have WebView2.
       - name: Install Tauri system packages
-        if: runner.os == 'Linux' && hashFiles('apps/desktop/src-tauri/Cargo.toml') != ''
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential file libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
-      # The streams crate's join tests need a real ffmpeg; they skip without one,
-      # so Linux CI is where the real stream-copy join is proven.
+      # The streams crate's join tests need a real ffmpeg; they skip without one, so Linux CI is where the real stream-copy join is proven.
       - name: Install ffmpeg
         if: runner.os == 'Linux'
         run: |
@@ -59,53 +53,25 @@ jobs:
           echo "WIRECATCH_TEST_FFMPEG=$(command -v ffmpeg)" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
-      # tauri::generate_context! embeds the built frontend at compile time and
-      # fails if its folder is missing. Clippy and the tests do not need the real
-      # frontend, so an empty folder at the configured path is enough here; the
-      # JavaScript job builds the real one.
-      - name: Create the desktop frontend folder
-        if: hashFiles('apps/desktop/src-tauri/tauri.conf.json') != ''
-        shell: bash
-        run: |
-          dist="$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').build.frontendDist")"
-          mkdir -p "apps/desktop/src-tauri/$dist"
-
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: rustfmt, clippy
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Installs the release named in rust-toolchain.toml, with rustfmt and clippy.
+      - name: Install Rust
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Formatting
-        run: cargo fmt --all --check
+      - name: Gate (Rust)
+        run: node scripts/gate.mjs rust
 
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-      # test-overrides only exists for the bridge's end-to-end tests; it is
-      # never enabled in a build.
-      # The desktop crate is tested on its own: its Tauri build script adds link
-      # paths that break other crates' doctests when everything links together.
-      - name: Tests
-        run: cargo test --workspace --exclude wirecatch-desktop --locked --features wirecatch-bridge/test-overrides
-
-      - name: Desktop tests
-        run: cargo test -p wirecatch-desktop --locked
-
-      # The engine is published to crates.io: its docs must build cleanly and
-      # the package must verify. Once per run is enough.
-      - name: Engine docs
+      # The engine is published to crates.io, and its http3 feature is off by default: check both once per run.
+      - name: Gate (engine release checks)
         if: runner.os == 'Linux'
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc -p wirecatch-engine --no-deps --locked
-
-      - name: Engine package
-        if: runner.os == 'Linux'
-        run: cargo package -p wirecatch-engine --locked
+        run: node scripts/gate.mjs release clippy-http3
 
   msrv:
     name: Engine on its minimum Rust version
@@ -125,16 +91,10 @@ jobs:
       - name: Check
         run: cargo +${{ env.RUST_MSRV }} check -p wirecatch-engine --locked
 
-  # Known security advisories (RustSec) for every crate in Cargo.lock. A
-  # vulnerability fails the run; warnings (unmaintained or unsound crates) are
-  # listed but do not. The warnings expected today, none of them fixable on our
-  # side yet:
-  # - RUSTSEC-2025-0119: number_prefix is unmaintained (through indicatif, in
-  #   the CLI's progress bar).
-  # - RUSTSEC-2024-0370: proc-macro-error is unmaintained (through glib-macros,
-  #   in Tauri's GTK stack on Linux).
-  # - RUSTSEC-2024-0429: glib's VariantStrIter is unsound (glib 0.18, in
-  #   Tauri's GTK stack on Linux; Wirecatch never uses that iterator).
+  # Known security advisories (RustSec) for every crate in Cargo.lock. A vulnerability fails the run; warnings (unmaintained or unsound crates) are listed but do not. The warnings expected today, none of them fixable on our side yet:
+  # - RUSTSEC-2025-0119: number_prefix is unmaintained (through indicatif, in the CLI's progress bar).
+  # - RUSTSEC-2024-0370: proc-macro-error is unmaintained (through glib-macros, in Tauri's GTK stack on Linux).
+  # - RUSTSEC-2024-0429: glib's VariantStrIter is unsound (glib 0.18, in Tauri's GTK stack on Linux; Wirecatch never uses that iterator).
   audit:
     name: Dependency advisories
     timeout-minutes: 20
@@ -142,9 +102,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Install Rust
+        run: rustup toolchain install
 
       # Also keeps the installed cargo-audit between runs.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -170,9 +129,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types.
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Install Rust
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -184,39 +142,25 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: ${{ hashFiles('pnpm-lock.yaml') != '' && 'pnpm' || '' }}
+          cache: pnpm
 
       - name: Install dependencies
-        if: hashFiles('pnpm-lock.yaml') != ''
         run: pnpm install --frozen-lockfile
 
-      # Until the first package with dependencies commits pnpm-lock.yaml.
-      - name: Install dependencies (no lockfile yet)
-        if: hashFiles('pnpm-lock.yaml') == ''
-        run: pnpm install --no-frozen-lockfile
+      - name: Gate (JavaScript and repository rules)
+        run: node scripts/gate.mjs js repo
 
-      - name: Regenerate protocol types
-        run: pnpm protocol:generate
+  commits:
+    name: Commit messages
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      - name: Generated types are committed and up to date
-        shell: bash
-        run: |
-          changes="$(git status --porcelain -- packages/protocol/src)"
-          if [ -n "$changes" ]; then
-            echo "::error::The TypeScript protocol types are stale. Run 'pnpm protocol:generate' and commit the result."
-            echo "$changes"
-            git --no-pager diff -- packages/protocol/src
-            exit 1
-          fi
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
+      - name: Gate (commit messages)
+        env:
+          GATE_COMMIT_RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+        run: node scripts/gate.mjs commits
