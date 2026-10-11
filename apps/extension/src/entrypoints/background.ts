@@ -159,8 +159,10 @@ export default defineBackground(() => {
     send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
     store: mediaStore(),
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
-    liveTabIds: async () =>
-      (await browser.tabs.query({})).flatMap((tab) => (tab.id === undefined ? [] : [tab.id])),
+    liveTabs: async () =>
+      (await browser.tabs.query({})).flatMap((tab) =>
+        tab.id === undefined ? [] : [{ id: tab.id, url: tab.url ?? null }],
+      ),
   });
   // Started before any listener can fire, so every response waits for the restored lists.
   const restored = media.start();

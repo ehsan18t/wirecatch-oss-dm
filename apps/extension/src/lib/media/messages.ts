@@ -47,11 +47,21 @@ export interface ElementInfo {
   audio: boolean;
 }
 
+/** Where the content script runs, sent with every question so the answer is about the page shown now. */
+export interface FrameInfo {
+  /**
+   * The frame's address now (`location.href`), or null when it is not a short web address.
+   *
+   * The browser's own record of the sender's address (`MessageSender.url`) is the address the frame had when the content script started, and a single-page site changes the address with the history API without loading a new page. The background trusts this claim only on the origin the browser reports.
+   */
+  location: string | null;
+}
+
 export type ContentRequest =
   /** Is there anything to download for this element? Asked before the button is shown. */
-  | ({ type: typeof MEDIA_CHECK } & ElementInfo)
+  | ({ type: typeof MEDIA_CHECK } & ElementInfo & FrameInfo)
   /** The button was clicked. */
-  | ({ type: typeof MEDIA_DOWNLOAD; title: string | null } & ElementInfo);
+  | ({ type: typeof MEDIA_DOWNLOAD; title: string | null } & ElementInfo & FrameInfo);
 
 export interface CheckAnswer {
   show: boolean;
@@ -68,18 +78,25 @@ export function isWebSrc(src: string): boolean {
   return src.length <= MAX_SRC_LENGTH && /^https?:\/\//i.test(src);
 }
 
-/** Checks the shape of a message from a content script; null for anything else. */
+/** The frame's address as the content script sends it: null unless it is a short web address. */
+export function frameLocation(href: string): string | null {
+  return isWebSrc(href) ? href : null;
+}
+
+/**
+ * Checks the shape of a message from a content script; null for anything else. A missing `location` reads as null (the background then uses the browser's record of the frame's address).
+ */
 export function asContentRequest(raw: unknown): ContentRequest | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const m = raw as Record<string, unknown>;
   if (m.type !== MEDIA_CHECK && m.type !== MEDIA_DOWNLOAD) return null;
-  if (typeof m.audio !== 'boolean') return null;
-  if (m.src !== null && !(typeof m.src === 'string' && isWebSrc(m.src))) return null;
-  if (
-    m.type === MEDIA_DOWNLOAD &&
-    !(m.title === null || (typeof m.title === 'string' && m.title.length <= MAX_TITLE_LENGTH))
-  ) {
-    return null;
-  }
-  return raw as ContentRequest;
+  const { src, audio, title } = m;
+  const location = m.location ?? null;
+  if (typeof audio !== 'boolean') return null;
+  if (src !== null && !(typeof src === 'string' && isWebSrc(src))) return null;
+  if (location !== null && !(typeof location === 'string' && isWebSrc(location))) return null;
+  const info = { src, audio, location };
+  if (m.type === MEDIA_CHECK) return { type: MEDIA_CHECK, ...info };
+  if (!(title === null || (typeof title === 'string' && title.length <= MAX_TITLE_LENGTH))) return null;
+  return { type: MEDIA_DOWNLOAD, title, ...info };
 }

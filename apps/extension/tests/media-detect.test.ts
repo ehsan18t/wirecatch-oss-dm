@@ -427,6 +427,40 @@ describe('MediaRegistry', () => {
     copy.restore({ v: 1, tabs: [[8, [{ kind: 'nonsense' }]]] });
     expect(copy.items(8)).toEqual([]);
   });
+
+  it('offers a list only on the page it was detected on, and keeps that page through a save and restore', () => {
+    const registry = new MediaRegistry();
+    // A list whose page is not known (detected before any navigation was seen) is offered anywhere, as before.
+    registry.add(1, file('https://e.com/a.mp4'));
+    expect(registry.itemsOn(1, 'https://e.com/anything')).toHaveLength(1);
+    expect(registry.itemsOn(1, null)).toHaveLength(1);
+
+    registry.newPage(1, 'https://e.com/watch?v=1');
+    expect(registry.items(1)).toEqual([]);
+    registry.add(1, file('https://e.com/b.mp4'));
+    expect(registry.itemsOn(1, 'https://e.com/watch?v=1#t=5')).toHaveLength(1);
+    expect(registry.itemsOn(1, 'https://e.com/watch?v=2')).toEqual([]);
+    expect(registry.itemsOn(1, null)).toEqual([]);
+
+    const saved = registry.save();
+    expect(saved.tabs).toEqual([
+      [1, [expect.objectContaining({ url: 'https://e.com/b.mp4' })], 'https://e.com/watch?v=1'],
+    ]);
+    const copy = new MediaRegistry();
+    copy.restore(JSON.parse(JSON.stringify(saved)));
+    expect(copy.itemsOn(1, 'https://e.com/watch?v=1')).toHaveLength(1);
+    expect(copy.itemsOn(1, 'https://e.com/watch?v=2')).toEqual([]);
+    // A tab that already moved to another page since the restart does not take the saved list.
+    const moved = new MediaRegistry();
+    moved.newPage(1, 'https://e.com/watch?v=2');
+    moved.restore(JSON.parse(JSON.stringify(saved)));
+    expect(moved.items(1)).toEqual([]);
+
+    // A closed tab forgets its page too.
+    registry.clearTab(1);
+    registry.add(1, file('https://e.com/c.mp4'));
+    expect(registry.itemsOn(1, 'https://e.com/watch?v=2')).toHaveLength(1);
+  });
 });
 
 describe('MediaWatcher', () => {
@@ -483,6 +517,9 @@ describe('MediaWatcher', () => {
     await watcher.onResponse(hlsResponse({ url: 'https://cdn.example.com/v2/master.m3u8' }));
     await watcher.onUrlChange(4, 'https://example.com/watch?v=2#t=10');
     expect(registry.items(4).map((i) => i.url)).toEqual(['https://cdn.example.com/v2/master.m3u8']);
+    // The list is recorded for the page it was detected on.
+    expect(registry.itemsOn(4, 'https://example.com/watch?v=2#t=10')).toHaveLength(1);
+    expect(registry.itemsOn(4, 'https://example.com/watch?v=1')).toEqual([]);
   });
 
   it('forgets a closed tab', async () => {

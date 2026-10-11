@@ -1,10 +1,5 @@
 import { classifyResponse, isNavigation, type ObservedResponse } from './detect';
-import type { MediaRegistry } from './registry';
-
-function withoutFragment(url: string): string {
-  const hash = url.indexOf('#');
-  return hash < 0 ? url : url.slice(0, hash);
-}
+import { pageKey, type MediaRegistry } from './registry';
 
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
@@ -61,8 +56,9 @@ export class MediaWatcher {
     if (tabId < 0) return;
     await this.#whenReady();
     if (isNavigation(response)) {
-      this.#newPage(tabId);
-      this.#urls.set(tabId, withoutFragment(response.url));
+      const page = pageKey(response.url);
+      this.#newPage(tabId, page);
+      this.#urls.set(tabId, page);
     }
     const detection = classifyResponse(response);
     if (detection === null) return;
@@ -86,15 +82,16 @@ export class MediaWatcher {
   async onUrlChange(tabId: number, url: string): Promise<void> {
     if (tabId < 0) return;
     await this.#whenReady();
-    const address = withoutFragment(url);
+    const address = pageKey(url);
     if (this.#urls.get(tabId) === address) return;
     this.#urls.set(tabId, address);
-    this.#newPage(tabId);
+    this.#newPage(tabId, address);
   }
 
-  #newPage(tabId: number): void {
+  /** Clears the tab's list and records the page its next media belongs to. */
+  #newPage(tabId: number, page: string): void {
     this.#generation.set(tabId, (this.#generation.get(tabId) ?? 0) + 1);
-    this.#registry.clearTab(tabId);
+    this.#registry.newPage(tabId, page);
   }
 
   async #whenReady(): Promise<void> {
