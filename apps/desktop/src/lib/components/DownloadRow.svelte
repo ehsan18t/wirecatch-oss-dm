@@ -8,8 +8,7 @@
     formatSize,
     formatSpeed,
     progressFraction,
-    STATUS_LABEL,
-    waitShort,
+    statusShort,
   } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -27,13 +26,7 @@
   const selected = $derived(app.selection.has(id));
   const active = $derived(app.active === id);
   const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
-  const statusText = $derived(
-    row
-      ? row.status === 'queued' && row.waiting
-        ? waitShort(row.waiting)
-        : STATUS_LABEL[row.status]
-      : '',
-  );
+  const statusText = $derived(row ? statusShort(row) : '');
 </script>
 
 {#if row}

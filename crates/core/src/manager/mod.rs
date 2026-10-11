@@ -95,18 +95,23 @@ pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// The default [`ManagerConfig::media_timeout`].
 pub const DEFAULT_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// The default [`ManagerConfig::media_refresh_delays`]: three more tries,
-/// after 2, 10 and 30 seconds.
+/// The default [`ManagerConfig::media_refresh_delays`]: six more tries, after
+/// 2, 10 and 30 seconds, then 1, 2 and 4 minutes.
 ///
 /// A video server sometimes refuses a perfectly good address for a while, and
 /// an address read again from the page usually works at once, so the first try
-/// comes quickly. The later ones wait longer to ride out a refusal that lasts,
-/// without keeping the person waiting more than about a minute for an answer
-/// or reading the page so often that the site takes it for a robot.
-pub const DEFAULT_MEDIA_REFRESH_DELAYS: [Duration; 3] = [
+/// comes quickly. YouTube has been seen refusing one video for several minutes
+/// and then sending it as usual, so the later tries spread over about eight
+/// minutes in all, with the row saying when the next one is, rather than
+/// giving up after a minute and asking the person to press Try again. The gaps
+/// grow so the page is not read so often that the site takes it for a robot.
+pub const DEFAULT_MEDIA_REFRESH_DELAYS: [Duration; 6] = [
     Duration::from_secs(2),
     Duration::from_secs(10),
     Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(120),
+    Duration::from_secs(240),
 ];
 
 impl ManagerConfig {

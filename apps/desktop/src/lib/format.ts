@@ -139,6 +139,12 @@ export function formatTime(t: TimeOfDay): string {
   return `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
 }
 
+/** The clock time of a Unix time in milliseconds, `07:05` style, in local time. */
+export function clockTime(ms: number): string {
+  const d = new Date(ms);
+  return formatTime({ hour: d.getHours(), minute: d.getMinutes() });
+}
+
 /** Parses `HH:MM`. Returns `null` for anything that is not a valid time. */
 export function parseTime(text: string): TimeOfDay | null {
   const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(text);
@@ -312,12 +318,26 @@ export function waitShort(w: WaitReason): string {
       return 'Overall limit';
     case 'in_line':
       return `${ordinal(w.data.position)} in line`;
+    case 'server_refused':
+      return `Retrying at ${clockTime(w.data.retry_at)}`;
   }
+}
+
+/**
+ * The wait reason a row shows: why a queued download waits, or that a video's server refused it
+ * for now and when the next try is (on a download that is connecting). `null` otherwise.
+ */
+export function shownWait(row: Pick<DownloadSummary, 'status' | 'waiting'>): WaitReason | null {
+  const w = row.waiting;
+  if (!w) return null;
+  if (row.status === 'queued') return w;
+  return w.type === 'server_refused' && row.status === 'connecting' ? w : null;
 }
 
 /** A download's status in a couple of words, as its list row shows it. */
 export function statusShort(row: Pick<DownloadSummary, 'status' | 'waiting'>): string {
-  return row.status === 'queued' && row.waiting ? waitShort(row.waiting) : STATUS_LABEL[row.status];
+  const wait = shownWait(row);
+  return wait ? waitShort(wait) : STATUS_LABEL[row.status];
 }
 
 /**
@@ -325,7 +345,8 @@ export function statusShort(row: Pick<DownloadSummary, 'status' | 'waiting'>): s
  * waits, or that its video and audio are being joined. `null` otherwise.
  */
 export function statusDetail(row: DownloadSummary, queueName: string): string | null {
-  if (row.status === 'queued' && row.waiting) return waitLong(row.waiting, queueName);
+  const wait = shownWait(row);
+  if (wait) return waitLong(wait, queueName);
   if (row.status === 'processing') {
     return 'The video and audio are downloaded; Wirecatch is joining them into one file.';
   }
@@ -378,5 +399,7 @@ export function waitLong(w: WaitReason, queueName: string): string {
       return `Overall limit: ${w.data.running} of ${w.data.limit} downloads are running. This starts when one of them finishes.`;
     case 'in_line':
       return `${ordinal(w.data.position)} in line in ${queueName}.`;
+    case 'server_refused':
+      return `The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again by itself at ${clockTime(w.data.retry_at)} and keeps what was already downloaded.`;
   }
 }

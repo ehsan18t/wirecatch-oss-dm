@@ -223,6 +223,13 @@ pub enum WaitReason {
     GlobalLimit { running: u32, limit: u32 },
     /// Ahead of it in the same queue are other waiting downloads.
     InLine { position: u32 },
+    /// A video's server refused it for now; Wirecatch tries again by itself at
+    /// `retry_at` (Unix time in milliseconds), keeping what was downloaded. Only
+    /// on a download that is connecting, never on a queued one.
+    ServerRefused {
+        #[ts(type = "number")]
+        retry_at: i64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

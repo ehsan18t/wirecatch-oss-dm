@@ -27,6 +27,7 @@ use super::media::{addon_missing, cookie_header, media_options};
 use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::MediaTools;
+use crate::clock::Clock;
 use crate::media::merge::{self, Joined};
 use crate::media::ytdlp::{self, Fetched, Format, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
@@ -45,6 +46,8 @@ struct Job {
     /// The pauses before each automatic try with fresh addresses; see
     /// [`ManagerConfig::media_refresh_delays`](crate::ManagerConfig::media_refresh_delays).
     refresh_delays: Arc<[Duration]>,
+    /// Tells the time of the next try, shown while waiting for it.
+    clock: Arc<dyn Clock>,
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
@@ -96,6 +99,7 @@ impl Manager {
             temp_dir: self.inner.temp_dir.clone(),
             timeout: self.inner.media_timeout,
             refresh_delays: self.inner.media_refresh_delays.clone(),
+            clock: self.inner.clock.clone(),
             reserve: {
                 let manager = Arc::downgrade(&self.inner);
                 Arc::new(move |path: &Path, take: bool| {
@@ -243,7 +247,8 @@ async fn run_page(
             retry_in = ?delay,
             "the server refused a video address; reading the page again for fresh ones"
         );
-        progress.set_waiting(true);
+        let wait_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
+        progress.set_retry_at(Some(job.clock.unix_millis().saturating_add(wait_ms)));
         tokio::select! {
             _ = cancel.cancelled() => return Ok(MediaDone::Paused),
             _ = tokio::time::sleep(*delay) => {}
@@ -687,7 +692,7 @@ fn refused_after_refreshing(status: Option<u16>) -> UserError {
         .unwrap_or_default();
     UserError {
         message: format!(
-            "The video's server would not send the video{answered}, even after Wirecatch read the page again for fresh addresses. Servers sometimes do this for a few minutes. Try again in a few minutes; what was already downloaded is kept."
+            "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again by itself several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
         ),
         fix: Some(FixAction::Retry),
     }
@@ -802,6 +807,7 @@ mod tests {
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
             refresh_delays: Arc::new([]),
+            clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let options = part_options(&job, &format, PrivateNetwork::Block);
@@ -830,6 +836,7 @@ mod tests {
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
             refresh_delays: Arc::new([]),
+            clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let progress = MediaProgress::default();
@@ -882,6 +889,7 @@ mod tests {
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(5),
             refresh_delays: Arc::new([]),
+            clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let done = run_stream(
@@ -924,6 +932,7 @@ mod tests {
             temp_dir: PathBuf::new(),
             timeout: Duration::from_secs(1),
             refresh_delays: Arc::new([]),
+            clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
         };
         let done = finish(&part, &job, &work).await.unwrap();

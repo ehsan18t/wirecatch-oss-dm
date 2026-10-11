@@ -131,6 +131,14 @@ impl Manager {
         let mut changed = Vec::new();
         for entry in state.downloads.values_mut() {
             let reason = reasons.remove(&entry.row.id);
+            // A running video waiting to try again keeps the time of its next try;
+            // the run sets and clears that one itself.
+            if reason.is_none()
+                && entry.run.is_some()
+                && matches!(entry.row.waiting, Some(WaitReason::ServerRefused { .. }))
+            {
+                continue;
+            }
             if entry.row.waiting != reason {
                 entry.row.waiting = reason;
                 changed.push(entry.row.id);

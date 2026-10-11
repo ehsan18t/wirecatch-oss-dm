@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use wirecatch_engine::CancellationToken;
-use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent};
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent, WaitReason};
 
 use super::state::{Entry, Gauge};
 use super::{Inner, Manager};
@@ -113,19 +113,28 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     };
     let row = &mut entry.row;
     let reading = run.gauge.read();
-    if reading.waiting {
+    if let Some(retry_at) = reading.retry_at {
         // Waiting to try again with fresh addresses: connecting again, as at
-        // the start of a run, with the progress so far kept.
+        // the start of a run, with the progress so far kept and the time of the
+        // next try, so the person sees it has not given up.
+        let waiting = Some(WaitReason::ServerRefused { retry_at });
         let before = (row.status, row.speed, row.connections, row.eta_secs);
+        let changed = row.waiting != waiting;
         row.status = DownloadStatus::Connecting;
         row.speed = 0;
         row.connections = 0;
         row.eta_secs = None;
-        return before != (row.status, row.speed, row.connections, row.eta_secs);
+        row.waiting = waiting;
+        return changed || before != (row.status, row.speed, row.connections, row.eta_secs);
+    }
+    // A try that started again clears the note about the refusal.
+    let cleared = matches!(row.waiting, Some(WaitReason::ServerRefused { .. }));
+    if cleared {
+        row.waiting = None;
     }
     // The engine names the file once the server has answered.
     if row.status == DownloadStatus::Connecting && !reading.answered {
-        return false;
+        return cleared;
     }
     let before = (
         row.status,

@@ -8,6 +8,7 @@ use std::time::Duration;
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
     AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, UiEvent,
+    WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind};
 
@@ -454,7 +455,7 @@ async fn a_format_address_refused_every_time_ends_with_a_plain_error() {
     assert_eq!(error.fix, Some(FixAction::Retry));
     assert!(error.message.contains("answered 403"), "{}", error.message);
     assert!(
-        error.message.contains("read the page again"),
+        error.message.contains("fresh addresses from the page"),
         "{}",
         error.message
     );
@@ -486,10 +487,18 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() {
     assert_eq!(waiting.status, DownloadStatus::Connecting);
     assert_eq!(waiting.error, None);
     assert_eq!(ytdlp_calls(&h).len(), 2);
+    // It also says when the next try is: two minutes after the refusal, by the
+    // manager's clock (a manual one here, so exactly two minutes from now).
+    let now = wirecatch_core::Clock::unix_millis(h.clock.as_ref());
+    match waiting.waiting {
+        Some(WaitReason::ServerRefused { retry_at }) => assert_eq!(retry_at, now + 120_000),
+        other => panic!("expected the refusal as the wait reason, got {other:?}"),
+    }
 
     h.manager.pause(id).unwrap();
     // Far sooner than the two minutes it was waiting for.
     h.wait_status(id, DownloadStatus::Paused).await;
+    assert_eq!(h.manager.list_downloads().remove(0).waiting, None);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
         ytdlp_calls(&h).len(),

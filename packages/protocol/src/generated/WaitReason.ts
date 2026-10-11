@@ -5,4 +5,4 @@ import type { TimeOfDay } from "./TimeOfDay";
  * Why a queued download is waiting, shown in plain words so queues are never a
  * mystery (D3).
  */
-export type WaitReason = { "type": "queue_paused" } | { "type": "queue_schedule", "data": { starts_at: TimeOfDay | null, } } | { "type": "queue_full", "data": { running: number, limit: number, } } | { "type": "global_limit", "data": { running: number, limit: number, } } | { "type": "in_line", "data": { position: number, } };
+export type WaitReason = { "type": "queue_paused" } | { "type": "queue_schedule", "data": { starts_at: TimeOfDay | null, } } | { "type": "queue_full", "data": { running: number, limit: number, } } | { "type": "global_limit", "data": { running: number, limit: number, } } | { "type": "in_line", "data": { position: number, } } | { "type": "server_refused", "data": { retry_at: number, } };

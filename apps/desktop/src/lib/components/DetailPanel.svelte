@@ -19,8 +19,9 @@
     linkForDisplay,
     MEDIA_SOURCE_LABEL,
     progressFraction,
+    shownWait,
     STATUS_LABEL,
-    waitLong,
+    statusDetail,
   } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -86,8 +87,8 @@
       <p class="status {one.status}">{STATUS_LABEL[one.status]}</p>
     </header>
 
-    {#if one.status === 'queued' && one.waiting}
-      <p class="waiting">{waitLong(one.waiting, app.queueById(one.queue)?.name ?? 'Its queue')}</p>
+    {#if shownWait(one)}
+      <p class="waiting">{statusDetail(one, app.queueById(one.queue)?.name ?? 'Its queue')}</p>
     {/if}
 
     {#if one.status === 'failed' && one.error}

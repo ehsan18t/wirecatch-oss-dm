@@ -8,7 +8,7 @@ pub(crate) mod process;
 pub(crate) mod ytdlp;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -96,8 +96,9 @@ pub(crate) struct MediaProgress {
     own_done: AtomicU64,
     own_total: AtomicU64,
     own: AtomicBool,
-    /// Waiting to try again with fresh addresses from the page.
-    waiting: AtomicBool,
+    /// When the next try with fresh addresses from the page starts, in Unix
+    /// milliseconds; 0 while not waiting.
+    retry_at: AtomicI64,
 }
 
 #[derive(Debug)]
@@ -119,8 +120,9 @@ pub(crate) struct Reading {
     pub connections: usize,
     pub processing: bool,
     /// Waiting to try again (a server refused, and the page is read again
-    /// for fresh addresses); nothing is being received.
-    pub waiting: bool,
+    /// for fresh addresses) at this Unix time in milliseconds; nothing is being
+    /// received meanwhile.
+    pub retry_at: Option<i64>,
 }
 
 impl MediaProgress {
@@ -140,9 +142,11 @@ impl MediaProgress {
         self.processing.store(on, Ordering::Relaxed);
     }
 
-    /// Marks the download as waiting to try again, or no longer waiting.
-    pub fn set_waiting(&self, on: bool) {
-        self.waiting.store(on, Ordering::Relaxed);
+    /// Marks the download as waiting to try again at `at` (Unix milliseconds),
+    /// or, with `None`, no longer waiting.
+    pub fn set_retry_at(&self, at: Option<i64>) {
+        self.retry_at
+            .store(at.filter(|t| *t > 0).unwrap_or(0), Ordering::Relaxed);
     }
 
     /// Forgets the parts of an attempt that did not finish, before the next
@@ -154,7 +158,7 @@ impl MediaProgress {
         self.own_done.store(0, Ordering::Relaxed);
         self.own_total.store(0, Ordering::Relaxed);
         self.processing.store(false, Ordering::Relaxed);
-        self.waiting.store(false, Ordering::Relaxed);
+        self.retry_at.store(0, Ordering::Relaxed);
     }
 
     /// yt-dlp's own report: bytes so far and the total, if known.
@@ -171,7 +175,7 @@ impl MediaProgress {
     pub fn read(&self) -> Reading {
         let mut reading = Reading {
             processing: self.processing.load(Ordering::Relaxed),
-            waiting: self.waiting.load(Ordering::Relaxed),
+            retry_at: Some(self.retry_at.load(Ordering::Relaxed)).filter(|t| *t > 0),
             ..Reading::default()
         };
         let mut total = Some(0u64);
@@ -338,18 +342,18 @@ mod tests {
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (10, Some(40)));
         assert!(reading.answered);
-        assert!(!reading.waiting);
+        assert_eq!(reading.retry_at, None);
 
         // Waiting to try again keeps what is shown until the next attempt
         // starts over with its own parts.
-        progress.set_waiting(true);
+        progress.set_retry_at(Some(1_000));
         let waiting = progress.read();
-        assert!(waiting.waiting);
+        assert_eq!(waiting.retry_at, Some(1_000));
         assert_eq!((waiting.done, waiting.total), (10, Some(40)));
         progress.start_over();
         progress.add_done(10);
         let again = progress.read();
-        assert!(!again.waiting);
+        assert_eq!(again.retry_at, None);
         assert_eq!((again.done, again.total), (10, Some(10)));
     }
 }

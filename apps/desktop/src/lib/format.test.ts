@@ -15,6 +15,7 @@ import {
   formatSpeed,
   linkForDisplay,
   parseTime,
+  shownWait,
   scheduleAllows,
   statusDetail,
   statusShort,
@@ -189,5 +190,44 @@ describe('a download already in the list (D23)', () => {
     expect(statusShort(row({ status: 'processing' }))).toBe('Joining video and audio');
     expect(statusDetail(row({ status: 'processing' }), 'Main')).toMatch(/joining them/);
     expect(statusDetail(row({}), 'Main')).toBeNull();
+  });
+});
+
+describe('a video whose server refused it for now', () => {
+  const at = new Date(2026, 9, 11, 20, 51).getTime();
+  const waiting = { type: 'server_refused', data: { retry_at: at } } as const;
+
+  it('says when the next try is while connecting, not that it failed', () => {
+    const row = { status: 'connecting', waiting } as const;
+    expect(shownWait(row)).toEqual(waiting);
+    expect(statusShort(row)).toBe('Retrying at 20:51');
+    const full: DownloadSummary = {
+      id: 1,
+      url: 'https://www.youtube.com/watch?v=x',
+      file_name: 'Talk.mp4',
+      path: 'C:/Downloads/Video/Talk.mp4',
+      queue: 1,
+      category: 'video',
+      status: 'connecting',
+      total: null,
+      done: 0,
+      speed: 0,
+      connections: 0,
+      eta_secs: null,
+      error: null,
+      waiting,
+      media: null,
+      added_at: at,
+      completed_at: null,
+    };
+    const detail = statusDetail(full, 'Main');
+    expect(detail).toContain('tries again by itself at 20:51');
+    expect(detail).not.toContain('—');
+  });
+
+  it('shows no stale refusal once the download moved on', () => {
+    expect(shownWait({ status: 'downloading', waiting })).toBeNull();
+    expect(statusShort({ status: 'downloading', waiting })).toBe('Downloading');
+    expect(shownWait({ status: 'connecting', waiting: null })).toBeNull();
   });
 });
