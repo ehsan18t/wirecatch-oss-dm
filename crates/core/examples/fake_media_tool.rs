@@ -9,12 +9,17 @@
 //!   cookies file's text and Unix mode at that moment). With `-J` it prints
 //!   `info.json`, or fails with the text of `fail.txt` if that exists, after
 //!   waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads":
-//!   writes a file at its `-o` template (extension `mp4`), prints two progress
+//!   writes a file at its `-o` template (extension `mp4`, or the text of
+//!   `download-ext`), prints two progress
 //!   lines in the format Wirecatch asks for, and prints the file's path.
 //! - `ffmpeg`: checks every `-i file:<path>` input exists, waits
 //!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
 //!   one per line, into the output (its last argument, `file:<path>`).
 //! - `deno`: prints a version.
+//!
+//! With `spawn-child` present, the `-J` call first starts a copy of itself that
+//! writes a growing number to `heartbeat` every 50 ms until it is killed, as a
+//! program yt-dlp starts would run.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -22,6 +27,16 @@ use std::time::Duration;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [flag, heartbeat] = args.as_slice()
+        && flag == "--fake-sleeper"
+    {
+        // A program yt-dlp started: it beats until it is killed.
+        for beat in 0..1200u32 {
+            let _ = std::fs::write(heartbeat, beat.to_string());
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        return ExitCode::SUCCESS;
+    }
     let exe = std::env::current_exe().unwrap_or_default();
     let dir = exe
         .ancestors()
@@ -74,6 +89,7 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
     let mode: Option<u32> = None;
     let call = serde_json::json!({
         "args": args,
+        "cwd": std::env::current_dir().ok(),
         "cookies_path": cookies,
         "cookies": text,
         "cookies_mode": mode,
@@ -88,6 +104,14 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
     }
 
     if args.iter().any(|a| a == "-J") {
+        if dir.join("spawn-child").exists()
+            && let Ok(me) = std::env::current_exe()
+        {
+            let _ = std::process::Command::new(me)
+                .arg("--fake-sleeper")
+                .arg(dir.join("heartbeat"))
+                .spawn();
+        }
         wait(&dir.join("delay-ms"));
         if let Ok(reason) = std::fs::read_to_string(dir.join("fail.txt")) {
             eprintln!("WARNING: something minor");
@@ -111,7 +135,8 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let format = after(args, "-f").unwrap_or("best");
-    let out = template.replace("%(ext)s", "mp4");
+    let ext = std::fs::read_to_string(dir.join("download-ext")).unwrap_or_else(|_| "mp4".into());
+    let out = template.replace("%(ext)s", ext.trim());
     println!("wcprogress 10 20 NA");
     println!("wcprogress 20 20 NA");
     if std::fs::write(&out, format!("downloaded by fake yt-dlp: {format}")).is_err() {

@@ -162,9 +162,15 @@ pub(crate) async fn extract(
     args.push("-J".into());
     args.push("--".into());
     args.push(ctx.page.as_str().into());
+    if let Err(e) = std::fs::create_dir_all(ctx.temp_dir) {
+        return Err(fix(format!(
+            "Wirecatch could not prepare a folder for the media add-on ({e}). Check that the disk has free space, then try again."
+        )));
+    }
     let result = process::run(
         &ctx.tools.ytdlp,
         &args,
+        ctx.temp_dir,
         true,
         Some(ctx.timeout),
         cancel,
@@ -181,7 +187,10 @@ pub(crate) async fn extract(
                 ctx.timeout.as_secs()
             )));
         }
-        Err(RunError::Start(e)) => return Err(cannot_start(&e)),
+        Err(RunError::Start(e)) => {
+            ctx.tools.mark_broken();
+            return Err(cannot_start(&e));
+        }
     };
     if !ran.success {
         return Err(failed(&ran));
@@ -233,7 +242,7 @@ pub(crate) async fn download(
     args.push(ctx.page.as_str().into());
     let printed = std::sync::Mutex::new(None::<PathBuf>);
     let (done, total) = (AtomicU64::new(0), AtomicU64::new(0));
-    let result = process::run(&ctx.tools.ytdlp, &args, false, None, cancel, |line| {
+    let result = process::run(&ctx.tools.ytdlp, &args, work, false, None, cancel, |line| {
         if let Some(report) = line.trim().strip_prefix(PROGRESS_MARK) {
             let mut numbers = report.split_whitespace().map(|n| n.parse::<f64>().ok());
             let (now, all, guess) = (
@@ -262,7 +271,10 @@ pub(crate) async fn download(
         Err(RunError::TimedOut) => {
             return Err(fix("The media add-on stopped answering. Try again.".into()));
         }
-        Err(RunError::Start(e)) => return Err(cannot_start(&e)),
+        Err(RunError::Start(e)) => {
+            ctx.tools.mark_broken();
+            return Err(cannot_start(&e));
+        }
     };
     if !ran.success {
         return Err(failed(&ran));
@@ -302,6 +314,7 @@ fn largest_result(work: &Path) -> Option<PathBuf> {
 fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec![
         "--ignore-config".into(),
+        "--no-plugin-dirs".into(),
         "--no-playlist".into(),
         "--no-update".into(),
         "--no-js-runtimes".into(),

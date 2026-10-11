@@ -374,7 +374,7 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
     assert!(addon.size.is_some_and(|s| s > 0));
     assert!(h.manager.pending_media_choices().is_empty());
 
-    h.manager.install_addon("media").unwrap();
+    h.manager.install_addon("media").await.unwrap();
     let choice = choice_requested(&mut ui).await;
     assert_eq!(
         choice.page_url.as_deref(),
@@ -543,4 +543,245 @@ async fn real_ffmpeg_joins_real_video_and_audio() {
     let text = String::from_utf8_lossy(&probe.stderr);
     assert!(text.contains("Video: mpeg4"), "{text}");
     assert!(text.contains("Audio: aac"), "{text}");
+}
+
+/// A site names the extension of what it serves; a program extension must
+/// never reach the disk (yt-dlp's CVE-2024-38519).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_cannot_save_a_program() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    server.put("fmt/payload.exe", b"MZ not a video".to_vec());
+    let info = serde_json::json!({
+        "title": "Invoice",
+        "formats": [
+            {"format_id": "1", "ext": "exe", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+             "protocol": "https", "url": server.url("fmt/payload.exe")},
+            {"format_id": "2", "ext": "bat", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+             "protocol": "http_dash_segments", "url": server.url("x.mpd")},
+        ]
+    });
+    tell_tool(&h, "info.json", &info.to_string());
+    // When yt-dlp downloads by itself, it names the file after the site too.
+    tell_tool(&h, "download-ext", "exe");
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(&server.url("watch/7"), MediaKind::Page, None))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    for option in &choice.options {
+        assert!(
+            !option.label.to_lowercase().contains("exe"),
+            "{}",
+            option.label
+        );
+        assert!(
+            !option.label.to_lowercase().contains("bat"),
+            "{}",
+            option.label
+        );
+    }
+    for (n, option) in ["1", "2"].into_iter().enumerate() {
+        if n == 1 {
+            h.manager
+                .add_capture(media_capture(&server.url("watch/8"), MediaKind::Page, None))
+                .await
+                .unwrap();
+        }
+        let choice = if n == 0 {
+            choice.clone()
+        } else {
+            choice_requested(&mut ui).await
+        };
+        h.manager
+            .choose_media(choice.id, select(option))
+            .await
+            .unwrap();
+        let id = wait_until("the new row", || {
+            h.manager
+                .list_downloads()
+                .into_iter()
+                .find(|r| r.url.ends_with(&format!("watch/{}", 7 + n)))
+        })
+        .await
+        .id;
+        let done = h.wait_status(id, DownloadStatus::Completed).await;
+        let saved = Path::new(&done.path);
+        assert_eq!(
+            saved.extension().and_then(|e| e.to_str()),
+            Some("mp4"),
+            "{}",
+            done.path
+        );
+        let folder = saved.parent().unwrap();
+        let programs: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".exe") || n.ends_with(".bat"))
+            .collect();
+        assert!(programs.is_empty(), "{programs:?}");
+    }
+}
+
+/// A page on the internet whose format points into the local network is
+/// refused, and the local server is never contacted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"));
+    let mut ui = h.manager.subscribe();
+    // The fake yt-dlp never fetches the page; its address only says where the
+    // page is: on the internet.
+    h.manager
+        .add_capture(media_capture(
+            "http://93.184.215.14/watch?v=1",
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    let id = h.manager.list_downloads()[0].id;
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("your own network"),
+        "{}",
+        error.message
+    );
+    assert!(server.requests("fmt/video.mp4").is_empty());
+    assert!(server.requests("fmt/audio.m4a").is_empty());
+}
+
+/// Stopping yt-dlp stops everything it started too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stopping_yt_dlp_stops_what_it_started() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    tell_tool(&h, "spawn-child", "1");
+    tell_tool(&h, "delay-ms", "30000");
+    let capture = media_capture(&server.url("watch/10"), MediaKind::Page, None);
+    h.manager.add_capture(capture.clone()).await.unwrap();
+    let heartbeat = crate::media_support::tool_dir(&h).join("heartbeat");
+    let beat = || {
+        std::fs::read_to_string(&heartbeat)
+            .ok()
+            .and_then(|t| t.trim().parse::<u32>().ok())
+    };
+    wait_until("the started program beats", || beat().filter(|b| *b > 2)).await;
+    // The browser takes the capture back while yt-dlp is still reading.
+    h.manager
+        .withdraw_capture(&capture.handover_id)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let before = beat();
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert_eq!(
+        beat(),
+        before,
+        "the program yt-dlp started is still running"
+    );
+
+    // yt-dlp ran in Wirecatch's own folder, without plugins.
+    let call = ytdlp_calls(&h).remove(0);
+    assert!(args(&call).contains(&"--no-plugin-dirs".to_string()));
+    let cwd = call["cwd"].as_str().unwrap().to_string();
+    assert!(
+        Path::new(&cwd).starts_with(h.root.path().join("data")),
+        "{cwd}"
+    );
+}
+
+/// Pages waiting for the add-on can be listed again (a reloaded window offers
+/// the install again) and dismissed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    let page = server.url("watch/11");
+    h.manager
+        .add_capture(media_capture(&page, MediaKind::Page, None))
+        .await
+        .unwrap();
+    let waiting = h.manager.pending_addon_requests();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(
+        (waiting[0].url.as_str(), waiting[0].addon.id.as_str()),
+        (page.as_str(), "media")
+    );
+    h.manager.dismiss_media_choice(waiting[0].id).unwrap();
+    assert!(h.manager.pending_addon_requests().is_empty());
+}
+
+/// When the install the person started fails, the waiting pages say so in the
+/// list instead of waiting for good.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_install_turns_waiting_pages_into_failed_downloads() {
+    let server = FileServer::start().await;
+    let mut sources = publish(&server, &Releases::fake(), "bad");
+    sources.deno.sha256 = crate::media_support::sha256(b"not it");
+    let h = harness(sources).await;
+    h.manager
+        .add_capture(media_capture(
+            &server.url("watch/12"),
+            MediaKind::Page,
+            Some("Waiting"),
+        ))
+        .await
+        .unwrap();
+    assert!(matches!(install(&h).await.state, AddonState::Failed { .. }));
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let error = row.error.unwrap();
+    assert!(
+        error.message.contains("could not be installed"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.fix, Some(FixAction::Retry));
+    assert!(h.manager.pending_addon_requests().is_empty());
+}
+
+/// A page that waited half an hour is not turned into a question once the
+/// add-on arrives: it becomes a failed download instead.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stale_wait_never_pops_a_question_later() {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake(), "r")).await;
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    h.manager
+        .add_capture(media_capture(
+            &server.url("watch/13"),
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    h.clock.advance(chrono::TimeDelta::minutes(31));
+    let mut ui = h.manager.subscribe();
+    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    assert!(row.error.unwrap().message.contains("waited"));
+    assert!(h.manager.pending_media_choices().is_empty());
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    while let Ok(event) = ui.try_recv() {
+        assert!(
+            !matches!(event, UiEvent::MediaChoiceRequested(_)),
+            "a stale question was asked"
+        );
+    }
+    assert!(ytdlp_calls(&h).is_empty(), "the stale page was read");
 }

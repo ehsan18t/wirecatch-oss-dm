@@ -365,6 +365,7 @@ pub fn publish(server: &FileServer, releases: &Releases, prefix: &str) -> MediaA
         ytdlp_latest_release: None,
         ytdlp_asset: ytdlp_asset(),
         ytdlp_checksums_asset: "SHA2-256SUMS".into(),
+        ytdlp_release_downloads: server.url("rel/"),
     }
 }
 
@@ -426,7 +427,7 @@ pub async fn next_event<T>(
 /// Installs the add-on and waits until it is installed.
 pub async fn install(h: &Harness) -> AddonInfo {
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").unwrap();
+    h.manager.install_addon("media").await.unwrap();
     wait_addon(&mut ui, "the add-on installed", |a| {
         matches!(a.state, AddonState::Installed | AddonState::Failed { .. })
     })

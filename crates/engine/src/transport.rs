@@ -210,9 +210,10 @@ pub(crate) async fn open(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
+    guard: Option<http::Guard>,
 ) -> Result<Opened> {
     match url.scheme() {
-        "http" | "https" => open_http(url, opts, clients, cancel).await,
+        "http" | "https" => open_http(url, opts, clients, cancel, guard).await,
         "ftp" | "ftps" | "ftpes" => {
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: refuse instead, until FTP proxies are supported.
@@ -249,8 +250,10 @@ async fn open_http(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
+    guard: Option<http::Guard>,
 ) -> Result<Opened> {
-    let (session, url) = Session::new(url, opts, cancel.clone());
+    let (mut session, url) = Session::new(url, opts, cancel.clone());
+    session.guard = guard;
     let client = clients.build()?;
     let probe = with_retries(opts, cancel, || http::probe(&client, &url, &session)).await?;
     #[cfg(feature = "http3")]

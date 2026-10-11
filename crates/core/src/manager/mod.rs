@@ -8,6 +8,8 @@ mod downloads;
 mod fake;
 mod handovers;
 mod media;
+
+pub use media::AddonRequestItem;
 mod media_run;
 mod plan;
 mod preferences;

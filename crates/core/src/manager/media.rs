@@ -32,10 +32,25 @@ use crate::media::{self, MediaJob, Pick, StoredMedia, ytdlp};
 use crate::store::Origin;
 use crate::{headers, settings};
 
+/// How long a page waits for the media add-on before it becomes a failed
+/// download, so a question is never asked long after the person moved on.
+const ADDON_WAIT_MILLIS: i64 = 30 * 60 * 1000;
 /// Most media captures that can wait at once.
 const MAX_PENDING_MEDIA: usize = 100;
 /// Most captures of one link that can share one choice.
 const MAX_HANDOVERS: usize = 32;
+
+/// A page waiting for an add-on, as [`Manager::pending_addon_requests`] lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AddonRequestItem {
+    /// Drops it when passed to [`Manager::dismiss_media_choice`]; the same id
+    /// as a later media choice for it would have.
+    pub id: u64,
+    /// The add-on it needs.
+    pub addon: wirecatch_protocol::app::AddonInfo,
+    /// The page.
+    pub url: String,
+}
 
 /// Where a media capture came from.
 #[derive(Debug, Clone)]
@@ -50,6 +65,8 @@ pub(super) struct MediaSource {
 
 /// A media capture that is not a download yet.
 pub(super) struct MediaPending {
+    /// When it was captured, in Unix milliseconds.
+    pub added_at: i64,
     pub source: MediaSource,
     pub queue: QueueId,
     /// The extension's handover ids for it.
@@ -138,6 +155,7 @@ impl Manager {
         state.media.insert(
             id,
             MediaPending {
+                added_at: self.inner.clock.unix_millis(),
                 source,
                 queue,
                 handovers: vec![capture.handover_id.clone()],
@@ -267,6 +285,9 @@ impl Manager {
 
     /// The media add-on was installed: read the pages that waited for it.
     pub(super) fn media_addon_ready(&self) {
+        // A page that waited too long becomes a failed download, not a question
+        // the person no longer expects.
+        self.expire_addon_waits();
         let mut started = Vec::new();
         {
             let mut state = self.lock();
@@ -280,6 +301,71 @@ impl Manager {
         }
         for (id, token) in started {
             self.spawn_analysis(id, token);
+        }
+    }
+
+    /// Pages waiting for the media add-on, oldest first, so a window opened
+    /// later can offer the install again. [`dismiss_media_choice`] with an
+    /// item's id drops it. A page waits at most 30 minutes; then it becomes a
+    /// failed download whose Retry works once the add-on is installed.
+    ///
+    /// [`dismiss_media_choice`]: Self::dismiss_media_choice
+    pub fn pending_addon_requests(&self) -> Vec<AddonRequestItem> {
+        self.expire_addon_waits();
+        let state = self.lock();
+        let addon = self.addon_info(&state.addon);
+        state
+            .media
+            .iter()
+            .filter(|(_, m)| matches!(m.stage, MediaStage::NeedsAddon))
+            .map(|(id, m)| AddonRequestItem {
+                id: *id,
+                addon: addon.clone(),
+                url: m.source.url.to_string(),
+            })
+            .collect()
+    }
+
+    /// Turns pages that waited longer than [`ADDON_WAIT_MILLIS`] into failed
+    /// downloads.
+    pub(super) fn expire_addon_waits(&self) {
+        let now = self.inner.clock.unix_millis();
+        self.fail_addon_waits(
+            |m| now.saturating_sub(m.added_at) >= ADDON_WAIT_MILLIS,
+            "This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings, Add-ons, then try again.",
+        );
+    }
+
+    /// An install the person started failed: the pages waiting for it become
+    /// failed downloads that say so.
+    pub(super) fn media_addon_failed(&self) {
+        self.fail_addon_waits(
+            |_| true,
+            "This video needs the media add-on, which could not be installed. Install the media add-on in Settings, Add-ons, then try again.",
+        );
+    }
+
+    fn fail_addon_waits(&self, which: impl Fn(&MediaPending) -> bool, message: &str) {
+        let failed: Vec<(u64, MediaPending)> = {
+            let mut state = self.lock();
+            let ids: Vec<u64> = state
+                .media
+                .iter()
+                .filter(|(_, m)| matches!(m.stage, MediaStage::NeedsAddon) && which(m))
+                .map(|(id, _)| *id)
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| state.media.remove(&id).map(|m| (id, m)))
+                .collect()
+        };
+        for (id, pending) in failed {
+            self.emit(UiEvent::ConfirmationClosed { id });
+            let manager = self.clone();
+            let error = UserError {
+                message: message.to_string(),
+                fix: Some(wirecatch_protocol::app::FixAction::Retry),
+            };
+            self.spawn(async move { manager.record_media_failure(pending, error).await });
         }
     }
 
@@ -303,7 +389,13 @@ impl Manager {
         };
         let found = match source.kind {
             MediaKind::Page => match &tools {
-                Some(tools) => self.read_page(&source, tools, &token).await,
+                Some(tools) => {
+                    let found = self.read_page(&source, tools, &token).await;
+                    if tools.is_broken() {
+                        self.rescan_addon().await;
+                    }
+                    found
+                }
                 None => Err(addon_missing()),
             },
             _ => {

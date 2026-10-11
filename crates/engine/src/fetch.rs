@@ -185,28 +185,11 @@ impl Fetcher {
                 .map_err(Error::task)?
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
-        // The addresses the starting host has right now. Only these may be on
-        // the local network later: a name that switches to a local address after
-        // this check (DNS rebinding) is filtered like any other.
-        let start_addrs = host_addresses(&url, options.stall_timeout).await;
-        let blocking_private = match private_network {
-            PrivateNetwork::Allow => false,
-            PrivateNetwork::Block => true,
-            PrivateNetwork::Auto => !all_private(&start_addrs),
-        };
-        let resolver = blocking_private.then(|| {
-            let guard = Arc::new(NetworkGuard::new(&url, options.stall_timeout));
-            session.guard = Some(Guard(Arc::new({
-                let guard = guard.clone();
-                move |target: &Url| {
-                    let (guard, target) = (guard.clone(), target.clone());
-                    Box::pin(async move { guard.check(&target).await })
-                }
-            })));
-            Arc::new(FilteringResolver {
-                exempt: url.host_str().map(str::to_string),
-                pinned: pinned_addresses(&start_addrs),
-            })
+        let protection = private_guard(&url, private_network, options.stall_timeout).await;
+        let blocking_private = protection.is_some();
+        let resolver = protection.map(|p| {
+            session.guard = Some(p.guard);
+            p.resolver
         });
         let clients = (0..options.connections.max(1))
             .map(|_| match &resolver {
@@ -640,6 +623,51 @@ fn all_private(addrs: &[IpAddr]) -> bool {
     !addrs.is_empty() && addrs.iter().all(|ip| is_private(*ip))
 }
 
+/// What keeps requests that start at one URL away from the local network: a
+/// check before every request and redirect hop, and a name resolver that never
+/// hands out a local address (so a name that changes its address after the
+/// check, DNS rebinding, cannot reach one either). Used by the [`Fetcher`] and
+/// by downloads with [`DownloadOptions::private_network`].
+pub(crate) struct PrivateGuard {
+    pub guard: Guard,
+    pub resolver: Arc<FilteringResolver>,
+}
+
+/// The protection `rule` asks for, for requests that start at `url`; `None`
+/// when local addresses are allowed.
+pub(crate) async fn private_guard(
+    url: &Url,
+    rule: PrivateNetwork,
+    timeout: Duration,
+) -> Option<PrivateGuard> {
+    if rule == PrivateNetwork::Allow {
+        return None;
+    }
+    // The addresses the starting host has right now. Only these may be on the
+    // local network later: a name that switches to a local address after this
+    // check (DNS rebinding) is filtered like any other.
+    let start_addrs = host_addresses(url, timeout).await;
+    if rule == PrivateNetwork::Auto && all_private(&start_addrs) {
+        return None;
+    }
+    Some(guard_from(url, &start_addrs, timeout))
+}
+
+/// The protection for requests starting at `url`, whose host had `start_addrs`.
+pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -> PrivateGuard {
+    let check = Arc::new(NetworkGuard::new(url, timeout));
+    PrivateGuard {
+        guard: Guard(Arc::new(move |target: &Url| {
+            let (check, target) = (check.clone(), target.clone());
+            Box::pin(async move { check.check(&target).await })
+        })),
+        resolver: Arc::new(FilteringResolver {
+            exempt: url.host_str().map(str::to_string),
+            pinned: pinned_addresses(start_addrs),
+        }),
+    }
+}
+
 /// Refuses requests to the local network, before they are sent; checked for
 /// every request and every redirect hop.
 struct NetworkGuard {
@@ -704,7 +732,7 @@ impl NetworkGuard {
 /// Resolves names like the system does, minus local network addresses: the
 /// connection itself can then never reach one, even if a name's address
 /// changes between the check and the connection.
-struct FilteringResolver {
+pub(crate) struct FilteringResolver {
     /// The fetcher's own host.
     exempt: Option<String>,
     /// Local addresses the fetcher's own host had when the fetcher was created;
@@ -875,6 +903,51 @@ mod tests {
             .unwrap()
             .collect();
         assert!(!addrs.is_empty() && addrs.iter().all(|a| start.contains(&a.ip())));
+    }
+
+    /// A download's host looked public when it started; it now resolves to a
+    /// local address, as a rebinding name server would make it. No connection
+    /// of the download may reach that address.
+    #[tokio::test]
+    async fn a_download_cannot_be_rebound_to_the_local_network() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let counter = accepted.clone();
+        tokio::spawn(async move {
+            while let Ok((_socket, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        let url = Url::parse(&format!("http://localhost:{port}/video.mp4")).unwrap();
+        // The addresses seen at the start: public (none of them local).
+        let guard = guard_from(
+            &url,
+            &["93.184.215.14".parse().unwrap()],
+            Duration::from_secs(5),
+        );
+        let dir = std::env::temp_dir().join(format!("wirecatch-rebind-{}", std::process::id()));
+        let mut request = crate::DownloadRequest::new(url, &dir);
+        request.options.max_retries = 0;
+        request.options.connect_timeout = Duration::from_secs(5);
+        let clients = crate::http::Clients::new(&request.options);
+        let result = crate::download::download_guarded(
+            request,
+            Arc::new(crate::Progress::default()),
+            CancellationToken::new(),
+            clients,
+            Some(guard),
+        )
+        .await;
+        assert!(result.is_err(), "the download went through");
+        assert_eq!(
+            accepted.load(Ordering::SeqCst),
+            0,
+            "a connection reached the local address"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

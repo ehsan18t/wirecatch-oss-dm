@@ -8,6 +8,7 @@ use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::app::{FixAction, UserError};
 
 use super::process::{self, RunError};
+use crate::addons::MediaTools;
 
 /// How a join ended without failing.
 #[derive(Debug, PartialEq, Eq)]
@@ -43,6 +44,11 @@ pub(crate) fn arguments(video: &Path, audio: &Path, output: &Path) -> Vec<OsStri
     args
 }
 
+/// The folder ffmpeg runs in: the one it writes into.
+fn work_dir(output: &Path) -> &Path {
+    output.parent().unwrap_or(Path::new("."))
+}
+
 fn file_arg(path: &Path) -> OsString {
     let absolute: PathBuf = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let mut arg = OsString::from("file:");
@@ -52,14 +58,24 @@ fn file_arg(path: &Path) -> OsString {
 
 /// Joins `video` and `audio` into `output` with `ffmpeg`.
 pub(crate) async fn join(
-    ffmpeg: &Path,
+    tools: &MediaTools,
     video: &Path,
     audio: &Path,
     output: &Path,
     cancel: &CancellationToken,
 ) -> Result<Joined, UserError> {
     let args = arguments(video, audio, output);
-    match process::run(ffmpeg, &args, false, None, cancel, |_| {}).await {
+    match process::run(
+        &tools.ffmpeg,
+        &args,
+        work_dir(output),
+        false,
+        None,
+        cancel,
+        |_| {},
+    )
+    .await
+    {
         Ok(ran) if ran.success && output.is_file() => Ok(Joined::Done),
         Ok(ran) => Err(UserError {
             message: format!(
@@ -75,11 +91,14 @@ pub(crate) async fn join(
             message: "ffmpeg took too long to join the video and audio. Try again.".into(),
             fix: Some(FixAction::Retry),
         }),
-        Err(RunError::Start(e)) => Err(UserError {
-            message: format!(
-                "The media add-on's ffmpeg could not be started ({e}). Reinstall the media add-on in Settings, Add-ons, then try again."
-            ),
-            fix: Some(FixAction::Retry),
+        Err(RunError::Start(e)) => Err({
+            tools.mark_broken();
+            UserError {
+                message: format!(
+                    "The media add-on's ffmpeg could not be started ({e}). Reinstall the media add-on in Settings, Add-ons, then try again."
+                ),
+                fix: Some(FixAction::Retry),
+            }
         }),
     }
 }
