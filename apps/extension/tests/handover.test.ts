@@ -4,6 +4,7 @@
  */
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CookieContext } from '../src/lib/cookies';
 import { Hub, type CachedSettings, type SettingsCache } from '../src/lib/hub';
 import { NativeClient } from '../src/lib/native/client';
 import {
@@ -32,6 +33,7 @@ interface Setup {
   hub: Hub;
   inFlight: MemoryInFlight;
   cookieCalls: Array<[string, string | null]>;
+  cookieContexts: CookieContext[];
   started: Promise<void>;
 }
 
@@ -42,6 +44,7 @@ async function setup(options: Options = {}): Promise<Setup> {
   const downloads = options.downloads ?? new FakeDownloads();
   const inFlight = options.inFlight ?? new MemoryInFlight();
   const cookieCalls: Array<[string, string | null]> = [];
+  const cookieContexts: CookieContext[] = [];
   const client = new NativeClient({
     transport: app,
     hello: () =>
@@ -53,8 +56,9 @@ async function setup(options: Options = {}): Promise<Setup> {
     client,
     cache: options.cache ?? memory,
     downloads,
-    cookieHeader: (url, storeId) => {
+    cookieHeader: (url, storeId, context) => {
       cookieCalls.push([url, storeId]);
+      cookieContexts.push(context);
       return Promise.resolve(url.includes('example.com') ? 'session=abc' : null);
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
@@ -70,7 +74,7 @@ async function setup(options: Options = {}): Promise<Setup> {
     await started;
     await flush();
   }
-  return { app, downloads, client, hub, inFlight, cookieCalls, started };
+  return { app, downloads, client, hub, inFlight, cookieCalls, cookieContexts, started };
 }
 
 function addDownloadCalls(app: FakeApp): NewDownload[] {
@@ -151,6 +155,20 @@ describe('handover', () => {
     expect(await s.hub.onDownload(item)).toBeNull();
     expect(s.downloads.log).toEqual([]);
     expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('reads cookies as for a navigation started by the page the download came from', async () => {
+    s = await setup();
+    await s.hub.onDownload(
+      downloadItem({ url: 'https://example.com/get?id=1', finalUrl: 'https://files.example.com/big.zip' }),
+    );
+    expect(s.cookieContexts).toEqual([
+      {
+        initiator: 'https://example.com/downloads',
+        originalUrl: 'https://example.com/get?id=1',
+        navigation: true,
+      },
+    ]);
   });
 
   it('uses a new handover id for every download', async () => {
@@ -623,6 +641,7 @@ describe('context menu', () => {
       queue: 1,
     });
     expect(s.cookieCalls).toEqual([['https://example.com/file.iso', 'firefox-container-2']]);
+    expect(s.cookieContexts).toEqual([{ initiator: 'https://example.com/page', navigation: true }]);
     expect(s.downloads.log).toEqual([]);
   });
 

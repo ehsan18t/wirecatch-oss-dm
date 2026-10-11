@@ -5,6 +5,7 @@ import type {
   NewDownload,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
+import type { CookieContext } from '../cookies';
 import { RequestError } from '../native/client';
 import { isConfirmed } from '../protocol';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
@@ -93,8 +94,8 @@ export interface HandoverDeps extends SubmitDeps {
    * the connection), or the cached ones when the app cannot be reached; null if neither.
    */
   liveSettings(): Promise<JudgingSettings | null>;
-  /** The `Cookie` header for a URL, or null. Never rejects. */
-  cookieHeader(url: string, storeId: string | null): Promise<string | null>;
+  /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
+  cookieHeader(url: string, storeId: string | null, context: CookieContext): Promise<string | null>;
   userAgent: string | null;
   newHandoverId(): string;
 }
@@ -207,7 +208,12 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     suggested_name: candidate.fileName,
     mime: candidate.mime,
     size_hint: candidate.size,
-    cookies: await deps.cookieHeader(candidate.url, input.cookieStoreId),
+    // A browser download is a top-level navigation started by the page it came from.
+    cookies: await deps.cookieHeader(candidate.url, input.cookieStoreId, {
+      initiator: candidate.referrer,
+      originalUrl: candidate.originalUrl,
+      navigation: true,
+    }),
     user_agent: deps.userAgent,
     extra_headers: [],
     source: 'browser_download',

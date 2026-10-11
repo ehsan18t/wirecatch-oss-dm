@@ -20,6 +20,7 @@ import {
   type JudgingSettings,
 } from './capture/handover';
 import { shouldCapture } from './capture/should-capture';
+import type { CookieContext } from './cookies';
 import { fileNameFromUrl, isProgramFile } from './file-types';
 import type { MediaRequest, MediaSendResult, MediaView } from './media/center';
 import {
@@ -68,7 +69,8 @@ export interface HubDeps {
   client: NativeClient;
   cache: SettingsCache;
   downloads: BrowserDownloads;
-  cookieHeader(url: string, storeId: string | null): Promise<string | null>;
+  /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
+  cookieHeader(url: string, storeId: string | null, context: CookieContext): Promise<string | null>;
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess(url: string): Promise<boolean>;
   userAgent: string | null;
@@ -289,7 +291,7 @@ export class Hub {
           liveSettings: () => this.#judgingSettings(),
           addDownload: (download) => this.#addDownload(download),
           withdraw: (handoverId) => this.#withdraw(handoverId),
-          cookieHeader: (url, storeId) => this.#deps.cookieHeader(url, storeId),
+          cookieHeader: (url, storeId, context) => this.#deps.cookieHeader(url, storeId, context),
           userAgent: this.#deps.userAgent,
           newHandoverId: () => this.#newHandoverId(),
         },
@@ -348,7 +350,11 @@ export class Hub {
         suggested_name: null,
         mime: null,
         size_hint: null,
-        cookies: await this.#deps.cookieHeader(url, tab?.cookieStoreId ?? null),
+        // Like following the link: a top-level navigation started by the frame it is in.
+        cookies: await this.#deps.cookieHeader(url, tab?.cookieStoreId ?? null, {
+          initiator: click.frameUrl ?? click.pageUrl ?? null,
+          navigation: true,
+        }),
         user_agent: this.#deps.userAgent,
         extra_headers: [],
         source: 'context_menu',
@@ -400,7 +406,12 @@ export class Hub {
         suggested_name: null,
         mime: target.mime,
         size_hint: target.size,
-        cookies: await this.#deps.cookieHeader(target.url, request.cookieStoreId),
+        // Media is loaded by the page itself (a top-level navigation only for the page address).
+        cookies: await this.#deps.cookieHeader(target.url, request.cookieStoreId, {
+          initiator: request.referrer,
+          topLevel: request.pageUrl,
+          navigation: target.kind === 'page',
+        }),
         user_agent: this.#deps.userAgent,
         extra_headers: [],
         source: 'media_button',
