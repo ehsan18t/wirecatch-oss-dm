@@ -188,15 +188,19 @@ async fn serve(port: u16, cap_mib: u64) -> Result<()> {
         let target = target.clone();
         tokio::spawn(async move {
             if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
-                // Either side closing ends the forwarding; there is nothing to report.
-                if let Err(error) = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await
-                {
-                    drop(error);
-                }
+                either_side_may_close(
+                    &tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await,
+                );
             }
         });
         tokio::time::sleep(Duration::ZERO).await;
     }
+}
+
+/// Takes the outcome of forwarding one connection. Either side closing ends
+/// it, which is how every forwarding ends, so there is nothing to report.
+fn either_side_may_close(forwarded: &std::io::Result<(u64, u64)>) {
+    let (Ok(_) | Err(_)) = forwarded;
 }
 
 async fn serve_ftp(port: u16, cap_mib: u64) -> Result<()> {

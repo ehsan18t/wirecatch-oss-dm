@@ -33,14 +33,17 @@ async fn start_proxy() -> std::io::Result<(u16, Arc<Mutex<Vec<String>>>)> {
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(line);
                 let answer = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
-                if let Err(error) = socket.write_all(answer).await {
-                    // The client hung up first: its own request reports that, not the proxy.
-                    drop(error);
-                }
+                client_may_hang_up(&socket.write_all(answer).await);
             });
         }
     });
     Ok((port, seen))
+}
+
+/// Takes the outcome of answering a client. One that hung up first fails its
+/// own request, so the proxy has nothing to report.
+fn client_may_hang_up(answered: &std::io::Result<()>) {
+    let (Ok(()) | Err(_)) = answered;
 }
 
 #[tokio::test(flavor = "current_thread")]

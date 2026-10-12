@@ -843,10 +843,13 @@ mod tests {
         async fn answer(stream: &mut (impl AsyncWriteExt + Unpin), response: &[u8]) {
             let written = stream.write_all(response).await;
             let closed = stream.shutdown().await;
-            if let Err(error) = written.and(closed) {
-                // The client hung up first: its own request reports that, not the server.
-                drop(error);
-            }
+            client_may_hang_up(&written.and(closed));
+        }
+
+        /// Takes the outcome of answering a client. One that hung up first
+        /// fails its own request, so the server has nothing to report.
+        fn client_may_hang_up(answered: &std::io::Result<()>) {
+            let (Ok(()) | Err(_)) = answered;
         }
 
         /// Answers every request with `response` and closes the connection.
