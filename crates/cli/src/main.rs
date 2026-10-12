@@ -1,11 +1,8 @@
 //! `wirecatch`, the command-line downloader built on the Wirecatch engine.
 //!
 //! Exit status: 0 when the file is complete, 1 on an error, 2 for a usage mistake (from clap) and 130 when the download was paused or stopped with Ctrl+C. Running the same command again continues a paused download.
-#![expect(
-    clippy::print_stdout,
-    reason = "a command-line tool reports its result on standard output"
-)]
 
+use std::io::{self, Write as _};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -119,8 +116,24 @@ async fn main() -> anyhow::Result<ExitCode> {
         bar.finish_and_clear();
     }
 
-    let ending = report(&result?);
-    Ok(ending.exit_code())
+    let (ending, summary) = summary(&result?);
+    let written = writeln!(io::stdout().lock(), "{summary}");
+    Ok(exit_code(ending, written))
+}
+
+/// The exit status once the summary was written, or failed to be. A reader that went away
+/// (`wirecatch URL | head -0`, a closed pipe) is not an error of the download: the status still
+/// says how it ended. Any other failure to write is reported on stderr and exits 1, since the
+/// result never reached the reader.
+fn exit_code(ending: Ending, written: io::Result<()>) -> ExitCode {
+    match written {
+        Ok(()) => ending.exit_code(),
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ending.exit_code(),
+        Err(e) => {
+            eprintln!("wirecatch: could not write the result to standard output: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Turns the command line into an engine request, refusing combinations the engine cannot honour.
@@ -205,8 +218,8 @@ impl Ending {
     }
 }
 
-/// Prints how the download ended.
-fn report(outcome: &Outcome) -> Ending {
+/// How the download ended, and the line that says so on standard output.
+fn summary(outcome: &Outcome) -> (Ending, String) {
     match outcome {
         Outcome::Completed {
             path,
@@ -219,25 +232,24 @@ fn report(outcome: &Outcome) -> Ending {
             } else {
                 String::new()
             };
-            println!("Saved {} to {}{kept}", HumanBytes(*bytes), path.display());
-            Ending::Saved
+            let line = format!("Saved {} to {}{kept}", HumanBytes(*bytes), path.display());
+            (Ending::Saved, line)
         }
         Outcome::Paused {
             path, remaining, ..
         } => {
-            println!(
+            let line = format!(
                 "Paused with {} left for {}. Run the same command again to continue.",
                 HumanBytes(*remaining),
                 path.display()
             );
-            Ending::Stopped
+            (Ending::Stopped, line)
         }
-        _ => {
-            println!(
-                "Wirecatch stopped before the download finished. Run the same command again to continue."
-            );
-            Ending::Stopped
-        }
+        _ => (
+            Ending::Stopped,
+            "Wirecatch stopped before the download finished. Run the same command again to continue."
+                .to_owned(),
+        ),
     }
 }
 
@@ -309,6 +321,22 @@ mod tests {
     fn only_a_saved_file_exits_zero() {
         assert_eq!(Ending::Saved.status(), 0);
         assert_eq!(Ending::Stopped.status(), EXIT_INTERRUPTED);
+    }
+
+    // A reader that went away does not change what the status says about the download; any
+    // other failure to report it does.
+    #[test]
+    fn a_closed_pipe_keeps_the_status_and_another_write_failure_is_an_error() {
+        let ok = Ok(());
+        assert_eq!(exit_code(Ending::Saved, ok), ExitCode::SUCCESS);
+        let closed = || Err(io::Error::from(io::ErrorKind::BrokenPipe));
+        assert_eq!(exit_code(Ending::Saved, closed()), ExitCode::SUCCESS);
+        assert_eq!(
+            exit_code(Ending::Stopped, closed()),
+            ExitCode::from(EXIT_INTERRUPTED)
+        );
+        let full = Err(io::Error::other("disk full"));
+        assert_eq!(exit_code(Ending::Saved, full), ExitCode::FAILURE);
     }
 
     #[test]
