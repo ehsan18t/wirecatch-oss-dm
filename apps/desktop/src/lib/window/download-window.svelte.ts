@@ -9,7 +9,6 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
-  FixAction,
   MediaChoice,
   MediaSelection,
   Queue,
@@ -18,6 +17,7 @@ import type {
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend';
 import { Clock } from '../state/clock.svelte';
+import { ProgressActions } from './progress-actions';
 import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
 import { errorMessage, Runner } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
@@ -69,6 +69,15 @@ export class DownloadWindowState {
     (text) => (this.error = text),
     () => (this.error = null),
   );
+  /** What the window does with the download it shows. */
+  readonly progress = new ProgressActions({
+    backend: () => this.#host.backend,
+    runner: this.#runner,
+    downloadId: () => this.downloadId,
+    row: () => this.row,
+    pickFolder: (current) => this.changeFolder(current),
+    close: () => this.close(),
+  });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>
     this.#runner.succeeds(() => this.#host.backend.changeSettings(patch)),
@@ -406,83 +415,6 @@ export class DownloadWindowState {
   async changeFolder(current: string): Promise<string | null> {
     const picked = await this.#runner.run(() => this.#host.backend.pickFolder(current));
     return picked ?? null;
-  }
-
-  // ---- Progress ----
-
-  /** Runs an action on the download shown; false when there is none or the action failed. */
-  async #onRow(action: (id: DownloadId) => Promise<void>): Promise<boolean> {
-    const id = this.downloadId;
-    return id !== null && (await this.#runner.succeeds(() => action(id)));
-  }
-
-  pause(): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend.pause(id));
-  }
-
-  resume(): Promise<boolean> {
-    // A cancelled download has no partial file left; it starts over.
-    return this.#onRow((id) =>
-      this.row?.status === 'cancelled'
-        ? this.#host.backend.retry(id)
-        : this.#host.backend.resume(id),
-    );
-  }
-
-  retry(): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend.retry(id));
-  }
-
-  /** Cancel on a download: stops it, deletes the partial file and takes it off the list. */
-  async cancelDownload(): Promise<void> {
-    if (await this.#onRow((id) => this.#host.backend.remove([id], true))) this.close();
-  }
-
-  /** Whether opening the finished file could run code, so the window asks first. */
-  async isProgram(): Promise<boolean | undefined> {
-    const id = this.downloadId;
-    if (id === null) return undefined;
-    return this.#runner.run(() => this.#host.backend.isProgram(id));
-  }
-
-  openFile(allowProgram = false): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend.openFile(id, allowProgram));
-  }
-
-  openFolder(): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend.openFolder(id));
-  }
-
-  refreshLink(url: string): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend.refreshLink(id, url));
-  }
-
-  /** Runs the fix an error offers. A fresh link needs the link: `askLink` shows that form. */
-  async fix(action: FixAction, askLink: () => void): Promise<void> {
-    switch (action) {
-      case 'retry':
-        await this.retry();
-        break;
-      case 'refresh_link':
-        askLink();
-        break;
-      case 'choose_folder': {
-        const row = this.row;
-        if (!row) return;
-        const picked = await this.changeFolder(row.path);
-        if (!picked) return;
-        if (await this.#onRow((id) => this.#host.backend.setDownloadFolder(id, picked))) {
-          await this.retry();
-        }
-        break;
-      }
-      case 'free_disk_space':
-        await this.openFolder();
-        break;
-      case 'keep_original':
-        await this.#onRow((id) => this.#host.backend.keepOriginal(id));
-        break;
-    }
   }
 
   // ---- Settings shown in the window ----

@@ -1,11 +1,5 @@
 <script lang="ts">
-  import AppWindow from '@lucide/svelte/icons/app-window';
   import Copy from '@lucide/svelte/icons/copy';
-  import FolderOpen from '@lucide/svelte/icons/folder-open';
-  import Pause from '@lucide/svelte/icons/pause';
-  import Play from '@lucide/svelte/icons/play';
-  import RotateCw from '@lucide/svelte/icons/rotate-cw';
-  import Trash from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import {
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
@@ -24,9 +18,9 @@
   } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
-  import { isUnderWay } from '$lib/state/view';
   import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
+  import DetailActions from './DetailActions.svelte';
   import DetailProgress from './DetailProgress.svelte';
   import ErrorFix from './ErrorFix.svelte';
   import IconButton from './IconButton.svelte';
@@ -39,9 +33,6 @@
   const rows = $derived(app.selection.rows);
   const one = $derived(rows.length === 1 ? rows[0] : undefined);
 
-  const anyRunning = $derived(rows.some((r) => isUnderWay(r.status)));
-  const anyStopped = $derived(rows.some((r) => r.status === 'paused' || r.status === 'failed'));
-  const anyFailed = $derived(rows.some((r) => r.status === 'failed' || r.status === 'cancelled'));
   /** Connections each download may open: the setting, or the core's default before it loads. */
   const connectionsLimit = $derived(
     app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
@@ -101,34 +92,7 @@
 
     <DetailProgress row={one} />
 
-    <div class="actions">
-      {#if isUnderWay(one.status)}
-        <Button icon={Pause} onclick={() => app.actions.pause([one.id])}>Pause</Button>
-      {:else if one.status === 'paused'}
-        <Button variant="primary" icon={Play} onclick={() => app.actions.resume([one.id])}
-          >Resume</Button
-        >
-      {:else if one.status === 'cancelled'}
-        <Button variant="primary" icon={RotateCw} onclick={() => app.actions.retry([one.id])}>
-          Start over</Button
-        >
-      {:else if one.status === 'failed' && !one.error}
-        <!-- With an error, the error box above already offers Try again. -->
-        <Button icon={RotateCw} onclick={() => app.actions.retry([one.id])}>Try again</Button>
-      {/if}
-      {#if one.status === 'completed'}
-        <Button variant="primary" onclick={() => app.actions.openFile(one.id)}>Open</Button>
-      {/if}
-      <Button icon={FolderOpen} onclick={() => app.actions.openFolder(one.id)}
-        >Show in folder</Button
-      >
-      <Button icon={AppWindow} onclick={() => app.showProgressWindow(one.id)}>
-        Show progress window</Button
-      >
-      <Button icon={Trash} onclick={() => app.openDialog({ kind: 'remove', ids: [one.id] })}>
-        Remove
-      </Button>
-    </div>
+    <DetailActions {rows} />
 
     <dl>
       <div>
@@ -208,23 +172,7 @@
       <h2>{rows.length} downloads selected</h2>
       <p class="status num">{formatBytes(totalSize)} in total</p>
     </header>
-    <div class="actions">
-      {#if anyRunning}
-        <Button icon={Pause} onclick={() => app.actions.pause()}>Pause</Button>
-      {/if}
-      {#if anyStopped}
-        <Button icon={Play} onclick={() => app.actions.resume()}>Resume</Button>
-      {/if}
-      {#if anyFailed}
-        <Button icon={RotateCw} onclick={() => app.actions.retry()}>Try again</Button>
-      {/if}
-      <Button
-        icon={Trash}
-        onclick={() => app.openDialog({ kind: 'remove', ids: app.selection.list })}
-      >
-        Remove
-      </Button>
-    </div>
+    <DetailActions {rows} />
     <dl>
       <div>
         <dt><label for="detail-queue-many">Move to queue</label></dt>
@@ -332,12 +280,6 @@
   .status.failed {
     color: var(--danger);
     font-weight: 600;
-  }
-
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
   }
 
   dl {

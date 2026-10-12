@@ -295,12 +295,12 @@ describe('a progress window', () => {
     const b = backend();
     const { win, host } = await running(b);
     b.tick(500);
-    await win.pause();
+    await win.progress.pause();
     expect(win.row?.status).toBe('paused');
-    await win.resume();
+    await win.progress.resume();
     expect(win.row?.status).toBe('queued');
     const remove = vi.spyOn(b, 'remove');
-    await win.cancelDownload();
+    await win.progress.cancelDownload();
     expect(remove).toHaveBeenCalledWith([win.downloadId], true);
     expect(host.close).toHaveBeenCalledTimes(1);
   });

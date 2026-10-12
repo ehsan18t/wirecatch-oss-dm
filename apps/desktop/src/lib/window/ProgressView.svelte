@@ -63,10 +63,10 @@
   });
 
   async function open() {
-    const program = await win.isProgram();
+    const program = await win.progress.isProgram();
     if (program === undefined) return;
     if (program) asking = 'program';
-    else await win.openFile();
+    else await win.progress.openFile();
   }
 
   async function saveLink() {
@@ -75,7 +75,7 @@
       linkError = 'Paste the full new link, starting with https://.';
       return;
     }
-    if (await win.refreshLink(found)) {
+    if (await win.progress.refreshLink(found)) {
       asking = null;
       link = '';
     }
@@ -122,8 +122,8 @@
       {#if row.status === 'failed' && row.error}
         <ErrorFix
           {row}
-          onfix={(fix: FixAction) => win.fix(fix, () => (asking = 'link'))}
-          onretry={() => win.retry()}
+          onfix={(fix: FixAction) => win.progress.fix(fix, () => (asking = 'link'))}
+          onretry={() => win.progress.retry()}
         />
       {/if}
 
@@ -175,7 +175,7 @@
           </p>
           <div class="ask-actions">
             <Button {@attach focusNow} onclick={() => (asking = null)}>Keep downloading</Button>
-            <Button variant="danger" onclick={() => win.cancelDownload()}
+            <Button variant="danger" onclick={() => win.progress.cancelDownload()}
               >Cancel and delete the partial file</Button
             >
           </div>
@@ -193,7 +193,7 @@
               variant="danger"
               onclick={async () => {
                 asking = null;
-                await win.openFile(true);
+                await win.progress.openFile(true);
               }}>Open it</Button
             >
           </div>
@@ -238,17 +238,17 @@
     {#snippet footer()}
       {#if finished}
         <Button onclick={() => win.close()}>Close</Button>
-        <Button onclick={() => win.openFolder()}>Show in folder</Button>
+        <Button onclick={() => win.progress.openFolder()}>Show in folder</Button>
         <Button variant="primary" onclick={open}>Open</Button>
       {:else}
         <Button onclick={() => win.close()}>Hide</Button>
         <Button disabled={asking === 'cancel'} onclick={() => (asking = 'cancel')}>Cancel</Button>
         {#if running}
-          <Button variant="primary" onclick={() => win.pause()}>Pause</Button>
+          <Button variant="primary" onclick={() => win.progress.pause()}>Pause</Button>
         {:else if row.status === 'failed' && !row.error}
-          <Button variant="primary" onclick={() => win.retry()}>Try again</Button>
+          <Button variant="primary" onclick={() => win.progress.retry()}>Try again</Button>
         {:else if row.status !== 'failed'}
-          <Button variant="primary" onclick={() => win.resume()}
+          <Button variant="primary" onclick={() => win.progress.resume()}
             >{row.status === 'cancelled' ? 'Start over' : 'Resume'}</Button
           >
         {/if}
