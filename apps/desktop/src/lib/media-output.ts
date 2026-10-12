@@ -153,7 +153,7 @@ export function conversionNote(
 ): string | null {
   if (!fit || format === 'original') return null;
   const name = FORMAT_LABEL[format];
-  if (fit.video_codec === null) {
+  if (fit.video === 'none') {
     if (fit.audio === 'encode' || kbps !== null) {
       const at = kbps !== null ? ` at ${kbps} kbps` : '';
       return `The audio is converted to ${name}${at} after it is downloaded, which is quick.`;

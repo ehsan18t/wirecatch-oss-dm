@@ -2,6 +2,7 @@
 // the command palette. Each case below performs the visible path for real and checks the
 // outcome, then checks that the palette offers the same action.
 
+import { PROFILE_FORMAT_VERSION } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -303,7 +304,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     if (!app.settings) throw new Error('no settings');
     const before = plain(app.settings);
     const profile = {
-      format_version: 1,
+      format_version: PROFILE_FORMAT_VERSION,
       app_version: '0.1.0',
       exported_at: 0,
       settings: {

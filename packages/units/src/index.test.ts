@@ -65,6 +65,8 @@ describe('size fields', () => {
     expect(inUnit(5 * MB, 'MB')).toBe(5);
     expect(inUnit(1.25 * MB, 'MB')).toBe(1.3);
     expect(inUnit(1000, 'KB')).toBe(1);
+    expect(inUnit(MB - 1, 'KB')).toBe(1024);
+    expect(inUnit(0, 'MB')).toBe(0);
   });
 
   it('shows a size in megabytes from 1 MB on and in kilobytes below', () => {
@@ -73,5 +75,7 @@ describe('size fields', () => {
     expect(splitKbOrMb(MB)).toEqual({ value: 1, unit: 'MB' });
     expect(splitKbOrMb(1.5 * MB)).toEqual({ value: 1.5, unit: 'MB' });
     expect(splitKbOrMb(3 * GB)).toEqual({ value: 3072, unit: 'MB' });
+    // Just under a megabyte stays in kilobytes, rounded up to the next one.
+    expect(splitKbOrMb(MB - 1)).toEqual({ value: 1024, unit: 'KB' });
   });
 });
