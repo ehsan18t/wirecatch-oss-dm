@@ -49,8 +49,9 @@ pub(crate) fn chromium_origin(id: &str) -> String {
 mod tests {
     use super::*;
 
-    /// The one place the ids are written out: changing which extensions every
-    /// bridge trusts is a decision (D22), so it must change this test too.
+    /// A deliberate tripwire: the only test that spells the trusted ids out instead
+    /// of reading them from `wirecatch-product`, so changing which extensions
+    /// every bridge trusts (a decision, D22) fails here until it is changed too.
     #[test]
     fn every_build_trusts_the_one_chromium_id_and_the_firefox_id() {
         // No cargo feature changes this: a release bridge built with default
