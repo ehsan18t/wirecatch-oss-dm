@@ -1,10 +1,13 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import { WxtVitest } from 'wxt/testing/vitest-plugin';
+import { buildDefines } from './build-values';
 
 export default defineConfig({
   // WxtVitest does not run the Svelte module's Vite setup, so the Svelte plugin is added here.
   plugins: [WxtVitest(), svelte()],
+  // WxtVitest does not apply wxt.config.ts's `vite.define`, so the same values are given here.
+  define: buildDefines(),
   resolve: {
     // Load Svelte's browser build so components can be mounted in jsdom.
     conditions: ['browser'],

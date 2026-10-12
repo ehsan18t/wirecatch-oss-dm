@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
-import { cookieStoreOf, noticeStore } from '../src/lib/browser/adapters';
+import { cookieStoreOf, noticeStore, toolbarBadge } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
+import popupCss from '../src/entrypoints/popup/style.css?raw';
 import { asPopupRequest, isNotice } from '../src/lib/messages';
 import {
   classifyDisconnect,
@@ -13,6 +14,7 @@ import {
   type ProblemKind,
 } from '../src/lib/native/status';
 import { applyPatch, patchOf } from '../src/lib/protocol';
+import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
 import { DEFAULT_SETTINGS } from './fakes';
@@ -370,5 +372,17 @@ describe('notices kept in session storage', () => {
     expect(await store.load()).toBeNull();
     await fakeBrowser.storage.session.set({ 'wirecatch.notice': { tone: 'loud' } });
     expect(await store.load()).toBeNull();
+  });
+});
+
+describe('toolbarBadge', () => {
+  // The build injects the badge color, but tests did not, so showing a badge threw here.
+  it('shows a message on the badge in the popup warning color', () => {
+    fakeBrowser.reset();
+    const setColor = vi
+      .spyOn(fakeBrowser.action, 'setBadgeBackgroundColor')
+      .mockResolvedValue(undefined);
+    toolbarBadge().set('!', 'Wirecatch has a message for you.');
+    expect(setColor).toHaveBeenCalledWith({ color: cssColor(BADGE_TOKEN, popupCss) });
   });
 });
