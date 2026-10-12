@@ -193,6 +193,36 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
+  it('fails an add_download answered with an action this version does not know as unreadable', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    app.addBehavior = 'unexpected_action';
+    const error = await client
+      .request(
+        {
+          method: 'add_download',
+          params: {
+            handover_id: 'h1',
+            url: 'https://example.com/a.zip',
+            referrer: null,
+            page_url: null,
+            suggested_name: null,
+            mime: null,
+            size_hint: null,
+            cookies: null,
+            user_agent: null,
+            extra_headers: [],
+            source: 'browser_download',
+            queue: null,
+          },
+        },
+        1_000,
+      )
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ kind: 'unreadable' });
+  });
+
   it('times a request out without dropping the connection', async () => {
     client = makeClient(app);
     client.start();
