@@ -60,10 +60,10 @@ fn build_bridge() -> PathBuf {
     }
     let output = command
         .output()
-        .expect("could not run cargo to build wirecatch-bridge");
+        .unwrap_or_else(|e| panic!("could not run cargo to build {BRIDGE_EXECUTABLE}: {e}"));
     assert!(
         output.status.success(),
-        "building wirecatch-bridge with test-overrides failed:\n{}",
+        "building {BRIDGE_EXECUTABLE} with test-overrides failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -72,7 +72,7 @@ fn build_bridge() -> PathBuf {
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == BRIDGE_EXECUTABLE)
         .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-        .unwrap_or_else(|| panic!("cargo built no wirecatch-bridge executable:\n{stdout}"))
+        .unwrap_or_else(|| panic!("cargo built no {BRIDGE_EXECUTABLE} executable:\n{stdout}"))
 }
 
 /// The target folder this test executable was built in, and whether it is a

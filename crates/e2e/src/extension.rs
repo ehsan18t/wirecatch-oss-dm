@@ -124,7 +124,12 @@ impl FakeExtension {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let mut child = command.spawn().expect("could not start wirecatch-bridge");
+        let mut child = command.spawn().unwrap_or_else(|e| {
+            panic!(
+                "could not start {}: {e}",
+                wirecatch_product::BRIDGE_EXECUTABLE
+            )
+        });
         let stdin = child.stdin.take();
         let mut stdout = child.stdout.take().expect("stdout is piped");
         let mut stderr_pipe = child.stderr.take().expect("stderr is piped");
