@@ -35,10 +35,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use url::{Host, Url};
 
-use crate::download::DownloadOptions;
 use crate::error::Error;
 use crate::http::{Failure, Validators};
-use crate::transport::RequestContext;
+use crate::options::DownloadOptions;
+use crate::request::RequestContext;
 use crate::units::KIB_USIZE;
 use crate::url::without_password;
 use control::{Control, Reply, Stream, Tls};

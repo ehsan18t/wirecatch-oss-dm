@@ -22,11 +22,11 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info};
 use url::Url;
 
-use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::http::{self, Failure, RequestRange, Session};
+use crate::options::DownloadOptions;
 use crate::proxy::{self, Scheme};
-use crate::transport::RequestContext;
+use crate::request::RequestContext;
 
 /// Longest wait for a QUIC handshake. A network that blocks UDP shows up as a
 /// handshake that never completes; this bounds how long a worker spends

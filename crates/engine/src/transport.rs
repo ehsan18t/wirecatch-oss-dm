@@ -3,37 +3,23 @@
 //! workers, retries) is shared by HTTP, HTTP/3 and FTP.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, Response};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
 use crate::http3;
 use crate::net_guard::Guard;
+use crate::options::DownloadOptions;
 use crate::proxy::{self, Scheme};
-use crate::retry::{Attempts, Next, Refusals};
+use crate::request::RequestContext;
 
-/// What every request of one download needs, and all the protocol layers get
-/// of it.
-pub(crate) struct RequestContext {
-    /// Where requests go: the URL after redirects, without credentials.
-    pub url: Url,
-    /// Whether the server accepts byte ranges.
-    pub ranged: bool,
-    /// The size of the file, if known.
-    pub total: Option<u64>,
-    /// Cancelled when the download pauses.
-    pub cancel: CancellationToken,
-    /// [`DownloadOptions::stall_timeout`].
-    pub stall_timeout: Duration,
-}
+use crate::retry::{Attempts, Next, Refusals};
 
 /// Where the file comes from; shared by every connection of one download.
 #[expect(

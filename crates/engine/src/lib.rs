@@ -220,9 +220,11 @@ mod limiter;
 pub mod naming;
 mod net_guard;
 pub mod numeric;
+mod options;
 mod progress;
 mod proxy;
 mod receive;
+mod request;
 mod retry;
 mod segment;
 mod state;
@@ -237,14 +239,12 @@ mod writer;
 /// HTTP header names and values, for [`DownloadOptions::headers`].
 pub use ::http::header;
 pub use ::url::Url;
-pub use download::{
-    DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathRejected,
-    PathResolver, RemoteFile, download,
-};
+pub use download::{DownloadRequest, Outcome, PathRejected, PathResolver, RemoteFile, download};
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;
 pub use net_guard::PrivateNetwork;
+pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

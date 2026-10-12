@@ -15,12 +15,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use url::Url;
 
-use crate::download::DownloadOptions;
 use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::{self, Clients, Failure, RequestRange, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
+use crate::options::DownloadOptions;
 use crate::receive::{Received, receive, skip_start};
 use crate::retry::{Attempts, Next, Refusals};
 use crate::units::KIB_USIZE;

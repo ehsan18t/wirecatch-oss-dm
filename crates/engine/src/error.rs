@@ -100,7 +100,7 @@ pub enum Error {
     /// because it redirects in a loop.
     #[error(
         "{url} redirected more than {max} times, probably in a loop. Open the link in a browser to check it, or get a fresh link",
-        max = crate::http::MAX_REDIRECTS
+        max = crate::http::status::MAX_REDIRECTS
     )]
     TooManyRedirects {
         /// The URL that was asked for.
@@ -227,7 +227,7 @@ impl Error {
         match self {
             Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled { .. } => true,
             Error::HttpStatus { status, .. } => {
-                StatusCode::from_u16(*status).is_ok_and(crate::http::is_retryable_status)
+                StatusCode::from_u16(*status).is_ok_and(crate::http::status::is_retryable_status)
             }
             // FTP's 4xx replies are "transient negative completion" (RFC 959):
             // too many connections, data connection failed, file busy.

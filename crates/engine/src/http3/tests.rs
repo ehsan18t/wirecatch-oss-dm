@@ -41,7 +41,7 @@ fn alt_svc_values() {
 fn http3_is_not_used_through_a_proxy() {
     use std::ffi::OsString;
 
-    let opts = crate::download::DownloadOptions::default();
+    let opts = crate::options::DownloadOptions::default();
     let clients = Clients::with_roots(&opts, rustls::RootCertStore::empty());
     let url = Url::parse("https://files.example/a.iso").unwrap();
     let mut headers = HeaderMap::new();
@@ -98,7 +98,7 @@ async fn fetch_from(
     tcp_port: u16,
     http3: bool,
     test: &str,
-    tune: impl FnOnce(&mut crate::download::DownloadOptions),
+    tune: impl FnOnce(&mut crate::options::DownloadOptions),
 ) -> (Vec<u8>, Duration) {
     let dir = private_dir(&format!("h3-{test}")).unwrap();
     let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
