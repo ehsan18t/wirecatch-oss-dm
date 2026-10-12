@@ -59,6 +59,16 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     valid('export const frozen = (list: string[]) => list as readonly string[];'),
     valid('export const loose = (raw: unknown[]) => raw as readonly unknown[];'),
     valid('export const later = (raw: Promise<Message>) => raw as Promise<unknown>;'),
+    // An empty collection written in place has no outside contents, though its type arguments are `any`.
+    valid('export const byId = new Map() as Map<string, Message>;'),
+    valid('export const none = [] as Message[];'),
+    // Known members stay known through unions and properties.
+    valid(
+      'export const maybe = (raw: string[] | undefined) => raw as readonly string[] | undefined;',
+    ),
+    valid(
+      'export const wrapped = (raw: { data: Message }) => raw as { data: Message; extra?: string };',
+    ),
   ],
   invalid: [
     invalid('export function asMessage(raw: unknown) { return raw as Message; }'),
@@ -104,5 +114,23 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     invalid('export function f(raw: Promise<unknown>) { return raw as Promise<Message>; }'),
     invalid('export function f(raw: Map<string, unknown>) { return raw as Map<string, Message>; }'),
     invalid('export function f(raw: Promise<unknown[]>) { return raw as Promise<Message[]>; }'),
+    // Member by member of a union.
+    invalid(
+      'export function f(raw: unknown[] | undefined) { return raw as Message[] | undefined; }',
+    ),
+    invalid(
+      'export function f(raw: Promise<unknown> | null) { return raw as Promise<Message> | null; }',
+    ),
+    // An array into a tuple.
+    invalid('export function f(raw: unknown[]) { return raw as [Message, Message]; }'),
+    // An unknown property into a known one.
+    invalid('export function f(raw: { data: unknown }) { return raw as { data: Message }; }'),
+    invalid(
+      "export function f(raw: Record<'a' | 'b', unknown>) { return raw as { a: Message; b: string }; }",
+    ),
+    // An array with elements or a constructor with arguments carries what it is given.
+    invalid('export function f(raw: unknown[]) { return [...raw] as Message[]; }'),
+    invalid('export function f(raw: unknown) { return [raw] as [Message]; }'),
+    invalid('export function f(raw: unknown[]) { return new Set(raw) as Set<Message>; }'),
   ],
 });

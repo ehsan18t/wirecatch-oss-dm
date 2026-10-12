@@ -2,11 +2,22 @@
 //
 // A value typed `any` or `unknown` is outside data until something checks it: a message from another script or process, what browser storage gives back, `JSON.parse`, a listener argument the browser's types leave open. `raw as Message`, `<Message>raw` and `raw!` claim a shape nothing has checked, which is the mistake a guard exists to prevent; the shape is checked with a guard instead (in the extension, the combinators in src/lib/validate.ts). Asserting a value whose type is already known (an Event to a PointerEvent) is a different decision and is left to review.
 //
-// Checking only that a value is an object tells nothing about its shape, so `object`, `{}` and `Record<string, unknown>` (any object type with no known members) count as unchecked too, and so does a type parameter whose constraint is one of them or that has none: after `typeof raw === 'object' && raw !== null`, `raw as Message` is still an unchecked claim. Unchecked contents of a container count the same way: `unknown[]` to `Message[]`, `Promise<unknown>` to `Promise<Message>`, `Map<string, unknown>` to `Map<string, Message>`. Asserting to a type parameter (`x as T`) claims whatever the caller picks, so it is reported too. An assertion to one of the unchecked types themselves claims nothing and stays allowed (`raw as Record<string, unknown>` before reading its fields one by one), and so do `as const` and an assertion on an object literal written in place (`{} as Record<Kind, number>`).
+// Checking only that a value is an object tells nothing about its shape, so `object`, `{}` and `Record<string, unknown>` count as unchecked too, and so does a type parameter whose constraint is one of them or that has none. The claim is also found inside the assertion: member by member of a union (`unknown[] | undefined` to `Message[] | undefined`), in the type arguments of a container (`Promise<unknown>` to `Promise<Message>`), from an array into a tuple, and in a property of the same name (`{ data: unknown }` to `{ data: Message }`). Asserting to a type parameter (`x as T`) claims whatever the caller picks.
+//
+// Allowed: an assertion to an unchecked type itself (`raw as Record<string, unknown>` before reading its fields), `as const`, and an assertion on an object literal, an empty array literal or a constructor called with no arguments (`{}`, `[]`, `new Map()`), whose contents are written right there, though their type arguments say `any`. An array with elements or a constructor with arguments can carry outside input (`[...raw]`, `new Set(raw)`) and is checked like any other value.
+//
+// Left to review: a generic type alias whose arguments the checker does not keep, and a cast of what a function returns to another function type.
 import ts from 'typescript';
 
 /** Type flags of a value nothing has checked. */
 const UNCHECKED = ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.NonPrimitive;
+
+/** Whether `node` is written in the assertion with no outside contents: an object literal, `[]`, or `new X()` with no arguments. */
+function isWrittenInPlace(node) {
+  if (node.type === 'ObjectExpression') return true;
+  if (node.type === 'ArrayExpression') return node.elements.length === 0;
+  return node.type === 'NewExpression' && node.arguments.length === 0;
+}
 
 /** Whether an assertion is `as const` (or `<const>`), which only fixes a literal's type. */
 function isConstAssertion(node) {
@@ -52,15 +63,63 @@ function typeArguments(checker, type) {
   return (type.objectFlags ?? 0) & ts.ObjectFlags.Reference ? checker.getTypeArguments(type) : [];
 }
 
-/** Whether asserting `from` to `to` claims a shape nothing checked: at the top, or inside the type arguments of a container (`unknown[]` to `Message[]`, `Promise<unknown>` to `Promise<Message>`). */
-function claimsUncheckedShape(checker, from, to) {
-  if (isUnchecked(checker, from)) return !claimsNothing(checker, to);
-  const fromArguments = typeArguments(checker, from);
-  const toArguments = typeArguments(checker, to);
-  if (fromArguments.length === 0 || fromArguments.length !== toArguments.length) return false;
-  return fromArguments.some((argument, i) =>
-    claimsUncheckedShape(checker, argument, toArguments[i]),
+/** How deep into type arguments and union members an assertion is compared; real assertions are a level or two deep, and recursive types end here. */
+const MAX_DEPTH = 6;
+const NULLISH = ts.TypeFlags.Null | ts.TypeFlags.Undefined;
+
+const isTuple = (type) => Boolean((type.target?.objectFlags ?? 0) & ts.ObjectFlags.Tuple);
+
+/** The member of `to` that `from` is asserted into: the one built from the same generic, or else the only one that is not null or undefined. */
+function counterpart(from, to) {
+  if (!to.isUnion()) return to;
+  const members = to.types.filter((member) => (member.flags & NULLISH) === 0);
+  const same = members.find(
+    (member) => member.target !== undefined && member.target === from.target,
   );
+  return same ?? (members.length === 1 ? members[0] : null);
+}
+
+/** Whether unchecked type arguments of `from` become checked ones in `to`, position by position, or an array's elements become a tuple's. */
+function argumentsClaim(checker, from, to, depth) {
+  const fromArguments = typeArguments(checker, from);
+  if (fromArguments.length === 0) return false;
+  const toArguments = typeArguments(checker, to);
+  if (isTuple(to) && !isTuple(from) && fromArguments.length === 1) {
+    return toArguments.some((element) =>
+      claimsUncheckedShape(checker, fromArguments[0], element, depth + 1),
+    );
+  }
+  if (fromArguments.length !== toArguments.length) return false;
+  return fromArguments.some((argument, i) =>
+    claimsUncheckedShape(checker, argument, toArguments[i], depth + 1),
+  );
+}
+
+/** Whether a property of `from` whose type is unchecked has a checked type in `to` (`{ data: unknown }` to `{ data: Message }`). */
+function propertiesClaim(checker, from, to) {
+  if ((from.flags & ts.TypeFlags.Object) === 0 || (to.flags & ts.TypeFlags.Object) === 0)
+    return false;
+  return checker.getPropertiesOfType(from).some((property) => {
+    const target = checker.getPropertyOfType(to, property.getName());
+    if (target === undefined || !isUnchecked(checker, checker.getTypeOfSymbol(property)))
+      return false;
+    return !claimsNothing(checker, checker.getTypeOfSymbol(target));
+  });
+}
+
+/** Whether asserting `from` to `to` claims a shape nothing checked: at the top, member by member of a union, inside the type arguments of a container (`unknown[]` to `Message[]`), or in a property (`{ data: unknown }` to `{ data: Message }`). */
+function claimsUncheckedShape(checker, from, to, depth = 0) {
+  if (depth > MAX_DEPTH) return false;
+  if (isUnchecked(checker, from)) return !claimsNothing(checker, to);
+  if (from.isUnion()) {
+    return from.types.some((member) => {
+      const target = counterpart(member, to);
+      return target !== null && claimsUncheckedShape(checker, member, target, depth + 1);
+    });
+  }
+  const target = counterpart(from, to);
+  if (target === null) return false;
+  return argumentsClaim(checker, from, target, depth) || propertiesClaim(checker, from, target);
 }
 
 /** @type {import('eslint').Rule.RuleModule} */
@@ -98,7 +157,7 @@ export const noAssertionOnInput = {
 
     /** `as` and `<T>`: reported when they claim a shape nothing checked; a literal written in place has the shape it is written with, and `as const` claims nothing. */
     function checkAssertion(node) {
-      if (isConstAssertion(node) || node.expression.type === 'ObjectExpression') return;
+      if (isConstAssertion(node) || isWrittenInPlace(node.expression)) return;
       const type = typeOf(node.expression);
       if (claimsUncheckedShape(checker, type, typeOf(node.typeAnnotation))) report(node, type);
     }
