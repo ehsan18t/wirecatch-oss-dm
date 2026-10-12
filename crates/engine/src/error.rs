@@ -3,6 +3,7 @@
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use reqwest::StatusCode;
 
@@ -68,9 +69,12 @@ pub enum Error {
     },
 
     /// Nothing arrived for [`DownloadOptions::stall_timeout`](crate::DownloadOptions::stall_timeout),
-    /// neither an answer to a request nor data; the number is that timeout in seconds.
-    #[error("no data received for {0} seconds")]
-    Stalled(u64),
+    /// neither an answer to a request nor data.
+    #[error("no data received for {after:?}")]
+    Stalled {
+        /// How long nothing arrived: the stall timeout.
+        after: Duration,
+    },
 
     /// Reading or writing a file failed, for example on a full disk, in a
     /// folder without write permission, or while another program holds the
@@ -221,7 +225,7 @@ impl Error {
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
-            Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled(_) => true,
+            Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled { .. } => true,
             Error::HttpStatus { status, .. } => {
                 StatusCode::from_u16(*status).is_ok_and(crate::http::is_retryable_status)
             }

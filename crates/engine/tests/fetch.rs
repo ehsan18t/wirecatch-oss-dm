@@ -296,10 +296,10 @@ async fn cancelling_and_stalls_end_requests() {
     options.stall_timeout = Duration::from_millis(300);
     options.max_retries = 0;
     let f = fetcher(&server.url("k"), &options).await.unwrap();
-    assert!(matches!(
-        f.get(f.url(), None, 1000).await,
-        Err(Error::Stalled(_))
-    ));
+    let stalled = f.get(f.url(), None, 1000).await.unwrap_err();
+    // A timeout under a second is said as it is, not as "0 seconds".
+    let text = stalled.to_string();
+    assert!(text.contains("300ms") && !text.contains(" 0 "), "{text}");
 }
 
 #[tokio::test]

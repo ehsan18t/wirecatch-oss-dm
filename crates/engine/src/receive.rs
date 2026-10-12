@@ -29,7 +29,7 @@ pub(crate) async fn receive<T>(
         biased;
         () = cancel.cancelled() => Ok(Received::Cancelled),
         next = tokio::time::timeout(stall, next) => match next {
-            Err(_) => Err(Error::Stalled(stall.as_secs())),
+            Err(_) => Err(Error::Stalled { after: stall }),
             Ok(Ok(Some(data))) => Ok(Received::Data(data)),
             Ok(Ok(None)) => Ok(Received::End),
             Ok(Err(e)) => Err(e),

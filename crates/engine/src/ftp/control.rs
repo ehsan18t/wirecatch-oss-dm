@@ -257,7 +257,7 @@ impl Control {
         match tokio::time::timeout(self.stall, write).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(Error::socket("the FTP control connection failed", e, false).into()),
-            Err(_) => Err(Error::Stalled(self.stall.as_secs()).into()),
+            Err(_) => Err(Error::Stalled { after: self.stall }.into()),
         }
     }
 
@@ -269,7 +269,7 @@ impl Control {
                 Ok(reply)
             }
             Ok(Err(e)) => Err(Error::socket("the FTP control connection failed", e, false).into()),
-            Err(_) => Err(Error::Stalled(self.stall.as_secs()).into()),
+            Err(_) => Err(Error::Stalled { after: self.stall }.into()),
         }
     }
 

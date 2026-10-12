@@ -56,9 +56,10 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
         ),
-        EngineError::Stalled(secs) => fix(
+        EngineError::Stalled { after } => fix(
             format!(
-                "The server stopped sending data for {secs} seconds. Try again; the part already downloaded is kept."
+                "The server stopped sending data for {} seconds. Try again; the part already downloaded is kept.",
+                after.as_secs().max(1)
             ),
             FixAction::Retry,
         ),
@@ -423,10 +424,7 @@ mod tests {
     fn server_trouble_and_network_problems_offer_retry() {
         assert_eq!(action(&status(503), false), Some(FixAction::Retry));
         assert_eq!(action(&status(429), true), Some(FixAction::Retry));
-        assert_eq!(
-            action(&EngineError::Stalled(30), true),
-            Some(FixAction::Retry)
-        );
+        assert_eq!(action(&stalled(), true), Some(FixAction::Retry));
         assert_eq!(
             action(&EngineError::RemoteChanged, true),
             Some(FixAction::Retry)
@@ -435,6 +433,13 @@ mod tests {
             action(&EngineError::PrematureEof { at: 1, end: 2 }, true),
             Some(FixAction::Retry)
         );
+    }
+
+    /// A stall as the engine reports it.
+    fn stalled() -> EngineError {
+        EngineError::Stalled {
+            after: std::time::Duration::from_secs(30),
+        }
     }
 
     /// A disk error as the engine reports it.
@@ -513,7 +518,7 @@ mod tests {
             status(500),
             status(400),
             EngineError::InvalidUrl("x".into()),
-            EngineError::Stalled(30),
+            stalled(),
             EngineError::RangeNotHonored {
                 expected: 1,
                 got: None,

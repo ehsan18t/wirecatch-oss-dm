@@ -309,7 +309,7 @@ async fn request(
     };
     let (stream, response) = tokio::time::timeout(stall, exchange)
         .await
-        .map_err(|_| H3Failure::Unusable(Error::Stalled(stall.as_secs())))??;
+        .map_err(|_| H3Failure::Unusable(Error::Stalled { after: stall }))??;
     check_response(&response, context, from)?;
     Ok(stream)
 }

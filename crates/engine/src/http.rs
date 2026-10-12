@@ -435,7 +435,9 @@ pub(crate) async fn send(
             () = session.cancel.cancelled() => return Err(Error::Cancelled.into()),
             answer = tokio::time::timeout(session.answer_timeout, request.send()) => match answer {
                 Ok(response) => response?,
-                Err(_) => return Err(Error::Stalled(session.answer_timeout.as_secs()).into()),
+                Err(_) => return Err(Error::Stalled {
+                    after: session.answer_timeout,
+                }.into()),
             },
         };
         let status = response.status();
