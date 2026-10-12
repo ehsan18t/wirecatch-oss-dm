@@ -26,11 +26,15 @@ macro_rules! log {
 }
 pub(crate) use log;
 
-/// Writes one log line to stderr. A failure is ignored rather than a panic: the browser may
-/// have closed stderr, and then there is nowhere left to report it.
+/// Writes one log line to stderr, without the panic of `eprintln!` when that fails.
 fn log_line(line: std::fmt::Arguments<'_>) {
-    let written = writeln!(io::stderr(), "wirecatch-bridge: {line}");
-    drop(written);
+    stderr_may_be_closed(&writeln!(io::stderr(), "wirecatch-bridge: {line}"));
+}
+
+/// Takes the outcome of writing a log line. The browser may have closed stderr, and then
+/// nowhere is left to report that.
+fn stderr_may_be_closed(written: &io::Result<()>) {
+    let (Ok(()) | Err(_)) = written;
 }
 
 mod app;

@@ -223,16 +223,21 @@ where
 }
 
 /// Lets the reader pass on what it already has, then stops it.
-async fn finish_reading(mut from_app: JoinHandle<()>) {
-    if tokio::time::timeout(Duration::from_secs(1), &mut from_app)
-        .await
-        .is_err()
+async fn finish_reading(from_app: JoinHandle<()>) {
+    if let Err(e) = reader_end(from_app).await
+        && e.is_panic()
     {
-        from_app.abort();
-        if let Err(e) = from_app.await
-            && e.is_panic()
-        {
-            log!("the reader of Wirecatch's messages stopped with a panic: {e}");
+        log!("the reader of Wirecatch's messages stopped with a panic: {e}");
+    }
+}
+
+/// How the reader ended: by itself within a second, or stopped after it.
+async fn reader_end(mut from_app: JoinHandle<()>) -> Result<(), tokio::task::JoinError> {
+    match tokio::time::timeout(Duration::from_secs(1), &mut from_app).await {
+        Ok(ended) => ended,
+        Err(_still_reading) => {
+            from_app.abort();
+            from_app.await
         }
     }
 }
@@ -255,10 +260,15 @@ async fn answer_error(outgoing: &mpsc::Sender<RawFrame>, id: u64, code: ErrorCod
         }),
     };
     match RawFrame::encode(&response) {
-        // If the browser side is gone there is nobody left to tell.
-        Ok(frame) => drop(outgoing.send(frame).await),
+        Ok(frame) => browser_may_be_gone(&outgoing.send(frame).await),
         Err(e) => log!("could not encode an error response: {e}"),
     }
+}
+
+/// Takes the outcome of passing a frame on to the browser. It fails only once the browser side
+/// has closed, and then nobody is left to tell.
+fn browser_may_be_gone(sent: &Result<(), mpsc::error::SendError<RawFrame>>) {
+    let (Ok(()) | Err(_)) = sent;
 }
 
 fn lock(pending: &Mutex<BTreeSet<u64>>) -> MutexGuard<'_, BTreeSet<u64>> {
@@ -498,5 +508,18 @@ mod tests {
 
         drop(h.to_relay);
         assert_eq!(h.relay.await.unwrap(), Ended::BrowserClosed);
+    }
+
+    #[tokio::test]
+    async fn a_reader_that_panics_at_once_is_reported_as_a_panic() {
+        let reader = tokio::spawn(async { panic!("the reader failed") });
+        assert!(reader_end(reader).await.unwrap_err().is_panic());
+    }
+
+    #[tokio::test]
+    async fn a_reader_that_never_ends_is_stopped_without_a_panic() {
+        let reader = tokio::spawn(std::future::pending::<()>());
+        let ended = reader_end(reader).await.unwrap_err();
+        assert!(ended.is_cancelled());
     }
 }

@@ -329,10 +329,19 @@ fn fake_app_process() {
         }
         // Like the real app, keep running after the bridge leaves, until the test
         // has checked that (by connecting once more), then exit.
-        let checked = timeout(PATIENCE, listener.accept()).await;
-        // Whether the test connected in time or not, this helper's job is over.
-        drop(checked);
+        test_may_not_check(&timeout(PATIENCE, listener.accept()).await);
     });
+}
+
+/// Takes the outcome of waiting for the test's last check. Whether it came in time or not,
+/// the fake app's job is over.
+fn test_may_not_check(
+    checked: &Result<
+        Result<wirecatch_ipc::Connection, wirecatch_ipc::IpcError>,
+        tokio::time::error::Elapsed,
+    >,
+) {
+    let (Ok(Ok(_) | Err(_)) | Err(_)) = checked;
 }
 
 fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) -> TestResult {
