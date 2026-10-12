@@ -1026,7 +1026,7 @@ async fn finish(
                 warn!(error = %e, "could not put a subtitle file next to the video");
             }
         }
-        let _ = std::fs::remove_dir_all(&work);
+        crate::discard::dir(&work);
         Ok((target, bytes))
     })
     .await
@@ -1146,7 +1146,7 @@ fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<Path
         // since the check is left alone.
         let moved = match std::fs::hard_link(file, &candidate) {
             Ok(()) => {
-                let _ = std::fs::remove_file(file);
+                crate::discard::file(file);
                 Ok(true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),

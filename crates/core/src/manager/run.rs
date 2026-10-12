@@ -327,15 +327,10 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
 /// Deletes files and folders, ignoring ones already gone. Blocks on the disk.
 pub(super) fn delete_files(paths: &[PathBuf]) {
     for path in paths {
-        let result = if path.is_dir() {
-            std::fs::remove_dir_all(path)
+        if path.is_dir() {
+            crate::discard::dir(path);
         } else {
-            std::fs::remove_file(path)
-        };
-        match result {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => warn!(path = %path.display(), error = %e, "could not delete file"),
+            crate::discard::file(path);
         }
     }
 }
@@ -410,10 +405,12 @@ async fn download_marked(
     let result = wirecatch_engine::download(request, progress, cancel).await;
     if let Ok(Outcome::Completed { path, .. }) = &result {
         let path = path.clone();
-        let _ = tokio::task::spawn_blocking(move || {
+        let marking = tokio::task::spawn_blocking(move || {
             crate::zone::mark(&path, &mark.url, mark.referrer.as_deref());
-        })
-        .await;
+        });
+        if let Err(e) = marking.await {
+            warn!(error = %e, "could not mark the finished file as downloaded from the internet");
+        }
     }
     result
 }

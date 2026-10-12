@@ -840,26 +840,25 @@ struct Lock {
 }
 
 impl Lock {
+    #[cfg(windows)]
     fn hold(dir: &std::path::Path, name: &str) -> TestResult<Self> {
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                // Others may read it (a checksum check), not delete or move it.
-                .share_mode(1)
-                .open(dir.join(name))?;
-            Ok(Lock { _file: file })
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = name;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555))?;
-            Ok(Lock {
-                dir: dir.to_path_buf(),
-            })
-        }
+        use std::os::windows::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            // Others may read it (a checksum check), not delete or move it.
+            .share_mode(1)
+            .open(dir.join(name))?;
+        Ok(Lock { _file: file })
+    }
+
+    /// Unix deletes an open file, so the whole folder is made read-only instead.
+    #[cfg(unix)]
+    fn hold(dir: &std::path::Path, _name: &str) -> TestResult<Self> {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555))?;
+        Ok(Lock {
+            dir: dir.to_path_buf(),
+        })
     }
 }
 
@@ -867,7 +866,14 @@ impl Lock {
 impl Drop for Lock {
     fn drop(&mut self) {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o755));
+        if let Err(error) =
+            std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o755))
+        {
+            eprintln!(
+                "could not make {} writable again: {error}",
+                self.dir.display()
+            );
+        }
     }
 }
 

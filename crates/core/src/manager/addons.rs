@@ -1007,7 +1007,7 @@ fn verify_and_unpack(
     let len = file.metadata().map_err(unreadable)?.len();
     if len > cap {
         drop(file);
-        let _ = std::fs::remove_file(release);
+        crate::discard::file(release);
         return Err(format!(
             "The downloaded {} is larger than its release says, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.name
@@ -1017,7 +1017,7 @@ fn verify_and_unpack(
     if actual != component.sha256 {
         warn!(component = %component.name, expected = %component.sha256, %actual, "checksum mismatch");
         drop(file);
-        let _ = std::fs::remove_file(release);
+        crate::discard::file(release);
         return Err(format!(
             "The downloaded {} did not match its published checksum, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.name
@@ -1034,9 +1034,8 @@ fn verify_and_unpack(
     }
     std::fs::create_dir_all(stage)
         .map_err(|e| format!("The add-on's work folder could not be created ({e})."))?;
-    let installed = archive::unpack(component, &mut file, stage).inspect_err(|_| {
-        let _ = std::fs::remove_dir_all(stage);
-    })?;
+    let installed =
+        archive::unpack(component, &mut file, stage).inspect_err(|_| crate::discard::dir(stage))?;
     Ok((stage.to_path_buf(), installed))
 }
 
@@ -1053,7 +1052,7 @@ fn swap_in(
     for (component, (stage, files)) in staged {
         let target = dir.join(&component.name);
         let old = work.join(format!("old-{}", component.name));
-        let _ = std::fs::remove_dir_all(&old);
+        crate::discard::dir(&old);
         let had_old = target.exists();
         if had_old {
             rename(&target, &old).map_err(|e| {
@@ -1083,7 +1082,7 @@ fn swap_in(
             }
             return Err(format!("{} could not be put in place ({e}).", component.name).into());
         }
-        let _ = std::fs::remove_dir_all(&old);
+        crate::discard::dir(&old);
         record.components.insert(
             component.name.clone(),
             addons::InstalledComponent {
@@ -1098,7 +1097,7 @@ fn swap_in(
         record
             .save(dir)
             .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
-        let _ = std::fs::remove_file(work.join(format!(
+        crate::discard::file(&work.join(format!(
             "{}-{}.download",
             component.name,
             file_safe(&component.version)

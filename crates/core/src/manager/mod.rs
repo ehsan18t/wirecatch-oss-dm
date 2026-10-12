@@ -248,7 +248,10 @@ impl Manager {
         let ui_events = broadcast::Sender::new(UI_EVENT_BUFFER);
         let failures = ui_events.clone();
         let on_failure = Box::new(move |reason: String| {
-            let _ = failures.send(UiEvent::StorageFailed(user_error::storage_failed(&reason)));
+            publish(
+                &failures,
+                UiEvent::StorageFailed(user_error::storage_failed(&reason)),
+            );
         });
         let dir = config.data_dir.clone();
         let addon_dir = crate::addons::media_dir(&config.data_dir);
@@ -267,7 +270,7 @@ impl Manager {
             let mut restored = restore::restore(snapshot, &around);
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             // Cookies files left by a crash: nothing may keep them.
-            let _ = std::fs::remove_dir_all(&temp_at);
+            crate::discard::dir(&temp_at);
             Ok((store, restored, recoveries))
         })
         .await?;
@@ -467,13 +470,18 @@ impl Manager {
     }
 
     fn emit(&self, event: UiEvent) {
-        // No subscriber is fine: nobody is looking.
-        let _ = self.inner.ui_events.send(event);
+        publish(&self.inner.ui_events, event);
     }
 
     fn emit_wire(&self, event: Event) {
-        let _ = self.inner.wire_events.send(event);
+        publish(&self.inner.wire_events, event);
     }
+}
+
+/// Sends `event` to every subscriber. With none, nobody is looking, so nobody
+/// misses it.
+fn publish<T>(events: &broadcast::Sender<T>, event: T) {
+    let (Ok(_) | Err(broadcast::error::SendError(_))) = events.send(event);
 }
 
 /// Re-evaluates schedules whenever one can change: at each minute boundary while

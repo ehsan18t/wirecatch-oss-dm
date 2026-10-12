@@ -121,8 +121,9 @@ fn start_request(
     // finishes, so the manager is never left halfway through a change.
     tokio::spawn(async move {
         let outcome = handle(&manager, call).await;
-        // The client may be gone; then nobody is waiting for the answer.
-        let _ = responder.send(Message::Response { id, outcome });
+        if responder.send(Message::Response { id, outcome }).is_err() {
+            debug!(id, "the client left before its answer was ready");
+        }
         drop(slot);
     });
     None

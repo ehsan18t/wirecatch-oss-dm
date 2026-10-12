@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use tokio::sync::broadcast::error::RecvError;
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Queue, UiEvent};
 
@@ -66,10 +67,14 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         if rows.iter().all(|r| r.status == DownloadStatus::Completed) {
             break;
         }
-        // A lagged receiver is fine here: the next loop reads the full list anyway.
-        let _ = tokio::time::timeout(crate::common::PATIENCE, events.recv())
+        let event = tokio::time::timeout(crate::common::PATIENCE, events.recv())
             .await
             .expect("downloads stopped making progress");
+        // A lagged receiver is fine here: the next loop reads the full list anyway.
+        assert!(
+            !matches!(event, Err(RecvError::Closed)),
+            "the manager stopped sending events"
+        );
     }
     assert_eq!(peak, 3, "the global limit was never reached");
     assert!(server.stats.max_concurrent.load(Ordering::SeqCst) <= 3);

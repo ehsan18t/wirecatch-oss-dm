@@ -190,7 +190,15 @@ impl Manager {
         };
         if let Some(deciding) = deciding {
             let patience = self.inner.capture_timeout + self.inner.stop_timeout;
-            let _ = tokio::time::timeout(patience, deciding.cancelled()).await;
+            if tokio::time::timeout(patience, deciding.cancelled())
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    ?patience,
+                    "the first attempt to take a download over is still undecided"
+                );
+            }
         }
         let state = self.lock_open()?;
         match state.handovers.get(handover) {

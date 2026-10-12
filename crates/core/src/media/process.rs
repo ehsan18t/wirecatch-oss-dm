@@ -242,30 +242,29 @@ struct Tree {
 
 impl Tree {
     /// Puts the just started `child` (and so what it starts later) in a group.
+    #[cfg(unix)]
     fn attach(child: &tokio::process::Child) -> Self {
-        #[cfg(unix)]
-        {
-            // `process_group(0)` made the child the leader of a group of its own.
-            Tree {
-                group: child.id().and_then(|id| i32::try_from(id).ok()),
-            }
+        // `process_group(0)` made the child the leader of a group of its own.
+        Tree {
+            group: child.id().and_then(|id| i32::try_from(id).ok()),
         }
-        #[cfg(windows)]
-        {
-            let job = child.raw_handle().and_then(|handle| {
-                job::Job::for_process(handle)
-                    .inspect_err(
-                        |e| tracing::warn!(error = %e, "could not group a started program"),
-                    )
-                    .ok()
-            });
-            Tree { job }
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            let _ = child;
-            Tree {}
-        }
+    }
+
+    /// Puts the just started `child` (and so what it starts later) in a group.
+    #[cfg(windows)]
+    fn attach(child: &tokio::process::Child) -> Self {
+        let job = child.raw_handle().and_then(|handle| {
+            job::Job::for_process(handle)
+                .inspect_err(|e| tracing::warn!(error = %e, "could not group a started program"))
+                .ok()
+        });
+        Tree { job }
+    }
+
+    /// Groups nothing: only Unix and Windows can kill a program with what it started.
+    #[cfg(not(any(unix, windows)))]
+    fn attach(_child: &tokio::process::Child) -> Self {
+        Tree {}
     }
 
     /// Kills every process of the group that is still running.

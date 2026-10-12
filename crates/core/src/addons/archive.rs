@@ -234,9 +234,8 @@ fn write_file(
     drop(out.file);
     #[cfg(unix)]
     set_mode(target, executable).map_err(|e| disk(&e))?;
-    // Windows has no executable bit: a file runs by its name.
     #[cfg(not(unix))]
-    let _ = executable;
+    set_mode(executable);
     Ok((copied, sha256))
 }
 
@@ -246,6 +245,10 @@ fn set_mode(path: &Path, executable: bool) -> io::Result<()> {
     let mode = if executable { 0o755 } else { 0o644 };
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
 }
+
+/// Sets nothing: Windows has no executable bit, a file runs by its name.
+#[cfg(not(unix))]
+fn set_mode(_executable: bool) {}
 
 fn disk(error: &io::Error) -> String {
     format!(

@@ -61,19 +61,18 @@ fn clean_url(raw: &str) -> Option<String> {
 }
 
 /// Marks the file at `path` as downloaded from the internet. Blocks on the disk.
-/// Does nothing outside Windows.
+#[cfg(windows)]
 pub(crate) fn mark(path: &Path, host_url: &str, referrer: Option<&str>) {
-    #[cfg(windows)]
-    {
-        let mut stream = path.as_os_str().to_owned();
-        stream.push(":Zone.Identifier");
-        if let Err(e) = std::fs::write(&stream, zone_identifier(host_url, referrer)) {
-            tracing::info!(path = %path.display(), error = %e, "could not mark the file as downloaded from the internet");
-        }
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    if let Err(e) = std::fs::write(&stream, zone_identifier(host_url, referrer)) {
+        tracing::info!(path = %path.display(), error = %e, "could not mark the file as downloaded from the internet");
     }
-    #[cfg(not(windows))]
-    let _ = (path, host_url, referrer);
 }
+
+/// Does nothing: only Windows marks files downloaded from the internet.
+#[cfg(not(windows))]
+pub(crate) fn mark(_path: &Path, _host_url: &str, _referrer: Option<&str>) {}
 
 #[cfg(test)]
 mod tests {

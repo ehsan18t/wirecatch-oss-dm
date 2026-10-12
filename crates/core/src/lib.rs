@@ -9,6 +9,7 @@
 
 mod addons;
 mod clock;
+mod discard;
 mod error;
 mod folders;
 mod headers;

@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
 use wirecatch_protocol::extension::Header;
@@ -347,7 +347,8 @@ impl Store {
     pub async fn flush(&self) {
         let (done, wait) = oneshot::channel();
         self.send(Op::Flush(done));
-        let _ = wait.await;
+        wait.await
+            .expect("the database thread stopped before saving every write");
     }
 
     /// Saves every write sent so far, closes the database file and stops the
@@ -384,7 +385,14 @@ fn run(conn: Connection, inbox: &mut Inbox<'_>, on_failure: &FailureHandler) {
         warn!(error = %e, "the database did not close cleanly");
     }
     if let Some(closed) = closed {
-        let _ = closed.send(());
+        wake(closed);
+    }
+}
+
+/// Tells a caller waiting for the database thread that it is done.
+fn wake(waiting: oneshot::Sender<()>) {
+    if waiting.send(()).is_err() {
+        debug!("the database finished after its caller stopped waiting");
     }
 }
 
@@ -459,7 +467,7 @@ fn write_until_closed(
         }
         #[cfg(test)]
         for done in flushed {
-            let _ = done.send(());
+            wake(done);
         }
         if let Some(done) = closing {
             last_try(&mut conn, kept);
