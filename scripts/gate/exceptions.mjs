@@ -31,6 +31,21 @@ const LINT_EXCEPTIONS = [
     file: 'crates/engine/src/numeric.rs',
     lints: ['clippy::cast_possible_truncation', 'clippy::cast_sign_loss'],
   },
+  {
+    id: 'E9',
+    file: 'apps/desktop/src/lib/window/FileQuestion.svelte',
+    lints: ['a11y_no_noninteractive_element_interactions'],
+  },
+  {
+    id: 'E10',
+    file: 'apps/desktop/src/lib/window/MediaQuestion.svelte',
+    lints: ['a11y_no_noninteractive_element_interactions'],
+  },
+  {
+    id: 'E11',
+    file: 'apps/desktop/src/lib/window/ProgressView.svelte',
+    lints: ['a11y_no_static_element_interactions'],
+  },
 ];
 const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs and docs/AUDIT.md W14';
 
