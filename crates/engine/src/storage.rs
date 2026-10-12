@@ -93,7 +93,8 @@ pub(crate) fn finalize(
         // reads the same, only less efficiently.
         #[cfg(windows)]
         if let Err(e) = windows::set_sparse(&file, false) {
-            tracing::debug!(error = %e, "could not clear the sparse flag of a finished file");
+            let error = crate::error::Chain(&e);
+            tracing::debug!(%error, "could not clear the sparse flag of a finished file");
         }
     }
     #[cfg(test)]
@@ -114,7 +115,8 @@ fn reserve(file: &File, len: u64) -> io::Result<()> {
         // Not every file system supports sparse files (FAT32, exFAT); without
         // the flag, space is reserved the slower way.
         if let Err(e) = windows::set_sparse(file, true) {
-            tracing::debug!(error = %e, "the file system does not take sparse files");
+            let error = crate::error::Chain(&e);
+            tracing::debug!(%error, "the file system does not take sparse files");
         }
         file.set_len(len)
     }

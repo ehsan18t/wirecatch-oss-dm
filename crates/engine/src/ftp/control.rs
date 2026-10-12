@@ -16,7 +16,7 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::debug;
 
-use crate::error::Error;
+use crate::error::{Chain, Error};
 use crate::http::Failure;
 
 /// Longest reply line accepted. Real replies are far shorter; the cap keeps a
@@ -64,7 +64,7 @@ impl Stream {
         // Commands are short and each waits for its reply, so Nagle's delay
         // would only slow them; without the option they still work.
         if let Err(e) = tcp.set_nodelay(true) {
-            debug!(error = %e, "could not turn off Nagle's algorithm on an FTP connection");
+            debug!(error = %Chain(&e), "could not turn off Nagle's algorithm on an FTP connection");
         }
         Ok(Stream::Plain(tcp))
     }

@@ -7,7 +7,7 @@ use reqwest::header::{ACCEPT_ENCODING, HeaderMap, HeaderValue};
 use reqwest::{Client, redirect};
 use tracing::{debug, warn};
 
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::net_guard::FilteringResolver;
 use crate::options::DownloadOptions;
 use crate::proxy;
@@ -182,7 +182,7 @@ fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
 fn native_roots() -> rustls::RootCertStore {
     let loaded = rustls_native_certs::load_native_certs();
     for error in &loaded.errors {
-        debug!(%error, "skipped part of the system certificate store");
+        debug!(error = %Chain(error), "skipped part of the system certificate store");
     }
     let mut roots = rustls::RootCertStore::empty();
     let (added, ignored) = roots.add_parsable_certificates(loaded.certs);

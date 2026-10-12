@@ -15,7 +15,7 @@ use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use tracing::debug;
 use url::{Host, Url};
 
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::proxy;
 
 /// The future a [`Guard`] returns.
@@ -154,7 +154,7 @@ async fn resolve(host: &str, timeout: Duration) -> Vec<IpAddr> {
     match tokio::time::timeout(timeout, tokio::net::lookup_host((host, LOOKUP_PORT))).await {
         Ok(Ok(addrs)) => addrs.map(|a| a.ip()).collect(),
         Ok(Err(e)) => {
-            debug!(host, error = %e, "the name does not resolve");
+            debug!(host, error = %Chain(&e), "the name does not resolve");
             Vec::new()
         }
         Err(_) => {

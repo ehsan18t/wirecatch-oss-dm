@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info};
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::http::{self, Failure, RequestRange, Session};
 use crate::options::DownloadOptions;
 use crate::proxy::{self, Scheme};
@@ -98,7 +98,7 @@ impl Origin {
         let crypto = match quinn::crypto::rustls::QuicClientConfig::try_from(tls) {
             Ok(crypto) => crypto,
             Err(e) => {
-                debug!(error = %e, "HTTP/3 is not possible with this TLS setup");
+                debug!(error = %Chain(&e), "HTTP/3 is not possible with this TLS setup");
                 return None;
             }
         };
@@ -175,7 +175,7 @@ impl Origin {
             // says why the connection ended.
             let closed = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
             if !closed.is_h3_no_error() {
-                debug!(error = %closed, "an HTTP/3 connection closed");
+                debug!(error = %Chain(&closed), "an HTTP/3 connection closed");
             }
         });
         Ok(Connection {

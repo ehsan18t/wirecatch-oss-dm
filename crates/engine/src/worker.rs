@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{debug, info, warn};
 
 use crate::download::Shared;
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
@@ -151,12 +151,12 @@ async fn run_assignment(
                 let delay = match next {
                     Next::GiveUp => return Err(f.error),
                     Next::StepBackOrRetry(_) if step_back(shared, index) => {
-                        info!(error = %f.error, "server refuses another connection; continuing with the open ones");
+                        info!(error = %Chain(&f.error), "server refuses another connection; continuing with the open ones");
                         return Ok(Ended::SteppedBack);
                     }
                     Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
-                warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
+                warn!(error = %Chain(&f.error), retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
                     () = shared.request.cancel.cancelled() => return Ok(Ended::Cancelled),
                     () = tokio::time::sleep(delay) => {}

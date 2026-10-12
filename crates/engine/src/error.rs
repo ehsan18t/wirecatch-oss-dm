@@ -328,6 +328,21 @@ impl<T> IoContext<T> for io::Result<T> {
     }
 }
 
+/// An error followed by every error below it, separated by `: `, for log lines: each level says only what it adds (an [`Error::Io`] the action and file, its source the system's reason), so a log needs them all.
+pub(crate) struct Chain<'a>(pub &'a dyn std::error::Error);
+
+impl fmt::Display for Chain<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)?;
+        let mut below = self.0.source();
+        while let Some(error) = below {
+            write!(f, ": {error}")?;
+            below = error.source();
+        }
+        Ok(())
+    }
+}
+
 /// What to add to an FTP error reply to say how to fix it.
 fn ftp_reply_hint(code: u16) -> &'static str {
     match code {

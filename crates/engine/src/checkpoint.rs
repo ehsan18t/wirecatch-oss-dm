@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::abandon::Abandoned;
 use crate::download::Shared;
-use crate::error::{IoAction, IoContext, Result};
+use crate::error::{Chain, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::state::ResumeState;
 use crate::storage;
@@ -162,7 +162,7 @@ impl Checkpoints {
                 }
                 let save = saver.clone();
                 if let Err(e) = storage::blocking(move || save.save()).await {
-                    warn!(error = %e, "could not save resume state; the next checkpoint tries again");
+                    warn!(error = %Chain(&e), "could not save resume state; the next checkpoint tries again");
                 }
             }
         });

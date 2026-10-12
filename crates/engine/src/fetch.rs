@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use url::Url;
 
-use crate::error::{Error, IoAction, IoContext, Result};
+use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::{self, Clients, Failure, RequestRange, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
@@ -352,7 +352,7 @@ impl Fetcher {
                 Next::GiveUp => return Err(f.error),
                 Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
             };
-            warn!(error = %f.error, %url, retry_in = ?delay, "request failed, retrying");
+            warn!(error = %Chain(&f.error), %url, retry_in = ?delay, "request failed, retrying");
             tokio::select! {
                 () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
                 () = tokio::time::sleep(delay) => {}

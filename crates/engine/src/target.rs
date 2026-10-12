@@ -13,7 +13,7 @@ use url::Url;
 
 use crate::abandon::Abandoned;
 use crate::download::{DownloadRequest, RemoteFile};
-use crate::error::{Error, IoAction, IoContext, Result};
+use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::SegmentTable;
 use crate::state::{LoadError, ResumeState};
@@ -218,7 +218,7 @@ fn saved_state(path: &Path) -> Option<ResumeState> {
         Ok(state) => Some(state),
         Err(LoadError::Read(e)) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => {
-            warn!(path = %path.display(), error = %e, "the resume file cannot be read; starting over");
+            warn!(path = %path.display(), error = %Chain(&e), "the resume file cannot be read; starting over");
             None
         }
     }
@@ -230,7 +230,7 @@ fn part_len(path: &Path) -> Option<u64> {
         Ok(metadata) => Some(metadata.len()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => {
-            warn!(path = %path.display(), error = %e, "the part file cannot be read; starting over");
+            warn!(path = %path.display(), error = %Chain(&e), "the part file cannot be read; starting over");
             None
         }
     }
@@ -244,7 +244,7 @@ pub(crate) fn discard(path: &Path) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
-            warn!(path = %path.display(), error = %e, "could not delete a file that is no longer needed");
+            warn!(path = %path.display(), error = %Chain(&e), "could not delete a file that is no longer needed");
         }
     }
 }
@@ -282,6 +282,41 @@ mod tests {
         assert_eq!(std::fs::read(&part).unwrap(), b"other run");
         assert_eq!(std::fs::read(&state).unwrap(), b"other run");
         drop(abandonment);
+        dir.remove().unwrap();
+    }
+
+    /// A logged error carries the system's reason, not only what the engine was doing.
+    #[test]
+    fn a_resume_file_that_cannot_be_read_is_logged_with_the_reason() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct Captured(Arc<Mutex<Vec<u8>>>);
+        impl Write for Captured {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let dir = wirecatch_test_support::private_dir("unreadable-state").unwrap();
+        // A folder where the resume file should be: opening works, reading does not.
+        let state = dir.join("f.bin.wcstate");
+        std::fs::create_dir(&state).unwrap();
+        let reason = std::fs::read(&state).unwrap_err().to_string();
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let saved = tracing::subscriber::with_default(subscriber, || saved_state(&state));
+        assert!(saved.is_none());
+        let logged = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert!(logged.contains(&reason), "{logged}");
         dir.remove().unwrap();
     }
 }

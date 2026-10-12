@@ -11,7 +11,7 @@ use url::Url;
 
 use crate::abandon::{Abandoned, Abandonment};
 use crate::checkpoint::{Checkpoints, ResumeSaver};
-use crate::error::{Error, IoAction, IoContext, Result};
+use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Clients;
 use crate::net_guard::{PrivateGuard, private_guard};
 use crate::numeric::saturating_cast;
@@ -448,7 +448,7 @@ async fn join_workers(mut workers: JoinSet<Result<()>>) -> Option<Error> {
     while let Some(joined) = workers.join_next().await {
         let result = joined.unwrap_or_else(|e| Err(Error::task(&e)));
         if let Err(e) = result {
-            warn!(error = %e, "connection gave up");
+            warn!(error = %Chain(&e), "connection gave up");
             first_error.get_or_insert(e);
         }
     }

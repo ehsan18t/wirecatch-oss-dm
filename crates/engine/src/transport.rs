@@ -9,7 +9,7 @@ use reqwest::{Client, Response};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
@@ -331,7 +331,7 @@ where
             Next::GiveUp => return Err(failure.error),
             Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
         };
-        tracing::warn!(error = %failure.error, retry_in = ?delay, "first request failed, retrying");
+        tracing::warn!(error = %Chain(&failure.error), retry_in = ?delay, "first request failed, retrying");
         tokio::select! {
             () = cancel.cancelled() => return Err(Error::Cancelled),
             () = tokio::time::sleep(delay) => {}
