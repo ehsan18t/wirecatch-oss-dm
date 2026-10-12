@@ -48,15 +48,6 @@
   );
   const totalSize = $derived(rows.reduce((sum, r) => sum + (r.total ?? 0), 0));
 
-  async function copyLink(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      app.toasts.notify('Link copied.');
-    } catch {
-      app.toasts.fail('Could not copy the link. Select it and copy it by hand.');
-    }
-  }
-
   function move(e: Event & { currentTarget: HTMLSelectElement }) {
     const queue: QueueId = Number(e.currentTarget.value);
     void app.actions.moveToQueue(app.selection.list, queue);
@@ -177,7 +168,7 @@
             icon={Copy}
             label="Copy link"
             title="Copy link"
-            onclick={() => copyLink(linkForDisplay(one.url))}
+            onclick={() => app.actions.copyLink(one.id)}
           />
         </dd>
       </div>

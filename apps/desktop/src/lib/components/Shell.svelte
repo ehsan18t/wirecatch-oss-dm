@@ -5,6 +5,7 @@
   import { isEditable, windowCommand } from '$lib/keymap';
   import { DOCK_WIDTH } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
+  import { followTheme } from '$lib/theme.svelte';
   import Button from './Button.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import DetailPanel from './DetailPanel.svelte';
@@ -27,13 +28,7 @@
     return () => query.removeEventListener('change', update);
   });
 
-  // Apply the theme setting. "System" leaves it to the operating system's preference.
-  $effect(() => {
-    const theme = app.settings?.theme ?? 'system';
-    const root = document.documentElement;
-    if (theme === 'system') delete root.dataset.theme;
-    else root.dataset.theme = theme;
-  });
+  followTheme(() => app.settings?.theme);
 
   const detail = $derived.by((): 'docked' | 'overlay' | null => {
     if (app.screen !== 'downloads') return null;

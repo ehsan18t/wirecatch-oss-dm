@@ -4,6 +4,7 @@
   // whole list, because every window is a webview of its own.
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
+  import { followTheme } from '$lib/theme.svelte';
   import DownloadWindow from '$lib/window/DownloadWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
@@ -49,13 +50,7 @@
     return () => state.dispose();
   });
 
-  // Follow the theme setting, like the main window.
-  $effect(() => {
-    const theme = win?.settings?.theme ?? 'system';
-    const root = document.documentElement;
-    if (theme === 'system') delete root.dataset.theme;
-    else root.dataset.theme = theme;
-  });
+  followTheme(() => win?.settings?.theme);
 </script>
 
 <svelte:head><title>Wirecatch download</title></svelte:head>

@@ -4,6 +4,7 @@
 
 import type { AddRequest, DownloadId, FixAction, QueueId } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
+import { linkForDisplay } from '../format';
 import type { Dialog } from './app.svelte';
 import type { DownloadStore } from './downloads.svelte';
 import { nudged, placed } from './order';
@@ -122,6 +123,20 @@ export class DownloadActions {
 
   async openFolder(id: DownloadId): Promise<void> {
     await this.#host.runner.run(() => this.#host.backend().openFolder(id));
+  }
+
+  /** Copies a download's link, with any password in it hidden, and says whether that worked. */
+  async copyLink(id: DownloadId): Promise<void> {
+    const row = this.#host.downloads.get(id);
+    if (!row) return;
+    try {
+      await navigator.clipboard.writeText(linkForDisplay(row.url));
+      this.#host.toasts.notify('Link copied.');
+    } catch {
+      this.#host.toasts.fail(
+        'Could not copy the link. Select it in the detail panel and copy it by hand.',
+      );
+    }
   }
 
   /** Lets the person pick a new folder for one download. */

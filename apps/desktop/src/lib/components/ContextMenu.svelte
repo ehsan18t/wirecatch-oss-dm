@@ -2,7 +2,6 @@
   // Right-click menu for the selected downloads. It only mirrors actions that are also visible
   // in the detail panel and the command palette (D3: nothing lives only in a context menu).
   import { onMount } from 'svelte';
-  import { linkForDisplay } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { isUnderWay } from '$lib/state/view';
 
@@ -43,19 +42,7 @@
       out.push(
         { label: 'Show in folder', run: () => app.actions.openFolder(one.id) },
         { label: 'Show progress window', run: () => app.showProgressWindow(one.id) },
-        {
-          label: 'Copy link',
-          run: async () => {
-            try {
-              await navigator.clipboard.writeText(linkForDisplay(one.url));
-              app.toasts.notify('Link copied.');
-            } catch {
-              app.toasts.fail(
-                'Could not copy the link. Select it in the detail panel and copy it by hand.',
-              );
-            }
-          },
-        },
+        { label: 'Copy link', run: () => app.actions.copyLink(one.id) },
       );
     }
     const queues = app.queues.list.filter((q) => rows.some((r) => r.queue !== q.id));
