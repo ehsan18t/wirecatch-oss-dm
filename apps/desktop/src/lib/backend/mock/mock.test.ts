@@ -254,6 +254,18 @@ describe('MockBackend', () => {
     expect(failed).toBe(true);
   });
 
+  it('drops a slow reading still on its way when disposed', () => {
+    vi.useFakeTimers();
+    try {
+      const { mock } = make({ empty: true });
+      mock.simulateSlowReading();
+      mock.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('drops answers still on their way back when disposed', async () => {
     vi.useFakeTimers();
     try {

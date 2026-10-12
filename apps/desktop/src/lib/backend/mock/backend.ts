@@ -84,9 +84,8 @@ export class MockBackend implements Backend {
   readonly #state: MockState;
   readonly #latencyMs: number;
   #timer: ReturnType<typeof setInterval> | undefined;
-  #captureTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Answers waiting out `latencyMs`. */
-  readonly #answers = new Set<ReturnType<typeof setTimeout>>();
+  /** Everything still to happen later (answers waiting out `latencyMs`, sample events), so `dispose` stops it. */
+  readonly #later = new Set<ReturnType<typeof setTimeout>>();
   #lastTick: number;
   #captureIndex = 0;
   #mediaIndex = 0;
@@ -104,16 +103,24 @@ export class MockBackend implements Backend {
       this.#timer = setInterval(() => this.tick(), options.tickMs ?? DEFAULT_TICK_MS);
     }
     if (options.autoCapture) {
-      this.#captureTimer = setTimeout(() => this.simulateCapture(), AUTO_CAPTURE_MS);
+      this.#after(AUTO_CAPTURE_MS, () => this.simulateCapture());
     }
   }
 
   /** Stops the timers, including answers still on their way back; those never arrive. */
   dispose(): void {
     if (this.#timer) clearInterval(this.#timer);
-    if (this.#captureTimer) clearTimeout(this.#captureTimer);
-    for (const answer of this.#answers) clearTimeout(answer);
-    this.#answers.clear();
+    for (const timer of this.#later) clearTimeout(timer);
+    this.#later.clear();
+  }
+
+  /** Runs `work` in `ms`, unless `dispose` comes first. */
+  #after(ms: number, work: () => void): void {
+    const timer = setTimeout(() => {
+      this.#later.delete(timer);
+      work();
+    }, ms);
+    this.#later.add(timer);
   }
 
   /**
@@ -136,13 +143,7 @@ export class MockBackend implements Backend {
 
   /** Waits `ms`, unless `dispose` stops the wait first. */
   #delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const answer = setTimeout(() => {
-        this.#answers.delete(answer);
-        resolve();
-      }, ms);
-      this.#answers.add(answer);
-    });
+    return new Promise((resolve) => this.#after(ms, resolve));
   }
 
   /** Advances the simulation. Called on a timer, or directly by tests. */
@@ -343,7 +344,7 @@ export class MockBackend implements Backend {
   /** Sample data only: a page that takes three seconds to read before its qualities show. */
   simulateSlowReading(): void {
     const id = media.startReading(this.#state, media.SLOW_SAMPLE_PAGE);
-    setTimeout(() => this.simulateMediaChoice(media.SLOW_SAMPLE_PAGE, id), SLOW_READING_MS);
+    this.#after(SLOW_READING_MS, () => this.simulateMediaChoice(media.SLOW_SAMPLE_PAGE, id));
   }
 
   /** Sample data only: a page that needs the media add-on to download. */
