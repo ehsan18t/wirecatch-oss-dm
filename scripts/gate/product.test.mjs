@@ -92,7 +92,6 @@ test('a change to product.toml makes every file that carries the value stale', a
   const stale = await staleOutputs(root);
   for (const path of [
     'crates/product/src/lib.rs',
-    'packages/product/src/index.ts',
     'apps/desktop/src-tauri/linux/prerm.sh',
     'apps/desktop/src-tauri/windows/hooks.nsh',
     'crates/bridge/Cargo.toml',

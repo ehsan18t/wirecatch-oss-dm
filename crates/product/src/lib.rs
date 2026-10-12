@@ -7,38 +7,8 @@
 /// The product name people see.
 pub const PRODUCT_NAME: &str = "Wirecatch";
 
-/// The lowercase product name used in file names.
-pub const PRODUCT_SLUG: &str = "wirecatch";
-
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
-
-/// The license, as an SPDX expression.
-pub const LICENSE: &str = "GPL-3.0-only";
-
-/// Who wrote it, for the copyright line.
-pub const AUTHORS: &str = "Wirecatch contributors";
-
-/// One line for store listings and package managers.
-pub const SUMMARY: &str = "A fast download manager that just works";
-
-/// A few sentences for installers.
-pub const DESCRIPTION: &str = "Wirecatch downloads files from the web quickly and reliably, catches downloads from your browser, and keeps queues, schedules and speed limits simple.";
-
-/// The legal name that publishes the installers.
-pub const PUBLISHER: &str = "TODO-PRODUCT-PUBLISHER-LEGAL-NAME";
-
-/// The source repository.
-pub const REPOSITORY_URL: &str = "https://github.com/ehsan18t/wirecatch-oss-dm";
-
-/// The product website.
-pub const WEBSITE_URL: &str = "https://TODO-PRODUCT-WEBSITE.invalid/";
-
-/// Where people ask for help.
-pub const SUPPORT_EMAIL: &str = "TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid";
-
-/// Where vulnerabilities are reported privately.
-pub const SECURITY_EMAIL: &str = "TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid";
 
 /// The desktop app executable, without `.exe`.
 pub const APP_EXECUTABLE: &str = "wirecatch-app";
@@ -66,9 +36,6 @@ pub const CHROMIUM_EXTENSION_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfel
 
 /// The Firefox add-on id.
 pub const FIREFOX_EXTENSION_ID: &str = "extension@wirecatch.app";
-
-/// The extension's one line in browser stores.
-pub const EXTENSION_DESCRIPTION: &str = "Sends your downloads to the Wirecatch download manager.";
 
 /// Linux: the folder in `XDG_RUNTIME_DIR` that holds the app's socket.
 pub const IPC_RUNTIME_FOLDER: &str = "wirecatch";

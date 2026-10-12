@@ -5,85 +5,84 @@ import { CHANNELS } from './read.mjs';
 export const GENERATED_NOTE =
   'Generated from config/product.toml by `pnpm product:generate`. Do not edit: change config/product.toml and run it again.';
 
-/**
- * The constants both languages get: their name, what they mean, and their value. `rust: false` or `ts: false` leaves one out where that side has no use for it.
- */
+/** Which languages use a constant: only those get it, so nothing is generated that nobody reads. */
+const RUST = { rust: true, ts: false };
+const TS = { rust: false, ts: true };
+const BOTH = { rust: true, ts: true };
+
+/** The constants generated: their name, what they mean, their value, and which languages use them. */
 const CONSTANTS = [
-  ['PRODUCT_NAME', 'The product name people see.', (p) => p.product.name],
-  ['PRODUCT_SLUG', 'The lowercase product name used in file names.', (p) => p.product.slug],
+  ['PRODUCT_NAME', 'The product name people see.', (p) => p.product.name, BOTH],
+  ['PRODUCT_SLUG', 'The lowercase product name used in file names.', (p) => p.product.slug, TS],
   [
     'PRODUCT_VERSION',
     'The release version of the app and the extension.',
     (p) => p.product.version,
+    RUST,
   ],
-  ['LICENSE', 'The license, as an SPDX expression.', (p) => p.product.license],
-  ['AUTHORS', 'Who wrote it, for the copyright line.', (p) => p.product.authors],
-  ['SUMMARY', 'One line for store listings and package managers.', (p) => p.product.summary],
-  ['DESCRIPTION', 'A few sentences for installers.', (p) => p.product.description],
-  ['PUBLISHER', 'The legal name that publishes the installers.', (p) => p.publisher.legal_name],
-  ['REPOSITORY_URL', 'The source repository.', (p) => p.links.repository],
-  ['WEBSITE_URL', 'The product website.', (p) => p.links.website],
-  ['SUPPORT_EMAIL', 'Where people ask for help.', (p) => p.contacts.support_email],
-  [
-    'SECURITY_EMAIL',
-    'Where vulnerabilities are reported privately.',
-    (p) => p.contacts.security_email,
-  ],
-  ['APP_EXECUTABLE', 'The desktop app executable, without `.exe`.', (p) => p.executables.app],
+  ['WEBSITE_URL', 'The product website.', (p) => p.links.website, TS],
+  ['APP_EXECUTABLE', 'The desktop app executable, without `.exe`.', (p) => p.executables.app, RUST],
   [
     'BRIDGE_EXECUTABLE',
     'The browser bridge executable, without `.exe`; it lives next to the app (D19).',
     (p) => p.executables.bridge,
+    RUST,
   ],
   [
     'CLI_EXECUTABLE',
     'The command-line downloader executable, without `.exe`.',
     (p) => p.executables.cli,
+    RUST,
   ],
-  ['DATABASE_FILE', 'The download list, in the data folder.', (p) => p.files.database],
+  ['DATABASE_FILE', 'The download list, in the data folder.', (p) => p.files.database, RUST],
   [
     'NATIVE_HOST_NAME',
     'The native messaging host name the bridge registers and the extension connects to.',
     (p) => p.native_host.name,
+    BOTH,
   ],
   [
     'NATIVE_HOST_DESCRIPTION',
     "The description in the bridge's native messaging manifests.",
     (p) => p.native_host.description,
+    RUST,
   ],
   [
     'CHROMIUM_EXTENSION_ID',
     'The one Chromium extension id every bridge trusts (D22).',
     (p) => p.extension.chromium_id,
+    RUST,
   ],
   [
     'CHROMIUM_EXTENSION_ORIGIN',
     'The origin Chromium passes for the extension, in the exact form it uses.',
     (p) => `chrome-extension://${p.extension.chromium_id}/`,
+    RUST,
   ],
   [
     'CHROMIUM_PUBLIC_KEY',
     'The public key that gives unpacked Chromium builds the extension id (D22).',
     (p) => p.extension.chromium_public_key,
-    { rust: false },
+    TS,
   ],
-  ['FIREFOX_EXTENSION_ID', 'The Firefox add-on id.', (p) => p.extension.firefox_id],
+  ['FIREFOX_EXTENSION_ID', 'The Firefox add-on id.', (p) => p.extension.firefox_id, BOTH],
   [
     'EXTENSION_DESCRIPTION',
     "The extension's one line in browser stores.",
     (p) => p.extension.description,
+    TS,
   ],
   [
     'IPC_RUNTIME_FOLDER',
     "Linux: the folder in `XDG_RUNTIME_DIR` that holds the app's socket.",
     (p) => p.ipc.runtime_folder,
-    { ts: false },
+    RUST,
   ],
   [
     'IPC_FALLBACK_FOLDER_PREFIX',
     'Linux: the start of the folder in `/tmp` that holds the socket when there is no runtime folder; the user id follows it.',
     (p) => p.ipc.fallback_folder_prefix,
-    { ts: false },
+    RUST,
   ],
 ];
 
@@ -120,7 +119,7 @@ const VARIANT_DOC = { release: 'Release builds.', dev: 'Debug builds.' };
 const rustString = (value) => `"${value.replace(/[\\"]/g, '\\$&')}"`;
 
 function rustConstants(product) {
-  return CONSTANTS.filter(([, , , only]) => only?.rust !== false).map(
+  return CONSTANTS.filter(([, , , uses]) => uses.rust).map(
     ([name, doc, value]) =>
       `/// ${doc}\npub const ${name}: &str = ${rustString(value(product))};\n`,
   );
@@ -174,7 +173,7 @@ ${rustChannel(product)}`;
 
 /** The `@wirecatch/product` package's index.ts, before Prettier. */
 export function typescriptSource(product) {
-  const constants = CONSTANTS.filter(([, , , only]) => only?.ts !== false).map(
+  const constants = CONSTANTS.filter(([, , , uses]) => uses.ts).map(
     ([name, doc, value]) =>
       `/** ${doc} */\nexport const ${name} = ${JSON.stringify(value(product))};\n`,
   );
