@@ -7,7 +7,7 @@
   const app = getApp();
 </script>
 
-<Dialog title="Keyboard shortcuts" onclose={() => app.closeDialog()} width={480}>
+<Dialog title="Keyboard shortcuts" onclose={() => app.closeDialog()} size="medium">
   <table>
     <caption class="visually-hidden">Keyboard shortcuts</caption>
     <tbody>

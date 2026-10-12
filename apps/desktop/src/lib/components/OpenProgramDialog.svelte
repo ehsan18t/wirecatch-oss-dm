@@ -23,7 +23,7 @@
   }
 </script>
 
-<Dialog title={`Open "${name}"?`} onclose={() => app.closeDialog()} width={460}>
+<Dialog title={`Open "${name}"?`} onclose={() => app.closeDialog()} size="narrow">
   <p class="text">
     {#if type}
       This is a <strong>.{type}</strong> file, a type that can run code.

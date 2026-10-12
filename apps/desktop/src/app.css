@@ -48,6 +48,11 @@
   --icon-md: 16px;
   --icon-lg: 18px;
   --icon-stroke-thin: 1.75;
+
+  /* Dialogs come in three widths (see Dialog.svelte). */
+  --dialog-narrow: 460px;
+  --dialog-medium: 500px;
+  --dialog-wide: 540px;
 }
 
 @media (prefers-color-scheme: dark) {

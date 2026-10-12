@@ -20,7 +20,7 @@
   }
 </script>
 
-<Dialog {title} onclose={() => app.closeDialog()} width={460}>
+<Dialog {title} onclose={() => app.closeDialog()} size="narrow">
   <p class="text">
     This stops the download and deletes the part already downloaded. It stays in the list, so you
     can start it over later.

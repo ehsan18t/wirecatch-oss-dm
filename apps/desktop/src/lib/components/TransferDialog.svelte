@@ -83,7 +83,7 @@
     ? 'Saves your setup to one file. Load it on another computer, Windows or Linux, with Import settings. Folders like Downloads are matched to that computer automatically.'
     : 'Loads a file made with Export settings. It replaces your current settings and queues; your downloads stay as they are.'}
   onclose={() => app.closeDialog()}
-  width={520}
+  size="wide"
 >
   {#if done}
     <p class="done" role="status">

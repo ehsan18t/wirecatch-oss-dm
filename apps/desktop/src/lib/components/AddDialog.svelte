@@ -61,7 +61,7 @@
 <Dialog
   title={urls.length > 1 ? `Add ${urls.length} downloads` : 'Add a download'}
   onclose={() => app.closeDialog()}
-  width={540}
+  size="wide"
 >
   <form
     id="add-form"

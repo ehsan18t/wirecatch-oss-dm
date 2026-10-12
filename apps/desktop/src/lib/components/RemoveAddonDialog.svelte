@@ -17,7 +17,7 @@
   }
 </script>
 
-<Dialog title={`Remove the ${name}?`} onclose={() => app.closeDialog()} width={440}>
+<Dialog title={`Remove the ${name}?`} onclose={() => app.closeDialog()} size="narrow">
   <p class="text">
     Downloads from video sites, and videos whose sound and picture must be joined, stop working
     until you install it again. Your downloaded files stay.

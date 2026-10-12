@@ -20,7 +20,7 @@
   }
 </script>
 
-<Dialog {title} onclose={() => app.closeDialog()} width={460}>
+<Dialog {title} onclose={() => app.closeDialog()} size="narrow">
   <p class="text">
     {rows.length === 1 ? 'It leaves the list.' : 'They leave the list.'}
     {#if unfinished > 0}

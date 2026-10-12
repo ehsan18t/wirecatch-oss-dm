@@ -151,7 +151,7 @@
   title={original ? `Edit ${original.name}` : 'New queue'}
   description="A queue runs its downloads in order, with its own limits and hours."
   onclose={() => app.closeDialog()}
-  width={500}
+  size="medium"
 >
   <form
     id="queue-form"

@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
   import IconButton from './IconButton.svelte';
+  import type { DialogSize } from './scale';
 
   let {
     title,
@@ -10,14 +11,15 @@
     onclose,
     children,
     footer,
-    width = 480,
+    size = 'medium',
   }: {
     title: string;
     description?: string;
     onclose: () => void;
     children: Snippet;
     footer?: Snippet;
-    width?: number;
+    /** One of the three dialog widths in app.css. */
+    size?: DialogSize;
   } = $props();
 
   const uid = $props.id();
@@ -88,7 +90,7 @@
   bind:this={el}
   aria-labelledby="{uid}-title"
   aria-describedby={description ? `${uid}-desc` : undefined}
-  style:--dialog-width="{width}px"
+  style:--dialog-width="var(--dialog-{size})"
   {oncancel}
   {onkeydown}
   {onclick}

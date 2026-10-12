@@ -3,3 +3,6 @@
 
 /** An icon size; each is a `--icon-*` token. */
 export type IconSize = 'xs' | 'sm' | 'md' | 'lg';
+
+/** A dialog width; each is a `--dialog-*` token. */
+export type DialogSize = 'narrow' | 'medium' | 'wide';
