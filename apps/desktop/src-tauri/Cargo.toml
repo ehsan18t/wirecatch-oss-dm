@@ -4,6 +4,9 @@ description = "Wirecatch desktop app: the Tauri shell that hosts the download ma
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
 
 # Desktop only: a plain library the binary links to (no mobile static or dynamic libraries).
