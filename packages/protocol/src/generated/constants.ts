@@ -53,6 +53,12 @@ export const NEW_QUEUE_MAX_CONCURRENT = 2;
 export const PER_MILLE_DONE = 1000;
 
 /**
+ * [`SettingsProfile::format_version`] of the settings files this build writes, and the
+ * newest it reads.
+ */
+export const PROFILE_FORMAT_VERSION = 1;
+
+/**
  * The audio bit rates, in kbps, a person can pick when saving as each format;
  * formats without a choice are left out (`OutputFormat::kbps_choices`).
  */

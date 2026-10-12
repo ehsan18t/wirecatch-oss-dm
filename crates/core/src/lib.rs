@@ -38,7 +38,6 @@ pub use manager::{
     AddonRequestItem, DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,
     DEFAULT_STOP_TIMEOUT, Manager, ManagerConfig, MediaReading,
 };
-pub use profile::PROFILE_FORMAT_VERSION;
 pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
 pub use store::DATABASE_FILE;

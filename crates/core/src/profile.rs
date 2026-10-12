@@ -6,15 +6,13 @@ use std::path::Path;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettings, Category, ImportSummary, ImportedFolder, PortablePath, Queue, SettingsProfile,
+    AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
+    Queue, SettingsProfile,
 };
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
-
-/// Version of the profile format this build writes and the newest it reads.
-pub const PROFILE_FORMAT_VERSION: u32 = 1;
 
 /// Largest profile file accepted. Real ones are a few kilobytes; the limits on
 /// queues and lists keep even a full one far below this.

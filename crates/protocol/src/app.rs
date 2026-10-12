@@ -747,6 +747,9 @@ crate::exported::exported_consts! {
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
+    /// [`SettingsProfile::format_version`] of the settings files this build writes, and the
+    /// newest it reads.
+    pub const PROFILE_FORMAT_VERSION: u32 = 1;
 }
 
 /// Every user setting. The app is the only store (D5).
