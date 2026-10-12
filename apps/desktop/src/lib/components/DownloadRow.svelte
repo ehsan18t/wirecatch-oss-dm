@@ -59,7 +59,7 @@
             class="fix"
             tabindex={-1}
             title={FIX_LABEL[fix]}
-            onclick={() => app.fix(row.id, fix)}
+            onclick={() => app.actions.fix(row.id, fix)}
           >
             {FIX_SHORT[fix]}
           </Button>

@@ -52,14 +52,14 @@
     <div class="tools">
       <Button
         icon={Pause}
-        onclick={() => app.pauseAll()}
+        onclick={() => app.actions.pauseAll()}
         disabled={!canPauseAll}
         title={canPauseAll ? 'Pause every download' : 'Nothing is running or waiting'}
         ><span class="label">Pause all</span>
       </Button>
       <Button
         icon={Play}
-        onclick={() => app.resumeAll()}
+        onclick={() => app.actions.resumeAll()}
         disabled={!canResumeAll}
         title={canResumeAll ? 'Resume every paused download' : 'Nothing is paused'}
         ><span class="label">Resume all</span>

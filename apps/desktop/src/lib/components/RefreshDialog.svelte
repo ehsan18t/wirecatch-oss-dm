@@ -18,7 +18,7 @@
       error = 'Paste the full new link, starting with https://.';
       return;
     }
-    if (await app.refreshLink(id, found)) {
+    if (await app.actions.refreshLink(id, found)) {
       app.toasts.notify('New link saved. The download continues where it stopped.');
       app.closeDialog();
     }

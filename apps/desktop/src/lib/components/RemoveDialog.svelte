@@ -15,7 +15,7 @@
   );
 
   async function remove() {
-    await app.remove(ids, deleteFiles);
+    await app.actions.remove(ids, deleteFiles);
     app.closeDialog();
   }
 </script>

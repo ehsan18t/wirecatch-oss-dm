@@ -59,7 +59,7 @@
 
   function move(e: Event & { currentTarget: HTMLSelectElement }) {
     const queue: QueueId = Number(e.currentTarget.value);
-    void app.moveToQueue(app.selection.list, queue);
+    void app.actions.moveToQueue(app.selection.list, queue);
   }
 
   const sharedQueue = $derived(
@@ -94,8 +94,8 @@
     {#if one.status === 'failed' && one.error}
       <ErrorFix
         row={one}
-        onfix={(fix: FixAction) => app.fix(one.id, fix)}
-        onretry={() => app.retry([one.id])}
+        onfix={(fix: FixAction) => app.actions.fix(one.id, fix)}
+        onretry={() => app.actions.retry([one.id])}
       />
     {/if}
 
@@ -112,21 +112,25 @@
 
     <div class="actions">
       {#if isUnderWay(one.status)}
-        <Button icon={Pause} onclick={() => app.pause([one.id])}>Pause</Button>
+        <Button icon={Pause} onclick={() => app.actions.pause([one.id])}>Pause</Button>
       {:else if one.status === 'paused'}
-        <Button variant="primary" icon={Play} onclick={() => app.resume([one.id])}>Resume</Button>
+        <Button variant="primary" icon={Play} onclick={() => app.actions.resume([one.id])}
+          >Resume</Button
+        >
       {:else if one.status === 'cancelled'}
-        <Button variant="primary" icon={RotateCw} onclick={() => app.retry([one.id])}>
+        <Button variant="primary" icon={RotateCw} onclick={() => app.actions.retry([one.id])}>
           Start over</Button
         >
       {:else if one.status === 'failed' && !one.error}
         <!-- With an error, the error box above already offers Try again. -->
-        <Button icon={RotateCw} onclick={() => app.retry([one.id])}>Try again</Button>
+        <Button icon={RotateCw} onclick={() => app.actions.retry([one.id])}>Try again</Button>
       {/if}
       {#if one.status === 'completed'}
-        <Button variant="primary" onclick={() => app.openFile(one.id)}>Open</Button>
+        <Button variant="primary" onclick={() => app.actions.openFile(one.id)}>Open</Button>
       {/if}
-      <Button icon={FolderOpen} onclick={() => app.openFolder(one.id)}>Show in folder</Button>
+      <Button icon={FolderOpen} onclick={() => app.actions.openFolder(one.id)}
+        >Show in folder</Button
+      >
       <Button icon={AppWindow} onclick={() => app.showProgressWindow(one.id)}>
         Show progress window</Button
       >
@@ -161,7 +165,7 @@
         <dd class="path">
           <span>{folderOf(one.path)}</span>
           {#if one.status !== 'completed'}
-            <Button small onclick={() => app.chooseFolderFor(one.id)}>Change</Button>
+            <Button small onclick={() => app.actions.chooseFolderFor(one.id)}>Change</Button>
           {/if}
         </dd>
       </div>
@@ -215,13 +219,13 @@
     </header>
     <div class="actions">
       {#if anyRunning}
-        <Button icon={Pause} onclick={() => app.pause()}>Pause</Button>
+        <Button icon={Pause} onclick={() => app.actions.pause()}>Pause</Button>
       {/if}
       {#if anyStopped}
-        <Button icon={Play} onclick={() => app.resume()}>Resume</Button>
+        <Button icon={Play} onclick={() => app.actions.resume()}>Resume</Button>
       {/if}
       {#if anyFailed}
-        <Button icon={RotateCw} onclick={() => app.retry()}>Try again</Button>
+        <Button icon={RotateCw} onclick={() => app.actions.retry()}>Try again</Button>
       {/if}
       <Button
         icon={Trash}

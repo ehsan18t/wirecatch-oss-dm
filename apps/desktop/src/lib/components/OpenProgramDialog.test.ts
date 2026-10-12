@@ -27,7 +27,7 @@ async function askToOpen(url: string) {
   for (let i = 0; i < 2000 && r.app.downloads.get(id)?.status !== 'completed'; i++) {
     r.backend.tick(5000);
   }
-  await r.app.openFile(id);
+  await r.app.actions.openFile(id);
   await settle();
   return within(screen.getByRole('dialog'));
 }

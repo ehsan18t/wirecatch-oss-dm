@@ -34,7 +34,7 @@
     e.preventDefault();
     dropTarget = null;
     const ids = getDragIds(e);
-    if (ids.length > 0) void app.moveToQueue(ids, q.id);
+    if (ids.length > 0) void app.actions.moveToQueue(ids, q.id);
   }
 </script>
 

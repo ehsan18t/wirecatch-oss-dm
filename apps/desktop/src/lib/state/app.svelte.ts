@@ -1,27 +1,22 @@
 // Everything the main window knows and every action it can take. Components read from here and
 // call these methods; nothing else talks to the backend. Each concern has its own class (the
-// selection, the queues, the notes, the questions, the add-ons, settings files); this one owns
-// the list, the screens and dialogs, the actions on downloads, and the core's events.
+// link to the backend, the actions on downloads, the selection, the queues, the notes, the
+// questions, the add-ons, settings files); this one owns the list, the screens and dialogs, the
+// settings and the core's events.
 
-import type {
-  AddRequest,
-  AppSettings,
-  DownloadId,
-  FixAction,
-  QueueId,
-  UiEvent,
-} from '@wirecatch/protocol';
+import type { AppSettings, DownloadId, QueueId, UiEvent } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import type { Backend } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { Addons } from './addons.svelte';
 import { Clock } from './clock.svelte';
+import { Connection } from './connection';
+import { DownloadActions } from './download-actions.svelte';
 import { DownloadStore } from './downloads.svelte';
 import { mainWindowEvents } from './app-events';
 import { dispatch, HeldEvents } from './events';
 import { Hints } from './hints.svelte';
-import { nudged, placed } from './order';
 import { Questions } from './questions.svelte';
 import { Queues } from './queues.svelte';
 import { errorMessage, Runner } from './runner';
@@ -29,7 +24,7 @@ import { Selection } from './selection.svelte';
 import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import { SettingsTransfer } from './settings-transfer.svelte';
 import { Toasts } from './toasts.svelte';
-import { countRows, isUnderWay, visibleIds, type SortKey, type View } from './view';
+import { countRows, visibleIds, type SortKey, type View } from './view';
 
 export type { Toast } from './toasts.svelte';
 
@@ -60,8 +55,7 @@ export function getApp(): AppState {
 }
 
 export class AppState {
-  #backend: Backend | null = null;
-  readonly #loadBackend: () => Promise<Backend>;
+  readonly #connection: Connection;
   readonly downloads = new DownloadStore();
   readonly hints = new Hints();
   readonly toasts = new Toasts();
@@ -88,6 +82,17 @@ export class AppState {
       if (settings) this.settings = settings;
       if (queues) this.queues.list = queues;
     },
+  });
+  readonly actions = new DownloadActions({
+    backend: () => this.backend,
+    runner: this.#runner,
+    toasts: this.toasts,
+    downloads: this.downloads,
+    selection: this.selection,
+    queues: this.queues,
+    openDialog: (dialog) => this.openDialog(dialog),
+    closeDialog: () => this.closeDialog(),
+    place: () => ({ view: this.view, sort: this.sort }),
   });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>
@@ -117,24 +122,17 @@ export class AppState {
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
 
-  #unsubscribe: (() => void) | null = null;
   /** Bumped by every init and dispose, so a superseded init cleans up after itself. */
   #generation = 0;
 
   /** Takes a backend, or a function that loads one (so the mock can stay out of production). */
   constructor(backend: Backend | (() => Promise<Backend>)) {
-    if (typeof backend === 'function') {
-      this.#loadBackend = backend;
-    } else {
-      this.#backend = backend;
-      this.#loadBackend = () => Promise.resolve(backend);
-    }
+    this.#connection = new Connection(backend);
   }
 
   /** The backend. Available once `init` has started; components only use it after loading. */
   get backend(): Backend {
-    if (!this.#backend) throw new Error('The backend is not loaded yet.');
-    return this.#backend;
+    return this.#connection.backend;
   }
 
   // ---- Derived views ----
@@ -165,13 +163,7 @@ export class AppState {
     const generation = ++this.#generation;
     const current = () => generation === this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
-    const unsubscribe = await this.#connect(current, events.receive);
-    if (!unsubscribe) return;
-    if (!current()) {
-      unsubscribe();
-      return;
-    }
-    this.#unsubscribe = unsubscribe;
+    if (!(await this.#connect(current, events.receive))) return;
     await this.#load(current);
     if (!current()) {
       events.drop();
@@ -186,39 +178,23 @@ export class AppState {
     void this.questions.restore(this.backend);
   }
 
-  /** Loads the backend and listens to it; `null` when that failed, which is then shown. */
-  async #connect(
-    current: () => boolean,
-    onEvent: (e: UiEvent) => void,
-  ): Promise<(() => void) | null> {
+  /** Loads the backend and listens to it; false when superseded or when that failed, which is then shown. */
+  async #connect(current: () => boolean, onEvent: (e: UiEvent) => void): Promise<boolean> {
     try {
-      const backend = this.#backend ?? (await this.#loadBackend());
-      this.#backend = backend;
+      const backend = await this.#connection.load();
       this.sampleData = backend.kind === 'mock';
       this.clock.follow(backend.sampleData?.now ?? (() => Date.now()));
-      const stopEvents = await backend.subscribe(onEvent);
-      const stopSignals = await backend
-        .onShellSignal((signal) => {
-          if (!current()) return;
-          // Events were missed: load everything again rather than show a stale list.
-          if (signal === 'resync') void this.init();
-          else void this.#takeLaunchLinks();
-        })
-        .catch((err: unknown) => {
-          // Nothing would ever close the event listener otherwise.
-          stopEvents();
-          throw err;
-        });
-      return () => {
-        stopEvents();
-        stopSignals();
-      };
+      return await this.#connection.listen(current, onEvent, (signal) => {
+        // Events were missed: load everything again rather than show a stale list.
+        if (signal === 'resync') void this.init();
+        else void this.#takeLaunchLinks();
+      });
     } catch (err) {
       if (current()) {
         this.loadError = errorMessage(err);
         this.ready = true;
       }
-      return null;
+      return false;
     }
   }
 
@@ -257,8 +233,7 @@ export class AppState {
   }
 
   #teardown(): void {
-    this.#unsubscribe?.();
-    this.#unsubscribe = null;
+    this.#connection.close();
     this.clock.stop();
   }
 
@@ -321,162 +296,6 @@ export class AppState {
   async showProgressWindow(id: DownloadId): Promise<void> {
     this.paletteOpen = false;
     await this.#runner.run(() => this.backend.showProgressWindow(id));
-  }
-
-  // ---- Download actions ----
-
-  async add(requests: AddRequest[]): Promise<DownloadId[]> {
-    const ids: DownloadId[] = [];
-    for (const r of requests) {
-      const id = await this.#runner.run(() => this.backend.addDownload(r));
-      if (id !== undefined) ids.push(id);
-    }
-    if (ids.length > 0) {
-      this.toasts.notify(ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`);
-    }
-    return ids;
-  }
-
-  async pause(ids: DownloadId[] = this.selection.list): Promise<void> {
-    await this.#runner.bulk(ids, 'pause', (id) => this.backend.pause(id));
-  }
-
-  async resume(ids: DownloadId[] = this.selection.list): Promise<void> {
-    await this.#runner.bulk(ids, 'resume', (id) => this.backend.resume(id));
-  }
-
-  /** Space bar: pause what runs, resume what does not. */
-  async togglePause(ids: DownloadId[] = this.selection.list): Promise<void> {
-    const rows = ids.flatMap((id) => this.downloads.get(id) ?? []);
-    if (rows.some((r) => isUnderWay(r.status))) {
-      await this.pause(ids);
-      return;
-    }
-    // A cancelled download has no partial file left; it starts over.
-    const cancelled = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
-    await this.retry(cancelled);
-    await this.resume(ids.filter((id) => !cancelled.includes(id)));
-  }
-
-  async retry(ids: DownloadId[] = this.selection.list): Promise<void> {
-    await this.#runner.bulk(ids, 'restart', (id) => this.backend.retry(id));
-  }
-
-  /** Tries every download that needs attention again. */
-  async retryAllFailed(): Promise<void> {
-    const failed = this.downloads.order.filter((id) => this.downloads.get(id)?.status === 'failed');
-    if (failed.length === 0) {
-      this.toasts.notify('Nothing needs attention right now.');
-      return;
-    }
-    const ok = await this.#runner.bulk(failed, 'restart', (id) => this.backend.retry(id));
-    if (ok > 0)
-      this.toasts.notify(ok === 1 ? 'Trying 1 download again.' : `Trying ${ok} downloads again.`);
-  }
-
-  async cancel(ids: DownloadId[] = this.selection.list): Promise<void> {
-    await this.#runner.bulk(ids, 'cancel', (id) => this.backend.cancel(id));
-  }
-
-  async remove(ids: DownloadId[], deleteFile: boolean): Promise<void> {
-    await this.#runner.run(() => this.backend.remove(ids, deleteFile));
-  }
-
-  refreshLink(id: DownloadId, url: string): Promise<boolean> {
-    return this.#runner.succeeds(() => this.backend.refreshLink(id, url));
-  }
-
-  /** Opens a finished file; a program asks first whether the person trusts where it came from. */
-  async openFile(id: DownloadId): Promise<void> {
-    const program = await this.#runner.run(() => this.backend.isProgram(id));
-    if (program === undefined) return;
-    if (program) {
-      this.openDialog({ kind: 'open-program', id });
-      return;
-    }
-    await this.#runner.run(() => this.backend.openFile(id));
-  }
-
-  /** Opens a program the person confirmed they trust. */
-  async openProgram(id: DownloadId): Promise<void> {
-    this.closeDialog();
-    await this.#runner.run(() => this.backend.openFile(id, true));
-  }
-
-  async openFolder(id: DownloadId): Promise<void> {
-    await this.#runner.run(() => this.backend.openFolder(id));
-  }
-
-  /** Lets the person pick a new folder for one download. */
-  async chooseFolderFor(id: DownloadId): Promise<boolean> {
-    const row = this.downloads.get(id);
-    const picked = await this.#runner.run(() => this.backend.pickFolder(row?.path));
-    if (!picked) return false;
-    const ok = await this.#runner.succeeds(() => this.backend.setDownloadFolder(id, picked));
-    if (ok) this.toasts.notify(`Saving to ${picked}`);
-    return ok;
-  }
-
-  /** Runs the fix an error offers. */
-  async fix(id: DownloadId, action: FixAction): Promise<void> {
-    switch (action) {
-      case 'retry':
-        await this.retry([id]);
-        break;
-      case 'refresh_link':
-        this.openDialog({ kind: 'refresh', id });
-        break;
-      case 'choose_folder':
-        if (await this.chooseFolderFor(id)) await this.retry([id]);
-        break;
-      case 'free_disk_space':
-        await this.openFolder(id);
-        break;
-      case 'keep_original':
-        await this.#runner.run(() => this.backend.keepOriginal(id));
-        break;
-    }
-  }
-
-  async moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void> {
-    if (ids.length === 0) return;
-    const ok = await this.#runner.succeeds(() => this.backend.moveToQueue(ids, queue));
-    const name = this.queues.byId(queue)?.name ?? 'the queue';
-    if (ok)
-      this.toasts.notify(
-        ids.length === 1 ? `Moved to ${name}.` : `${ids.length} downloads moved to ${name}.`,
-      );
-  }
-
-  /**
-   * Moves `ids` inside their queue so they sit just before `before` (or at the end when it is
-   * `null`). Only downloads of that one queue take part.
-   */
-  async placeInQueue(queue: QueueId, ids: DownloadId[], before: DownloadId | null): Promise<void> {
-    const next = placed(this.downloads.idsInQueue(queue), ids, before);
-    if (next === null) return;
-    if (await this.#runner.succeeds(() => this.backend.reorder(queue, next))) {
-      this.downloads.reorder(queue, next);
-    }
-  }
-
-  /** Alt+Up and Alt+Down: nudge the selection one place within its queue. */
-  async nudge(delta: -1 | 1): Promise<void> {
-    if (this.view.kind !== 'queue' || this.sort !== 'queue') {
-      this.toasts.notify('Open a queue in the sidebar to change its order.');
-      return;
-    }
-    const queue = this.view.id;
-    const move = nudged(this.downloads.idsInQueue(queue), (id) => this.selection.has(id), delta);
-    if (move) await this.placeInQueue(queue, move.chosen, move.before);
-  }
-
-  async pauseAll(): Promise<void> {
-    await this.#runner.run(() => this.backend.pauseAll());
-  }
-
-  async resumeAll(): Promise<void> {
-    await this.#runner.run(() => this.backend.resumeAll());
   }
 
   // ---- Settings ----

@@ -42,7 +42,7 @@
       return;
     }
     busy = true;
-    const ids = await app.add(
+    const ids = await app.actions.add(
       urls.map((url) => ({
         url,
         queue,

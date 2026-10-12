@@ -41,8 +41,8 @@
       <p class="title">Downloading <strong>{row.file_name}</strong></p>
       <p class="sub">to {folderOf(row.path)}</p>
       <div class="actions">
-        <Button small onclick={() => app.chooseFolderFor(row.id)}>Change</Button>
-        <Button small onclick={() => app.openFolder(row.id)}>Open folder</Button>
+        <Button small onclick={() => app.actions.chooseFolderFor(row.id)}>Change</Button>
+        <Button small onclick={() => app.actions.openFolder(row.id)}>Open folder</Button>
         <Button variant="ghost" small onclick={() => app.setAskBeforeDownload(!ask)}>
           {ask ? 'Start without asking' : 'Show a window first next time'}
         </Button>

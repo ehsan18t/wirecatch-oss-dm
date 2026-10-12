@@ -1,0 +1,205 @@
+// The actions on downloads: adding, pausing, resuming, trying again, cancelling and removing them,
+// opening their files, the fixes their errors offer, and their place in the queues. Each says
+// what went wrong in a note; a bulk action says it once.
+
+import type { AddRequest, DownloadId, FixAction, QueueId } from '@wirecatch/protocol';
+import type { Backend } from '../backend';
+import type { Dialog } from './app.svelte';
+import type { DownloadStore } from './downloads.svelte';
+import { nudged, placed } from './order';
+import type { Queues } from './queues.svelte';
+import type { Runner } from './runner';
+import type { Selection } from './selection.svelte';
+import type { Toasts } from './toasts.svelte';
+import { isUnderWay, type SortKey, type View } from './view';
+
+/** What the actions need from the window they run in. */
+export interface DownloadActionsHost {
+  backend: () => Backend;
+  runner: Runner;
+  toasts: Toasts;
+  downloads: DownloadStore;
+  selection: Selection;
+  queues: Queues;
+  openDialog: (dialog: Dialog) => void;
+  closeDialog: () => void;
+  /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
+  place: () => { view: View; sort: SortKey };
+}
+
+export class DownloadActions {
+  readonly #host: DownloadActionsHost;
+
+  constructor(host: DownloadActionsHost) {
+    this.#host = host;
+  }
+
+  async add(requests: AddRequest[]): Promise<DownloadId[]> {
+    const ids: DownloadId[] = [];
+    for (const r of requests) {
+      const id = await this.#host.runner.run(() => this.#host.backend().addDownload(r));
+      if (id !== undefined) ids.push(id);
+    }
+    if (ids.length > 0) {
+      this.#host.toasts.notify(
+        ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`,
+      );
+    }
+    return ids;
+  }
+
+  async pause(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+    await this.#host.runner.bulk(ids, 'pause', (id) => this.#host.backend().pause(id));
+  }
+
+  async resume(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+    await this.#host.runner.bulk(ids, 'resume', (id) => this.#host.backend().resume(id));
+  }
+
+  /** Space bar: pause what runs, resume what does not. */
+  async togglePause(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+    const rows = ids.flatMap((id) => this.#host.downloads.get(id) ?? []);
+    if (rows.some((r) => isUnderWay(r.status))) {
+      await this.pause(ids);
+      return;
+    }
+    // A cancelled download has no partial file left; it starts over.
+    const cancelled = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
+    await this.retry(cancelled);
+    await this.resume(ids.filter((id) => !cancelled.includes(id)));
+  }
+
+  async retry(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+    await this.#host.runner.bulk(ids, 'restart', (id) => this.#host.backend().retry(id));
+  }
+
+  /** Tries every download that needs attention again. */
+  async retryAllFailed(): Promise<void> {
+    const failed = this.#host.downloads.order.filter(
+      (id) => this.#host.downloads.get(id)?.status === 'failed',
+    );
+    if (failed.length === 0) {
+      this.#host.toasts.notify('Nothing needs attention right now.');
+      return;
+    }
+    const ok = await this.#host.runner.bulk(failed, 'restart', (id) =>
+      this.#host.backend().retry(id),
+    );
+    if (ok > 0)
+      this.#host.toasts.notify(
+        ok === 1 ? 'Trying 1 download again.' : `Trying ${ok} downloads again.`,
+      );
+  }
+
+  async cancel(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+    await this.#host.runner.bulk(ids, 'cancel', (id) => this.#host.backend().cancel(id));
+  }
+
+  async remove(ids: DownloadId[], deleteFile: boolean): Promise<void> {
+    await this.#host.runner.run(() => this.#host.backend().remove(ids, deleteFile));
+  }
+
+  refreshLink(id: DownloadId, url: string): Promise<boolean> {
+    return this.#host.runner.succeeds(() => this.#host.backend().refreshLink(id, url));
+  }
+
+  /** Opens a finished file; a program asks first whether the person trusts where it came from. */
+  async openFile(id: DownloadId): Promise<void> {
+    const program = await this.#host.runner.run(() => this.#host.backend().isProgram(id));
+    if (program === undefined) return;
+    if (program) {
+      this.#host.openDialog({ kind: 'open-program', id });
+      return;
+    }
+    await this.#host.runner.run(() => this.#host.backend().openFile(id));
+  }
+
+  /** Opens a program the person confirmed they trust. */
+  async openProgram(id: DownloadId): Promise<void> {
+    this.#host.closeDialog();
+    await this.#host.runner.run(() => this.#host.backend().openFile(id, true));
+  }
+
+  async openFolder(id: DownloadId): Promise<void> {
+    await this.#host.runner.run(() => this.#host.backend().openFolder(id));
+  }
+
+  /** Lets the person pick a new folder for one download. */
+  async chooseFolderFor(id: DownloadId): Promise<boolean> {
+    const row = this.#host.downloads.get(id);
+    const picked = await this.#host.runner.run(() => this.#host.backend().pickFolder(row?.path));
+    if (!picked) return false;
+    const ok = await this.#host.runner.succeeds(() =>
+      this.#host.backend().setDownloadFolder(id, picked),
+    );
+    if (ok) this.#host.toasts.notify(`Saving to ${picked}`);
+    return ok;
+  }
+
+  /** Runs the fix an error offers. */
+  async fix(id: DownloadId, action: FixAction): Promise<void> {
+    switch (action) {
+      case 'retry':
+        await this.retry([id]);
+        break;
+      case 'refresh_link':
+        this.#host.openDialog({ kind: 'refresh', id });
+        break;
+      case 'choose_folder':
+        if (await this.chooseFolderFor(id)) await this.retry([id]);
+        break;
+      case 'free_disk_space':
+        await this.openFolder(id);
+        break;
+      case 'keep_original':
+        await this.#host.runner.run(() => this.#host.backend().keepOriginal(id));
+        break;
+    }
+  }
+
+  async moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void> {
+    if (ids.length === 0) return;
+    const ok = await this.#host.runner.succeeds(() => this.#host.backend().moveToQueue(ids, queue));
+    const name = this.#host.queues.byId(queue)?.name ?? 'the queue';
+    if (ok)
+      this.#host.toasts.notify(
+        ids.length === 1 ? `Moved to ${name}.` : `${ids.length} downloads moved to ${name}.`,
+      );
+  }
+
+  /**
+   * Moves `ids` inside their queue so they sit just before `before` (or at the end when it is
+   * `null`). Only downloads of that one queue take part.
+   */
+  async placeInQueue(queue: QueueId, ids: DownloadId[], before: DownloadId | null): Promise<void> {
+    const next = placed(this.#host.downloads.idsInQueue(queue), ids, before);
+    if (next === null) return;
+    if (await this.#host.runner.succeeds(() => this.#host.backend().reorder(queue, next))) {
+      this.#host.downloads.reorder(queue, next);
+    }
+  }
+
+  /** Alt+Up and Alt+Down: nudge the selection one place within its queue. */
+  async nudge(delta: -1 | 1): Promise<void> {
+    const { view, sort } = this.#host.place();
+    if (view.kind !== 'queue' || sort !== 'queue') {
+      this.#host.toasts.notify('Open a queue in the sidebar to change its order.');
+      return;
+    }
+    const queue = view.id;
+    const move = nudged(
+      this.#host.downloads.idsInQueue(queue),
+      (id) => this.#host.selection.has(id),
+      delta,
+    );
+    if (move) await this.placeInQueue(queue, move.chosen, move.before);
+  }
+
+  async pauseAll(): Promise<void> {
+    await this.#host.runner.run(() => this.#host.backend().pauseAll());
+  }
+
+  async resumeAll(): Promise<void> {
+    await this.#host.runner.run(() => this.#host.backend().resumeAll());
+  }
+}

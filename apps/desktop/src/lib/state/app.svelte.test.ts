@@ -71,19 +71,19 @@ describe('AppState', () => {
     const { app, backend } = await make();
     const spy = vi.spyOn(backend, 'reorder');
     const q = app.downloads.idsInQueue(1);
-    await app.placeInQueue(1, [q[3]!], q[0]!);
+    await app.actions.placeInQueue(1, [q[3]!], q[0]!);
     const expected = [q[3], q[0], q[1], q[2], ...q.slice(4)];
     expect(app.downloads.idsInQueue(1)).toEqual(expected);
     expect(spy).toHaveBeenCalledWith(1, expected);
     // Dropping at the end.
-    await app.placeInQueue(1, [q[3]!], null);
+    await app.actions.placeInQueue(1, [q[3]!], null);
     expect(app.downloads.idsInQueue(1).at(-1)).toBe(q[3]);
   });
 
   it('only nudges inside a queue view', async () => {
     const { app } = await make();
     app.selection.only(app.visible[1]!);
-    await app.nudge(-1);
+    await app.actions.nudge(-1);
     expect(app.toasts.items.at(-1)?.message).toMatch(/Open a queue/);
   });
 
@@ -114,7 +114,7 @@ describe('AppState', () => {
   it('runs fixes: choose a folder then retry', async () => {
     const { app } = await make();
     const id = app.visible.find((x) => app.downloads.get(x)?.error?.fix === 'choose_folder')!;
-    await app.fix(id, 'choose_folder');
+    await app.actions.fix(id, 'choose_folder');
     expect(app.downloads.get(id)?.status).toBe('queued');
     expect(app.downloads.get(id)?.path).not.toContain('E:\\Backups');
   });
@@ -123,12 +123,12 @@ describe('AppState', () => {
     const { app } = await make();
     const id = app.visible.find((x) => app.downloads.get(x)?.status === 'paused')!;
     expect(app.downloads.get(id)?.done).toBeGreaterThan(0);
-    await app.cancel([id]);
+    await app.actions.cancel([id]);
     expect(app.downloads.get(id)?.status).toBe('cancelled');
     expect(app.downloads.get(id)?.done).toBe(0);
     expect(app.counts.status.cancelled).toBe(2);
     // Space on a cancelled download starts it over.
-    await app.togglePause([id]);
+    await app.actions.togglePause([id]);
     expect(app.downloads.get(id)?.status).toBe('queued');
   });
 

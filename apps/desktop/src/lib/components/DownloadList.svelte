@@ -85,8 +85,8 @@
     const id = idFrom(e);
     const row = id === null ? undefined : app.downloads.get(id);
     if (!row) return;
-    if (row.status === 'completed') void app.openFile(row.id);
-    else void app.togglePause([row.id]);
+    if (row.status === 'completed') void app.actions.openFile(row.id);
+    else void app.actions.togglePause([row.id]);
   }
 
   function oncontextmenu(e: MouseEvent) {
@@ -115,8 +115,9 @@
   /** Enter: open a finished file, or run the fix a download that needs attention offers. */
   function openOrFix() {
     const only = app.selection.rows.length === 1 ? app.selection.rows[0] : undefined;
-    if (only?.status === 'completed') void app.openFile(only.id);
-    else if (only?.status === 'failed' && only.error?.fix) void app.fix(only.id, only.error.fix);
+    if (only?.status === 'completed') void app.actions.openFile(only.id);
+    else if (only?.status === 'failed' && only.error?.fix)
+      void app.actions.fix(only.id, only.error.fix);
   }
 
   const ACTIONS: Record<ListKey, (e: KeyboardEvent) => void> = {
@@ -132,14 +133,14 @@
     'pause-resume': () => {
       if (app.selection.size === 0 && app.selection.active !== null)
         app.selection.only(app.selection.active);
-      void app.togglePause();
+      void app.actions.togglePause();
     },
     open: openOrFix,
     remove: () => {
       if (app.selection.size > 0) app.openDialog({ kind: 'remove', ids: app.selection.list });
     },
-    'nudge-up': () => void app.nudge(-1),
-    'nudge-down': () => void app.nudge(1),
+    'nudge-up': () => void app.actions.nudge(-1),
+    'nudge-down': () => void app.actions.nudge(1),
     menu: openMenuAtActive,
   };
 
@@ -182,7 +183,7 @@
         break;
       }
     }
-    void app.placeInQueue(app.view.id, [...moving], before);
+    void app.actions.placeInQueue(app.view.id, [...moving], before);
     dropIndex = null;
   }
 </script>

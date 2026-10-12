@@ -22,19 +22,19 @@ const ACTIONS: readonly CommandSpec<Selected>[] = [
     id: 'sel.pause',
     title: (s) => `Pause ${s.n}`,
     keywords: 'stop hold',
-    run: (s) => s.app.pause(s.ids),
+    run: (s) => s.app.actions.pause(s.ids),
   },
   {
     id: 'sel.resume',
     title: (s) => `Resume ${s.n}`,
     keywords: 'start continue',
-    run: (s) => s.app.resume(s.ids),
+    run: (s) => s.app.actions.resume(s.ids),
   },
   {
     id: 'sel.retry',
     title: (s) => `Try ${s.n} again`,
     keywords: 'retry restart',
-    run: (s) => s.app.retry(s.ids),
+    run: (s) => s.app.actions.retry(s.ids),
   },
   {
     id: 'sel.cancel',
@@ -55,7 +55,7 @@ const MOVE: CommandSpec<Selected & { queue: Queue }> = {
   id: (s) => `sel.move.${s.queue.id}`,
   title: (s) => `Move ${s.n} to ${s.queue.name}`,
   keywords: 'queue transfer',
-  run: (s) => s.app.moveToQueue(s.ids, s.queue.id),
+  run: (s) => s.app.actions.moveToQueue(s.ids, s.queue.id),
 };
 
 /** Commands about one file. `only` is checked by `when`, so `run` may rely on it. */
@@ -66,13 +66,13 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
     keywords: 'launch run file',
     key: 'open',
     when: (s) => s.only.status === 'completed',
-    run: (s) => s.app.openFile(s.only.id),
+    run: (s) => s.app.actions.openFile(s.only.id),
   },
   {
     id: 'sel.folder',
     title: (s) => `Show ${s.n} in its folder`,
     keywords: 'open folder explorer',
-    run: (s) => s.app.openFolder(s.only.id),
+    run: (s) => s.app.actions.openFolder(s.only.id),
   },
   {
     id: 'sel.progress',
@@ -90,7 +90,7 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
     id: 'sel.choosefolder',
     title: (s) => `Save ${s.n} to a different folder`,
     keywords: 'change folder location',
-    run: (s) => s.app.chooseFolderFor(s.only.id),
+    run: (s) => s.app.actions.chooseFolderFor(s.only.id),
   },
 ];
 
@@ -100,14 +100,14 @@ const ORDER: readonly CommandSpec<Selected>[] = [
     title: 'Move the selection up in its queue',
     key: 'nudge-up',
     keywords: 'reorder priority',
-    run: (s) => s.app.nudge(-1),
+    run: (s) => s.app.actions.nudge(-1),
   },
   {
     id: 'sel.down',
     title: 'Move the selection down in its queue',
     key: 'nudge-down',
     keywords: 'reorder priority',
-    run: (s) => s.app.nudge(1),
+    run: (s) => s.app.actions.nudge(1),
   },
   {
     id: 'sel.clear',

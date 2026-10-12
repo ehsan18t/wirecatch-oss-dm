@@ -28,19 +28,19 @@ const DOWNLOADS: readonly CommandSpec<AppState>[] = [
     id: 'dl.pauseall',
     title: 'Pause all downloads',
     keywords: 'stop everything',
-    run: (app) => app.pauseAll(),
+    run: (app) => app.actions.pauseAll(),
   },
   {
     id: 'dl.resumeall',
     title: 'Resume all downloads',
     keywords: 'start everything continue',
-    run: (app) => app.resumeAll(),
+    run: (app) => app.actions.resumeAll(),
   },
   {
     id: 'dl.retryfailed',
     title: 'Retry all failed downloads',
     keywords: 'try again errors needs attention',
-    run: (app) => app.retryAllFailed(),
+    run: (app) => app.actions.retryAllFailed(),
   },
   {
     id: 'dl.selectall',

@@ -73,7 +73,7 @@ describe('media and add-ons', () => {
     expect(app.counts.joining).toBe(1);
     expect(app.counts.status.active).toBe(1);
 
-    await app.togglePause([id]);
+    await app.actions.togglePause([id]);
     expect(app.downloads.get(id)?.status).toBe('paused');
     expect(app.counts.joining).toBe(0);
   });

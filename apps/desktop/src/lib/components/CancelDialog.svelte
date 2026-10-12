@@ -16,7 +16,7 @@
     // Read the ids before closing: closing unmounts this dialog and its props with it.
     const chosen = [...ids];
     app.closeDialog();
-    await app.cancel(chosen);
+    await app.actions.cancel(chosen);
   }
 </script>
 

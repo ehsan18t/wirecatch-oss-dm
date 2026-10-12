@@ -30,17 +30,18 @@
     const one = rows.length === 1 ? rows[0] : undefined;
     const out: Item[] = [];
     if (rows.some((r) => isUnderWay(r.status))) {
-      out.push({ label: 'Pause', run: () => app.pause(ids) });
+      out.push({ label: 'Pause', run: () => app.actions.pause(ids) });
     }
     if (rows.some((r) => r.status === 'paused'))
-      out.push({ label: 'Resume', run: () => app.resume(ids) });
+      out.push({ label: 'Resume', run: () => app.actions.resume(ids) });
     if (rows.some((r) => r.status === 'failed' || r.status === 'cancelled')) {
-      out.push({ label: 'Try again', run: () => app.retry(ids) });
+      out.push({ label: 'Try again', run: () => app.actions.retry(ids) });
     }
-    if (one?.status === 'completed') out.push({ label: 'Open', run: () => app.openFile(one.id) });
+    if (one?.status === 'completed')
+      out.push({ label: 'Open', run: () => app.actions.openFile(one.id) });
     if (one) {
       out.push(
-        { label: 'Show in folder', run: () => app.openFolder(one.id) },
+        { label: 'Show in folder', run: () => app.actions.openFolder(one.id) },
         { label: 'Show progress window', run: () => app.showProgressWindow(one.id) },
         {
           label: 'Copy link',
@@ -61,7 +62,7 @@
     queues.forEach((q, i) =>
       out.push({
         label: `Move to ${q.name}`,
-        run: () => app.moveToQueue(ids, q.id),
+        run: () => app.actions.moveToQueue(ids, q.id),
         separator: i === 0,
       }),
     );

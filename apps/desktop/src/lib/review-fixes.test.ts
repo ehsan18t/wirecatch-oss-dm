@@ -220,7 +220,7 @@ describe('10. the palette', () => {
         true,
       );
     }
-    await app.retryAllFailed();
+    await app.actions.retryAllFailed();
     expect(app.counts.status.failed).toBe(0);
   });
 
@@ -291,7 +291,7 @@ describe('16. bulk actions run together and report once', () => {
       await new Promise<void>((r) => gates.push(r));
       if (id !== ids[0]) throw new Error('The engine is busy. Try again.');
     });
-    const done = app.pause(ids);
+    const done = app.actions.pause(ids);
     await Promise.resolve();
     expect(calls).toBe(3);
     for (const g of gates) g();

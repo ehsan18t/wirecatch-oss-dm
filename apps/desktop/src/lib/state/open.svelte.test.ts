@@ -27,11 +27,11 @@ async function finished(url: string) {
 describe('opening a finished file', () => {
   it('asks before opening a program, and Open then opens it', async () => {
     const { app, backend, id } = await finished('https://downloads.example.com/Setup.EXE');
-    await app.openFile(id);
+    await app.actions.openFile(id);
     expect(app.dialog).toEqual({ kind: 'open-program', id });
     expect(backend.opened).toEqual([]);
 
-    await app.openProgram(id);
+    await app.actions.openProgram(id);
     expect(app.dialog).toBeNull();
     expect(backend.opened).toEqual([id]);
     app.dispose();
@@ -39,7 +39,7 @@ describe('opening a finished file', () => {
 
   it('opens other files at once', async () => {
     const { app, backend, id } = await finished('https://example.com/report.pdf');
-    await app.openFile(id);
+    await app.actions.openFile(id);
     expect(app.dialog).toBeNull();
     expect(backend.opened).toEqual([id]);
     app.dispose();

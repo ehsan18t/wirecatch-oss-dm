@@ -19,7 +19,7 @@
 
   async function showInFolder() {
     app.closeDialog();
-    await app.openFolder(id);
+    await app.actions.openFolder(id);
   }
 </script>
 
@@ -35,7 +35,7 @@
   </p>
 
   {#snippet footer()}
-    <Button onclick={() => app.openProgram(id)}>Open</Button>
+    <Button onclick={() => app.actions.openProgram(id)}>Open</Button>
     <Button variant="primary" data-autofocus onclick={showInFolder}>Show in folder</Button>
   {/snippet}
 </Dialog>
