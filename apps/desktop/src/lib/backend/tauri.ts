@@ -33,6 +33,8 @@ import {
 } from './types';
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+/** Tauri's `listen`; tests pass their own. */
+type Listen = typeof listen;
 
 /** Turns whatever the Rust side rejected with into a `BackendError` with readable text. */
 export function toBackendError(err: unknown): BackendError {
@@ -48,9 +50,11 @@ export function toBackendError(err: unknown): BackendError {
 export class TauriBackend implements DownloadWindowBackend {
   readonly kind = 'tauri';
   readonly #invoke: Invoke;
+  readonly #listen: Listen;
 
-  constructor(invoker: Invoke = invoke) {
+  constructor(invoker: Invoke = invoke, listener: Listen = listen) {
     this.#invoke = invoker;
+    this.#listen = listener;
   }
 
   async #call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -219,14 +223,21 @@ export class TauriBackend implements DownloadWindowBackend {
   }
 
   async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {
-    return listen<UiEvent>(EVENT_NAME, (e) => listener(e.payload));
+    return this.#listen<UiEvent>(EVENT_NAME, (e) => listener(e.payload));
   }
 
   async onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe> {
     const signals = Object.keys(SIGNAL_EVENTS) as ShellSignal[];
-    const stops = await Promise.all(
-      signals.map((signal) => listen(SIGNAL_EVENTS[signal], () => listener(signal))),
+    const started = await Promise.allSettled(
+      signals.map((signal) => this.#listen(SIGNAL_EVENTS[signal], () => listener(signal))),
     );
+    const stops = started.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []));
+    const failed = started.find((s) => s.status === 'rejected');
+    if (failed) {
+      // Nothing would ever stop the listeners that did start.
+      for (const stop of stops) stop();
+      throw failed.reason;
+    }
     return () => {
       for (const stop of stops) stop();
     };

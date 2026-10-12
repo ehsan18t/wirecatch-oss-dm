@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { TauriBackend, toBackendError } from './tauri';
-import { BackendError, COMMANDS } from './types';
+import { BackendError, COMMANDS, SIGNAL_EVENTS } from './types';
 
 // The command names the core team implements. They must not drift.
 const FIXED = [
@@ -174,5 +174,26 @@ describe('TauriBackend', () => {
     await expect(b.listDownloads()).rejects.toThrow(/not connected/);
     expect(toBackendError({ message: 'x' }).message).toBe('x');
     expect(toBackendError(42).message).toMatch(/Try again/);
+  });
+});
+
+describe('shell signals', () => {
+  it('stops the listeners already started when another cannot start', async () => {
+    const signals = Object.keys(SIGNAL_EVENTS).length;
+    const stops: (() => void)[] = [];
+    let calls = 0;
+    // Every listener starts except the last one asked for.
+    const listen = vi.fn(() => {
+      calls += 1;
+      if (calls === signals) return Promise.reject(new Error('no event system'));
+      const stop = vi.fn();
+      stops.push(stop);
+      return Promise.resolve(stop);
+    });
+    const b = new TauriBackend(vi.fn(), listen);
+    await expect(b.onShellSignal(() => undefined)).rejects.toThrow('no event system');
+    expect(listen).toHaveBeenCalledTimes(signals);
+    expect(stops).toHaveLength(signals - 1);
+    for (const stop of stops) expect(stop).toHaveBeenCalledOnce();
   });
 });

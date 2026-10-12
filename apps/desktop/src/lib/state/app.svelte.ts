@@ -197,12 +197,18 @@ export class AppState {
       this.sampleData = backend.kind === 'mock';
       this.clock.follow(backend.sampleData?.now ?? (() => Date.now()));
       const stopEvents = await backend.subscribe(onEvent);
-      const stopSignals = await backend.onShellSignal((signal) => {
-        if (!current()) return;
-        // Events were missed: load everything again rather than show a stale list.
-        if (signal === 'resync') void this.init();
-        else void this.#takeLaunchLinks();
-      });
+      const stopSignals = await backend
+        .onShellSignal((signal) => {
+          if (!current()) return;
+          // Events were missed: load everything again rather than show a stale list.
+          if (signal === 'resync') void this.init();
+          else void this.#takeLaunchLinks();
+        })
+        .catch((err: unknown) => {
+          // Nothing would ever close the event listener otherwise.
+          stopEvents();
+          throw err;
+        });
       return () => {
         stopEvents();
         stopSignals();

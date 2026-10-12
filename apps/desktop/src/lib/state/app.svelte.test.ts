@@ -36,6 +36,18 @@ describe('AppState', () => {
     app.dispose();
   });
 
+  it('stops listening to events when the shell signals cannot be heard', async () => {
+    const backend = new MockBackend({ autoTick: false });
+    const stopEvents = vi.fn();
+    vi.spyOn(backend, 'subscribe').mockResolvedValue(stopEvents);
+    vi.spyOn(backend, 'onShellSignal').mockRejectedValue(new BackendError('No shell.'));
+    const app = new AppState(backend);
+    await app.init();
+    expect(app.loadError).toBe('No shell.');
+    expect(stopEvents).toHaveBeenCalledOnce();
+    app.dispose();
+  });
+
   it('selects ranges in display order', async () => {
     const { app } = await make();
     const [a, b, c] = app.visible;
