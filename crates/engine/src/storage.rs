@@ -88,9 +88,9 @@ pub(crate) fn finalize(
     {
         let file = open_for_write(part).context(IoAction::OpenFile, part)?;
         // Unknown-length downloads may have reserved nothing; known ones already match.
-        let size = file.metadata().context(IoAction::Write, part)?.len();
+        let size = file.metadata().context(IoAction::Resize, part)?.len();
         if size != len {
-            file.set_len(len).context(IoAction::Write, part)?;
+            file.set_len(len).context(IoAction::Resize, part)?;
         }
         file.sync_data().context(IoAction::Flush, part)?;
         // Fully written now, so the sparse flag can go. A file that keeps it
@@ -244,6 +244,12 @@ mod tests {
         );
 
         create_part(&part, Some(10)).unwrap();
+        // No file system holds a file this long.
+        let error = finalize(&part, &done, u64::MAX, &live.flag()).unwrap_err();
+        assert!(
+            matches!(&error, crate::Error::Io { action: IoAction::Resize, path, .. } if *path == part),
+            "{error:?}"
+        );
         let elsewhere = dir.join("missing-folder").join("gone.bin");
         let error = finalize(&part, &elsewhere, 10, &live.flag()).unwrap_err();
         assert!(

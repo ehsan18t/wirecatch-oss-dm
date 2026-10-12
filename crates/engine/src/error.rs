@@ -286,6 +286,8 @@ pub enum IoAction {
     OpenFile,
     /// Writing downloaded data.
     Write,
+    /// Giving the finished file its exact size.
+    Resize,
     /// Making sure written data is on the disk itself, not only in memory.
     Flush,
     /// Saving the resume file next to the part file.
@@ -301,6 +303,7 @@ impl fmt::Display for IoAction {
             IoAction::CreateFile => "create the file",
             IoAction::OpenFile => "open the file",
             IoAction::Write => "write to the file",
+            IoAction::Resize => "set the size of the file",
             IoAction::Flush => "flush the file to the disk",
             IoAction::SaveResume => "save the resume file",
             IoAction::Finish => "move the finished file into place",
