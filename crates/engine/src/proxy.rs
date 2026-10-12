@@ -108,17 +108,24 @@ fn first_set(names: &[&'static str], env: Env<'_>) -> Option<(&'static str, Stri
 /// Whether a request to `host` would bypass the proxy `proxy` because of the
 /// `NO_PROXY` list `no_proxy`, decided by the matcher the HTTP client itself
 /// uses, so the two never disagree. A host that cannot be put in a URL counts
-/// as going through the proxy, the careful answer.
+/// as going through the proxy, the careful answer, and so does a proxy value
+/// the matcher cannot read.
 fn excluded(proxy: &str, no_proxy: &str, host: &str) -> bool {
     let Ok(destination) = format!("http://{host}/").parse::<::http::Uri>() else {
         return false;
     };
-    Matcher::builder()
-        .all(proxy.to_string())
-        .no(no_proxy.to_string())
-        .build()
-        .intercept(&destination)
-        .is_none()
+    let intercepts = |no: &str| {
+        Matcher::builder()
+            .all(proxy.to_string())
+            .no(no.to_string())
+            .build()
+            .intercept(&destination)
+            .is_some()
+    };
+    // A proxy value the matcher cannot read intercepts nothing, with or
+    // without NO_PROXY; only a host it would otherwise send through the proxy
+    // can be excused by NO_PROXY.
+    intercepts("") && !intercepts(no_proxy)
 }
 
 #[cfg(test)]
@@ -211,6 +218,29 @@ mod tests {
             configured(Scheme::Https, "x.1.2.3.4", &address),
             Some("HTTPS_PROXY")
         );
+    }
+
+    /// A proxy value the client cannot read still counts as a proxy the user
+    /// set: an unrelated `NO_PROXY` must not make FTP or QUIC go around it.
+    #[test]
+    fn an_unreadable_proxy_is_not_excused_by_no_proxy() {
+        for proxy in ["not a url at all", "http://[bad"] {
+            let set = move |name: &str| match name {
+                "ALL_PROXY" => Some(OsString::from(proxy)),
+                "NO_PROXY" => Some(OsString::from("other.example")),
+                _ => None,
+            };
+            assert_eq!(
+                configured(Scheme::Ftp, "h.example", &set),
+                Some("ALL_PROXY"),
+                "{proxy}"
+            );
+            assert_eq!(
+                configured(Scheme::Https, "h.example", &set),
+                Some("ALL_PROXY"),
+                "{proxy}"
+            );
+        }
     }
 
     #[test]
