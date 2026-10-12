@@ -208,6 +208,7 @@
 //! bulk downloads several TCP connections are as fast, and QUIC costs more
 //! processor time per byte.
 
+mod abandon;
 mod checkpoint;
 mod download;
 mod error;

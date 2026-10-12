@@ -1,14 +1,14 @@
 //! The resume file, saved while a download runs and once more as it ends.
 
 use std::fs::File;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tracing::warn;
 
+use crate::abandon::Abandoned;
 use crate::download::Shared;
-use crate::error::{Error, IoAction, IoContext, Result};
+use crate::error::{IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::state::ResumeState;
 use crate::storage;
@@ -65,6 +65,11 @@ impl ResumeSaver {
         }
     }
 
+    /// Whether the download was dropped, for the work that ends it.
+    pub fn abandoned(&self) -> &Abandoned {
+        &self.abandoned
+    }
+
     /// Locks `saving`. A lock poisoned by a panic in another holder is taken
     /// over as it is, for the reason
     /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives.
@@ -87,17 +92,17 @@ impl ResumeSaver {
                 empty.insert(storage::open_for_write(path).context(IoAction::OpenFile, path)?)
             }
         };
-        part.sync_data()
-            .context(IoAction::Flush, &self.shared.part_path)?;
         let shared = &self.shared;
-        ResumeState::new(
-            &self.url,
-            shared.request.total,
-            shared.request.ranged,
-            &self.validators,
-            remaining,
-        )
-        .save(&self.path)
+        flush_then(part, &shared.part_path, &self.abandoned, || {
+            ResumeState::new(
+                &self.url,
+                shared.request.total,
+                shared.request.ranged,
+                &self.validators,
+                remaining,
+            )
+            .save(&self.path)
+        })
     }
 
     /// Waits for a save still writing, then stops any later one.
@@ -108,57 +113,29 @@ impl ResumeSaver {
     }
 }
 
+/// Flushes `part` (at `path`) to the disk, then runs `write`, unless the
+/// download was abandoned meanwhile: a slow flush is just when an owner gives
+/// up waiting and drops the download, and then deletes its files.
+fn flush_then(
+    part: &File,
+    path: &Path,
+    abandoned: &Abandoned,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    part.sync_data().context(IoAction::Flush, path)?;
+    abandoned.flushed();
+    if abandoned.is_set() {
+        return Ok(());
+    }
+    write()
+}
+
 /// The state saves share, behind one lock.
 struct Saving {
     /// Set once the download has ended.
     closed: bool,
     /// The part file, to flush to the disk, once a save has opened it.
     part: Option<File>,
-}
-
-/// Marks a download abandoned once its future is dropped: made first thing in
-/// a download and dropped with it.
-///
-/// File system work the download already queued on the blocking pool still
-/// runs then, and must change no file: its owner may already have deleted them
-/// or started a new run. Each such piece of work checks [`Abandoned`] first.
-pub(crate) struct Abandonment(Arc<AtomicBool>);
-
-impl Abandonment {
-    pub fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
-
-    /// What queued work checks.
-    pub fn flag(&self) -> Abandoned {
-        Abandoned(self.0.clone())
-    }
-}
-
-impl Drop for Abandonment {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
-    }
-}
-
-/// Whether the download's future was dropped; see [`Abandonment`].
-#[derive(Clone)]
-pub(crate) struct Abandoned(Arc<AtomicBool>);
-
-impl Abandoned {
-    pub fn is_set(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
-    }
-
-    /// [`Error::Cancelled`] once the download was dropped, for work that must
-    /// then not start; no one receives it.
-    pub fn check(&self) -> Result<()> {
-        if self.is_set() {
-            Err(Error::Cancelled)
-        } else {
-            Ok(())
-        }
-    }
 }
 
 /// The task that saves the resume file at every checkpoint while a download
@@ -213,6 +190,37 @@ impl Drop for Checkpoints {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn a_download_dropped_during_the_flush_writes_no_resume_file() {
+        let dir = wirecatch_test_support::private_dir("flush-then").unwrap();
+        let path = dir.join("f.bin.wcpart");
+        let part = File::create(&path).unwrap();
+        let abandonment = crate::abandon::Abandonment::new();
+        let abandoned = abandonment.flag();
+        let mut wrote = false;
+        flush_then(&part, &path, &abandoned, || {
+            wrote = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(wrote, "a live download writes after the flush");
+
+        abandoned.drop_at_flush();
+        let mut wrote = false;
+        flush_then(&part, &path, &abandoned, || {
+            wrote = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(
+            !wrote,
+            "a download dropped during the flush wrote its resume file"
+        );
+        drop(part);
+        drop(abandonment);
+        dir.remove().unwrap();
+    }
 
     #[tokio::test(start_paused = true)]
     async fn a_slow_save_delays_the_next_checkpoint_instead_of_bunching_them() {

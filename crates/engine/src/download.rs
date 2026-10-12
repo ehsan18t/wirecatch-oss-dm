@@ -9,7 +9,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
 
-use crate::checkpoint::{Abandoned, Abandonment, Checkpoints, ResumeSaver};
+use crate::abandon::{Abandoned, Abandonment};
+use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Clients;
 use crate::net_guard::{PrivateGuard, private_guard};
@@ -352,11 +353,7 @@ pub(crate) async fn download_guarded(
     let checkpoints = Checkpoints::spawn(saver.clone());
     let first_error = join_workers(workers).await;
     drop(checkpoints);
-    storage::blocking(move || {
-        abandoned.check()?;
-        finish(&shared, &saver, target, resumed_from, first_error)
-    })
-    .await
+    storage::blocking(move || finish(&shared, &saver, target, resumed_from, first_error)).await
 }
 
 /// Makes `destination` ready on the blocking pool, unless the download is
@@ -469,6 +466,8 @@ fn finish(
     resumed_from: u64,
     first_error: Option<Error>,
 ) -> Result<Outcome> {
+    let abandoned = saver.abandoned();
+    abandoned.check()?;
     let (complete, remaining, file_len) = {
         let table = shared.table.lock();
         // A known size is the file's; a table resumed with every range already
@@ -479,7 +478,8 @@ fn finish(
 
     if complete {
         saver.close();
-        storage::finalize(&target.part, &target.file, file_len)?;
+        storage::finalize(&target.part, &target.file, file_len, abandoned)?;
+        abandoned.check()?;
         target::discard(&target.state);
         info!(path = %target.file.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {

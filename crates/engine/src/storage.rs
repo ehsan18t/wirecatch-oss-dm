@@ -4,6 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::Path;
 
+use crate::abandon::Abandoned;
 use crate::error::{IoAction, IoContext};
 
 /// Suffix of the file that receives data while a download runs.
@@ -69,11 +70,21 @@ fn write_at(file: &File, buf: &[u8], offset: u64) -> io::Result<usize> {
 /// one; the part file and its resume file are then still there, and the next
 /// run finishes them again.
 ///
+/// Nothing is renamed once the download is `abandoned`, checked again after
+/// the flush: a slow flush is when an owner gives up, and the part file may
+/// then already be another run's.
+///
 /// # Errors
 ///
 /// [`Error::Io`](crate::Error::Io) naming the step that failed and its file:
-/// opening, sizing or flushing the part file, or the rename to `final_path`.
-pub fn finalize(part: &Path, final_path: &Path, len: u64) -> crate::Result<()> {
+/// opening, sizing or flushing the part file, or the rename to `final_path`;
+/// [`Error::Cancelled`](crate::Error::Cancelled) once abandoned.
+pub(crate) fn finalize(
+    part: &Path,
+    final_path: &Path,
+    len: u64,
+    abandoned: &Abandoned,
+) -> crate::Result<()> {
     {
         let file = open_for_write(part).context(IoAction::OpenFile, part)?;
         // Unknown-length downloads may have reserved nothing; known ones already match.
@@ -89,6 +100,8 @@ pub fn finalize(part: &Path, final_path: &Path, len: u64) -> crate::Result<()> {
             tracing::debug!(error = %e, "could not clear the sparse flag of a finished file");
         }
     }
+    abandoned.flushed();
+    abandoned.check()?;
     std::fs::rename(part, final_path).context(IoAction::Finish, final_path)
 }
 
@@ -180,10 +193,28 @@ mod linux {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abandon::Abandonment;
+
+    #[test]
+    fn a_download_dropped_during_the_final_flush_is_not_renamed() {
+        let dir = wirecatch_test_support::private_dir("finalize-dropped").unwrap();
+        let part = dir.join("f.bin.wcpart");
+        let done = dir.join("f.bin");
+        create_part(&part, Some(10)).unwrap();
+        let abandonment = Abandonment::new();
+        let abandoned = abandonment.flag();
+        abandoned.drop_at_flush();
+        let error = finalize(&part, &done, 10, &abandoned).unwrap_err();
+        assert!(matches!(error, crate::Error::Cancelled), "{error:?}");
+        assert!(part.exists() && !done.exists(), "the part file was renamed");
+        drop(abandonment);
+        dir.remove().unwrap();
+    }
 
     #[test]
     fn out_of_order_positional_writes_assemble_the_file() {
         let dir = wirecatch_test_support::private_dir("storage").unwrap();
+        let live = Abandonment::new();
         let part = dir.join("f.bin.wcpart");
         let done = dir.join("f.bin");
 
@@ -192,7 +223,7 @@ mod tests {
         write_all_at(&f, b"56789", 5).unwrap();
         write_all_at(&f, b"01234", 0).unwrap();
         drop(f);
-        finalize(&part, &done, 10).unwrap();
+        finalize(&part, &done, 10, &live.flag()).unwrap();
 
         assert_eq!(std::fs::read(&done).unwrap(), b"0123456789");
         dir.remove().unwrap();
@@ -203,9 +234,10 @@ mod tests {
     #[test]
     fn a_failed_finish_names_its_step_and_file() {
         let dir = wirecatch_test_support::private_dir("finalize").unwrap();
+        let live = Abandonment::new();
         let part = dir.join("gone.bin.wcpart");
         let done = dir.join("gone.bin");
-        let error = finalize(&part, &done, 10).unwrap_err();
+        let error = finalize(&part, &done, 10, &live.flag()).unwrap_err();
         assert!(
             matches!(&error, crate::Error::Io { action: IoAction::OpenFile, path, .. } if *path == part),
             "{error:?}"
@@ -213,7 +245,7 @@ mod tests {
 
         create_part(&part, Some(10)).unwrap();
         let elsewhere = dir.join("missing-folder").join("gone.bin");
-        let error = finalize(&part, &elsewhere, 10).unwrap_err();
+        let error = finalize(&part, &elsewhere, 10, &live.flag()).unwrap_err();
         assert!(
             matches!(&error, crate::Error::Io { action: IoAction::Finish, path, .. } if *path == elsewhere),
             "{error:?}"
