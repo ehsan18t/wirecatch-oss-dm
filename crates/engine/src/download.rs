@@ -21,7 +21,8 @@ use crate::segment::{self, SegmentTable, SharedTable};
 use crate::state::ResumeState;
 use crate::transport::{self, Opened, Remote};
 use crate::units::{MIB, MIB_USIZE};
-use crate::{ftp, naming, storage, worker};
+use crate::url::without_password;
+use crate::{naming, storage, worker};
 
 /// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
 pub const MAX_CONNECTIONS: usize = 64;
@@ -435,7 +436,7 @@ pub(crate) async fn download_guarded(
     let opened = transport::open(&request.url, &opts, &clients, &cancel, session_guard).await?;
     debug!(ranged = opened.ranged, total = ?opened.total, url = %opened.final_url, "probed");
     // What the resume file records and compares: never a password.
-    let saved_url = ftp::without_password(&request.url).to_string();
+    let saved_url = without_password(&request.url).to_string();
     let target = choose_target(&request, &opened, &saved_url)?;
 
     let Opened {
@@ -796,8 +797,7 @@ fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
 /// passwords were left out of them still match, so they are continued once
 /// and rewritten without the password straight away.
 fn same_download(saved: &str, url: &str) -> bool {
-    saved == url
-        || Url::parse(saved).is_ok_and(|saved| ftp::without_password(&saved).as_str() == url)
+    saved == url || Url::parse(saved).is_ok_and(|saved| without_password(&saved).as_str() == url)
 }
 
 /// Decides where the file goes and whether an earlier run can be continued.

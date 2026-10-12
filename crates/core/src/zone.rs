@@ -11,6 +11,8 @@ use std::path::Path;
 
 #[cfg(any(windows, test))]
 use wirecatch_engine::Url;
+#[cfg(any(windows, test))]
+use wirecatch_engine::url::without_credentials;
 
 /// Longest URL written into the mark; longer ones are cut.
 // Only Windows writes the mark; the text is built there and in tests on every platform.
@@ -47,9 +49,7 @@ pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String 
 // Only Windows writes the mark; the text is built there and in tests on every platform.
 #[cfg(any(windows, test))]
 fn clean_url(raw: &str) -> Option<String> {
-    let mut url = Url::parse(raw.trim()).ok()?;
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
+    let mut url = without_credentials(&Url::parse(raw.trim()).ok()?);
     url.set_fragment(None);
     let mut text: String = url.as_str().chars().filter(|c| !c.is_control()).collect();
     if text.len() > MAX_URL_LEN {

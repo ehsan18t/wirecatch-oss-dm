@@ -38,6 +38,7 @@ use crate::download::{DownloadOptions, Shared};
 use crate::error::Error;
 use crate::http::{Failure, Validators};
 use crate::units::KIB_USIZE;
+use crate::url::without_password;
 use control::{Control, Reply, Stream, Tls};
 
 /// Bytes read from a data connection at once. One buffer per connection,
@@ -359,14 +360,6 @@ impl Target {
             .into()
         }
     }
-}
-
-/// `url` with its password removed.
-pub(crate) fn without_password(url: &Url) -> Url {
-    let mut clean = url.clone();
-    // Fails only for URLs that cannot carry credentials, which then have none.
-    let _ = clean.set_password(None);
-    clean
 }
 
 /// The server as the first connection found it; shared by every connection of

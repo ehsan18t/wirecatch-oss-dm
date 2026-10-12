@@ -203,11 +203,7 @@ fn split_userinfo(url: &Url, headers: &mut HeaderMap) -> Url {
             headers.insert(AUTHORIZATION, value);
         }
     }
-    let mut clean = url.clone();
-    // Only fails for URLs that cannot have credentials, which this one has.
-    let _ = clean.set_username("");
-    let _ = clean.set_password(None);
-    clean
+    crate::url::without_credentials(url)
 }
 
 /// What every request of one download shares: which headers may go where,

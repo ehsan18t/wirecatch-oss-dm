@@ -897,13 +897,7 @@ fn check_scheme(url: &Url) -> Result<()> {
 /// header, and credentials found in a link are never sent on their own.
 fn clean_url(url: &Url) -> Result<Url> {
     check_scheme(url)?;
-    let mut url = url.clone();
-    if !url.username().is_empty() || url.password().is_some() {
-        // Only fails for URLs that cannot have credentials; http and https can.
-        let _ = url.set_username("");
-        let _ = url.set_password(None);
-    }
-    Ok(url)
+    Ok(crate::url::without_credentials(url))
 }
 
 #[cfg(test)]

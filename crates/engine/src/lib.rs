@@ -222,8 +222,10 @@ mod state;
 mod storage;
 mod transport;
 pub mod units;
+pub mod url;
 mod worker;
 
+pub use ::url::Url;
 pub use download::{
     DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathResolver,
     RemoteFile, download,
@@ -236,4 +238,3 @@ pub use progress::Progress;
 pub use reqwest::header;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;
-pub use url::Url;
