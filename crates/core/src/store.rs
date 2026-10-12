@@ -79,6 +79,10 @@ const MIGRATIONS: &[&str] = &[
     SET value = json_set(value, '$.extension.ask_before_download', json('true'))
     WHERE key = 'app' AND json_valid(value);
 ",
+    // Where a failed move left some of a download's files (`Entry::stranded`).
+    r"
+    ALTER TABLE downloads ADD COLUMN stranded TEXT;
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -115,6 +119,8 @@ pub(crate) struct StoredDownload {
     /// For video and audio: what the row shows and, for streams and pages, what
     /// to download (kept so it continues after a restart).
     pub media: Option<StoredMedia>,
+    /// Where a failed move left some of its files, if it did.
+    pub stranded: Option<PathBuf>,
 }
 
 /// How a download's final name and folder get decided.
@@ -857,7 +863,8 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
-                added_at, completed_at, origin, settled, chosen_name, chosen_folder, media
+                added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
+                stranded
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1001,8 +1008,10 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
     tx.prepare_cached(
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
-             added_at, completed_at, origin, settled, chosen_name, chosen_folder, media)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+             added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
+             stranded)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 ?18)",
     )?
     .execute(params![
         d.id.0,
@@ -1022,6 +1031,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.naming.name,
         row.naming.folder,
         row.media.as_ref().map(to_json),
+        row.stranded
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned()),
     ])?;
     Ok(())
 }
@@ -1140,6 +1152,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 folder: row.get(15)?,
             },
             media,
+            stranded: row.get::<_, Option<String>>(17)?.map(PathBuf::from),
         }),
     })
 }
@@ -1228,6 +1241,7 @@ mod tests {
                 folder: None,
             },
             media: None,
+            stranded: None,
         }
     }
 

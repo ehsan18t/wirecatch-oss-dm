@@ -131,7 +131,7 @@ fn restore_entry(
         cleanup: None,
         removing: false,
         moving: None,
-        stranded: None,
+        stranded: stored.stranded,
     };
     let mut fixed = false;
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
@@ -228,6 +228,7 @@ mod tests {
             origin: Origin::default(),
             naming: NameChoice::settled(),
             media: None,
+            stranded: None,
         }
     }
 

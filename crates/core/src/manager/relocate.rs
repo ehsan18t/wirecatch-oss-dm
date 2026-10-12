@@ -26,13 +26,7 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it
-    /// cannot be created or written to or the files cannot be moved there,
-    /// [`CoreError::FilesSplit`] when, after that, some files already moved could
-    /// not be put back (the download is then marked failed with that message and
-    /// waits until it is tried again), [`CoreError::WrongState`] for an unfinished video or a download already being
-    /// moved, [`CoreError::DownloadNotFound`] when there is no download `id`, and
-    /// [`CoreError::Closed`] once the manager has shut down.
+    /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it cannot be created or written to or the files cannot be moved there, [`CoreError::FilesSplit`] when, after that, some files already moved could not be put back (the download is then marked failed with that message and waits until it is tried again), [`CoreError::WrongState`] for an unfinished video, a download already being moved or one whose files an earlier move left split, [`CoreError::DownloadNotFound`] when there is no download `id`, and [`CoreError::Closed`] once the manager has shut down.
     pub async fn set_download_folder(&self, id: DownloadId, folder: &str) -> Result<()> {
         let dir = self
             .inner
@@ -40,10 +34,8 @@ impl Manager {
             .resolve(&PortablePath(folder.to_string()))?;
         let exited = {
             let mut state = self.lock_open()?;
-            state.entry_mut(id)?;
-            // A new move supersedes what an earlier failed one left behind.
-            state.release_stranded(id);
             let entry = state.entry_mut(id)?;
+            entry.refuse_if_stranded()?;
             if entry.media_job.is_some() && entry.row.status != DownloadStatus::Completed {
                 // Its parts live in work folders that are not moved along.
                 return Err(CoreError::WrongState(

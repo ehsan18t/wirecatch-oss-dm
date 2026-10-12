@@ -301,7 +301,8 @@ impl Manager {
     /// # Errors
     ///
     /// [`CoreError::InvalidUrl`] for a link that is not http, https or FTP,
-    /// [`CoreError::WrongState`] for a download that has finished,
+    /// [`CoreError::WrongState`] for a download that has finished or whose files
+    /// a failed move left split between two folders,
     /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
     /// [`CoreError::Closed`] once the manager has shut down.
     pub fn refresh_link(&self, id: DownloadId, url: &str) -> Result<()> {
@@ -313,6 +314,7 @@ impl Manager {
                 "This download has already finished, so its link cannot be changed.",
             ));
         }
+        entry.refuse_if_stranded()?;
         let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
         if !same_site {
             entry.origin.headers = headers::for_another_site(&entry.origin.headers);

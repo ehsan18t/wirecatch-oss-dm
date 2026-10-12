@@ -138,8 +138,10 @@ pub(super) struct Entry {
     /// not started meanwhile.
     pub moving: Option<CancellationToken>,
     /// Where a move that failed halfway and could not be undone left some of its
-    /// files: that path stays taken (reserved) until the download is moved again,
-    /// tried again or removed, so no other download takes the name next to them.
+    /// files: that path stays taken (reserved) until the download is tried again
+    /// or removed, so no other download takes the name next to them, and the
+    /// download is not moved or relinked meanwhile. Saved with the download, so
+    /// this holds across restarts.
     pub stranded: Option<PathBuf>,
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
@@ -299,6 +301,9 @@ impl State {
         if entry.row.status != DownloadStatus::Completed {
             self.claimed.insert(entry.path());
         }
+        if let Some(stranded) = &entry.stranded {
+            self.claimed.reserve(stranded);
+        }
         self.downloads.insert(entry.row.id, entry);
     }
 
@@ -370,6 +375,17 @@ impl State {
 }
 
 impl Entry {
+    /// Refuses an operation that would start the download while a failed move
+    /// has left some of its files in another folder (see [`Entry::stranded`]).
+    pub fn refuse_if_stranded(&self) -> Result<()> {
+        if self.stranded.is_some() {
+            return Err(CoreError::WrongState(
+                "Some of this download's files are still in the folder it was being moved to. Move them back as its error says, then try it again.",
+            ));
+        }
+        Ok(())
+    }
+
     /// The row as it leaves the manager (for the UI, events and callers):
     /// a password in its link is hidden. `row` keeps the real link.
     pub fn summary(&self) -> DownloadSummary {
@@ -406,6 +422,7 @@ impl Entry {
                 summary,
                 job: self.media_job.clone(),
             }),
+            stranded: self.stranded.clone(),
         }
     }
 

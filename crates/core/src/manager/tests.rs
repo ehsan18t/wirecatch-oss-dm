@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use wirecatch_engine::{Error as EngineError, Url};
+use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
@@ -361,15 +362,52 @@ async fn a_move_that_cannot_be_undone_stops_the_download() {
         .unwrap_err();
     assert!(matches!(error, CoreError::FilesSplit { .. }), "{error}");
 
+    {
+        let state = manager.lock();
+        let entry = &state.downloads[&id];
+        assert!(entry.run.is_none(), "the download started again");
+        assert_eq!(entry.row.status, DownloadStatus::Failed);
+        let shown = entry.row.error.as_ref().map(|e| e.message.clone());
+        assert_eq!(shown, Some(error.to_string()));
+        let stranded = chosen.join(old_path.file_name().unwrap());
+        assert!(
+            state.claimed.contains(&stranded),
+            "the name in the new folder was given up"
+        );
+    }
+
+    refuses_to_restart_split(&manager, id, &dir.path().join("other")).await;
+
+    // The same after a restart: the split is saved with the download.
+    manager.shutdown().await;
+    drop(manager);
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let reopened = Manager::open(ManagerConfig::new(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    reopened.use_fake_engine(Arc::new(obedient));
+    refuses_to_restart_split(&reopened, id, &dir.path().join("other")).await;
+    let stranded = chosen.join(old_path.file_name().unwrap());
+    assert!(
+        reopened.lock().claimed.contains(&stranded),
+        "the name in the new folder was given up on restart"
+    );
+}
+
+/// Moving download `id` to `elsewhere`, or giving it a new link, would start it
+/// on split files: both are refused, and it stays failed and stopped.
+async fn refuses_to_restart_split(manager: &Manager, id: DownloadId, elsewhere: &Path) {
+    let again = manager
+        .set_download_folder(id, &elsewhere.to_string_lossy())
+        .await
+        .unwrap_err();
+    assert!(matches!(again, CoreError::WrongState(_)), "{again}");
+    let relinked = manager
+        .refresh_link(id, "https://example.com/big.iso?fresh")
+        .unwrap_err();
+    assert!(matches!(relinked, CoreError::WrongState(_)), "{relinked}");
     let state = manager.lock();
     let entry = &state.downloads[&id];
     assert!(entry.run.is_none(), "the download started again");
     assert_eq!(entry.row.status, DownloadStatus::Failed);
-    let shown = entry.row.error.as_ref().map(|e| e.message.clone());
-    assert_eq!(shown, Some(error.to_string()));
-    let stranded = chosen.join(old_path.file_name().unwrap());
-    assert!(
-        state.claimed.contains(&stranded),
-        "the name in the new folder was given up"
-    );
 }
