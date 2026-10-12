@@ -35,6 +35,23 @@ const CHECK_EVERY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 const LOOK_EVERY: Duration = Duration::from_hours(1);
 /// Why a part did not finish when the install was stopped.
 const STOPPED: &str = "It was stopped.";
+/// How much larger than announced a release file may be. Release sizes are
+/// exact byte counts; the margin is only a small allowance.
+const SIZE_MARGIN: u64 = 4096;
+/// Largest yt-dlp release file accepted from an update (it is about 40 MB).
+const MAX_UPDATE_SIZE: u64 = 200 * MIB;
+/// A new yt-dlp release is installed (quietly, with the Update button, by a
+/// repair or a reinstall) only once it is this old, so a broken or tampered
+/// release has time to be noticed and withdrawn (D21.1).
+const MATURE_AGE_MILLIS: i64 = 48 * 60 * 60 * 1000;
+/// A day, for saying when a release that is not old enough came out.
+const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
+/// How many of the newest yt-dlp releases are looked at for one old enough.
+const RELEASES_LOOKED_AT: usize = 10;
+/// Largest GitHub release description or checksum list read.
+const MAX_METADATA: u64 = 4 * MIB;
+/// Largest signature file read (yt-dlp's is under 1 KB).
+const MAX_SIGNATURE: u64 = 64 * KIB;
 
 /// Why installing or updating the media add-on failed.
 #[derive(Debug)]
@@ -54,23 +71,6 @@ impl From<String> for InstallFailure {
         }
     }
 }
-/// How much larger than announced a release file may be. Release sizes are
-/// exact byte counts; the margin is only a small allowance.
-const SIZE_MARGIN: u64 = 4096;
-/// Largest yt-dlp release file accepted from an update (it is about 40 MB).
-const MAX_UPDATE_SIZE: u64 = 200 * MIB;
-/// A new yt-dlp release is installed (quietly, with the Update button, by a
-/// repair or a reinstall) only once it is this old, so a broken or tampered
-/// release has time to be noticed and withdrawn (D21.1).
-const MATURE_AGE_MILLIS: i64 = 48 * 60 * 60 * 1000;
-/// A day, for saying when a release that is not old enough came out.
-const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
-/// How many of the newest yt-dlp releases are looked at for one old enough.
-const RELEASES_LOOKED_AT: usize = 10;
-/// Largest GitHub release description or checksum list read.
-const MAX_METADATA: u64 = 4 * MIB;
-/// Largest signature file read (yt-dlp's is under 1 KB).
-const MAX_SIGNATURE: u64 = 64 * KIB;
 
 /// Why looking up the newest yt-dlp gave nothing.
 enum Lookup {

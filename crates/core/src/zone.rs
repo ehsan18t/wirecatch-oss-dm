@@ -10,9 +10,7 @@
 use std::path::Path;
 
 #[cfg(any(windows, test))]
-use wirecatch_engine::Url;
-#[cfg(any(windows, test))]
-use wirecatch_engine::url::without_credentials;
+use wirecatch_engine::{Url, url::without_credentials};
 
 /// Longest URL written into the mark; longer ones are cut.
 // Only Windows writes the mark; the text is built there and in tests on every platform.
