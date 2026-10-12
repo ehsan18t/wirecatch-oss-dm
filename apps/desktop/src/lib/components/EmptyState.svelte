@@ -1,5 +1,6 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { CATEGORY_LABEL } from '$lib/format';
   import { shortcutParts } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
@@ -32,7 +33,7 @@
       </h2>
       <p>
         {app.name} downloads it right away, using several connections at once. Downloads you start in
-        your browser show up here too once the {app.name} extension is installed.
+        your browser show up here too once the {PRODUCT_NAME} extension is installed.
       </p>
       <div class="actions">
         <Button
