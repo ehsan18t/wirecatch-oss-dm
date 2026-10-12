@@ -170,6 +170,12 @@ Decided by the maintainer on 2026-10-12, replacing D19's per-user Windows instal
 5. Linux is unchanged: `.deb` and `.rpm` already install system-wide, and the AppImage is per user by nature.
 6. A Wirecatch the person closed stays closed until something needs it, as with other download managers. The browser extension starts it only for something the person did: a browser download it will take, the media button, or Open Wirecatch in its popup. Its checks on waking and its reconnects send `hello` with `start_app` off, so the bridge only reaches an app that is already running and otherwise answers `app_not_running`, and the extension then waits instead of retrying. This makes D5's "the bridge starts the app when needed" exact.
 
+### D26. The published engine ships its library, and is tested in the workspace
+Decided by the lead on 2026-10-12, during W14.
+1. The engine's tests and examples share test servers with the other crates through `crates/test-support`, which is not published: one copy of each server instead of one per crate. So the engine's tests cannot be built from the published package.
+2. The package therefore holds the library only (`include` in `crates/engine/Cargo.toml`): no `tests/`, no `examples/`. Its tests run in this repository, where CI runs them on Windows and Linux. A packager who wants to run them builds from the repository at the release tag. The in-source test modules (`src/ftp/tests.rs`, `src/http3/tests.rs`) stay in the package, since the library declares them, and also need the repository to build. The gate checks that the package holds no tests or examples, so a change that ships uncompilable files fails.
+3. `wirecatch_engine::numeric` is public: `approx_f64` and `f64_to_u64`, the checked conversions every crate uses for byte counts, rates and floats read from outside the process (W14 decision 4), so they are written and reasoned about once.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
