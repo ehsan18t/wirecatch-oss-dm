@@ -70,8 +70,8 @@ use crate::http::{self, Clients, Failure, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
+use crate::retry::{Attempts, Next, Refusals};
 use crate::units::KIB_USIZE;
-use crate::worker;
 
 /// Size of the write buffer used by [`Fetcher::save`].
 const SAVE_BUFFER: usize = 256 * KIB_USIZE;
@@ -322,29 +322,26 @@ impl Fetcher {
             end: range.map(|r| r.end),
             written: 0,
         };
-        let mut failures = 0u32;
+        let mut attempts = Attempts::new(Refusals::AsFailures, self.inner.max_retries);
         loop {
             let before = position.written;
             let attempt = self
                 .attempt(client, url, &mut position, sink, on_bytes)
                 .await;
-            match attempt {
+            let f = match attempt {
                 Ok(answer) => return Ok(answer),
                 Err(_) if self.inner.cancel.is_cancelled() => return Err(Error::Cancelled),
-                Err(f) if f.error.is_retryable() && failures < self.inner.max_retries => {
-                    failures = if position.written > before {
-                        0
-                    } else {
-                        failures + 1
-                    };
-                    let delay = worker::retry_delay(failures.max(1), f.retry_after);
-                    warn!(error = %f.error, %url, retry_in = ?delay, "request failed, retrying");
-                    tokio::select! {
-                        () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
-                        () = tokio::time::sleep(delay) => {}
-                    }
-                }
-                Err(f) => return Err(f.error),
+                Err(f) => f,
+            };
+            let progressed = position.written > before;
+            let delay = match attempts.after_failure(&f.error, f.retry_after, progressed) {
+                Next::GiveUp => return Err(f.error),
+                Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
+            };
+            warn!(error = %f.error, %url, retry_in = ?delay, "request failed, retrying");
+            tokio::select! {
+                () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
+                () = tokio::time::sleep(delay) => {}
             }
         }
     }

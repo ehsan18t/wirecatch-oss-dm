@@ -18,7 +18,7 @@ use crate::http::{self, Clients, Failure, Session, Validators};
 use crate::http3;
 use crate::net_guard::Guard;
 use crate::proxy::{self, Scheme};
-use crate::worker;
+use crate::retry::{Attempts, Next, Refusals};
 
 /// What every request of one download needs, and all the protocol layers get
 /// of it.
@@ -336,19 +336,20 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, Failure>>,
 {
-    let mut failures = 0;
+    let mut attempts = Attempts::new(Refusals::AsFailures, opts.max_retries);
     loop {
-        match attempt().await {
-            Err(f) if f.error.is_retryable() && failures < opts.max_retries => {
-                failures += 1;
-                let delay = worker::retry_delay(failures, f.retry_after);
-                tracing::warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
-                tokio::select! {
-                    () = cancel.cancelled() => return Err(Error::Cancelled),
-                    () = tokio::time::sleep(delay) => {}
-                }
-            }
-            result => return result.map_err(|f| f.error),
+        let failure = match attempt().await {
+            Ok(value) => return Ok(value),
+            Err(failure) => failure,
+        };
+        let delay = match attempts.after_failure(&failure.error, failure.retry_after, false) {
+            Next::GiveUp => return Err(failure.error),
+            Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
+        };
+        tracing::warn!(error = %failure.error, retry_in = ?delay, "first request failed, retrying");
+        tokio::select! {
+            () = cancel.cancelled() => return Err(Error::Cancelled),
+            () = tokio::time::sleep(delay) => {}
         }
     }
 }

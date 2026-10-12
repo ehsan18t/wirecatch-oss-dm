@@ -222,6 +222,7 @@ mod net_guard;
 pub mod numeric;
 mod progress;
 mod proxy;
+mod retry;
 mod segment;
 mod state;
 mod storage;
@@ -230,6 +231,7 @@ mod transport;
 pub mod units;
 pub mod url;
 mod worker;
+mod writer;
 
 pub use ::url::Url;
 pub use download::{
