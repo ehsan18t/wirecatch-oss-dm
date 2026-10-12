@@ -11,8 +11,9 @@
 //!   knows what each window shows now.
 //! - **Limit**: at most [`MAX_QUESTION_WINDOWS`] windows ask a question at once; later
 //!   questions wait and open, oldest first, as those windows close or start showing progress.
-//! - **Placement**: each window takes the lowest free slot, and slot `n` sits [`CASCADE_STEP`]
-//!   logical pixels down and right of slot `n - 1`, on the screen under the pointer.
+//! - **Placement**: each window takes the lowest free slot, and slot `n` sits
+//!   [`DOWNLOAD_WINDOW_CASCADE_STEP`] logical pixels down and right of slot `n - 1`, on the
+//!   screen under the pointer.
 //! - **Front**: windows open always on top and focused, and drop always-on-top the first time
 //!   they lose focus after having had it, so they behave like normal windows from then on.
 //! - **Closing**: closing a question window does not answer it. The question stays open in the
@@ -39,11 +40,6 @@ use crate::questions::open_question_ids;
 /// Every download window's label starts with this. The capability in
 /// `capabilities/download-windows.json` matches it as `download-*`.
 pub const LABEL_PREFIX: &str = "download-";
-
-/// How far each window sits down and right of the one before, in logical pixels: the
-/// protocol's [`DOWNLOAD_WINDOW_CASCADE_STEP`], which the sample app's windows follow too, as a
-/// coordinate. Exact: the step is a small whole number.
-pub const CASCADE_STEP: f64 = DOWNLOAD_WINDOW_CASCADE_STEP as f64;
 
 /// A download window's size when it opens, in logical pixels.
 pub const WINDOW_SIZE: (f64, f64) = (460.0, 600.0);
@@ -327,9 +323,9 @@ pub struct Area {
 }
 
 /// Where the window in `slot` goes on `area`, for a window of `size` (all logical pixels). The
-/// first windows spread around the middle of the screen, each [`CASCADE_STEP`] down and right
-/// of the one before; slots that would leave the screen start again at the top left of the
-/// cascade. A window larger than the screen goes to its top left corner.
+/// first windows spread around the middle of the screen, each [`DOWNLOAD_WINDOW_CASCADE_STEP`]
+/// down and right of the one before; slots that would leave the screen start again at the top
+/// left of the cascade. A window larger than the screen goes to its top left corner.
 #[must_use]
 pub fn place(slot: usize, area: Area, size: (f64, f64)) -> (f64, f64) {
     let room_x = (area.width - size.0).max(0.0);
@@ -357,7 +353,7 @@ fn cascade_offset(steps: usize) -> f64 {
 /// How many whole cascade steps fit in `length` logical pixels: none when it is negative or
 /// not a number.
 fn whole_steps(length: f64) -> usize {
-    f64_to_u64((length / CASCADE_STEP).floor()).map_or(0, saturating)
+    f64_to_u64((length / f64::from(DOWNLOAD_WINDOW_CASCADE_STEP)).floor()).map_or(0, saturating)
 }
 
 /// The download windows, kept by the app.
@@ -775,8 +771,9 @@ mod tests {
     fn each_window_sits_one_step_down_and_right_of_the_last() {
         let first = place(0, SCREEN, WINDOW_SIZE);
         let second = place(1, SCREEN, WINDOW_SIZE);
-        assert_eq!(second.0 - first.0, CASCADE_STEP);
-        assert_eq!(second.1 - first.1, CASCADE_STEP);
+        let step = f64::from(DOWNLOAD_WINDOW_CASCADE_STEP);
+        assert_eq!(second.0 - first.0, step);
+        assert_eq!(second.1 - first.1, step);
         // The first five spread around the middle of the screen.
         let fifth = place(4, SCREEN, WINDOW_SIZE);
         let middle = (
