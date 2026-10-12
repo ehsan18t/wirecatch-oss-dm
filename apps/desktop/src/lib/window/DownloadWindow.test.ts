@@ -3,16 +3,12 @@
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from '$lib/backend/mock';
 import { mockBackend, NOON, settle, windowState } from '$lib/testing/setup';
 import { HOURS_PER_DAY, MS_PER_HOUR } from '$lib/time';
 import DownloadWindow from './DownloadWindow.svelte';
 import { CLOSE_AFTER_MS, type Target } from './download-window.svelte';
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 async function show(b: MockBackend, target: Target) {
   const { win, host } = windowState(b, target);

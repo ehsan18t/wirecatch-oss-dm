@@ -4,7 +4,7 @@
 import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { settingAnchor } from '$lib/settings-schema';
 import { renderApp, settle } from '$lib/testing/setup';
 
@@ -14,10 +14,6 @@ const MANY_AT_ONCE = 50;
 const FLASH_MS = 1600;
 /** A little over half of that. */
 const FLASH_HALF = 900;
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 async function openSettings() {
   const r = await renderApp();

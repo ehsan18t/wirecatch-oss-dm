@@ -155,17 +155,13 @@ describe('a video', () => {
   it('shows the reading, then the quality list, in the same window', async () => {
     const b = backend();
     vi.useFakeTimers();
-    try {
-      b.simulateSlowReading();
-      const id = b.windows.windows[0]?.shows.id ?? -1;
-      const { win } = windowState(b, { question: id });
-      await win.init();
-      expect(win.question?.kind).toBe('reading');
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(win.question?.kind).toBe('choice');
-    } finally {
-      vi.useRealTimers();
-    }
+    b.simulateSlowReading();
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    expect(win.question?.kind).toBe('reading');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(win.question?.kind).toBe('choice');
   });
 
   it('drops the note about an earlier download when it cannot be read again', async () => {
@@ -182,35 +178,27 @@ describe('a video', () => {
       .mockResolvedValueOnce(earlier)
       .mockRejectedValueOnce(new Error('The list could not be read.'));
     vi.useFakeTimers();
-    try {
-      b.simulateSlowReading();
-      const id = b.windows.windows[0]?.shows.id ?? -1;
-      const { win } = windowState(b, { question: id });
-      await win.init();
-      expect(win.earlier?.id).toBe(earlierId);
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(win.question?.kind).toBe('choice');
-      // A note that could not be checked again is not shown as if it still held.
-      expect(win.earlier).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    b.simulateSlowReading();
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    expect(win.earlier?.id).toBe(earlierId);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(win.question?.kind).toBe('choice');
+    // A note that could not be checked again is not shown as if it still held.
+    expect(win.earlier).toBeNull();
   });
 
   it('a reading that ends without a list says why it went', async () => {
     const b = backend();
     vi.useFakeTimers();
-    try {
-      b.simulateSlowReading();
-      const id = b.windows.windows[0]?.shows.id ?? -1;
-      const { win } = windowState(b, { question: id });
-      await win.init();
-      win.handle({ type: 'confirmation_closed', data: { id } });
-      expect(win.phase).toBe('gone');
-      expect(win.goneReason).toBe(READING_ENDED);
-    } finally {
-      vi.useRealTimers();
-    }
+    b.simulateSlowReading();
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    win.handle({ type: 'confirmation_closed', data: { id } });
+    expect(win.phase).toBe('gone');
+    expect(win.goneReason).toBe(READING_ENDED);
   });
 
   it('installs the add-on for a quality that needs it, then downloads by itself', async () => {

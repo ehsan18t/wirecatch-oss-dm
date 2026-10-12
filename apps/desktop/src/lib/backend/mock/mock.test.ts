@@ -206,41 +206,33 @@ describe('MockBackend', () => {
 
   it('answers after the configured latency, once its events have arrived', async () => {
     vi.useFakeTimers();
-    try {
-      const { mock, events } = make({ empty: true, latencyMs: 200 });
-      let answered: number | null = null;
-      void mock
-        .addDownload({
-          url: 'https://x.org/a.zip',
-          queue: null,
-          folder: null,
-          file_name: null,
-          start: true,
-        })
-        .then((id) => (answered = id));
-      expect(events.some((e) => e.type === 'downloads_changed')).toBe(true);
-      await vi.advanceTimersByTimeAsync(199);
-      expect(answered).toBeNull();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(answered).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
+    const { mock, events } = make({ empty: true, latencyMs: 200 });
+    let answered: number | null = null;
+    void mock
+      .addDownload({
+        url: 'https://x.org/a.zip',
+        queue: null,
+        folder: null,
+        file_name: null,
+        start: true,
+      })
+      .then((id) => (answered = id));
+    expect(events.some((e) => e.type === 'downloads_changed')).toBe(true);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(answered).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(answered).toBe(1);
   });
 
   it('fails after the configured latency too', async () => {
     vi.useFakeTimers();
-    try {
-      const { mock } = make({ empty: true, latencyMs: 50 });
-      let error: unknown = null;
-      void mock.pause(42).catch((e: unknown) => (error = e));
-      await vi.advanceTimersByTimeAsync(49);
-      expect(error).toBeNull();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(error).toBeInstanceOf(BackendError);
-    } finally {
-      vi.useRealTimers();
-    }
+    const { mock } = make({ empty: true, latencyMs: 50 });
+    let error: unknown = null;
+    void mock.pause(42).catch((e: unknown) => (error = e));
+    await vi.advanceTimersByTimeAsync(49);
+    expect(error).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(error).toBeInstanceOf(BackendError);
   });
 
   it('answers within one microtask by default', async () => {
@@ -256,28 +248,20 @@ describe('MockBackend', () => {
 
   it('drops a slow reading still on its way when disposed', () => {
     vi.useFakeTimers();
-    try {
-      const { mock } = make({ empty: true });
-      mock.simulateSlowReading();
-      mock.dispose();
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    const { mock } = make({ empty: true });
+    mock.simulateSlowReading();
+    mock.dispose();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('drops answers still on their way back when disposed', async () => {
     vi.useFakeTimers();
-    try {
-      const { mock } = make({ empty: true, latencyMs: 100 });
-      let answered = false;
-      void mock.listDownloads().then(() => (answered = true));
-      mock.dispose();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(answered).toBe(false);
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    const { mock } = make({ empty: true, latencyMs: 100 });
+    let answered = false;
+    void mock.listDownloads().then(() => (answered = true));
+    mock.dispose();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(answered).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
