@@ -96,15 +96,20 @@ EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16
 
 The W0 baseline found 1,477 clippy warnings and 787 ESLint errors. Each package is brought to zero while its workstream is open, and the gates then hold it there.
 
-Done on 2026-10-12: every crate follows the workspace lints, both apps' suppression files are deleted, and `std::thread::sleep` is banned in `clippy.toml`. 2,204 violations were fixed by cause, not silenced. The exceptions left, each a single attribute or comment with its reason:
+Done on 2026-10-12: every crate follows the workspace lints, both apps' suppression files are deleted, and `std::thread::sleep` is banned in `clippy.toml`. 2,204 violations were fixed by cause, not silenced. The exceptions left are these eight, each a single attribute or comment with its reason in place. `LINT_EXCEPTIONS` in `scripts/gate.mjs` lists the same eight by file and lint, and the `exceptions` check fails on any other `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore`, and on any of these that is gone:
 
-- E1: the mulberry32 constants in the desktop sample backend (`backend/mock/rng.ts`), which define the algorithm.
-- E2: `clippy::large_enum_variant` on the protocol's `Message`; E3: the same on the engine's `Remote`.
-- E4: `clippy::struct_excessive_bools` on `AppSettings`, whose bools are independent settings.
-- E5: test-support lints on `crates/e2e`; E6: the same on `crates/test-support`.
-- E7, E8: the checked numeric conversions in `wirecatch_engine::numeric`.
+- E1: `apps/desktop/src/lib/backend/mock/rng.ts`, `wirecatch/no-magic-numbers` (one block, switched back on after it): the constants of the published mulberry32 generator, which define the algorithm.
+- E2: `crates/protocol/src/wire.rs`, `clippy::large_enum_variant` on `Message`: messages are decoded, handled and dropped one at a time.
+- E3: `crates/engine/src/transport.rs`, `clippy::large_enum_variant` on `Remote`: one value per download, shared by its connections.
+- E4: `crates/protocol/src/app.rs`, `clippy::struct_excessive_bools` on `AppSettings`: each bool is an independent setting.
+- E5: `crates/e2e/src/lib.rs`, crate level, `clippy::expect_used` and `clippy::missing_panics_doc`: test support, where a panic is the failing test's report.
+- E6: `crates/test-support/src/lib.rs`, crate level, `clippy::unwrap_used` and `clippy::missing_panics_doc`: the same.
+- E7: `crates/engine/src/numeric.rs`, `clippy::cast_precision_loss` on `approx_f64`: exact below 2^53, which byte counts and rates stay far below.
+- E8: `crates/engine/src/numeric.rs`, `clippy::cast_possible_truncation` and `clippy::cast_sign_loss` on `f64_to_u64`: the value is checked to be finite, not negative and in range first.
 
-The lead's decisions on the way: `wirecatch/no-magic-numbers` lets named module constants be written as they read; a shared, unpublished `crates/test-support` holds every test server (D26); engine locks recover from poisoning through one accessor per struct; Rust-owned facts the apps need are generated into `@wirecatch/protocol`; `@wirecatch/units` holds byte units for both apps; icon sizes and dialog widths are a scale of tokens in `app.css` (approved by the maintainer). New gate rules keep the result: `wirecatch/no-assertion-on-input` (no `as`, `<T>` or `!` on a value whose type says nothing about its shape, such as `unknown` or `object`, every package), `wirecatch/use-ui-primitives` (in the desktop app, no element outside `Button` and `IconButton` carries their `btn` or `icon-btn` class, and no Lucide icon is rendered except through `Icon`) and the `std::thread::sleep` ban. The desktop tests share one test window per worker (`isolate: false`), guarded by a reset after every file and a ban on module mocks, which made them pass reliably under load.
+The lead's decisions on the way: `wirecatch/no-magic-numbers` lets named module constants be written as they read; a shared, unpublished `crates/test-support` holds every test server (D26); engine locks recover from poisoning through one accessor per struct; Rust-owned facts the apps need are generated into `@wirecatch/protocol`; `@wirecatch/units` holds byte units for both apps; icon sizes and dialog widths are a scale of tokens in `app.css` (approved by the maintainer). New gate rules keep the result: `wirecatch/no-assertion-on-input` (no `as`, `<T>` or `!` on a value whose type says nothing about its shape, such as `unknown` or `object`, every package), `wirecatch/use-ui-primitives` (in the desktop app, no element outside `Button` and `IconButton` carries their `btn` or `icon-btn` class, and no Lucide icon is rendered except through `Icon`) and the `std::thread::sleep` ban; after the workstream review, gate checks for `allow` inside `cfg_attr` (`cfg-allow`), Linux lints from Windows and macOS (`clippy-linux`), a reason on every disable comment, the exception list (`exceptions`), the lint setup of every package (`js-policy`), and no `app.backend` in desktop components. The desktop tests share one test window per worker (`isolate: false`), guarded by a reset after every file and a ban on module mocks, which made them pass reliably under load.
+
+Planned as the next round, not enabled yet: `clippy::let_underscore_must_use`, so a `Result` or other `#[must_use]` value is never dropped with `let _ =` (section 4 of ENGINEERING.md says so today, enforced by review only). It is its own round because each existing `let _ =` needs a decision: handle, propagate or log with a reason.
 
 ## Status
 

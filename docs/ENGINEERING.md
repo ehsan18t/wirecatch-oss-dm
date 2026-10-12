@@ -93,7 +93,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - No lock is held across `.await`.
 - Every spawned task has an owner that stops it: a `JoinSet`, a stored `JoinHandle` or a `CancellationToken`. No fire-and-forget tasks.
 - Public async functions are cancel-safe, or their docs say what cancelling them leaves behind.
-- No polling where an event exists. Wait on a channel, `Notify` or watch with a deadline instead of sleeping in a loop.
+- No polling where an event exists. Wait on a channel, `Notify` or watch with a deadline instead of sleeping in a loop. Gate for `std::thread::sleep` (`disallowed_methods` in `clippy.toml`); review for `tokio::time::sleep` in a loop.
 
 ### Structure
 
@@ -108,7 +108,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - Layers in the desktop app: components get what they need from state and never import the backend or reach it through `app.backend`; the state classes call the backend; routes wire the two together; only `src/lib/backend` talks to Tauri. In the extension, only `src/lib/native` talks to the app. Gate (`no-restricted-imports`, `no-restricted-syntax`, including dynamic `import()` and destructuring, and `no-restricted-properties` for `app.backend` in components).
 - Buttons and icons in the desktop app go through the `Button`, `IconButton` and `Icon` primitives: no element outside them carries their `btn` or `icon-btn` classes, and no Lucide icon is rendered except through `Icon`, whether as its own tag, through a name it was given (`const Close = X; <Close />`) or with `<svelte:component>`. Gate (`wirecatch/use-ui-primitives`); review for buttons with styles of their own (menu items, switches, which stay plain buttons) and for an icon component passed in as a prop, which the rule cannot follow.
 - Every `{#each}` has a key. Lists that can be long are virtualized. A progress tick updates the rows that changed, not the whole list.
-- Functions stay under 80 lines and a complexity of 12, files under 400 lines. Gate.
+- Functions stay within 80 lines and a cyclomatic complexity of 12, files within 400 lines, counting neither blank lines nor comments; blocks nest at most 4 deep and functions take at most 4 parameters. Gate (`max-lines-per-function`, `complexity`, `max-lines`, `max-depth`, `max-params`; tests are exempt from the line limits).
 
 There are no suppression files, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place: it names the rule, gives its reason after `--`, and covers only those lines (`eslint-disable-next-line`, or an `eslint-disable` switched back on by `eslint-enable`), never a whole file. A `svelte-ignore` gives its reason the same way (`<!-- svelte-ignore a11y_x -- the reason -->`). Gate (`require-description`, `no-unlimited-disable` and `disable-enable-pair` from `eslint-plugin-eslint-comments` in the shared config, and the `text` check for `svelte-ignore`).
 
@@ -123,7 +123,7 @@ There are no suppression files, and none is added: fix a violation at its cause.
 
 - New behavior comes with tests that would fail without it. A bug fix starts with a test that reproduces the bug.
 - Tests never reach the internet. Servers are local.
-- No fixed sleeps. Wait for an event with a deadline, and fail with a message when the deadline passes. A test that can hang forever is a bug.
+- No fixed sleeps. Wait for an event with a deadline, and fail with a message when the deadline passes. A test that can hang forever is a bug. Gate for `std::thread::sleep` in Rust (`disallowed_methods` in `clippy.toml`); review for async sleeps and for TypeScript.
 - No silent skips. A test that needs something optional (a real ffmpeg, a display) says why it skipped, and CI sets the variable that makes it required.
 - Tests are named for the behavior they prove (`paused_download_keeps_its_part_file`), not for a ticket or a review round.
 - Hostile input gets its own tests: oversized numbers, truncated frames, malformed manifests, paths with `..`, executables disguised as documents.

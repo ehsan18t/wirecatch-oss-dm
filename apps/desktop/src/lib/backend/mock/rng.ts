@@ -8,7 +8,7 @@ export type Random = () => number;
  * no meaning a name could carry, and changing one changes every sample download.
  */
 export function mulberry32(seed: number): Random {
-  /* eslint-disable wirecatch/no-magic-numbers -- the constants of the published mulberry32 generator (lint plan E1) */
+  /* eslint-disable wirecatch/no-magic-numbers -- the constants of the published mulberry32 generator (docs/AUDIT.md W14 E1) */
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
