@@ -14,6 +14,11 @@ use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
 use super::Manager;
+use super::fake::{EngineFuture, FakeEngine, FakeRun};
+use super::settle::ServerAnswer;
+use crate::error::CoreError;
+use crate::naming;
+use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
 
 /// A media download without a browser's agent names the app, never the engine
 /// library's default; with one, it is the browser's.
@@ -32,11 +37,6 @@ fn media_requests_name_the_app_or_the_browser() {
         "TestBrowser/1"
     );
 }
-use super::fake::{EngineFuture, FakeEngine, FakeRun};
-use super::settle::ServerAnswer;
-use crate::error::CoreError;
-use crate::naming;
-use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
 
 /// How long any wait in these tests may take before it fails.
 const PATIENCE: Duration = Duration::from_secs(20);
