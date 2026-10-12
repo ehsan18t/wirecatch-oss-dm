@@ -38,7 +38,7 @@ use axum::routing::get;
 use bytes::Bytes;
 use url::Url;
 
-use crate::http::{Seen, index, parse_range, throttled};
+use crate::http::{Seen, index, parse_range, path_key, throttled};
 
 /// One file and how it is served.
 #[derive(Clone, Default)]
@@ -99,7 +99,7 @@ impl FileServer {
     /// The URL of `path` on this server; a leading `/` is optional.
     #[must_use]
     pub fn url(&self, path: &str) -> Url {
-        Url::parse(&format!("{}{}", self.base, key(path))).unwrap()
+        Url::parse(&format!("{}{}", self.base, path_key(path))).unwrap()
     }
 
     /// Serves `body` at `path` with no `Content-Type`, replacing any file
@@ -159,7 +159,7 @@ impl FileServer {
     /// Every request for `path` so far, in the order they arrived.
     #[must_use]
     pub fn seen_at(&self, path: &str) -> Vec<Seen> {
-        let path = key(path);
+        let path = path_key(path);
         self.inner
             .log
             .lock()
@@ -188,21 +188,20 @@ impl FileServer {
             content_type,
             ..File::default()
         };
-        self.inner.files.lock().unwrap().insert(key(path), file);
+        self.inner
+            .files
+            .lock()
+            .unwrap()
+            .insert(path_key(path), file);
     }
 
     fn change(&self, path: &str, change: impl FnOnce(&mut File)) {
         let mut files = self.inner.files.lock().unwrap();
-        let Some(file) = files.get_mut(&key(path)) else {
+        let Some(file) = files.get_mut(&path_key(path)) else {
             panic!("put a file at {path} before changing how it is served");
         };
         change(file);
     }
-}
-
-/// `path` as the server sees it: with exactly one leading `/`.
-fn key(path: &str) -> String {
-    format!("/{}", path.trim_start_matches('/'))
 }
 
 /// Counts a request as being answered until it is dropped.

@@ -239,10 +239,10 @@ impl TestServer {
         }
     }
 
-    /// The URL of `path` on this server.
+    /// The URL of `path` on this server; a leading `/` is optional.
     #[must_use]
     pub fn url(&self, path: &str) -> Url {
-        Url::parse(&format!("{}/{}", self.base, path)).unwrap()
+        Url::parse(&format!("{}{}", self.base, path_key(path))).unwrap()
     }
 
     /// Changes the configuration for the requests that follow.
@@ -269,45 +269,45 @@ impl TestServer {
         self.inner.open.send_replace(true);
     }
 
-    /// How many requests for `path` (with its leading `/`) have arrived so far,
+    /// How many requests for `path` (a leading `/` is optional) have arrived so far,
     /// answered, held or still being answered.
     #[must_use]
     pub fn arrived(&self, path: &str) -> usize {
+        let key = path_key(path);
         self.inner
             .arrived
             .borrow()
             .iter()
-            .filter(|p| *p == path)
+            .filter(|p| **p == key)
             .count()
     }
 
-    /// Waits until a request for `path` (with its leading `/`) has arrived,
+    /// Waits until a request for `path` (a leading `/` is optional) has arrived,
     /// held or not.
     ///
     /// # Panics
     ///
     /// When none arrives within `patience`.
     pub async fn wait_for_request(&self, path: &str, patience: Duration) {
+        let key = path_key(path);
         let mut arrived = self.inner.arrived.subscribe();
-        let seen = tokio::time::timeout(
-            patience,
-            arrived.wait_for(|paths| paths.iter().any(|p| p == path)),
-        )
-        .await;
+        let seen =
+            tokio::time::timeout(patience, arrived.wait_for(|paths| paths.contains(&key))).await;
         assert!(
             matches!(seen, Ok(Ok(_))),
             "the server saw no request for {path} within {patience:?}"
         );
     }
 
-    /// The requests for `path` (with its leading `/`) answered so far, oldest
+    /// The requests for `path` (a leading `/` is optional) answered so far, oldest
     /// first.
     #[must_use]
     pub fn seen_at(&self, path: &str) -> Vec<Seen> {
+        let key = path_key(path);
         self.stats
             .seen()
             .into_iter()
-            .filter(|seen| seen.path == path)
+            .filter(|seen| seen.path == key)
             .collect()
     }
 }
@@ -593,6 +593,12 @@ pub(crate) fn time_to_send(bytes: u64, bps: u64) -> Duration {
     Duration::from_nanos(u64::try_from(nanos).unwrap())
 }
 
+/// `path` as the servers see it in a request: with exactly one leading `/`, so
+/// helpers take a path with or without one.
+pub(crate) fn path_key(path: &str) -> String {
+    format!("/{}", path.trim_start_matches('/'))
+}
+
 /// A position in the served buffer as an index into it.
 pub(crate) fn index(position: u64) -> usize {
     usize::try_from(position).unwrap()
@@ -652,5 +658,18 @@ fn asks_too_much(headers: &HeaderMap, max: u64) -> bool {
     match asked {
         Some((start, last)) => last < start || last - start + 1 > max,
         None => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_key;
+
+    #[test]
+    fn a_path_has_one_leading_slash_however_it_is_given() {
+        assert_eq!(path_key("a/b.bin"), "/a/b.bin");
+        assert_eq!(path_key("/a/b.bin"), "/a/b.bin");
+        assert_eq!(path_key("//a"), "/a");
+        assert_eq!(path_key(""), "/");
     }
 }
