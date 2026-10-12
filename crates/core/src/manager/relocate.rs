@@ -3,11 +3,12 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tracing::warn;
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{DownloadStatus, PortablePath};
+use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
 
 use super::Manager;
 use super::state::Stop;
@@ -28,7 +29,8 @@ impl Manager {
     /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it
     /// cannot be created or written to or the files cannot be moved there,
     /// [`CoreError::FilesSplit`] when, after that, some files already moved could
-    /// not be put back, [`CoreError::WrongState`] for an unfinished video or a download already being
+    /// not be put back (the download is then marked failed with that message and
+    /// waits until it is tried again), [`CoreError::WrongState`] for an unfinished video or a download already being
     /// moved, [`CoreError::DownloadNotFound`] when there is no download `id`, and
     /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn set_download_folder(&self, id: DownloadId, folder: &str) -> Result<()> {
@@ -38,6 +40,9 @@ impl Manager {
             .resolve(&PortablePath(folder.to_string()))?;
         let exited = {
             let mut state = self.lock_open()?;
+            state.entry_mut(id)?;
+            // A new move supersedes what an earlier failed one left behind.
+            state.release_stranded(id);
             let entry = state.entry_mut(id)?;
             if entry.media_job.is_some() && entry.row.status != DownloadStatus::Completed {
                 // Its parts live in work folders that are not moved along.
@@ -78,6 +83,17 @@ impl Manager {
         } else {
             self.move_files(id, &old_path, dir.clone()).await
         };
+        self.finish_move(id, &dir, &old_path, moved)
+    }
+
+    /// Records how moving download `id` from `old_path` to `dir` ended.
+    fn finish_move(
+        &self,
+        id: DownloadId,
+        dir: &Path,
+        old_path: &Path,
+        moved: Result<PathBuf>,
+    ) -> Result<()> {
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
             if let Ok(new_path) = &moved {
@@ -109,7 +125,7 @@ impl Manager {
                 // The new path was reserved while moving and is the download's
                 // own now; the old one is free.
                 if new_path != old_path {
-                    state.claimed.remove(&old_path);
+                    state.claimed.remove(old_path);
                     state.claimed.settle(&new_path);
                 }
                 self.save(&mut state, id);
@@ -117,6 +133,16 @@ impl Manager {
                 Ok(())
             }
             Err(e) => {
+                if matches!(e, CoreError::FilesSplit { .. }) {
+                    // Its part and resume files are split between two folders: it must
+                    // not resume until the person has put them back.
+                    entry.row.status = DownloadStatus::Failed;
+                    entry.row.error = Some(UserError {
+                        message: e.to_string(),
+                        fix: None,
+                    });
+                    self.save(&mut state, id);
+                }
                 self.reconcile(&mut state);
                 Err(e)
             }
@@ -154,15 +180,30 @@ impl Manager {
             completed
         };
         let (from, to) = (old_path.to_path_buf(), new_path.clone());
+        #[cfg(test)]
+        let mover: Mover = self.fake_mover().unwrap_or_else(|| Arc::new(move_file));
+        #[cfg(not(test))]
+        let mover: Mover = Arc::new(move_file);
         let result = self
-            .blocking(move || move_download_files(&from, &to, completed))
+            .blocking(move || move_download_files(&from, &to, completed, &*mover))
             .await;
-        if result.is_err() && !completed {
-            self.lock().claimed.release(&new_path);
+        if let Err(e) = &result {
+            let mut state = self.lock();
+            if matches!(e, CoreError::FilesSplit { .. }) {
+                // Some files are still at the new path: it stays reserved for them.
+                if let Some(entry) = state.downloads.get_mut(&id) {
+                    entry.stranded = Some(new_path.clone());
+                }
+            } else if !completed {
+                state.claimed.release(&new_path);
+            }
         }
         result.map(|()| new_path)
     }
 }
+
+/// Moves one file from the first path to the second.
+type Mover = Arc<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
 
 /// Creates `dir` if needed and proves it can be written to.
 fn prepare_folder(dir: &Path) -> Result<()> {
@@ -184,9 +225,14 @@ fn prepare_folder(dir: &Path) -> Result<()> {
 }
 
 /// Moves a finished file, or an unfinished download's part and resume files.
-fn move_download_files(from: &Path, to: &Path, completed: bool) -> Result<()> {
+fn move_download_files(
+    from: &Path,
+    to: &Path,
+    completed: bool,
+    move_one: &(dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync),
+) -> Result<()> {
     if completed {
-        return move_file(from, to).map_err(|source| CoreError::File {
+        return move_one(from, to).map_err(|source| CoreError::File {
             path: from.display().to_string(),
             source,
         });
@@ -196,7 +242,7 @@ fn move_download_files(from: &Path, to: &Path, completed: bool) -> Result<()> {
         .zip(partial_files(to))
         .filter(|(old, _)| old.exists())
         .collect();
-    move_together(&pairs, move_file)
+    move_together(&pairs, move_one)
 }
 
 /// Moves each `(old, new)` pair of a download's files with `move_one`. When one
@@ -282,7 +328,7 @@ mod tests {
         let [part, state] = partial_files(&from);
         std::fs::write(&part, b"data").unwrap();
         std::fs::write(&state, b"state").unwrap();
-        move_download_files(&from, &to, false).unwrap();
+        move_download_files(&from, &to, false, &move_file).unwrap();
         let [new_part, new_state] = partial_files(&to);
         assert_eq!(std::fs::read(new_part).unwrap(), b"data");
         assert_eq!(std::fs::read(new_state).unwrap(), b"state");

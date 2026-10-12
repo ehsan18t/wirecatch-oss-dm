@@ -219,6 +219,9 @@ struct Inner {
     /// Plays the engine in unit tests.
     #[cfg(test)]
     fake_engine: Mutex<Option<fake::FakeEngine>>,
+    /// Moves files in unit tests, so a move can be made to fail.
+    #[cfg(test)]
+    fake_mover: Mutex<Option<fake::FakeMover>>,
 }
 
 impl Drop for Inner {
@@ -295,6 +298,8 @@ impl Manager {
             startup_notice: recovery.as_ref().map(user_error::list_recovered),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
+            #[cfg(test)]
+            fake_mover: Mutex::new(None),
         });
         let manager = Manager { inner };
         manager.spawn_background_tasks();

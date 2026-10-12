@@ -447,6 +447,9 @@ impl Manager {
     /// starts over.
     fn requeue(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
+        state.entry_mut(id)?;
+        // Trying again means the person has dealt with files a failed move left.
+        state.release_stranded(id);
         let entry = state.entry_mut(id)?;
         if entry.is_running() {
             entry.requeue_when_stopped(true);
@@ -582,6 +585,7 @@ impl Manager {
             cleanup: None,
             removing: false,
             moving: None,
+            stranded: None,
             media_job,
         });
         self.save(state, id);

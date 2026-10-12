@@ -2,6 +2,7 @@
 //! never held across an `.await`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
@@ -136,6 +137,10 @@ pub(super) struct Entry {
     /// Set while its files are moved to another folder (cancelled when done); it is
     /// not started meanwhile.
     pub moving: Option<CancellationToken>,
+    /// Where a move that failed halfway and could not be undone left some of its
+    /// files: that path stays taken (reserved) until the download is moved again,
+    /// tried again or removed, so no other download takes the name next to them.
+    pub stranded: Option<PathBuf>,
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
@@ -297,10 +302,25 @@ impl State {
         self.downloads.insert(entry.row.id, entry);
     }
 
+    /// Gives up the path a failed move left files at, if any (see
+    /// [`Entry::stranded`]).
+    pub fn release_stranded(&mut self, id: DownloadId) {
+        if let Some(stranded) = self
+            .downloads
+            .get_mut(&id)
+            .and_then(|entry| entry.stranded.take())
+        {
+            self.claimed.release(&stranded);
+        }
+    }
+
     /// Takes a download out, giving up its path.
     pub fn remove_entry(&mut self, id: DownloadId) -> Option<Entry> {
         let entry = self.downloads.remove(&id)?;
         self.claimed.remove(entry.path());
+        if let Some(stranded) = &entry.stranded {
+            self.claimed.release(stranded);
+        }
         self.running.remove(&id);
         self.dirty.remove(&id);
         Some(entry)
@@ -487,6 +507,7 @@ mod tests {
             cleanup: None,
             removing: false,
             moving: None,
+            stranded: None,
             media_job: None,
         }
     }

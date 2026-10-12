@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use wirecatch_engine::{Error as EngineError, Url};
-use wirecatch_protocol::app::AddRequest;
+use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
 use super::Manager;
@@ -316,4 +316,60 @@ async fn only_reservations_may_exceed_the_downloads_paths() {
         state.assert_consistent();
     }));
     assert!(leaked.is_err(), "a claim of no download went unnoticed");
+}
+
+/// A run that waits until it is asked to stop.
+fn obedient(run: FakeRun) -> EngineFuture {
+    Box::pin(async move {
+        run.cancel.cancelled().await;
+        Err(EngineError::Cancelled)
+    })
+}
+
+/// A move that fails halfway and cannot be undone leaves the download's files in
+/// two folders: it must not start again on its own (it would resume from a
+/// mismatched part and state), it says what happened, and the name in the new
+/// folder stays taken while files of it are there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_that_cannot_be_undone_stops_the_download() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    for file in naming::partial_files(&old_path) {
+        std::fs::write(file, b"partial").unwrap();
+    }
+    // The first file moves; the second, and putting the first back, fail.
+    let moves = Arc::new(AtomicUsize::new(0));
+    let counted = moves.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+            std::fs::rename(from, to)
+        } else {
+            Err(std::io::ErrorKind::PermissionDenied.into())
+        }
+    }));
+
+    let chosen = dir.path().join("chosen");
+    let error = manager
+        .set_download_folder(id, &chosen.to_string_lossy())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CoreError::FilesSplit { .. }), "{error}");
+
+    let state = manager.lock();
+    let entry = &state.downloads[&id];
+    assert!(entry.run.is_none(), "the download started again");
+    assert_eq!(entry.row.status, DownloadStatus::Failed);
+    let shown = entry.row.error.as_ref().map(|e| e.message.clone());
+    assert_eq!(shown, Some(error.to_string()));
+    let stranded = chosen.join(old_path.file_name().unwrap());
+    assert!(
+        state.claimed.contains(&stranded),
+        "the name in the new folder was given up"
+    );
 }

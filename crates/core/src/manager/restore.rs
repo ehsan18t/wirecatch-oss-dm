@@ -131,6 +131,7 @@ fn restore_entry(
         cleanup: None,
         removing: false,
         moving: None,
+        stranded: None,
     };
     let mut fixed = false;
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {

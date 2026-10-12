@@ -2,8 +2,10 @@
 //! when the server "answers", and whether the run honours its stop request.
 
 use std::future::Future;
+use std::io;
+use std::path::Path;
 use std::pin::Pin;
-use std::sync::{Arc, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use wirecatch_engine::{CancellationToken, Error as EngineError, Outcome};
 
@@ -23,6 +25,9 @@ pub(super) struct FakeRun {
 /// Plays the engine for every run of a manager.
 pub(super) type FakeEngine = Arc<dyn Fn(FakeRun) -> EngineFuture + Send + Sync>;
 
+/// Moves one file in place of the real move, so a test can make a move fail.
+pub(super) type FakeMover = Arc<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
+
 /// Starts `fake` on one run.
 pub(super) fn run(
     fake: Option<FakeEngine>,
@@ -39,20 +44,28 @@ pub(super) fn run(
 impl Manager {
     /// The stand-in engine, if a test set one.
     pub(super) fn fake_engine(&self) -> Option<FakeEngine> {
-        self.fake_engine_slot().clone()
+        slot(&self.inner.fake_engine).clone()
     }
 
     /// Runs every later download with `engine` instead of the real engine.
     pub(super) fn use_fake_engine(&self, engine: FakeEngine) {
-        *self.fake_engine_slot() = Some(engine);
+        *slot(&self.inner.fake_engine) = Some(engine);
     }
 
-    /// Locks the stand-in engine's slot. A lock poisoned by a panic in another
-    /// holder is taken over as it is, for the reason [`Manager::lock`] gives.
-    fn fake_engine_slot(&self) -> MutexGuard<'_, Option<FakeEngine>> {
-        self.inner
-            .fake_engine
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+    /// The stand-in file mover, if a test set one.
+    pub(super) fn fake_mover(&self) -> Option<FakeMover> {
+        slot(&self.inner.fake_mover).clone()
     }
+
+    /// Moves every later download's files with `mover` instead of the file
+    /// system's rename and copy.
+    pub(super) fn use_fake_mover(&self, mover: FakeMover) {
+        *slot(&self.inner.fake_mover) = Some(mover);
+    }
+}
+
+/// Locks one of the stand-in slots. A lock poisoned by a panic in another holder
+/// is taken over as it is, for the reason [`Manager::lock`] gives.
+fn slot<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
