@@ -19,10 +19,17 @@ import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
 import { JS_CHECKS } from './gate/javascript.mjs';
 import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
-import { PRODUCT_CHECKS } from './gate/product.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS } from './gate/rust.mjs';
 import { TAURI_CHECKS } from './gate/tauri.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
+
+/** A product check, its module loaded only when it runs: the generator behind it imports Prettier and smol-toml. */
+function productCheck(name) {
+  return async () => {
+    const { PRODUCT_CHECKS } = await import('./gate/product.mjs');
+    await PRODUCT_CHECKS[name]();
+  };
+}
 
 const CHECKS = {
   ...RUST_CHECKS,
@@ -32,7 +39,8 @@ const CHECKS = {
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
   ...TAURI_CHECKS,
-  ...PRODUCT_CHECKS,
+  product: productCheck('product'),
+  'product-placeholders': productCheck('product-placeholders'),
 };
 
 const GROUPS = {
@@ -101,7 +109,7 @@ async function main(rawArgs) {
   const checks = [...new Set(expand(names.length > 0 ? names : DEFAULT))];
   for (const name of checks) {
     console.log(`\n=== ${name}`);
-    // Checks that need a module only some systems install (the ESLint API) are async and load it when they run.
+    // Checks that need a package from `pnpm install` (the ESLint API, the product generator) are async and load it when they run: CI runs the Rust and supply-chain groups without installing them.
     await CHECKS[name]();
   }
   console.log(`\nGate passed: ${checks.join(', ')}`);
