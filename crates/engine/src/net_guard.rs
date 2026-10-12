@@ -504,15 +504,37 @@ mod tests {
     async fn a_download_cannot_be_rebound_to_the_local_network() {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let accepted = Arc::new(AtomicUsize::new(0));
-        let counter = accepted.clone();
-        tokio::spawn(async move {
-            while let Ok((_socket, _)) = listener.accept().await {
-                counter.fetch_add(1, Ordering::SeqCst);
+        // Listen on every address `localhost` names, on one port. A client tries
+        // them in turn, and Windows takes about two seconds to refuse a closed
+        // loopback port, longer than the stall timeout below; it also lets the
+        // check count a connection to any of them.
+        let mut port = 0;
+        let mut listeners = Vec::new();
+        for addr in tokio::net::lookup_host("localhost:0").await.unwrap() {
+            match tokio::net::TcpListener::bind((addr.ip(), port)).await {
+                Ok(listener) => {
+                    port = listener.local_addr().unwrap().port();
+                    listeners.push(listener);
+                }
+                // A host without IPv6 can still list `::1` for `localhost`;
+                // nothing connects there either.
+                Err(error) if error.kind() == std::io::ErrorKind::AddrNotAvailable => {}
+                Err(error) => panic!("{addr}: {error}"),
             }
-        });
+        }
+        assert!(
+            !listeners.is_empty(),
+            "localhost has no address to listen on"
+        );
+        let accepted = Arc::new(AtomicUsize::new(0));
+        for listener in listeners {
+            let counter = accepted.clone();
+            tokio::spawn(async move {
+                while let Ok((_socket, _)) = listener.accept().await {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            });
+        }
         let url = Url::parse(&format!("http://localhost:{port}/video.mp4")).unwrap();
         let dir = wirecatch_test_support::private_dir("rebind").unwrap();
         let mut request = crate::DownloadRequest::new(url.clone(), dir.path());
