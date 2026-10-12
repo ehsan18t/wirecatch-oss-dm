@@ -162,10 +162,15 @@ impl Drop for SocketListener {
         if let Ok(meta) = fs::symlink_metadata(path)
             && (meta.dev(), meta.ino()) == self.socket_id
         {
-            // Best effort: a leftover file is handled as stale by the next bind.
-            let _ = fs::remove_file(path);
+            leftover_is_stale_to_the_next_bind(&fs::remove_file(path));
         }
     }
+}
+
+/// Takes the outcome of removing the socket file on drop. A file left behind is handled as
+/// stale by the next bind, so a failure cannot matter.
+fn leftover_is_stale_to_the_next_bind(removed: &std::io::Result<()>) {
+    let (Ok(()) | Err(_)) = removed;
 }
 
 /// Takes the exclusive lock that marks the live listener.
