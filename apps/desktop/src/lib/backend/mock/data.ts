@@ -3,6 +3,7 @@
 import {
   DEFAULT_CONNECTIONS_PER_DOWNLOAD,
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+  DEFAULT_QUEUE_MAX_CONCURRENT,
   type AddonInfo,
   type AppSettings,
   type Category,
@@ -114,7 +115,7 @@ const DEFAULT_QUEUES: readonly Queue[] = [
   {
     id: MAIN_QUEUE_ID,
     name: 'Main',
-    max_concurrent: 3,
+    max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
     speed_limit: null,
     schedule: null,
     is_default: true,
