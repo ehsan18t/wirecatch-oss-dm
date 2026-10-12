@@ -1,43 +1,16 @@
 //! Frames go both ways over a real connection made with the public API.
 
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use tokio::io::AsyncWriteExt;
 use wirecatch_ipc::{Connection, Endpoint, IpcError, Listener, connect};
 use wirecatch_protocol::frame::{read_async, write_async};
 use wirecatch_protocol::wire::{Call, Event, Message, Outcome, Reply};
+use wirecatch_test_support::{PrivateDir, TestResult, private_dir};
 
-/// A fresh endpoint nobody else uses, with a new folder of its own that the
-/// returned guard removes. On Linux the socket lives in that folder, which is 0700
-/// like the app's.
-fn test_endpoint() -> std::io::Result<(Endpoint, Guard)> {
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let tag = format!("{}-{n}", std::process::id());
-    let dir = std::env::temp_dir().join(format!("wirecatch-ipc-it-{tag}"));
-    #[cfg(windows)]
-    std::fs::create_dir(&dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
-        // The umask can only remove bits; set the exact mode anyway.
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-    }
-    #[cfg(windows)]
-    let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-ipc-it-{tag}"));
-    #[cfg(unix)]
-    let endpoint = Endpoint::from_raw(dir.join("app.sock"));
-    Ok((endpoint, Guard(dir)))
-}
-
-/// Removes the test's folder when dropped.
-struct Guard(std::path::PathBuf);
-
-impl Drop for Guard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+/// A fresh endpoint nobody else uses, in a private folder of its own that the
+/// returned guard removes.
+fn test_endpoint() -> TestResult<(Endpoint, PrivateDir)> {
+    let dir = private_dir("ipc")?;
+    Ok((Endpoint::from_raw(dir.endpoint_name()), dir))
 }
 
 fn assert_send<T: Send + Unpin>(_: &T) {}

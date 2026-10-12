@@ -27,6 +27,8 @@ libc.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "io-util"] }
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
+# The plain helpers only, without the test servers' TLS stack.
+wirecatch-test-support = { path = "../test-support" }
 
 [lints]
 workspace = true

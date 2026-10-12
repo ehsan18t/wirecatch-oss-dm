@@ -345,11 +345,11 @@ async fn attempt(endpoint: &Endpoint, deadline: Instant, budget: Duration) -> At
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Arc, Mutex};
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use wirecatch_ipc::Listener;
+    use wirecatch_test_support::{PrivateDir, private_dir};
 
     #[test]
     fn the_app_is_found_next_to_the_bridge() {
@@ -367,36 +367,11 @@ mod tests {
         assert_eq!(launcher.args, [OsString::from("--background")]);
     }
 
-    fn test_endpoint() -> (Endpoint, TestDir) {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let tag = format!(
-            "{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        let dir = std::env::temp_dir().join(format!("wirecatch-bridge-unit-{tag}"));
-        #[cfg(windows)]
-        std::fs::create_dir(&dir).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-            // The umask can only remove bits; set the exact mode anyway.
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        #[cfg(windows)]
-        let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-unit-{tag}"));
-        #[cfg(unix)]
-        let endpoint = Endpoint::from_raw(dir.join("app.sock"));
-        (endpoint, TestDir(dir))
-    }
-
-    /// A folder of one test's own (on Linux it holds the socket), removed on drop.
-    struct TestDir(PathBuf);
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
+    /// A fresh endpoint nobody else uses, in a private folder of its own that
+    /// the returned guard removes.
+    fn test_endpoint() -> (Endpoint, PrivateDir) {
+        let dir = private_dir("bridge-unit").unwrap();
+        (Endpoint::from_raw(dir.endpoint_name()), dir)
     }
 
     /// Starts an in-process "app" after a delay, the way a real app takes a moment

@@ -8,17 +8,19 @@ license.workspace = true
 publish = false
 
 [dependencies]
-axum.workspace = true
-base64 = "0.22.1"
-bytes.workspace = true
-futures-util.workspace = true
+# Everything here serves the test servers, so it comes with the `servers`
+# feature: a crate that needs only the plain helpers builds no HTTP or TLS stack.
+axum = { workspace = true, optional = true }
+base64 = { version = "0.22.1", optional = true }
+bytes = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 # The same major version and crypto provider (ring) as the engine, so a test's
 # root store is the type the engine's TLS configuration takes.
-rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
-rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }
-tokio = { workspace = true, features = ["io-util"] }
-tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
-url.workspace = true
+rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"], optional = true }
+rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"], optional = true }
+tokio = { workspace = true, features = ["io-util"], optional = true }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"], optional = true }
+url = { workspace = true, optional = true }
 
 # The HTTP/3 test servers, only with the `http3` feature.
 h3 = { version = "0.0.8", optional = true }
@@ -30,8 +32,20 @@ quinn = { version = "0.11.9", default-features = false, features = ["runtime-tok
 
 [features]
 default = []
+# The HTTP, FTP and silent test servers, and the certificate their TLS uses.
+servers = [
+    "dep:axum",
+    "dep:base64",
+    "dep:bytes",
+    "dep:futures-util",
+    "dep:rcgen",
+    "dep:rustls",
+    "dep:tokio",
+    "dep:tokio-rustls",
+    "dep:url",
+]
 # HTTPS servers that advertise and speak HTTP/3, for the engine's `http3` feature.
-http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:hyper", "dep:hyper-util", "dep:quinn"]
+http3 = ["servers", "dep:h3", "dep:h3-quinn", "dep:http", "dep:hyper", "dep:hyper-util", "dep:quinn"]
 
 [lints]
 workspace = true

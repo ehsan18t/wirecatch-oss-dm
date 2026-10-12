@@ -49,7 +49,7 @@ rand = "0.8.6"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 tracing-subscriber.workspace = true
-wirecatch-test-support = { path = "../test-support" }
+wirecatch-test-support = { path = "../test-support", features = ["servers"] }
 
 [lints]
 workspace = true

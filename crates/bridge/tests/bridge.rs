@@ -7,9 +7,7 @@
 //! `cargo test -p wirecatch-bridge --features test-overrides`.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -21,6 +19,7 @@ use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
+use wirecatch_test_support::{PrivateDir, TestResult, private_dir};
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -34,52 +33,24 @@ const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// What a test helper returns when it can fail, so the test that calls it
-/// decides how to report the failure (the same shape as the test-support crate's,
-/// whose servers the bridge does not need).
-type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
 /// The most memory an idle bridge may hold, resident or private.
 const IDLE_MEMORY_LIMIT: usize = 10 * 1024 * 1024;
 
-/// A private endpoint for one test, with a new folder of its own that is removed
-/// on drop. On Linux the socket lives in that folder, which is 0700 like the
-/// app's; on every platform the program the bridge "starts" by default is a
-/// missing file inside it.
+/// A private endpoint for one test, in a private folder of its own that is
+/// removed on drop. On every platform the program the bridge "starts" by
+/// default is a missing file inside that folder.
 struct TestEndpoint {
     endpoint: Endpoint,
-    dir: PathBuf,
+    dir: PrivateDir,
 }
 
 impl TestEndpoint {
     fn new() -> TestResult<Self> {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let tag = format!(
-            "{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        let dir = std::env::temp_dir().join(format!("wirecatch-bridge-it-{tag}"));
-        #[cfg(windows)]
-        std::fs::create_dir(&dir)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
-            // The umask can only remove bits; set the exact mode anyway.
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-        }
-        #[cfg(windows)]
-        let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-it-{tag}"));
-        #[cfg(unix)]
-        let endpoint = Endpoint::from_raw(dir.join("app.sock"));
-        Ok(Self { endpoint, dir })
-    }
-}
-
-impl Drop for TestEndpoint {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        let dir = private_dir("bridge-it")?;
+        Ok(Self {
+            endpoint: Endpoint::from_raw(dir.endpoint_name()),
+            dir,
+        })
     }
 }
 
@@ -88,6 +59,7 @@ impl Drop for TestEndpoint {
 fn bridge(args: &[&str], test: &TestEndpoint) -> Command {
     let missing = test
         .dir
+        .path()
         .join(format!("no-such-app{}", std::env::consts::EXE_SUFFIX));
     let launch = serde_json::json!([missing]).to_string();
     let mut command = Command::new(BRIDGE);

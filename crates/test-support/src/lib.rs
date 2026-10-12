@@ -1,21 +1,29 @@
 //! Local test servers and helpers shared by the tests of every Wirecatch crate.
 //!
 //! Tests never reach the internet (docs/ENGINEERING.md, section 7), so the
-//! servers they download from live here, once, instead of as a copy per crate:
+//! servers they download from live here, once, instead of as a copy per crate.
 //!
-//! - [`http::TestServer`]: an HTTP server for one byte buffer, with ranges,
+//! With the `servers` feature:
+//!
+//! - `http::TestServer`: an HTTP server for one byte buffer, with ranges,
 //!   throttling, injected disconnects, busy answers and connection limits.
-//! - [`files::FileServer`]: an HTTP server for a set of files by path, each of
+//! - `files::FileServer`: an HTTP server for a set of files by path, each of
 //!   which can fail a set number of times or answer slowly.
-//! - [`ftp::FtpServer`]: a scripted FTP and FTPS server.
-//! - [`silent::SilentServer`]: a server that accepts connections and never
+//! - `ftp::FtpServer`: a scripted FTP and FTPS server.
+//! - `silent::SilentServer`: a server that accepts connections and never
 //!   answers.
+//! - `TestCertificate`: a self-signed certificate for the TLS servers.
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
+//!
+//! Always, and without an HTTP or TLS stack:
+//!
+//! - [`TestResult`]: what a fallible test or helper returns.
 //! - [`test_data`], [`seeded_data`] and [`ts_segment`]: deterministic bytes to
-//!   serve, and [`fresh_dir`] and
-//!   [`files_in`] for the folders tests download into.
-//! - [`TestCertificate`]: a self-signed certificate for the TLS servers.
+//!   serve, and [`fresh_dir`] and [`files_in`] for the folders tests download
+//!   into.
+//! - [`private_dir`]: a folder only its owner can enter, with a local endpoint
+//!   name of its own, for tests of the app's local endpoint.
 //!
 //! The crate does not depend on the engine, so the engine's own unit tests can
 //! use it too.
@@ -26,17 +34,25 @@
     reason = "test support: a panic here is the failing test's report, as clippy.toml already allows inside tests, and the whole crate is only ever used by tests"
 )]
 
+#[cfg(feature = "servers")]
 pub mod files;
+#[cfg(feature = "servers")]
 pub mod ftp;
+#[cfg(feature = "servers")]
 pub mod http;
 #[cfg(feature = "http3")]
 pub mod http3;
+#[cfg(feature = "servers")]
 pub mod silent;
+#[cfg(feature = "servers")]
 mod tls;
 
+#[cfg(feature = "servers")]
 pub use tls::TestCertificate;
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// What a test helper returns when it can fail, so the test that calls it
 /// decides how to report the failure.
@@ -53,6 +69,77 @@ pub fn fresh_dir(name: &str) -> PathBuf {
     }
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// A new folder for one test that only its owner can enter, removed on drop.
+///
+/// On Unix it is created with mode 0700, like the app's runtime folder, so a
+/// socket inside it is as private as the app's. [`PrivateDir::endpoint_name`]
+/// names a local endpoint of the folder's own, for tests that run a server on
+/// it. `name` says which tests the folder belongs to; the process id and a
+/// counter keep every call apart.
+///
+/// # Errors
+///
+/// The folder cannot be created, or (on Unix) its mode cannot be set.
+pub fn private_dir(name: &str) -> TestResult<PrivateDir> {
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let leaf = format!("wirecatch-test-{name}-{}-{n}", std::process::id());
+    let path = std::env::temp_dir().join(&leaf);
+    #[cfg(not(unix))]
+    std::fs::create_dir(&path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new().mode(OWNER_ONLY).create(&path)?;
+        // The umask can only remove bits; set the exact mode anyway.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(OWNER_ONLY))?;
+    }
+    Ok(PrivateDir { path, leaf })
+}
+
+/// The mode of a folder only its owner can read, write and enter.
+#[cfg(unix)]
+const OWNER_ONLY: u32 = 0o700;
+
+/// A folder from [`private_dir`], removed with everything in it on drop.
+#[derive(Debug)]
+pub struct PrivateDir {
+    path: PathBuf,
+    /// The folder's own name, unique to this call.
+    leaf: String,
+}
+
+impl PrivateDir {
+    /// Where the folder is.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// A local endpoint name nobody else uses, in the form the app's endpoint
+    /// takes: a named pipe on Windows, a socket inside this folder on Unix.
+    #[must_use]
+    pub fn endpoint_name(&self) -> OsString {
+        if cfg!(windows) {
+            format!(r"\\.\pipe\{}", self.leaf).into()
+        } else {
+            self.path.join("app.sock").into_os_string()
+        }
+    }
+}
+
+impl Drop for PrivateDir {
+    fn drop(&mut self) {
+        // A folder already gone is fine: the test removed it itself. Any other failure is
+        // not the test's, but it leaves a folder behind in the temporary folder.
+        if let Err(error) = std::fs::remove_dir_all(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!("could not remove {}: {error}", self.path.display());
+        }
+    }
 }
 
 /// The names of the entries in `dir`, sorted.
@@ -115,6 +202,26 @@ mod tests {
     fn test_data_is_seed_one() {
         assert_eq!(test_data(64), seeded_data(1, 64));
         assert_ne!(seeded_data(1, 64), seeded_data(2, 64));
+    }
+
+    #[test]
+    fn a_private_dir_is_its_own_and_goes_away_on_drop() -> TestResult {
+        let first = private_dir("support")?;
+        let second = private_dir("support")?;
+        assert!(first.path().is_dir());
+        assert_ne!(first.path(), second.path());
+        assert_ne!(first.endpoint_name(), second.endpoint_name());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(first.path())?.permissions().mode();
+            assert_eq!(mode & 0o777, OWNER_ONLY);
+        }
+        let path = first.path().to_path_buf();
+        std::fs::write(path.join("inside"), b"x")?;
+        drop(first);
+        assert!(!path.exists());
+        Ok(())
     }
 
     #[test]
