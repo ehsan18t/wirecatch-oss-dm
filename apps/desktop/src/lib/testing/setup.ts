@@ -35,6 +35,10 @@ export async function settle(): Promise<void> {
  * least one: they load in the background.
  */
 export async function downloadWindows(): Promise<HTMLElement[]> {
+  // The shell imports the windows on demand. Loaded here first, so the wait below is for the
+  // windows to open and not for the first test in a file to compile them, which on a busy
+  // machine takes longer than the wait allows.
+  await import('$lib/window/MockWindows.svelte');
   const found = await screen.findAllByRole('region', { name: /^Wirecatch download window/ });
   await settle();
   return found;
