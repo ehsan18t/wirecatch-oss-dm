@@ -4,6 +4,7 @@ import prettier from 'eslint-config-prettier';
 import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import ts from 'typescript-eslint';
+import { noAssertionOnInput } from './rules/no-assertion-on-input.js';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
 
@@ -11,6 +12,7 @@ import { useUiPrimitives } from './rules/use-ui-primitives.js';
 const plugin = {
   meta: { name: '@wirecatch/eslint-config' },
   rules: {
+    'no-assertion-on-input': noAssertionOnInput,
     'no-magic-numbers': noMagicNumbers,
     'use-ui-primitives': useUiPrimitives,
   },
