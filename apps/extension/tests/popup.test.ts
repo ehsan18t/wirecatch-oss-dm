@@ -560,8 +560,6 @@ function accessibleName(el: HTMLElement): string {
 }
 
 describe('popup model', () => {
-  // Only the `type` of a message from the background was checked, so a malformed snapshot
-  // replaced the one shown and broke the popup.
   it('ignores a message from the background that does not have the shape its type claims', async () => {
     const [popupEnd, backgroundEnd] = channelPair<PopupRequest, BackgroundMessage>();
     const model = new PopupModel(popupEnd);

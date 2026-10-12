@@ -418,8 +418,8 @@ export class Hub {
   }
 
   /**
-   * The app answered a handover after this side gave up waiting: warn if the browser kept its
-   * copy too. An answer that cannot be read may be a confirmation, so it counts as one.
+   * The app answered `add_download` after this side gave up waiting. `outcome` is null for an
+   * answer that cannot be read and was not marked as an error, which may be a confirmation.
    */
   #onLateAnswer(call: Call, outcome: Outcome | null): void {
     if (call.method !== 'add_download') return;

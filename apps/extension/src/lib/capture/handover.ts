@@ -128,7 +128,7 @@ export type BrowserCopy =
   | 'resumed'
   /** Still paused in the browser's list: the person has to resume it. */
   | 'stuck_paused'
-  /** No longer running in the browser (the person cancelled it, or it finished). */
+  /** No longer running in the browser: finished, interrupted (cancelled or failed), or not listed. */
   | 'gone';
 
 export type HandoverResult =

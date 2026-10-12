@@ -156,8 +156,6 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
-  // Only the outer shape of a frame was checked, so an event with settings of the wrong types
-  // was passed on and adopted as the app's settings.
   it('drops an event whose content does not match the protocol', async () => {
     client = makeClient(app);
     const events: Event[] = [];
@@ -323,8 +321,6 @@ describe('NativeClient', () => {
     expect(late).toEqual([['pause_all', null]]);
   });
 
-  // A late error answer of unknown shape was passed on as a possible confirmation, and the hub
-  // then said Wirecatch took the download after all.
   it('does not pass on a late error answer it cannot read', async () => {
     client = makeClient(app);
     const late: unknown[] = [];
@@ -346,8 +342,6 @@ describe('NativeClient', () => {
     expect(late).toEqual([]);
   });
 
-  // An error answer that could not be read kept the port, so an app_not_running in a newer
-  // shape left every later request failing on a port the bridge had given up on.
   it('drops the port after an error answer it cannot read, and connects again later', async () => {
     client = makeClient(app);
     client.start();

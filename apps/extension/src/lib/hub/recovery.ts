@@ -14,7 +14,7 @@ import type { InFlightEntry } from './deps';
 
 /** What became of a download recovered after a restart. */
 export type Recovered =
-  /** The person cancelled the browser copy or took it off the list: whatever the app has is the only copy. */
+  /** The browser copy is interrupted (cancelled or failed) or no longer listed: whatever the app has is the only copy. */
   | 'no_browser_copy'
   /** The app has it, and the browser copy is gone. */
   | 'handed_over'

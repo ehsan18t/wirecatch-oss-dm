@@ -388,7 +388,6 @@ describe('notices kept in session storage', () => {
 });
 
 describe('toolbarBadge', () => {
-  // The build injects the badge color, but tests did not, so showing a badge threw here.
   it('shows a message on the badge in the popup warning color', () => {
     fakeBrowser.reset();
     const setColor = vi

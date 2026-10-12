@@ -257,8 +257,6 @@ describe('handover', () => {
     );
   });
 
-  // An answer the guard rejected counted as the app refusing, though a newer app most likely
-  // took the download: the browser kept its copy, nothing was withdrawn and nobody was warned.
   it('withdraws after an answer it does not understand, and keeps the browser copy if withdrawn', async () => {
     s = await setup({
       configure: (app) => {
@@ -412,8 +410,6 @@ describe('handover', () => {
       });
     });
 
-    // A late answer that could not be read was dropped, so a late confirmation from a newer app
-    // raised no warning although the browser kept its copy.
     it('warns about a possible duplicate when a late answer cannot be read', async () => {
       s = await setup({
         configure: (app) => {
@@ -605,8 +601,6 @@ describe('handover', () => {
     expect(s.app.starts).toBe(0);
   });
 
-  // Opening the popup replaced the port a download had opened to start the app with one that
-  // may not start it: the bridge said the app was not running, and the download stayed in the browser.
   it('keeps the connection a download is starting the app with when the popup opens', async () => {
     s = await setup({
       configure: (fake, cache) => {
@@ -629,8 +623,6 @@ describe('handover', () => {
     expect(s.app.starts).toBe(1);
   });
 
-  // Opening the popup dropped the live connection a download was being handed over on, so its
-  // answer never came: the download waited out its time and was withdrawn.
   it('keeps the live connection a download is being handed over on when the popup opens', async () => {
     s = await setup({
       configure: (fake, cache) => {
@@ -844,8 +836,6 @@ describe('handover', () => {
     expect(latestNotice(s.hub)?.message).toContain('still in the browser');
   });
 
-  // The browser copy was cancelled and erased on the app's word without looking at it again:
-  // one the person had resumed meanwhile was cancelled, and a finished one lost its history.
   it.each([
     ['resumed', { state: 'in_progress', paused: false }],
     ['finished', { state: 'complete', paused: false }],
@@ -937,8 +927,6 @@ describe('downloads left paused by a restarted background', () => {
     expect(s.inFlight.saves).toEqual([]);
   });
 
-  // The notice lived only in memory: when the browser stopped the background script, the next
-  // wake cleared the badge and the person never learned the download was left paused.
   it('keeps a notice across a restart until it is dismissed', async () => {
     s = await setup({
       configure: (app) => {
@@ -962,8 +950,6 @@ describe('downloads left paused by a restarted background', () => {
     expect(s.notice.value).toEqual([]);
   });
 
-  // A dismiss that came while the stored notice was still loading was undone by the load, so
-  // the notice the person had just dismissed came back.
   it('does not bring back a notice dismissed while it was loading', async () => {
     const notice = new MemoryNotice();
     notice.value = [
@@ -1014,8 +1000,6 @@ describe('downloads left paused by a restarted background', () => {
     ]);
   });
 
-  // Recovery resumed every paused copy and could not tell whether the app had it: it either said
-  // nothing (and the file could download twice) or warned when the request never reached the app.
   describe('after a restart, lets withdraw_download decide', () => {
     async function recover(
       withdraw: FakeApp['withdrawBehavior'],
@@ -1151,8 +1135,6 @@ describe('downloads left paused by a restarted background', () => {
       });
     });
 
-    // A download the person resumed after the restart was skipped without asking the app, so
-    // one the app had taken before the restart ran in both places with no warning.
     it.each([
       ['resumed', { state: 'in_progress', paused: false }],
       ['finished', { state: 'complete', paused: false }],
@@ -1182,7 +1164,6 @@ describe('downloads left paused by a restarted background', () => {
       expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
 
-    // A later warning replaced a "still paused" error, so that download stayed paused unseen.
     it('keeps a notice for each of two downloads', async () => {
       const inFlight = new MemoryInFlight();
       inFlight.entries = [
@@ -1208,8 +1189,6 @@ describe('downloads left paused by a restarted background', () => {
       ]);
     });
 
-    // The recovery withdraw waited less than a hello may take, so an app it had to start often
-    // answered too late and the download ended with a false "may download twice".
     it('waits for an app it has to start for as long as hello may take', async () => {
       const inFlight = new MemoryInFlight();
       inFlight.entries = [{ id: 5, handoverId: 'h5' }];
