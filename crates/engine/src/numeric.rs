@@ -58,6 +58,55 @@ pub fn f64_to_u64(value: f64) -> Option<u64> {
     in_range.then_some(value as u64)
 }
 
+/// A whole-number type, with its smallest and largest values.
+pub trait Bounded: Sized {
+    /// The smallest value.
+    const MIN: Self;
+    /// The largest value.
+    const MAX: Self;
+}
+
+macro_rules! bounded {
+    ($($t:ty),*) => {
+        $(impl Bounded for $t {
+            const MIN: Self = <$t>::MIN;
+            const MAX: Self = <$t>::MAX;
+        })*
+    };
+}
+
+bounded!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+);
+
+/// `value` as a `U`, or the nearest of `U`'s bounds when it does not fit: a
+/// value too large becomes `U::MAX`, a negative one too small becomes `U::MIN`.
+///
+/// For counts, versions and limits, where "more than can be said" is the
+/// honest answer: a list's length in a protocol's `u32`, a byte count in
+/// SQLite's signed integers, a stored count read back as unsigned. Never for a
+/// buffer size handed to the operating system, where a size larger than the
+/// buffer would be a lie; derive the buffer from the size instead.
+///
+/// ```
+/// use wirecatch_engine::numeric::saturating;
+///
+/// assert_eq!(saturating::<u32, _>(7_usize), 7);
+/// assert_eq!(saturating::<u32, _>(u64::MAX), u32::MAX);
+/// assert_eq!(saturating::<i64, _>(u64::MAX), i64::MAX);
+/// assert_eq!(saturating::<u64, _>(-5_i64), 0);
+/// ```
+#[must_use]
+pub fn saturating<U, T>(value: T) -> U
+where
+    U: TryFrom<T> + Bounded,
+    T: Copy + PartialOrd + Default,
+{
+    // `T::default()` is zero for every whole-number type.
+    let negative = value < T::default();
+    U::try_from(value).unwrap_or(if negative { U::MIN } else { U::MAX })
+}
+
 /// `n` as an index into a slice of length `len`: `n` itself when it fits,
 /// otherwise `len`.
 pub(crate) fn clamp_to_len(n: u64, len: usize) -> usize {
@@ -67,6 +116,17 @@ pub(crate) fn clamp_to_len(n: u64, len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saturating_keeps_what_fits_and_clamps_the_rest_to_the_nearest_bound() {
+        assert_eq!(saturating::<u32, _>(u64::from(u32::MAX)), u32::MAX);
+        assert_eq!(saturating::<u32, _>(u64::from(u32::MAX) + 1), u32::MAX);
+        assert_eq!(saturating::<u32, _>(0_usize), 0);
+        assert_eq!(saturating::<i64, _>(u128::MAX), i64::MAX);
+        assert_eq!(saturating::<u64, _>(i64::MIN), 0);
+        assert_eq!(saturating::<i8, _>(-1000_i32), i8::MIN);
+        assert_eq!(saturating::<i8, _>(-5_i32), -5);
+    }
 
     #[test]
     fn approx_f64_is_exact_up_to_two_pow_53() {

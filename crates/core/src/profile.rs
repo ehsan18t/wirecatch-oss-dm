@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
+use wirecatch_engine::numeric::saturating;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
@@ -50,7 +51,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
         .get("format_version")
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| CoreError::InvalidProfile("it has no format version".into()))?;
-    let found = u32::try_from(version).unwrap_or(u32::MAX);
+    let found: u32 = saturating(version);
     if found > PROFILE_FORMAT_VERSION {
         return Err(CoreError::ProfileTooNew {
             found,
@@ -192,7 +193,7 @@ pub(crate) fn merge_localized(
         .unwrap_or(DEFAULT_QUEUE_ID);
     settings::check_queue_count(queues.len())?;
     let settings = settings::validate(settings, &queues, folders)?;
-    let count = |names: &[String]| u32::try_from(names.len()).unwrap_or(u32::MAX);
+    let count = |names: &[String]| saturating::<u32, _>(names.len());
     Ok(Imported {
         settings,
         queues,

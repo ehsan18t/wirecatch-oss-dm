@@ -29,7 +29,7 @@ use std::sync::{Mutex, PoisonError};
 
 use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
 use wirecatch_core::Manager;
-use wirecatch_engine::numeric::f64_to_u64;
+use wirecatch_engine::numeric::{f64_to_u64, saturating};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS};
 
@@ -357,8 +357,7 @@ fn cascade_offset(steps: usize) -> f64 {
 /// How many whole cascade steps fit in `length` logical pixels: none when it is negative or
 /// not a number.
 fn whole_steps(length: f64) -> usize {
-    f64_to_u64((length / CASCADE_STEP).floor())
-        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX))
+    f64_to_u64((length / CASCADE_STEP).floor()).map_or(0, saturating)
 }
 
 /// The download windows, kept by the app.

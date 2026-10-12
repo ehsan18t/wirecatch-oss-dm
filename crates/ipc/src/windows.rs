@@ -206,9 +206,12 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
         return Err(io::Error::last_os_error());
     }
     // u64 elements give the 8-byte alignment SID_AND_ATTRIBUTES (which holds a
-    // pointer) needs.
-    let mut buf = vec![0u64; (needed as usize).div_ceil(8)];
-    let capacity = u32::try_from(buf.len() * 8).unwrap_or(u32::MAX);
+    // pointer) needs. The buffer is sized from `capacity`, so the size passed
+    // below is exactly what it holds.
+    let capacity = needed
+        .checked_next_multiple_of(8)
+        .ok_or_else(|| io::Error::other("the token information is too large"))?;
+    let mut buf = vec![0u64; capacity as usize / 8];
     // SAFETY: `buf` is writable for `capacity` bytes.
     if unsafe {
         GetTokenInformation(

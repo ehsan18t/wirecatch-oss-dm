@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 use wirecatch_engine::CancellationToken;
+use wirecatch_engine::numeric::saturating;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent, WaitReason};
 
 use super::state::{Entry, Gauge};
@@ -153,7 +154,7 @@ fn sample(entry: &mut Entry, now: Instant) -> bool {
     row.processing = reading.processing;
     row.done = reading.done;
     row.total = reading.total;
-    row.connections = u32::try_from(reading.connections).unwrap_or(u32::MAX);
+    row.connections = saturating(reading.connections);
     row.speed = run.meter.sample(row.done, now);
     row.eta_secs = speed::eta(row.total, row.done, row.speed);
     before

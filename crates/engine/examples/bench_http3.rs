@@ -181,8 +181,8 @@ fn cpu_time() -> Duration {
         usage
     };
     let time = |t: libc::timeval| {
-        let micros = u64::try_from(t.tv_usec).unwrap_or(0);
-        Duration::from_secs(u64::try_from(t.tv_sec).unwrap_or(0)) + Duration::from_micros(micros)
+        use wirecatch_engine::numeric::saturating;
+        Duration::from_secs(saturating(t.tv_sec)) + Duration::from_micros(saturating(t.tv_usec))
     };
     time(usage.ru_utime) + time(usage.ru_stime)
 }

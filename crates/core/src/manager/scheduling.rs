@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use wirecatch_engine::numeric::saturating;
 use wirecatch_protocol::app::{DownloadStatus, TimeOfDay, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -105,7 +106,7 @@ impl Manager {
     /// queueing a row event for each one that changed.
     fn update_wait_reasons(&self, state: &mut State, gates: &[GateView]) {
         let limit = state.settings.max_concurrent_downloads;
-        let running_total = u32::try_from(state.running.len()).unwrap_or(u32::MAX);
+        let running_total = saturating::<u32, _>(state.running.len());
         let mut running: HashMap<QueueId, u32> = HashMap::new();
         for id in &state.running {
             if let Some(entry) = state.downloads.get(id) {
@@ -164,7 +165,7 @@ fn wait_reason(
     global_limit: u32,
 ) -> WaitReason {
     let in_line = WaitReason::InLine {
-        position: u32::try_from(place + 1).unwrap_or(u32::MAX),
+        position: saturating(place + 1),
     };
     let Some(gate) = gate else {
         return in_line;

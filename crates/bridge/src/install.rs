@@ -754,10 +754,13 @@ mod registry {
 
     pub(crate) fn value(hive: Hive, key: &str) -> io::Result<Option<String>> {
         let key = wide(key);
-        let mut buf: Vec<u16> = vec![0; 260];
+        // In bytes; the buffer is sized from it, so the size passed below is
+        // exactly what the buffer holds.
+        let mut capacity: u32 = 520;
+        let mut buf: Vec<u16> = vec![0; capacity as usize / 2];
         // The value can change size between calls; retry a few times.
         for _ in 0..4 {
-            let mut size = u32::try_from(buf.len() * 2).unwrap_or(u32::MAX);
+            let mut size = capacity;
             // SAFETY: `key` is NUL-terminated; `buf` is writable for `size` bytes.
             let status = unsafe {
                 RegGetValueW(
@@ -780,7 +783,14 @@ mod registry {
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
                 }
                 ERROR_FILE_NOT_FOUND => return Ok(None),
-                ERROR_MORE_DATA => buf.resize(size as usize / 2 + 1, 0),
+                ERROR_MORE_DATA => {
+                    // Room for what was asked for in whole UTF-16 units, and one more.
+                    capacity = size
+                        .checked_next_multiple_of(2)
+                        .and_then(|bytes| bytes.checked_add(2))
+                        .ok_or_else(|| io::Error::other("the registry value is too large"))?;
+                    buf.resize(capacity as usize / 2, 0);
+                }
                 other => return Err(os_error(other)),
             }
         }

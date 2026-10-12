@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{error, warn};
+use wirecatch_engine::numeric::saturating;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
@@ -771,7 +772,7 @@ fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) {
 /// conversion below never falls back.
 fn schema_version() -> u32 {
     const { assert!(MIGRATIONS.len() <= u32::MAX as usize) };
-    u32::try_from(MIGRATIONS.len()).unwrap_or(u32::MAX)
+    saturating(MIGRATIONS.len())
 }
 
 fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
@@ -910,7 +911,7 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
             position,
             q.name,
             q.max_concurrent,
-            q.speed_limit.map(to_i64),
+            q.speed_limit.map(saturating::<i64, u64>),
             q.schedule.as_ref().map(to_json),
             q.is_default,
             q.paused,
@@ -925,7 +926,7 @@ fn read_queue(row: &Row<'_>) -> rusqlite::Result<Queue> {
         id: QueueId(row.get(0)?),
         name: row.get(1)?,
         max_concurrent: row.get(2)?,
-        speed_limit: row.get::<_, Option<i64>>(3)?.map(to_u64),
+        speed_limit: row.get::<_, Option<i64>>(3)?.map(saturating::<u64, i64>),
         schedule: row
             .get::<_, Option<String>>(4)?
             .and_then(|json| from_json(&json, "queue schedule")),
@@ -951,8 +952,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.position,
         enum_text(&d.category),
         enum_text(&d.status),
-        d.total.map(to_i64),
-        to_i64(d.done),
+        d.total.map(saturating::<i64, u64>),
+        saturating::<i64, _>(d.done),
         d.error.as_ref().map(to_json),
         d.added_at,
         d.completed_at,
@@ -1036,8 +1037,8 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 queue: QueueId(row.get(3)?),
                 category,
                 status,
-                total: row.get::<_, Option<i64>>(7)?.map(to_u64),
-                done: to_u64(row.get(8)?),
+                total: row.get::<_, Option<i64>>(7)?.map(saturating::<u64, i64>),
+                done: saturating::<u64, i64>(row.get(8)?),
                 speed: 0,
                 connections: 0,
                 eta_secs: None,
@@ -1084,15 +1085,6 @@ fn from_json<T: DeserializeOwned>(json: &str, what: &str) -> Option<T> {
     serde_json::from_str(json)
         .inspect_err(|e| warn!(error = %e, "stored {what} is unreadable"))
         .ok()
-}
-
-/// SQLite integers are signed; byte counts never get near the limit.
-fn to_i64(value: u64) -> i64 {
-    i64::try_from(value).unwrap_or(i64::MAX)
-}
-
-fn to_u64(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
 }
 
 /// The database holds cookies, so only its owner may read it (D17). A failure is
