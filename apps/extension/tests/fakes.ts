@@ -20,6 +20,7 @@ import type { DownloadState } from '../src/lib/capture/handover';
 import type {
   BrowserDownloads,
   CachedSettings,
+  InFlightEntry,
   InFlightStore,
   NoticeStore,
   SettingsCache,
@@ -338,15 +339,15 @@ export class FakeDownloads implements BrowserDownloads {
 }
 
 export class MemoryInFlight implements InFlightStore {
-  ids: number[] = [];
+  entries: InFlightEntry[] = [];
   /** Every list saved, in order. */
-  readonly saves: number[][] = [];
-  load(): Promise<number[]> {
-    return Promise.resolve([...this.ids]);
+  readonly saves: InFlightEntry[][] = [];
+  load(): Promise<InFlightEntry[]> {
+    return Promise.resolve([...this.entries]);
   }
-  save(ids: number[]): Promise<void> {
-    this.ids = [...ids];
-    this.saves.push([...ids]);
+  save(entries: InFlightEntry[]): Promise<void> {
+    this.entries = [...entries];
+    this.saves.push([...entries]);
     return Promise.resolve();
   }
 }

@@ -20,13 +20,20 @@ export interface SettingsCache {
   save(value: CachedSettings): Promise<void>;
 }
 
+/** A browser download paused for a handover, and the handover id it is (or will be) offered under. */
+export interface InFlightEntry {
+  id: number;
+  handoverId: string;
+}
+
 /**
- * Ids of browser downloads paused for a handover, kept in `storage.session` so a
- * background script that is restarted mid-handover can resume them.
+ * The browser downloads paused for a handover, kept in `storage.session` so a background
+ * script that is restarted mid-handover can withdraw each one and act on the answer. The
+ * area is cleared when the extension is updated, so it never holds another version's shape.
  */
 export interface InFlightStore {
-  load(): Promise<number[]>;
-  save(ids: number[]): Promise<void>;
+  load(): Promise<InFlightEntry[]>;
+  save(entries: InFlightEntry[]): Promise<void>;
 }
 
 /**

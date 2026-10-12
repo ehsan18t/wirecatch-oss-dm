@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
-import { cookieStoreOf, noticeStore, toolbarBadge } from '../src/lib/browser/adapters';
+import {
+  cookieStoreOf,
+  inFlightStore,
+  noticeStore,
+  toolbarBadge,
+} from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
@@ -384,5 +389,20 @@ describe('toolbarBadge', () => {
       .mockResolvedValue(undefined);
     toolbarBadge().set('!', 'Wirecatch has a message for you.');
     expect(setColor).toHaveBeenCalledWith({ color: cssColor(BADGE_TOKEN, popupCss) });
+  });
+});
+
+describe('in-flight downloads kept in session storage', () => {
+  it('saves each download with its handover id and drops entries it cannot read', async () => {
+    fakeBrowser.reset();
+    const store = inFlightStore();
+    if (store === undefined) throw new Error('no session storage');
+    expect(await store.load()).toEqual([]);
+    await store.save([{ id: 5, handoverId: 'h1' }]);
+    expect(await store.load()).toEqual([{ id: 5, handoverId: 'h1' }]);
+    await fakeBrowser.storage.session.set({
+      'wirecatch.inFlight': [7, { id: 8 }, { id: 9, handoverId: 'h9' }],
+    });
+    expect(await store.load()).toEqual([{ id: 9, handoverId: 'h9' }]);
   });
 });

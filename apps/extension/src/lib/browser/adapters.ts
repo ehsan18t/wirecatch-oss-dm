@@ -6,11 +6,17 @@ import { PROTOCOL_VERSION, type BrowserInfo, type Hello } from '@wirecatch/proto
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '../cookies';
-import type { Badge, BrowserDownloads, InFlightStore, NoticeStore } from '../hub/deps';
+import type {
+  Badge,
+  BrowserDownloads,
+  InFlightEntry,
+  InFlightStore,
+  NoticeStore,
+} from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
 import { isNotice } from '../messages';
 import { originPattern } from '../site-access';
-import { isNumber, isString, itemsOf, object } from '../validate';
+import { fields, isNumber, isString, itemsOf, object } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
 const NOTICE_KEY = 'wirecatch.notice';
@@ -101,16 +107,18 @@ function sessionArea(): typeof browser.storage.session | undefined {
   return (browser.storage as Partial<typeof browser.storage>).session;
 }
 
+const isInFlightEntry = fields<InFlightEntry>({ id: isNumber, handoverId: isString });
+
 export function inFlightStore(): InFlightStore | undefined {
   const area = sessionArea();
   if (area === undefined) return undefined;
   return {
     async load() {
       const items = await area.get(IN_FLIGHT_KEY);
-      return itemsOf(items[IN_FLIGHT_KEY], isNumber);
+      return itemsOf(items[IN_FLIGHT_KEY], isInFlightEntry);
     },
-    async save(ids) {
-      await area.set({ [IN_FLIGHT_KEY]: ids });
+    async save(entries) {
+      await area.set({ [IN_FLIGHT_KEY]: entries });
     },
   };
 }

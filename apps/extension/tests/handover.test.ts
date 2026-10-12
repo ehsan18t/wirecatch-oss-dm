@@ -5,7 +5,8 @@
 import { MAX_FRAME_LEN, type NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
-import type { CachedSettings, SettingsCache } from '../src/lib/hub/deps';
+import type { DownloadState } from '../src/lib/capture/handover';
+import type { CachedSettings, InFlightEntry, SettingsCache } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MENU_PRIVATE_WINDOW } from '../src/lib/hub/notices';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
@@ -798,15 +799,17 @@ describe('handover', () => {
 describe('downloads left paused by a restarted background', () => {
   it('records the download before pausing it and clears it afterwards', async () => {
     s = await setup();
-    let savedWhenPaused: number[] = [];
+    let savedWhenPaused: InFlightEntry[] = [];
     const pause = s.downloads.pause.bind(s.downloads);
     s.downloads.pause = (id) => {
-      savedWhenPaused = [...s.inFlight.ids];
+      savedWhenPaused = [...s.inFlight.entries];
       return pause(id);
     };
     await s.hub.onDownload(downloadItem({ id: 9 }));
-    expect(savedWhenPaused).toEqual([9]);
-    expect(s.inFlight.ids).toEqual([]);
+    // With the handover id it is offered under, so a restarted background can withdraw it.
+    expect(savedWhenPaused).toEqual([{ id: 9, handoverId: 'h1' }]);
+    expect(addDownloadCalls(s.app)[0]?.handover_id).toBe('h1');
+    expect(s.inFlight.entries).toEqual([]);
   });
 
   it('does not write anything for downloads it does not take', async () => {
@@ -817,16 +820,6 @@ describe('downloads left paused by a restarted background', () => {
     });
     await s.hub.onDownload(downloadItem());
     expect(s.inFlight.saves).toEqual([]);
-  });
-
-  it('resumes the ones still paused when it starts again', async () => {
-    const inFlight = new MemoryInFlight();
-    inFlight.ids = [5, 6];
-    const downloads = new FakeDownloads();
-    downloads.browserState = { state: 'in_progress', paused: true };
-    s = await setup({ inFlight, downloads });
-    expect(downloads.log).toEqual(['resume:5', 'resume:6']);
-    expect(inFlight.ids).toEqual([]);
   });
 
   // The notice lived only in memory: when the browser stopped the background script, the next
@@ -885,45 +878,91 @@ describe('downloads left paused by a restarted background', () => {
     expect(s.hub.snapshot().notice?.message).toBe(MENU_PRIVATE_WINDOW);
   });
 
-  // Recovery resumed the browser copies silently: the person was not told that the app may
-  // have one of them too, nor that one was left paused.
-  it('says the app may have a download it resumes after a restart', async () => {
-    const inFlight = new MemoryInFlight();
-    inFlight.ids = [5];
-    const downloads = new FakeDownloads();
-    downloads.browserState = {
-      state: 'in_progress',
-      paused: true,
-      filename: '/home/me/Downloads/big.zip',
-    };
-    s = await setup({ inFlight, downloads });
-    expect(downloads.log).toEqual(['resume:5']);
-    expect(s.hub.snapshot().notice).toMatchObject({ tone: 'warning' });
-    expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip .*restarted/);
-  });
+  // Recovery resumed every paused copy and could not tell whether the app had it: it either said
+  // nothing (and the file could download twice) or warned when the request never reached the app.
+  describe('after a restart, lets withdraw_download decide', () => {
+    async function recover(
+      withdraw: FakeApp['withdrawBehavior'],
+      browserState: DownloadState | null = { state: 'in_progress', paused: true },
+    ): Promise<{ downloads: FakeDownloads; inFlight: MemoryInFlight }> {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.browserState = browserState;
+      s = await setup({
+        inFlight,
+        downloads,
+        start: false,
+        configure: (app) => {
+          app.withdrawBehavior = withdraw;
+        },
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await s.started;
+      return { downloads, inFlight };
+    }
 
-  it('says how to recover a download it cannot resume after a restart', async () => {
-    const inFlight = new MemoryInFlight();
-    inFlight.ids = [5];
-    const downloads = new FakeDownloads();
-    downloads.browserState = { state: 'in_progress', paused: true };
-    downloads.failing.add('resume');
-    s = await setup({ inFlight, downloads });
-    expect(s.hub.snapshot().notice).toMatchObject({
-      tone: 'error',
-      message:
-        "A download is paused in the browser. Open the browser's downloads page and click Resume.",
+    it('cancels the browser copy when the app already has it', async () => {
+      const { downloads, inFlight } = await recover('already_started');
+      expect(s.app.calls('withdraw_download')).toEqual([
+        { method: 'withdraw_download', params: { handover_id: 'h-before' } },
+      ]);
+      expect(downloads.log).toEqual(['cancel:5', 'erase:5']);
+      expect(s.hub.snapshot().notice).toBeNull();
+      expect(inFlight.entries).toEqual([]);
     });
-  });
 
-  it('leaves alone the ones that are no longer paused', async () => {
-    const inFlight = new MemoryInFlight();
-    inFlight.ids = [5];
-    const downloads = new FakeDownloads();
-    downloads.browserState = { state: 'complete', paused: false };
-    s = await setup({ inFlight, downloads });
-    expect(downloads.log).toEqual([]);
-    expect(inFlight.ids).toEqual([]);
+    it.each(['withdrawn', 'not_found'] as const)(
+      'resumes the browser copy without a warning when the app says "%s"',
+      async (outcome) => {
+        const { downloads, inFlight } = await recover(outcome);
+        expect(downloads.log).toEqual(['resume:5']);
+        expect(s.hub.snapshot().notice).toBeNull();
+        expect(inFlight.entries).toEqual([]);
+      },
+    );
+
+    it.each([
+      ['no answer comes', 'hang'],
+      ['the answer cannot be read', 'unreadable'],
+      ['the app fails', { error: { code: 'internal', message: 'Database locked.' } }],
+    ] as const)(
+      'resumes the browser copy and warns it may download twice when %s',
+      async (_label, behavior) => {
+        const { downloads } = await recover(behavior, {
+          state: 'in_progress',
+          paused: true,
+          filename: '/home/me/Downloads/big.zip',
+        });
+        expect(downloads.log).toEqual(['resume:5']);
+        expect(s.hub.snapshot().notice).toMatchObject({ tone: 'warning' });
+        expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip may be downloading twice/);
+      },
+    );
+
+    it('says how to recover a download it cannot resume', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.browserState = { state: 'in_progress', paused: true };
+      downloads.failing.add('resume');
+      s = await setup({ inFlight, downloads });
+      expect(s.hub.snapshot().notice).toMatchObject({
+        tone: 'error',
+        message:
+          "A download is paused in the browser. Open the browser's downloads page and click Resume.",
+      });
+    });
+
+    it('leaves alone, without asking the app, the ones no longer paused', async () => {
+      const { downloads, inFlight } = await recover('withdrawn', {
+        state: 'complete',
+        paused: false,
+      });
+      expect(downloads.log).toEqual([]);
+      expect(s.app.calls('withdraw_download')).toHaveLength(0);
+      expect(inFlight.entries).toEqual([]);
+    });
   });
 });
 

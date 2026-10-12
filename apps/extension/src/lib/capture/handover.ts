@@ -104,7 +104,6 @@ export interface HandoverDeps extends SubmitDeps {
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
   cookieHeader(url: string, storeId: string | null, context: CookieContext): Promise<string | null>;
   userAgent: string | null;
-  newHandoverId(): string;
 }
 
 /** Why the browser kept a download it was about to hand over. */
@@ -152,6 +151,8 @@ export type HandoverResult =
 
 export interface HandoverInput {
   downloadId: number;
+  /** The id the download is offered to the app under, recorded before pausing so a restarted background can withdraw it. */
+  handoverId: string;
   candidate: CaptureCandidate;
   /** Firefox container or private cookie store the download belongs to. */
   cookieStoreId: string | null;
@@ -208,7 +209,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
   if (!decision.capture) return keep(null, decision.reason, null);
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
 
-  const handoverId = deps.newHandoverId();
+  const { handoverId } = input;
   const download: NewDownload = {
     handover_id: handoverId,
     url: candidate.url,
@@ -256,7 +257,7 @@ async function withLatestVerdict(
 }
 
 /** Cancels the browser's copy and takes it off the browser's list; false when it could not be cancelled. */
-async function removeBrowserCopy(downloads: DownloadControl, id: number): Promise<boolean> {
+export async function removeBrowserCopy(downloads: DownloadControl, id: number): Promise<boolean> {
   try {
     await downloads.cancel(id);
   } catch {

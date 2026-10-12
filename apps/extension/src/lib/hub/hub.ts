@@ -1,21 +1,15 @@
 import type { Call, Event, ExtensionSettings, Outcome } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
-import {
-  handOver,
-  resumeBrowserCopy,
-  type HandoverResult,
-  type JudgingSettings,
-} from '../capture/handover';
+import { handOver, type HandoverResult, type JudgingSettings } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
-import { baseName, fileNameFromUrl } from '../file-types';
+import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
-import { nonEmpty } from '../text';
 import { AppCalls } from './app';
-import type { HubDeps, HubTiming, MenuClick, MenuResult, MenuTab } from './deps';
+import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
 import { DuplicateWatch } from './duplicates';
 import { planMenuClick } from './menu';
 import {
@@ -29,10 +23,11 @@ import {
   mayDownloadTwice,
   mediaAnswer,
   menuNotTaken,
-  resumedAfterRestart,
+  mayDownloadTwiceAfterRestart,
   stuckPaused,
 } from './notices';
 import { Popups, type PopupChannel } from './popups';
+import { recoverHandover } from './recovery';
 import { KnownSettings } from './settings';
 
 /** Used to rule out blob, data and internal addresses before anything is known about the settings. */
@@ -79,8 +74,11 @@ export class Hub {
   readonly #settings: KnownSettings;
   readonly #app: AppCalls;
   readonly #popups: Popups;
-  /** Browser downloads being handed over right now (persisted through `deps.inFlight`). */
-  readonly #inFlight = new Set<number>();
+  /**
+   * Browser downloads being handed over or recovered right now, by id, with the handover id
+   * once one is chosen; those with one are persisted through `deps.inFlight`.
+   */
+  readonly #inFlight = new Map<number, string | null>();
   readonly #duplicates = new DuplicateWatch((name) => this.#warn(mayDownloadTwice(name)));
   readonly #ready: Promise<void>;
   #markReady: () => void = () => undefined;
@@ -158,7 +156,7 @@ export class Hub {
    */
   async onDownload(item: DownloadItemLike): Promise<HandoverResult | null> {
     if (this.#inFlight.has(item.id)) return null;
-    this.#inFlight.add(item.id);
+    this.#inFlight.set(item.id, null);
     let persisted = false;
     try {
       await this.#ready;
@@ -172,11 +170,13 @@ export class Hub {
         return null;
       }
 
-      // Recorded before pausing, so a restarted background can resume it.
+      // Recorded before pausing, so a restarted background can withdraw it and act on the answer.
+      const handoverId = this.#newHandoverId();
+      this.#inFlight.set(item.id, handoverId);
       await this.#persistInFlight();
       persisted = true;
       const result = await handOver(
-        { downloadId: item.id, candidate, cookieStoreId: item.cookieStoreId ?? null },
+        { downloadId: item.id, handoverId, candidate, cookieStoreId: item.cookieStoreId ?? null },
         {
           downloads: this.#deps.downloads,
           liveSettings: () => this.#judgingSettings(),
@@ -184,7 +184,6 @@ export class Hub {
           withdraw: (handoverId) => this.#app.withdraw(handoverId),
           cookieHeader: (url, storeId, context) => this.#deps.cookieHeader(url, storeId, context),
           userAgent: this.#deps.userAgent,
-          newHandoverId: () => this.#newHandoverId(),
         },
       );
       this.#noticeFor(result, name);
@@ -333,28 +332,49 @@ export class Hub {
 
   async #persistInFlight(): Promise<void> {
     try {
-      await this.#deps.inFlight?.save([...this.#inFlight]);
+      const entries = [...this.#inFlight].flatMap(([id, handoverId]) =>
+        handoverId === null ? [] : [{ id, handoverId }],
+      );
+      await this.#deps.inFlight?.save(entries);
     } catch {
       // Session storage unavailable: recovery after a restart is best effort.
     }
   }
 
-  /** Resumes downloads a previous run of the background script paused and never finished handing over. */
-  async #recoverInFlight(ids: readonly number[]): Promise<void> {
-    if (ids.length === 0) return;
-    for (const id of ids) {
-      if (this.#inFlight.has(id)) continue;
-      const state = await this.#deps.downloads.state(id).catch(() => null);
-      if (state?.state !== 'in_progress' || !state.paused) continue;
-      const name = nonEmpty(baseName(state.filename ?? '')) ?? 'A download';
-      // Whether `add_download` went out before the restart is not known, so the app may have it.
-      const copy = await resumeBrowserCopy(this.#deps.downloads, id);
-      if (copy === 'resumed') this.#warn(resumedAfterRestart(name));
-      else if (copy === 'stuck_paused') {
-        this.#setNotice({ tone: 'error', message: stuckPaused(name), at: this.#now() });
+  /**
+   * Settles the handovers a previous run of the background script paused and never finished,
+   * exactly as after a timeout: `withdraw_download` decides. `already_started` means the app has
+   * it, so the browser copy goes; `withdrawn` or `not_found` means it does not, so the browser
+   * resumes it; no answer, or one that cannot be read, keeps the browser copy with a warning
+   * that the file may download twice.
+   */
+  async #recoverInFlight(entries: readonly InFlightEntry[]): Promise<void> {
+    const left = entries.filter((entry) => !this.#inFlight.has(entry.id));
+    // Kept in the persisted list until settled, so another restart picks them up again.
+    for (const { id, handoverId } of left) this.#inFlight.set(id, handoverId);
+    for (const entry of left) {
+      try {
+        await this.#recover(entry);
+      } finally {
+        this.#inFlight.delete(entry.id);
+        await this.#persistInFlight();
       }
     }
-    await this.#persistInFlight();
+  }
+
+  async #recover(entry: InFlightEntry): Promise<void> {
+    const { result, name } = await recoverHandover(entry, {
+      downloads: this.#deps.downloads,
+      // The app may need connecting, or starting, first: this is the handover the person started.
+      withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
+    });
+    if (result === 'copy_left') this.#warn(copyLeftInBrowser(name));
+    if (result === 'stuck_paused') {
+      this.#setNotice({ tone: 'error', message: stuckPaused(name), at: this.#now() });
+    }
+    if (result === 'uncertain' && !this.#duplicates.keptUncertain(entry.handoverId, name)) {
+      this.#warn(mayDownloadTwiceAfterRestart(name));
+    }
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
