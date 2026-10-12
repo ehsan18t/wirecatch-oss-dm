@@ -55,7 +55,7 @@
 //! Cookies and other headers in [`StreamRequest::options`] are sent only to the
 //! origin of the playlist link, exactly as the engine does for a download.
 //! Segments and keys on another origin, such as a CDN, get only headers that
-//! hold no credentials (see [`wirecatch_engine::fetch`]).
+//! hold no credentials (see [`wirecatch_engine::Fetcher`]).
 //!
 //! A stream from the internet may not point Wirecatch at the local network:
 //! segments, keys, init sections and DASH base addresses that are (or resolve

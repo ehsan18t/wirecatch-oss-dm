@@ -9,23 +9,24 @@
 //! was. Only a real answer from the server (`429` or `503`, which say "busy")
 //! is treated like the same answer over TCP.
 
-use std::net::{IpAddr, SocketAddr};
+use std::io;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use bytes::{Buf, Bytes};
-use reqwest::header::{
-    ACCEPT_ENCODING, CONTENT_RANGE, HeaderMap, HeaderValue, RANGE, RETRY_AFTER, USER_AGENT,
-};
+use reqwest::StatusCode;
+use reqwest::header::{ACCEPT_ENCODING, HeaderMap, HeaderValue, RANGE, USER_AGENT};
 use tokio::task::JoinHandle;
 use tracing::{debug, info};
 use url::Url;
 
-use crate::download::{DownloadOptions, Shared};
-use crate::error::{Error, Result};
-use crate::http::{Failure, Session, parse_content_range, parse_retry_after};
-use crate::transport::proxy_variable;
+use crate::error::{Chain, Error, Result};
+use crate::http::{self, Failure, RequestRange, Session};
+use crate::options::DownloadOptions;
+use crate::proxy::{self, Scheme};
+use crate::request::RequestContext;
 
 /// Longest wait for a QUIC handshake. A network that blocks UDP shows up as a
 /// handshake that never completes; this bounds how long a worker spends
@@ -34,6 +35,10 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// One MiB as a `u32`, the type quinn's window settings take.
 const MIB_U32: u32 = 1024 * 1024;
+
+/// Entries in the HTTP/3 TLS session cache, shared by the QUIC connections of
+/// one download: the same few hosts, with room to spare.
+const SESSION_CACHE_ENTRIES: usize = 64;
 
 /// Flow control windows. The defaults suit a 100 Mbit/s link with 100 ms of
 /// latency; downloads can be much faster than that.
@@ -51,6 +56,8 @@ pub(crate) struct Origin {
     port: u16,
     config: quinn::ClientConfig,
     handshake_timeout: Duration,
+    /// [`DownloadOptions::user_agent`], which the TCP clients send on their own.
+    user_agent: String,
     /// Set by the first QUIC failure; from then on every worker uses TCP.
     broken: AtomicBool,
 }
@@ -61,36 +68,24 @@ impl Origin {
     /// belong to that host.
     ///
     /// `peer` is the address the first request reached. Nothing is used when
-    /// a proxy is set in the environment: QUIC would go around it.
+    /// a proxy is set for the host in the environment `env` reads: QUIC would
+    /// go around it.
     pub fn advertised(
         url: &Url,
         headers: &HeaderMap,
         peer: Option<SocketAddr>,
         tls: &rustls::ClientConfig,
         opts: &DownloadOptions,
-    ) -> Option<Arc<Self>> {
-        Self::advertised_in(url, headers, peer, tls, opts, &|name| {
-            std::env::var_os(name)
-        })
-    }
-
-    /// [`Origin::advertised`], reading environment variables with `env`.
-    fn advertised_in(
-        url: &Url,
-        headers: &HeaderMap,
-        peer: Option<SocketAddr>,
-        tls: &rustls::ClientConfig,
-        opts: &DownloadOptions,
-        env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+        env: proxy::Env<'_>,
     ) -> Option<Arc<Self>> {
         if url.scheme() != "https" {
             return None;
         }
-        if let Some(variable) = proxy_variable(HTTPS_PROXY_VARIABLES, env) {
+        let host = url.host_str()?;
+        if let Some(variable) = proxy::configured(Scheme::Https, host, env) {
             debug!(variable, "a proxy is set, so HTTP/3 is not used");
             return None;
         }
-        let host = url.host_str()?;
         let port = headers
             .get_all("alt-svc")
             .iter()
@@ -99,11 +94,11 @@ impl Origin {
         let mut tls = tls.clone();
         tls.alpn_protocols = vec![b"h3".to_vec()];
         // A cache of its own: tickets from TCP connections do not work for QUIC.
-        tls.resumption = rustls::client::Resumption::in_memory_sessions(64);
+        tls.resumption = rustls::client::Resumption::in_memory_sessions(SESSION_CACHE_ENTRIES);
         let crypto = match quinn::crypto::rustls::QuicClientConfig::try_from(tls) {
             Ok(crypto) => crypto,
             Err(e) => {
-                debug!(error = %e, "HTTP/3 is not possible with this TLS setup");
+                debug!(error = %Chain(&e), "HTTP/3 is not possible with this TLS setup");
                 return None;
             }
         };
@@ -125,6 +120,7 @@ impl Origin {
             port,
             config,
             handshake_timeout: opts.connect_timeout.min(HANDSHAKE_TIMEOUT),
+            user_agent: opts.user_agent.clone(),
             broken: AtomicBool::new(false),
         }))
     }
@@ -140,37 +136,46 @@ impl Origin {
     }
 
     /// A new QUIC connection with HTTP/3 set up on it.
-    async fn connect(&self) -> std::result::Result<Connection, String> {
-        let addr = match self.ip {
-            Some(ip) => SocketAddr::new(ip, self.port),
-            None => tokio::net::lookup_host((self.host.as_str(), self.port))
-                .await
-                .map_err(|e| format!("address lookup failed: {e}"))?
-                .next()
-                .ok_or("no address found")?,
-        };
-        let local: SocketAddr = if addr.is_ipv6() {
-            "[::]:0".parse().map_err(|e| format!("{e}"))?
+    async fn connect(&self) -> Result<Connection> {
+        let addr = if let Some(ip) = self.ip {
+            SocketAddr::new(ip, self.port)
         } else {
-            "0.0.0.0:0".parse().map_err(|e| format!("{e}"))?
+            let what = format!("could not find {}", self.host);
+            tokio::net::lookup_host((self.host.as_str(), self.port))
+                .await
+                .map_err(|e| Error::socket(what.clone(), e, true))?
+                .next()
+                .ok_or_else(|| Error::socket(what, io::ErrorKind::NotFound.into(), true))?
         };
-        let endpoint = quinn::Endpoint::client(local).map_err(|e| format!("no UDP socket: {e}"))?;
+        let unspecified: IpAddr = if addr.is_ipv6() {
+            Ipv6Addr::UNSPECIFIED.into()
+        } else {
+            Ipv4Addr::UNSPECIFIED.into()
+        };
+        let endpoint = quinn::Endpoint::client(SocketAddr::new(unspecified, 0))
+            .map_err(|e| Error::socket("could not open a UDP socket for QUIC", e, true))?;
         let connecting = endpoint
             .connect_with(self.config.clone(), addr, &self.host)
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| Error::transport("could not start a QUIC connection", e, true))?;
         let quic = tokio::time::timeout(self.handshake_timeout, connecting)
             .await
-            .map_err(|_| "the QUIC handshake timed out".to_string())?
-            .map_err(|e| format!("the QUIC handshake failed: {e}"))?;
+            .map_err(|_| {
+                Error::socket(
+                    "the QUIC handshake timed out",
+                    io::ErrorKind::TimedOut.into(),
+                    true,
+                )
+            })?
+            .map_err(|e| Error::transport("the QUIC handshake failed", e, true))?;
         let (mut driver, send) = h3::client::new(h3_quinn::Connection::new(quic))
             .await
-            .map_err(|e| format!("HTTP/3 setup failed: {e}"))?;
+            .map_err(|e| Error::transport("setting up HTTP/3 failed", e, true))?;
         let driver = tokio::spawn(async move {
             // A request on a broken connection fails with its own error; this
             // says why the connection ended.
             let closed = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
             if !closed.is_h3_no_error() {
-                debug!(error = %closed, "an HTTP/3 connection closed");
+                debug!(error = %Chain(&closed), "an HTTP/3 connection closed");
             }
         });
         Ok(Connection {
@@ -180,9 +185,6 @@ impl Origin {
         })
     }
 }
-
-/// The variables the HTTP client takes an `https` proxy from.
-const HTTPS_PROXY_VARIABLES: &[&str] = &["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"];
 
 /// The port of an `h3` alternative on `host` in an `Alt-Svc` value such as
 /// `h3=":443"; ma=86400, h3-29=":443"`. Drafts (`h3-29`) are not used.
@@ -219,7 +221,7 @@ impl Drop for Connection {
 pub(crate) async fn open(
     slot: &mut Option<Connection>,
     origin: &Arc<Origin>,
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
@@ -228,10 +230,10 @@ pub(crate) async fn open(
         *slot = None;
         return Ok(None);
     }
-    let attempt = request(slot, origin, shared, session, from, to);
+    let attempt = request(slot, origin, context, session, from, to);
     let outcome = tokio::select! {
         biased;
-        () = shared.cancel.cancelled() => return Err(Error::Cancelled.into()),
+        () = context.cancel.cancelled() => return Err(Error::Cancelled.into()),
         outcome = attempt => outcome,
     };
     match outcome {
@@ -240,8 +242,8 @@ pub(crate) async fn open(
             chunk: Bytes::new(),
             origin: origin.clone(),
         })),
-        Err(Outcome::Answer(failure)) => Err(failure),
-        Err(Outcome::Unusable(why)) => {
+        Err(H3Failure::Answer(failure)) => Err(failure),
+        Err(H3Failure::Unusable(why)) => {
             origin.mark_broken(&why);
             *slot = None;
             Ok(None)
@@ -250,11 +252,12 @@ pub(crate) async fn open(
 }
 
 /// Why a request over HTTP/3 did not start a body.
-enum Outcome {
-    /// The server answered "busy": handled like the same answer over TCP.
+enum H3Failure {
+    /// The server answered "busy", or with another version of the file:
+    /// handled like the same answer over TCP.
     Answer(Failure),
     /// HTTP/3 does not work here.
-    Unusable(String),
+    Unusable(Error),
 }
 
 type Stream = h3::client::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>;
@@ -262,119 +265,104 @@ type Stream = h3::client::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>;
 async fn request(
     slot: &mut Option<Connection>,
     origin: &Origin,
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
-) -> std::result::Result<Stream, Outcome> {
-    if slot.is_none() {
-        *slot = Some(origin.connect().await.map_err(Outcome::Unusable)?);
-    }
-    let Some(connection) = slot.as_mut() else {
-        return Err(Outcome::Unusable("no connection".into()));
+) -> std::result::Result<Stream, H3Failure> {
+    let connection = match slot {
+        Some(connection) => connection,
+        empty => empty.insert(origin.connect().await.map_err(H3Failure::Unusable)?),
     };
-    let request = build_request(shared, session, from, to)?;
-
-    let stall = shared.opts.stall_timeout;
+    let stall = context.stall_timeout;
+    let request = build_request(
+        context,
+        session,
+        &origin.user_agent,
+        RequestRange::new(from, to)
+            .ok_or_else(|| H3Failure::Unusable(http::empty_range(from, to)))?,
+    )?;
     let exchange = async {
         let mut stream = connection
             .send
             .send_request(request)
             .await
-            .map_err(|e| Outcome::Unusable(format!("sending the request failed: {e}")))?;
+            .map_err(|e| unusable("sending the request over HTTP/3 failed", e))?;
         stream
             .finish()
             .await
-            .map_err(|e| Outcome::Unusable(format!("sending the request failed: {e}")))?;
+            .map_err(|e| unusable("sending the request over HTTP/3 failed", e))?;
         let response = stream
             .recv_response()
             .await
-            .map_err(|e| Outcome::Unusable(format!("no answer: {e}")))?;
+            .map_err(|e| unusable("no answer over HTTP/3", e))?;
         Ok((stream, response))
     };
     let (stream, response) = tokio::time::timeout(stall, exchange)
         .await
-        .map_err(|_| Outcome::Unusable("no answer in time".into()))??;
-    check_response(&response, shared, from)?;
+        .map_err(|_| H3Failure::Unusable(Error::Stalled { after: stall }))??;
+    check_response(&response, context, from)?;
     Ok(stream)
 }
 
-/// The request for `[from, to)` with the headers the session sends to this URL.
+/// HTTP/3 is not usable because `error` happened while doing `what`.
+fn unusable(what: &str, error: impl std::error::Error + Send + Sync + 'static) -> H3Failure {
+    H3Failure::Unusable(Error::transport(what, error, false))
+}
+
+/// The request for `range` with the headers the session sends to this URL.
 fn build_request(
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
-    from: u64,
-    to: u64,
-) -> std::result::Result<::http::Request<()>, Outcome> {
-    let mut request = ::http::Request::get(shared.url.as_str());
-    let headers = request
-        .headers_mut()
-        .ok_or_else(|| Outcome::Unusable("bad request".into()))?;
-    headers.extend(session.headers.for_url(&shared.url).clone());
-    if !headers.contains_key(USER_AGENT)
-        && let Ok(agent) = HeaderValue::from_str(&shared.opts.user_agent)
-    {
-        headers.insert(USER_AGENT, agent);
+    user_agent: &str,
+    range: RequestRange,
+) -> std::result::Result<::http::Request<()>, H3Failure> {
+    let range = HeaderValue::try_from(range.to_string())
+        .map_err(|e| unusable("the range cannot be sent over HTTP/3", e))?;
+    let mut request = ::http::Request::get(context.url.as_str());
+    // Without headers the request already holds the error `body` reports.
+    if let Some(headers) = request.headers_mut() {
+        headers.extend(session.headers.for_url(&context.url).clone());
+        if !headers.contains_key(USER_AGENT)
+            && let Ok(agent) = HeaderValue::from_str(user_agent)
+        {
+            headers.insert(USER_AGENT, agent);
+        }
+        // Compressed transfer encodings break byte offsets.
+        headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+        headers.insert(RANGE, range);
     }
-    // Compressed transfer encodings break byte offsets.
-    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    let range = if to == crate::segment::UNKNOWN_END {
-        format!("bytes={from}-")
-    } else {
-        format!("bytes={from}-{}", to - 1)
-    };
-    let range = HeaderValue::from_str(&range).map_err(|e| Outcome::Unusable(e.to_string()))?;
-    headers.insert(RANGE, range);
     request
         .body(())
-        .map_err(|e| Outcome::Unusable(e.to_string()))
+        .map_err(|e| unusable("the request cannot be sent over HTTP/3", e))
 }
 
 /// Whether `response` is the range asked for, starting at `from`, of the same
-/// file: a busy answer is handled like the same answer over TCP, anything else
-/// means HTTP/3 is not usable here.
+/// file: a busy answer and a changed file are handled like the same answer over
+/// TCP, any other answer means HTTP/3 is not usable here.
 fn check_response(
     response: &::http::Response<()>,
-    shared: &Shared,
+    context: &RequestContext,
     from: u64,
-) -> std::result::Result<(), Outcome> {
-    let status = response.status().as_u16();
-    if status == 429 || status == 503 {
-        let retry_after = response
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_retry_after(v, std::time::SystemTime::now()));
-        return Err(Outcome::Answer(Failure {
-            error: Error::HttpStatus {
-                status,
-                url: shared.url.to_string(),
-            },
-            retry_after,
-        }));
-    }
-    if status != 206 {
-        return Err(Outcome::Unusable(format!(
-            "the server answered {status} over HTTP/3"
+) -> std::result::Result<(), H3Failure> {
+    let status = response.status();
+    if http::is_busy(status) {
+        return Err(H3Failure::Answer(Failure::from_status(
+            status,
+            response.headers(),
+            &context.url,
         )));
     }
-    let range = response
-        .headers()
-        .get(CONTENT_RANGE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(parse_content_range);
-    match range {
-        Some(range) if range.start == from => {
-            if let (Some(expected), Some(actual)) = (shared.total, range.total)
-                && expected != actual
-            {
-                return Err(Outcome::Answer(Error::RemoteChanged.into()));
-            }
-            Ok(())
-        }
-        _ => Err(Outcome::Unusable(
-            "the server sent the wrong range over HTTP/3".into(),
-        )),
+    if status != StatusCode::PARTIAL_CONTENT {
+        return Err(H3Failure::Unusable(Error::HttpStatus {
+            status: status.as_u16(),
+            url: context.url.to_string(),
+        }));
+    }
+    match http::check_partial(response.headers(), from, context.total) {
+        Ok(_) => Ok(()),
+        Err(changed @ Error::RemoteChanged) => Err(H3Failure::Answer(changed.into())),
+        Err(other) => Err(H3Failure::Unusable(other)),
     }
 }
 

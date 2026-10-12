@@ -9,7 +9,7 @@
 //!
 //! # Quick start
 //!
-//! Build a [`DownloadRequest`], hand it to [`download`] with a [`Progress`] to
+//! Build a [`DownloadRequest`], hand it to [`download`](fn@download) with a [`Progress`] to
 //! watch and a [`CancellationToken`] to pause with, and await the [`Outcome`]:
 //!
 //! ```
@@ -62,7 +62,7 @@
 //! }
 //! ```
 //!
-//! [`download`] needs a Tokio runtime with the time and I/O drivers enabled
+//! [`download`](fn@download) needs a Tokio runtime with the time and I/O drivers enabled
 //! (`#[tokio::main]` has both).
 //!
 //! # What happens during a download
@@ -160,7 +160,7 @@
 //! # FTP and FTPS
 //!
 //! `ftp://`, `ftps://` and `ftpes://` links download through the same
-//! [`download`] call, with the same parallel connections, resume files, speed
+//! [`download`](fn@download) call, with the same parallel connections, resume files, speed
 //! limits and retries:
 //!
 //! | Link | Encryption | Default port |
@@ -187,7 +187,7 @@
 //!
 //! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
 //! set, an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
-//! going around the proxy.
+//! going around the proxy, unless `NO_PROXY` names its host.
 //!
 //! Each connection logs in once and then downloads range after range: it
 //! asks for a passive data connection, sends `REST` with the offset and
@@ -208,35 +208,44 @@
 //! bulk downloads several TCP connections are as fast, and QUIC costs more
 //! processor time per byte.
 
+mod abandon;
+mod checkpoint;
 mod download;
 mod error;
-pub mod fetch;
+mod fetch;
 mod ftp;
 mod http;
 #[cfg(feature = "http3")]
 mod http3;
 mod limiter;
 pub mod naming;
+mod net_guard;
 pub mod numeric;
+mod options;
 mod progress;
+mod proxy;
+mod receive;
+mod request;
+mod retry;
 mod segment;
 mod state;
 mod storage;
+mod target;
 mod transport;
 pub mod units;
 pub mod url;
 mod worker;
+mod writer;
 
-pub use ::url::Url;
-pub use download::{
-    DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathResolver,
-    RemoteFile, download,
-};
-pub use error::{Error, NetworkError, Result};
-pub use fetch::{Fetched, Fetcher, PrivateNetwork};
-pub use limiter::RateLimiter;
-pub use progress::Progress;
 /// HTTP header names and values, for [`DownloadOptions::headers`].
-pub use reqwest::header;
+pub use ::http::header;
+pub use ::url::Url;
+pub use download::{DownloadRequest, Outcome, PathRejected, PathResolver, RemoteFile, download};
+pub use error::{Error, IoAction, NetworkError, Result};
+pub use fetch::{Fetched, Fetcher};
+pub use limiter::RateLimiter;
+pub use net_guard::PrivateNetwork;
+pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
+pub use progress::Progress;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

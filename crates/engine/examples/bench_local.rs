@@ -1,10 +1,13 @@
 //! Local benchmark and manual test server.
 //!
-//! `cargo run --release -p wirecatch-engine --example bench_local`
+//! `cargo run --release -p wirecatch-engine --example bench_local [-- bench [runs]]`
 //!     Measures throughput for 1 to 16 connections against a local server that
 //!     caps each connection's speed (the way many CDNs and file hosts do), then
 //!     against an uncapped server to show the engine's own ceiling, with and
 //!     without a 10 MiB limit on the size of each request (as video sites need).
+//!     Each case runs `runs` times (default 5) and reports the median time, with
+//!     the fastest and slowest run as the spread: one run of the uncapped cases
+//!     varies by about 40 percent, too much to show a regression.
 //!
 //! `cargo run --release -p wirecatch-engine --example bench_local -- serve [port] [MiB/s per connection]`
 //!     Keeps a capped server running for trying the CLI by hand.
@@ -14,6 +17,7 @@
 
 use std::error::Error;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,6 +34,9 @@ const BENCH_SIZE: usize = 256 * MIB_USIZE;
 const BENCH_CAP: u64 = 16 * MIB;
 /// The request size limit of the last run, as video sites need.
 const BENCH_MAX_REQUEST: u64 = 10 * MIB;
+/// Runs of each case when the command line does not say: enough for the median to
+/// stand still while one run is disturbed by the rest of the machine.
+const DEFAULT_RUNS: NonZeroUsize = NonZeroUsize::new(5).unwrap();
 /// Connection counts for the capped and the uncapped runs.
 const CAPPED_CONNECTIONS: [usize; 5] = [1, 2, 4, 8, 16];
 const UNCAPPED_CONNECTIONS: [usize; 2] = [1, 8];
@@ -53,15 +60,27 @@ async fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("serve") => serve(port(DEFAULT_HTTP_PORT), cap).await,
         Some("serve-ftp") => serve_ftp(port(DEFAULT_FTP_PORT), cap).await,
-        _ => bench().await,
+        Some("bench") | None => {
+            let runs = match args.get(1) {
+                Some(runs) => runs
+                    .parse()
+                    .map_err(|e| format!("runs {runs:?} must be a whole number from 1: {e}"))?,
+                None => DEFAULT_RUNS,
+            };
+            bench(runs).await
+        }
+        Some(other) => Err(format!(
+            "unknown command {other:?}; use bench [runs], serve [port] [MiB/s] or serve-ftp [port] [MiB/s]"
+        )
+        .into()),
     }
 }
 
-async fn bench() -> Result<()> {
+async fn bench(runs: NonZeroUsize) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
-        "File: {} MiB. Server caps each connection at {} MiB/s.\n",
+        "File: {} MiB. Server caps each connection at {} MiB/s. Each case runs {runs} times: the median, and the fastest and slowest run.\n",
         BENCH_SIZE / MIB_USIZE,
         BENCH_CAP / MIB
     )?;
@@ -76,18 +95,20 @@ async fn bench() -> Result<()> {
     .await;
     writeln!(
         out,
-        "{:>12}  {:>9}  {:>10}  {:>8}",
-        "connections", "seconds", "MiB/s", "speedup"
+        "{:>12}  {:>9}  {:>15}  {:>10}  {:>8}",
+        "connections", "seconds", "spread", "MiB/s", "speedup"
     )?;
     let mut baseline = None;
     for connections in CAPPED_CONNECTIONS {
-        let secs = timed_download(&capped, connections, None).await?;
-        let base = *baseline.get_or_insert(secs);
+        let times = Times::measure(runs, || timed_download(&capped, connections, None)).await?;
+        let base = *baseline.get_or_insert(times.median);
         writeln!(
             out,
-            "{connections:>12}  {secs:>9.2}  {:>10.1}  {:>7.1}x",
-            mib_per_second(secs),
-            base / secs
+            "{connections:>12}  {:>9.2}  {:>15}  {:>10.1}  {:>7.1}x",
+            times.median,
+            times.spread(),
+            mib_per_second(times.median),
+            base / times.median
         )?;
     }
 
@@ -109,19 +130,61 @@ async fn bench() -> Result<()> {
         }
         writeln!(
             out,
-            "{:>12}  {:>9}  {:>10}",
-            "connections", "seconds", "MiB/s"
+            "{:>12}  {:>9}  {:>15}  {:>10}",
+            "connections", "seconds", "spread", "MiB/s"
         )?;
         for connections in UNCAPPED_CONNECTIONS {
-            let secs = timed_download(&open, connections, max_request).await?;
+            let times =
+                Times::measure(runs, || timed_download(&open, connections, max_request)).await?;
             writeln!(
                 out,
-                "{connections:>12}  {secs:>9.2}  {:>10.1}",
-                mib_per_second(secs)
+                "{connections:>12}  {:>9.2}  {:>15}  {:>10.1}",
+                times.median,
+                times.spread(),
+                mib_per_second(times.median)
             )?;
         }
     }
     Ok(())
+}
+
+/// The times, in seconds, of the runs of one case.
+struct Times {
+    median: f64,
+    fastest: f64,
+    slowest: f64,
+}
+
+impl Times {
+    /// Runs `case` `runs` times, one after another.
+    async fn measure<F, Fut>(runs: NonZeroUsize, mut case: F) -> Result<Self>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<f64>>,
+    {
+        // At least one run, so every index below is in range.
+        let mut secs = vec![case().await?];
+        for _ in 1..runs.get() {
+            secs.push(case().await?);
+        }
+        secs.sort_by(f64::total_cmp);
+        let middle = secs.len() / 2;
+        let median = if secs.len() % 2 == 0 {
+            f64::midpoint(secs[middle - 1], secs[middle])
+        } else {
+            secs[middle]
+        };
+        Ok(Self {
+            median,
+            fastest: secs.iter().copied().fold(f64::INFINITY, f64::min),
+            slowest: secs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        })
+    }
+
+    /// The fastest and the slowest run, as `0.81 to 1.13`.
+    fn spread(&self) -> String {
+        format!("{:.2} to {:.2}", self.fastest, self.slowest)
+    }
 }
 
 /// The benchmark file's size over `secs`, in MiB a second.

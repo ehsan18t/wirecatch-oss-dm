@@ -1,31 +1,20 @@
 //! Downloads over HTTP through the public `download()` API, against the local test server: parallel connections, resuming, retries, naming and where the file goes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, RemoteFile,
-    download,
+    CancellationToken, DownloadRequest, Error, Outcome, PathRejected, PrivateNetwork, Progress,
+    RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
 
-fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
-    let mut req = DownloadRequest::new(server.url(path), dir);
-    req.options.connections = connections;
-    req.options.min_split = 128 * KIB;
-    req.options.buffer_size = 64 * KIB_USIZE;
-    req.options.stall_timeout = Duration::from_secs(5);
-    req.options.checkpoint_interval = Duration::from_millis(100);
-    req
-}
-
-async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
-    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
-}
+mod common;
+use common::{request, run};
 
 /// Starts a download, waits until `at_least` bytes arrived, then cancels it.
 async fn pause_midway(req: DownloadRequest, at_least: u64) -> TestResult<Outcome> {
@@ -159,6 +148,129 @@ async fn resumes_after_pause_without_downloading_again() {
         sent < needed + (len / 8) as u64,
         "second run fetched {sent} bytes to fill {needed}"
     );
+    dir.remove().unwrap();
+}
+
+/// A resume file is data from outside the process: a hand edit, a torn write
+/// or a bug can leave ranges that overlap, run past the end or are out of
+/// order. Such a file is set aside and the download starts over, instead of
+/// asking for bytes past the end or counting more bytes kept than the file has.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_tampered_resume_file_starts_the_download_over() {
+    let len = 2 * MIB;
+    let server = TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let range = |start: u64, end: u64| serde_json::json!({ "start": start, "end": end });
+    for (case, remaining) in [
+        ("past the end", vec![range(0, len + MIB)]),
+        ("overlapping", vec![range(0, len), range(KIB, len)]),
+        ("out of order", vec![range(MIB, len), range(0, KIB)]),
+        ("empty", vec![range(KIB, KIB)]),
+    ] {
+        let dir = private_dir("tampered").unwrap();
+        let paused = pause_midway(request(&server, "t.bin", &dir, 2), 64 * KIB)
+            .await
+            .unwrap();
+        assert!(
+            matches!(paused, Outcome::Paused { .. }),
+            "{case}: {paused:?}"
+        );
+        let state_path = dir.join("t.bin.wcstate");
+        let mut state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        state["remaining"] = serde_json::Value::Array(remaining);
+        std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+
+        let outcome = run(request(&server, "t.bin", &dir, 2)).await;
+        let Ok(Outcome::Completed {
+            path, resumed_from, ..
+        }) = outcome
+        else {
+            panic!("{case}: not completed: {outcome:?}")
+        };
+        assert_eq!(resumed_from, 0, "{case}");
+        assert_eq!(std::fs::read(path).unwrap(), server.data, "{case}");
+        dir.remove().unwrap();
+    }
+}
+
+/// A process killed after the last range reached the disk, but before the part
+/// file was renamed, leaves a resume file with no range left. The next run
+/// finishes the file as it is.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_file_with_nothing_left_finishes_the_whole_file() {
+    let server = TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("all-flushed").unwrap();
+    let paused = pause_midway(request(&server, "f.bin", &dir, 2), 64 * KIB)
+        .await
+        .unwrap();
+    assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
+    let state_path = dir.join("f.bin.wcstate");
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    state["remaining"] = serde_json::json!([]);
+    std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+    std::fs::write(dir.join("f.bin.wcpart"), &server.data).unwrap();
+
+    let outcome = run(request(&server, "f.bin", &dir, 2)).await.unwrap();
+    let Outcome::Completed {
+        path,
+        bytes,
+        resumed_from,
+        ..
+    } = outcome
+    else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!((bytes, resumed_from), (2 * MIB, 2 * MIB));
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// A disk error says what the engine was doing and with which file, so the
+/// person can tell a full disk from a folder they cannot write to.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_disk_error_names_the_file_and_what_failed() {
+    let server = TestServer::start(
+        test_data(64 * KIB_USIZE),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("disk-error").unwrap();
+    // A file where the folder should be: the folder cannot be created.
+    let blocked = dir.join("not-a-folder");
+    std::fs::write(&blocked, b"x").unwrap();
+    let error = run(request(&server, "f.bin", &blocked.join("inside"), 1))
+        .await
+        .unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains("create the folder") && text.contains("inside"),
+        "{text}"
+    );
+    // The system's own reason is the source, shown once in a chain of errors.
+    let reason = std::error::Error::source(&error).unwrap().to_string();
+    assert!(!text.contains(&reason), "{text}");
     dir.remove().unwrap();
 }
 
@@ -317,6 +429,139 @@ async fn rate_limiter_caps_combined_speed() {
     // 2 MiB at 1 MiB/s, less the quarter-second burst allowance.
     assert!(secs >= 1.6, "finished in {secs:.2} s despite the limit");
     dir.remove().unwrap();
+}
+
+/// How long a pause may take to come back, far less than the limiter's wait.
+const PROMPT: Duration = Duration::from_secs(3);
+
+/// At 1 KiB/s the first chunk alone puts the limiter many seconds in debt. A pause must not wait for that, nor must a raised limit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
+    let server = TestServer::start(
+        test_data(MIB_USIZE),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("limited-pause").unwrap();
+    let limiter = Arc::new(wirecatch_engine::RateLimiter::new(Some(KIB)));
+    let mut req = request(&server, "slow.bin", &dir, 2);
+    req.options.rate_limiters = vec![limiter.clone()];
+
+    let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
+    let deadline = tokio::time::Instant::now() + PROMPT;
+    while progress.done() == 0 {
+        assert!(tokio::time::Instant::now() < deadline, "nothing arrived");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    cancel.cancel();
+    let paused = tokio::time::timeout(PROMPT, task).await;
+    let outcome = paused
+        .expect("the pause waited for the rate limiter")
+        .unwrap()
+        .unwrap();
+    let Outcome::Paused { remaining, .. } = outcome else {
+        panic!("not paused: {outcome:?}")
+    };
+    let kept = server.data.len() as u64 - remaining;
+
+    // Resumed at the same tiny limit, then lifted once a new chunk has put
+    // the limiter in debt: the download finishes at once.
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
+    let deadline = tokio::time::Instant::now() + PROMPT;
+    while progress.done() <= kept {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "nothing new arrived"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    limiter.set_limit(None);
+    let finished = tokio::time::timeout(PROMPT, task).await;
+    let outcome = finished
+        .expect("lifting the limit did not wake the download")
+        .unwrap()
+        .unwrap();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// File system work a download queued on the blocking pool runs even after
+/// its future is dropped. Such work must change no file then: the owner may
+/// already have deleted or reused them. Here the pool is held busy while the
+/// download waits to prepare its target, and the download is dropped before
+/// the pool frees up; the old part and resume files it would have replaced
+/// must stay exactly as they were.
+#[test]
+fn a_dropped_download_leaves_its_files_alone() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let server = TestServer::start(
+            test_data(64 * KIB_USIZE),
+            Config {
+                ranges: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let dir = private_dir("dropped-early").unwrap();
+        // Loads the system certificates now, which needs the blocking pool.
+        run(request(&server, "warm.bin", &dir, 1)).await.unwrap();
+
+        let target = dir.join("f.bin");
+        let (part, state) = (dir.join("f.bin.wcpart"), dir.join("f.bin.wcstate"));
+        std::fs::write(&part, b"old part").unwrap();
+        std::fs::write(&state, b"not a resume file").unwrap();
+
+        // The pool's only thread waits until it is let go.
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let holding = tokio::task::spawn_blocking(move || held.recv());
+
+        let (choosing, chose) = tokio::sync::oneshot::channel();
+        let choosing = Mutex::new(Some(choosing));
+        let mut req = request(&server, "f.bin", &dir, 1);
+        let chosen = target.clone();
+        req.resolve_path = Some(Arc::new(move |_: &RemoteFile| {
+            if let Some(tell) = choosing.lock().unwrap().take() {
+                tell.send(()).unwrap();
+            }
+            Ok(chosen.clone())
+        }));
+        let task = tokio::spawn(run(req));
+        // On this one thread the download runs until it waits for the pool,
+        // with its preparation queued, before this resumes.
+        chose.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+
+        release.send(()).unwrap();
+        holding.await.unwrap().unwrap();
+        // The queue is first in, first out: this runs after the preparation.
+        tokio::task::spawn_blocking(|| ()).await.unwrap();
+
+        assert!(
+            std::fs::read(&part).unwrap() == b"old part",
+            "the part file was replaced"
+        );
+        assert!(
+            std::fs::read(&state).unwrap() == b"not a resume file",
+            "the resume file was replaced"
+        );
+        assert!(!target.exists());
+        dir.remove().unwrap();
+    });
 }
 
 /// A caller may drop a download's future before it ends (a manager abandons a
@@ -571,10 +816,10 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
     let dir = private_dir("resolver-refuses").unwrap();
     let mut req = request(&server, "files/setup.exe", &dir, 4);
     req.resolve_path = Some(Arc::new(|remote: &RemoteFile| {
-        Err(format!(
+        Err(PathRejected::new(format!(
             "{} is not an allowed file type",
             remote.suggested_name
-        ))
+        )))
     }));
     let progress = Arc::new(Progress::default());
 
@@ -582,7 +827,7 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
 
     match result {
         Err(Error::TargetRejected(reason)) => {
-            assert_eq!(reason, "setup.exe is not an allowed file type");
+            assert_eq!(reason.message(), "setup.exe is not an allowed file type");
         }
         other => panic!("expected TargetRejected, got {other:?}"),
     }

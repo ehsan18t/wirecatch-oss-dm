@@ -8,7 +8,7 @@ const UNKNOWN: u64 = u64::MAX;
 
 /// Live counters for one download. Cheap to read from another task or thread.
 ///
-/// Create one with [`Progress::default`], pass it to [`download`](crate::download)
+/// Create one with [`Progress::default`], pass it to [`download`](fn@crate::download)
 /// in an `Arc`, and read it from anywhere, for example a few times a second to
 /// draw a progress bar. Speed is the change in [`done`](Self::done) over time.
 #[derive(Debug)]

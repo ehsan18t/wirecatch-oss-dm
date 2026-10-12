@@ -151,6 +151,18 @@ pub(crate) fn to_map(headers: &[Header]) -> HeaderMap {
 mod tests {
     use super::*;
 
+    /// The agent every request of the app starts from, before a browser's own.
+    fn app_agent() -> String {
+        format!("{PRODUCT_NAME}/{PRODUCT_VERSION}")
+    }
+
+    #[test]
+    fn requests_name_the_app_not_the_engine() {
+        let agent = download_options().user_agent;
+        assert_eq!(agent, app_agent());
+        assert_ne!(agent, DownloadOptions::default().user_agent);
+    }
+
     fn header(name: &str, value: &str) -> Header {
         Header {
             name: name.into(),

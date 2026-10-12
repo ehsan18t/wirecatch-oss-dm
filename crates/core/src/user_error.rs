@@ -51,14 +51,15 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         // Only the manager's own resolver refuses a file, and the reason that
         // reaches a person is that the server sent something other than the file
         // the browser saw: a fresh link from the page is the way out.
-        EngineError::TargetRejected(reason) => fix(reason.clone(), FixAction::RefreshLink),
+        EngineError::TargetRejected(reason) => fix(reason.message(), FixAction::RefreshLink),
         EngineError::Internal(detail) => fix(
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
         ),
-        EngineError::Stalled(secs) => fix(
+        EngineError::Stalled { after } => fix(
             format!(
-                "The server stopped sending data for {secs} seconds. Try again; the part already downloaded is kept."
+                "The server stopped sending data for {}. Try again; the part already downloaded is kept.",
+                how_long(*after)
             ),
             FixAction::Retry,
         ),
@@ -74,11 +75,11 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             "The file changed on the server while it was downloading. Try again to download the new version.",
             FixAction::Retry,
         ),
-        EngineError::Io(e) => disk(e, folder),
-        EngineError::State(_) => fix(
-            "The saved progress of this download is damaged. Try again to start it over.",
-            FixAction::Retry,
-        ),
+        EngineError::Io {
+            action,
+            path,
+            source,
+        } => disk_failure(source, folder, &format!("{action} ({})", path.display())),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
             FixAction::Retry,
@@ -304,7 +305,27 @@ fn http_status(status: u16, previously_worked: bool) -> UserError {
     }
 }
 
-fn disk(error: &io::Error, folder: &Path) -> UserError {
+/// A span of time in words: `less than a second`, `1 second`, `30 seconds`.
+fn how_long(span: std::time::Duration) -> String {
+    match span.as_secs() {
+        0 => "less than a second".to_owned(),
+        1 => "1 second".to_owned(),
+        seconds => format!("{seconds} seconds"),
+    }
+}
+
+/// Describes a file operation that failed while saving into `folder`.
+pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
+    disk_failure(
+        error,
+        folder,
+        &format!("write the file to {}", folder.display()),
+    )
+}
+
+/// Describes a file operation that failed while saving into `folder`; `what`
+/// says what could not be done, as in `create the folder (/x)`.
+fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
         error.kind(),
@@ -334,9 +355,7 @@ fn disk(error: &io::Error, folder: &Path) -> UserError {
             FixAction::ChooseFolder,
         ),
         _ => fix(
-            format!(
-                "Could not write the file to {folder} ({error}). Check the drive, then try again."
-            ),
+            format!("Could not {what}: {error}. Check the drive, then try again."),
             FixAction::Retry,
         ),
     }
@@ -426,10 +445,7 @@ mod tests {
     fn server_trouble_and_network_problems_offer_retry() {
         assert_eq!(action(&status(503), false), Some(FixAction::Retry));
         assert_eq!(action(&status(429), true), Some(FixAction::Retry));
-        assert_eq!(
-            action(&EngineError::Stalled(30), true),
-            Some(FixAction::Retry)
-        );
+        assert_eq!(action(&stalled(), true), Some(FixAction::Retry));
         assert_eq!(
             action(&EngineError::RemoteChanged, true),
             Some(FixAction::Retry)
@@ -440,18 +456,72 @@ mod tests {
         );
     }
 
+    /// A stall as the engine reports it.
+    fn stalled() -> EngineError {
+        EngineError::Stalled {
+            after: std::time::Duration::from_secs(30),
+        }
+    }
+
+    /// A disk error as the engine reports it.
+    fn io(source: io::Error) -> EngineError {
+        EngineError::Io {
+            action: wirecatch_engine::IoAction::Write,
+            path: "/downloads/f.bin.wcpart".into(),
+            source,
+        }
+    }
+
     #[test]
     fn full_disk_asks_for_space() {
-        let kind = EngineError::Io(io::ErrorKind::StorageFull.into());
+        let kind = io(io::ErrorKind::StorageFull.into());
         assert_eq!(action(&kind, true), Some(FixAction::FreeDiskSpace));
-        let raw = EngineError::Io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
+        let raw = io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
         assert_eq!(action(&raw, true), Some(FixAction::FreeDiskSpace));
+    }
+
+    #[test]
+    fn a_stall_says_how_long_in_words() {
+        let said = |after| describe(&EngineError::Stalled { after }, Path::new("/d"), true).message;
+        let short = said(std::time::Duration::from_millis(500));
+        assert!(short.contains("for less than a second"), "{short}");
+        let one = said(std::time::Duration::from_secs(1));
+        assert!(
+            one.contains("for 1 second.") || one.contains("for 1 second "),
+            "{one}"
+        );
+        let many = said(std::time::Duration::from_secs(30));
+        assert!(many.contains("for 30 seconds"), "{many}");
+    }
+
+    #[test]
+    fn a_disk_error_says_what_failed_with_which_file() {
+        let error = EngineError::Io {
+            action: wirecatch_engine::IoAction::Flush,
+            path: "/downloads/f.bin.wcpart".into(),
+            source: io::ErrorKind::Other.into(),
+        };
+        let message = describe(&error, Path::new("/downloads"), true).message;
+        assert_eq!(
+            message,
+            "Could not flush the file to the disk (/downloads/f.bin.wcpart): other error. Check the drive, then try again."
+        );
+        let resize = EngineError::Io {
+            action: wirecatch_engine::IoAction::Resize,
+            path: "/downloads/f.bin.wcpart".into(),
+            source: io::ErrorKind::Other.into(),
+        };
+        let message = describe(&resize, Path::new("/downloads"), true).message;
+        assert!(
+            message.starts_with("Could not set the size of the file (/downloads/f.bin.wcpart)"),
+            "{message}"
+        );
     }
 
     #[test]
     fn forbidden_folder_asks_for_another() {
         let e = describe(
-            &EngineError::Io(io::ErrorKind::PermissionDenied.into()),
+            &io(io::ErrorKind::PermissionDenied.into()),
             Path::new("/locked"),
             false,
         );
@@ -485,9 +555,9 @@ mod tests {
         // The app refused what the server sent (another file than the browser
         // saw, or a sign-in page): a fresh link from the page is the way out.
         let rejected = describe(
-            &EngineError::TargetRejected(
-                "The server sent a web page instead of the file. Refresh the link.".into(),
-            ),
+            &EngineError::TargetRejected(wirecatch_engine::PathRejected::new(
+                "The server sent a web page instead of the file. Refresh the link.",
+            )),
             Path::new("/d"),
             false,
         );
@@ -507,14 +577,13 @@ mod tests {
             status(500),
             status(400),
             EngineError::InvalidUrl("x".into()),
-            EngineError::Stalled(30),
+            stalled(),
             EngineError::RangeNotHonored {
                 expected: 1,
                 got: None,
             },
-            EngineError::State("x".into()),
             EngineError::Cancelled,
-            EngineError::Io(io::ErrorKind::Other.into()),
+            io(io::ErrorKind::Other.into()),
             EngineError::TooManyRedirects { url: "u".into() },
             EngineError::RedirectWithoutLocation {
                 status: 302,

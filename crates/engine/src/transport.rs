@@ -9,13 +9,17 @@ use reqwest::{Client, Response};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::download::{DownloadOptions, Shared};
-use crate::error::{Error, Result};
+use crate::error::{Chain, Error, Result};
 use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
 use crate::http3;
-use crate::worker;
+use crate::net_guard::Guard;
+use crate::options::DownloadOptions;
+use crate::proxy::{self, Scheme};
+use crate::request::RequestContext;
+
+use crate::retry::{Attempts, Next, Refusals};
 
 /// Where the file comes from; shared by every connection of one download.
 #[expect(
@@ -65,18 +69,20 @@ impl Connection {
     /// byte ranges always sends from the start).
     ///
     /// For HTTP, `to` is the end of this one request, which may stop short of
-    /// the segment's end (see [`Shared::request_end`]); FTP sends from `from`
-    /// to the end of the file whatever `to` is.
+    /// the segment's end (see
+    /// [`Shared::request_end`](crate::download::Shared::request_end)); FTP
+    /// sends from `from` to the end of the file whatever `to` is.
     pub async fn open(
         &mut self,
-        shared: &Shared,
+        remote: &Remote,
+        request: &RequestContext,
         from: u64,
         to: u64,
     ) -> Result<(Body, u64), Failure> {
-        match (self, &shared.remote) {
+        match (self, remote) {
             (Connection::Ftp(connection), Remote::Ftp(_)) => {
-                let transfer = connection.open(shared, from).await?;
-                let skip = if shared.ranged { 0 } else { from };
+                let transfer = connection.open(request, from).await?;
+                let skip = if request.ranged { 0 } else { from };
                 Ok((Body::Ftp(transfer), skip))
             }
             #[cfg(feature = "http3")]
@@ -88,19 +94,19 @@ impl Connection {
                 },
             ) => {
                 if let Some(origin) = origin
-                    && shared.ranged
-                    && let Some(body) = http3::open(h3, origin, shared, session, from, to).await?
+                    && request.ranged
+                    && let Some(body) = http3::open(h3, origin, request, session, from, to).await?
                 {
                     return Ok((Body::Http3(Box::new(body)), 0));
                 }
                 let (response, skip) = http::fetch(
                     client,
-                    &shared.url,
+                    &request.url,
                     session,
                     from,
                     to,
-                    shared.ranged,
-                    shared.total,
+                    request.ranged,
+                    request.total,
                 )
                 .await?;
                 Ok((Body::http(response), skip))
@@ -109,12 +115,12 @@ impl Connection {
             (Connection::Http { client }, Remote::Http { session }) => {
                 let (response, skip) = http::fetch(
                     client,
-                    &shared.url,
+                    &request.url,
                     session,
                     from,
                     to,
-                    shared.ranged,
-                    shared.total,
+                    request.ranged,
+                    request.total,
                 )
                 .await?;
                 Ok((Body::http(response), skip))
@@ -221,16 +227,15 @@ pub(crate) async fn open(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
-    guard: Option<http::Guard>,
+    guard: Option<Guard>,
 ) -> Result<Opened> {
     match url.scheme() {
         "http" | "https" => open_http(url, opts, clients, cancel, guard).await,
         "ftp" | "ftps" | "ftpes" => {
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: refuse instead, until FTP proxies are supported.
-            if let Some(variable) =
-                proxy_variable(FTP_PROXY_VARIABLES, &|name| std::env::var_os(name))
-            {
+            let host = url.host_str().unwrap_or_default();
+            if let Some(variable) = proxy::configured(Scheme::Ftp, host, clients.environment()) {
                 return Err(Error::FtpProxyUnsupported {
                     variable: variable.to_string(),
                 });
@@ -250,7 +255,7 @@ pub(crate) async fn open(
             })
         }
         other => Err(Error::InvalidUrl(format!(
-            "{} uses \"{other}\", which Wirecatch cannot download from. Links must start with http, https, ftp, ftps or ftpes",
+            "{} uses \"{other}\", which cannot be downloaded. Links must start with http, https, ftp, ftps or ftpes",
             crate::url::without_password(url)
         ))),
     }
@@ -261,7 +266,7 @@ async fn open_http(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
-    guard: Option<http::Guard>,
+    guard: Option<Guard>,
 ) -> Result<Opened> {
     let (mut session, url) = Session::new(url, opts, cancel.clone());
     session.guard = guard;
@@ -276,6 +281,7 @@ async fn open_http(
             probe.response.remote_addr(),
             clients.tls(),
             opts,
+            clients.environment(),
         )
     } else {
         None
@@ -301,21 +307,6 @@ async fn open_http(
     })
 }
 
-/// The variables a proxy for FTP is commonly set with.
-const FTP_PROXY_VARIABLES: &[&str] = &["FTP_PROXY", "ftp_proxy", "ALL_PROXY", "all_proxy"];
-
-/// The first of `names` that is set (and not empty) in the environment, as
-/// `env` reads it.
-pub(crate) fn proxy_variable(
-    names: &[&'static str],
-    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
-) -> Option<&'static str> {
-    names
-        .iter()
-        .copied()
-        .find(|name| env(name).is_some_and(|value| !value.is_empty()))
-}
-
 /// The first request gets the same retry treatment as every later one: a server
 /// can drop a connection before sending any headers.
 ///
@@ -330,19 +321,20 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, Failure>>,
 {
-    let mut failures = 0;
+    let mut attempts = Attempts::new(Refusals::AsFailures, opts.max_retries);
     loop {
-        match attempt().await {
-            Err(f) if f.error.is_retryable() && failures < opts.max_retries => {
-                failures += 1;
-                let delay = worker::retry_delay(failures, f.retry_after);
-                tracing::warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
-                tokio::select! {
-                    () = cancel.cancelled() => return Err(Error::Cancelled),
-                    () = tokio::time::sleep(delay) => {}
-                }
-            }
-            result => return result.map_err(|f| f.error),
+        let failure = match attempt().await {
+            Ok(value) => return Ok(value),
+            Err(failure) => failure,
+        };
+        let delay = match attempts.after_failure(&failure.error, failure.retry_after, false) {
+            Next::GiveUp => return Err(failure.error),
+            Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
+        };
+        tracing::warn!(error = %Chain(&failure.error), retry_in = ?delay, "first request failed, retrying");
+        tokio::select! {
+            () = cancel.cancelled() => return Err(Error::Cancelled),
+            () = tokio::time::sleep(delay) => {}
         }
     }
 }

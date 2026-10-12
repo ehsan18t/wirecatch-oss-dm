@@ -1,135 +1,82 @@
-//! Single requests that follow the same rules as a download.
-//!
-//! [`download`](crate::download) handles one large file. Some callers instead
-//! need many small requests that belong together: the playlist of a video
-//! stream, its decryption keys and its segments. A [`Fetcher`] makes those
-//! requests with everything a download already does:
-//!
-//! - Credentials in [`DownloadOptions::headers`] (and a `user:password@` in the
-//!   URL it was created with) are sent only to the origin (scheme, host and
-//!   port) of that URL. Requests to any other origin, such as a CDN that serves
-//!   the segments, carry only headers that hold no credentials, exactly as a
-//!   download that redirects to another origin does.
-//! - A redirect from `https` to `http` is refused unless
-//!   [`DownloadOptions::allow_insecure_redirects`] is set.
-//! - Network errors, timeouts and busy answers (`408`, `425`, `429`, `500`,
-//!   `502`, `503`, `504`) are retried with growing pauses, up to
-//!   [`DownloadOptions::max_retries`] attempts in a row without progress. A
-//!   `Retry-After` on a `429` or `503` is honored. An interrupted transfer
-//!   continues from the byte it reached instead of starting over.
-//! - A server that stops sending for [`DownloadOptions::stall_timeout`] counts
-//!   as a failed attempt, and cancelling the token stops every request at once.
-//! - Every byte counts against [`DownloadOptions::rate_limiters`].
-//! - When the URL it was created with is on the internet, requests to the
-//!   local network (loopback, private, link-local, shared CGNAT and other
-//!   non-public addresses, whether written as an IP, also inside an IPv6
-//!   address, or reached through a name or a redirect) are
-//!   refused with [`Error::PrivateNetwork`]: a playlist from a website must
-//!   not make Wirecatch reach the router or other devices at home. See
-//!   [`PrivateNetwork`].
-//!
-//! ```no_run
-//! # async fn example() -> wirecatch_engine::Result<()> {
-//! use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
-//! use wirecatch_engine::units::MIB;
-//!
-//! let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
-//! let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
-//!
-//! // A small resource, read into memory, refused if larger than 1 MiB.
-//! let text = fetcher.get(fetcher.url(), None, MIB).await?;
-//!
-//! // A large one, streamed to disk; here only its first 1000 bytes.
-//! let segment = text.url.join("segment1.ts").unwrap();
-//! fetcher
-//!     .save(&segment, Some(0..1000), "segment1.ts".as_ref(), |bytes| println!("+{bytes}"))
-//!     .await?;
-//! # Ok(())
-//! # }
-//! ```
+//! The [`Fetcher`]: single requests that follow the same rules as a download.
 
-use std::collections::HashMap;
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use futures_util::StreamExt;
-use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use url::{Host, Url};
+use url::Url;
 
-use crate::download::DownloadOptions;
-use crate::error::{Error, Result};
-use crate::http::{self, Clients, Failure, Guard, Session};
-use crate::limiter::RateLimiter;
+use crate::error::{Chain, Error, IoAction, IoContext, Result};
+use crate::http::{self, Clients, Failure, RequestRange, Session};
+use crate::limiter::{Paced, RateLimiter, pace};
+use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
+use crate::options::DownloadOptions;
+use crate::receive::{Received, receive, skip_start};
+use crate::retry::{Attempts, Next, Refusals};
 use crate::units::KIB_USIZE;
-use crate::worker;
 
 /// Size of the write buffer used by [`Fetcher::save`].
 const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 
-/// Whether a [`Fetcher`] may send requests to the local network. These
-/// addresses count as local:
+/// Makes requests that share one set of credentials, limits and rules.
 ///
-/// - loopback (`127.0.0.0/8`, `::1`) and unspecified (`0.0.0.0/8`, `::`);
-/// - private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`,
-///   and the old site-local `fec0::/10`);
-/// - link-local (`169.254.0.0/16`, `fe80::/10`);
-/// - shared address space (`100.64.0.0/10`), used by carrier-grade NAT and by
-///   VPNs such as Tailscale;
-/// - benchmarking (`198.18.0.0/15`), multicast (`224.0.0.0/4`, `ff00::/8`),
-///   and reserved and broadcast (`240.0.0.0/4`, so `255.255.255.255` too);
-/// - local-use NAT64 (`64:ff9b:1::/48`);
-/// - an IPv6 address that only carries an IPv4 one counts as that IPv4
-///   address: IPv4-mapped (`::ffff:10.0.0.1`), IPv4-compatible (`::10.0.0.1`),
-///   NAT64 (`64:ff9b::10.0.0.1`) and 6to4 (`2002:0a00:0001::`).
+/// [`download`](fn@crate::download) handles one large file. Some callers instead
+/// need many small requests that belong together: the playlist of a video
+/// stream, its decryption keys and its segments. A [`Fetcher`] makes those
+/// requests with everything a download already does:
 ///
-/// The origin the fetcher was created for is always allowed.
+/// - Credentials in [`DownloadOptions::headers`] (and a `user:password@` in the
+///   URL it was created with) are sent only to the origin (scheme, host and
+///   port) of that URL. Requests to any other origin, such as a CDN that serves
+///   the segments, carry only headers that hold no credentials, exactly as a
+///   download that redirects to another origin does.
+/// - A redirect from `https` to `http` is refused unless
+///   [`DownloadOptions::allow_insecure_redirects`] is set.
+/// - Network errors, timeouts and busy answers (`408`, `425`, `429`, `500`,
+///   `502`, `503`, `504`) are retried with growing pauses, up to
+///   [`DownloadOptions::max_retries`] attempts in a row without progress. A
+///   `Retry-After` on a `429` or `503` is honored. An interrupted transfer
+///   continues from the byte it reached instead of starting over.
+/// - A server that stops sending for [`DownloadOptions::stall_timeout`] counts
+///   as a failed attempt, and cancelling the token stops every request at once.
+/// - Every byte counts against [`DownloadOptions::rate_limiters`].
+/// - When the URL it was created with is on the internet, requests to the
+///   local network (loopback, private, link-local, shared CGNAT and other
+///   non-public addresses, whether written as an IP, also inside an IPv6
+///   address, or reached through a name or a redirect) are
+///   refused with [`Error::PrivateNetwork`]: a playlist from a website must
+///   not make the program reach the router or other devices at home. See
+///   [`PrivateNetwork`].
 ///
-/// # With a proxy
+/// ```no_run
+/// # async fn example() -> wirecatch_engine::Result<()> {
+/// use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
+/// use wirecatch_engine::units::MIB;
 ///
-/// When a proxy is set in the environment (`HTTP_PROXY`, `HTTPS_PROXY` or
-/// `ALL_PROXY`, in upper or lower case), requests go through it, and the
-/// proxy, not Wirecatch, looks up each name and connects. The guard then
-/// still refuses, before every request and redirect hop, a target written as a
-/// local address and a target whose name resolves only to local addresses on
-/// this computer. It cannot see how the proxy resolves a name, so a name that
-/// the proxy resolves to a local address (because it changed after the check,
-/// or because only the proxy knows it, such as an intranet host) is not
-/// caught. The proxy itself is trusted, since the user or their administrator
-/// set it, not a website: its own address may be local.
+/// let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
+/// let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
 ///
-/// Requests are not refused outright while a proxy is set, because on
-/// networks that need one, every stream would then fail; such a proxy is the
-/// network's own gateway and applies its own rules. Use
-/// [`PrivateNetwork::Allow`] if those rules should decide alone, or unset the
-/// proxy for full protection.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PrivateNetwork {
-    /// Block when the fetcher's own URL is on the internet (the usual case
-    /// for a video from a website); allow when it is itself on the local
-    /// network, such as a media server at home.
-    #[default]
-    Auto,
-    /// Always block (except the fetcher's own origin).
-    Block,
-    /// Never block.
-    Allow,
-}
-
-/// Makes requests that share one set of credentials, limits and rules; see the
-/// [module documentation](self).
+/// // A small resource, read into memory, refused if larger than 1 MiB.
+/// let text = fetcher.get(fetcher.url(), None, MIB).await?;
+///
+/// // A large one, streamed to disk; here only its first 1000 bytes.
+/// let segment = text.url.join("segment1.ts").unwrap();
+/// fetcher
+///     .save(&segment, Some(0..1000), "segment1.ts".as_ref(), |bytes| println!("+{bytes}"))
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// It is cheap to clone, and clones share everything, so one `Fetcher` can be
 /// used from many tasks at once. It opens up to
@@ -223,7 +170,13 @@ impl Fetcher {
                 .map_err(|e| Error::task(&e))??
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
-        let protection = private_guard(&url, private_network, options.stall_timeout).await;
+        let protection = private_guard(
+            &url,
+            private_network,
+            options.stall_timeout,
+            clients.environment(),
+        )
+        .await;
         let blocking_private = protection.is_some();
         let resolver = protection.map(|p| {
             session.guard = Some(p.guard);
@@ -310,7 +263,7 @@ impl Fetcher {
         let answer = self.transfer(&url, range, &mut sink, &mut |_| {}).await?;
         let body = match sink {
             Sink::Memory { buf, .. } => buf.freeze(),
-            Sink::File(_) => Bytes::new(),
+            Sink::File { .. } => Bytes::new(),
         };
         Ok(Fetched {
             body,
@@ -327,6 +280,10 @@ impl Fetcher {
     /// with the number of new bytes each time some arrive; bytes are never
     /// counted twice, even when a retry has to ask for the resource again.
     ///
+    /// Cancelling (by the token or by dropping this future) keeps what arrived
+    /// in the file; once the future has been polled, the file may already have
+    /// been created or truncated even if no byte arrived.
+    ///
     /// # Errors
     ///
     /// The same as [`Fetcher::get`] (without the size limit), plus
@@ -340,8 +297,13 @@ impl Fetcher {
         mut on_bytes: impl FnMut(u64) + Send,
     ) -> Result<u64> {
         let url = clean_url(url)?;
-        let file = tokio::fs::File::create(path).await?;
-        let mut sink = Sink::File(BufWriter::with_capacity(SAVE_BUFFER, file));
+        let file = tokio::fs::File::create(path)
+            .await
+            .context(IoAction::CreateFile, path)?;
+        let mut sink = Sink::File {
+            file: BufWriter::with_capacity(SAVE_BUFFER, file),
+            path: path.to_path_buf(),
+        };
         if range.as_ref().is_some_and(|r| r.end <= r.start) {
             return Ok(0);
         }
@@ -374,29 +336,26 @@ impl Fetcher {
             end: range.map(|r| r.end),
             written: 0,
         };
-        let mut failures = 0u32;
+        let mut attempts = Attempts::new(Refusals::AsFailures, self.inner.max_retries);
         loop {
             let before = position.written;
             let attempt = self
                 .attempt(client, url, &mut position, sink, on_bytes)
                 .await;
-            match attempt {
+            let f = match attempt {
                 Ok(answer) => return Ok(answer),
                 Err(_) if self.inner.cancel.is_cancelled() => return Err(Error::Cancelled),
-                Err(f) if f.error.is_retryable() && failures < self.inner.max_retries => {
-                    failures = if position.written > before {
-                        0
-                    } else {
-                        failures + 1
-                    };
-                    let delay = worker::retry_delay(failures.max(1), f.retry_after);
-                    warn!(error = %f.error, %url, retry_in = ?delay, "request failed, retrying");
-                    tokio::select! {
-                        () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
-                        () = tokio::time::sleep(delay) => {}
-                    }
-                }
-                Err(f) => return Err(f.error),
+                Err(f) => f,
+            };
+            let progressed = position.written > before;
+            let delay = match attempts.after_failure(&f.error, f.retry_after, progressed) {
+                Next::GiveUp => return Err(f.error),
+                Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
+            };
+            warn!(error = %Chain(&f.error), %url, retry_in = ?delay, "request failed, retrying");
+            tokio::select! {
+                () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
+                () = tokio::time::sleep(delay) => {}
             }
         }
     }
@@ -429,29 +388,19 @@ impl Fetcher {
             .map(str::to_string);
 
         let stall = self.inner.stall_timeout;
-        let mut body = response.bytes_stream();
+        let mut response = response;
         loop {
             let at = position.base + position.written;
             if position.end.is_some_and(|end| at >= end) {
                 break;
             }
-            let next = tokio::select! {
-                biased;
-                () = self.inner.cancel.cancelled() => return Err(Error::Cancelled.into()),
-                next = tokio::time::timeout(stall, body.next()) => next,
+            let next = async { response.chunk().await.map_err(Error::network) };
+            let chunk = match receive(&self.inner.cancel, stall, next).await? {
+                Received::Data(chunk) => chunk,
+                Received::End => break,
+                Received::Cancelled => return Err(Error::Cancelled.into()),
             };
-            let chunk = match next {
-                Err(_) => return Err(Error::Stalled(stall.as_secs()).into()),
-                Ok(None) => break,
-                Ok(Some(Err(e))) => return Err(Error::network(e).into()),
-                Ok(Some(Ok(chunk))) => chunk,
-            };
-            let mut data = &chunk[..];
-            if skip > 0 {
-                let n = clamp_to_len(skip, data.len());
-                data = &data[n..];
-                skip -= n as u64;
-            }
+            let mut data = skip_start(&chunk, &mut skip);
             if let Some(end) = position.end {
                 data = &data[..clamp_to_len(end.saturating_sub(at), data.len())];
             }
@@ -462,8 +411,8 @@ impl Fetcher {
             let n = data.len() as u64;
             position.written += n;
             on_bytes(n);
-            for limiter in &self.inner.rate_limiters {
-                limiter.consume(n).await;
+            if pace(&self.inner.rate_limiters, n, &self.inner.cancel).await == Paced::Cancelled {
+                return Err(Error::Cancelled.into());
             }
         }
 
@@ -490,27 +439,17 @@ impl Fetcher {
         from: u64,
         end: Option<u64>,
     ) -> Result<(Response, u64), Failure> {
-        let range = match (from, end) {
-            (0, None) => None,
-            (from, None) => Some(format!("bytes={from}-")),
-            (from, Some(end)) => Some(format!("bytes={from}-{}", end.saturating_sub(1))),
-        };
-        let response = http::send(client, url, &self.inner.session, range.as_deref()).await?;
+        let range = RequestRange::up_to(from, end)
+            .ok_or_else(|| http::empty_range(from, end.unwrap_or(from)))?;
+        let range = (!range.is_whole()).then_some(range);
+        let response = http::send(client, url, &self.inner.session, range).await?;
         match (response.status(), range) {
             (StatusCode::OK, None) => Ok((response, 0)),
             // The server ignores ranges and sends everything.
             (StatusCode::OK, Some(_)) => Ok((response, from)),
             (StatusCode::PARTIAL_CONTENT, Some(_)) => {
-                let got = http::content_range(response.headers()).map(|c| c.start);
-                if got == Some(from) {
-                    Ok((response, 0))
-                } else {
-                    Err(Error::RangeNotHonored {
-                        expected: from,
-                        got,
-                    }
-                    .into())
-                }
+                http::check_partial(response.headers(), from, None)?;
+                Ok((response, 0))
             }
             _ => Err(Failure::status(&response)),
         }
@@ -551,7 +490,11 @@ enum Sink {
         limit: u64,
         url: String,
     },
-    File(BufWriter<tokio::fs::File>),
+    File {
+        file: BufWriter<tokio::fs::File>,
+        /// Where it is, for errors.
+        path: PathBuf,
+    },
 }
 
 impl Sink {
@@ -586,300 +529,15 @@ impl Sink {
                 buf.extend_from_slice(data);
                 Ok(())
             }
-            Sink::File(file) => Ok(file.write_all(data).await?),
+            Sink::File { file, path } => file.write_all(data).await.context(IoAction::Write, path),
         }
     }
 
     async fn finish(&mut self) -> Result<()> {
-        if let Sink::File(file) = self {
-            file.flush().await?;
+        if let Sink::File { file, path } = self {
+            file.flush().await.context(IoAction::Write, path)?;
         }
         Ok(())
-    }
-}
-
-/// Whether an address is on the local network or otherwise not a public
-/// internet host; see [`PrivateNetwork`] for the list. An IPv6 address that
-/// carries an IPv4 one (mapped, compatible, NAT64 or 6to4) counts as that
-/// IPv4 address.
-pub(crate) fn is_private(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            a == 0 // "this network", 0.0.0.0/8
-                || v4.is_loopback() // 127.0.0.0/8
-                || v4.is_private() // 10/8, 172.16/12, 192.168/16
-                || v4.is_link_local() // 169.254.0.0/16
-                || (a == 100 && b & 0xc0 == 64) // shared (CGNAT, Tailscale), 100.64.0.0/10
-                || (a == 198 && b & 0xfe == 18) // benchmarking, 198.18.0.0/15
-                || v4.is_multicast() // 224.0.0.0/4
-                || a >= 240 // reserved and broadcast, 240.0.0.0/4
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = embedded_ipv4(v6) {
-                return is_private(IpAddr::V4(v4));
-            }
-            let first = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast() // ff00::/8
-                || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
-                || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
-                || (first & 0xffc0) == 0xfec0 // old site-local, fec0::/10
-                // Local-use NAT64, 64:ff9b:1::/48: translated by a gateway on
-                // the local network, to wherever it was set up for.
-                || v6.segments()[..3] == [0x64, 0xff9b, 1]
-        }
-    }
-}
-
-/// The IPv4 address inside an IPv6 one that is only a way of writing or
-/// reaching it: IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`,
-/// NAT64 `64:ff9b::a.b.c.d` and 6to4 `2002:aabb:ccdd::/48`.
-fn embedded_ipv4(v6: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
-    let last = |hi: u16, lo: u16| {
-        let [first, second] = hi.to_be_bytes();
-        let [third, fourth] = lo.to_be_bytes();
-        std::net::Ipv4Addr::new(first, second, third, fourth)
-    };
-    if let Some(v4) = v6.to_ipv4_mapped() {
-        return Some(v4);
-    }
-    match v6.segments() {
-        // `::` and `::1` are themselves, not IPv4 addresses.
-        [0, 0, 0, 0, 0, 0, 0, 0 | 1] => None,
-        [0, 0, 0, 0, 0, 0, hi, lo] | [0x64, 0xff9b, 0, 0, 0, 0, hi, lo] | [0x2002, hi, lo, ..] => {
-            Some(last(hi, lo))
-        }
-        _ => None,
-    }
-}
-
-/// Every address `host` resolves to, or nothing if it does not resolve (the
-/// request then fails on its own).
-async fn resolve(host: &str, port: u16, timeout: Duration) -> Vec<IpAddr> {
-    match tokio::time::timeout(timeout, tokio::net::lookup_host((host, port))).await {
-        Ok(Ok(addrs)) => addrs.map(|a| a.ip()).collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// The addresses of the host of `url`: the address itself, or what the name
-/// resolves to (nothing if it does not resolve).
-async fn host_addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
-    match url.host() {
-        Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
-        Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
-        Some(Host::Domain(name)) => {
-            let port = url.port_or_known_default().unwrap_or(80);
-            resolve(name, port, timeout).await
-        }
-        None => Vec::new(),
-    }
-}
-
-/// Local addresses the starting host may keep using once the guard is on.
-/// Only a host that was entirely local (the user deliberately fetching from
-/// their own network) keeps them; a host that mixed public and local answers
-/// gets none, so a hostile name server cannot slip a local address in beside a
-/// public one.
-fn pinned_addresses(start: &[IpAddr]) -> Vec<IpAddr> {
-    if all_private(start) {
-        start.to_vec()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Whether a host with these addresses is on the local network: it has
-/// addresses and all of them are local. A host that does not resolve counts as
-/// public, which keeps the guard on.
-fn all_private(addrs: &[IpAddr]) -> bool {
-    !addrs.is_empty() && addrs.iter().all(|ip| is_private(*ip))
-}
-
-/// What keeps requests that start at one URL away from the local network: a
-/// check before every request and redirect hop, and a name resolver that never
-/// hands out a local address (so a name that changes its address after the
-/// check, DNS rebinding, cannot reach one either). Used by the [`Fetcher`] and
-/// by downloads with [`DownloadOptions::private_network`].
-pub(crate) struct PrivateGuard {
-    pub guard: Guard,
-    pub resolver: Arc<FilteringResolver>,
-}
-
-/// The protection `rule` asks for, for requests that start at `url`; `None`
-/// when local addresses are allowed.
-pub(crate) async fn private_guard(
-    url: &Url,
-    rule: PrivateNetwork,
-    timeout: Duration,
-) -> Option<PrivateGuard> {
-    if rule == PrivateNetwork::Allow {
-        return None;
-    }
-    // The addresses the starting host has right now. Only these may be on the
-    // local network later: a name that switches to a local address after this
-    // check (DNS rebinding) is filtered like any other.
-    let start_addrs = host_addresses(url, timeout).await;
-    if rule == PrivateNetwork::Auto && all_private(&start_addrs) {
-        return None;
-    }
-    Some(guard_from(url, &start_addrs, timeout))
-}
-
-/// The protection for requests starting at `url`, whose host had `start_addrs`.
-pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -> PrivateGuard {
-    let check = Arc::new(NetworkGuard::new(url, timeout));
-    PrivateGuard {
-        guard: Guard(Arc::new(move |target: &Url| {
-            let (check, target) = (check.clone(), target.clone());
-            Box::pin(async move { check.check(&target).await })
-        })),
-        resolver: Arc::new(FilteringResolver {
-            exempt: url.host_str().map(str::to_string),
-            pinned: pinned_addresses(start_addrs),
-            proxies: proxy_hosts(&|name| std::env::var_os(name)),
-        }),
-    }
-}
-
-/// The variables the HTTP client takes a proxy from.
-const PROXY_VARIABLES: &[&str] = &[
-    "ALL_PROXY",
-    "all_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "HTTPS_PROXY",
-    "https_proxy",
-];
-
-/// The host names of the proxies set in the environment, as `env` reads it.
-/// The HTTP client connects to these itself, so their names reach the
-/// resolver; a proxy given as an IP address needs no entry.
-fn proxy_hosts(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<String> {
-    let mut hosts = Vec::new();
-    for name in PROXY_VARIABLES {
-        let Some(value) = env(name) else { continue };
-        let value = value.to_string_lossy();
-        let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        // Like the HTTP client, a value without a scheme is an http proxy.
-        let parsed = if value.contains("://") {
-            Url::parse(value)
-        } else {
-            Url::parse(&format!("http://{value}"))
-        };
-        if let Ok(url) = parsed
-            && let Some(Host::Domain(host)) = url.host()
-            && !hosts.iter().any(|h| h == host)
-        {
-            hosts.push(host.to_string());
-        }
-    }
-    hosts
-}
-
-/// Refuses requests to the local network, before they are sent; checked for
-/// every request and every redirect hop.
-struct NetworkGuard {
-    /// The fetcher's own origin, always allowed.
-    origin: url::Origin,
-    timeout: Duration,
-    /// Names already checked, and whether they were refused.
-    names: Mutex<HashMap<String, bool>>,
-}
-
-impl NetworkGuard {
-    fn new(url: &Url, timeout: Duration) -> Self {
-        Self {
-            origin: url.origin(),
-            timeout,
-            names: Mutex::new(HashMap::new()),
-        }
-    }
-
-    /// Locks the names already checked. A lock poisoned by a panic in another
-    /// holder is taken over as it is, for the reason
-    /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives; the cache
-    /// holds only finished answers, so it is never half written either.
-    fn names(&self) -> MutexGuard<'_, HashMap<String, bool>> {
-        self.names.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    async fn check(&self, url: &Url) -> Result<()> {
-        if url.origin() == self.origin {
-            return Ok(());
-        }
-        let refused = match url.host() {
-            Some(Host::Ipv4(ip)) => is_private(IpAddr::V4(ip)),
-            Some(Host::Ipv6(ip)) => is_private(IpAddr::V6(ip)),
-            Some(Host::Domain(name)) => {
-                let known = self.names().get(name).copied();
-                if let Some(refused) = known {
-                    refused
-                } else {
-                    let port = url.port_or_known_default().unwrap_or(80);
-                    let addrs = resolve(name, port, self.timeout).await;
-                    // Refused when no address outside the local network
-                    // is left, the same rule the resolver applies.
-                    let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
-                    self.names().insert(name.to_string(), refused);
-                    refused
-                }
-            }
-            None => false,
-        };
-        if refused {
-            Err(Error::PrivateNetwork {
-                url: url.to_string(),
-            })
-        } else {
-            Ok(())
-        }
-    }
-}
-
-/// Resolves names like the system does, minus local network addresses: the
-/// connection itself can then never reach one, even if a name's address
-/// changes between the check and the connection.
-pub(crate) struct FilteringResolver {
-    /// The fetcher's own host.
-    exempt: Option<String>,
-    /// Local addresses the fetcher's own host had when the fetcher was created;
-    /// the only local addresses it may use. Empty when it started public, so a
-    /// later switch to a local address is filtered (DNS rebinding).
-    pinned: Vec<IpAddr>,
-    /// The proxies the user set (see [`proxy_hosts`]), resolved without the
-    /// filter: the connection to a proxy is the user's choice, and a request
-    /// that names one as its target is still checked by the [`NetworkGuard`].
-    proxies: Vec<String>,
-}
-
-impl Resolve for FilteringResolver {
-    fn resolve(&self, name: Name) -> Resolving {
-        let host = name.as_str().to_string();
-        let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
-        let pinned = if self.exempt.as_deref() == Some(host.as_str()) {
-            self.pinned.clone()
-        } else {
-            Vec::new()
-        };
-        Box::pin(async move {
-            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
-                .await?
-                .filter(|a| trusted || !is_private(a.ip()) || pinned.contains(&a.ip()))
-                .collect();
-            if addrs.is_empty() {
-                return Err(format!(
-                    "{host} points to a device on your own network, which Wirecatch blocks for safety"
-                )
-                .into());
-            }
-            Ok(Box::new(addrs.into_iter()) as Addrs)
-        })
     }
 }
 
@@ -919,265 +577,6 @@ mod tests {
             clean_url(&url).unwrap().as_str(),
             "https://cdn.example/a.ts"
         );
-    }
-
-    #[test]
-    fn local_network_addresses_are_recognized() {
-        for private in [
-            "127.0.0.1",
-            "127.255.0.9",
-            "10.1.2.3",
-            "172.16.0.1",
-            "172.31.255.255",
-            "192.168.1.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "::1",
-            "::",
-            "fc00::1",
-            "fd12:3456::1",
-            "fe80::1",
-            "::ffff:192.168.0.1",
-            "::ffff:127.0.0.1",
-            // Shared address space: carrier-grade NAT, Tailscale.
-            "100.64.0.1",
-            "100.100.100.100",
-            "100.127.255.255",
-            // Benchmarking.
-            "198.18.0.1",
-            "198.19.255.255",
-            // Multicast, reserved and broadcast.
-            "224.0.0.1",
-            "239.255.255.250",
-            "240.0.0.1",
-            "255.255.255.255",
-            "ff02::1",
-            "ff05::1:3",
-            // Old site-local IPv6.
-            "fec0::1",
-            // IPv4 inside IPv6: compatible, NAT64, local-use NAT64, 6to4.
-            "::127.0.0.1",
-            "::10.0.0.1",
-            "::0.0.0.2",
-            "64:ff9b::7f00:1",
-            "64:ff9b::192.168.1.1",
-            "64:ff9b::100.64.0.1",
-            "64:ff9b:1::1",
-            "64:ff9b:1:abcd::8.8.8.8",
-            "2002:7f00:1::",
-            "2002:c0a8:0101::1",
-            "2002:a9fe:a9fe:1::5",
-            "2002:6440:1::",
-        ] {
-            assert!(is_private(private.parse().unwrap()), "{private}");
-        }
-        for public in [
-            "8.8.8.8",
-            "172.32.0.1",
-            "192.169.0.1",
-            "100.63.255.255",
-            "100.128.0.1",
-            "198.17.255.255",
-            "198.20.0.1",
-            "223.255.255.255",
-            "2001:4860:4860::8888",
-            "::ffff:8.8.8.8",
-            "::8.8.8.8",
-            "64:ff9b::8.8.8.8",
-            "64:ff9b::93.184.215.14",
-            "2002:0808:0808::1",
-            "fe00::1",
-            "2606:4700::1111",
-        ] {
-            assert!(!is_private(public.parse().unwrap()), "{public}");
-        }
-    }
-
-    #[tokio::test]
-    async fn the_guard_refuses_local_addresses_but_not_its_own_origin() {
-        let start = Url::parse("http://127.0.0.1:8000/master.m3u8").unwrap();
-        let guard = NetworkGuard::new(&start, Duration::from_secs(5));
-        let ok = |u: &str| Url::parse(u).unwrap();
-        assert!(
-            guard
-                .check(&ok("http://127.0.0.1:8000/seg.ts"))
-                .await
-                .is_ok()
-        );
-        for refused in [
-            "http://127.0.0.1:8001/seg.ts",
-            "http://10.0.0.1/seg.ts",
-            "http://[::1]:8000/seg.ts",
-            "http://169.254.169.254/latest/meta-data",
-            "http://[fe80::1]/k",
-            "https://192.168.1.1/key",
-            "http://localhost:8000/seg.ts",
-            "http://100.100.100.100/",
-            "http://[64:ff9b::a9fe:a9fe]/latest/meta-data",
-            "http://[2002:c0a8:101::1]/admin",
-            "http://[::192.168.1.1]/",
-            "http://255.255.255.255/",
-        ] {
-            let error = guard.check(&ok(refused)).await.unwrap_err();
-            assert!(matches!(error, Error::PrivateNetwork { .. }), "{refused}");
-        }
-        assert!(
-            guard
-                .check(&ok("http://93.184.215.14/seg.ts"))
-                .await
-                .is_ok()
-        );
-    }
-
-    #[tokio::test]
-    async fn the_resolver_never_hands_out_local_addresses() {
-        use std::str::FromStr;
-        let resolver = FilteringResolver {
-            exempt: Some("own-host.invalid".into()),
-            pinned: Vec::new(),
-            proxies: Vec::new(),
-        };
-        // `localhost` resolves only to loopback addresses, all filtered out.
-        let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
-            Ok(addrs) => panic!("resolved to {:?}", addrs.collect::<Vec<_>>()),
-            Err(error) => error,
-        };
-        assert!(error.to_string().contains("blocks for safety"), "{error}");
-        // The fetcher's own host keeps the local addresses it had at creation.
-        let start = host_addresses(
-            &Url::parse("http://localhost/").unwrap(),
-            Duration::from_secs(5),
-        )
-        .await;
-        assert!(all_private(&start), "localhost resolved to {start:?}");
-        let resolver = FilteringResolver {
-            exempt: Some("localhost".into()),
-            pinned: start.clone(),
-            proxies: Vec::new(),
-        };
-        let addrs: Vec<_> = resolver
-            .resolve(Name::from_str("localhost").unwrap())
-            .await
-            .unwrap()
-            .collect();
-        assert!(!addrs.is_empty() && addrs.iter().all(|a| start.contains(&a.ip())));
-    }
-
-    /// A download's host looked public when it started; it now resolves to a
-    /// local address, as a rebinding name server would make it. No connection
-    /// of the download may reach that address.
-    #[tokio::test]
-    async fn a_download_cannot_be_rebound_to_the_local_network() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let accepted = Arc::new(AtomicUsize::new(0));
-        let counter = accepted.clone();
-        tokio::spawn(async move {
-            while let Ok((_socket, _)) = listener.accept().await {
-                counter.fetch_add(1, Ordering::SeqCst);
-            }
-        });
-        let url = Url::parse(&format!("http://localhost:{port}/video.mp4")).unwrap();
-        // The addresses seen at the start: public (none of them local).
-        let guard = guard_from(
-            &url,
-            &["93.184.215.14".parse().unwrap()],
-            Duration::from_secs(5),
-        );
-        let dir = wirecatch_test_support::private_dir("rebind").unwrap();
-        let mut request = crate::DownloadRequest::new(url, dir.path());
-        request.options.max_retries = 0;
-        request.options.connect_timeout = Duration::from_secs(5);
-        let clients = crate::http::Clients::new(&request.options).unwrap();
-        let result = crate::download::download_guarded(
-            request,
-            Arc::new(crate::Progress::default()),
-            CancellationToken::new(),
-            clients,
-            Some(guard),
-        )
-        .await;
-        assert!(result.is_err(), "the download went through");
-        assert_eq!(
-            accepted.load(Ordering::SeqCst),
-            0,
-            "a connection reached the local address"
-        );
-        dir.remove().unwrap();
-    }
-
-    #[test]
-    fn a_host_mixing_public_and_local_answers_keeps_no_local_address() {
-        let public: IpAddr = "93.184.215.14".parse().unwrap();
-        let local: IpAddr = "127.0.0.1".parse().unwrap();
-        assert_eq!(
-            pinned_addresses(&[public, local]),
-            [] as [std::net::IpAddr; 0]
-        );
-        assert_eq!(pinned_addresses(&[public]), [] as [std::net::IpAddr; 0]);
-        assert_eq!(pinned_addresses(&[]), [] as [std::net::IpAddr; 0]);
-        assert_eq!(pinned_addresses(&[local]), vec![local]);
-    }
-
-    #[tokio::test]
-    async fn the_own_host_cannot_switch_to_a_local_address_later() {
-        use std::str::FromStr;
-        // The own host looked public when the fetcher was created (no pinned
-        // local addresses); it now resolves to loopback, as a rebinding DNS
-        // server would make it. Those addresses must be filtered.
-        let resolver = FilteringResolver {
-            exempt: Some("localhost".into()),
-            pinned: Vec::new(),
-            proxies: Vec::new(),
-        };
-        let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
-            Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
-            Err(error) => error,
-        };
-        assert!(error.to_string().contains("blocks for safety"), "{error}");
-    }
-
-    #[test]
-    fn proxy_host_names_come_from_the_environment() {
-        let env = |values: &'static [(&'static str, &'static str)]| {
-            move |name: &str| {
-                values
-                    .iter()
-                    .find(|(n, _)| *n == name)
-                    .map(|(_, v)| std::ffi::OsString::from(v))
-            }
-        };
-        let hosts = proxy_hosts(&env(&[
-            ("HTTPS_PROXY", "http://user:secret@Proxy.Corp.example:8080"),
-            ("http_proxy", "proxy.corp.example:3128"),
-            ("ALL_PROXY", "socks5://socks.lan:1080"),
-            ("all_proxy", "http://10.0.0.5:8080"),
-            ("HTTP_PROXY", "  "),
-            ("https_proxy", "http://[::1]:8080"),
-        ]));
-        assert_eq!(hosts, ["socks.lan", "proxy.corp.example"]);
-        assert_eq!(
-            proxy_hosts(&env(&[("NO_PROXY", "localhost")])),
-            [] as [std::string::String; 0]
-        );
-    }
-
-    #[tokio::test]
-    async fn the_proxy_the_user_set_may_be_local() {
-        use std::str::FromStr;
-        let resolver = FilteringResolver {
-            exempt: Some("own-host.invalid".into()),
-            pinned: Vec::new(),
-            proxies: vec!["localhost".into()],
-        };
-        let addrs: Vec<_> = resolver
-            .resolve(Name::from_str("localhost").unwrap())
-            .await
-            .unwrap()
-            .collect();
-        assert!(!addrs.is_empty() && addrs.iter().all(|a| a.ip().is_loopback()));
     }
 
     #[test]

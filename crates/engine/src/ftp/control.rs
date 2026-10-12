@@ -1,6 +1,7 @@
 //! The FTP control connection: sockets that may switch to TLS, sending
 //! commands and reading replies, and parsing the replies the engine relies on.
 
+use super::reply;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -15,7 +16,7 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::debug;
 
-use crate::error::Error;
+use crate::error::{Chain, Error};
 use crate::http::Failure;
 
 /// Longest reply line accepted. Real replies are far shorter; the cap keeps a
@@ -25,6 +26,11 @@ const MAX_LINE: u64 = 4096;
 const MAX_LINES: usize = 256;
 /// Most reply text kept for an error message.
 const MAX_TEXT: usize = 512;
+
+/// Entries in one control connection's TLS session cache: room for one
+/// server's tickets. rustls keeps a server's entry only while the cache holds
+/// more than one server, so 8 or fewer would throw every ticket away at once.
+const SESSION_CACHE_ENTRIES: usize = 32;
 
 /// A socket, plain or encrypted.
 pub(crate) enum Stream {
@@ -58,7 +64,7 @@ impl Stream {
         // Commands are short and each waits for its reply, so Nagle's delay
         // would only slow them; without the option they still work.
         if let Err(e) = tcp.set_nodelay(true) {
-            debug!(error = %e, "could not turn off Nagle's algorithm on an FTP connection");
+            debug!(error = %Chain(&e), "could not turn off Nagle's algorithm on an FTP connection");
         }
         Ok(Stream::Plain(tcp))
     }
@@ -117,10 +123,7 @@ impl Tls {
     /// a different session than its control connection.
     pub fn for_new_session(&self) -> Self {
         let mut config = (*self.config).clone();
-        // Room for one server's tickets: rustls keeps a server's entry only
-        // while the cache holds more than one server, so 8 or fewer would
-        // throw every ticket away at once.
-        config.resumption = rustls::client::Resumption::in_memory_sessions(32);
+        config.resumption = rustls::client::Resumption::in_memory_sessions(SESSION_CACHE_ENTRIES);
         Self::new(config, self.server_name.clone())
     }
 }
@@ -176,17 +179,17 @@ pub(crate) struct Reply {
 impl Reply {
     /// 1xx: the command started and another reply follows.
     pub fn is_preliminary(&self) -> bool {
-        (100..200).contains(&self.code)
+        reply::is_preliminary(self.code)
     }
 
     /// 2xx: the command succeeded.
     pub fn is_success(&self) -> bool {
-        (200..300).contains(&self.code)
+        reply::is_success(self.code)
     }
 
     /// 5xx: the command will never succeed as sent.
     pub fn is_permanent_failure(&self) -> bool {
-        (500..600).contains(&self.code)
+        reply::is_permanent_failure(self.code)
     }
 
     /// The text cut to a length fit for an error message.
@@ -255,7 +258,7 @@ impl Control {
         match tokio::time::timeout(self.stall, write).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(Error::socket("the FTP control connection failed", e, false).into()),
-            Err(_) => Err(Error::Stalled(self.stall.as_secs()).into()),
+            Err(_) => Err(Error::Stalled { after: self.stall }.into()),
         }
     }
 
@@ -267,7 +270,7 @@ impl Control {
                 Ok(reply)
             }
             Ok(Err(e)) => Err(Error::socket("the FTP control connection failed", e, false).into()),
-            Err(_) => Err(Error::Stalled(self.stall.as_secs()).into()),
+            Err(_) => Err(Error::Stalled { after: self.stall }.into()),
         }
     }
 
@@ -342,7 +345,7 @@ fn split_reply_line(line: &str) -> io::Result<(u16, char, &str)> {
     let code: u16 = line[..3]
         .parse()
         .map_err(|_| invalid("a reply that is not FTP"))?;
-    if !(100..600).contains(&code) {
+    if !reply::is_reply_code(code) {
         return Err(invalid("a reply that is not FTP"));
     }
     match bytes.get(3) {

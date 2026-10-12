@@ -1273,11 +1273,7 @@ fn refresh(message: &str) -> UserError {
 
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
-    user_error::describe(
-        &EngineError::Io(std::io::Error::new(error.kind(), error.to_string())),
-        folder,
-        false,
-    )
+    user_error::disk(error, folder)
 }
 
 /// A stream error, worded for a person with the fix to offer.
@@ -1289,11 +1285,7 @@ pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> U
     };
     match error {
         E::Request(e) => user_error::describe(e, folder, false),
-        E::Io(e) => user_error::describe(
-            &EngineError::Io(std::io::Error::new(e.kind(), e.to_string())),
-            folder,
-            false,
-        ),
+        E::Io(e) => user_error::disk(e, folder),
         // A track that is not a real video or audio file: the link most
         // likely does not point at the video any more.
         E::UnknownFormat { role } => crate::media::merge::unknown_format(role),

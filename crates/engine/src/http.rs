@@ -1,27 +1,31 @@
 //! HTTP requests: client setup, the first request, and ranged requests.
 
-use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
 use percent_encoding::percent_decode_str;
 use reqwest::header::{
-    ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION,
-    CONTENT_RANGE, CONTENT_TYPE, DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED,
-    LOCATION, PRAGMA, RANGE, REFERER, RETRY_AFTER, USER_AGENT,
+    ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, DNT,
+    ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA, RANGE, REFERER,
+    RETRY_AFTER, USER_AGENT,
 };
-use reqwest::{Client, Response, StatusCode, redirect};
+use reqwest::{Client, Response, StatusCode};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::debug;
 use url::Url;
 
-use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::naming;
-use crate::segment::UNKNOWN_END;
+use crate::net_guard::Guard;
+use crate::options::DownloadOptions;
 
-/// Most redirects followed for one request, the same limit browsers use.
-const MAX_REDIRECTS: usize = 20;
+mod client;
+mod range;
+pub(crate) mod status;
+
+pub(crate) use client::Clients;
+pub(crate) use range::{RequestRange, check_partial, content_range};
+pub(crate) use status::{MAX_REDIRECTS, is_busy};
 
 /// Longest `Retry-After` the engine waits for; a longer one is cut to this.
 pub(crate) const MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
@@ -88,19 +92,22 @@ impl From<reqwest::Error> for Failure {
 impl Failure {
     /// A response whose status is not the one wanted.
     pub(crate) fn status(response: &Response) -> Self {
-        let status = response.status();
-        let retry_after = matches!(
-            status,
-            StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
-        )
-        .then(|| response.headers().get(RETRY_AFTER))
-        .flatten()
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| parse_retry_after(v, SystemTime::now()));
+        Self::from_status(response.status(), response.headers(), response.url())
+    }
+
+    /// An answer with `status` and `headers` from `url` that is not the one
+    /// wanted, over any version of HTTP: a busy answer keeps the wait its
+    /// `Retry-After` asks for.
+    pub(crate) fn from_status(status: StatusCode, headers: &HeaderMap, url: &Url) -> Self {
+        let retry_after = is_busy(status)
+            .then(|| headers.get(RETRY_AFTER))
+            .flatten()
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| parse_retry_after(v, SystemTime::now()));
         Self {
             error: Error::HttpStatus {
                 status: status.as_u16(),
-                url: response.url().to_string(),
+                url: url.to_string(),
             },
             retry_after,
         }
@@ -219,22 +226,6 @@ pub(crate) struct Session {
     pub guard: Option<Guard>,
 }
 
-/// The future a [`Guard`] returns.
-pub(crate) type GuardCheck =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
-
-/// Decides whether a request may go to an address; an error stops it before
-/// anything is sent. Used by [`Fetcher`](crate::Fetcher) to keep streams away
-/// from the local network.
-#[derive(Clone)]
-pub(crate) struct Guard(pub Arc<dyn Fn(&Url) -> GuardCheck + Send + Sync>);
-
-impl std::fmt::Debug for Guard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Guard")
-    }
-}
-
 impl Session {
     /// Returns the session and the URL to request (credentials moved out of it).
     pub fn new(url: &Url, opts: &DownloadOptions, cancel: CancellationToken) -> (Self, Url) {
@@ -251,144 +242,6 @@ impl Session {
     }
 }
 
-/// Builds the HTTP clients of one download.
-///
-/// Each worker gets its own client, so each worker gets its own TCP connection:
-/// HTTP/2 would otherwise multiplex every range request over one connection and
-/// one congestion window, which removes the point of splitting. All clients
-/// share one rustls configuration, and with it one TLS session cache, so once
-/// a connection to a host has done a full handshake the others resume the
-/// session (no certificate exchange or verification, and one round trip less on
-/// TLS 1.2).
-pub(crate) struct Clients {
-    tls: rustls::ClientConfig,
-    user_agent: String,
-    connect_timeout: Duration,
-    /// Resolves names for every client [`build`](Self::build) makes, when set
-    /// (to keep a download away from the local network).
-    resolver: Option<Arc<crate::fetch::FilteringResolver>>,
-}
-
-/// The process-wide TLS configuration: the system's root certificates are read
-/// once, and sessions resume across downloads from the same host too.
-static SHARED_TLS: OnceLock<rustls::ClientConfig> = OnceLock::new();
-
-impl Clients {
-    /// Uses the operating system's root certificates, read once per process.
-    /// The first call reads the certificate store, so it must not run on an
-    /// async thread; see [`Clients::shared_ready`].
-    pub fn new(opts: &DownloadOptions) -> Result<Self> {
-        let tls = if let Some(tls) = SHARED_TLS.get() {
-            tls
-        } else {
-            let config = tls_config(native_roots())?;
-            SHARED_TLS.get_or_init(|| config)
-        };
-        Ok(Self::with_config(opts, tls.clone()))
-    }
-
-    /// Whether [`Clients::new`] would return without touching the disk.
-    pub fn shared_ready() -> bool {
-        SHARED_TLS.get().is_some()
-    }
-
-    /// The TLS configuration (root certificates included) other protocols
-    /// start from.
-    pub fn tls(&self) -> &rustls::ClientConfig {
-        &self.tls
-    }
-
-    /// Uses the given root certificates and a session cache of its own.
-    #[cfg(test)]
-    pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {
-        Self::with_config(opts, tls_config(roots).unwrap())
-    }
-
-    fn with_config(opts: &DownloadOptions, tls: rustls::ClientConfig) -> Self {
-        Self {
-            tls,
-            user_agent: opts.user_agent.clone(),
-            connect_timeout: opts.connect_timeout,
-            resolver: None,
-        }
-    }
-
-    /// Resolves names through `resolver` in every client built from now on.
-    pub fn set_resolver(&mut self, resolver: Arc<crate::fetch::FilteringResolver>) {
-        self.resolver = Some(resolver);
-    }
-
-    /// A client with its own connection pool and the shared TLS session cache.
-    pub fn build(&self) -> Result<Client> {
-        let builder = match &self.resolver {
-            Some(resolver) => self.builder().dns_resolver(resolver.clone()),
-            None => self.builder(),
-        };
-        builder.build().map_err(Error::network)
-    }
-
-    /// The settings every client shares, for a caller that adds its own.
-    pub fn builder(&self) -> reqwest::ClientBuilder {
-        let mut headers = HeaderMap::new();
-        // Compressed transfer encodings break byte offsets.
-        headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-        Client::builder()
-            // A clone shares the session cache: it lives behind an `Arc` in the config.
-            .use_preconfigured_tls(self.tls.clone())
-            .user_agent(self.user_agent.as_str())
-            .default_headers(headers)
-            // Redirects are followed by `send`, which decides per hop which
-            // caller headers may go along.
-            .redirect(redirect::Policy::none())
-            .connect_timeout(self.connect_timeout)
-            .tcp_nodelay(true)
-            .pool_max_idle_per_host(1)
-    }
-}
-
-/// The same TLS setup reqwest builds by default (TLS 1.2 and 1.3, the process's
-/// crypto provider or else ring, HTTP/2 offered through ALPN), built once.
-fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
-    let installed = rustls::crypto::CryptoProvider::get_default()
-        .cloned()
-        .and_then(|provider| {
-            rustls::ClientConfig::builder_with_provider(provider)
-                .with_protocol_versions(rustls::ALL_VERSIONS)
-                .ok()
-        });
-    let builder = match installed {
-        Some(builder) => builder,
-        // The ring provider supports both versions, so this only fails if the
-        // TLS library itself is broken.
-        None => rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_protocol_versions(rustls::ALL_VERSIONS)
-        .map_err(|e| Error::Internal(format!("TLS 1.2 and 1.3 are not available: {e}")))?,
-    };
-    let mut config = builder.with_root_certificates(roots).with_no_client_auth();
-    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    Ok(config)
-}
-
-/// The operating system's trusted root certificates. Unreadable entries are
-/// skipped; with none at all, HTTPS requests fail with a certificate error.
-fn native_roots() -> rustls::RootCertStore {
-    let loaded = rustls_native_certs::load_native_certs();
-    for error in &loaded.errors {
-        debug!(%error, "skipped part of the system certificate store");
-    }
-    let mut roots = rustls::RootCertStore::empty();
-    let (added, ignored) = roots.add_parsable_certificates(loaded.certs);
-    if added == 0 {
-        warn!(
-            ignored,
-            "no usable root certificates found; HTTPS downloads will fail"
-        );
-    }
-    roots
-}
-
 /// Sends `GET url`, following redirects. Each hop carries only the caller
 /// headers its origin may see (see [`RequestHeaders`]), refuses to go from
 /// `https` to `http` unless allowed, gives up waiting for an answer after the
@@ -398,7 +251,7 @@ pub(crate) async fn send(
     client: &Client,
     url: &Url,
     session: &Session,
-    range: Option<&str>,
+    range: Option<RequestRange>,
 ) -> Result<Response, Failure> {
     let asked = url;
     let mut url = url.clone();
@@ -411,14 +264,16 @@ pub(crate) async fn send(
             .get(url.clone())
             .headers(session.headers.for_url(&url).clone());
         if let Some(range) = range {
-            request = request.header(RANGE, range);
+            request = request.header(RANGE, range.to_string());
         }
         let response = tokio::select! {
             biased;
             () = session.cancel.cancelled() => return Err(Error::Cancelled.into()),
             answer = tokio::time::timeout(session.answer_timeout, request.send()) => match answer {
                 Ok(response) => response?,
-                Err(_) => return Err(Error::Stalled(session.answer_timeout.as_secs()).into()),
+                Err(_) => return Err(Error::Stalled {
+                    after: session.answer_timeout,
+                }.into()),
             },
         };
         let status = response.status();
@@ -499,23 +354,23 @@ pub(crate) async fn probe(
     limit: Option<u64>,
 ) -> Result<Probe, Failure> {
     if let Some(limit) = limit.filter(|&n| n > 0) {
-        let range = format!("bytes=0-{}", limit - 1);
-        let probe = probe_range(client, url, session, &range).await?;
+        let range = RequestRange::new(0, limit).ok_or_else(|| empty_range(0, limit))?;
+        let probe = probe_range(client, url, session, range).await?;
         if probe.limited_without_size {
             debug!("the server sent part of the file without its size; asking for all of it");
         } else {
             return Ok(probe);
         }
     }
-    probe_range(client, url, session, "bytes=0-").await
+    probe_range(client, url, session, RequestRange::from(0)).await
 }
 
-/// [`probe`] with the given `Range` header.
+/// [`probe`] asking for `range`, which starts at byte 0.
 async fn probe_range(
     client: &Client,
     url: &Url,
     session: &Session,
-    range: &str,
+    range: RequestRange,
 ) -> Result<Probe, Failure> {
     let response = send(client, url, session, Some(range)).await?;
     let status = response.status();
@@ -533,29 +388,15 @@ async fn probe_range(
 
     let mut limited_without_size = false;
     let (ranged, total) = match status {
-        StatusCode::PARTIAL_CONTENT => match content_range(response_headers) {
-            Some(ContentRange {
-                start: 0,
-                total: Some(total),
-                ..
-            }) => (true, Some(total)),
-            Some(ContentRange {
-                start: 0,
-                total: None,
-                ..
-            }) => {
+        StatusCode::PARTIAL_CONTENT => {
+            if let Some(total) = check_partial(response_headers, 0, None)?.total {
+                (true, Some(total))
+            } else {
                 // Only the whole file if the request asked for all of it.
-                limited_without_size = range != "bytes=0-";
+                limited_without_size = !range.is_whole();
                 (false, None)
             }
-            other => {
-                return Err(Error::RangeNotHonored {
-                    expected: 0,
-                    got: other.map(|c| c.start),
-                }
-                .into());
-            }
-        },
+        }
         StatusCode::OK => (false, response.content_length()),
         // `bytes=0-` on an empty file.
         StatusCode::RANGE_NOT_SATISFIABLE
@@ -595,12 +436,8 @@ pub(crate) async fn fetch(
         return Ok((response, from));
     }
 
-    let range = if to == UNKNOWN_END {
-        format!("bytes={from}-")
-    } else {
-        format!("bytes={from}-{}", to - 1)
-    };
-    let response = send(client, url, session, Some(&range)).await?;
+    let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
+    let response = send(client, url, session, Some(range)).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
@@ -609,20 +446,13 @@ pub(crate) async fn fetch(
         .into());
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
-    let got = content_range(response.headers());
-    if got.map(|c| c.start) != Some(from) {
-        return Err(Error::RangeNotHonored {
-            expected: from,
-            got: got.map(|c| c.start),
-        }
-        .into());
-    }
-    if let (Some(expected), Some(actual)) = (expected_total, got.and_then(|c| c.total))
-        && expected != actual
-    {
-        return Err(Error::RemoteChanged.into());
-    }
+    check_partial(response.headers(), from, expected_total)?;
     Ok((response, 0))
+}
+
+/// The error for a request asked to fetch no bytes, which its caller rules out.
+pub(crate) fn empty_range(from: u64, to: u64) -> Error {
+    Error::Internal(format!("a request for no bytes ({from} to {to})"))
 }
 
 fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {
@@ -633,359 +463,5 @@ fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ContentRange {
-    pub start: u64,
-    pub end_inclusive: u64,
-    pub total: Option<u64>,
-}
-
-pub(crate) fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
-    parse_content_range(headers.get(CONTENT_RANGE)?.to_str().ok()?)
-}
-
-/// Parses `bytes 0-99/1000`, `bytes 0-99/*` and `bytes */1000`.
-pub fn parse_content_range(value: &str) -> Option<ContentRange> {
-    let rest = value.trim().strip_prefix("bytes")?.trim_start();
-    let (span, total) = rest.split_once('/')?;
-    let total = match total.trim() {
-        "*" => None,
-        t => Some(t.parse().ok()?),
-    };
-    if span.trim() == "*" {
-        return Some(ContentRange {
-            start: 0,
-            end_inclusive: 0,
-            total,
-        });
-    }
-    let (start, end) = span.split_once('-')?;
-    let start = start.trim().parse().ok()?;
-    let end_inclusive = end.trim().parse().ok()?;
-    (start <= end_inclusive).then_some(ContentRange {
-        start,
-        end_inclusive,
-        total,
-    })
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use reqwest::header::{AUTHORIZATION, COOKIE};
-
-    #[test]
-    fn content_range_forms() {
-        assert_eq!(
-            parse_content_range("bytes 0-99/1000"),
-            Some(ContentRange {
-                start: 0,
-                end_inclusive: 99,
-                total: Some(1000)
-            })
-        );
-        assert_eq!(parse_content_range("bytes 5-9/*").unwrap().total, None);
-        assert_eq!(parse_content_range("bytes */0").unwrap().total, Some(0));
-        assert_eq!(parse_content_range("bytes 9-5/10"), None);
-        assert_eq!(parse_content_range("items 0-1/2"), None);
-    }
-
-    #[test]
-    fn retry_after_forms() {
-        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-        assert_eq!(parse_retry_after("7", now), Some(Duration::from_secs(7)));
-        assert_eq!(parse_retry_after(" 0 ", now), Some(Duration::ZERO));
-        let later = httpdate::fmt_http_date(now + Duration::from_secs(42));
-        assert_eq!(
-            parse_retry_after(&later, now),
-            Some(Duration::from_secs(42))
-        );
-        // The two obsolete date formats HTTP still allows.
-        let base = httpdate::fmt_http_date(now);
-        assert_eq!(base, "Tue, 14 Nov 2023 22:13:20 GMT");
-        assert_eq!(
-            parse_retry_after("Tuesday, 14-Nov-23 22:13:30 GMT", now),
-            Some(Duration::from_secs(10))
-        );
-        assert_eq!(
-            parse_retry_after("Tue Nov 14 22:13:25 2023", now),
-            Some(Duration::from_secs(5))
-        );
-        let earlier = httpdate::fmt_http_date(now - Duration::from_secs(60));
-        assert_eq!(parse_retry_after(&earlier, now), Some(Duration::ZERO));
-        assert_eq!(parse_retry_after("86400", now), Some(MAX_RETRY_AFTER));
-        assert_eq!(
-            parse_retry_after("99999999999999999999999", now),
-            Some(MAX_RETRY_AFTER)
-        );
-        assert_eq!(parse_retry_after("-5", now), None);
-        assert_eq!(parse_retry_after("soon", now), None);
-        assert_eq!(parse_retry_after("", now), None);
-    }
-
-    #[test]
-    fn credentials_only_go_to_their_own_origin() {
-        let mut given = HeaderMap::new();
-        given.insert(COOKIE, HeaderValue::from_static("session=secret"));
-        given.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
-        given.insert("x-api-key", HeaderValue::from_static("secret"));
-        given.insert(
-            REFERER,
-            HeaderValue::from_static("https://site.example/page"),
-        );
-        given.insert(USER_AGENT, HeaderValue::from_static("Browser/1.0"));
-        let origin = Url::parse("https://files.example/a.bin").unwrap();
-        let headers = RequestHeaders::new(&origin, &given);
-
-        let url = |s: &str| Url::parse(s).unwrap();
-        // Same origin, including the default port written out.
-        assert_eq!(headers.for_url(&url("https://files.example/b.bin")), &given);
-        assert_eq!(
-            headers.for_url(&url("https://files.example:443/b.bin")),
-            &given
-        );
-
-        for other in [
-            "https://cdn.example/a.bin",        // other host
-            "https://files.example:8443/a.bin", // other port
-            "http://files.example/a.bin",       // other scheme (downgrade)
-            "https://sub.files.example/a.bin",  // subdomain
-        ] {
-            let sent = headers.for_url(&url(other));
-            assert!(sent.get(COOKIE).is_none(), "cookie leaked to {other}");
-            assert!(sent.get(AUTHORIZATION).is_none(), "auth leaked to {other}");
-            assert!(sent.get("x-api-key").is_none(), "key leaked to {other}");
-            // Other origins only learn which site the link came from.
-            assert_eq!(sent.get(REFERER).unwrap(), "https://site.example/");
-            assert_eq!(sent.get(USER_AGENT), given.get(USER_AGENT));
-        }
-    }
-
-    #[test]
-    fn referer_is_cut_to_its_origin_for_other_origins() {
-        let cut = |v: &'static str| referer_origin(&HeaderValue::from_static(v));
-        assert_eq!(
-            cut("http://site.example:8080/a/b?token=1#x").unwrap(),
-            "http://site.example:8080/"
-        );
-        assert_eq!(
-            cut("https://site.example:443/a").unwrap(),
-            "https://site.example/"
-        );
-        assert_eq!(cut("not a url"), None);
-        assert_eq!(cut("file:///etc/passwd"), None);
-    }
-
-    #[test]
-    fn url_credentials_become_an_origin_bound_header() {
-        let mut headers = HeaderMap::new();
-        let url = Url::parse("https://us%40er:p%3Ass@files.example/a.bin").unwrap();
-        let clean = split_userinfo(&url, &mut headers);
-        assert_eq!(clean.as_str(), "https://files.example/a.bin");
-        let expected = format!(
-            "Basic {}",
-            base64::engine::general_purpose::STANDARD.encode("us@er:p:ss")
-        );
-        assert_eq!(headers.get(AUTHORIZATION).unwrap(), expected.as_str());
-
-        // A header the caller set wins over the URL.
-        let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer mine"));
-        split_userinfo(&url, &mut headers);
-        assert_eq!(headers.get(AUTHORIZATION).unwrap(), "Bearer mine");
-
-        // No credentials, nothing added.
-        let mut headers = HeaderMap::new();
-        let plain = Url::parse("https://files.example/a.bin").unwrap();
-        assert_eq!(split_userinfo(&plain, &mut headers), plain);
-        assert!(headers.is_empty());
-    }
-
-    /// Against a local TLS server: session resumption, checked from the server
-    /// side (it records whether each handshake was full or resumed), and
-    /// redirects from https to http.
-    mod tls {
-        use super::*;
-        use std::sync::Mutex;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        use rustls::HandshakeKind;
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        struct TlsServer {
-            url: Url,
-            roots: rustls::RootCertStore,
-            handshakes: Arc<Mutex<Vec<HandshakeKind>>>,
-        }
-
-        const OK: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
-
-        /// Answers every request with a tiny body and closes the connection, so
-        /// each request needs a new TCP connection and a new TLS handshake.
-        async fn start_tls_server() -> TlsServer {
-            start_tls_server_answering(OK.to_vec()).await
-        }
-
-        /// Reads one request's headers from `stream`; false if it closed first.
-        async fn read_request(stream: &mut (impl AsyncReadExt + Unpin)) -> bool {
-            let mut request = Vec::new();
-            let mut buf = [0u8; 1024];
-            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
-                match stream.read(&mut buf).await {
-                    Ok(0) | Err(_) => return false,
-                    Ok(n) => request.extend_from_slice(&buf[..n]),
-                }
-            }
-            true
-        }
-
-        /// Writes `response` to `stream` and closes it.
-        async fn answer(stream: &mut (impl AsyncWriteExt + Unpin), response: &[u8]) {
-            let written = stream.write_all(response).await;
-            let closed = stream.shutdown().await;
-            client_may_hang_up(&written.and(closed));
-        }
-
-        /// Takes the outcome of answering a client. One that hung up first
-        /// fails its own request, so the server has nothing to report.
-        fn client_may_hang_up(answered: &std::io::Result<()>) {
-            let (Ok(()) | Err(_)) = answered;
-        }
-
-        /// Answers every request with `response` and closes the connection.
-        async fn start_tls_server_answering(response: Vec<u8>) -> TlsServer {
-            let cert = wirecatch_test_support::TestCertificate::new();
-            let roots = cert.roots();
-            let config = cert.server_config(&[]);
-            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let handshakes = Arc::new(Mutex::new(Vec::new()));
-            {
-                let handshakes = handshakes.clone();
-                tokio::spawn(async move {
-                    loop {
-                        let (tcp, _) = listener.accept().await.unwrap();
-                        let acceptor = acceptor.clone();
-                        let handshakes = handshakes.clone();
-                        let response = response.clone();
-                        tokio::spawn(async move {
-                            let Ok(mut tls) = acceptor.accept(tcp).await else {
-                                return;
-                            };
-                            if let Some(kind) = tls.get_ref().1.handshake_kind() {
-                                handshakes.lock().unwrap().push(kind);
-                            }
-                            if !read_request(&mut tls).await {
-                                return;
-                            }
-                            answer(&mut tls, &response).await;
-                        });
-                    }
-                });
-            }
-            TlsServer {
-                url: Url::parse(&format!("https://{addr}/file.bin")).unwrap(),
-                roots,
-                handshakes,
-            }
-        }
-
-        async fn get(client: &Client, url: &Url) {
-            let body = client.get(url.clone()).send().await.unwrap();
-            assert_eq!(body.bytes().await.unwrap(), "ok");
-        }
-
-        #[tokio::test]
-        async fn connections_of_one_download_resume_the_first_session() {
-            let server = start_tls_server().await;
-            let opts = DownloadOptions::default();
-            let clients = Clients::with_roots(&opts, server.roots.clone());
-
-            // One client per worker, exactly as `download` builds them.
-            for _ in 0..4 {
-                get(&clients.build().unwrap(), &server.url).await;
-            }
-
-            let kinds = server.handshakes.lock().unwrap().clone();
-            assert_eq!(
-                kinds,
-                vec![
-                    HandshakeKind::Full,
-                    HandshakeKind::Resumed,
-                    HandshakeKind::Resumed,
-                    HandshakeKind::Resumed
-                ],
-                "4 connections, only the first with a full handshake"
-            );
-        }
-
-        /// A plain HTTP server answering `OK`; returns its URL and request count.
-        async fn start_plain_server() -> (Url, Arc<AtomicUsize>) {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let requests = Arc::new(AtomicUsize::new(0));
-            let counter = requests.clone();
-            tokio::spawn(async move {
-                loop {
-                    let (mut tcp, _) = listener.accept().await.unwrap();
-                    let counter = counter.clone();
-                    tokio::spawn(async move {
-                        if read_request(&mut tcp).await {
-                            counter.fetch_add(1, Ordering::SeqCst);
-                            answer(&mut tcp, OK).await;
-                        }
-                    });
-                }
-            });
-            let url = Url::parse(&format!("http://{addr}/file.bin")).unwrap();
-            (url, requests)
-        }
-
-        #[tokio::test]
-        async fn https_to_http_redirects_are_refused_unless_allowed() {
-            let (plain, plain_requests) = start_plain_server().await;
-            let redirect = format!(
-                "HTTP/1.1 302 Found\r\nLocation: {plain}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            );
-            let server = start_tls_server_answering(redirect.into_bytes()).await;
-            let mut opts = DownloadOptions::default();
-            let client = Clients::with_roots(&opts, server.roots.clone())
-                .build()
-                .unwrap();
-
-            // Refused by default, before anything is sent over plain HTTP.
-            let (session, url) = Session::new(&server.url, &opts, CancellationToken::new());
-            let failure = send(&client, &url, &session, None).await.unwrap_err();
-            match failure.error {
-                Error::InsecureRedirect { from, to } => {
-                    assert_eq!(from, server.url.as_str());
-                    assert_eq!(to, plain.as_str());
-                }
-                other => panic!("expected InsecureRedirect, got {other:?}"),
-            }
-            assert_eq!(plain_requests.load(Ordering::SeqCst), 0);
-
-            // Followed when the caller allows it.
-            opts.allow_insecure_redirects = true;
-            let (session, url) = Session::new(&server.url, &opts, CancellationToken::new());
-            let response = send(&client, &url, &session, None).await.unwrap();
-            assert_eq!(response.url(), &plain);
-            assert_eq!(response.bytes().await.unwrap(), "ok");
-            assert_eq!(plain_requests.load(Ordering::SeqCst), 1);
-        }
-
-        #[tokio::test]
-        async fn separate_tls_configs_cannot_resume() {
-            // Control: proves the test above detects the difference.
-            let server = start_tls_server().await;
-            let opts = DownloadOptions::default();
-            for _ in 0..3 {
-                let clients = Clients::with_roots(&opts, server.roots.clone());
-                get(&clients.build().unwrap(), &server.url).await;
-            }
-            let kinds = server.handshakes.lock().unwrap().clone();
-            assert_eq!(kinds, vec![HandshakeKind::Full; 3]);
-        }
-    }
-}
+mod tests;

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::{Error as EngineError, Url};
+use wirecatch_engine::{Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
@@ -19,6 +19,24 @@ use super::settle::ServerAnswer;
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
+
+/// A media download without a browser's agent names the app, never the engine
+/// library's default; with one, it is the browser's.
+#[test]
+fn media_requests_name_the_app_or_the_browser() {
+    let mut origin = crate::store::Origin::default();
+    let agent = super::media::media_options(&origin).user_agent;
+    assert_eq!(agent, crate::headers::download_options().user_agent);
+    assert_ne!(
+        agent,
+        wirecatch_engine::DownloadOptions::default().user_agent
+    );
+    origin.user_agent = Some("TestBrowser/1".into());
+    assert_eq!(
+        super::media::media_options(&origin).user_agent,
+        "TestBrowser/1"
+    );
+}
 
 /// How long any wait in these tests may take before it fails.
 const PATIENCE: Duration = Duration::from_secs(20);
@@ -191,7 +209,8 @@ fn answers_on_cue(gate: Arc<Notify>, name: &'static str) -> impl Fn(FakeRun) -> 
         Box::pin(async move {
             gate.notified().await;
             let settle = run.settle.expect("the path is not settled yet");
-            let path = settle(&answer(name)).map_err(EngineError::TargetRejected)?;
+            let path = settle(&answer(name))
+                .map_err(|reason| EngineError::TargetRejected(PathRejected::new(reason)))?;
             let [part, _] = naming::partial_files(&path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(part, b"part").unwrap();

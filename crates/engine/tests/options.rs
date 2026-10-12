@@ -1,4 +1,4 @@
-//! Options that cannot work are refused before anything is sent. A zero buffer size used to hang a thread, a zero split size panicked, and a zero checkpoint interval silently turned off resume files.
+//! Options that cannot work are refused before anything is sent. Unchecked, a zero buffer size would hang a thread, a zero split size would panic, and a zero checkpoint interval would silently turn off resume files.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ fn unworkable() -> Vec<Unworkable> {
     ]
 }
 
-/// Runs `future` on a thread and runtime of its own and fails the test if it does not finish within [`DEADLINE`]. A `tokio::time::timeout` around it cannot catch a future that never yields (a zero buffer size used to loop without one): the timer never gets to run. A thread that hangs is left behind.
+/// Runs `future` on a thread and runtime of its own and fails the test if it does not finish within [`DEADLINE`]. A `tokio::time::timeout` around it cannot catch a future that never yields (an unchecked zero buffer size loops without one): the timer never gets to run. A thread that hangs is left behind.
 fn within_deadline<T: Send + 'static>(
     what: &str,
     future: impl Future<Output = T> + Send + 'static,
@@ -58,6 +58,16 @@ fn within_deadline<T: Send + 'static>(
 #[test]
 fn the_defaults_are_valid() {
     DownloadOptions::default().validate().unwrap();
+}
+
+/// The engine is a library other programs use: by default it names itself,
+/// never the app it was written for.
+#[test]
+fn the_default_user_agent_names_the_engine() {
+    assert_eq!(
+        DownloadOptions::default().user_agent,
+        format!("wirecatch-engine/{}", env!("CARGO_PKG_VERSION"))
+    );
 }
 
 // Multi-threaded, so the test server keeps answering while this thread waits for the deadline.

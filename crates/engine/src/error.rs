@@ -2,6 +2,12 @@
 
 use std::fmt;
 use std::io;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use reqwest::StatusCode;
+
+use crate::ftp::reply;
 
 /// Errors a download can end with.
 ///
@@ -63,14 +69,26 @@ pub enum Error {
     },
 
     /// Nothing arrived for [`DownloadOptions::stall_timeout`](crate::DownloadOptions::stall_timeout),
-    /// neither an answer to a request nor data; the number is that timeout in seconds.
-    #[error("no data received for {0} seconds")]
-    Stalled(u64),
+    /// neither an answer to a request nor data.
+    #[error("no data received for {after:?}")]
+    Stalled {
+        /// How long nothing arrived: the stall timeout.
+        after: Duration,
+    },
 
-    /// Reading or writing the file or its resume file failed, for example a
-    /// full disk or a folder without write permission.
-    #[error("disk error: {0}")]
-    Io(#[from] io::Error),
+    /// Reading or writing a file failed, for example on a full disk, in a
+    /// folder without write permission, or while another program holds the
+    /// file. It says what was being done and with which file.
+    #[error("could not {action} ({})", path.display())]
+    Io {
+        /// What was being done.
+        action: IoAction,
+        /// The file or folder it was done with.
+        path: PathBuf,
+        /// What the operating system reported.
+        #[source]
+        source: io::Error,
+    },
 
     /// The download was cancelled before the server answered its first request,
     /// so there is nothing to resume yet. Cancelling once the server has
@@ -78,14 +96,11 @@ pub enum Error {
     #[error("cancelled before the download started")]
     Cancelled,
 
-    /// The resume file exists but could not be read.
-    #[error("resume state is unreadable: {0}")]
-    State(String),
-
-    /// The link kept redirecting, more than 20 times, usually because it
-    /// redirects in a loop.
+    /// The link kept redirecting, past the limit browsers also use, usually
+    /// because it redirects in a loop.
     #[error(
-        "{url} redirected more than 20 times, probably in a loop. Open the link in a browser to check it, or get a fresh link"
+        "{url} redirected more than {max} times, probably in a loop. Open the link in a browser to check it, or get a fresh link",
+        max = crate::http::status::MAX_REDIRECTS
     )]
     TooManyRedirects {
         /// The URL that was asked for.
@@ -118,9 +133,9 @@ pub enum Error {
     },
 
     /// [`DownloadRequest::resolve_path`](crate::DownloadRequest::resolve_path)
-    /// refused the file; the text is its reason. Nothing was written.
+    /// refused the file, for the reason it gives. Nothing was written.
     #[error("the download was not saved: {0}")]
-    TargetRejected(String),
+    TargetRejected(crate::PathRejected),
 
     /// A [`Fetcher`](crate::Fetcher) answer was larger than the size limit the
     /// caller set for it, so it was not read to the end.
@@ -137,8 +152,8 @@ pub enum Error {
     /// A [`Fetcher`](crate::Fetcher) refused to send a request to an address
     /// on the local network (loopback, private, link-local or unspecified),
     /// because a resource from the internet pointed there; see
-    /// [`PrivateNetwork`](crate::fetch::PrivateNetwork).
-    #[error("{url} points to a device on your own network, which Wirecatch blocks for safety")]
+    /// [`PrivateNetwork`](crate::PrivateNetwork).
+    #[error("{url} points to a device on your own network, which is blocked for safety")]
     PrivateNetwork {
         /// The address that was refused.
         url: String,
@@ -187,7 +202,8 @@ pub enum Error {
     },
 
     /// A proxy is set in the environment (for example `ALL_PROXY` or
-    /// `FTP_PROXY`), but FTP downloads cannot go through a proxy yet, and
+    /// `FTP_PROXY`) and `NO_PROXY` does not name the server, but FTP downloads
+    /// cannot go through a proxy yet, and
     /// going around it without asking could expose what it is there to hide.
     #[error(
         "FTP downloads cannot go through a proxy yet, and the {variable} environment variable sets one. To download this link directly instead, remove {variable} from the environment"
@@ -199,8 +215,8 @@ pub enum Error {
     },
 
     /// Something inside the engine failed that should not, such as a task that
-    /// panicked. This is a bug in Wirecatch; please report it with the text.
-    #[error("internal error: {0}. This is a bug in Wirecatch; please report it")]
+    /// panicked. This is a bug in this crate; please report it with the text.
+    #[error("internal error: {0}. This is a bug in wirecatch-engine; please report it")]
     Internal(String),
 }
 
@@ -209,13 +225,13 @@ impl Error {
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
-            Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled(_) => true,
+            Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled { .. } => true,
             Error::HttpStatus { status, .. } => {
-                matches!(status, 408 | 425 | 429 | 500 | 502 | 503 | 504)
+                StatusCode::from_u16(*status).is_ok_and(crate::http::status::is_retryable_status)
             }
             // FTP's 4xx replies are "transient negative completion" (RFC 959):
             // too many connections, data connection failed, file busy.
-            Error::FtpReply { code, .. } => (400..500).contains(code),
+            Error::FtpReply { code, .. } => reply::is_transient(*code),
             _ => false,
         }
     }
@@ -255,10 +271,82 @@ impl Error {
     }
 }
 
+/// What the engine was doing with a file when [`Error::Io`] happened.
+///
+/// New actions may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IoAction {
+    /// Creating the folder the file goes in.
+    CreateFolder,
+    /// Creating a file: the part file of a download, or the file a
+    /// [`Fetcher`](crate::Fetcher) saves to.
+    CreateFile,
+    /// Opening the part file to write downloaded data to it.
+    OpenFile,
+    /// Writing downloaded data.
+    Write,
+    /// Giving the finished file its exact size.
+    Resize,
+    /// Making sure written data is on the disk itself, not only in memory.
+    Flush,
+    /// Saving the resume file next to the part file.
+    SaveResume,
+    /// Giving the finished file its final name.
+    Finish,
+}
+
+impl fmt::Display for IoAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            IoAction::CreateFolder => "create the folder",
+            IoAction::CreateFile => "create the file",
+            IoAction::OpenFile => "open the file",
+            IoAction::Write => "write to the file",
+            IoAction::Resize => "set the size of the file",
+            IoAction::Flush => "flush the file to the disk",
+            IoAction::SaveResume => "save the resume file",
+            IoAction::Finish => "move the finished file into place",
+        })
+    }
+}
+
+/// Turns a failed file operation into [`Error::Io`], saying what was being
+/// done and with which file.
+pub(crate) trait IoContext<T> {
+    /// The error, if any, as [`Error::Io`] for `action` on `path`.
+    fn context(self, action: IoAction, path: &Path) -> Result<T>;
+}
+
+impl<T> IoContext<T> for io::Result<T> {
+    fn context(self, action: IoAction, path: &Path) -> Result<T> {
+        self.map_err(|source| Error::Io {
+            action,
+            path: path.to_path_buf(),
+            source,
+        })
+    }
+}
+
+/// An error followed by every error below it, separated by `: `, for log lines about errors whose message leaves their source out: each level says only what it adds (an [`Error::Io`] the action and file, its source the system's reason), so a log needs them all. An error whose message already includes its source (such as `rustls_native_certs::Error`) is logged on its own, or the reason would show twice.
+pub(crate) struct Chain<'a>(pub &'a dyn std::error::Error);
+
+impl fmt::Display for Chain<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)?;
+        let mut below = self.0.source();
+        while let Some(error) = below {
+            write!(f, ": {error}")?;
+            below = error.source();
+        }
+        Ok(())
+    }
+}
+
 /// What to add to an FTP error reply to say how to fix it.
 fn ftp_reply_hint(code: u16) -> &'static str {
     match code {
-        550 => {
+        reply::FILE_UNAVAILABLE => {
             ". Check that the file exists. The path in the link is relative to the folder the server logs in to; to give a path from the top folder, start it with %2F, as in ftp://host/%2Fpub/file.iso"
         }
         _ => "",

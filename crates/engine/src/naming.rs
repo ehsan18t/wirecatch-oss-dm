@@ -9,11 +9,15 @@ use crate::storage::{PART_EXT, STATE_EXT};
 
 const MAX_NAME_BYTES: usize = 200;
 const FALLBACK_NAME: &str = "download";
+/// Longest text after the last dot that still counts as an extension and is
+/// kept whole when a name is shortened. Real extensions are a few bytes; a
+/// longer "extension" is part of the name and is shortened with it.
+const MAX_EXTENSION_BYTES: usize = 32;
 
 /// Extracts the file name from a `Content-Disposition` header value.
 /// `filename*` (RFC 6266 / 5987) wins over plain `filename`.
 #[must_use]
-pub fn from_content_disposition(value: &str) -> Option<String> {
+pub(crate) fn from_content_disposition(value: &str) -> Option<String> {
     let mut plain = None;
     for part in split_params(value) {
         let Some((key, val)) = part.split_once('=') else {
@@ -159,17 +163,26 @@ fn is_windows_reserved(name: &str) -> bool {
     )
 }
 
+/// `name` cut to at most `max` bytes, on a character boundary, keeping its
+/// extension unless that is longer than [`MAX_EXTENSION_BYTES`].
 fn truncate_keeping_extension(name: &str, max: usize) -> String {
     if name.len() <= max {
         return name.to_string();
     }
-    let (stem, ext) = split_ext(name);
-    let room = max.saturating_sub(ext.len());
-    let mut cut = room.min(stem.len());
+    let (stem, ext) = match split_ext(name) {
+        (stem, ext) if ext.len() <= MAX_EXTENSION_BYTES && ext.len() < max => (stem, ext),
+        _ => (name, ""),
+    };
+    let mut cut = (max - ext.len()).min(stem.len());
     while !stem.is_char_boundary(cut) {
         cut -= 1;
     }
-    format!("{}{}", &stem[..cut], ext)
+    // Windows refuses a name that ends in a dot or a space, which a cut can leave.
+    let stem = match stem[..cut].trim_end_matches(['.', ' ']) {
+        "" => FALLBACK_NAME,
+        stem => stem,
+    };
+    format!("{stem}{ext}")
 }
 
 /// Splits `archive.tar.gz` into (`archive.tar`, `.gz`). Dotfiles keep their name as the stem.
@@ -315,6 +328,27 @@ mod tests {
         let out = sanitize(&long);
         assert!(out.len() <= MAX_NAME_BYTES);
         assert_eq!(Path::new(&out).extension(), Some("mp4".as_ref()));
+    }
+
+    #[test]
+    fn a_long_extension_cannot_make_the_name_too_long() {
+        // Everything after the last dot of a hostile `Content-Disposition`.
+        for name in [
+            format!("a.{}", "x".repeat(300)),
+            format!("{}.{}", "y".repeat(150), "z".repeat(150)),
+            format!("é.{}", "€".repeat(100)),
+        ] {
+            let out = sanitize(&name);
+            assert!(
+                (1..=MAX_NAME_BYTES).contains(&out.len()),
+                "{} bytes",
+                out.len()
+            );
+        }
+        // An ordinary extension is still kept whole.
+        let kept = sanitize(&format!("{}.tar.gz", "n".repeat(300)));
+        assert_eq!(Path::new(&kept).extension(), Some("gz".as_ref()));
+        assert!(kept.len() <= MAX_NAME_BYTES);
     }
 
     #[test]

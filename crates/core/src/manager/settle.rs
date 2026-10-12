@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use wirecatch_engine::{CancellationToken, PathResolver, RemoteFile, Url};
+use wirecatch_engine::{CancellationToken, PathRejected, PathResolver, RemoteFile, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
 
@@ -45,7 +45,9 @@ pub(super) type Settle = Arc<dyn Fn(&ServerAnswer) -> Result<PathBuf, String> + 
 
 /// The engine's resolver for `settle`.
 pub(super) fn path_resolver(settle: Settle) -> PathResolver {
-    Arc::new(move |remote: &RemoteFile| settle(&ServerAnswer::from(remote)))
+    Arc::new(move |remote: &RemoteFile| {
+        settle(&ServerAnswer::from(remote)).map_err(PathRejected::new)
+    })
 }
 
 impl Manager {

@@ -15,6 +15,7 @@ use crate::http::Clients;
 use crate::progress::Progress;
 use crate::units::{MIB, MIB_USIZE};
 use reqwest::header::HeaderValue;
+use std::ffi::OsString;
 use wirecatch_test_support::http3::{self as servers, Counts};
 use wirecatch_test_support::{TestCertificate, private_dir};
 
@@ -40,13 +41,13 @@ fn alt_svc_values() {
 fn http3_is_not_used_through_a_proxy() {
     use std::ffi::OsString;
 
-    let opts = crate::download::DownloadOptions::default();
+    let opts = crate::options::DownloadOptions::default();
     let clients = Clients::with_roots(&opts, rustls::RootCertStore::empty());
     let url = Url::parse("https://files.example/a.iso").unwrap();
     let mut headers = HeaderMap::new();
     headers.insert("alt-svc", HeaderValue::from_static(r#"h3=":443""#));
-    let advertised = |env: &dyn Fn(&str) -> Option<OsString>| {
-        Origin::advertised_in(&url, &headers, None, clients.tls(), &opts, env).is_some()
+    let advertised = |env: crate::proxy::Env<'_>| {
+        Origin::advertised(&url, &headers, None, clients.tls(), &opts, env).is_some()
     };
 
     assert!(advertised(&|_| None), "no proxy: HTTP/3 is used");
@@ -63,6 +64,12 @@ fn http3_is_not_used_through_a_proxy() {
     ));
     assert!(advertised(&|name: &str| {
         (name == "HTTP_PROXY").then(|| OsString::from("http://proxy:8080"))
+    }));
+    // A host the proxy settings exclude is reached directly, so QUIC goes nowhere the client would not.
+    assert!(advertised(&|name: &str| match name {
+        "HTTPS_PROXY" => Some(OsString::from("http://proxy:8080")),
+        "NO_PROXY" => Some(OsString::from("other.example,.files.example")),
+        _ => None,
     }));
 }
 
@@ -91,7 +98,7 @@ async fn fetch_from(
     tcp_port: u16,
     http3: bool,
     test: &str,
-    tune: impl FnOnce(&mut crate::download::DownloadOptions),
+    tune: impl FnOnce(&mut crate::options::DownloadOptions),
 ) -> (Vec<u8>, Duration) {
     let dir = private_dir(&format!("h3-{test}")).unwrap();
     let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
@@ -117,6 +124,62 @@ async fn fetch_from(
     let bytes = std::fs::read(&path).unwrap();
     dir.remove().unwrap();
     (bytes, took)
+}
+
+/// A download over HTTP/3 from 127.0.0.1 while the environment `env` reads is
+/// in effect; how many requests went over HTTP/3.
+async fn h3_requests_with(env: fn(&str) -> Option<OsString>, test: &str) -> usize {
+    let data = test_data(8 * MIB_USIZE);
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, _tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let dir = private_dir(&format!("h3-{test}")).unwrap();
+    let url = Url::parse(&format!("https://127.0.0.1:{tcp_port}/file.bin")).unwrap();
+    let mut request = DownloadRequest::new(url, dir.path());
+    request.options.connections = 4;
+    request.options.http3 = true;
+    let clients = Clients::with_roots(&request.options, cert.roots()).with_environment(env);
+    let outcome = download_with(
+        request,
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+        clients,
+    )
+    .await
+    .unwrap();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("expected Completed, got {outcome:?}");
+    };
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    dir.remove().unwrap();
+    requests(&h3)
+}
+
+/// The HTTP client reaches a host `NO_PROXY` names directly, so HTTP/3 may be
+/// used for it; a `NO_PROXY` naming other hosts leaves the proxy, and QUIC
+/// stays off.
+#[tokio::test]
+async fn no_proxy_decides_whether_http3_is_used_while_a_proxy_is_set() {
+    fn exempt(name: &str) -> Option<OsString> {
+        match name {
+            "HTTPS_PROXY" => Some(OsString::from("http://proxy.example:8080")),
+            "NO_PROXY" => Some(OsString::from("other.example, 127.0.0.0/8")),
+            _ => None,
+        }
+    }
+    fn proxied(name: &str) -> Option<OsString> {
+        match name {
+            "HTTPS_PROXY" => Some(OsString::from("http://proxy.example:8080")),
+            "NO_PROXY" => Some(OsString::from("other.example")),
+            _ => None,
+        }
+    }
+    assert!(h3_requests_with(exempt, "no-proxy-exempt").await > 0);
+    assert_eq!(h3_requests_with(proxied, "no-proxy-other").await, 0);
 }
 
 fn requests(counts: &Counts) -> usize {
@@ -225,14 +288,16 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
     let (h3_port, h3) = servers::start_h3_breaking(
         data.clone(),
         &cert,
-        Some(7 * MIB_USIZE),
+        // Half of the 8 MiB the HTTP/3 connection asks for at most, so its
+        // range breaks even when the first connection got a head start.
+        Some(4 * MIB_USIZE),
         Duration::from_secs(1),
     );
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    // Two connections, 8 MiB each, and parts too big to split again: the TCP
-    // connection finishes its half and stops before HTTP/3 breaks.
+    // Two connections, up to 8 MiB each, and parts too big to split again: the
+    // TCP connection finishes its part and stops while HTTP/3 waits to break.
     let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
         o.connections = 2;
         o.min_split = 4 * MIB;
