@@ -1,3 +1,4 @@
+import type { ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
@@ -18,7 +19,7 @@ import {
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { applyPatch, patchOf } from '../src/lib/protocol';
+import { applyPatch, isOutcome, patchOf } from '../src/lib/protocol';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
@@ -68,6 +69,23 @@ describe('file types', () => {
 });
 
 describe('protocol helpers', () => {
+  it('reads every error code the app can answer with', () => {
+    const codes: Record<ErrorCode, true> = {
+      unsupported_version: true,
+      invalid_request: true,
+      invalid_url: true,
+      not_found: true,
+      app_unavailable: true,
+      app_not_running: true,
+      internal: true,
+      not_started: true,
+      addon_required: true,
+    };
+    for (const code of Object.keys(codes)) {
+      expect(isOutcome({ status: 'err', value: { code, message: 'No.' } }), code).toBe(true);
+    }
+  });
+
   it('builds a patch that changes only the given fields', () => {
     expect(patchOf({ ask_before_download: true })).toEqual({
       capture_enabled: null,

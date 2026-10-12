@@ -117,6 +117,7 @@ const isErrorCode = member<ErrorCode>({
   app_not_running: true,
   internal: true,
   not_started: true,
+  addon_required: true,
 });
 
 const isProtocolError = fields<ProtocolError>({ code: isErrorCode, message: isString });
