@@ -308,16 +308,23 @@ export class FakeApp implements NativeTransport {
 export class FakeDownloads implements BrowserDownloads {
   readonly log: string[] = [];
   readonly failing = new Set<'pause' | 'resume' | 'cancel' | 'erase' | 'start'>();
+  /** Calls that fail for one download only, written as in `log` (`resume:5`). */
+  readonly failingCalls = new Set<string>();
   /** What `state()` reports (the browser's own view of the download). */
   browserState: DownloadState | null = { state: 'in_progress', paused: true };
+  /** What `state()` reports for one download, over `browserState`. */
+  readonly states = new Map<number, DownloadState | null>();
 
-  state(): Promise<DownloadState | null> {
-    return Promise.resolve(this.browserState);
+  state(id: number): Promise<DownloadState | null> {
+    return Promise.resolve(this.states.has(id) ? (this.states.get(id) ?? null) : this.browserState);
   }
 
   #run(op: 'pause' | 'resume' | 'cancel' | 'erase' | 'start', arg: number | string): Promise<void> {
-    this.log.push(`${op}:${String(arg)}`);
-    if (this.failing.has(op)) return Promise.reject(new Error(`${op} failed`));
+    const call = `${op}:${String(arg)}`;
+    this.log.push(call);
+    if (this.failing.has(op) || this.failingCalls.has(call)) {
+      return Promise.reject(new Error(`${op} failed`));
+    }
     return Promise.resolve();
   }
 

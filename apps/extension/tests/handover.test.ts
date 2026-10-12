@@ -1025,6 +1025,27 @@ describe('downloads left paused by a restarted background', () => {
       expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
     });
 
+    it('keeps the entries not yet settled saved, so another restart still has them', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [
+        { id: 5, handoverId: 'h5' },
+        { id: 6, handoverId: 'h6' },
+      ];
+      s = await setup({ inFlight });
+      expect(inFlight.saves[0]).toEqual([{ id: 6, handoverId: 'h6' }]);
+      expect(inFlight.entries).toEqual([]);
+    });
+
+    it('leaves a download being handed over again to that handover', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      s = await setup({ inFlight, start: false });
+      const download = s.hub.onDownload(downloadItem({ id: 5 }));
+      await s.started;
+      await download;
+      expect(s.app.calls('withdraw_download')).toHaveLength(0);
+    });
+
     it.each([
       ['cancelled', { state: 'interrupted', paused: false }],
       ['taken off the list', null],
