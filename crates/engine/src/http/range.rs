@@ -63,24 +63,44 @@ pub(crate) fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
     parse_content_range(headers.get(CONTENT_RANGE)?.to_str().ok()?)
 }
 
-/// Parses `bytes 0-99/1000`, `bytes 0-99/*` and `bytes */1000`.
+/// Parses `bytes 0-99/1000`, `bytes 0-99/*` and `bytes */1000` (RFC 9110,
+/// section 14.4): the unit in any case and a space after it, offsets in digits
+/// only, a last byte inside the file, and a size the engine can represent.
 pub(crate) fn parse_content_range(value: &str) -> Option<ContentRange> {
-    let rest = value.trim().strip_prefix("bytes")?.trim_start();
+    let value = value.trim();
+    let (unit, rest) = value.split_at_checked(BYTES_UNIT.len())?;
+    if !unit.eq_ignore_ascii_case(BYTES_UNIT) {
+        return None;
+    }
+    let rest = rest.strip_prefix(' ')?.trim_start();
     let (span, total) = rest.split_once('/')?;
     let total = match total.trim() {
         "*" => None,
-        t => Some(t.parse().ok()?),
+        t => Some(digits(t).filter(|&total| total != UNKNOWN_END)?),
     };
     if span.trim() == "*" {
         return Some(ContentRange { start: None, total });
     }
     let (start, end) = span.split_once('-')?;
-    let start: u64 = start.trim().parse().ok()?;
-    let end_inclusive: u64 = end.trim().parse().ok()?;
-    (start <= end_inclusive).then_some(ContentRange {
+    let start = digits(start.trim())?;
+    let end_inclusive = digits(end.trim())?;
+    let inside = total.is_none_or(|total| end_inclusive < total);
+    (start <= end_inclusive && inside).then_some(ContentRange {
         start: Some(start),
         total,
     })
+}
+
+/// The range unit, the only one HTTP defines.
+const BYTES_UNIT: &str = "bytes";
+
+/// A whole number written in ASCII digits only: `u64::from_str` would also
+/// take a leading `+`, which HTTP does not allow.
+fn digits(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
 }
 
 /// Checks that a partial answer (`206`) with these headers holds the range
@@ -179,5 +199,30 @@ mod tests {
             check_partial(&headers("bytes 10-19/101"), 10, Some(100)),
             Err(Error::RemoteChanged)
         ));
+    }
+
+    #[test]
+    fn a_content_range_that_cannot_be_right_is_refused() {
+        // The last byte must be inside the file.
+        assert_eq!(parse_content_range("bytes 0-100/100"), None);
+        assert!(parse_content_range("bytes 0-99/100").is_some());
+        // u64::MAX stands for an unknown end inside the engine.
+        assert_eq!(parse_content_range("bytes 0-1/18446744073709551615"), None);
+        assert_eq!(parse_content_range("bytes */18446744073709551615"), None);
+        // Digits only.
+        assert_eq!(parse_content_range("bytes +1-2/10"), None);
+        assert_eq!(parse_content_range("bytes 1-+2/10"), None);
+        assert_eq!(parse_content_range("bytes 1-2/+10"), None);
+        assert_eq!(parse_content_range("bytes */+10"), None);
+        // The unit is case-insensitive and followed by a space.
+        assert_eq!(
+            parse_content_range("BYTES 1-2/10"),
+            Some(ContentRange {
+                start: Some(1),
+                total: Some(10)
+            })
+        );
+        assert_eq!(parse_content_range("bytes1-2/10"), None);
+        assert_eq!(parse_content_range("bytesX 1-2/10"), None);
     }
 }
