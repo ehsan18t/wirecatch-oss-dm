@@ -31,8 +31,19 @@ export function copyLeftInBrowser(name: string): string {
   return `${name} went to Wirecatch, but its paused copy is still in the browser's download list. You can remove it there.`;
 }
 
-export function stuckPaused(name: string): string {
-  return `${name} is paused in the browser. Open the browser's downloads page and click Resume.`;
+/**
+ * The browser would not resume its copy. `certain` is false when the browser could not say how
+ * the copy stands; `appMayHave` when the app could not say whether it took the download.
+ */
+export function stuckPaused(
+  name: string,
+  { certain, appMayHave }: { certain: boolean; appMayHave: boolean },
+): string {
+  const paused = `${name} ${certain ? 'is' : 'may be'} paused in the browser`;
+  const resume = "open the browser's downloads page and click Resume.";
+  return appMayHave
+    ? `${paused}, and Wirecatch may have taken it. Check Wirecatch's download list: if it is not there, ${resume}`
+    : `${paused}. ${resume.charAt(0).toUpperCase()}${resume.slice(1)}`;
 }
 
 /** The browser has a copy and the app could not say whether it has one too. */

@@ -27,13 +27,23 @@ export type Recovered =
   /** The app could not say whether it has it, and the browser copy runs too. */
   | 'uncertain'
   /** The browser would not resume its copy, which is still paused. */
-  | 'stuck_paused';
+  | 'stuck_paused'
+  /** The browser would not resume its copy and could not say how it stands: it may still be paused. */
+  | 'maybe_paused';
 
 const REMOVAL_RESULTS = {
   removed: 'handed_over',
   left_paused: 'copy_left',
   kept_running: 'both',
 } as const satisfies Record<CopyRemoval, Recovered>;
+
+export interface RecoveryResult {
+  result: Recovered;
+  /** The file's name, as the notices give it. */
+  name: string;
+  /** The withdraw got no answer it could read, so the app may have the download. */
+  appMayHave: boolean;
+}
 
 export interface RecoveryDeps {
   downloads: DownloadControl;
@@ -51,24 +61,34 @@ export interface RecoveryDeps {
 export async function recoverHandover(
   { id, handoverId }: InFlightEntry,
   deps: RecoveryDeps,
-): Promise<{ result: Recovered; name: string }> {
+): Promise<RecoveryResult> {
   const { downloads } = deps;
   const state = await readBrowserCopy(downloads, id);
   const name = nameOf(state);
   if (state === null || (state !== 'unreadable' && state.state === 'interrupted')) {
-    return { result: 'no_browser_copy', name };
+    return { result: 'no_browser_copy', name, appMayHave: false };
   }
   const outcome = await deps.withdraw(handoverId).catch(() => null);
   if (outcome === 'already_started') {
-    return { result: REMOVAL_RESULTS[await removeBrowserCopy(downloads, id)], name };
+    return {
+      result: REMOVAL_RESULTS[await removeBrowserCopy(downloads, id)],
+      name,
+      appMayHave: false,
+    };
   }
   // A copy the browser would not describe may still be paused: resuming one that runs does no harm.
   if (state === 'unreadable' || (state.state === 'in_progress' && state.paused)) {
     const copy = await resumeBrowserCopy(downloads, id);
-    if (copy === 'stuck_paused') return { result: 'stuck_paused', name };
-    if (copy === 'gone') return { result: 'no_browser_copy', name };
+    if (copy === 'stuck_paused' || copy === 'maybe_paused') {
+      return { result: copy, name, appMayHave: outcome === null };
+    }
+    if (copy === 'gone') return { result: 'no_browser_copy', name, appMayHave: false };
   }
-  return { result: outcome === null ? 'uncertain' : 'browser_only', name };
+  return {
+    result: outcome === null ? 'uncertain' : 'browser_only',
+    name,
+    appMayHave: outcome === null,
+  };
 }
 
 function nameOf(state: DownloadState | null | 'unreadable'): string {

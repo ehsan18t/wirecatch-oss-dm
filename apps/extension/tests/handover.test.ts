@@ -449,6 +449,29 @@ describe('handover', () => {
       );
     });
 
+    it('says Wirecatch may have a copy the browser will not resume, and warns on a late confirmation', async () => {
+      s = await setup({
+        configure: (app) => {
+          app.addBehavior = 'started';
+          app.addLateMs = 9_000;
+          app.withdrawBehavior = 'hang';
+        },
+      });
+      s.downloads.failing.add('resume');
+      s.downloads.browserState = { state: 'in_progress', paused: true };
+      const pending = s.hub.onDownload(downloadItem());
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await pending).toMatchObject({ browserCopy: 'stuck_paused', uncertain: true });
+      expect(latestNotice(s.hub)).toMatchObject({
+        tone: 'error',
+        urgent: true,
+        message:
+          "big.zip is paused in the browser, and Wirecatch may have taken it. Check Wirecatch's download list: if it is not there, open the browser's downloads page and click Resume.",
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
+    });
+
     it('warns at once when the late confirmation came while the withdraw was still waiting', async () => {
       s = await setup({
         configure: (app) => {
@@ -1149,6 +1172,27 @@ describe('downloads left paused by a restarted background', () => {
       downloads.failing.add('resume');
       s = await setup({ inFlight, downloads });
       expect(latestNotice(s.hub)).toMatchObject({ tone: 'error', downloadId: 5 });
+      expect(latestNotice(s.hub)?.message).toContain('may be paused in the browser');
+    });
+
+    it('says Wirecatch may have a copy that will not resume when the withdraw gets no answer', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h5' }];
+      const downloads = new FakeDownloads();
+      downloads.failingCalls.add('resume:5');
+      downloads.states.set(5, { state: 'in_progress', paused: true });
+      s = await setup({
+        inFlight,
+        downloads,
+        start: false,
+        configure: (app) => {
+          app.withdrawFor.set('h5', 'hang');
+        },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await s.started;
+      expect(latestNotice(s.hub)).toMatchObject({ tone: 'error', urgent: true, downloadId: 5 });
+      expect(latestNotice(s.hub)?.message).toContain('Wirecatch may have taken it');
     });
 
     it('raises no error for a copy the person resumed while the withdraw was waiting', async () => {

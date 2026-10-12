@@ -19,6 +19,7 @@ type Determining = (item: DownloadItemLike, suggest: () => void) => boolean | un
 function chromiumEvents(): {
   events: DownloadEvents;
   change: (delta: DownloadDelta) => void;
+  erase: (downloadId: number) => void;
   fire: (item: DownloadItemLike) => {
     suggest: ReturnType<typeof vi.fn>;
     returned: boolean | undefined;
@@ -26,6 +27,7 @@ function chromiumEvents(): {
 } {
   let listener: Determining | null = null;
   let changed: ((delta: DownloadDelta) => void) | null = null;
+  let erased: ((downloadId: number) => void) | null = null;
   const events: DownloadEvents = {
     onDeterminingFilename: {
       addListener: (l) => {
@@ -42,12 +44,21 @@ function chromiumEvents(): {
         changed = l;
       },
     },
+    onErased: {
+      addListener: (l) => {
+        erased = l;
+      },
+    },
   };
   return {
     events,
     change: (delta) => {
       if (changed === null) throw new Error('not registered');
       changed(delta);
+    },
+    erase: (downloadId) => {
+      if (erased === null) throw new Error('not registered');
+      erased(downloadId);
     },
     fire: (item) => {
       const suggest = vi.fn();
@@ -111,6 +122,14 @@ describe('download changes', () => {
     });
     change(delta);
     expect(onDownloadMoved).toHaveBeenCalledTimes(moved ? 1 : 0);
+  });
+
+  it('tells the hub when a download is erased from the list', () => {
+    const { events, erase } = chromiumEvents();
+    const onDownloadMoved = vi.fn();
+    registerCapture(events, { onDownload: () => Promise.resolve(null), onDownloadMoved });
+    erase(3);
+    expect(onDownloadMoved).toHaveBeenCalledWith(3);
   });
 });
 
@@ -234,6 +253,7 @@ describe('registerCapture on Firefox', () => {
     let listener: ((item: DownloadItemLike) => void) | null = null;
     const events: DownloadEvents = {
       onChanged: { addListener: () => undefined },
+      onErased: { addListener: () => undefined },
       onCreated: {
         addListener: (l) => {
           listener = l;

@@ -363,12 +363,12 @@ export class Hub {
   }
 
   async #recover(entry: InFlightEntry): Promise<void> {
-    const { result, name } = await recoverHandover(entry, {
+    const recovered = await recoverHandover(entry, {
       downloads: this.#deps.downloads,
       // The app may need connecting, or starting, first: this is the handover the person started.
       withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
     });
-    this.#notices.recovered(result, name, entry.id);
+    this.#notices.recovered(recovered, entry.id);
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */

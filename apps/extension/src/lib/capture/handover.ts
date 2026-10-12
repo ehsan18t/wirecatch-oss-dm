@@ -128,6 +128,8 @@ export type BrowserCopy =
   | 'resumed'
   /** Still paused in the browser's list: the person has to resume it. */
   | 'stuck_paused'
+  /** Resuming failed and the browser could not say how the copy stands: it may still be paused. */
+  | 'maybe_paused'
   /** No longer running in the browser: finished, interrupted (cancelled or failed), or not listed. */
   | 'gone';
 
@@ -336,7 +338,7 @@ export async function resumeBrowserCopy(
   } catch {
     const state = await readBrowserCopy(downloads, id);
     // A copy that cannot be read may still be paused, so the person is asked to look.
-    if (state === 'unreadable') return 'stuck_paused';
+    if (state === 'unreadable') return 'maybe_paused';
     // Resuming a download that already runs fails in Firefox: the person resumed it.
     if (state?.state === 'in_progress') return state.paused ? 'stuck_paused' : 'resumed';
     return 'gone';

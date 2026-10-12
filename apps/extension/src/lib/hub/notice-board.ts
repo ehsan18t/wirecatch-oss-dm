@@ -10,7 +10,7 @@ import {
   mayDownloadTwiceUncertain,
   stuckPaused,
 } from './notices';
-import type { Recovered } from './recovery';
+import type { RecoveryResult } from './recovery';
 
 /**
  * Most notices kept. The popup lists them all, and a person who has not opened it for this many
@@ -140,17 +140,34 @@ export class NoticeBoard {
       return;
     }
     if (result.browserCopy === 'gone') return;
-    if (result.browserCopy === 'stuck_paused') {
-      this.error(stuckPaused(name), { downloadId, untilResumed: true });
+    const { handoverId } = result;
+    if (result.browserCopy === 'stuck_paused' || result.browserCopy === 'maybe_paused') {
+      this.#notResumed(name, downloadId, result.browserCopy, result.uncertain ? handoverId : null);
       return;
     }
-    const { handoverId } = result;
     if (result.uncertain && handoverId !== null) {
       this.uncertain(handoverId, name, downloadId);
       return;
     }
     const message = keptInBrowser(result, name);
     if (message !== null) this.warn(message, about);
+  }
+
+  /**
+   * The browser would not resume its copy. With the handover id of one the app may have taken,
+   * it is registered like any copy the app may have, so a late confirmation still warns; one
+   * that already came has warned, and then the app has it, so nothing is left to resume.
+   */
+  #notResumed(
+    name: string,
+    downloadId: number,
+    copy: 'stuck_paused' | 'maybe_paused',
+    uncertainHandover: string | null,
+  ): void {
+    const appMayHave = uncertainHandover !== null;
+    if (appMayHave && this.#duplicates.keptUncertain(uncertainHandover, name, downloadId)) return;
+    const certain = copy === 'stuck_paused';
+    this.error(stuckPaused(name, { certain, appMayHave }), { downloadId, untilResumed: true });
   }
 
   /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
@@ -165,12 +182,14 @@ export class NoticeBoard {
   }
 
   /** Tells the person what became of a download a restarted background settled. */
-  recovered(result: Recovered, name: string, downloadId: number): void {
+  recovered({ result, name, appMayHave }: RecoveryResult, downloadId: number): void {
     const about = { downloadId };
     if (result === 'copy_left') this.warn(copyLeftInBrowser(name), about);
     if (result === 'both') this.warn(mayDownloadTwice(name), { downloadId, urgent: true });
-    if (result === 'stuck_paused')
-      this.error(stuckPaused(name), { downloadId, untilResumed: true });
+    if (result === 'stuck_paused' || result === 'maybe_paused') {
+      const certain = result === 'stuck_paused';
+      this.error(stuckPaused(name, { certain, appMayHave }), { downloadId, untilResumed: true });
+    }
     // Not registered with the duplicate watch: the ports of the run that sent it are gone, so
     // no late answer to it can come.
     if (result === 'uncertain') {
