@@ -119,10 +119,14 @@ export default wirecatch({
             patterns: [
               NO_TAURI_IMPORT,
               {
-                group: ['$lib/backend', '$lib/backend/*', '**/backend', '**/backend/*'],
+                group: ['$lib/backend', '**/backend'],
                 allowTypeImports: true,
                 message:
                   'Window components get what they need from their state, not from the backend.',
+              },
+              {
+                group: ['$lib/backend/*', '**/backend/*'],
+                message: 'Import the backend from `$lib/backend`, not from one implementation.',
               },
             ],
           },
