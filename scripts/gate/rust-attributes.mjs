@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, ROOT } from './process.mjs';
 
-/** Where a raw string starts (`r"`, `r#"`, `br##"`): its `#`s close it again after the closing quote. */
-const RAW_STRING = /^b?r(#*)"/;
+/** Where a raw string starts (`r"`, `r#"`, `br##"`, `cr#"`): its `#`s close it again after the closing quote. */
+const RAW_STRING = /^[bc]?r(#*)"/;
 /** A character literal (`'"'`, `'\''`, `'\u{2014}'`), told apart from a lifetime by its closing quote. */
 const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]+\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'/;
 
@@ -120,7 +120,11 @@ function lintAttributes(call, conditional) {
     return call.args.slice(1).flatMap((arg) => lintAttributes(attributeCall(arg), true));
   if (call.name !== 'allow' && call.name !== 'expect') return [];
   // The reason is a string, blanked with the other literals, so only `reason =` is left of it.
-  const lints = call.args.filter((arg) => !/^reason\s*=/.test(arg)).sort();
+  // A `$lint` or `$($lint),*` inside `macro_rules!` is filled in by each use of the macro, which this reader does not expand; those lints are left to review. The comma splits a repetition, leaving its operator (`*`, `+`, `?`) as an argument of its own.
+  const lints = call.args
+    .filter((arg) => !/^reason\s*=/.test(arg) && !arg.startsWith('$') && !/^[*+?]$/.test(arg))
+    .sort();
+  if (lints.length === 0) return [];
   return [{ kind: call.name, conditional, lints }];
 }
 
