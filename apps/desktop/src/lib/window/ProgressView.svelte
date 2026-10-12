@@ -219,9 +219,9 @@
             void saveLink();
           }}
         >
-          <label class="stack">
-            <span class="label">Fresh link</span>
-            <span class="hint"
+          <label class="form-stack">
+            <span class="form-label">Fresh link</span>
+            <span class="form-help hint"
               >Start the download again on the page it came from, copy the new link and paste it
               here. Everything already downloaded is kept.</span
             >
@@ -406,19 +406,7 @@
     gap: 8px;
   }
 
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
   .hint {
-    color: var(--ink-2);
-    font-size: var(--text-xs);
     line-height: 1.45;
   }
 

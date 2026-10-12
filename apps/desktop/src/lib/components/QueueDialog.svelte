@@ -161,13 +161,13 @@
       void save();
     }}
   >
-    <label class="stack">
-      <span class="label">Name</span>
+    <label class="form-stack">
+      <span class="form-label">Name</span>
       <input class="field" bind:value={name} placeholder="For example: Overnight" required />
     </label>
 
-    <div class="stack">
-      <label class="label" for="queue-max">Downloads at the same time</label>
+    <div class="form-stack">
+      <label class="form-label" for="queue-max">Downloads at the same time</label>
       <input
         id="queue-max"
         class="field narrow"
@@ -177,14 +177,14 @@
         aria-describedby="queue-max-help"
         bind:value={maxConcurrent}
       />
-      <span id="queue-max-help" class="help">The rest wait their turn in order.</span>
+      <span id="queue-max-help" class="form-help">The rest wait their turn in order.</span>
     </div>
 
     <fieldset>
       <legend class="visually-hidden">Speed limit</legend>
-      <label class="check">
+      <label class="form-check">
         <input type="checkbox" bind:checked={limitOn} />
-        <span class="label">Limit this queue's speed</span>
+        <span class="form-label">Limit this queue's speed</span>
       </label>
       {#if limitOn}
         <div class="inline">
@@ -200,32 +200,32 @@
             <option value="KB">KB/s</option>
             <option value="MB">MB/s</option>
           </select>
-          <span class="help">Shared by everything running in this queue.</span>
+          <span class="form-help">Shared by everything running in this queue.</span>
         </div>
       {/if}
     </fieldset>
 
     <fieldset>
       <legend class="visually-hidden">Schedule</legend>
-      <label class="check">
+      <label class="form-check">
         <input type="checkbox" bind:checked={scheduleOn} />
-        <span class="label">Only run at certain times</span>
+        <span class="form-label">Only run at certain times</span>
       </label>
       {#if scheduleOn}
         <div class="inline">
           <label class="inline">From <input class="field" type="time" bind:value={start} /></label>
-          <label class="check">
+          <label class="form-check">
             <input type="checkbox" bind:checked={stopOn} />
             <span>until</span>
           </label>
           {#if stopOn}
             <input class="field" type="time" aria-label="Stop time" bind:value={stop} />
           {:else}
-            <span class="help">the queue is empty</span>
+            <span class="form-help">the queue is empty</span>
           {/if}
         </div>
         <div class="days-row">
-          <span class="label" id="queue-days-label">Only on these days</span>
+          <span class="form-label" id="queue-days-label">Only on these days</span>
           <div
             class="days"
             role="group"
@@ -243,7 +243,7 @@
               </button>
             {/each}
           </div>
-          <span id="queue-days-help" class="help">{daysHelp}</span>
+          <span id="queue-days-help" class="form-help">{daysHelp}</span>
         </div>
       {/if}
     </fieldset>
@@ -280,35 +280,8 @@
     border: 0;
   }
 
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  .help {
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-  }
-
   .narrow {
     width: 90px;
-  }
-
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .check input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
   }
 
   .inline {

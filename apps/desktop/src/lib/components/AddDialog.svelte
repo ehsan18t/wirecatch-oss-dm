@@ -70,8 +70,8 @@
       void submit(true);
     }}
   >
-    <div class="stack">
-      <label class="label" for="add-links">Links</label>
+    <div class="form-stack">
+      <label class="form-label" for="add-links">Links</label>
       <textarea
         id="add-links"
         class="field"
@@ -87,14 +87,15 @@
             void submit(true);
           }
         }}></textarea>
-      <span id="add-links-help" class="help">One link per line. Ctrl+Enter downloads them all.</span
+      <span id="add-links-help" class="form-help"
+        >One link per line. Ctrl+Enter downloads them all.</span
       >
       {#if error}<span id="add-error" class="error" role="alert">{error}</span>{/if}
     </div>
 
     {#if single}
-      <div class="stack">
-        <label class="label" for="add-name">File name</label>
+      <div class="form-stack">
+        <label class="form-label" for="add-name">File name</label>
         <input
           id="add-name"
           class="field"
@@ -102,13 +103,15 @@
           aria-describedby="add-name-help"
           bind:value={fileName}
         />
-        <span id="add-name-help" class="help">Leave empty to use the name the server gives.</span>
+        <span id="add-name-help" class="form-help"
+          >Leave empty to use the name the server gives.</span
+        >
       </div>
     {/if}
 
     <div class="row">
-      <div class="stack grow">
-        <span class="label">Save to</span>
+      <div class="form-stack grow">
+        <span class="form-label">Save to</span>
         <p class="folder">
           {folder ?? 'A folder picked by file type, as set in Settings'}
         </p>
@@ -121,8 +124,8 @@
       </div>
     </div>
 
-    <label class="stack">
-      <span class="label">Queue</span>
+    <label class="form-stack">
+      <span class="form-label">Queue</span>
       <select class="field" bind:value={queue}>
         {#each app.queues.list as q (q.id)}
           <option value={q.id}>{q.name}{q.is_default ? ' (default)' : ''}</option>
@@ -151,24 +154,9 @@
     gap: 14px;
   }
 
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
   .grow {
     flex: 1;
     min-width: 0;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  .help {
-    color: var(--ink-2);
-    font-size: var(--text-xs);
   }
 
   .error {

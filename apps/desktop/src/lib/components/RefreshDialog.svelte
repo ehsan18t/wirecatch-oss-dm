@@ -44,8 +44,8 @@
         <span class="from">from {hostOf(row.url)}</span>
       </p>
     {/if}
-    <label class="stack">
-      <span class="label">New link</span>
+    <label class="form-stack">
+      <span class="form-label">New link</span>
       <input
         class="field"
         type="url"
@@ -88,15 +88,5 @@
   .error {
     margin: 0;
     color: var(--danger);
-  }
-
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
   }
 </style>

@@ -51,8 +51,8 @@
   <div class="output">
     {#if option.outputs.length > 1}
       <div class="pair">
-        <label class="stack">
-          <span class="label">Save as</span>
+        <label class="form-stack">
+          <span class="form-label">Save as</span>
           <select class="field" bind:value={output.format} onchange={formatChanged}>
             {#each option.outputs as each (each.format)}
               <option value={each.format}>{formatChoiceLabel(each)}</option>
@@ -60,8 +60,8 @@
           </select>
         </label>
         {#if kbpsChoices && fit}
-          <label class="stack">
-            <span class="label">Audio quality</span>
+          <label class="form-stack">
+            <span class="form-label">Audio quality</span>
             <select
               class="field"
               value={output.kbps === null ? '' : String(output.kbps)}
@@ -88,10 +88,10 @@
 
     {#if choice.subtitles.length > 0}
       <fieldset class="subs">
-        <legend class="label">Subtitles</legend>
+        <legend class="form-label">Subtitles</legend>
         <div class="sub-list">
           {#each choice.subtitles as subtitle (subtitle.id)}
-            <label class="check">
+            <label class="form-check">
               <input type="checkbox" value={subtitle.id} bind:group={output.subtitles} />
               <span
                 >{subtitle.name}{#if subtitle.auto}<span class="auto">, auto-generated</span
@@ -102,19 +102,19 @@
         </div>
         {#if output.subtitles.length > 0}
           {#if fit?.embeds_subtitles}
-            <label class="check">
+            <label class="form-check">
               <input type="checkbox" bind:checked={output.subtitleFiles} />
               <span>Save them as .srt files next to the video instead</span>
             </label>
           {:else}
-            <p class="help">They are saved as .srt files next to the file.</p>
+            <p class="form-help">They are saved as .srt files next to the file.</p>
           {/if}
         {/if}
       </fieldset>
     {/if}
 
     {#if canChapters}
-      <label class="check">
+      <label class="form-check">
         <input type="checkbox" bind:checked={output.chapters} />
         <span>Add the video's chapters</span>
       </label>
@@ -138,27 +138,11 @@
     gap: 10px;
   }
 
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
   .note {
     margin: 0;
     color: var(--ink-2);
     font-size: var(--text-sm);
     line-height: 1.5;
-  }
-
-  .help {
-    margin: 0;
-    color: var(--ink-2);
-    font-size: var(--text-xs);
   }
 
   .subs {
@@ -185,17 +169,16 @@
     background: var(--surface);
   }
 
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .form-check {
     font-size: var(--text-sm);
     cursor: pointer;
   }
 
-  .check input {
+  /* The output options are a compact panel, so their boxes keep the platform size. */
+  .form-check input {
+    width: auto;
+    height: auto;
     margin: 0;
-    accent-color: var(--accent);
   }
 
   .auto {

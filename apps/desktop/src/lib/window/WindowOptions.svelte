@@ -14,7 +14,7 @@
 {#if win.settings}
   <div class="options">
     {#if files}
-      <label class="option">
+      <label class="form-check option">
         <input
           type="checkbox"
           checked={startWithoutAsking}
@@ -23,12 +23,12 @@
         />
         <span>Start downloads without asking</span>
       </label>
-      <p id="{uid}-ask" class="help">
+      <p id="{uid}-ask" class="form-help">
         Browser files then start at once, with no window. Videos still ask for a quality. You can
         turn this back on in Settings, Browser.
       </p>
     {/if}
-    <label class="option">
+    <label class="form-check option">
       <input
         type="checkbox"
         checked={closeWhenStarted}
@@ -37,7 +37,7 @@
       />
       <span>Close this window when downloads start</span>
     </label>
-    <p id="{uid}-close" class="help">
+    <p id="{uid}-close" class="form-help">
       Otherwise the window stays and shows the download's progress.
     </p>
   </div>
@@ -53,24 +53,17 @@
   }
 
   .option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     font-size: var(--text-sm);
     cursor: pointer;
   }
 
   .option input {
-    width: 16px;
-    height: 16px;
     margin: 0;
-    accent-color: var(--accent);
   }
 
-  .help {
+  /* Under the checkbox's label, lined up with its text. */
+  .form-help {
     margin: 0 0 6px 24px;
-    color: var(--ink-2);
-    font-size: var(--text-xs);
     line-height: 1.45;
   }
 </style>

@@ -29,7 +29,7 @@
         : `${unfinished} of them are unfinished; those stop and their partial files are deleted.`}
     {/if}
   </p>
-  <label class="check">
+  <label class="form-check">
     <input type="checkbox" bind:checked={deleteFiles} />
     <span>Also delete finished files from the disk</span>
   </label>
@@ -47,17 +47,5 @@
     margin: 0 0 12px;
     color: var(--ink-2);
     line-height: 1.5;
-  }
-
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .check input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
   }
 </style>

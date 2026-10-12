@@ -118,7 +118,7 @@
     {/if}
 
     <fieldset class="options">
-      <legend class="label">Quality</legend>
+      <legend class="form-label">Quality</legend>
       {#each choice.options as option, i (option.id)}
         {@const tag = rowTag(option, output.format, option.id === optionId ? output.kbps : null)}
         {@const size = rowSize(option)}
@@ -151,15 +151,15 @@
       <SaveAsOptions option={picked} {choice} defaults={defaultsFor(picked)} {output} />
     {/if}
 
-    <label class="stack">
-      <span class="label">File name</span>
+    <label class="form-stack">
+      <span class="form-label">File name</span>
       <input class="field" placeholder={choice.title} bind:value={fileName} spellcheck="false" />
-      <span class="help">Leave empty to use the video's title.</span>
+      <span class="form-help">Leave empty to use the video's title.</span>
     </label>
 
     <div class="row">
-      <div class="stack grow">
-        <span class="label">Save to</span>
+      <div class="form-stack grow">
+        <span class="form-label">Save to</span>
         <p class="folder" id="{uid}-folder">{folder}</p>
       </div>
       <Button
@@ -170,8 +170,8 @@
       >
     </div>
 
-    <label class="stack">
-      <span class="label">Queue</span>
+    <label class="form-stack">
+      <span class="form-label">Queue</span>
       <select class="field" bind:value={queue}>
         {#each win.queues as q (q.id)}
           <option value={q.id}>{q.name}</option>
@@ -289,11 +289,6 @@
     line-height: 1.5;
   }
 
-  .stack {
-    display: grid;
-    gap: 4px;
-  }
-
   .grow {
     flex: 1;
     min-width: 0;
@@ -303,17 +298,6 @@
     display: flex;
     align-items: flex-end;
     gap: 10px;
-  }
-
-  .label {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  .help {
-    margin: 0;
-    color: var(--ink-2);
-    font-size: var(--text-xs);
   }
 
   .folder {
