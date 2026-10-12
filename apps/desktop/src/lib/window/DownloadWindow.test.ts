@@ -5,7 +5,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from '$lib/backend/mock';
-import { mockBackend, settle, windowState } from '$lib/testing/setup';
+import { mockBackend, NOON, settle, windowState } from '$lib/testing/setup';
+import { HOURS_PER_DAY, MS_PER_HOUR } from '$lib/time';
 import DownloadWindow from './DownloadWindow.svelte';
 import { CLOSE_AFTER_MS, type Target } from './download-window.svelte';
 
@@ -134,7 +135,8 @@ describe('a finished download’s window', () => {
 
 describe('a download window and the clock', () => {
   it('says when the file was downloaded before by the clock the app follows', async () => {
-    // The sample backend runs at NOON on 10 October 2026, whatever the date on this machine.
+    // The sample backend runs at NOON on 10 October 2026; the machine's clock says ten days later.
+    vi.setSystemTime(NOON + 10 * HOURS_PER_DAY * MS_PER_HOUR);
     const b = mockBackend({ empty: true });
     b.simulateConfirmation();
     const [first] = await b.pendingConfirmations();

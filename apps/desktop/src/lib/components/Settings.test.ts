@@ -10,7 +10,9 @@ import { renderApp, settle } from '$lib/testing/setup';
 
 /** More downloads at once than the desktop used to allow (32), and fewer than the core's limit. */
 const MANY_AT_ONCE = 50;
-/** A little over half the time a setting opened from elsewhere stays highlighted (1.6 s). */
+/** How long a setting opened from elsewhere stays highlighted. */
+const FLASH_MS = 1600;
+/** A little over half of that. */
 const FLASH_HALF = 900;
 
 afterEach(() => {
@@ -94,11 +96,16 @@ describe('a setting opened from elsewhere', () => {
   it('leaves no timer behind when the screen closes', async () => {
     const { app } = await renderApp();
     vi.useFakeTimers();
+    const started = vi.spyOn(globalThis, 'setTimeout');
+    const stopped = vi.spyOn(globalThis, 'clearTimeout');
     app.openSettings('default_folder');
     await vi.advanceTimersByTimeAsync(0);
-    expect(vi.getTimerCount()).toBe(1);
+    const highlight: unknown = started.mock.results.find(
+      (_, i) => started.mock.calls[i]?.[1] === FLASH_MS,
+    )?.value;
+    expect(highlight).toBeDefined();
     app.screen = 'downloads';
     await vi.advanceTimersByTimeAsync(0);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(stopped).toHaveBeenCalledWith(highlight);
   });
 });
