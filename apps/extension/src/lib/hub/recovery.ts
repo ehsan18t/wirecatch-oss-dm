@@ -1,6 +1,11 @@
 /** Settling a handover that a previous run of the background script started and never finished. */
 import type { WithdrawOutcome } from '@wirecatch/protocol';
-import { removeBrowserCopy, resumeBrowserCopy, type DownloadControl } from '../capture/handover';
+import {
+  removeBrowserCopy,
+  resumeBrowserCopy,
+  type CopyRemoval,
+  type DownloadControl,
+} from '../capture/handover';
 import { baseName } from '../file-types';
 import { nonEmpty } from '../text';
 import type { InFlightEntry } from './deps';
@@ -13,12 +18,20 @@ export type Recovered =
   | 'handed_over'
   /** The app has it, but the browser copy could not be cancelled and stays paused in its list. */
   | 'copy_left'
+  /** The app has it, and so does the browser: the person resumed its copy, or it finished, meanwhile. */
+  | 'both'
   /** The app does not have it, and the browser resumed its copy. */
   | 'resumed'
   /** The app could not say whether it has it, and the browser resumed its copy too. */
   | 'uncertain'
   /** The browser would not resume its copy, which is still paused. */
   | 'stuck_paused';
+
+const REMOVAL_RESULTS = {
+  removed: 'handed_over',
+  left_paused: 'copy_left',
+  kept_running: 'both',
+} as const satisfies Record<CopyRemoval, Recovered>;
 
 export interface RecoveryDeps {
   downloads: DownloadControl;
@@ -42,8 +55,8 @@ export async function recoverHandover(
   if (state?.state !== 'in_progress' || !state.paused) return { result: 'not_waiting', name };
   const outcome = await deps.withdraw(handoverId).catch(() => null);
   if (outcome === 'already_started') {
-    const removed = await removeBrowserCopy(downloads, id);
-    return { result: removed ? 'handed_over' : 'copy_left', name };
+    const removal = await removeBrowserCopy(downloads, id);
+    return { result: REMOVAL_RESULTS[removal], name };
   }
   const copy = await resumeBrowserCopy(downloads, id);
   if (copy === 'stuck_paused') return { result: 'stuck_paused', name };

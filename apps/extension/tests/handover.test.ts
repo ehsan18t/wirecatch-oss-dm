@@ -138,7 +138,7 @@ describe('handover', () => {
       kind: 'handed_over',
       handoverId: 'h1',
       action: 'started',
-      browserCopyRemoved: true,
+      browserCopy: 'removed',
     });
     expect(addDownloadCalls(s.app)).toEqual([
       {
@@ -348,7 +348,7 @@ describe('handover', () => {
         kind: 'handed_over',
         handoverId: 'h1',
         action: 'started',
-        browserCopyRemoved: true,
+        browserCopy: 'removed',
       });
       expect(s.downloads.log).toEqual(['pause:1', 'cancel:1', 'erase:1']);
     });
@@ -744,9 +744,28 @@ describe('handover', () => {
     s.downloads.failing.add('cancel');
     const result = await s.hub.onDownload(downloadItem());
     expect(s.downloads.log).toEqual(['pause:1', 'cancel:1']);
-    expect(result).toMatchObject({ kind: 'handed_over', browserCopyRemoved: false });
+    expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'left_paused' });
     expect(s.hub.snapshot().notice?.message).toContain('still in the browser');
   });
+
+  // The browser copy was cancelled and erased on the app's word without looking at it again:
+  // one the person had resumed meanwhile was cancelled, and a finished one lost its history.
+  it.each([
+    ['resumed', { state: 'in_progress', paused: false }],
+    ['finished', { state: 'complete', paused: false }],
+  ] as const)(
+    'leaves a browser copy the person %s meanwhile, and warns of two copies',
+    async (_label, state) => {
+      s = await setup();
+      s.app.onRequest = (call) => {
+        if (call.method === 'add_download') s.downloads.browserState = { ...state };
+      };
+      const result = await s.hub.onDownload(downloadItem());
+      expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
+      expect(s.downloads.log).toEqual(['pause:1']);
+      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+    },
+  );
 
   it('rechecks the app settings after pausing and resumes if they now say no', async () => {
     s = await setup({
@@ -910,6 +929,27 @@ describe('downloads left paused by a restarted background', () => {
       expect(downloads.log).toEqual(['cancel:5', 'erase:5']);
       expect(s.hub.snapshot().notice).toBeNull();
       expect(inFlight.entries).toEqual([]);
+    });
+
+    it('leaves a browser copy the person resumed while the withdraw was waiting', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.browserState = { state: 'in_progress', paused: true };
+      s = await setup({
+        inFlight,
+        downloads,
+        configure: (app) => {
+          app.withdrawBehavior = 'already_started';
+          app.onRequest = (call) => {
+            if (call.method === 'withdraw_download') {
+              downloads.browserState = { state: 'in_progress', paused: false };
+            }
+          };
+        },
+      });
+      expect(downloads.log).toEqual([]);
+      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
     });
 
     it.each(['withdrawn', 'not_found'] as const)(

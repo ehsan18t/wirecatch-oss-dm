@@ -136,8 +136,7 @@ export type HandoverResult =
       kind: 'handed_over';
       handoverId: string;
       action: AddAction;
-      /** False if the browser copy could not be cancelled; it then stays paused in the browser list. */
-      browserCopyRemoved: boolean;
+      browserCopy: CopyRemoval;
     }
   | {
       kind: 'kept';
@@ -164,7 +163,8 @@ export interface HandoverInput {
  * 1. Pause the browser download. If that fails, leave it alone.
  * 2. Check the settings again (the app's live ones when it can be reached) and build the request.
  * 3. Send `add_download` with a fresh handover id; if no answer comes back, withdraw it (see `submit`).
- * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy.
+ * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy,
+ *    if it is still paused (see `removeBrowserCopy`).
  *    Only `started` means the app has reached the server and data is flowing. `queued` and
  *    `awaiting_confirmation` mean accepted but the link not yet tried, so some risk remains: a
  *    link that only works once, or one that needs the browser's POST request, may fail later in
@@ -234,8 +234,8 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     return keep(handoverId, KEPT_REASONS[result.reason], result.detail, result.uncertain);
   }
 
-  const browserCopyRemoved = await removeBrowserCopy(deps.downloads, downloadId);
-  return { kind: 'handed_over', handoverId, action: result.action, browserCopyRemoved };
+  const browserCopy = await removeBrowserCopy(deps.downloads, downloadId);
+  return { kind: 'handed_over', handoverId, action: result.action, browserCopy };
 }
 
 /** Why the browser keeps a download the app did not take, by why the app did not take it. */
@@ -256,19 +256,39 @@ async function withLatestVerdict(
   return danger === null ? candidate : { ...candidate, danger };
 }
 
-/** Cancels the browser's copy and takes it off the browser's list; false when it could not be cancelled. */
-export async function removeBrowserCopy(downloads: DownloadControl, id: number): Promise<boolean> {
+/** What became of the browser's copy once the app has a download. */
+export type CopyRemoval =
+  /** Cancelled and taken off the browser's list, or already gone. */
+  | 'removed'
+  /** Could not be cancelled: it stays paused in the browser's list. */
+  | 'left_paused'
+  /** The person resumed it, or it finished, while the app was answering: left alone, so it is in both places. */
+  | 'kept_running';
+
+/**
+ * Cancels the browser's copy and takes it off the browser's list, but only while it is still
+ * paused: the answer may have taken seconds, and a copy the person resumed meanwhile is theirs
+ * (cancelling a finished one does nothing, and erasing it would only lose its history).
+ */
+export async function removeBrowserCopy(
+  downloads: DownloadControl,
+  id: number,
+): Promise<CopyRemoval> {
+  const state = await downloads.state(id).catch(() => null);
+  // Cancelled by the person, or taken off the list: there is no copy left.
+  if (state === null || state.state === 'interrupted') return 'removed';
+  if (state.state !== 'in_progress' || !state.paused) return 'kept_running';
   try {
     await downloads.cancel(id);
   } catch {
-    return false;
+    return 'left_paused';
   }
   try {
     await downloads.erase(id);
   } catch {
     // Cancelled but still listed: harmless, the person can clear it from the list.
   }
-  return true;
+  return 'removed';
 }
 
 /** Resumes a paused browser download; if that fails, finds out whether it is still waiting or already gone. */

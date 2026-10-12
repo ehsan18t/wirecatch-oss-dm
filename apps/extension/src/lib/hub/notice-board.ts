@@ -63,7 +63,8 @@ export class NoticeBoard {
   /** Tells the person what became of a browser download, when there is something to say. */
   handover(result: HandoverResult, name: string): void {
     if (result.kind === 'handed_over') {
-      if (!result.browserCopyRemoved) this.warn(copyLeftInBrowser(name));
+      if (result.browserCopy === 'left_paused') this.warn(copyLeftInBrowser(name));
+      if (result.browserCopy === 'kept_running') this.warn(mayDownloadTwice(name));
       return;
     }
     // The person cancelled it in the browser meanwhile, or it finished: nothing to say.
@@ -94,6 +95,7 @@ export class NoticeBoard {
   /** Tells the person what became of a download a restarted background settled. */
   recovered(result: Recovered, name: string, handoverId: string): void {
     if (result === 'copy_left') this.warn(copyLeftInBrowser(name));
+    if (result === 'both') this.warn(mayDownloadTwice(name));
     if (result === 'stuck_paused') this.error(stuckPaused(name));
     if (result === 'uncertain' && !this.#duplicates.keptUncertain(handoverId, name)) {
       this.warn(mayDownloadTwiceAfterRestart(name));
