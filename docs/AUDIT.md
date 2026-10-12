@@ -124,7 +124,7 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 |---|---|
 | W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
 | W1 | done and independently reviewed: all 12 fixed, each with a test shown to fail without its fix, and the review's 29 defects (2 high, 7 medium, 20 low) fixed the same way. Also done alongside: per-machine install (D25). What is left of the review moved to later workstreams, listed below |
-| W14 | fixed (2026-10-12): every crate on the workspace lints, no suppression files, `thread::sleep` banned; each part was verified by an agent that did not write it. Review of the whole workstream running |
+| W14 | done (2026-10-12): every crate and package on the lint rules with the eleven exceptions listed above, reviewed as a whole by four reviewers whose findings were fixed and verified, full gate passing. What is left moved to later workstreams, listed below |
 | W2 to W13 | not started |
 | W15 | planned last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
@@ -135,6 +135,18 @@ Parts of W0 findings carried into later workstreams:
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
 - XC-32: `SECURITY.md` needs a security contact address, a product identity value (W2).
+
+Parts of W14 carried into later workstreams:
+
+- The desktop bridge test hard-codes the extension's Chromium origin (`apps/desktop/src-tauri/tests/bridge.rs:25`); it should come from `config/extension-ids.json` like the e2e tests (W2).
+- `PrivateDir::remove` (`crates/test-support/src/lib.rs:133`) says it catches a handle left open, but only a file opened without delete sharing blocks removal, and std opens files with it, so it cannot prove the engine closed its files: say so in its docs, or check open handles another way (W6).
+- Flaky under load, each seen once: `resuming_checks_segment_sizes` (`crates/streams/tests/hls.rs:468`), `a_capture_starts_after_the_server_answers_and_completes` (`crates/e2e/tests/e2e.rs:46`, a `.wcpart` still listed after the row turned Completed), and the media tests in `apps/desktop/e2e/a11y.spec.ts` (90 s waiting for the sample download window, also on the base branch) (W6).
+- Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports (W6).
+- The HLS and DASH parsers still return `Result<_, String>` (`crates/streams/src/hls.rs:92`, `crates/streams/src/dash.rs:325` and their helpers): typed errors (W8).
+- Win32 helpers are copied: `win32_size_of` (`crates/ipc/src/windows.rs:51`, `crates/bridge/src/shell_parent.rs:89`), `os_error` (`crates/ipc/src/windows.rs:62`, `crates/bridge/src/install.rs:741`), a fourth `wide` (`crates/core/src/owner_only.rs:163`) and two current-user SID readers (`crates/core/src/owner_only.rs:124`, `crates/ipc/src/windows.rs:196`); add them to IPB-6, and the registry loop's literal 520 (`crates/bridge/src/install.rs:759`) to IPB-17 (W10).
+- Desktop lint rules, each clean today: no type argument on `querySelector` or `closest` and no `as` on DOM values (unchecked casts), no `setTimeout` in a `$effect` without its cleanup, no `vi.useRealTimers()` or timer spies outside `vitest-setup.ts`, and no import of `window/**` from `backend/**` (W12).
+- Extension lint rule: type predicates (`x is T`) only in `src/lib/validate.ts`, so only its combinators declare guards; two are outside it today (`src/lib/file-types.ts:54`, `src/lib/media/detect.ts:255`) (W13).
+- About 70 `let _ =` in Rust outside the `tests/` folders (for example `crates/bridge/src/main.rs:26`), each to be handled, propagated or logged with a reason, then a gate check that allows none (the `let_underscore_must_use` round).
 
 Parts of the W1 review carried into later workstreams:
 
