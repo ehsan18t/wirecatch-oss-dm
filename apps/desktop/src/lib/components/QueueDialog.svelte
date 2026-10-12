@@ -12,6 +12,7 @@
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
   import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { id }: { id: QueueId | null } = $props();
@@ -252,16 +253,16 @@
 
   {#snippet footer()}
     {#if original && !original.is_default}
-      <button type="button" class="btn danger delete" onclick={remove}>
+      <Button variant="danger" class="queue-delete" onclick={remove}>
         {confirmDelete
           ? `Delete it; downloads move to ${app.queues.defaultQueue?.name ?? 'the default queue'}`
           : 'Delete queue'}
-      </button>
+      </Button>
     {/if}
-    <button type="button" class="btn" onclick={() => app.closeDialog()}>Cancel</button>
-    <button type="submit" form="queue-form" class="btn primary" disabled={busy}>
+    <Button onclick={() => app.closeDialog()}>Cancel</Button>
+    <Button type="submit" form="queue-form" variant="primary" disabled={busy}>
       {original || created ? 'Save' : 'Create queue'}
-    </button>
+    </Button>
   {/snippet}
 </Dialog>
 
@@ -354,7 +355,8 @@
     font-size: var(--text-sm);
   }
 
-  .delete {
+  /* The delete button stands apart from Cancel and Save, at the start of the bar. */
+  :global(.queue-delete) {
     margin-right: auto;
   }
 </style>
