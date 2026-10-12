@@ -44,12 +44,17 @@ interface About {
  */
 export class NoticeBoard {
   readonly #deps: NoticeBoardDeps;
-  readonly #duplicates = new DuplicateWatch((name, certain, downloadId) =>
-    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name), {
-      downloadId,
-      urgent: true,
-    }),
-  );
+  readonly #duplicates = new DuplicateWatch(({ name, downloadId, paused }, certain) => {
+    if (!paused) {
+      const message = certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name);
+      this.warn(message, { downloadId, urgent: true });
+    } else if (certain) {
+      // The app has it: the paused copy only needs removing, not resuming.
+      this.warn(copyLeftInBrowser(name), { downloadId });
+    }
+    // A paused copy and an unreadable answer: the notice to resume it already says to check
+    // Wirecatch's list first, so it stays.
+  });
   #notices: Notice[] = [];
   /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
   readonly #dismissed = new Set<string>();
@@ -155,8 +160,8 @@ export class NoticeBoard {
 
   /**
    * The browser would not resume its copy. With the handover id of one the app may have taken,
-   * it is registered like any copy the app may have, so a late confirmation still warns; one
-   * that already came has warned, and then the app has it, so nothing is left to resume.
+   * it is also registered as a paused copy, so a sure late confirmation, before or after, replaces
+   * the notice to resume it with one saying the copy is left over.
    */
   #notResumed(
     name: string,
@@ -165,14 +170,15 @@ export class NoticeBoard {
     uncertainHandover: string | null,
   ): void {
     const appMayHave = uncertainHandover !== null;
-    if (appMayHave && this.#duplicates.keptUncertain(uncertainHandover, name, downloadId)) return;
     const certain = copy === 'stuck_paused';
     this.error(stuckPaused(name, { certain, appMayHave }), { downloadId, untilResumed: true });
+    if (appMayHave)
+      this.#duplicates.keptUncertain(uncertainHandover, { name, downloadId, paused: true });
   }
 
   /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
   uncertain(handoverId: string, name: string, downloadId: number | null): void {
-    if (!this.#duplicates.keptUncertain(handoverId, name, downloadId)) {
+    if (!this.#duplicates.keptUncertain(handoverId, { name, downloadId, paused: false })) {
       this.warn(mayDownloadTwiceUncertain(name), { downloadId, urgent: true });
     }
   }

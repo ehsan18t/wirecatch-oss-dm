@@ -86,12 +86,14 @@ describe('planMenuClick', () => {
 describe('DuplicateWatch', () => {
   function watch(): { watch: DuplicateWatch; warned: string[] } {
     const warned: string[] = [];
-    return { watch: new DuplicateWatch((name) => warned.push(name)), warned };
+    return { watch: new DuplicateWatch(({ name }) => warned.push(name)), warned };
   }
 
   it('warns once when the late confirmation comes after the browser kept it', () => {
     const w = watch();
-    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(false);
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
+      false,
+    );
     w.watch.confirmedLate('h1', 'a.zip', true);
     w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.warned).toEqual(['a.zip']);
@@ -100,17 +102,21 @@ describe('DuplicateWatch', () => {
   it('warns once when the late confirmation came first', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(true);
-    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(false);
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
+      true,
+    );
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
+      false,
+    );
     expect(w.warned).toEqual(['a.zip']);
   });
 
   it('passes on whether the late answer was a sure confirmation', () => {
     const certainty: boolean[] = [];
-    const duplicates = new DuplicateWatch((_name, certain) => certainty.push(certain));
+    const duplicates = new DuplicateWatch((_copy, certain) => certainty.push(certain));
     duplicates.confirmedLate('h1', 'a.zip', false);
-    duplicates.keptUncertain('h1', 'a.zip', null);
-    duplicates.keptUncertain('h2', 'b.zip', null);
+    duplicates.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false });
+    duplicates.keptUncertain('h2', { name: 'b.zip', downloadId: null, paused: false });
     duplicates.confirmedLate('h2', 'b.zip', true);
     expect(certainty).toEqual([false, true]);
   });
@@ -118,7 +124,9 @@ describe('DuplicateWatch', () => {
   it('does not match different handovers', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h2', 'b.zip', null)).toBe(false);
+    expect(w.watch.keptUncertain('h2', { name: 'b.zip', downloadId: null, paused: false })).toBe(
+      false,
+    );
     expect(w.warned).toEqual([]);
   });
 });

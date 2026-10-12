@@ -449,27 +449,54 @@ describe('handover', () => {
       );
     });
 
-    it('says Wirecatch may have a copy the browser will not resume, and warns on a late confirmation', async () => {
-      s = await setup({
-        configure: (app) => {
-          app.addBehavior = 'started';
-          app.addLateMs = 9_000;
-          app.withdrawBehavior = 'hang';
+    describe('a copy the browser will not resume, which the app may have', () => {
+      const STUCK =
+        "big.zip is paused in the browser, and Wirecatch may have taken it. Check Wirecatch's download list: if it is not there, open the browser's downloads page and click Resume.";
+      const LEFT =
+        "big.zip went to Wirecatch, but its paused copy is still in the browser's download list. You can remove it there.";
+
+      async function stuckWithLateAnswer(
+        addBehavior: 'started' | 'unexpected_action',
+        addLateMs: number,
+      ): Promise<void> {
+        s = await setup({
+          configure: (app) => {
+            app.addBehavior = addBehavior;
+            app.addLateMs = addLateMs;
+            app.withdrawBehavior = 'hang';
+          },
+        });
+        s.downloads.failing.add('resume');
+        s.downloads.browserState = { state: 'in_progress', paused: true };
+        const pending = s.hub.onDownload(downloadItem());
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(await pending).toMatchObject({ browserCopy: 'stuck_paused', uncertain: true });
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+
+      it.each([
+        ['after the browser kept it', 9_000],
+        ['while the withdraw was waiting', 6_000],
+      ])(
+        'keeps the notice to resume it when an unreadable late answer comes %s',
+        async (_label, ms) => {
+          await stuckWithLateAnswer('unexpected_action', ms);
+          expect(s.hub.snapshot().notices).toMatchObject([
+            { tone: 'error', urgent: true, untilResumed: true, message: STUCK },
+          ]);
         },
-      });
-      s.downloads.failing.add('resume');
-      s.downloads.browserState = { state: 'in_progress', paused: true };
-      const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(8_000);
-      expect(await pending).toMatchObject({ browserCopy: 'stuck_paused', uncertain: true });
-      expect(latestNotice(s.hub)).toMatchObject({
-        tone: 'error',
-        urgent: true,
-        message:
-          "big.zip is paused in the browser, and Wirecatch may have taken it. Check Wirecatch's download list: if it is not there, open the browser's downloads page and click Resume.",
-      });
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
+      );
+
+      it.each([
+        ['after the browser kept it', 9_000],
+        ['while the withdraw was waiting', 6_000],
+      ])(
+        'says the paused copy is left over when a sure confirmation comes %s',
+        async (_label, ms) => {
+          await stuckWithLateAnswer('started', ms);
+          expect(s.hub.snapshot().notices).toMatchObject([{ message: LEFT }]);
+        },
+      );
     });
 
     it('warns at once when the late confirmation came while the withdraw was still waiting', async () => {
