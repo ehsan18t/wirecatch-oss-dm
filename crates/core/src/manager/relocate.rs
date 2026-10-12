@@ -21,6 +21,14 @@ impl Manager {
     /// and started again, and a failed one (for example because its old folder
     /// could not be written) goes back in line. The folder is created if needed and
     /// must be writable. If the name is taken there, ` (1)` and so on is added.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it
+    /// cannot be created or written to or the files cannot be moved there,
+    /// [`CoreError::WrongState`] for an unfinished video or a download already being
+    /// moved, [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn set_download_folder(&self, id: DownloadId, folder: &str) -> Result<()> {
         let dir = self
             .inner

@@ -43,6 +43,15 @@ impl Manager {
     /// [`confirm_capture`](Manager::confirm_capture) or
     /// [`reject_capture`](Manager::reject_capture). A repeated call with the same
     /// handover id gets the first call's answer and adds nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::NotStarted`] when the app could not take the download over (the
+    /// server did not answer in time, refused it, or the browser took it back), so the
+    /// browser keeps it; [`CoreError::Invalid`] for a handover id that is empty or too
+    /// long, or a name that cannot be used; [`CoreError::InvalidUrl`] for a link that
+    /// is not http, https or FTP; [`CoreError::Path`] when the folder for its category
+    /// does not resolve; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn add_capture(&self, capture: NewDownload) -> Result<AddedDownload> {
         handovers::check_id(&capture.handover_id)?;
         let url = parse_url(&capture.url)?;
@@ -196,6 +205,11 @@ impl Manager {
     /// not yet replied `Started` to, or that was queued and has not reached the
     /// server, is dropped completely, leaving no download and no files behind.
     /// Once the app has replied `Started` (the server answered), it is the app's.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Closed`] once the manager has shut down. A handover that is unknown
+    /// or already started is an outcome, not an error.
     pub fn withdraw_capture(&self, handover_id: &str) -> Result<WithdrawOutcome> {
         let download = {
             let mut state = self.lock_open()?;
@@ -254,6 +268,14 @@ impl Manager {
     /// Accepts a waiting capture, with the user's changes, and starts it, or with
     /// `answer.later` adds it to its queue paused. Returns the new download's id; its
     /// row also arrives with the next `DownloadsChanged` event.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::ConfirmationNotFound`] when the question was already answered or
+    /// withdrawn; [`CoreError::InvalidUrl`], [`CoreError::Invalid`],
+    /// [`CoreError::Path`] or [`CoreError::QueueNotFound`] when the answer's link,
+    /// name, folder or queue cannot be used, in which case the question stays open; and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn confirm_capture(
         &self,
         id: u64,
@@ -286,6 +308,11 @@ impl Manager {
     }
 
     /// Dismisses a waiting capture; nothing is downloaded.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::ConfirmationNotFound`] when the question was already answered or
+    /// withdrawn, and [`CoreError::Closed`] once the manager has shut down.
     pub fn reject_capture(&self, id: u64) -> Result<()> {
         let mut state = self.lock_open()?;
         let pending = state

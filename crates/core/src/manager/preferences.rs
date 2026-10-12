@@ -29,6 +29,13 @@ impl Manager {
     /// Settings someone else changed in the meantime are overwritten, so the windows and
     /// the shell change settings with [`change_settings`](Self::change_settings); this is
     /// for replacing them all at once.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] for a value out of range or a queue that does not exist,
+    /// [`CoreError::Path`] for a folder that does not resolve, and
+    /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
+    /// error.
     pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
         let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
@@ -37,6 +44,10 @@ impl Manager {
     }
 
     /// Applies `patch` to the current settings, checks the result and keeps it, like [`update_settings`](Self::update_settings). A patch holds only the settings that change, so settings nobody changed keep their current values whoever set them: two windows changing different settings never undo each other.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`update_settings`](Self::update_settings).
     pub fn change_settings(&self, mut patch: AppSettingsPatch) -> Result<()> {
         if let Some(extension) = &mut patch.extension {
             normalize_site_edits(extension);
@@ -57,6 +68,10 @@ impl Manager {
 
     /// Changes some of the extension's settings, as asked by a socket client. Sites
     /// to add or remove are matched the way the list stores them (lower case).
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`update_settings`](Self::update_settings).
     pub fn update_extension_settings(
         &self,
         mut patch: ExtensionSettingsPatch,
@@ -74,6 +89,10 @@ impl Manager {
     /// Writes every setting and queue to `path` as a settings profile (D6). Folders
     /// are written relative to the user's standard folders, so the file works on
     /// another machine.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::File`] when `path` cannot be written.
     pub async fn export_settings(&self, path: &Path) -> Result<()> {
         let profile = {
             let state = self.lock();
@@ -106,6 +125,14 @@ impl Manager {
     /// [`UiEvent::SettingsImported`]. Add-ons the profile lists that are not
     /// installed here are listed there for the UI to offer; nothing is
     /// downloaded without the person asking.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::File`] when `path` cannot be read, [`CoreError::InvalidProfile`]
+    /// when it is not a settings profile, [`CoreError::ProfileTooNew`] when a newer
+    /// Wirecatch made it, [`CoreError::Invalid`] when its settings or queues are out of
+    /// range, and [`CoreError::Closed`] once the manager has shut down. Nothing changes
+    /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let localized = self.read_profile(path).await?;
         let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);
@@ -144,6 +171,10 @@ impl Manager {
     /// outside the person's own folders flagged), the queues it would add and
     /// update, and the add-ons it would offer. The UI shows this and asks before
     /// importing.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`import_settings`](Self::import_settings).
     pub async fn preview_import(&self, path: &Path) -> Result<ImportPreview> {
         let localized = self.read_profile(path).await?;
         let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);

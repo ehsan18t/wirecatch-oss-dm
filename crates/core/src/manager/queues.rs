@@ -22,6 +22,12 @@ impl Manager {
     }
 
     /// Adds a queue with no schedule and no speed limit.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] when the name is empty, too long or taken, or there are
+    /// already as many queues as allowed; and [`CoreError::Closed`] once the manager
+    /// has shut down.
     pub fn create_queue(&self, name: &str) -> Result<Queue> {
         let mut state = self.lock_open()?;
         settings::check_queue_count(state.queues.len() + 1)?;
@@ -51,6 +57,12 @@ impl Manager {
     /// not changed here (see [`set_queue_paused`](Self::set_queue_paused) and
     /// [`start_queue_now`](Self::start_queue_now)). The stored queue arrives as
     /// `QueuesChanged`.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] for a name or limit that cannot be used,
+    /// [`CoreError::QueueNotFound`] when there is no such queue, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn update_queue(&self, queue: Queue) -> Result<()> {
         let queue = settings::validate_queue(queue)?;
         let mut state = self.lock_open()?;
@@ -64,6 +76,11 @@ impl Manager {
     /// downloads added later, and its running downloads stop and wait. Resuming it
     /// lets those continue, but not downloads the user paused one by one. Pausing
     /// also ends a "start now" run.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::QueueNotFound`] when there is no queue `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn set_queue_paused(&self, id: QueueId, paused: bool) -> Result<()> {
         let mut state = self.lock_open()?;
         let queue = &mut state.slot_mut(id)?.queue;
@@ -78,6 +95,11 @@ impl Manager {
     /// Runs a queue now, ignoring its schedule, until it has nothing left to do or
     /// is paused; then its schedule applies again. Starting a paused queue now also
     /// resumes it.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::QueueNotFound`] when there is no queue `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn start_queue_now(&self, id: QueueId) -> Result<()> {
         let mut state = self.lock_open()?;
         let queue = &mut state.slot_mut(id)?.queue;
@@ -89,6 +111,12 @@ impl Manager {
 
     /// Deletes a queue. Its downloads move to the end of the default queue, and
     /// captures waiting for confirmation that were meant for it go there too.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::DefaultQueue`] for the default queue, [`CoreError::QueueNotFound`]
+    /// when there is no queue `id`, and [`CoreError::Closed`] once the manager has shut
+    /// down.
     pub fn delete_queue(&self, id: QueueId) -> Result<()> {
         let mut state = self.lock_open()?;
         if state.slot(id)?.queue.is_default {

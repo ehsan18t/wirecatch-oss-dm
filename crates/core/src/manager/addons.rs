@@ -128,6 +128,12 @@ impl Manager {
     /// already being installed, does nothing. The files are looked at again
     /// first, so a damaged install (a program an antivirus took away, say) is
     /// repaired.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, and
+    /// [`CoreError::Closed`] once the manager has shut down. A failed install is not an
+    /// error here: it arrives as `AddonsChanged`.
     pub async fn install_addon(&self, id: &str) -> Result<()> {
         check_id(id)?;
         if self.lock_open()?.addon.op.is_some() {
@@ -147,6 +153,10 @@ impl Manager {
     /// Brings an installed add-on up to date in the background, the same way as
     /// [`install_addon`](Self::install_addon) (which it is, for one that is not
     /// installed).
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`install_addon`](Self::install_addon).
     pub async fn update_addon(&self, id: &str) -> Result<()> {
         self.install_addon(id).await
     }
@@ -156,6 +166,12 @@ impl Manager {
     /// installed before in place and working, and discards what it had
     /// downloaded; a first install (or a repair of a damaged add-on) removes
     /// everything it put down, so the add-on is not installed afterwards.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, or when the
+    /// install stopped but some of its files could not be deleted; and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn cancel_addon_operation(&self, id: &str) -> Result<()> {
         check_id(id)?;
         let (ended, had_tools) = {
@@ -192,6 +208,12 @@ impl Manager {
     /// Removes an add-on and its files, stopping an install in progress first.
     /// Refused while a video is being read or downloaded with it. Whatever
     /// happens, the add-on's state afterwards is what is on disk.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows or its files
+    /// could not all be deleted, [`CoreError::WrongState`] while a video is read or
+    /// downloaded with it, and [`CoreError::Closed`] once the manager has shut down.
     pub async fn remove_addon(&self, id: &str) -> Result<()> {
         check_id(id)?;
         let ended = {
@@ -272,6 +294,13 @@ impl Manager {
     /// signed by yt-dlp's developers, the check still counts (so the daily
     /// check does not retry at once) and this fails with the reason, for a
     /// person who asked to check.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`], with a message for the person who asked, when the
+    /// releases could not be looked up or a newer release's checksum list is not signed
+    /// by yt-dlp's developers; and [`CoreError::Closed`] once the manager has shut
+    /// down.
     pub async fn check_addon_updates(&self) -> Result<()> {
         let (installed, record) = {
             let state = self.lock_open()?;

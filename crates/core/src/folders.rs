@@ -150,6 +150,13 @@ impl KnownFolders {
     }
 
     /// The folder `path` names on this machine.
+    ///
+    /// # Errors
+    ///
+    /// A [`PathError`] when `path` is not a full path on this machine, names an unknown
+    /// `{Folder}` placeholder, climbs out of its folder with `..`, has a part after the
+    /// placeholder that is not a plain folder name, or is a Windows device or verbatim
+    /// path.
     pub fn resolve(&self, path: &PortablePath) -> Result<PathBuf, PathError> {
         let raw = path.0.trim();
         let Some(rest) = raw.strip_prefix('{') else {
@@ -189,6 +196,12 @@ impl KnownFolders {
     /// rather than the user's own choice: network folders are refused too, and
     /// so are startup and system folders (see [`is_protected`](Self::is_protected)).
     /// Blocks on the disk.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`resolve`](Self::resolve), and [`PathError::Network`] for a
+    /// network folder written as a plain path or [`PathError::Protected`] for a startup
+    /// or system folder.
     pub fn resolve_local(&self, path: &PortablePath) -> Result<PathBuf, PathError> {
         let resolved = self.resolve(path)?;
         // A placeholder names this user's own folder, wherever the system keeps it

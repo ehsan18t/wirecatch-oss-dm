@@ -75,6 +75,10 @@ impl Manager {
     }
 
     /// One download, as [`list_downloads`](Self::list_downloads) shows it.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`.
     pub fn get_download(&self, id: DownloadId) -> Result<DownloadSummary> {
         Ok(self.lock().entry(id)?.summary())
     }
@@ -82,6 +86,13 @@ impl Manager {
     /// Adds a download from the app itself (paste, Add dialog, command palette) and
     /// returns its id. Its row arrives with the next `DownloadsChanged` event and is
     /// in [`list_downloads`](Self::list_downloads) at once.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::InvalidUrl`] for a link that is not http, https or FTP;
+    /// [`CoreError::QueueNotFound`] for an unknown queue; [`CoreError::Path`] when the
+    /// folder does not resolve; [`CoreError::Invalid`] for a file name that cannot be
+    /// used; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn add_download(&self, request: AddRequest) -> Result<DownloadId> {
         let url = parse_url(&request.url)?;
         let queue = match request.queue {
@@ -116,6 +127,11 @@ impl Manager {
     }
 
     /// Pauses a download. A paused download only starts again when resumed.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn pause(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         let entry = state.entry_mut(id)?;
@@ -128,18 +144,34 @@ impl Manager {
     }
 
     /// Puts a paused or failed download back in line; it starts when its queue has room.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::WrongState`] for a download that has finished,
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn resume(&self, id: DownloadId) -> Result<()> {
         self.requeue(id)
     }
 
     /// Tries a failed download again, keeping what was already downloaded when the
     /// server allows it.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`resume`](Self::resume).
     pub fn retry(&self, id: DownloadId) -> Result<()> {
         self.requeue(id)
     }
 
     /// Stops a download and deletes what was downloaded so far. It stays in the
     /// list as cancelled, so it can be tried again.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::WrongState`] for a download that has finished,
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn cancel(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         let entry = state.entry_mut(id)?;
@@ -163,6 +195,11 @@ impl Manager {
     /// Removes downloads from the list, stopping them first. The partial files of an
     /// unfinished download are always deleted; the file of a completed download only
     /// when `delete_file` is set. Ids that no longer exist are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Closed`] once the manager has shut down. Files that cannot be
+    /// deleted are logged, not reported.
     pub async fn remove(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
@@ -260,6 +297,13 @@ impl Manager {
     /// A link to another site (scheme, host or port) does not get the browser's
     /// cookies and credentials for the old one; the user agent and harmless
     /// headers such as the preferred language are kept.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::InvalidUrl`] for a link that is not http, https or FTP,
+    /// [`CoreError::WrongState`] for a download that has finished,
+    /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn refresh_link(&self, id: DownloadId, url: &str) -> Result<()> {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
@@ -286,6 +330,12 @@ impl Manager {
 
     /// Moves downloads to the end of another queue. Running ones restart there, under
     /// that queue's limits, continuing their part files.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::QueueNotFound`] or [`CoreError::DownloadNotFound`] when the queue
+    /// or one of the downloads does not exist, in which case nothing moves; and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn move_to_queue(&self, ids: &[DownloadId], queue: QueueId) -> Result<()> {
         let mut state = self.lock_open()?;
         state.slot(queue)?;
@@ -309,6 +359,13 @@ impl Manager {
 
     /// Puts the given downloads of `queue` in this order. They take the places in
     /// line they held between them; other downloads keep theirs.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::QueueNotFound`] or [`CoreError::DownloadNotFound`] for an unknown
+    /// queue or download, [`CoreError::Invalid`] when a download is in another queue or
+    /// appears twice, and [`CoreError::Closed`] once the manager has shut down. Nothing
+    /// changes on an error.
     pub fn reorder(&self, queue: QueueId, ids_in_order: &[DownloadId]) -> Result<()> {
         let mut state = self.lock_open()?;
         state.slot(queue)?;
@@ -340,6 +397,10 @@ impl Manager {
     }
 
     /// Pauses every download that is running or waiting.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn pause_all(&self) -> Result<()> {
         let mut state = self.lock_open()?;
         let ids: Vec<DownloadId> = state.downloads.keys().copied().collect();
@@ -358,6 +419,10 @@ impl Manager {
     }
 
     /// Puts every paused download back in line.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn resume_all(&self) -> Result<()> {
         let mut state = self.lock_open()?;
         let mut paused = Vec::new();

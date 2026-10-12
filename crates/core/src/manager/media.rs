@@ -260,6 +260,15 @@ impl Manager {
     /// needs the media add-on; without it this fails with
     /// [`CoreError::AddonRequired`], tells the UI with `AddonRequired`, and
     /// keeps the choice so it can be made again.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::ConfirmationNotFound`] when the choice was already made, dismissed
+    /// or withdrawn, or is not ready; [`CoreError::Invalid`] when the selection asks
+    /// for something the choice did not offer; [`CoreError::AddonRequired`] as
+    /// described above; errors adding the download (its name, folder or queue), in
+    /// which case the choice stays open; and [`CoreError::Closed`] once the manager has
+    /// shut down.
     pub async fn choose_media(
         &self,
         id: u64,
@@ -333,6 +342,11 @@ impl Manager {
 
     /// Drops a media choice (or a capture still being read or waiting for the
     /// add-on); nothing is downloaded.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::ConfirmationNotFound`] when there is no such choice, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn dismiss_media_choice(&self, id: u64) -> Result<()> {
         let mut state = self.lock_open()?;
         let pending = state
@@ -777,6 +791,12 @@ impl Manager {
     /// as it was downloaded instead (D24): the conversion, subtitles and
     /// chapters are dropped, and it finishes from the parts already downloaded,
     /// in their own format.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::WrongState`] when the download is not a failed conversion offering
+    /// this, [`CoreError::DownloadNotFound`] when there is no download `id`, and
+    /// [`CoreError::Closed`] once the manager has shut down.
     pub fn keep_original(&self, id: wirecatch_protocol::DownloadId) -> Result<()> {
         {
             let mut state = self.lock_open()?;

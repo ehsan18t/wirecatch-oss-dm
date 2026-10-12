@@ -233,6 +233,13 @@ impl Manager {
     ///
     /// Must be called from inside a Tokio runtime; the manager keeps a handle to it
     /// and runs all its work there, so its methods may then be called from any thread.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::DatabaseTooNew`] when the download list was saved by a newer
+    /// Wirecatch, [`CoreError::Database`] or [`CoreError::File`] when it cannot be
+    /// opened or created in `config.data_dir`. A damaged list is not an error: it is
+    /// set aside and a new one started.
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();
         let ui_events = broadcast::Sender::new(UI_EVENT_BUFFER);

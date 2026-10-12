@@ -40,6 +40,10 @@ const READ_CHUNK: usize = 16 * 1024;
 ///
 /// Returns `Ok(())` when the client goes away or is refused, and an error only when
 /// reading from or writing to the stream fails.
+///
+/// # Errors
+///
+/// The error reading from or writing to `stream`, which ends the connection.
 pub async fn serve_connection<S>(manager: Manager, mut stream: S) -> io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
