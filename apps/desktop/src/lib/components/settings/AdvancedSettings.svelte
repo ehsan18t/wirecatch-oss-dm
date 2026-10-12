@@ -17,13 +17,13 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet connections({ s, labelId, help }: Row)}
+{#snippet connections({ s, labelId, helpId }: Row)}
   <input
     type="range"
     min="1"
     max={MAX_CONNECTIONS_PER_DOWNLOAD}
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={s.connections_per_download}
     onchange={(e) => {
       const v = connectionsPerDownload(Number(e.currentTarget.value));
@@ -33,14 +33,14 @@
   <span class="unit num">{s.connections_per_download}</span>
 {/snippet}
 
-{#snippet concurrent({ s, labelId, help }: Row)}
+{#snippet concurrent({ s, labelId, helpId }: Row)}
   <input
     class="field narrow"
     type="number"
     min="1"
     max={MAX_CONCURRENT_DOWNLOADS}
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={s.max_concurrent_downloads}
     onchange={(e) => {
       const v = concurrentDownloads(Number(e.currentTarget.value));

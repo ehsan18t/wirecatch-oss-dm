@@ -24,9 +24,9 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet mediaAddon({ help }: Row)}
+{#snippet mediaAddon({ helpId }: Row)}
   {#if addon}
-    <AddonCard {addon} describedby={help} />
+    <AddonCard {addon} describedby={helpId} />
   {:else if app.addons.error}
     <p class="addon-note">
       {app.addons.error}
@@ -37,10 +37,10 @@
   {/if}
 {/snippet}
 
-{#snippet autoUpdate({ def, s, help }: Row)}
+{#snippet autoUpdate({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.auto_update_addons}
     onchange={(v: boolean) => save((d) => void (d.auto_update_addons = v))}
   />

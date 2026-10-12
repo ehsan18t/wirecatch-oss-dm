@@ -19,14 +19,14 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet exportButton({ help }: Row)}
-  <Button aria-describedby={help} onclick={() => app.openDialog({ kind: 'export' })}
+{#snippet exportButton({ helpId }: Row)}
+  <Button aria-describedby={helpId} onclick={() => app.openDialog({ kind: 'export' })}
     >Export settings</Button
   >
 {/snippet}
 
-{#snippet importButton({ help }: Row)}
-  <Button aria-describedby={help} onclick={() => app.openDialog({ kind: 'import' })}
+{#snippet importButton({ helpId }: Row)}
+  <Button aria-describedby={helpId} onclick={() => app.openDialog({ kind: 'import' })}
     >Import settings</Button
   >
 {/snippet}

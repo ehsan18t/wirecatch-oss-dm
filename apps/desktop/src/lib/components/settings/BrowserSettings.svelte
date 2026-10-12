@@ -45,46 +45,46 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet captureEnabled({ def, s, help }: Row)}
+{#snippet captureEnabled({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.extension.capture_enabled}
     onchange={(v: boolean) => save((d) => void (d.extension.capture_enabled = v))}
   />
 {/snippet}
 
-{#snippet askBeforeDownload({ def, s, help }: Row)}
+{#snippet askBeforeDownload({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.extension.ask_before_download}
     onchange={(v: boolean) => save((d) => void (d.extension.ask_before_download = v))}
   />
 {/snippet}
 
-{#snippet showProgressWindows({ def, s, help }: Row)}
+{#snippet showProgressWindows({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.show_progress_windows}
     onchange={(v: boolean) => save((d) => void (d.show_progress_windows = v))}
   />
 {/snippet}
 
-{#snippet showMediaButton({ def, s, help }: Row)}
+{#snippet showMediaButton({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.extension.show_media_button}
     onchange={(v: boolean) => save((d) => void (d.extension.show_media_button = v))}
   />
 {/snippet}
 
-{#snippet ignoredSites({ def, s, help }: Row)}
+{#snippet ignoredSites({ def, s, helpId }: Row)}
   <ListEditor
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     placeholder="example.com"
     items={s.extension.ignored_sites}
     normalize={siteHost}
@@ -92,10 +92,10 @@
   />
 {/snippet}
 
-{#snippet captureExtensions({ def, s, help }: Row)}
+{#snippet captureExtensions({ def, s, helpId }: Row)}
   <ListEditor
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     placeholder="zip, mp4, pdf"
     items={s.extension.capture_extensions}
     normalize={(x: string) => x.trim().toLowerCase().replace(/^\./, '')}
@@ -103,14 +103,14 @@
   />
 {/snippet}
 
-{#snippet minCaptureSize({ labelId, help }: Row)}
+{#snippet minCaptureSize({ labelId, helpId }: Row)}
   <input
     class="field narrow"
     type="number"
     min="0"
     step="1"
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={minSize.value}
     onchange={(e) => setMinSize(e.currentTarget.value, minSize.unit)}
   />
@@ -125,11 +125,11 @@
   </select>
 {/snippet}
 
-{#snippet defaultQueue({ s, labelId, help }: Row)}
+{#snippet defaultQueue({ s, labelId, helpId }: Row)}
   <select
     class="field"
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={s.extension.default_queue}
     onchange={(e) => {
       const q = Number(e.currentTarget.value);

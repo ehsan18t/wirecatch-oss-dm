@@ -53,9 +53,9 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet defaultFolder({ s, help }: Row)}
+{#snippet defaultFolder({ s, helpId }: Row)}
   <span class="path">{displayPath(s.default_folder)}</span>
-  <Button small aria-describedby={help} onclick={pickDefaultFolder}>Change</Button>
+  <Button small aria-describedby={helpId} onclick={pickDefaultFolder}>Change</Button>
 {/snippet}
 
 {#snippet categories(_: Row)}

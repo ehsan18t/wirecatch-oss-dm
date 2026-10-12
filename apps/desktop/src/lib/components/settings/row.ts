@@ -15,7 +15,7 @@ export interface Row {
   def: SettingDef;
   s: AppSettings;
   labelId: string;
-  help: string;
+  helpId: string;
 }
 
 /** What a section is given. */

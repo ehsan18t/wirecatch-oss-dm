@@ -19,10 +19,10 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet speedLimit({ s, help }: Row)}
+{#snippet speedLimit({ s, helpId }: Row)}
   <Toggle
     label="Limit total speed"
-    describedby={help}
+    describedby={helpId}
     checked={s.global_speed_limit !== null}
     onchange={(v: boolean) =>
       save((d) => void (d.global_speed_limit = v ? FIRST_SPEED_LIMIT : null))}

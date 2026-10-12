@@ -70,11 +70,11 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet videoFormat({ s, labelId, help }: Row)}
+{#snippet videoFormat({ s, labelId, helpId }: Row)}
   <select
     class="field"
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={s.media.video.format}
     onchange={(e) => {
       const format = pick(VIDEO_FORMATS, e.currentTarget.value);
@@ -85,13 +85,13 @@
   </select>
 {/snippet}
 
-{#snippet audioFormat({ s, labelId, help }: Row)}
+{#snippet audioFormat({ s, labelId, helpId }: Row)}
   {@const audio = s.media.audio}
   {@const kbpsList = AUDIO_KBPS_CHOICES[audio.format]}
   <select
     class="field"
     aria-labelledby={labelId}
-    aria-describedby={help}
+    aria-describedby={helpId}
     value={audio.format}
     onchange={(e) => {
       const format = pick(AUDIO_FORMATS, e.currentTarget.value);
@@ -118,11 +118,11 @@
   {/if}
 {/snippet}
 
-{#snippet subtitles({ def, s, help }: Row)}
+{#snippet subtitles({ def, s, helpId }: Row)}
   {@const kind = kindOf(def.id)}
   <ListEditor
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     placeholder="en, fr"
     items={s.media[kind].subtitle_languages}
     normalize={language}
@@ -130,30 +130,30 @@
   />
 {/snippet}
 
-{#snippet autoSubtitles({ def, s, help }: Row)}
+{#snippet autoSubtitles({ def, s, helpId }: Row)}
   {@const kind = kindOf(def.id)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.media[kind].auto_subtitles}
     onchange={(v: boolean) => save((d) => void (d.media[kind].auto_subtitles = v))}
   />
 {/snippet}
 
-{#snippet chapters({ def, s, help }: Row)}
+{#snippet chapters({ def, s, helpId }: Row)}
   {@const kind = kindOf(def.id)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.media[kind].chapters}
     onchange={(v: boolean) => save((d) => void (d.media[kind].chapters = v))}
   />
 {/snippet}
 
-{#snippet subtitleFiles({ def, s, help }: Row)}
+{#snippet subtitleFiles({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.media.video.subtitle_files}
     onchange={(v: boolean) => save((d) => void (d.media.video.subtitle_files = v))}
   />

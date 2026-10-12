@@ -18,16 +18,16 @@
 </script>
 
 {#each items as def (def.id)}
-  {@const help = `help-${def.id}`}
+  {@const helpId = `help-${def.id}`}
   {@const labelId = `label-${def.id}`}
   {@const control = controls[def.id]}
   <div class="setting" class:flash={flash === def.id} id={settingAnchor(def.id)}>
     <div class="text">
       <span class="label" id={labelId}>{def.label}</span>
-      <span class="help" id={help}>{def.help}</span>
+      <span class="help" id={helpId}>{def.help}</span>
     </div>
     <div class="control">
-      {#if control}{@render control({ def, s: settings, labelId, help })}{/if}
+      {#if control}{@render control({ def, s: settings, labelId, helpId })}{/if}
     </div>
   </div>
 {/each}

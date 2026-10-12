@@ -37,8 +37,8 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet theme({ s, labelId, help }: Row)}
-  <div class="segmented" role="radiogroup" aria-labelledby={labelId} aria-describedby={help}>
+{#snippet theme({ s, labelId, helpId }: Row)}
+  <div class="segmented" role="radiogroup" aria-labelledby={labelId} aria-describedby={helpId}>
     {#each THEMES as t (t.value)}
       <button
         type="button"
@@ -54,28 +54,28 @@
   </div>
 {/snippet}
 
-{#snippet startWithSystem({ def, s, help }: Row)}
+{#snippet startWithSystem({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.start_with_system}
     onchange={(v: boolean) => save((d) => void (d.start_with_system = v))}
   />
 {/snippet}
 
-{#snippet closeToTray({ def, s, help }: Row)}
+{#snippet closeToTray({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.close_to_tray}
     onchange={(v: boolean) => save((d) => void (d.close_to_tray = v))}
   />
 {/snippet}
 
-{#snippet notifyOnComplete({ def, s, help }: Row)}
+{#snippet notifyOnComplete({ def, s, helpId }: Row)}
   <Toggle
     label={def.label}
-    describedby={help}
+    describedby={helpId}
     checked={s.notify_on_complete}
     onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
   />
