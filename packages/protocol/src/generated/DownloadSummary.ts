@@ -61,7 +61,7 @@ connections: number,
  */
 eta_secs: number | null, 
 /**
- * Why it failed, for a `Failed` download.
+ * Why it failed, when it did.
  */
 error: UserError | null, 
 /**

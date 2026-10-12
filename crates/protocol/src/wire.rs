@@ -131,7 +131,7 @@ pub enum Event {
 pub struct Hello {
     /// What kind of program is calling.
     pub client: ClientKind,
-    /// The client's own version, for logs and error reports.
+    /// The client's own version; the app writes it to its log.
     pub client_version: String,
     /// The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the client speaks; the app refuses
     /// one it does not speak with [`ErrorCode::UnsupportedVersion`].
@@ -154,7 +154,7 @@ fn start_app_by_default() -> bool {
 pub enum ClientKind {
     /// The browser extension, through the bridge.
     Extension,
-    /// The native messaging bridge itself.
+    /// The native messaging bridge, connecting on its own behalf.
     Bridge,
     /// The `wirecatch` command-line tool.
     Cli,
@@ -219,8 +219,8 @@ pub enum ErrorCode {
     AppUnavailable,
     /// Produced by the bridge when the app is not running and the client asked not to start it (`Hello::start_app` off).
     AppNotRunning,
-    /// Something failed inside the app, such as its database or a file it keeps; trying again
-    /// later may work.
+    /// Something failed inside the app, such as its database or a file it keeps, or the app
+    /// is shutting down.
     Internal,
     /// The app could not take over a captured download (the server did not answer
     /// in time, or sent something other than what the browser saw). The browser

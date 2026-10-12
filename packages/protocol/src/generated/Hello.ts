@@ -11,7 +11,7 @@ export type Hello = {
  */
 client: ClientKind, 
 /**
- * The client's own version, for logs and error reports.
+ * The client's own version; the app writes it to its log.
  */
 client_version: string, 
 /**

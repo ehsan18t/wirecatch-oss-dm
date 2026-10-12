@@ -43,20 +43,22 @@ pub(crate) struct Constant {
 
 #[cfg(test)]
 impl Constant {
-    /// A whole number. TypeScript numbers are exact only up to 2^53, so a larger one fails
-    /// the generator instead of being written wrong.
+    /// A whole number. TypeScript numbers are exact only between -(2^53 - 1) and 2^53 - 1,
+    /// so a value outside that range fails the generator instead of being written wrong.
     pub(crate) fn number(
         name: &'static str,
         docs: &[&'static str],
-        value: impl TryInto<u64>,
+        value: impl TryInto<i128>,
     ) -> Constant {
         /// `Number.MAX_SAFE_INTEGER` in JavaScript.
-        const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
-        let value: u64 = value
+        const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
+        let value: i128 = value
             .try_into()
             .ok()
-            .filter(|v| *v <= MAX_SAFE_INTEGER)
-            .unwrap_or_else(|| panic!("{name} is not exact as a TypeScript number"));
+            .filter(|v| v.abs() <= MAX_SAFE_INTEGER)
+            .unwrap_or_else(|| {
+                panic!("{name} is outside the range a TypeScript number holds exactly (2^53 - 1 either way)")
+            });
         Constant {
             name,
             docs: docs.to_vec(),
@@ -68,9 +70,9 @@ impl Constant {
     fn write(&self, out: &mut String) {
         use std::fmt::Write as _;
         out.push_str("\n/**\n");
-        for line in &self.docs {
-            // `///` comments arrive with the space after the slashes.
-            let line = line.strip_prefix(' ').unwrap_or(line);
+        for line in self.docs.iter().flat_map(|doc| doc_lines(doc)) {
+            // `*/` inside the text would end the TypeScript comment early.
+            let line = line.replace("*/", "*\\/");
             if line.is_empty() {
                 out.push_str(" *\n");
             } else {
@@ -89,6 +91,33 @@ impl Constant {
         )
         .unwrap();
     }
+}
+
+/// The lines of one doc attribute. A `///` comment is one attribute per line, with the
+/// space after the slashes; a `/** */` comment is one attribute holding every line, each
+/// usually starting with ` * `, and the line breaks after `/**` and before `*/`.
+#[cfg(test)]
+fn doc_lines(doc: &str) -> Vec<&str> {
+    if !doc.contains('\n') {
+        return vec![doc.strip_prefix(' ').unwrap_or(doc)];
+    }
+    let lines: Vec<&str> = doc
+        .lines()
+        .map(|line| {
+            let line = line.trim_start();
+            let line = line.strip_prefix('*').unwrap_or(line);
+            line.strip_prefix(' ').unwrap_or(line).trim_end()
+        })
+        .collect();
+    let first = lines
+        .iter()
+        .position(|l| !l.is_empty())
+        .unwrap_or(lines.len());
+    let last = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(first, |l| l + 1);
+    lines[first..last].to_vec()
 }
 
 #[cfg(test)]
@@ -187,6 +216,43 @@ mod tests {
     fn export_dir() -> PathBuf {
         std::env::var_os("TS_RS_EXPORT_DIR")
             .map_or_else(|| PathBuf::from("./bindings"), PathBuf::from)
+    }
+
+    fn written(constant: &Constant) -> String {
+        let mut out = String::new();
+        constant.write(&mut out);
+        out
+    }
+
+    #[test]
+    fn line_comments_become_one_comment_line_each() {
+        let out = written(&Constant::number("A", &[" First.", "", " Second."], 1u8));
+        assert_eq!(
+            out,
+            "\n/**\n * First.\n *\n * Second.\n */\nexport const A = 1;\n"
+        );
+    }
+
+    #[test]
+    fn block_comments_get_a_star_on_every_line() {
+        let out = written(&Constant::number("B", &["\n * First.\n * Second.\n "], 2u8));
+        assert_eq!(
+            out,
+            "\n/**\n * First.\n * Second.\n */\nexport const B = 2;\n"
+        );
+    }
+
+    #[test]
+    fn a_comment_end_in_the_text_is_escaped() {
+        let out = written(&Constant::number("C", &[" Ends with `*/`."], 3u8));
+        assert!(out.contains(" * Ends with `*\\/`.\n */\n"), "{out}");
+    }
+
+    #[test]
+    fn negative_numbers_are_written_and_inexact_ones_refused() {
+        assert!(written(&Constant::number("D", &[" Negative."], -5i64)).ends_with("= -5;\n"));
+        let too_big = std::panic::catch_unwind(|| Constant::number("E", &[" Big."], u64::MAX));
+        assert!(too_big.is_err());
     }
 
     #[test]

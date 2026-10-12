@@ -19,7 +19,7 @@ handover_id: string,
  */
 url: string, 
 /**
- * Value for the `Referer` header, as the browser would have sent it.
+ * Value for the `Referer` header of the app's requests.
  */
 referrer: string | null, 
 /**
@@ -36,7 +36,10 @@ suggested_name: string | null,
  */
 mime: string | null, 
 /**
- * Size in bytes the browser expected, shown until the server answers.
+ * Size in bytes the browser saw, when it knew. Shown when the app asks to confirm the
+ * download ([`PendingCapture::size`](crate::app::PendingCapture::size)), and checked
+ * against the server's answer: a different size means the app did not get the same
+ * file, and it does not take the download over.
  */
 size_hint: number | null, 
 /**
@@ -44,11 +47,15 @@ size_hint: number | null,
  */
 cookies: string | null, 
 /**
- * The browser's `User-Agent`, so the server answers the app as it answered the browser.
+ * The browser's `User-Agent`; the app sends it instead of its own.
  */
 user_agent: string | null, 
 /**
- * Further request headers the download needs, sent as given.
+ * Further request headers the download needs. The app drops those that belong to the
+ * HTTP layer or to its own downloader (`Host`, `Range`, the conditional headers,
+ * `Accept-Encoding`, `User-Agent`, `Proxy-*` and other hop-by-hop headers), keeps
+ * `Cookie`, `Referer` and `Authorization` once each, and when the link moves to another
+ * site sends only `Accept` and `Accept-Language` there.
  */
 extra_headers: Array<Header>, 
 /**

@@ -9,6 +9,6 @@ export type Header = {
  */
 name: string, 
 /**
- * The header's value, sent as is.
+ * The header's value.
  */
 value: string, };

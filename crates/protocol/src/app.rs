@@ -38,7 +38,7 @@ pub struct DownloadSummary {
     /// Seconds left at the current speed, when the size is known and data is flowing.
     #[ts(type = "number | null")]
     pub eta_secs: Option<u64>,
-    /// Why it failed, for a `Failed` download.
+    /// Why it failed, when it did.
     pub error: Option<UserError>,
     /// Why a `Queued` download is not running yet; `None` for every other status.
     pub waiting: Option<WaitReason>,
@@ -92,8 +92,10 @@ pub enum DownloadStatus {
     Connecting,
     /// Data is arriving.
     Downloading,
-    /// Stopped by the person, by pausing its queue, or by "pause all"; the downloaded part
-    /// is kept and resuming continues from it.
+    /// Stopped by the person (this download or "pause all"), or added without starting; the
+    /// downloaded part is kept and resuming continues from it. Pausing a queue does not
+    /// pause its downloads one by one: they go back to `Queued` with
+    /// [`WaitReason::QueuePaused`].
     Paused,
     /// The file is in its folder, finished.
     Completed,
@@ -279,10 +281,11 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
-    /// The audio bit rates, in kbps, a person can pick when saving as this format; the app
-    /// refuses any other [`MediaSelection::audio_kbps`]. Empty when there is no choice: the
-    /// original and the video formats keep the audio or use [`default_kbps`](Self::default_kbps)
-    /// of its codec, and FLAC and WAV are lossless.
+    /// The audio bit rates, in kbps, a person can pick when saving as this format; for such a
+    /// format the app refuses any other [`MediaSelection::audio_kbps`]. Empty when there is no
+    /// choice, and then the app ignores `audio_kbps`: the original and the video formats keep
+    /// the audio or re-encode it at the default bit rate of its codec, and FLAC and WAV are
+    /// lossless.
     #[must_use]
     pub const fn kbps_choices(self) -> &'static [u32] {
         match self {
@@ -1028,7 +1031,8 @@ pub struct ImportSummary {
     pub folders: Vec<ImportedFolder>,
     /// Queues the profile added.
     pub queues_added: u32,
-    /// Existing queues, matched by name, that took the profile's limits and schedule.
+    /// Existing queues that took the profile's name, limits and schedule: the default queue,
+    /// and every queue whose name matches one in the profile, ignoring case.
     pub queues_updated: u32,
     /// Ids of add-ons the profile lists that are not installed here. Nothing is
     /// downloaded on import; the UI may offer to install them.

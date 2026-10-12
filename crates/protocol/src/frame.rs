@@ -32,8 +32,8 @@ pub enum FrameError {
     Io(#[from] io::Error),
 }
 
-/// The 4-byte header that announces a body of `len` bytes. Everything that writes frames
-/// builds the header here, so the length rule has one home.
+/// The 4-byte header that announces a body of `len` bytes, built with the size rule of
+/// [`MAX_FRAME_LEN`] so a writer outside this module need not repeat it.
 ///
 /// # Errors
 ///

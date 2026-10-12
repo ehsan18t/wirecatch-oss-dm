@@ -14,7 +14,8 @@ folders: Array<ImportedFolder>,
  */
 queues_added: number, 
 /**
- * Existing queues, matched by name, that took the profile's limits and schedule.
+ * Existing queues that took the profile's name, limits and schedule: the default queue,
+ * and every queue whose name matches one in the profile, ignoring case.
  */
 queues_updated: number, 
 /**

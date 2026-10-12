@@ -15,7 +15,7 @@ pub struct NewDownload {
     pub handover_id: String,
     /// Address of the file (or, for [`MediaKind::Page`], of the page holding the media).
     pub url: String,
-    /// Value for the `Referer` header, as the browser would have sent it.
+    /// Value for the `Referer` header of the app's requests.
     pub referrer: Option<String>,
     /// The page the download started from.
     pub page_url: Option<String>,
@@ -24,14 +24,21 @@ pub struct NewDownload {
     /// The MIME type the browser saw, for example `video/mp4`; tells audio from video for
     /// a direct media file.
     pub mime: Option<String>,
-    /// Size in bytes the browser expected, shown until the server answers.
+    /// Size in bytes the browser saw, when it knew. Shown when the app asks to confirm the
+    /// download ([`PendingCapture::size`](crate::app::PendingCapture::size)), and checked
+    /// against the server's answer: a different size means the app did not get the same
+    /// file, and it does not take the download over.
     #[ts(type = "number | null")]
     pub size_hint: Option<u64>,
     /// Value for the `Cookie` header, so downloads behind a login keep working.
     pub cookies: Option<String>,
-    /// The browser's `User-Agent`, so the server answers the app as it answered the browser.
+    /// The browser's `User-Agent`; the app sends it instead of its own.
     pub user_agent: Option<String>,
-    /// Further request headers the download needs, sent as given.
+    /// Further request headers the download needs. The app drops those that belong to the
+    /// HTTP layer or to its own downloader (`Host`, `Range`, the conditional headers,
+    /// `Accept-Encoding`, `User-Agent`, `Proxy-*` and other hop-by-hop headers), keeps
+    /// `Cookie`, `Referer` and `Authorization` once each, and when the link moves to another
+    /// site sends only `Accept` and `Accept-Language` there.
     pub extra_headers: Vec<Header>,
     /// What in the browser started the capture.
     pub source: CaptureSource,
@@ -74,7 +81,7 @@ pub enum MediaKind {
 pub struct Header {
     /// The header's name, for example `Authorization`.
     pub name: String,
-    /// The header's value, sent as is.
+    /// The header's value.
     pub value: String,
 }
 
