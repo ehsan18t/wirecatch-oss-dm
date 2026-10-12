@@ -8,6 +8,11 @@
 
   const app = getApp();
 
+  /** Rows the links box has for one link or none: room to paste or type a few by hand. */
+  const LINK_ROWS = 3;
+  /** The links box grows with the links up to this many rows, then scrolls. */
+  const LINK_ROWS_MAX = 8;
+
   // The dialog opens with whatever was pasted; later edits are the person's own.
   const start = (() => ({ text: initial.join('\n'), queue: initialQueue }))();
   let text = $state(start.text);
@@ -69,7 +74,7 @@
       <textarea
         id="add-links"
         class="field"
-        rows={urls.length > 1 ? Math.min(8, urls.length + 1) : 3}
+        rows={urls.length > 1 ? Math.min(LINK_ROWS_MAX, urls.length + 1) : LINK_ROWS}
         placeholder="https://example.com/file.zip"
         aria-describedby="add-links-help{error ? ' add-error' : ''}"
         aria-invalid={error ? 'true' : undefined}

@@ -13,6 +13,7 @@ import type {
   Weekday,
 } from '@wirecatch/protocol';
 import { formatBytes, formatRate } from '@wirecatch/units';
+import { ordinal } from './text';
 import {
   dayBefore,
   DAYS_PER_WEEK,
@@ -27,6 +28,13 @@ import {
   WEEKEND,
   WORKDAYS,
 } from './time';
+
+/** What ends the scheme of a link, before the user name, host and path. */
+const SCHEME_END = '://';
+
+/** How `formatDate` starts a date of today and of yesterday. */
+const TODAY_PREFIX = 'Today, ';
+const YESTERDAY_PREFIX = 'Yesterday, ';
 
 /** Up to two days, time left is said in hours and minutes; beyond that, in days. */
 const ETA_IN_HOURS_BELOW = 2 * HOURS_PER_DAY;
@@ -226,9 +234,9 @@ export function formatLimit(bytesPerSecond: number | null): string {
  * sends links this way; this keeps the UI safe whatever it is given.
  */
 export function linkForDisplay(url: string): string {
-  const scheme = url.indexOf('://');
+  const scheme = url.indexOf(SCHEME_END);
   if (scheme < 0) return url;
-  const start = scheme + 3;
+  const start = scheme + SCHEME_END.length;
   const rest = url.slice(start);
   const end = rest.search(/[/?#]/);
   const authority = end < 0 ? rest : rest.slice(0, end);
@@ -256,8 +264,8 @@ export function formatDate(ms: number, now: Date = new Date()): string {
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
-  if (sameDay(d, now)) return `Today, ${time}`;
-  if (sameDay(d, dayBefore(now))) return `Yesterday, ${time}`;
+  if (sameDay(d, now)) return `${TODAY_PREFIX}${time}`;
+  if (sameDay(d, dayBefore(now))) return `${YESTERDAY_PREFIX}${time}`;
   const month = d.toLocaleString('en-GB', { month: 'short' });
   return `${d.getDate()} ${month} ${d.getFullYear()}, ${time}`;
 }
@@ -325,14 +333,6 @@ export const PROCESSING_LABEL: Record<ProcessingStep, string> = {
   finishing: 'Finishing the file',
   converting: 'Converting',
 };
-
-/** 1st, 2nd, 3rd, 4th, 11th, 21st. */
-export function ordinal(n: number): string {
-  const tens = n % 100;
-  if (tens >= 11 && tens <= 13) return `${n}th`;
-  const suffix = ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
-  return `${n}${n % 10 > 3 ? 'th' : suffix}`;
-}
 
 /** Why a download waits, in a couple of words for its row. */
 export function waitShort(w: WaitReason): string {
@@ -405,8 +405,10 @@ export function statusDetail(row: DownloadSummary, queueName: string): string | 
 /** "today at 18:38", "yesterday at 09:05" or "on 3 Oct 2026". */
 function whenSaid(ms: number, now: Date): string {
   const date = formatDate(ms, now);
-  if (date.startsWith('Today, ')) return `today at ${date.slice(7)}`;
-  if (date.startsWith('Yesterday, ')) return `yesterday at ${date.slice(11)}`;
+  if (date.startsWith(TODAY_PREFIX)) return `today at ${date.slice(TODAY_PREFIX.length)}`;
+  if (date.startsWith(YESTERDAY_PREFIX)) {
+    return `yesterday at ${date.slice(YESTERDAY_PREFIX.length)}`;
+  }
   return `on ${date.slice(0, date.lastIndexOf(','))}`;
 }
 

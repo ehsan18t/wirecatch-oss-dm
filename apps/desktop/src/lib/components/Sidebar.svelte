@@ -25,6 +25,8 @@
   const active = $derived(app.counts.status.active);
   const waiting = $derived(app.counts.status.waiting);
   const joining = $derived(app.counts.joining);
+  /** A phrase in the readout longer than this does not fit the column at the size of a speed. */
+  const HEADLINE_FITS = 8;
   /** What the readout says when nothing is moving bytes. */
   const headline = $derived(
     active === 0 ? 'Idle' : joining === active ? 'Finishing videos' : 'Starting',
@@ -64,7 +66,11 @@
       </svg>
       Wirecatch
     </p>
-    <p class="speed num" class:word={!speed && headline.length > 8} title="Total download speed">
+    <p
+      class="speed num"
+      class:word={!speed && headline.length > HEADLINE_FITS}
+      title="Total download speed"
+    >
       {speed || headline}
     </p>
     <p class="sub num">
