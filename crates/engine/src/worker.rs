@@ -1,6 +1,8 @@
 //! One connection's loop: take a range, stream it to disk, take the next.
 
+use std::collections::hash_map::RandomState;
 use std::fs::File;
+use std::hash::{BuildHasher, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -12,7 +14,7 @@ use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
-use crate::numeric::clamp_to_len;
+use crate::numeric::{clamp_to_len, saturating_cast};
 use crate::segment::{Assignment, ByteRange, SharedTable, UNKNOWN_END};
 use crate::storage;
 use crate::transport::{Body, Connection};
@@ -30,6 +32,10 @@ const MAX_BACKOFF: Duration = Duration::from_secs(10);
 
 /// The pause after the first failure; it doubles with each failure after it.
 const FIRST_BACKOFF: Duration = Duration::from_millis(500);
+
+/// The most random delay added to a backoff, so connections that failed
+/// together spread their next attempts out.
+const MAX_JITTER: Duration = Duration::from_millis(250);
 
 /// Most times the backoff doubles, which keeps the shift small; [`MAX_BACKOFF`]
 /// caps it sooner anyway.
@@ -387,8 +393,7 @@ pub(crate) fn retry_delay(failures: u32, retry_after: Option<Duration>) -> Durat
     }
 }
 
-/// 0.5 s, 1 s, 2 s ... capped at 10 s, with a little jitter so workers that
-/// failed together do not retry in lockstep.
+/// 0.5 s, 1 s, 2 s ... capped at 10 s, plus [`jitter`].
 pub(crate) fn backoff(failures: u32) -> Duration {
     let doublings = failures.saturating_sub(1).min(MAX_DOUBLINGS);
     FIRST_BACKOFF
@@ -397,12 +402,14 @@ pub(crate) fn backoff(failures: u32) -> Duration {
         + jitter()
 }
 
-/// 0 to 249 ms.
+/// A random delay below [`MAX_JITTER`], different on every call: connections
+/// that fail at the same moment must not come back at the same moment.
 fn jitter() -> Duration {
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::from(d.subsec_millis()) % 250);
-    Duration::from_millis(ms)
+    // Every `RandomState` is keyed apart from the last one, so a hash made with a
+    // new one is a fresh random number, without a dependency just for this.
+    let random = RandomState::new().build_hasher().finish();
+    let span: u64 = saturating_cast(MAX_JITTER.as_nanos());
+    Duration::from_nanos(random % span)
 }
 
 /// What a finished write hands back.
@@ -598,9 +605,9 @@ mod tests {
 
     #[test]
     fn backoff_grows_and_caps() {
-        assert!(backoff(1) < Duration::from_millis(800));
+        assert!(backoff(1) < FIRST_BACKOFF + MAX_JITTER);
         assert!(backoff(3) >= Duration::from_secs(2));
-        assert!(backoff(30) <= Duration::from_millis(10_250));
+        assert!(backoff(30) < MAX_BACKOFF + MAX_JITTER);
     }
 
     fn ftp(code: u16) -> Error {
@@ -685,11 +692,28 @@ mod tests {
         ));
     }
 
+    /// Connections that fail together ask for their delay within the same
+    /// millisecond; they must still not all retry at the same moment.
+    #[test]
+    fn connections_failing_together_get_different_delays() {
+        let delays: std::collections::HashSet<Duration> = (0..16).map(|_| backoff(1)).collect();
+        assert!(
+            delays.len() >= 8,
+            "16 delays asked for at once, only {} different",
+            delays.len()
+        );
+        assert!(
+            delays
+                .iter()
+                .all(|d| *d >= FIRST_BACKOFF && *d < FIRST_BACKOFF + MAX_JITTER)
+        );
+    }
+
     #[test]
     fn retry_after_is_never_shortened() {
         let asked = Duration::from_secs(3);
         let delay = retry_delay(1, Some(asked));
-        assert!(delay >= asked && delay < asked + Duration::from_millis(250));
+        assert!(delay >= asked && delay < asked + MAX_JITTER);
         assert!(retry_delay(1, None) < Duration::from_millis(800));
     }
 }
