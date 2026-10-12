@@ -90,39 +90,10 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             message,
             anonymous,
             ..
-        } => fix(
-            if *anonymous {
-                format!(
-                    "The FTP server {host} does not allow anonymous downloads (it answered \"{code} {}\"). Refresh the link with one that includes your user name and password, like ftp://name:password@{host}/file.",
-                    message.trim().trim_end_matches('.')
-                )
-            } else {
-                format!(
-                    "The FTP server {host} did not accept the user name or password in the link (it answered \"{code} {}\"). Refresh the link with the right ones.",
-                    message.trim().trim_end_matches('.')
-                )
-            },
-            FixAction::RefreshLink,
-        ),
-        EngineError::FtpTlsUnavailable { host, .. } => fix(
-            format!(
-                "The FTP server {host} does not offer encryption, so Wirecatch stopped rather than download without it. If an unencrypted download is acceptable, refresh the link with one that starts with ftp:// instead."
-            ),
-            FixAction::RefreshLink,
-        ),
-        EngineError::FtpProxyUnsupported { variable, .. } => fix(
-            format!(
-                "FTP downloads cannot go through a proxy yet, and the {variable} setting on this computer asks for one. Remove {variable} from the environment to download this link directly, then try again."
-            ),
-            FixAction::Retry,
-        ),
-        // Settings are checked when they change and brought into range when they load, so this is a fault in Wirecatch: trying again cannot help.
-        EngineError::InvalidOption(option) => UserError {
-            message: format!(
-                "Wirecatch could not start this download because a setting it uses ({option}) is out of range. Check Settings, then add the download again."
-            ),
-            fix: None,
-        },
+        } => ftp_login_refused(host, *code, message, *anonymous),
+        EngineError::FtpTlsUnavailable { host, .. } => ftp_tls_unavailable(host),
+        EngineError::FtpProxyUnsupported { variable, .. } => ftp_proxy_unsupported(variable),
+        EngineError::InvalidOption(option) => invalid_option(option),
         // A kind of error added to the engine after this was written.
         other => fix(
             format!("The download failed ({other}). Try again."),
@@ -179,6 +150,54 @@ pub(crate) fn stopped_unexpectedly() -> UserError {
         "The download stopped unexpectedly. Try again; the part already downloaded is kept.",
         FixAction::Retry,
     )
+}
+
+/// An `ftps` or `ftpes` link to a server that offers no encryption.
+fn ftp_tls_unavailable(host: &str) -> UserError {
+    fix(
+        format!(
+            "The FTP server {host} does not offer encryption, so Wirecatch stopped rather than download without it. If an unencrypted download is acceptable, refresh the link with one that starts with ftp:// instead."
+        ),
+        FixAction::RefreshLink,
+    )
+}
+
+/// An FTP link while the proxy setting `variable` asks for a proxy.
+fn ftp_proxy_unsupported(variable: &str) -> UserError {
+    fix(
+        format!(
+            "FTP downloads cannot go through a proxy yet, and the {variable} setting on this computer asks for one. Remove {variable} from the environment to download this link directly, then try again."
+        ),
+        FixAction::Retry,
+    )
+}
+
+/// A download option out of range. Settings are checked when they change and
+/// brought into range when they load, so this is a fault in Wirecatch: trying
+/// again cannot help, and no fix is offered.
+fn invalid_option(option: &str) -> UserError {
+    UserError {
+        message: format!(
+            "Wirecatch could not start this download because a setting it uses ({option}) is out of range. Check Settings, then add the download again."
+        ),
+        fix: None,
+    }
+}
+
+/// An FTP server that refused the login: an anonymous one needs a name and
+/// password in the link, a named one the right ones.
+fn ftp_login_refused(host: &str, code: u16, message: &str, anonymous: bool) -> UserError {
+    let answer = message.trim().trim_end_matches('.');
+    let message = if anonymous {
+        format!(
+            "The FTP server {host} does not allow anonymous downloads (it answered \"{code} {answer}\"). Refresh the link with one that includes your user name and password, like ftp://name:password@{host}/file."
+        )
+    } else {
+        format!(
+            "The FTP server {host} did not accept the user name or password in the link (it answered \"{code} {answer}\"). Refresh the link with the right ones."
+        )
+    };
+    fix(message, FixAction::RefreshLink)
 }
 
 /// An FTP server's error reply: 550 and friends mean the file is not there or not

@@ -10,10 +10,11 @@ fn absolute(path: &std::path::Path) -> PortablePath {
     PortablePath(path.to_string_lossy().into_owned())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn settings_and_queues_move_to_another_machine() -> TestResult {
-    let here = Harness::new().await?;
-    let night = here.manager.create_queue("Night").unwrap();
+/// Sets `here` up as someone would before exporting: a scheduled, limited
+/// queue for the night that captures go to, folders inside the standard ones
+/// and a speed limit. Returns the night queue.
+fn set_up_first_machine(here: &Harness) -> TestResult<Queue> {
+    let night = here.manager.create_queue("Night")?;
     let night = Queue {
         max_concurrent: 4,
         speed_limit: Some(500_000),
@@ -27,21 +28,29 @@ async fn settings_and_queues_move_to_another_machine() -> TestResult {
         }),
         ..night
     };
-    here.manager.update_queue(night.clone()).unwrap();
+    here.manager.update_queue(night.clone())?;
     let downloads = here.folders.downloads.clone();
     let videos = here.folders.videos.clone();
     tune(&here.manager, |s| {
         s.default_folder = absolute(&downloads.join("Stuff"));
-        let video = s
+        if let Some(video) = s
             .categories
             .iter_mut()
             .find(|r| r.category == Category::Video)
-            .unwrap();
-        video.folder = absolute(&videos.join("Clips"));
+        {
+            video.folder = absolute(&videos.join("Clips"));
+        }
         s.global_speed_limit = Some(2_000_000);
         s.extension.ask_before_download = true;
         s.extension.default_queue = night.id;
     })?;
+    Ok(night)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn settings_and_queues_move_to_another_machine() -> TestResult {
+    let here = Harness::new().await?;
+    let night = set_up_first_machine(&here)?;
 
     let file = here.root.path().join("profile.json");
     here.manager.export_settings(&file).await.unwrap();

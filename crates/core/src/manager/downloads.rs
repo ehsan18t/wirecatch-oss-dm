@@ -1,7 +1,7 @@
 //! Adding downloads and moving them through their life: pause, resume, cancel,
 //! retry, refresh link, remove, and their place in queues.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, Url};
@@ -14,7 +14,7 @@ use wirecatch_protocol::{DownloadId, QueueId};
 use super::Manager;
 use super::handovers::{Handover, Target};
 use super::run::{delete_files, mark_cancelled};
-use super::state::{Entry, Expectation, Stop};
+use super::state::{Entry, Expectation, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::media::StoredMedia;
 use crate::naming;
@@ -480,23 +480,7 @@ impl Manager {
     /// whose handover is already known (a retry from the extension, or two copies
     /// racing), which adds nothing.
     pub(super) async fn insert(&self, new: NewEntry) -> Result<Option<DownloadSummary>> {
-        let (dir, name, category) = {
-            let state = self.lock_open()?;
-            state.slot(new.queue)?;
-            let name = naming::file_name(
-                new.file_name.as_deref().or(new.hint_name.as_deref()),
-                &new.url,
-            )?;
-            let category = new
-                .category
-                .unwrap_or_else(|| settings::category_of(&state.settings, &name));
-            let dir = match &new.folder {
-                Some(folder) => folder.clone(),
-                None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
-            };
-            (dir, name, category)
-        };
-
+        let (dir, name, category) = self.destination(&new)?;
         // Checking the disk blocks, so it happens off the lock and off async threads;
         // if another add claimed the same path meanwhile, look again.
         loop {
@@ -518,82 +502,108 @@ impl Manager {
                 continue;
             }
             state.slot(new.queue)?;
-            let id = state.ids.download();
-            self.inner.store.save_last_ids(state.ids.last());
-            let position = state.ids.position();
-            let row = DownloadSummary {
-                id,
-                url: new.url.to_string(),
-                file_name: path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                path: path.to_string_lossy().into_owned(),
-                queue: new.queue,
-                category,
-                status: if new.start {
-                    DownloadStatus::Queued
-                } else {
-                    DownloadStatus::Paused
-                },
-                total: None,
-                done: 0,
-                speed: 0,
-                connections: 0,
-                eta_secs: None,
-                error: None,
-                added_at: self.inner.clock.unix_millis(),
-                completed_at: None,
-                waiting: None,
-                media: new.media.as_ref().map(|m| m.summary.clone()),
-                processing: None,
-            };
-            let media_job = new.media.as_ref().and_then(|m| m.job.clone());
-            // The path is a guess until the server answers with its own name; a
-            // media job's is final.
-            let naming = NameChoice {
-                settled: media_job.is_some(),
-                name: new.file_name.clone(),
-                folder: new
-                    .folder
-                    .as_ref()
-                    .map(|f| f.to_string_lossy().into_owned()),
-            };
-            state.insert_entry(Entry {
-                row,
-                position,
-                origin: new.origin,
-                naming,
-                expect: new.expect,
-                run: None,
-                resume_first: false,
-                cleanup: None,
-                removing: false,
-                moving: None,
-                media_job,
-            });
-            self.save(&mut state, id);
-            self.reconcile(&mut state);
-            let row = state.entry(id)?.summary();
-            if let Some(handover) = &new.handover {
-                let action = capture_action(&row);
-                // A started capture is only taken over once the server answers;
-                // until then a duplicate add waits for that outcome.
-                let deciding = (action == AddAction::Started).then(CancellationToken::new);
-                let reply = AddedDownload {
-                    id: Some(id),
-                    action,
-                };
-                let target = Target::Download(id);
-                let record = Handover {
-                    reply,
-                    target,
-                    deciding,
-                };
-                state.handovers.insert(handover, record);
-            }
-            return Ok(Some(row));
+            return self.add_entry(&mut state, new, &path, category).map(Some);
         }
+    }
+
+    /// Where a new download goes: its folder, its file name and its category.
+    fn destination(&self, new: &NewEntry) -> Result<(PathBuf, String, Category)> {
+        let state = self.lock_open()?;
+        state.slot(new.queue)?;
+        let name = naming::file_name(
+            new.file_name.as_deref().or(new.hint_name.as_deref()),
+            &new.url,
+        )?;
+        let category = new
+            .category
+            .unwrap_or_else(|| settings::category_of(&state.settings, &name));
+        let dir = match &new.folder {
+            Some(folder) => folder.clone(),
+            None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
+        };
+        Ok((dir, name, category))
+    }
+
+    /// Puts `new` in the list at the free `path`, lets it start if its queue has
+    /// room, and remembers its handover; returns its row.
+    fn add_entry(
+        &self,
+        state: &mut State,
+        new: NewEntry,
+        path: &Path,
+        category: Category,
+    ) -> Result<DownloadSummary> {
+        let id = state.ids.download();
+        self.inner.store.save_last_ids(state.ids.last());
+        let position = state.ids.position();
+        let row = DownloadSummary {
+            id,
+            url: new.url.to_string(),
+            file_name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            path: path.to_string_lossy().into_owned(),
+            queue: new.queue,
+            category,
+            status: if new.start {
+                DownloadStatus::Queued
+            } else {
+                DownloadStatus::Paused
+            },
+            total: None,
+            done: 0,
+            speed: 0,
+            connections: 0,
+            eta_secs: None,
+            error: None,
+            added_at: self.inner.clock.unix_millis(),
+            completed_at: None,
+            waiting: None,
+            media: new.media.as_ref().map(|m| m.summary.clone()),
+            processing: None,
+        };
+        let media_job = new.media.and_then(|m| m.job);
+        // The path is a guess until the server answers with its own name; a
+        // media job's is final.
+        let naming = NameChoice {
+            settled: media_job.is_some(),
+            name: new.file_name,
+            folder: new.folder.map(|f| f.to_string_lossy().into_owned()),
+        };
+        state.insert_entry(Entry {
+            row,
+            position,
+            origin: new.origin,
+            naming,
+            expect: new.expect,
+            run: None,
+            resume_first: false,
+            cleanup: None,
+            removing: false,
+            moving: None,
+            media_job,
+        });
+        self.save(state, id);
+        self.reconcile(state);
+        let row = state.entry(id)?.summary();
+        if let Some(handover) = &new.handover {
+            let action = capture_action(&row);
+            // A started capture is only taken over once the server answers;
+            // until then a duplicate add waits for that outcome.
+            let deciding = (action == AddAction::Started).then(CancellationToken::new);
+            let reply = AddedDownload {
+                id: Some(id),
+                action,
+            };
+            let record = Handover {
+                reply,
+                target: Target::Download(id),
+                deciding,
+            };
+            state.handovers.insert(handover, record);
+        }
+        Ok(row)
     }
 }
 

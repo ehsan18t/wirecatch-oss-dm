@@ -413,11 +413,10 @@ pub(crate) struct OutputJob {
     /// Subtitles go next to the file as `.srt` files instead of inside it.
     #[serde(default)]
     pub subtitle_files: bool,
-    #[serde(default)]
-    pub chapters: bool,
-    /// Title, artist and cover picture go into the file.
-    #[serde(default)]
-    pub tags: bool,
+    /// What else goes into the file. Stored as fields of the job itself, as
+    /// jobs saved before were.
+    #[serde(flatten)]
+    pub extras: Extras,
     /// The media's length, for the conversion's progress.
     #[serde(default)]
     pub duration_ms: Option<u64>,
@@ -427,6 +426,17 @@ pub(crate) struct OutputJob {
     /// when something goes inside the file.
     #[serde(default)]
     pub original: bool,
+}
+
+/// What goes into a saved file besides its streams, where its format holds it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Extras {
+    /// The video's chapters.
+    #[serde(default)]
+    pub chapters: bool,
+    /// Title, artist and cover picture.
+    #[serde(default)]
+    pub tags: bool,
 }
 
 impl OutputJob {
@@ -460,12 +470,13 @@ impl OutputJob {
 
     /// Whether a metadata file (tags, chapters) is written for ffmpeg.
     pub fn wants_metadata(&self) -> bool {
-        (self.chapters && self.container.chapters()) || (self.tags && self.container.tags())
+        (self.extras.chapters && self.container.chapters())
+            || (self.extras.tags && self.container.tags())
     }
 
     /// Whether a cover picture is downloaded for the file.
     pub fn wants_cover(&self) -> bool {
-        self.tags && self.container.cover()
+        self.extras.tags && self.container.cover()
     }
 }
 
@@ -1501,9 +1512,6 @@ pub(crate) fn arguments(
         .into_iter()
         .map(OsString::from)
         .collect();
-    let push = |args: &mut Vec<OsString>, words: &[&str]| {
-        args.extend(words.iter().map(OsString::from));
-    };
     let video_encoder = match job.video {
         VideoAction::Encode { .. } => encoder,
         _ => None,
@@ -1511,133 +1519,27 @@ pub(crate) fn arguments(
     if let Some(e) = video_encoder {
         push(&mut args, e.global);
     }
-    // Inputs, in order; their numbers are needed for the mapping.
-    let mut next = 0usize;
-    let mut number = |args: &mut Vec<OsString>, input: Vec<OsString>| {
-        args.extend(input);
-        next += 1;
-        next - 1
-    };
-    let video_in = inputs
-        .video
-        .as_ref()
-        .map(|(f, p)| number(&mut args, ffmpeg_input_args(*f, p)));
-    let audio_in = inputs
-        .audio
-        .as_ref()
-        .map(|(f, p)| number(&mut args, ffmpeg_input_args(*f, p)));
-    let embed = job.embedded_subtitles();
-    let subtitle_ins: Vec<(usize, &SubtitlePick)> = if embed {
-        inputs
-            .subtitles
-            .iter()
-            .map(|(f, p, pick)| (number(&mut args, local_input(f.demuxer(), p)), pick))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let metadata_in = inputs
-        .metadata
-        .as_ref()
-        .filter(|_| job.wants_metadata())
-        .map(|p| number(&mut args, local_input("ffmetadata", p)));
-    let cover_in = inputs
-        .cover
-        .as_ref()
-        .filter(|_| job.wants_cover())
-        .map(|(f, p)| number(&mut args, local_input(f.demuxer(), p)));
-
-    // Streams.
-    let map = |args: &mut Vec<OsString>, spec: String| {
-        args.push("-map".into());
-        args.push(spec.into());
-    };
-    if job.video != VideoAction::None
-        && let Some(v) = video_in
+    let numbers = add_inputs(&mut args, job, inputs);
+    add_maps(&mut args, job, &numbers);
+    add_video_codec(&mut args, job, video_encoder);
+    add_audio_codec(&mut args, job, audio_encoder);
+    if let Some(codec) = job
+        .container
+        .subtitle_codec()
+        .filter(|_| job.embedded_subtitles())
     {
-        map(&mut args, format!("{v}:v:0"));
+        add_subtitle_tracks(&mut args, codec, &numbers.subtitles);
     }
-    if job.audio != AudioAction::None {
-        match (audio_in, video_in) {
-            (Some(a), _) => map(&mut args, format!("{a}:a:0")),
-            (None, Some(v)) => map(&mut args, format!("{v}:a:0")),
-            (None, None) => {}
-        }
-    }
-    for (i, _) in &subtitle_ins {
-        map(&mut args, format!("{i}:s:0"));
-    }
-    if let Some(c) = cover_in {
-        map(&mut args, format!("{c}:v:0"));
-    }
-
-    // Video.
-    match (job.video, video_encoder) {
-        (VideoAction::None, _) => {}
-        (VideoAction::Encode { kbps, .. }, Some(e)) => {
-            push(
-                &mut args,
-                &["-filter:v:0", &encode_filter(e), "-c:v:0", e.name],
-            );
-            push(&mut args, e.options);
-            let (rate, max, buf) = (kbps, kbps.saturating_mul(3) / 2, kbps.saturating_mul(2));
-            for (flag, value) in [
-                ("-b:v:0", rate),
-                ("-maxrate:v:0", max),
-                ("-bufsize:v:0", buf),
-            ] {
-                args.push(flag.into());
-                args.push(format!("{value}k").into());
-            }
-        }
-        _ => push(&mut args, &["-c:v:0", "copy"]),
-    }
-    // Audio.
-    match job.audio {
-        AudioAction::None => {}
-        AudioAction::Copy => push(&mut args, &["-c:a", "copy"]),
-        AudioAction::Encode { kbps, .. } => {
-            push(&mut args, &["-c:a", audio_encoder.0]);
-            push(&mut args, audio_encoder.1);
-            if let Some(kbps) = kbps {
-                args.push("-b:a".into());
-                args.push(format!("{kbps}k").into());
-            }
-        }
-    }
-    // Subtitles, each named and labelled with its language.
-    if let Some(codec) = job.container.subtitle_codec().filter(|_| embed) {
-        push(&mut args, &["-c:s", codec]);
-        for (n, (_, pick)) in subtitle_ins.iter().enumerate() {
-            let name = if pick.auto {
-                format!("{} (auto-generated)", plain(&pick.name, MAX_NAME_CHARS))
-            } else {
-                plain(&pick.name, MAX_NAME_CHARS)
-            };
-            args.push(format!("-metadata:s:s:{n}").into());
-            args.push(format!("language={}", iso639_2(&pick.language)).into());
-            args.push(format!("-metadata:s:s:{n}").into());
-            args.push(format!("title={name}").into());
-        }
-    }
-    // Cover picture.
-    if cover_in.is_some() {
-        let n = usize::from(job.video != VideoAction::None);
-        let stream = format!("-c:v:{n}");
-        args.push(stream.into());
-        args.push("mjpeg".into());
-        args.push(format!("-disposition:v:{n}").into());
-        args.push("attached_pic".into());
-        args.push(format!("-metadata:s:v:{n}").into());
-        args.push("comment=Cover (front)".into());
+    if numbers.cover.is_some() {
+        add_cover_disposition(&mut args, job);
     }
     // Tags and chapters come from the metadata file, or not at all.
-    match metadata_in {
+    match numbers.metadata {
         Some(m) => {
             args.push("-map_metadata".into());
             args.push(m.to_string().into());
             args.push("-map_chapters".into());
-            let chapters = job.chapters && job.container.chapters();
+            let chapters = job.extras.chapters && job.container.chapters();
             args.push(if chapters { m.to_string() } else { "-1".into() }.into());
         }
         None => push(&mut args, &["-map_chapters", "-1"]),
@@ -1659,6 +1561,170 @@ pub(crate) fn arguments(
     );
     args.push(file_arg(output));
     args
+}
+
+/// Appends `words` to `args`.
+fn push(args: &mut Vec<OsString>, words: &[&str]) {
+    args.extend(words.iter().map(OsString::from));
+}
+
+/// The number ffmpeg gives each input that was added, counting from 0 in the
+/// order they were added.
+struct InputNumbers<'a> {
+    video: Option<usize>,
+    audio: Option<usize>,
+    /// Each embedded subtitle's input, with the subtitle it is.
+    subtitles: Vec<(usize, &'a SubtitlePick)>,
+    metadata: Option<usize>,
+    cover: Option<usize>,
+}
+
+/// Adds the inputs `job` uses to `args`, in a fixed order, and returns their
+/// numbers for the mapping.
+fn add_inputs<'a>(
+    args: &mut Vec<OsString>,
+    job: &OutputJob,
+    inputs: &'a Inputs,
+) -> InputNumbers<'a> {
+    let mut next = 0usize;
+    let mut number = |args: &mut Vec<OsString>, input: Vec<OsString>| {
+        args.extend(input);
+        next += 1;
+        next - 1
+    };
+    let video = inputs
+        .video
+        .as_ref()
+        .map(|(f, p)| number(args, ffmpeg_input_args(*f, p)));
+    let audio = inputs
+        .audio
+        .as_ref()
+        .map(|(f, p)| number(args, ffmpeg_input_args(*f, p)));
+    let subtitles = if job.embedded_subtitles() {
+        inputs
+            .subtitles
+            .iter()
+            .map(|(f, p, pick)| (number(args, local_input(f.demuxer(), p)), pick))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let metadata = inputs
+        .metadata
+        .as_ref()
+        .filter(|_| job.wants_metadata())
+        .map(|p| number(args, local_input("ffmetadata", p)));
+    let cover = inputs
+        .cover
+        .as_ref()
+        .filter(|_| job.wants_cover())
+        .map(|(f, p)| number(args, local_input(f.demuxer(), p)));
+    InputNumbers {
+        video,
+        audio,
+        subtitles,
+        metadata,
+        cover,
+    }
+}
+
+/// Picks the streams that go into the file: the video, the audio (from the
+/// video's input when it came joined), each subtitle and the cover.
+fn add_maps(args: &mut Vec<OsString>, job: &OutputJob, numbers: &InputNumbers<'_>) {
+    let mut map = |spec: String| {
+        args.push("-map".into());
+        args.push(spec.into());
+    };
+    if job.video != VideoAction::None
+        && let Some(v) = numbers.video
+    {
+        map(format!("{v}:v:0"));
+    }
+    if job.audio != AudioAction::None {
+        match (numbers.audio, numbers.video) {
+            (Some(a), _) => map(format!("{a}:a:0")),
+            (None, Some(v)) => map(format!("{v}:a:0")),
+            (None, None) => {}
+        }
+    }
+    for (i, _) in &numbers.subtitles {
+        map(format!("{i}:s:0"));
+    }
+    if let Some(c) = numbers.cover {
+        map(format!("{c}:v:0"));
+    }
+}
+
+/// How the video is written: not at all, re-encoded with `encoder` at the
+/// job's rate, or copied.
+fn add_video_codec(args: &mut Vec<OsString>, job: &OutputJob, encoder: Option<&Encoder>) {
+    match (job.video, encoder) {
+        (VideoAction::None, _) => {}
+        (VideoAction::Encode { kbps, .. }, Some(e)) => {
+            push(args, &["-filter:v:0", &encode_filter(e), "-c:v:0", e.name]);
+            push(args, e.options);
+            let (rate, max, buf) = (kbps, kbps.saturating_mul(3) / 2, kbps.saturating_mul(2));
+            for (flag, value) in [
+                ("-b:v:0", rate),
+                ("-maxrate:v:0", max),
+                ("-bufsize:v:0", buf),
+            ] {
+                args.push(flag.into());
+                args.push(format!("{value}k").into());
+            }
+        }
+        _ => push(args, &["-c:v:0", "copy"]),
+    }
+}
+
+/// How the audio is written: not at all, copied, or re-encoded with
+/// `encoder` (its name and options) at the job's rate, if it has one.
+fn add_audio_codec(args: &mut Vec<OsString>, job: &OutputJob, encoder: (&str, &[&str])) {
+    match job.audio {
+        AudioAction::None => {}
+        AudioAction::Copy => push(args, &["-c:a", "copy"]),
+        AudioAction::Encode { kbps, .. } => {
+            push(args, &["-c:a", encoder.0]);
+            push(args, encoder.1);
+            if let Some(kbps) = kbps {
+                args.push("-b:a".into());
+                args.push(format!("{kbps}k").into());
+            }
+        }
+    }
+}
+
+/// Writes the embedded subtitles with `codec`, each named and labelled with
+/// its language.
+fn add_subtitle_tracks(
+    args: &mut Vec<OsString>,
+    codec: &str,
+    subtitles: &[(usize, &SubtitlePick)],
+) {
+    push(args, &["-c:s", codec]);
+    for (n, (_, pick)) in subtitles.iter().enumerate() {
+        let name = if pick.auto {
+            format!("{} (auto-generated)", plain(&pick.name, MAX_NAME_CHARS))
+        } else {
+            plain(&pick.name, MAX_NAME_CHARS)
+        };
+        args.push(format!("-metadata:s:s:{n}").into());
+        args.push(format!("language={}", iso639_2(&pick.language)).into());
+        args.push(format!("-metadata:s:s:{n}").into());
+        args.push(format!("title={name}").into());
+    }
+}
+
+/// Writes the cover picture as an attached JPEG picture after the video, if
+/// there is one.
+fn add_cover_disposition(args: &mut Vec<OsString>, job: &OutputJob) {
+    let n = usize::from(job.video != VideoAction::None);
+    args.push(format!("-c:v:{n}").into());
+    args.push("mjpeg".into());
+    args.push(format!("-disposition:v:{n}").into());
+    args.push("attached_pic".into());
+    args.push(format!("-metadata:s:v:{n}").into());
+    args.push("comment=Cover (front)".into());
 }
 
 /// ffmpeg's arguments to turn subtitle file `input` into `SubRip` at `output`.
@@ -1819,43 +1885,47 @@ mod tests {
         assert!(Container::Mp3.cover() && Container::M4a.cover() && !Container::Opus.cover());
     }
 
-    /// A YouTube-like 1080p row: VP9 is best, but MP4 takes the H.264 of the
-    /// same height and frame rate and copies it; only a height without H.264
-    /// re-encodes.
+    /// A format as yt-dlp describes one of a `YouTube` page's.
+    fn listed(
+        id: &str,
+        ext: &str,
+        codecs: (&str, &str),
+        height: Option<u32>,
+        fps: f64,
+        tbr: f64,
+    ) -> Format {
+        format(serde_json::json!({
+            "format_id": id, "ext": ext, "vcodec": codecs.0, "acodec": codecs.1,
+            "height": height, "fps": fps, "tbr": tbr, "url": "u", "filesize": 1000
+        }))
+    }
+
+    /// A `YouTube`-like 1080p row: VP9 is best, but MP4 takes the H.264 of the
+    /// same height and frame rate and copies it.
     #[test]
     fn a_container_takes_matching_streams_of_the_same_quality() {
-        let f = |id: &str, ext: &str, v: &str, a: &str, h: Option<u32>, fps: f64, tbr: f64| {
-            format(serde_json::json!({
-                "format_id": id, "ext": ext, "vcodec": v, "acodec": a,
-                "height": h, "fps": fps, "tbr": tbr, "url": "u", "filesize": 1000
-            }))
-        };
-        let vp9 = f("303", "webm", "vp9", "none", Some(1080), 60.0, 4000.0);
-        let avc30 = f(
+        let vp9 = listed("303", "webm", ("vp9", "none"), Some(1080), 60.0, 4000.0);
+        let avc30 = listed(
             "137",
             "mp4",
-            "avc1.640028",
-            "none",
+            ("avc1.640028", "none"),
             Some(1080),
             30.0,
             4500.0,
         );
-        let avc60 = f(
+        let avc60 = listed(
             "299",
             "mp4",
-            "avc1.64002a",
-            "none",
+            ("avc1.64002a", "none"),
             Some(1080),
             60.0,
             6000.0,
         );
-        let aac = f("140", "m4a", "none", "mp4a.40.2", None, 0.0, 128.0);
-        let opus = f("251", "webm", "none", "opus", None, 0.0, 160.0);
-        let at = [&vp9, &avc30, &avc60];
-        let audios = [&aac, &opus];
+        let aac = listed("140", "m4a", ("none", "mp4a.40.2"), None, 0.0, 128.0);
+        let opus = listed("251", "webm", ("none", "opus"), None, 0.0, 160.0);
         let variants = video_variants(
-            &at,
-            &audios,
+            &[&vp9, &avc30, &avc60],
+            &[&aac, &opus],
             (&vp9, Some(&opus)),
             "webm",
             Some(1080),
@@ -1879,12 +1949,17 @@ mod tests {
         let mkv = by(OutputFormat::Mkv);
         assert_eq!(mkv.selection, "303+251");
         assert_eq!(mkv.container, Container::Mkv);
+    }
 
-        // 2160p comes only as VP9: MP4 re-encodes it, and says so.
-        let uhd = f("313", "webm", "vp9", "none", Some(2160), 30.0, 12_000.0);
+    /// 2160p comes only as VP9: MP4 re-encodes it, and says so.
+    #[test]
+    fn a_height_without_a_matching_codec_is_re_encoded() {
+        let uhd = listed("313", "webm", ("vp9", "none"), Some(2160), 30.0, 12_000.0);
+        let aac = listed("140", "m4a", ("none", "mp4a.40.2"), None, 0.0, 128.0);
+        let opus = listed("251", "webm", ("none", "opus"), None, 0.0, 160.0);
         let variants = video_variants(
             &[&uhd],
-            &audios,
+            &[&aac, &opus],
             (&uhd, Some(&opus)),
             "webm",
             Some(2160),
@@ -1905,8 +1980,20 @@ mod tests {
         assert_eq!(codec, VideoCodec::H264);
         assert_eq!(kbps, 16_800, "VP9 at 12 Mb/s needs more as H.264");
         assert_eq!(mp4.fit.size, Some(16_800 * 60_000 / 8 + 1000));
+    }
 
-        // WebM with only H.264 and AAC: both are re-encoded.
+    /// `WebM` from a page with only H.264 and AAC: both are re-encoded.
+    #[test]
+    fn webm_from_h264_and_aac_re_encodes_both() {
+        let avc30 = listed(
+            "137",
+            "mp4",
+            ("avc1.640028", "none"),
+            Some(1080),
+            30.0,
+            4500.0,
+        );
+        let aac = listed("140", "m4a", ("none", "mp4a.40.2"), None, 0.0, 128.0);
         let variants = video_variants(
             &[&avc30],
             &[&aac],
@@ -2260,8 +2347,7 @@ mod tests {
             audio,
             subtitles: Vec::new(),
             subtitle_files: false,
-            chapters: false,
-            tags: false,
+            extras: Extras::default(),
             duration_ms: None,
             original_ext: "webm".into(),
             original: false,
@@ -2277,10 +2363,10 @@ mod tests {
         assert!(j.needs_pass(), "subtitles go inside a WebM");
         j.subtitle_files = true;
         assert!(!j.needs_pass(), "subtitles go next to it");
-        j.chapters = true;
+        j.extras.chapters = true;
         assert!(j.needs_pass());
         j.original = false;
-        j.chapters = false;
+        j.extras.chapters = false;
         assert!(j.needs_pass(), "another format always runs ffmpeg");
     }
 
@@ -2305,7 +2391,7 @@ mod tests {
     fn every_input_of_a_conversion_is_a_named_local_file() {
         let mut j = job(Container::Mkv, VideoAction::Copy, AudioAction::Copy);
         j.subtitles = vec![pick("en", false), pick("en", true)];
-        j.chapters = true;
+        j.extras.chapters = true;
         let inputs = Inputs {
             video: Some((InputFormat::WebM, PathBuf::from("/w/-video.webm"))),
             audio: Some((InputFormat::WebM, PathBuf::from("/w/audio.webm"))),
@@ -2419,7 +2505,7 @@ mod tests {
                 kbps: Some(320),
             },
         );
-        j.tags = true;
+        j.extras.tags = true;
         j.subtitles = vec![pick("en", false)];
         assert!(j.sidecar_subtitles() && !j.embedded_subtitles());
         let inputs = Inputs {

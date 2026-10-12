@@ -344,10 +344,41 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
     assert!(best.needs_ffmpeg);
     assert_eq!(best.size, Some((video.len() + audio.len()) as u64));
 
-    // yt-dlp ran with an argument vector Wirecatch controls.
     let calls = ytdlp_calls(&h)?;
     assert_eq!(calls.len(), 1);
-    let call = &calls[0];
+    check_page_reading(&calls[0], &page)?;
+
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    let row = h.manager.list_downloads().remove(0);
+    assert_eq!(row.media.as_ref().unwrap().quality, "1080p");
+    h.wait_status(row.id, DownloadStatus::Processing).await;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mp4"),
+        "{}",
+        done.file_name
+    );
+    check_joined_by_copying(&done.path)?;
+    assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
+    // The format's own headers were sent with the format, never the page's cookies.
+    for seen in server.seen_at("fmt/video.mp4") {
+        assert_eq!(seen.headers.get("x-format").unwrap(), "yes");
+        assert_eq!(seen.headers.get("user-agent").unwrap(), "yt-dlp-agent");
+        assert!(seen.headers.get("cookie").is_none());
+    }
+    // The page was read again when the download started (addresses expire).
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    Ok(())
+}
+
+/// Checks that yt-dlp read the page with an argument vector Wirecatch
+/// controls, and with the browser's cookies in a file bound to the page's
+/// host, readable only by the user, and deleted right after.
+fn check_page_reading(call: &serde_json::Value, page: &str) -> TestResult {
     let argv = args(call)?;
     for expected in [
         "--ignore-config",
@@ -365,48 +396,37 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
         .windows(2)
         .find(|w| w[0] == "--js-runtimes")
         .map(|w| w[1].clone())
-        .unwrap();
+        .ok_or("no --js-runtimes")?;
     assert!(
-        deno.starts_with("deno:") && Path::new(&deno[5..]).is_file(),
+        deno.strip_prefix("deno:")
+            .is_some_and(|path| Path::new(path).is_file()),
         "{deno}"
     );
-    assert_eq!(argv[argv.len() - 2..], ["--".to_string(), page.clone()]);
+    assert_eq!(argv[argv.len() - 2..], ["--".to_string(), page.to_string()]);
     assert!(argv.contains(&"User-Agent:TestBrowser/2".to_string()));
-    // The cookies went in a file bound to the page's host, readable only by
-    // the user, and deleted right after.
-    let cookies = call["cookies"].as_str().unwrap();
+    let cookies = call["cookies"].as_str().ok_or("no cookies were passed")?;
     assert!(cookies.starts_with("# Netscape HTTP Cookie File\n"));
     assert!(cookies.contains("127.0.0.1\tFALSE\t/\tFALSE\t"));
     assert!(cookies.contains("\tsession\tabc123\n") && cookies.contains("\ttheme\tdark\n"));
     if cfg!(unix) {
         assert_eq!(call["cookies_mode"].as_u64(), Some(0o600));
     }
-    let cookies_path = call["cookies_path"].as_str().unwrap();
+    let cookies_path = call["cookies_path"].as_str().ok_or("no cookies file")?;
     assert!(
         !Path::new(cookies_path).exists(),
         "the cookies file was left behind"
     );
+    Ok(())
+}
 
-    h.manager
-        .choose_media(choice.id, select("137+140"))
-        .await
-        .unwrap();
-    let row = h.manager.list_downloads().remove(0);
-    assert_eq!(row.media.as_ref().unwrap().quality, "1080p");
-    h.wait_status(row.id, DownloadStatus::Processing).await;
-    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert_eq!(
-        extension(&done.file_name),
-        Some("mp4"),
-        "{}",
-        done.file_name
-    );
-    // The fake ffmpeg wrote its arguments: a copy of both parts, no re-encoding.
-    let joined = std::fs::read_to_string(&done.path).unwrap();
+/// Checks that the fake ffmpeg, which writes its arguments into the file at
+/// `path`, copied both parts without re-encoding, each read as the format it
+/// was recognized as, from a file only.
+fn check_joined_by_copying(path: &str) -> TestResult {
+    let joined = std::fs::read_to_string(path)?;
     let lines: Vec<&str> = joined.lines().collect();
     assert!(lines.windows(2).any(|w| w == ["-c", "copy"]), "{joined}");
     assert_eq!(lines.iter().filter(|l| **l == "-i").count(), 2);
-    // Each input is read as the format it was recognized as, from a file only.
     assert_eq!(
         lines
             .windows(2)
@@ -420,15 +440,6 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
         2,
         "{joined}"
     );
-    assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
-    // The format's own headers were sent with the format, never the page's cookies.
-    for seen in server.seen_at("fmt/video.mp4") {
-        assert_eq!(seen.headers.get("x-format").unwrap(), "yes");
-        assert_eq!(seen.headers.get("user-agent").unwrap(), "yt-dlp-agent");
-        assert!(seen.headers.get("cookie").is_none());
-    }
-    // The page was read again when the download started (addresses expire).
-    assert_eq!(ytdlp_calls(&h)?.len(), 2);
     Ok(())
 }
 

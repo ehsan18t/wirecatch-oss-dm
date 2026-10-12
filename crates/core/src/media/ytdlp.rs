@@ -424,27 +424,8 @@ async fn download_once(
     cancel: &CancellationToken,
 ) -> Result<Fetched, Attempt> {
     let cookies = CookiesFile::create(ctx)?;
-    let mut args = common_args(ctx, cookies.as_ref());
-    let template = work.join("media.%(ext)s");
-    for arg in [
-        "-f",
-        format,
-        "--no-simulate",
-        "--newline",
-        "--progress",
-        "--progress-template",
-        "download:wcprogress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
-        "--print",
-        "after_move:filepath",
-        "-o",
-    ] {
-        args.push(arg.into());
-    }
-    args.push(template.into_os_string());
-    args.push("--".into());
-    args.push(ctx.page.as_str().into());
+    let args = download_args(ctx, cookies.as_ref(), format, work);
     let mut printed = None::<PathBuf>;
-    let (done, total) = (AtomicU64::new(0), AtomicU64::new(0));
     let result = process::run(
         &ctx.tools.ytdlp,
         &args,
@@ -458,21 +439,8 @@ async fn download_once(
                 .strip_prefix(PROGRESS_MARK)
                 .filter(|_| output == Output::Stdout)
             {
-                // Byte counts as yt-dlp prints them; anything that is not a
-                // count is ignored rather than read as zero.
-                let mut numbers = report
-                    .split_whitespace()
-                    .map(|n| n.parse::<f64>().ok().and_then(f64_to_u64));
-                let (now, all, guess) = (
-                    numbers.next().flatten(),
-                    numbers.next().flatten(),
-                    numbers.next().flatten(),
-                );
-                if let Some(now) = now {
-                    done.store(now, Ordering::Relaxed);
-                    total.store(all.or(guess).unwrap_or(0), Ordering::Relaxed);
-                    let total = Some(total.load(Ordering::Relaxed)).filter(|t| *t > 0);
-                    progress.set_own(now, total);
+                if let Some((done, total)) = progress_report(report) {
+                    progress.set_own(done, total);
                 }
             } else if let Some(path) = printed_output(output, line, work) {
                 printed = Some(path);
@@ -509,6 +477,51 @@ async fn download_once(
             Err(fix("The media add-on finished without saving the video. Try again.".into()).into())
         }
     }
+}
+
+/// yt-dlp's arguments to download `format` of the page into `work` as
+/// `media.<ext>`, reporting progress and printing the finished file's path.
+fn download_args(
+    ctx: &Context<'_>,
+    cookies: Option<&CookiesFile>,
+    format: &str,
+    work: &Path,
+) -> Vec<OsString> {
+    let mut args = common_args(ctx, cookies);
+    for arg in [
+        "-f",
+        format,
+        "--no-simulate",
+        "--newline",
+        "--progress",
+        "--progress-template",
+        "download:wcprogress %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
+        "--print",
+        "after_move:filepath",
+        "-o",
+    ] {
+        args.push(arg.into());
+    }
+    args.push(work.join("media.%(ext)s").into_os_string());
+    args.push("--".into());
+    args.push(ctx.page.as_str().into());
+    args
+}
+
+/// The bytes done and, when known, the total (exact, else estimated) from a
+/// progress report yt-dlp printed after [`PROGRESS_MARK`]. Byte counts are
+/// read as yt-dlp prints them; a report whose bytes done are not a count is
+/// ignored rather than read as zero.
+fn progress_report(report: &str) -> Option<(u64, Option<u64>)> {
+    let mut numbers = report
+        .split_whitespace()
+        .map(|n| n.parse::<f64>().ok().and_then(f64_to_u64));
+    let (done, total, estimate) = (
+        numbers.next().flatten()?,
+        numbers.next().flatten(),
+        numbers.next().flatten(),
+    );
+    Some((done, total.or(estimate).filter(|t| *t > 0)))
 }
 
 /// The path of the finished file in a line yt-dlp printed (`--print
@@ -886,6 +899,19 @@ mod tests {
         assert_eq!(size(serde_json::json!(1e30)), None);
         assert_eq!(size(serde_json::json!(-5.0)), None);
         assert_eq!(size(serde_json::json!(0.0)), None);
+    }
+
+    /// Progress reports give the bytes done and the total, exact or else
+    /// estimated; a report whose bytes done are not a count is ignored.
+    #[test]
+    fn progress_reports_are_read_as_counts() {
+        assert_eq!(progress_report("10 20 NA"), Some((10, Some(20))));
+        assert_eq!(progress_report("10 NA 30.0"), Some((10, Some(30))));
+        assert_eq!(progress_report("10 NA NA"), Some((10, None)));
+        assert_eq!(progress_report("10 0 0"), Some((10, None)));
+        assert_eq!(progress_report("-5 20 NA"), None);
+        assert_eq!(progress_report("NA 20 NA"), None);
+        assert_eq!(progress_report(""), None);
     }
 
     /// A page description as yt-dlp prints it for `YouTube`: every format has

@@ -79,53 +79,11 @@ pub(crate) async fn run(
     cancel: &CancellationToken,
     mut on_line: impl FnMut(Output, &str),
 ) -> Result<Ran, RunError> {
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .current_dir(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    for name in python_variables(std::env::vars_os().map(|(name, _)| name)) {
-        command.env_remove(name);
-    }
-    #[cfg(windows)]
-    {
-        /// Keeps a console window from flashing up for every run.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    #[cfg(unix)]
-    command.process_group(0);
-    let mut child = command.spawn().map_err(RunError::Start)?;
+    let mut child = command(program, args, dir)
+        .spawn()
+        .map_err(RunError::Start)?;
     let tree = Tree::attach(&child);
-    let (tx, mut rx) = mpsc::channel::<(bool, String)>(64);
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let collected = tokio::spawn({
-        let tx = tx.clone();
-        async move {
-            match stdout {
-                Some(out) if collect_stdout => {
-                    let mut bytes = Vec::new();
-                    let _ = out.take(MAX_STDOUT).read_to_end(&mut bytes).await;
-                    bytes
-                }
-                Some(out) => {
-                    forward(out, false, &tx).await;
-                    Vec::new()
-                }
-                None => Vec::new(),
-            }
-        }
-    });
-    if let Some(err) = stderr {
-        tokio::spawn(async move { forward(err, true, &tx).await });
-    } else {
-        drop(tx);
-    }
-
+    let (collected, mut rx) = read_outputs(&mut child, collect_stdout);
     let deadline = async {
         match timeout {
             Some(t) => tokio::time::sleep(t).await,
@@ -183,6 +141,72 @@ pub(crate) async fn run(
         stdout,
         stderr: tail,
     })
+}
+
+/// The command that runs `program` with `args` in `dir`, its outputs piped, no
+/// input, without Python's environment variables, in a process group of its
+/// own on Unix and without a console window on Windows.
+fn command(program: &Path, args: &[OsString], dir: &Path) -> Command {
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    for name in python_variables(std::env::vars_os().map(|(name, _)| name)) {
+        command.env_remove(name);
+    }
+    #[cfg(windows)]
+    {
+        /// Keeps a console window from flashing up for every run.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    command
+}
+
+/// Reads the outputs of `child` on tasks of their own: with `collect_stdout`
+/// standard output is collected whole (up to [`MAX_STDOUT`]) into the returned
+/// task's result; otherwise its lines, and always those of standard error,
+/// arrive on the returned channel, `true` marking standard error. The channel
+/// closes once both outputs have ended.
+fn read_outputs(
+    child: &mut tokio::process::Child,
+    collect_stdout: bool,
+) -> (
+    tokio::task::JoinHandle<Vec<u8>>,
+    mpsc::Receiver<(bool, String)>,
+) {
+    let (tx, rx) = mpsc::channel::<(bool, String)>(64);
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let collected = tokio::spawn({
+        let tx = tx.clone();
+        async move {
+            match stdout {
+                Some(out) if collect_stdout => {
+                    let mut bytes = Vec::new();
+                    let _ = out.take(MAX_STDOUT).read_to_end(&mut bytes).await;
+                    bytes
+                }
+                Some(out) => {
+                    forward(out, false, &tx).await;
+                    Vec::new()
+                }
+                None => Vec::new(),
+            }
+        }
+    });
+    if let Some(err) = stderr {
+        tokio::spawn(async move { forward(err, true, &tx).await });
+    } else {
+        drop(tx);
+    }
+    (collected, rx)
 }
 
 /// The environment variables that set up Python (`PYTHONPATH`, `PYTHONHOME`,

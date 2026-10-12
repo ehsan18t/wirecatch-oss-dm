@@ -425,8 +425,10 @@ mod tests {
                     name: "English".into(),
                 }],
                 subtitle_files: false,
-                chapters: true,
-                tags: false,
+                extras: output::Extras {
+                    chapters: true,
+                    tags: false,
+                },
                 duration_ms: Some(1000),
                 original_ext: "webm".into(),
                 original: false,
@@ -434,6 +436,11 @@ mod tests {
             keep_ext: None,
         };
         let json = serde_json::to_string(&converting).unwrap();
+        // The extras are stored as fields of the job, as jobs saved before were.
+        assert!(
+            json.contains(r#""subtitle_files":false,"chapters":true,"tags":false,"#),
+            "{json}"
+        );
         assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), converting);
         let job = MediaJob::Stream {
             video: Pick::Track("v1".into()),

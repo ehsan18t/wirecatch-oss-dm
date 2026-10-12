@@ -55,6 +55,33 @@ enum Ended {
     Vanished,
 }
 
+impl Ended {
+    /// How run `end` of download `id`, saving into `folder`, ended. A failure
+    /// is described for the person, in words that depend on whether anything
+    /// had arrived before it (`worked_before`).
+    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked_before: bool) -> Self {
+        match end {
+            RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
+                Ended::Completed { bytes, path: None }
+            }
+            RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
+            RunEnd::Engine(Err(error)) => {
+                warn!(id = id.0, %error, "download failed");
+                Ended::Failed(user_error::describe(&error, folder, worked_before))
+            }
+            RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
+                bytes,
+                path: Some(path),
+            },
+            RunEnd::Media(Err(error)) => {
+                warn!(id = id.0, error = %error.message, "media download failed");
+                Ended::Failed(error)
+            }
+            RunEnd::Vanished => Ended::Vanished,
+        }
+    }
+}
+
 /// What a run may use of the network.
 pub(super) struct Bandwidth {
     /// Connections per download.
@@ -215,27 +242,8 @@ impl Manager {
         }
         entry.clear_live_fields();
 
-        let ended = match end {
-            RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
-                Ended::Completed { bytes, path: None }
-            }
-            RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
-            RunEnd::Engine(Err(error)) => {
-                warn!(id = id.0, %error, "download failed");
-                let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
-                Ended::Failed(user_error::describe(&error, &folder, worked_before))
-            }
-            RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
-                bytes,
-                path: Some(path),
-            },
-            RunEnd::Media(Err(error)) => {
-                warn!(id = id.0, error = %error.message, "media download failed");
-                Ended::Failed(error)
-            }
-            RunEnd::Vanished => Ended::Vanished,
-        };
-
+        let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
+        let ended = Ended::of(end, id, &folder, worked_before);
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
                 // The finished file now holds the name on disk.

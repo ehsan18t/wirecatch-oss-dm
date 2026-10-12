@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::NaiveDateTime;
-use wirecatch_protocol::app::DownloadStatus;
+use wirecatch_protocol::QueueId;
+use wirecatch_protocol::app::{DownloadStatus, Queue};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
@@ -48,14 +49,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     let settings = snapshot
         .settings
         .map_or_else(settings::default_settings, settings::within_limits);
-    let mut queues: Vec<QueueSlot> = snapshot
-        .queues
-        .into_iter()
-        .map(|queue| QueueSlot::new(settings::queue_within_limits(queue)))
-        .collect();
-    if !queues.iter().any(|s| s.queue.is_default) {
-        queues.insert(0, QueueSlot::new(settings::default_queue()));
-    }
+    let mut queues = restore_queues(snapshot.queues);
     let default_queue = queues
         .iter()
         .find(|s| s.queue.is_default)
@@ -72,47 +66,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     let mut downloads = Vec::with_capacity(snapshot.downloads.len());
     let mut changed = Vec::new();
     for stored in snapshot.downloads {
-        let mut entry = Entry {
-            media_job: stored.media.and_then(|m| m.job),
-            row: stored.summary,
-            position: stored.position,
-            origin: stored.origin,
-            naming: stored.naming,
-            expect: None,
-            run: None,
-            resume_first: false,
-            cleanup: None,
-            removing: false,
-            moving: None,
-        };
-        let mut fixed = false;
-        if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
-            entry.row.queue = default_queue;
-            fixed = true;
-        }
-        let done_with = matches!(
-            entry.row.status,
-            DownloadStatus::Completed | DownloadStatus::Cancelled
-        );
-        // A provisional path has no file of this download's yet; whatever is there
-        // is someone else's.
-        if !done_with
-            && entry.naming.settled
-            && let Some(size) = (around.finished_size)(entry.path())
-        {
-            mark_completed(&mut entry, size, around.now_millis);
-            fixed = true;
-        }
-        if matches!(
-            entry.row.status,
-            DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Processing
-        ) {
-            entry.row.status = DownloadStatus::Queued;
-            entry.resume_first = true;
-            if let Some(slot) = queues.iter_mut().find(|s| s.queue.id == entry.row.queue) {
-                slot.gate.resume_run();
-            }
-        }
+        let (entry, fixed) = restore_entry(stored, &mut queues, default_queue, around);
         ids.download = ids.download.max(entry.row.id.0);
         ids.position = ids.position.max(entry.position);
         if fixed {
@@ -140,6 +94,73 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         state.insert_entry(entry);
     }
     Restored { state, changed }
+}
+
+/// The stored queues within today's limits, with the default queue first when
+/// none of them is the default.
+fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
+    let mut queues: Vec<QueueSlot> = stored
+        .into_iter()
+        .map(|queue| QueueSlot::new(settings::queue_within_limits(queue)))
+        .collect();
+    if !queues.iter().any(|s| s.queue.is_default) {
+        queues.insert(0, QueueSlot::new(settings::default_queue()));
+    }
+    queues
+}
+
+/// One stored download as it continues, and whether its stored row needed
+/// fixing: one whose queue is gone joins `default_queue`, one whose file
+/// finished is completed, and one that was running goes back in line first and
+/// its queue continues the run that was under way.
+fn restore_entry(
+    stored: StoredDownload,
+    queues: &mut [QueueSlot],
+    default_queue: QueueId,
+    around: &Surroundings<'_>,
+) -> (Entry, bool) {
+    let mut entry = Entry {
+        media_job: stored.media.and_then(|m| m.job),
+        row: stored.summary,
+        position: stored.position,
+        origin: stored.origin,
+        naming: stored.naming,
+        expect: None,
+        run: None,
+        resume_first: false,
+        cleanup: None,
+        removing: false,
+        moving: None,
+    };
+    let mut fixed = false;
+    if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
+        entry.row.queue = default_queue;
+        fixed = true;
+    }
+    let done_with = matches!(
+        entry.row.status,
+        DownloadStatus::Completed | DownloadStatus::Cancelled
+    );
+    // A provisional path has no file of this download's yet; whatever is there
+    // is someone else's.
+    if !done_with
+        && entry.naming.settled
+        && let Some(size) = (around.finished_size)(entry.path())
+    {
+        mark_completed(&mut entry, size, around.now_millis);
+        fixed = true;
+    }
+    if matches!(
+        entry.row.status,
+        DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Processing
+    ) {
+        entry.row.status = DownloadStatus::Queued;
+        entry.resume_first = true;
+        if let Some(slot) = queues.iter_mut().find(|s| s.queue.id == entry.row.queue) {
+            slot.gate.resume_run();
+        }
+    }
+    (entry, fixed)
 }
 
 #[cfg(test)]

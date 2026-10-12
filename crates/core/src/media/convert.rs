@@ -350,6 +350,7 @@ async fn remove(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::media::output::Extras;
     use crate::media::output::{AudioAction, Container, ImageFormat, SubtitlePick};
     use wirecatch_streams::InputFormat;
 
@@ -397,8 +398,7 @@ mod tests {
             audio,
             subtitles: Vec::new(),
             subtitle_files: false,
-            chapters: false,
-            tags: false,
+            extras: Extras::default(),
             duration_ms: Some(2_000),
             original_ext: "webm".into(),
             original: false,
@@ -533,7 +533,7 @@ mod tests {
         let f = fixture(&ffmpeg);
         let mut j = job(Container::Mkv, VideoAction::Copy, AudioAction::Copy);
         j.subtitles = vec![pick("en", "English", false), pick("fr", "French", true)];
-        j.chapters = true;
+        j.extras.chapters = true;
         let out = f.dir.path().join("output.mkv");
         let progress = MediaProgress::default();
         let done = convert(
@@ -580,7 +580,7 @@ mod tests {
             },
         );
         j.subtitles = vec![pick("en", "English", false), pick("fr", "French", true)];
-        j.chapters = true;
+        j.extras.chapters = true;
         let out = f.dir.path().join("output.mp4");
         let tools = tools(&ffmpeg);
         let key = program_key(&tools.ffmpeg).await;
@@ -692,7 +692,7 @@ mod tests {
                 kbps: Some(320),
             },
         );
-        j.tags = true;
+        j.extras.tags = true;
         let inputs = Inputs {
             video: None,
             audio: Some((InputFormat::WebM, f.audio.clone())),
@@ -729,7 +729,7 @@ mod tests {
         let f = fixture(&ffmpeg);
         let mut j = job(Container::Webm, VideoAction::Copy, AudioAction::Copy);
         j.subtitles = vec![pick("en", "English", false), pick("fr", "French", true)];
-        j.chapters = true;
+        j.extras.chapters = true;
         let out = f.dir.path().join("output.webm");
         let done = convert(
             &tools(&ffmpeg),

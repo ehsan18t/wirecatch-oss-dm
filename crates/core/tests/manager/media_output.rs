@@ -446,26 +446,18 @@ async fn a_paused_conversion_starts_again_without_downloading() -> TestResult {
     Ok(())
 }
 
-/// A real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) turns a VP9 and Opus page
-/// video into an MP4 with H.264 and AAC, with the subtitles and chapters, using
-/// whichever encoder works on this computer.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
-    let Some(ffmpeg) = real_ffmpeg() else {
-        eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
-        return Ok(());
-    };
-    let scratch = tempfile::tempdir().unwrap();
-    let make = |args: &[&str], out: &str| {
-        let path = scratch.path().join(out);
-        let status = std::process::Command::new(&ffmpeg)
+/// Two seconds of VP9 video and of Opus audio, each in a `WebM` file, made with
+/// the real `ffmpeg` in `dir`.
+fn sample_streams(ffmpeg: &Path, dir: &Path) -> TestResult<(Vec<u8>, Vec<u8>)> {
+    let make = |args: &[&str], out: &str| -> TestResult<Vec<u8>> {
+        let path = dir.join(out);
+        let status = std::process::Command::new(ffmpeg)
             .args(["-hide_banner", "-loglevel", "error", "-y"])
             .args(args)
             .arg(&path)
-            .status()
-            .unwrap();
+            .status()?;
         assert!(status.success(), "could not make {out}");
-        std::fs::read(path).unwrap()
+        Ok(std::fs::read(path)?)
     };
     let video = make(
         &[
@@ -484,7 +476,7 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
             "-an",
         ],
         "v.webm",
-    );
+    )?;
     let audio = make(
         &[
             "-f",
@@ -496,7 +488,21 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
             "-vn",
         ],
         "a.webm",
-    );
+    )?;
+    Ok((video, audio))
+}
+
+/// A real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) turns a VP9 and Opus page
+/// video into an MP4 with H.264 and AAC, with the subtitles and chapters, using
+/// whichever encoder works on this computer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
+    let Some(ffmpeg) = real_ffmpeg() else {
+        eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
+        return Ok(());
+    };
+    let scratch = tempfile::tempdir()?;
+    let (video, audio) = sample_streams(&ffmpeg, scratch.path())?;
     let server = FileServer::start().await;
     let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap())?;
     let h = harness(publish(&server, &releases, "r")?).await?;

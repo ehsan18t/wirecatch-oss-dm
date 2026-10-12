@@ -11,7 +11,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
-use super::output::{self, AudioAction, OutputJob, SubtitlePick, Variant};
+use super::output::{self, AudioAction, Extras, OutputJob, SubtitlePick, Variant};
 use super::ytdlp::{Format, Info};
 use super::{Content, MediaJob, Pick, safe_ext};
 
@@ -96,29 +96,7 @@ impl Plan {
         choice: &MediaChoice,
         selection: &MediaSelection,
     ) -> Result<Resolved, String> {
-        let mut picks = Vec::new();
-        for id in &selection.subtitles {
-            let Some(offered) = choice.subtitles.iter().find(|s| &s.id == id) else {
-                return Err("One of the subtitles chosen is not offered for this video. Choose from the listed subtitles.".into());
-            };
-            if picks
-                .iter()
-                .any(|p: &SubtitlePick| p.key == key_of(id) && p.auto == offered.auto)
-            {
-                continue;
-            }
-            picks.push(SubtitlePick {
-                key: key_of(id).to_string(),
-                auto: offered.auto,
-                language: offered.language.clone(),
-                name: offered.name.clone(),
-            });
-        }
-        if picks.len() > MAX_PICKED_SUBTITLES {
-            return Err(format!(
-                "At most {MAX_PICKED_SUBTITLES} subtitle languages can be saved with one video. Untick some."
-            ));
-        }
+        let picks = subtitle_picks(choice, selection)?;
         let plain = selection.output == OutputFormat::Original
             && picks.is_empty()
             && !(selection.chapters && choice.chapters);
@@ -136,27 +114,7 @@ impl Plan {
         else {
             return Err("This quality cannot be saved in that format. Choose one of the formats listed for it.".into());
         };
-        let audio = match (selection.audio_kbps, variant.container.is_video()) {
-            (Some(kbps), false) if selection.output != OutputFormat::Original => {
-                let target = variant.container.audio_target();
-                let choices = target.kbps_choices();
-                if choices.is_empty() {
-                    // A lossless format has no audio quality to pick.
-                    variant.audio_action
-                } else if choices.contains(&kbps) {
-                    AudioAction::Encode {
-                        codec: target,
-                        kbps: Some(kbps),
-                    }
-                } else {
-                    return Err(format!(
-                        "{kbps} kbps is not one of the audio qualities for {}. Choose one of the listed qualities.",
-                        variant.container.label()
-                    ));
-                }
-            }
-            _ => variant.audio_action,
-        };
+        let audio = audio_action(variant, selection)?;
         // The streams this format downloads, kept as they came, are not always
         // the Original choice's (MP4 may take VP9 with AAC, which only MKV holds).
         let original_ext = variant.kept_ext.clone();
@@ -166,8 +124,10 @@ impl Plan {
             audio,
             subtitles: picks,
             subtitle_files: selection.subtitle_files || !variant.fit.embeds_subtitles,
-            chapters: selection.chapters && choice.chapters && variant.fit.chapters,
-            tags: selection.output != OutputFormat::Original && !variant.container.is_video(),
+            extras: Extras {
+                chapters: selection.chapters && choice.chapters && variant.fit.chapters,
+                tags: selection.output != OutputFormat::Original && !variant.container.is_video(),
+            },
             duration_ms: choice.duration_ms,
             original_ext,
             original: selection.output == OutputFormat::Original,
@@ -183,6 +143,65 @@ impl Plan {
             ext: variant.fit.ext.clone(),
             needs_ffmpeg: true,
         })
+    }
+}
+
+/// The subtitles `selection` asks for, each once, checked against what `choice`
+/// offered. The error says what is wrong in a sentence.
+fn subtitle_picks(
+    choice: &MediaChoice,
+    selection: &MediaSelection,
+) -> Result<Vec<SubtitlePick>, String> {
+    let mut picks: Vec<SubtitlePick> = Vec::new();
+    for id in &selection.subtitles {
+        let Some(offered) = choice.subtitles.iter().find(|s| &s.id == id) else {
+            return Err("One of the subtitles chosen is not offered for this video. Choose from the listed subtitles.".into());
+        };
+        if picks
+            .iter()
+            .any(|p| p.key == key_of(id) && p.auto == offered.auto)
+        {
+            continue;
+        }
+        picks.push(SubtitlePick {
+            key: key_of(id).to_string(),
+            auto: offered.auto,
+            language: offered.language.clone(),
+            name: offered.name.clone(),
+        });
+    }
+    if picks.len() > MAX_PICKED_SUBTITLES {
+        return Err(format!(
+            "At most {MAX_PICKED_SUBTITLES} subtitle languages can be saved with one video. Untick some."
+        ));
+    }
+    Ok(picks)
+}
+
+/// What happens to the audio of `variant`: re-encoded at the quality
+/// `selection` picked for an audio format, as the variant says otherwise. The
+/// error says what is wrong in a sentence.
+fn audio_action(variant: &Variant, selection: &MediaSelection) -> Result<AudioAction, String> {
+    match (selection.audio_kbps, variant.container.is_video()) {
+        (Some(kbps), false) if selection.output != OutputFormat::Original => {
+            let target = variant.container.audio_target();
+            let choices = target.kbps_choices();
+            if choices.is_empty() {
+                // A lossless format has no audio quality to pick.
+                Ok(variant.audio_action)
+            } else if choices.contains(&kbps) {
+                Ok(AudioAction::Encode {
+                    codec: target,
+                    kbps: Some(kbps),
+                })
+            } else {
+                Err(format!(
+                    "{kbps} kbps is not one of the audio qualities for {}. Choose one of the listed qualities.",
+                    variant.container.label()
+                ))
+            }
+        }
+        _ => Ok(variant.audio_action),
     }
 }
 
@@ -329,19 +348,7 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         return Err(live());
     }
     let all = info.all_formats();
-    let usable: Vec<&Format> = all
-        .iter()
-        .filter(|f| !f.drm() && (f.has_video() || f.has_audio()))
-        .collect();
-    if usable.is_empty() {
-        if all.iter().any(Format::drm) {
-            return Err(UserError {
-                message: "This video is protected with DRM, which only licensed players can open, so Wirecatch cannot download it.".into(),
-                fix: None,
-            });
-        }
-        return Err(nothing());
-    }
+    let usable = usable_formats(&all)?;
     let audios: Vec<&Format> = usable
         .iter()
         .copied()
@@ -349,144 +356,166 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         .collect();
     let videos: Vec<&Format> = usable.iter().copied().filter(|f| f.has_video()).collect();
     let duration_ms = duration_ms(info);
-    let best_audio = |prefer: Option<&str>| -> Option<&Format> {
-        let preferred: Vec<&Format> = audios
-            .iter()
-            .copied()
-            .filter(|a| a.ext.as_deref() == prefer)
-            .collect();
-        best(preferred).or_else(|| best(audios.clone()))
-    };
+    let mut offers: Vec<Offer> = heights(&videos)
+        .into_iter()
+        .filter_map(|height| video_offer(&videos, &audios, height, duration_ms))
+        .collect();
+    offers.extend(audio_offer(&audios, duration_ms));
+    if offers.is_empty() {
+        return Err(nothing());
+    }
+    offers.truncate(MAX_OPTIONS);
+    Ok(offers)
+}
 
+/// The formats of `all` Wirecatch can offer: with video or audio, and not
+/// protected with DRM. The error says why there are none.
+fn usable_formats(all: &[Format]) -> Result<Vec<&Format>, UserError> {
+    let usable: Vec<&Format> = all
+        .iter()
+        .filter(|f| !f.drm() && (f.has_video() || f.has_audio()))
+        .collect();
+    if !usable.is_empty() {
+        return Ok(usable);
+    }
+    if all.iter().any(Format::drm) {
+        return Err(UserError {
+            message: "This video is protected with DRM, which only licensed players can open, so Wirecatch cannot download it.".into(),
+            fix: None,
+        });
+    }
+    Err(nothing())
+}
+
+/// The heights the videos come in, tallest first; unknown only when no video
+/// says its height.
+fn heights(videos: &[&Format]) -> Vec<Option<u32>> {
     let mut heights: Vec<Option<u32>> = videos.iter().map(|f| f.height).collect();
     heights.sort_by_key(|h| std::cmp::Reverse(*h));
     heights.dedup();
     if heights.iter().any(Option::is_some) {
         heights.retain(Option::is_some);
     }
-    let mut offers = Vec::new();
-    for height in heights {
-        let at: Vec<&Format> = videos
-            .iter()
-            .copied()
-            .filter(|f| f.height == height)
-            .collect();
-        let separate: Vec<&Format> = at.iter().copied().filter(|f| !f.has_audio()).collect();
-        let mp4: Vec<&Format> = separate
-            .iter()
-            .copied()
-            .filter(|f| f.ext.as_deref() == Some("mp4"))
-            .collect();
-        let video_only = best(mp4).or_else(|| best(separate));
-        let together = best(at.iter().copied().filter(|f| f.has_audio()).collect());
-        let pair = video_only.and_then(|v| {
-            let prefer = match v.ext.as_deref() {
-                Some("mp4") => Some("m4a"),
-                Some("webm") => Some("webm"),
-                _ => None,
-            };
-            best_audio(prefer).map(|a| (v, a))
-        });
-        let fps = at.iter().filter_map(|f| f.fps).fold(0.0, f64::max);
-        let quality = match height {
-            Some(h) if fps >= 50.0 => format!("{h}p, {} fps", fps.round()),
-            Some(h) => format!("{h}p"),
-            None => "Best quality".to_string(),
+    heights
+}
+
+/// The best of `audios`, in the `prefer`red extension when there is one.
+fn best_audio<'a>(audios: &[&'a Format], prefer: Option<&str>) -> Option<&'a Format> {
+    let preferred: Vec<&Format> = audios
+        .iter()
+        .copied()
+        .filter(|a| a.ext.as_deref() == prefer)
+        .collect();
+    best(preferred).or_else(|| best(audios.to_vec()))
+}
+
+/// The option for the videos of `height`: the best video-only format joined
+/// with the best audio in a matching container, or else the best format with
+/// both; `None` when there is neither.
+fn video_offer(
+    videos: &[&Format],
+    audios: &[&Format],
+    height: Option<u32>,
+    duration_ms: Option<u64>,
+) -> Option<Offer> {
+    let at: Vec<&Format> = videos
+        .iter()
+        .copied()
+        .filter(|f| f.height == height)
+        .collect();
+    let separate: Vec<&Format> = at.iter().copied().filter(|f| !f.has_audio()).collect();
+    let mp4: Vec<&Format> = separate
+        .iter()
+        .copied()
+        .filter(|f| f.ext.as_deref() == Some("mp4"))
+        .collect();
+    let video_only = best(mp4).or_else(|| best(separate));
+    let together = best(at.iter().copied().filter(|f| f.has_audio()).collect());
+    let pair = video_only.and_then(|v| {
+        let prefer = match v.ext.as_deref() {
+            Some("mp4") => Some("m4a"),
+            Some("webm") => Some("webm"),
+            _ => None,
         };
-        let (job, ext, needs_ffmpeg, size, original) = if let Some((v, a)) = pair {
-            let ext = output::kept_ext(Some(v), Some(a));
-            (
-                MediaJob::Page {
-                    format: format!("{}+{}", v.id, a.id),
-                    video: Some(v.id.clone()),
-                    audio: Some(a.id.clone()),
-                    output: None,
-                    keep_ext: None,
-                },
-                ext,
-                true,
-                v.size().zip(a.size()).map(|(x, y)| x + y),
-                (v, Some(a)),
-            )
-        } else if let Some(f) = together.or(video_only) {
-            (
-                MediaJob::Page {
-                    format: f.id.clone(),
-                    video: Some(f.id.clone()),
-                    audio: None,
-                    output: None,
-                    keep_ext: None,
-                },
-                safe_ext(
-                    f.ext.as_deref(),
-                    if f.has_video() {
-                        Content::Video
-                    } else {
-                        Content::Audio
-                    },
-                ),
-                false,
-                f.size(),
-                (f, None),
-            )
+        best_audio(audios, prefer).map(|a| (v, a))
+    });
+    let fps = at.iter().filter_map(|f| f.fps).fold(0.0, f64::max);
+    let quality = match height {
+        Some(h) if fps >= 50.0 => format!("{h}p, {} fps", fps.round()),
+        Some(h) => format!("{h}p"),
+        None => "Best quality".to_string(),
+    };
+    let (video, audio) = match pair {
+        Some((v, a)) => (v, Some(a)),
+        None => (together.or(video_only)?, None),
+    };
+    let (id, ext, needs_ffmpeg, size) = if let Some(a) = audio {
+        (
+            format!("{}+{}", video.id, a.id),
+            output::kept_ext(Some(video), Some(a)),
+            true,
+            video.size().zip(a.size()).map(|(x, y)| x + y),
+        )
+    } else {
+        let content = if video.has_video() {
+            Content::Video
         } else {
-            continue;
+            Content::Audio
         };
-        let label = format!("{quality}, {}", ext.to_ascii_uppercase());
-        let id = match &job {
-            MediaJob::Page { format, .. } => format.clone(),
-            MediaJob::Stream { .. } | MediaJob::Unreadable => continue,
-        };
-        let mut variants =
-            output::video_variants(&at, &audios, original, &ext, height, duration_ms);
-        if let Some(first) = variants.first_mut() {
-            // The Original choice is exactly today's download, size included.
-            first.fit.size = size;
-        }
-        offers.push(offer(
-            id,
-            label,
-            height,
-            size,
-            Plan {
-                job,
-                ext,
-                quality,
-                audio_only: false,
-                needs_ffmpeg,
-                variants,
+        let ext = safe_ext(video.ext.as_deref(), content);
+        (video.id.clone(), ext, false, video.size())
+    };
+    let job = MediaJob::Page {
+        format: id.clone(),
+        video: Some(video.id.clone()),
+        audio: audio.map(|a| a.id.clone()),
+        output: None,
+        keep_ext: None,
+    };
+    let label = format!("{quality}, {}", ext.to_ascii_uppercase());
+    let mut variants =
+        output::video_variants(&at, audios, (video, audio), &ext, height, duration_ms);
+    if let Some(first) = variants.first_mut() {
+        // The Original choice is exactly today's download, size included.
+        first.fit.size = size;
+    }
+    let plan = Plan {
+        job,
+        ext,
+        quality,
+        audio_only: false,
+        needs_ffmpeg,
+        variants,
+    };
+    Some(offer(id, label, height, size, plan))
+}
+
+/// The audio-only option: the best audio, preferably M4A, as it comes or
+/// converted.
+fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
+    let audio = best_audio(audios, Some("m4a"))?;
+    let ext = safe_ext(audio.ext.as_deref(), Content::Audio);
+    let variants = output::audio_variants(audios, audio, &ext, duration_ms);
+    Some(offer(
+        audio.id.clone(),
+        format!("Audio only, {}", ext.to_ascii_uppercase()),
+        None,
+        audio.size(),
+        Plan {
+            job: MediaJob::Page {
+                format: audio.id.clone(),
+                video: None,
+                audio: Some(audio.id.clone()),
+                output: None,
+                keep_ext: None,
             },
-        ));
-    }
-    if let Some(audio) = best_audio(Some("m4a")) {
-        let ext = safe_ext(audio.ext.as_deref(), Content::Audio);
-        let variants = output::audio_variants(&audios, audio, &ext, duration_ms);
-        offers.push(offer(
-            audio.id.clone(),
-            format!("Audio only, {}", ext.to_ascii_uppercase()),
-            None,
-            audio.size(),
-            Plan {
-                job: MediaJob::Page {
-                    format: audio.id.clone(),
-                    video: None,
-                    audio: Some(audio.id.clone()),
-                    output: None,
-                    keep_ext: None,
-                },
-                ext,
-                quality: "Audio only".into(),
-                audio_only: true,
-                needs_ffmpeg: false,
-                variants,
-            },
-        ));
-    }
-    if offers.is_empty() {
-        return Err(nothing());
-    }
-    offers.truncate(MAX_OPTIONS);
-    Ok(offers)
+            ext,
+            quality: "Audio only".into(),
+            audio_only: true,
+            needs_ffmpeg: false,
+            variants,
+        },
+    ))
 }
 
 /// A page's length in milliseconds, when yt-dlp gave a sensible one.
@@ -802,7 +831,7 @@ mod tests {
         assert_eq!(output.subtitles.len(), 2);
         assert_eq!(output.subtitles[1].key, "de-orig");
         assert!(output.subtitles[1].auto);
-        assert!(output.chapters && !output.subtitle_files && !output.tags);
+        assert!(output.extras.chapters && !output.subtitle_files && !output.extras.tags);
         assert_eq!(output.original_ext, "mkv", "VP9 with AAC is kept as MKV");
 
         // Original with subtitles: copied back into WebM with them.
@@ -841,8 +870,8 @@ mod tests {
                 kbps: Some(320)
             }
         );
-        assert!(output.tags && output.sidecar_subtitles());
-        assert!(!output.chapters, "an MP3 holds no chapters");
+        assert!(output.extras.tags && output.sidecar_subtitles());
+        assert!(!output.extras.chapters, "an MP3 holds no chapters");
         assert_eq!(resolved.ext, "mp3");
     }
 

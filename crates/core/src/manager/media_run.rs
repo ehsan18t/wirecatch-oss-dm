@@ -502,6 +502,63 @@ async fn fetch_extras(
     downloaded: &mut Downloaded,
     cancel: &CancellationToken,
 ) -> bool {
+    if !fetch_subtitles(job, info, output, work, downloaded, cancel).await {
+        return false;
+    }
+    if output.wants_cover()
+        && let Some(url) = info.thumbnail.as_deref().and_then(|u| Url::parse(u).ok())
+    {
+        let path = work.join("cover.image");
+        match fetch_small(job, &url, &HashMap::new(), &path, MAX_COVER_BYTES, cancel).await {
+            Fetch::Done => {
+                if let Some(format) = ImageFormat::detect(&head(&path).await) {
+                    downloaded.cover = Some(("cover.image".into(), format));
+                } else {
+                    warn!("the video's picture is not a JPEG, PNG or WebP picture");
+                }
+            }
+            Fetch::Stopped => return false,
+            Fetch::Failed(reason) => warn!(%reason, "could not download the video's picture"),
+        }
+    }
+    if output.wants_metadata() {
+        let tags = output.extras.tags && output.container.tags();
+        let title = info.track.as_deref().or(info.title.as_deref());
+        let artist = info
+            .artist
+            .as_deref()
+            .or(info.uploader.as_deref())
+            .or(info.channel.as_deref());
+        let chapters: &[ytdlp::Chapter] = if output.extras.chapters {
+            &info.chapters
+        } else {
+            &[]
+        };
+        let text = output::ffmetadata(
+            title.filter(|_| tags),
+            artist.filter(|_| tags),
+            chapters,
+            output.duration_ms,
+        );
+        match tokio::fs::write(work.join("metadata.txt"), text).await {
+            Ok(()) => downloaded.metadata = Some("metadata.txt".into()),
+            Err(e) => warn!(error = %e, "could not write the metadata file"),
+        }
+    }
+    true
+}
+
+/// Downloads the subtitles `output` chose into `work` and lists those that
+/// are what they claim in `downloaded`; the others are left out with a note
+/// in the log. Returns `false` when stopped.
+async fn fetch_subtitles(
+    job: &Job,
+    info: &ytdlp::Info,
+    output: &OutputJob,
+    work: &Path,
+    downloaded: &mut Downloaded,
+    cancel: &CancellationToken,
+) -> bool {
     for (n, pick) in output.subtitles.iter().enumerate() {
         let Some(file) = output::subtitle_files(info, pick) else {
             warn!(language = %pick.language, "the page no longer offers these subtitles");
@@ -538,42 +595,6 @@ async fn fetch_extras(
             None => {
                 warn!(language = %pick.language, "the subtitles are not in the format they claim");
             }
-        }
-    }
-    if output.wants_cover()
-        && let Some(url) = info.thumbnail.as_deref().and_then(|u| Url::parse(u).ok())
-    {
-        let path = work.join("cover.image");
-        match fetch_small(job, &url, &HashMap::new(), &path, MAX_COVER_BYTES, cancel).await {
-            Fetch::Done => {
-                if let Some(format) = ImageFormat::detect(&head(&path).await) {
-                    downloaded.cover = Some(("cover.image".into(), format));
-                } else {
-                    warn!("the video's picture is not a JPEG, PNG or WebP picture");
-                }
-            }
-            Fetch::Stopped => return false,
-            Fetch::Failed(reason) => warn!(%reason, "could not download the video's picture"),
-        }
-    }
-    if output.wants_metadata() {
-        let tags = output.tags && output.container.tags();
-        let title = info.track.as_deref().or(info.title.as_deref());
-        let artist = info
-            .artist
-            .as_deref()
-            .or(info.uploader.as_deref())
-            .or(info.channel.as_deref());
-        let chapters: &[ytdlp::Chapter] = if output.chapters { &info.chapters } else { &[] };
-        let text = output::ffmetadata(
-            title.filter(|_| tags),
-            artist.filter(|_| tags),
-            chapters,
-            output.duration_ms,
-        );
-        match tokio::fs::write(work.join("metadata.txt"), text).await {
-            Ok(()) => downloaded.metadata = Some("metadata.txt".into()),
-            Err(e) => warn!(error = %e, "could not write the metadata file"),
         }
     }
     true
@@ -925,7 +946,9 @@ async fn fetch_part(
         request.options = options;
         let stream = Arc::new(StreamProgress::default());
         progress.add_stream(stream.clone());
-        match wirecatch_streams::download(request, stream, cancel.clone()).await {
+        // Boxed: a download's state is tens of kilobytes, which every future
+        // awaiting this one would otherwise carry inline.
+        match Box::pin(wirecatch_streams::download(request, stream, cancel.clone())).await {
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
             Err(e) => {
@@ -940,7 +963,7 @@ async fn fetch_part(
         request.options = options;
         let file = Arc::new(Progress::default());
         progress.add_file(file.clone(), format.size());
-        match wirecatch_engine::download(request, file, cancel.clone()).await {
+        match Box::pin(wirecatch_engine::download(request, file, cancel.clone())).await {
             Ok(Outcome::Completed { .. }) => path,
             Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
             Err(e) => {
