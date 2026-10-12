@@ -761,7 +761,10 @@ mod tests {
         assert!(user.starts_with("S-1-5-"), "{user}");
         assert_eq!(
             endpoint(Channel::Release).unwrap().as_os_str(),
-            OsStr::new(&format!(r"\\.\pipe\wirecatch-app-{user}"))
+            OsStr::new(&format!(
+                r"\\.\pipe\{}{user}",
+                Channel::Release.pipe_prefix()
+            ))
         );
     }
 
