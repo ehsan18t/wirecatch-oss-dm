@@ -9,7 +9,7 @@ import {
   type CaptureHandler,
   type DownloadEvents,
 } from '../src/lib/capture/register';
-import { Hub } from '../src/lib/hub';
+import { Hub } from '../src/lib/hub/hub';
 import { NativeClient } from '../src/lib/native/client';
 import { FakeApp, FakeDownloads, MemoryCache, downloadItem, flush } from './fakes';
 

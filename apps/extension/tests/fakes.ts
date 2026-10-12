@@ -21,7 +21,7 @@ import type {
   CachedSettings,
   InFlightStore,
   SettingsCache,
-} from '../src/lib/hub';
+} from '../src/lib/hub/deps';
 import type { Channel } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 import { applyPatch } from '../src/lib/protocol';

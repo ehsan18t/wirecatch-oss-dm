@@ -5,7 +5,8 @@
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
-import { Hub, MEDIA_UNREACHABLE } from '../src/lib/hub';
+import { Hub } from '../src/lib/hub/hub';
+import { MEDIA_UNREACHABLE } from '../src/lib/hub/notices';
 import {
   MediaCenter,
   PRIVATE_WINDOW,

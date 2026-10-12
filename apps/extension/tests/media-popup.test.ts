@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from '../src/components/App.svelte';
-import { Hub } from '../src/lib/hub';
+import { Hub } from '../src/lib/hub/hub';
 import { MediaCenter, type TabInfo } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';

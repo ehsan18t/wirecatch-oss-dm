@@ -5,7 +5,8 @@
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
-import { Hub, type CachedSettings, type SettingsCache } from '../src/lib/hub';
+import type { CachedSettings, SettingsCache } from '../src/lib/hub/deps';
+import { Hub } from '../src/lib/hub/hub';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import {

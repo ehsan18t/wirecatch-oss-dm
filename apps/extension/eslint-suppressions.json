@@ -19,14 +19,6 @@
       "count": 1
     }
   },
-  "src/lib/hub.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/lib/media/button.ts": {
     "max-lines": {
       "count": 1

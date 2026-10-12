@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from '../src/components/App.svelte';
-import { Hub } from '../src/lib/hub';
+import { Hub } from '../src/lib/hub/hub';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import { PopupModel } from '../src/lib/popup/model.svelte';

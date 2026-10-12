@@ -5,13 +5,8 @@ import { detectBrowser, type Brand } from '@/lib/browser-info';
 import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '@/lib/cookies';
-import {
-  Hub,
-  type Badge,
-  type BrowserDownloads,
-  type InFlightStore,
-  type MenuTab,
-} from '@/lib/hub';
+import type { Badge, BrowserDownloads, InFlightStore, MenuTab } from '@/lib/hub/deps';
+import { Hub } from '@/lib/hub/hub';
 import {
   MediaCenter,
   type MediaSendResult,

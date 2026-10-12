@@ -1,5 +1,5 @@
 import type { ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
-import type { CachedSettings, SettingsCache } from './hub';
+import type { CachedSettings, SettingsCache } from './hub/deps';
 import {
   arrayOf,
   isBoolean,
