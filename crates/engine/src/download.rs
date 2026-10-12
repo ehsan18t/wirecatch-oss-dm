@@ -478,6 +478,8 @@ fn finish(
     if complete {
         // Closing waits for a checkpoint still flushing, during which the owner may drop the download and start another run on the same files.
         saver.close();
+        #[cfg(test)]
+        abandoned.slow_step_done();
         abandoned.check()?;
         storage::finalize(&target.part, &target.file, file_len, abandoned)?;
         abandoned.check()?;
