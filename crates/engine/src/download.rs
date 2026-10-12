@@ -628,8 +628,7 @@ fn finish(
 
     if complete {
         saver.close();
-        storage::finalize(&target.part, &target.file, file_len)
-            .context(IoAction::Finish, &target.file)?;
+        storage::finalize(&target.part, &target.file, file_len)?;
         target::discard(&target.state);
         info!(path = %target.file.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {

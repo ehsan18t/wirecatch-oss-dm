@@ -4,6 +4,8 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::Path;
 
+use crate::error::{IoAction, IoContext};
+
 /// Suffix of the file that receives data while a download runs.
 pub const PART_EXT: &str = ".wcpart";
 /// Suffix of the resume file next to it.
@@ -66,14 +68,20 @@ fn write_at(file: &File, buf: &[u8], offset: u64) -> io::Result<usize> {
 /// name is complete even after a power cut. The rename itself may be lost to
 /// one; the part file and its resume file are then still there, and the next
 /// run finishes them again.
-pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
+///
+/// # Errors
+///
+/// [`Error::Io`](crate::Error::Io) naming the step that failed and its file:
+/// opening, sizing or flushing the part file, or the rename to `final_path`.
+pub fn finalize(part: &Path, final_path: &Path, len: u64) -> crate::Result<()> {
     {
-        let file = open_for_write(part)?;
+        let file = open_for_write(part).context(IoAction::OpenFile, part)?;
         // Unknown-length downloads may have reserved nothing; known ones already match.
-        if file.metadata()?.len() != len {
-            file.set_len(len)?;
+        let size = file.metadata().context(IoAction::Write, part)?.len();
+        if size != len {
+            file.set_len(len).context(IoAction::Write, part)?;
         }
-        file.sync_data()?;
+        file.sync_data().context(IoAction::Flush, part)?;
         // Fully written now, so the sparse flag can go. A file that keeps it
         // reads the same, only less efficiently.
         #[cfg(windows)]
@@ -81,7 +89,7 @@ pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
             tracing::debug!(error = %e, "could not clear the sparse flag of a finished file");
         }
     }
-    std::fs::rename(part, final_path)
+    std::fs::rename(part, final_path).context(IoAction::Finish, final_path)
 }
 
 /// Reserves space for `len` bytes without writing them.
@@ -187,6 +195,29 @@ mod tests {
         finalize(&part, &done, 10).unwrap();
 
         assert_eq!(std::fs::read(&done).unwrap(), b"0123456789");
+        dir.remove().unwrap();
+    }
+
+    /// Each step that can fail says which: a missing part file is not a
+    /// failed rename to the final name.
+    #[test]
+    fn a_failed_finish_names_its_step_and_file() {
+        let dir = wirecatch_test_support::private_dir("finalize").unwrap();
+        let part = dir.join("gone.bin.wcpart");
+        let done = dir.join("gone.bin");
+        let error = finalize(&part, &done, 10).unwrap_err();
+        assert!(
+            matches!(&error, crate::Error::Io { action: IoAction::OpenFile, path, .. } if *path == part),
+            "{error:?}"
+        );
+
+        create_part(&part, Some(10)).unwrap();
+        let elsewhere = dir.join("missing-folder").join("gone.bin");
+        let error = finalize(&part, &elsewhere, 10).unwrap_err();
+        assert!(
+            matches!(&error, crate::Error::Io { action: IoAction::Finish, path, .. } if *path == elsewhere),
+            "{error:?}"
+        );
         dir.remove().unwrap();
     }
 }
