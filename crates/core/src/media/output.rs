@@ -6,7 +6,6 @@
 
 use std::collections::HashSet;
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -571,7 +570,11 @@ pub(crate) fn video_kbps(
         };
         h264 / efficiency(target)
     });
-    let whole = f64_to_u64(kbps.round()).map_or(0, |k| u32::try_from(k).unwrap_or(u32::MAX));
+    // `kbps` is positive here, so a rate that is no `u32` (or no `u64`, or
+    // infinite after the efficiency factor) is one too large.
+    let whole = f64_to_u64(kbps.round())
+        .and_then(|k| u32::try_from(k).ok())
+        .unwrap_or(u32::MAX);
     whole.clamp(MIN_VIDEO_KBPS, MAX_VIDEO_KBPS)
 }
 
@@ -1076,11 +1079,11 @@ pub(crate) fn ffmetadata(
     chapters: &[Chapter],
     duration_ms: Option<u64>,
 ) -> String {
-    let mut text = String::from(";FFMETADATA1\n");
+    // Line by line, joined at the end.
+    let mut lines = vec![";FFMETADATA1".to_string()];
     for (key, value) in [("title", title), ("artist", artist)] {
         if let Some(value) = value.map(escape).filter(|v| !v.is_empty()) {
-            // Writing to a `String` cannot fail.
-            let _ = writeln!(text, "{key}={value}");
+            lines.push(format!("{key}={value}"));
         }
     }
     let mut last_end = 0u64;
@@ -1097,16 +1100,20 @@ pub(crate) fn ffmetadata(
             continue;
         }
         last_end = end;
-        let _ = writeln!(text, "[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}");
+        lines.push(format!(
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}"
+        ));
         if let Some(title) = chapter
             .title
             .as_deref()
             .map(escape)
             .filter(|t| !t.is_empty())
         {
-            let _ = writeln!(text, "title={title}");
+            lines.push(format!("title={title}"));
         }
     }
+    let mut text = lines.join("\n");
+    text.push('\n');
     text
 }
 
@@ -2088,6 +2095,9 @@ mod tests {
         assert_eq!(video_kbps(V::Vp9, V::H264, Some(f64::NAN), Some(240)), 500);
         // Never absurdly low.
         assert_eq!(video_kbps(V::H264, V::H264, Some(10.0), None), 300);
+        // Never absurdly high, even beyond what a whole number holds.
+        assert_eq!(video_kbps(V::H264, V::H264, Some(1e20), None), 80_000);
+        assert_eq!(video_kbps(V::Av1, V::H264, Some(f64::MAX), None), 80_000);
     }
 
     /// Hardware first in a fixed order, then software; a hardware encoder that

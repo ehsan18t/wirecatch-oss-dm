@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -669,8 +668,8 @@ pub(crate) fn netscape(page: &Url, header: &str) -> Option<String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
         + 24 * 60 * 60;
-    let mut text = String::from("# Netscape HTTP Cookie File\n");
-    let mut any = false;
+    // Line by line, joined at the end.
+    let mut lines = vec!["# Netscape HTTP Cookie File".to_string()];
     for pair in header.split(';') {
         let Some((name, value)) = pair.split_once('=') else {
             continue;
@@ -680,14 +679,16 @@ pub(crate) fn netscape(page: &Url, header: &str) -> Option<String> {
         if !clean(name) || value.contains(['\t', '\r', '\n']) {
             continue;
         }
-        // Writing to a `String` cannot fail.
-        let _ = writeln!(
-            text,
+        lines.push(format!(
             "{host}\tFALSE\t/\t{secure}\t{expires}\t{name}\t{value}"
-        );
-        any = true;
+        ));
     }
-    any.then_some(text)
+    // The header line alone holds no cookies.
+    (lines.len() > 1).then(|| {
+        let mut text = lines.join("\n");
+        text.push('\n');
+        text
+    })
 }
 
 fn fix(message: String) -> UserError {
