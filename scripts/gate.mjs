@@ -14,8 +14,7 @@
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -227,28 +226,16 @@ function clippyLinux() {
   if (crates.includes(BRIDGE_CRATE)) cargo('clippy', ...target, '-p', BRIDGE_CRATE, '--all-targets', '--locked', '--', '-D', 'warnings');
 }
 
-/**
- * Runs `cargo test` with the TypeScript type export pointed at a temporary folder. `.cargo/config.toml` points it at `packages/protocol/src/generated` so `pnpm protocol:generate` can write there, but a test run that rewrote the committed types would hide stale ones from the `protocol` check that runs after it. A variable already set wins over `[env]` in that file.
- */
-function cargoTest(...args) {
-  const exportDir = mkdtempSync(join(tmpdir(), 'wirecatch-gate-types-'));
-  try {
-    run('cargo', ['test', ...args], { env: { TS_RS_EXPORT_DIR: exportDir } });
-  } finally {
-    rmSync(exportDir, { recursive: true, force: true });
-  }
-}
-
 function test() {
   const failFast = options.failFast ? [] : ['--no-fail-fast'];
-  cargoTest('--workspace', '--exclude', DESKTOP_CRATE, '--locked', ...failFast, ...TEST_FEATURES);
+  cargo('test', '--workspace', '--exclude', DESKTOP_CRATE, '--locked', ...failFast, ...TEST_FEATURES);
 }
 
 /** The desktop crate is tested on its own: its Tauri build script adds link paths that break other crates' doctests when everything links together. */
 function testDesktop() {
   if (!options.desktop) return;
   ensureDesktopFrontend();
-  cargoTest('-p', DESKTOP_CRATE, '--locked', ...(options.failFast ? [] : ['--no-fail-fast']));
+  cargo('test', '-p', DESKTOP_CRATE, '--locked', ...(options.failFast ? [] : ['--no-fail-fast']));
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */
@@ -640,7 +627,7 @@ const CHECKS = {
   'clippy-http3': () => cargo('clippy', '-p', ENGINE_CRATE, '-p', 'wirecatch-cli', '--all-targets', '--locked', '--features', 'wirecatch-engine/http3,wirecatch-cli/http3', '--', '-D', 'warnings'),
   test,
   // The engine with its off-by-default http3 feature, which no other check compiles into a test.
-  'test-http3': () => cargoTest('-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
+  'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
   'test-desktop': testDesktop,
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () => run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], { env: { RUSTDOCFLAGS: '-D warnings' } }),
