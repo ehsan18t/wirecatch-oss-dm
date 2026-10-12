@@ -1,7 +1,7 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import Button from './Button.svelte';
-  import Icon from './Icon.svelte';
+  import IconButton from './IconButton.svelte';
 
   let {
     items,
@@ -37,14 +37,13 @@
       {#each items as item (item)}
         <li>
           <span>{item}</span>
-          <button
-            type="button"
+          <IconButton
+            icon={X}
+            size="xs"
             class="remove"
-            aria-label="Remove {item}"
+            label="Remove {item}"
             onclick={() => onchange(items.filter((x) => x !== item))}
-          >
-            <Icon icon={X} size="xs" />
-          </button>
+          />
         </li>
       {/each}
     </ul>
@@ -95,22 +94,11 @@
     font-size: var(--text-sm);
   }
 
-  .remove {
-    display: grid;
-    place-items: center;
+  /* A smaller, round icon button, to fit inside the chip. */
+  li > :global(.remove) {
     width: 20px;
     height: 20px;
-    padding: 0;
-    border: 0;
     border-radius: 50%;
-    background: transparent;
-    color: var(--ink-2);
-    cursor: pointer;
-  }
-
-  .remove:hover {
-    background: var(--surface-3);
-    color: var(--ink);
   }
 
   .add {
