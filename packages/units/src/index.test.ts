@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { GB, KB, MB, formatBytes, formatRate, formatSpeed, splitSize, toBytes } from './index';
+import {
+  GB,
+  KB,
+  MB,
+  formatBytes,
+  formatRate,
+  formatSpeed,
+  inUnit,
+  splitKbOrMb,
+  splitSize,
+  toBytes,
+} from './index';
 
 describe('formatBytes', () => {
   it('uses short units with three significant digits at most', () => {
@@ -42,5 +53,25 @@ describe('size fields', () => {
     expect(toBytes('', 'MB')).toBe(0);
     expect(toBytes('-1', 'MB')).toBeNull();
     expect(toBytes('abc', 'MB')).toBeNull();
+  });
+
+  it('reads a number field as it is', () => {
+    expect(toBytes(1.5, 'MB')).toBe(1.5 * MB);
+    expect(toBytes(Number.NaN, 'KB')).toBeNull();
+    expect(toBytes(-2, 'KB')).toBeNull();
+  });
+
+  it('shows a size in a given unit to one decimal', () => {
+    expect(inUnit(5 * MB, 'MB')).toBe(5);
+    expect(inUnit(1.25 * MB, 'MB')).toBe(1.3);
+    expect(inUnit(1000, 'KB')).toBe(1);
+  });
+
+  it('shows a size in megabytes from 1 MB on and in kilobytes below', () => {
+    expect(splitKbOrMb(0)).toEqual({ value: 0, unit: 'KB' });
+    expect(splitKbOrMb(512 * KB)).toEqual({ value: 512, unit: 'KB' });
+    expect(splitKbOrMb(MB)).toEqual({ value: 1, unit: 'MB' });
+    expect(splitKbOrMb(1.5 * MB)).toEqual({ value: 1.5, unit: 'MB' });
+    expect(splitKbOrMb(3 * GB)).toEqual({ value: 3072, unit: 'MB' });
   });
 });

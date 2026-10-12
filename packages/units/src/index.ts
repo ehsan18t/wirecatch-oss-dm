@@ -14,6 +14,13 @@ const WHOLE_FROM = 100;
 /** From this many of a unit on, a size shows one decimal (`12.4 MB`); below it, two (`4.70 GB`). */
 const ONE_DECIMAL_FROM = 10;
 const TWO_DECIMALS = 2;
+/** Limits and size fields show tenths at most. */
+const TENTHS = 10;
+
+/** `value` rounded to tenths. */
+function toTenths(value: number): number {
+  return Math.round(value * TENTHS) / TENTHS;
+}
 
 /** `bytes` in the largest unit that keeps it at 1 or more, with that unit's index in `SHOWN_UNITS`. */
 function scaled(bytes: number): { value: number; unit: number } {
@@ -48,7 +55,7 @@ export function formatSpeed(bytesPerSecond: number): string {
 /** A limit someone set, such as `4 MB/s`, `1.5 MB/s` or `512 KB/s`: one decimal at most and no trailing zeros. */
 export function formatRate(bytesPerSecond: number): string {
   const { value, unit } = scaled(bytesPerSecond);
-  return `${Math.round(value * ONE_DECIMAL_FROM) / ONE_DECIMAL_FROM} ${SHOWN_UNITS[unit]}/s`;
+  return `${toTenths(value)} ${SHOWN_UNITS[unit]}/s`;
 }
 
 /** The units a person can type a size in. */
@@ -77,9 +84,20 @@ export function splitSize(bytes: number): { value: number; unit: SizeUnit } {
   return { value: Math.round((bytes / KB) * HUNDREDTHS) / HUNDREDTHS, unit: 'KB' };
 }
 
-/** What a person typed in a size field, in bytes; a comma is read as a decimal point, empty is 0, and anything that is not a number of zero or more is null. */
-export function toBytes(value: string, unit: SizeUnit): number | null {
-  const trimmed = value.trim().replace(',', '.');
+/** `bytes` in `unit` to one decimal, as a field in that unit shows it. */
+export function inUnit(bytes: number, unit: SizeUnit): number {
+  return toTenths(bytes / unitBytes(unit));
+}
+
+/** `bytes` for a field that offers kilobytes and megabytes: megabytes from 1 MB on, kilobytes below, to one decimal (`1.5` MB, `512` KB). */
+export function splitKbOrMb(bytes: number): { value: number; unit: 'KB' | 'MB' } {
+  const unit = bytes >= MB ? 'MB' : 'KB';
+  return { value: inUnit(bytes, unit), unit };
+}
+
+/** What a person typed in a size field, in bytes; a comma is read as a decimal point, empty is 0, and anything that is not a number of zero or more is null. A number field's value can be passed as it is. */
+export function toBytes(value: string | number, unit: SizeUnit): number | null {
+  const trimmed = String(value).trim().replace(',', '.');
   if (trimmed === '') return 0;
   const number = Number(trimmed);
   if (!Number.isFinite(number) || number < 0) return null;
