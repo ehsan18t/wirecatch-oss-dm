@@ -213,6 +213,48 @@ async fn a_tampered_resume_file_starts_the_download_over() {
     }
 }
 
+/// A process killed after the last range reached the disk, but before the part
+/// file was renamed, leaves a resume file with no range left. The next run
+/// finishes the file as it is.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_file_with_nothing_left_finishes_the_whole_file() {
+    let server = TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("all-flushed").unwrap();
+    let paused = pause_midway(request(&server, "f.bin", &dir, 2), 64 * KIB)
+        .await
+        .unwrap();
+    assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
+    let state_path = dir.join("f.bin.wcstate");
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    state["remaining"] = serde_json::json!([]);
+    std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+    std::fs::write(dir.join("f.bin.wcpart"), &server.data).unwrap();
+
+    let outcome = run(request(&server, "f.bin", &dir, 2)).await.unwrap();
+    let Outcome::Completed {
+        path,
+        bytes,
+        resumed_from,
+        ..
+    } = outcome
+    else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!((bytes, resumed_from), (2 * MIB, 2 * MIB));
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn starts_over_when_the_remote_file_changed() {
     let server = TestServer::start(

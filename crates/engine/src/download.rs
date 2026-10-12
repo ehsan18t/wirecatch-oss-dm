@@ -613,11 +613,10 @@ fn finish(
 ) -> Result<Outcome> {
     let (complete, remaining, file_len) = {
         let table = shared.table.lock();
-        (
-            table.is_complete(),
-            table.remaining_bytes(),
-            table.file_len(),
-        )
+        // A known size is the file's; a table resumed with every range already
+        // on disk holds no range to take the size from.
+        let file_len = shared.total.unwrap_or_else(|| table.file_len());
+        (table.is_complete(), table.remaining_bytes(), file_len)
     };
 
     if complete {
