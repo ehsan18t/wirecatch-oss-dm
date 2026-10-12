@@ -8,6 +8,7 @@ import { outputs } from '../product/outputs.mjs';
 import {
   crateMetadataProblems,
   handCopiedPlaceholders,
+  placeholderReport,
   remainingPlaceholders,
   staleOutputs,
   placeholderHits,
@@ -121,4 +122,14 @@ test('the release check finds every placeholder until the values are decided', a
 test('a workspace package whose package.json was deleted is reported, not skipped', async () => {
   rmSync(join(root, 'apps/extension/package.json'));
   await assert.rejects(staleOutputs(root), /apps\/extension\/package\.json is missing/);
+});
+
+test('the release report lists only the kinds of placeholder that were found', () => {
+  const values = placeholderReport({ values: ['links.website'], lines: [], copied: [] });
+  assert.match(values, /links\.website/);
+  assert.doesNotMatch(values, /Generated lines|written by hand/);
+  const copied = placeholderReport({ values: [], lines: [], copied: ['src/a.rs:3:x'] });
+  assert.match(copied, /written by hand elsewhere[^\n]*:\nsrc\/a\.rs:3:x/);
+  assert.doesNotMatch(copied, /still placeholders/);
+  assert.equal(placeholderReport({ values: [], lines: [], copied: [] }), null);
 });

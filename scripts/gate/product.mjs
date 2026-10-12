@@ -112,17 +112,31 @@ export function handCopiedPlaceholders(hits, generated) {
   return hits.filter((hit) => !paths.has(hit.slice(0, hit.indexOf(':'))));
 }
 
+/** What a release must still fix, one part per kind of placeholder found, or null when none is left. */
+export function placeholderReport({ values, lines, copied }) {
+  const parts = [];
+  if (values.length > 0) {
+    parts.push(
+      `A release needs the real product identity, but these values in config/product.toml are still placeholders (${PLACEHOLDER_MARK}...): ${values.join(', ')}. Fill them in and run \`pnpm product:generate\`.`,
+    );
+  }
+  if (lines.length > 0) parts.push(`Generated lines that carry them:\n${lines.join('\n')}`);
+  if (copied.length > 0) {
+    parts.push(
+      `Placeholders written by hand elsewhere, which only config/product.toml may hold:\n${copied.join('\n')}`,
+    );
+  }
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
 async function noPlaceholders() {
   const { values, lines } = await remainingPlaceholders(ROOT);
   const copied = handCopiedPlaceholders(
     placeholderHits(),
     outputs(ROOT).map((output) => output.path),
   );
-  if (values.length > 0 || lines.length > 0 || copied.length > 0) {
-    throw new GateError(
-      `A release needs the real product identity, but these values in config/product.toml are still placeholders (${PLACEHOLDER_MARK}...): ${values.join(', ')}. Fill them in and run \`pnpm product:generate\`. Generated lines that carry them:\n${lines.join('\n')}\nPlaceholders written by hand elsewhere, which only config/product.toml may hold:\n${copied.join('\n')}`,
-    );
-  }
+  const report = placeholderReport({ values, lines, copied });
+  if (report !== null) throw new GateError(report);
 }
 
 export const PRODUCT_CHECKS = {
