@@ -1,9 +1,4 @@
 {
-  "src/lib/media-output.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/lib/window/MediaQuestion.svelte": {
     "max-lines": {
       "count": 1

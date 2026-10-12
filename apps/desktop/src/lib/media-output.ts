@@ -107,6 +107,16 @@ export interface OutputChoice {
   chapters: boolean;
 }
 
+/** What the window starts from when nothing was chosen before: the download as it comes. */
+const NOTHING_CHOSEN: OutputDefaults = {
+  format: 'original',
+  audio_kbps: null,
+  subtitle_languages: [],
+  auto_subtitles: false,
+  subtitle_files: false,
+  chapters: false,
+};
+
 /**
  * Where the window starts for `option`: the last choices for its kind (videos or audio only),
  * as far as this quality and video offer them. Original when nothing was chosen before.
@@ -116,18 +126,14 @@ export function startingChoice(
   choice: MediaChoice,
   defaults: OutputDefaults | null | undefined,
 ): OutputChoice {
-  const wanted = defaults?.format ?? 'original';
-  const format = fitFor(option, wanted) ? wanted : 'original';
+  const last = defaults ?? NOTHING_CHOSEN;
+  const format = fitFor(option, last.format) ? last.format : 'original';
   return {
     format,
-    kbps: kbpsFor(fitFor(option, format), format, defaults?.audio_kbps ?? null),
-    subtitles: preselectSubtitles(
-      choice.subtitles,
-      defaults?.subtitle_languages ?? [],
-      defaults?.auto_subtitles ?? false,
-    ),
-    subtitleFiles: defaults?.subtitle_files ?? false,
-    chapters: choice.chapters && (defaults?.chapters ?? false),
+    kbps: kbpsFor(fitFor(option, format), format, last.audio_kbps),
+    subtitles: preselectSubtitles(choice.subtitles, last.subtitle_languages, last.auto_subtitles),
+    subtitleFiles: last.subtitle_files,
+    chapters: choice.chapters && last.chapters,
   };
 }
 
