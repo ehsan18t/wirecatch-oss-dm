@@ -27,7 +27,7 @@ export type Phase = 'loading' | 'ask' | 'progress' | 'gone';
 
 /** What the window needs from whatever shows it: a real window, or the sample page. */
 export interface DownloadWindowHost {
-  backend: Backend;
+  backend: () => Backend;
   /** Closes the window. Never answers its question. */
   close(): void;
   /** The window now shows download `id` (only the sample page needs telling). */
@@ -71,7 +71,7 @@ export class DownloadWindowState {
   );
   /** What the window does with the download it shows. */
   readonly progress = new ProgressActions({
-    backend: () => this.#host.backend,
+    backend: () => this.#host.backend(),
     runner: this.#runner,
     downloadId: () => this.downloadId,
     row: () => this.row,
@@ -80,7 +80,7 @@ export class DownloadWindowState {
   });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>
-    this.#runner.succeeds(() => this.#host.backend.changeSettings(patch)),
+    this.#runner.succeeds(() => this.#host.backend().changeSettings(patch)),
   );
 
   phase = $state<Phase>('loading');
@@ -132,7 +132,7 @@ export class DownloadWindowState {
     const generation = ++this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
     try {
-      const unsubscribe = await this.#host.backend.subscribe(events.receive);
+      const unsubscribe = await this.#host.backend().subscribe(events.receive);
       if (generation !== this.#generation) {
         // Closed (or loaded again) while subscribing: nothing would ever close this listener.
         unsubscribe();
@@ -140,16 +140,16 @@ export class DownloadWindowState {
         return;
       }
       this.#unsubscribe = unsubscribe;
-      this.clock.follow(this.#host.backend.sampleData?.now);
+      this.clock.follow(this.#host.backend().sampleData?.now);
       this.clock.start();
       const [queues, settings] = await Promise.all([
-        this.#host.backend.listQueues(),
-        this.#host.backend.getSettings(),
+        this.#host.backend().listQueues(),
+        this.#host.backend().getSettings(),
       ]);
       this.queues = queues;
       this.settings = settings;
       if ('download' in this.#target) {
-        this.row = await this.#host.backend.getDownload(this.#target.download);
+        this.row = await this.#host.backend().getDownload(this.#target.download);
         this.phase = 'progress';
       } else {
         await this.#loadQuestion(this.#target.question);
@@ -163,7 +163,7 @@ export class DownloadWindowState {
   }
 
   async #loadQuestion(id: number): Promise<void> {
-    const question = await this.#host.backend.getQuestion(id);
+    const question = await this.#host.backend().getQuestion(id);
     if (!question) {
       // Answered (here or anywhere) or taken back before the window loaded: never asked again.
       this.#gone(ANSWERED_ELSEWHERE);
@@ -172,7 +172,7 @@ export class DownloadWindowState {
     this.question = question;
     this.phase = 'ask';
     try {
-      this.earlier = await this.#host.backend.earlierDownload(id);
+      this.earlier = await this.#host.backend().earlierDownload(id);
     } catch {
       // Only a note; the question works without it.
     }
@@ -180,7 +180,7 @@ export class DownloadWindowState {
 
   async #loadAddon(): Promise<void> {
     try {
-      const addons = await this.#host.backend.listAddons();
+      const addons = await this.#host.backend().listAddons();
       this.addon = addons.find((a) => a.id === MEDIA_ADDON) ?? null;
     } catch {
       // The add-on events still bring it.
@@ -265,7 +265,8 @@ export class DownloadWindowState {
   /** The quality list for the video this window reads. */
   #choiceArrived(choice: MediaChoice): void {
     this.question = { kind: 'choice', data: choice };
-    void this.#host.backend
+    void this.#host
+      .backend()
       .earlierDownload(choice.id)
       .then((row) => (this.earlier = row))
       .catch(() => {
@@ -305,7 +306,7 @@ export class DownloadWindowState {
     this.busy = true;
     this.#answered = true;
     const id = await this.#runner.run(() =>
-      this.#host.backend.confirmCapture(proposal.id, confirmation),
+      this.#host.backend().confirmCapture(proposal.id, confirmation),
     );
     this.busy = false;
     if (id === undefined) {
@@ -332,7 +333,7 @@ export class DownloadWindowState {
     // The core may ask for the add-on instead; the window offers it and goes on afterwards.
     const outcome = { addonAsked: false };
     const id = await this.#runner.run(
-      () => this.#host.backend.chooseMedia(choice.id, selection),
+      () => this.#host.backend().chooseMedia(choice.id, selection),
       (err) => (outcome.addonAsked = needsAddon && isAddonRequired(err)),
     );
     this.busy = false;
@@ -368,7 +369,7 @@ export class DownloadWindowState {
     this.earlier = null;
     this.phase = 'progress';
     try {
-      this.row = await this.#host.backend.getDownload(id);
+      this.row = await this.#host.backend().getDownload(id);
     } catch (err) {
       this.#gone(errorMessage(err));
     }
@@ -385,8 +386,8 @@ export class DownloadWindowState {
     this.#answered = true;
     const ok = await this.#runner.succeeds(() =>
       question.kind === 'capture'
-        ? this.#host.backend.rejectCapture(id)
-        : this.#host.backend.dismissMediaChoice(id),
+        ? this.#host.backend().rejectCapture(id)
+        : this.#host.backend().dismissMediaChoice(id),
     );
     if (ok) this.close();
     else this.#answered = false;
@@ -394,11 +395,11 @@ export class DownloadWindowState {
 
   async installAddon(): Promise<void> {
     if (!this.addon) await this.#loadAddon();
-    await this.#runner.run(() => this.#host.backend.installAddon(MEDIA_ADDON));
+    await this.#runner.run(() => this.#host.backend().installAddon(MEDIA_ADDON));
   }
 
   async stopAddonInstall(): Promise<void> {
-    await this.#runner.run(() => this.#host.backend.cancelAddonOperation(MEDIA_ADDON));
+    await this.#runner.run(() => this.#host.backend().cancelAddonOperation(MEDIA_ADDON));
   }
 
   /** Not now on the add-on: a picked quality gets its list back; a page waiting for it goes. */
@@ -411,7 +412,7 @@ export class DownloadWindowState {
   }
 
   async changeFolder(current: string): Promise<string | null> {
-    const picked = await this.#runner.run(() => this.#host.backend.pickFolder(current));
+    const picked = await this.#runner.run(() => this.#host.backend().pickFolder(current));
     return picked ?? null;
   }
 

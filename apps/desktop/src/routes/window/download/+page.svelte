@@ -44,7 +44,7 @@
     backend = shell;
     const state = new DownloadWindowState(
       {
-        backend: shell,
+        backend: () => shell,
         close: () => void shell.closeDownloadWindow().catch(() => window.close()),
       },
       wanted,

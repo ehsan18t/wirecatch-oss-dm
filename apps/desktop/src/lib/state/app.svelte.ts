@@ -133,7 +133,7 @@ export class AppState {
    * itself, so it needs them made over the backend that only this state holds.
    */
   readonly openSampleWindow: OpenDownloadWindow = (target, host) =>
-    new DownloadWindowState({ ...host, backend: this.#backend }, target);
+    new DownloadWindowState({ ...host, backend: () => this.#backend }, target);
 
   /** The sample backend's extras (its palette actions and download windows); null on the engine. */
   get sample(): SampleData | null {
