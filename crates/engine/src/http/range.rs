@@ -10,19 +10,27 @@ use crate::error::Error;
 use crate::segment::UNKNOWN_END;
 
 /// The bytes a request asks for: from `from` up to `to` (exclusive), or to the
-/// end of the file when `to` is `None`.
+/// end of the file when `to` is `None`. Never empty: there is no `Range`
+/// header for no bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RequestRange {
-    pub from: u64,
-    pub to: Option<u64>,
+    from: u64,
+    to: Option<u64>,
 }
 
 impl RequestRange {
-    /// `[from, to)`, where `to` may be [`UNKNOWN_END`] for "to the end".
-    pub fn new(from: u64, to: u64) -> Self {
-        Self {
-            from,
-            to: (to != UNKNOWN_END).then_some(to),
+    /// `[from, to)`, where `to` may be [`UNKNOWN_END`] for "to the end";
+    /// `None` when that holds no byte.
+    pub fn new(from: u64, to: u64) -> Option<Self> {
+        Self::up_to(from, (to != UNKNOWN_END).then_some(to))
+    }
+
+    /// `[from, to)`, or everything from `from` when `to` is `None`; `None`
+    /// when that holds no byte.
+    pub fn up_to(from: u64, to: Option<u64>) -> Option<Self> {
+        match to {
+            Some(to) if to <= from => None,
+            _ => Some(Self { from, to }),
         }
     }
 
@@ -164,11 +172,18 @@ mod tests {
 
     #[test]
     fn range_headers() {
-        assert_eq!(RequestRange::new(0, 100).to_string(), "bytes=0-99");
-        assert_eq!(RequestRange::new(5, UNKNOWN_END).to_string(), "bytes=5-");
+        let range = |from, to| RequestRange::new(from, to).unwrap().to_string();
+        assert_eq!(range(0, 100), "bytes=0-99");
+        assert_eq!(range(5, 6), "bytes=5-5");
+        assert_eq!(range(5, UNKNOWN_END), "bytes=5-");
         assert_eq!(RequestRange::from(0).to_string(), "bytes=0-");
         assert!(RequestRange::from(0).is_whole());
-        assert!(!RequestRange::new(0, 10).is_whole());
+        assert!(!RequestRange::new(0, 10).unwrap().is_whole());
+        // No header asks for no bytes.
+        assert_eq!(RequestRange::new(5, 5), None);
+        assert_eq!(RequestRange::new(5, 4), None);
+        assert_eq!(RequestRange::new(0, 0), None);
+        assert_eq!(RequestRange::up_to(3, Some(3)), None);
     }
 
     #[test]

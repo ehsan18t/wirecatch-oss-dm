@@ -564,7 +564,8 @@ pub(crate) async fn probe(
     limit: Option<u64>,
 ) -> Result<Probe, Failure> {
     if let Some(limit) = limit.filter(|&n| n > 0) {
-        let probe = probe_range(client, url, session, RequestRange::new(0, limit)).await?;
+        let range = RequestRange::new(0, limit).unwrap_or(RequestRange::from(0));
+        let probe = probe_range(client, url, session, range).await?;
         if probe.limited_without_size {
             debug!("the server sent part of the file without its size; asking for all of it");
         } else {
@@ -645,7 +646,8 @@ pub(crate) async fn fetch(
         return Ok((response, from));
     }
 
-    let response = send(client, url, session, Some(RequestRange::new(from, to))).await?;
+    let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
+    let response = send(client, url, session, Some(range)).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
@@ -656,6 +658,11 @@ pub(crate) async fn fetch(
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
     check_partial(response.headers(), from, expected_total)?;
     Ok((response, 0))
+}
+
+/// The error for a request asked to fetch no bytes, which its caller rules out.
+pub(crate) fn empty_range(from: u64, to: u64) -> Error {
+    Error::Internal(format!("a request for no bytes ({from} to {to})"))
 }
 
 fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {

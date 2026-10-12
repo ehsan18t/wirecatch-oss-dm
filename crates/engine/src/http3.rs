@@ -279,7 +279,8 @@ async fn request(
         context,
         session,
         &origin.user_agent,
-        RequestRange::new(from, to),
+        RequestRange::new(from, to)
+            .ok_or_else(|| H3Failure::Unusable(http::empty_range(from, to)))?,
     )?;
     let exchange = async {
         let mut stream = connection

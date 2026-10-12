@@ -435,7 +435,8 @@ impl Fetcher {
         from: u64,
         end: Option<u64>,
     ) -> Result<(Response, u64), Failure> {
-        let range = RequestRange { from, to: end };
+        let range = RequestRange::up_to(from, end)
+            .ok_or_else(|| http::empty_range(from, end.unwrap_or(from)))?;
         let range = (!range.is_whole()).then_some(range);
         let response = http::send(client, url, &self.inner.session, range).await?;
         match (response.status(), range) {
