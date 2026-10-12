@@ -22,10 +22,11 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info};
 use url::Url;
 
-use crate::download::{DownloadOptions, Shared};
+use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::http::{Failure, Session, parse_content_range, parse_retry_after};
 use crate::proxy::{self, Scheme};
+use crate::transport::RequestContext;
 
 /// Longest wait for a QUIC handshake. A network that blocks UDP shows up as a
 /// handshake that never completes; this bounds how long a worker spends
@@ -218,7 +219,7 @@ impl Drop for Connection {
 pub(crate) async fn open(
     slot: &mut Option<Connection>,
     origin: &Arc<Origin>,
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
@@ -227,10 +228,10 @@ pub(crate) async fn open(
         *slot = None;
         return Ok(None);
     }
-    let attempt = request(slot, origin, shared, session, from, to);
+    let attempt = request(slot, origin, context, session, from, to);
     let outcome = tokio::select! {
         biased;
-        () = shared.cancel.cancelled() => return Err(Error::Cancelled.into()),
+        () = context.cancel.cancelled() => return Err(Error::Cancelled.into()),
         outcome = attempt => outcome,
     };
     match outcome {
@@ -261,7 +262,7 @@ type Stream = h3::client::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>;
 async fn request(
     slot: &mut Option<Connection>,
     origin: &Origin,
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
@@ -272,9 +273,9 @@ async fn request(
     let Some(connection) = slot.as_mut() else {
         return Err(Outcome::Unusable("no connection".into()));
     };
-    let request = build_request(shared, session, from, to)?;
+    let stall = context.stall_timeout;
+    let request = build_request(context, session, from, to)?;
 
-    let stall = shared.opts.stall_timeout;
     let exchange = async {
         let mut stream = connection
             .send
@@ -294,24 +295,24 @@ async fn request(
     let (stream, response) = tokio::time::timeout(stall, exchange)
         .await
         .map_err(|_| Outcome::Unusable("no answer in time".into()))??;
-    check_response(&response, shared, from)?;
+    check_response(&response, context, from)?;
     Ok(stream)
 }
 
 /// The request for `[from, to)` with the headers the session sends to this URL.
 fn build_request(
-    shared: &Shared,
+    context: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
 ) -> std::result::Result<::http::Request<()>, Outcome> {
-    let mut request = ::http::Request::get(shared.url.as_str());
+    let mut request = ::http::Request::get(context.url.as_str());
     let headers = request
         .headers_mut()
         .ok_or_else(|| Outcome::Unusable("bad request".into()))?;
-    headers.extend(session.headers.for_url(&shared.url).clone());
+    headers.extend(session.headers.for_url(&context.url).clone());
     if !headers.contains_key(USER_AGENT)
-        && let Ok(agent) = HeaderValue::from_str(&shared.opts.user_agent)
+        && let Ok(agent) = HeaderValue::from_str(&context.user_agent)
     {
         headers.insert(USER_AGENT, agent);
     }
@@ -334,7 +335,7 @@ fn build_request(
 /// means HTTP/3 is not usable here.
 fn check_response(
     response: &::http::Response<()>,
-    shared: &Shared,
+    context: &RequestContext,
     from: u64,
 ) -> std::result::Result<(), Outcome> {
     let status = response.status().as_u16();
@@ -347,7 +348,7 @@ fn check_response(
         return Err(Outcome::Answer(Failure {
             error: Error::HttpStatus {
                 status,
-                url: shared.url.to_string(),
+                url: context.url.to_string(),
             },
             retry_after,
         }));
@@ -364,7 +365,7 @@ fn check_response(
         .and_then(parse_content_range);
     match range {
         Some(range) if range.start == Some(from) => {
-            if let (Some(expected), Some(actual)) = (shared.total, range.total)
+            if let (Some(expected), Some(actual)) = (context.total, range.total)
                 && expected != actual
             {
                 return Err(Outcome::Answer(Error::RemoteChanged.into()));

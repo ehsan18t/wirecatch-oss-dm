@@ -82,8 +82,8 @@ impl ResumeSaver {
         let shared = &self.shared;
         ResumeState::new(
             &self.url,
-            shared.total,
-            shared.ranged,
+            shared.request.total,
+            shared.request.ranged,
             &self.validators,
             remaining,
         )
@@ -125,7 +125,7 @@ impl Checkpoints {
     /// is cancelled or this is dropped.
     pub fn spawn(saver: Arc<ResumeSaver>) -> Self {
         let every = saver.shared.opts.checkpoint_interval;
-        let cancel = saver.shared.cancel.clone();
+        let cancel = saver.shared.request.cancel.clone();
         let saving = saver.clone();
         let task = tokio::spawn(async move {
             let mut tick = tokio::time::interval(every);

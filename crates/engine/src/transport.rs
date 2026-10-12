@@ -3,20 +3,39 @@
 //! workers, retries) is shared by HTTP, HTTP/3 and FTP.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, Response};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::download::{DownloadOptions, Shared};
+use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
 use crate::http3;
+use crate::net_guard::Guard;
 use crate::proxy::{self, Scheme};
 use crate::worker;
+
+/// What every request of one download needs, and all the protocol layers get
+/// of it.
+pub(crate) struct RequestContext {
+    /// Where requests go: the URL after redirects, without credentials.
+    pub url: Url,
+    /// Whether the server accepts byte ranges.
+    pub ranged: bool,
+    /// The size of the file, if known.
+    pub total: Option<u64>,
+    /// Cancelled when the download pauses.
+    pub cancel: CancellationToken,
+    /// [`DownloadOptions::user_agent`].
+    pub user_agent: String,
+    /// [`DownloadOptions::stall_timeout`].
+    pub stall_timeout: Duration,
+}
 
 /// Where the file comes from; shared by every connection of one download.
 #[expect(
@@ -66,18 +85,20 @@ impl Connection {
     /// byte ranges always sends from the start).
     ///
     /// For HTTP, `to` is the end of this one request, which may stop short of
-    /// the segment's end (see [`Shared::request_end`]); FTP sends from `from`
-    /// to the end of the file whatever `to` is.
+    /// the segment's end (see
+    /// [`Shared::request_end`](crate::download::Shared::request_end)); FTP
+    /// sends from `from` to the end of the file whatever `to` is.
     pub async fn open(
         &mut self,
-        shared: &Shared,
+        remote: &Remote,
+        request: &RequestContext,
         from: u64,
         to: u64,
     ) -> Result<(Body, u64), Failure> {
-        match (self, &shared.remote) {
+        match (self, remote) {
             (Connection::Ftp(connection), Remote::Ftp(_)) => {
-                let transfer = connection.open(shared, from).await?;
-                let skip = if shared.ranged { 0 } else { from };
+                let transfer = connection.open(request, from).await?;
+                let skip = if request.ranged { 0 } else { from };
                 Ok((Body::Ftp(transfer), skip))
             }
             #[cfg(feature = "http3")]
@@ -89,19 +110,19 @@ impl Connection {
                 },
             ) => {
                 if let Some(origin) = origin
-                    && shared.ranged
-                    && let Some(body) = http3::open(h3, origin, shared, session, from, to).await?
+                    && request.ranged
+                    && let Some(body) = http3::open(h3, origin, request, session, from, to).await?
                 {
                     return Ok((Body::Http3(Box::new(body)), 0));
                 }
                 let (response, skip) = http::fetch(
                     client,
-                    &shared.url,
+                    &request.url,
                     session,
                     from,
                     to,
-                    shared.ranged,
-                    shared.total,
+                    request.ranged,
+                    request.total,
                 )
                 .await?;
                 Ok((Body::http(response), skip))
@@ -110,12 +131,12 @@ impl Connection {
             (Connection::Http { client }, Remote::Http { session }) => {
                 let (response, skip) = http::fetch(
                     client,
-                    &shared.url,
+                    &request.url,
                     session,
                     from,
                     to,
-                    shared.ranged,
-                    shared.total,
+                    request.ranged,
+                    request.total,
                 )
                 .await?;
                 Ok((Body::http(response), skip))
@@ -222,7 +243,7 @@ pub(crate) async fn open(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
-    guard: Option<http::Guard>,
+    guard: Option<Guard>,
 ) -> Result<Opened> {
     match url.scheme() {
         "http" | "https" => open_http(url, opts, clients, cancel, guard).await,
@@ -261,7 +282,7 @@ async fn open_http(
     opts: &DownloadOptions,
     clients: &Clients,
     cancel: &CancellationToken,
-    guard: Option<http::Guard>,
+    guard: Option<Guard>,
 ) -> Result<Opened> {
     let (mut session, url) = Session::new(url, opts, cancel.clone());
     session.guard = guard;

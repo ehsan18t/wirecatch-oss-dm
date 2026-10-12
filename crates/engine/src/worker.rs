@@ -133,7 +133,7 @@ async fn run_assignment(
 ) -> Result<Ended> {
     let mut attempts = Attempts::default();
     loop {
-        if shared.cancel.is_cancelled() {
+        if shared.request.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
         }
         let (from, to) = shared.table.lock().position(index);
@@ -147,10 +147,14 @@ async fn run_assignment(
         let attempt = async {
             let (mut body, skip) = match response.take() {
                 Some(body) => (body, 0),
-                None => connection.open(shared, from, end).await?,
+                None => {
+                    connection
+                        .open(&shared.remote, &shared.request, from, end)
+                        .await?
+                }
             };
             let ended = stream(shared, writer, index, from, end, &mut body, skip).await;
-            connection.finish(body, &shared.cancel).await;
+            connection.finish(body, &shared.request.cancel).await;
             Ok::<_, Failure>(ended?)
         };
 
@@ -160,7 +164,7 @@ async fn run_assignment(
             Ok(Ended::RequestDone) => attempts = Attempts::default(),
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
-            Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
+            Err(_) if shared.request.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) => {
                 let (now, _) = shared.table.lock().position(index);
                 let next = attempts.after_failure(
@@ -179,7 +183,7 @@ async fn run_assignment(
                 };
                 warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
-                    () = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
+                    () = shared.request.cancel.cancelled() => return Ok(Ended::Cancelled),
                     () = tokio::time::sleep(delay) => {}
                 }
             }
@@ -273,7 +277,7 @@ async fn stream(
     let outcome: Result<Ended> = loop {
         let next = tokio::select! {
             biased;
-            () = shared.cancel.cancelled() => break Ok(Ended::Cancelled),
+            () = shared.request.cancel.cancelled() => break Ok(Ended::Cancelled),
             next = tokio::time::timeout(stall, body.next()) => next,
         };
         let mut data = match next {
@@ -305,7 +309,9 @@ async fn stream(
                 break Err(e);
             }
             shared.progress.add(allowed);
-            if pace(&shared.opts.rate_limiters, allowed, &shared.cancel).await == Paced::Cancelled {
+            if pace(&shared.opts.rate_limiters, allowed, &shared.request.cancel).await
+                == Paced::Cancelled
+            {
                 break Ok(Ended::Cancelled);
             }
         }

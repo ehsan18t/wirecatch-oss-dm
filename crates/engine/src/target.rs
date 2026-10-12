@@ -47,6 +47,16 @@ pub(crate) struct Target {
     pub state: PathBuf,
 }
 
+impl Target {
+    /// The finished file's name, for showing.
+    pub fn name(&self) -> String {
+        self.file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+}
+
 /// A destination ready on disk: its part file exists, sized when the size is
 /// known.
 pub(crate) struct Prepared {

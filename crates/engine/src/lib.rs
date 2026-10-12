@@ -218,6 +218,7 @@ mod http;
 mod http3;
 mod limiter;
 pub mod naming;
+mod net_guard;
 pub mod numeric;
 mod progress;
 mod proxy;
@@ -236,8 +237,9 @@ pub use download::{
     RemoteFile, download,
 };
 pub use error::{Error, NetworkError, Result};
-pub use fetch::{Fetched, Fetcher, PrivateNetwork};
+pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;
+pub use net_guard::PrivateNetwork;
 pub use progress::Progress;
 /// HTTP header names and values, for [`DownloadOptions::headers`].
 pub use reqwest::header;

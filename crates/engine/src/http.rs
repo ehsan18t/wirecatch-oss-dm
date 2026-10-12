@@ -18,6 +18,7 @@ use url::Url;
 use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::naming;
+use crate::net_guard::{FilteringResolver, Guard};
 use crate::segment::UNKNOWN_END;
 
 /// Most redirects followed for one request, the same limit browsers use.
@@ -242,22 +243,6 @@ pub(crate) struct Session {
     pub guard: Option<Guard>,
 }
 
-/// The future a [`Guard`] returns.
-pub(crate) type GuardCheck =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>;
-
-/// Decides whether a request may go to an address; an error stops it before
-/// anything is sent. Used by [`Fetcher`](crate::Fetcher) to keep streams away
-/// from the local network.
-#[derive(Clone)]
-pub(crate) struct Guard(pub Arc<dyn Fn(&Url) -> GuardCheck + Send + Sync>);
-
-impl std::fmt::Debug for Guard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Guard")
-    }
-}
-
 impl Session {
     /// Returns the session and the URL to request (credentials moved out of it).
     pub fn new(url: &Url, opts: &DownloadOptions, cancel: CancellationToken) -> (Self, Url) {
@@ -289,7 +274,7 @@ pub(crate) struct Clients {
     connect_timeout: Duration,
     /// Resolves names for every client [`build`](Self::build) makes, when set
     /// (to keep a download away from the local network).
-    resolver: Option<Arc<crate::fetch::FilteringResolver>>,
+    resolver: Option<Arc<FilteringResolver>>,
 }
 
 /// The process-wide TLS configuration: the system's root certificates are read
@@ -337,7 +322,7 @@ impl Clients {
     }
 
     /// Resolves names through `resolver` in every client built from now on.
-    pub fn set_resolver(&mut self, resolver: Arc<crate::fetch::FilteringResolver>) {
+    pub fn set_resolver(&mut self, resolver: Arc<FilteringResolver>) {
         self.resolver = Some(resolver);
     }
 

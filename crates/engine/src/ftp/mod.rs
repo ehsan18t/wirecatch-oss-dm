@@ -35,9 +35,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use url::{Host, Url};
 
-use crate::download::{DownloadOptions, Shared};
+use crate::download::DownloadOptions;
 use crate::error::Error;
 use crate::http::{Failure, Validators};
+use crate::transport::RequestContext;
 use crate::units::KIB_USIZE;
 use crate::url::without_password;
 use control::{Control, Reply, Stream, Tls};
@@ -579,7 +580,7 @@ impl Connection {
 
     /// Starts receiving the file from `from`, logging in first if this worker
     /// has no control connection yet.
-    pub async fn open(&mut self, shared: &Shared, from: u64) -> Result<Transfer, Failure> {
+    pub async fn open(&mut self, request: &RequestContext, from: u64) -> Result<Transfer, Failure> {
         let work = async {
             let control = if let Some(control) = self.control.take() {
                 control
@@ -590,14 +591,14 @@ impl Connection {
             let buffer = self.buffer.take().unwrap_or_else(|| vec![0; READ_BUFFER]);
             // Without range support, every attempt starts at 0 and the worker
             // skips what it already has.
-            let from = if shared.ranged { from } else { 0 };
+            let from = if request.ranged { from } else { 0 };
             self.server
                 .start(control, from, buffer, self.tls.as_ref())
                 .await
         };
         tokio::select! {
             biased;
-            () = shared.cancel.cancelled() => Err(Error::Cancelled.into()),
+            () = request.cancel.cancelled() => Err(Error::Cancelled.into()),
             started = work => started,
         }
     }

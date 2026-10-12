@@ -13,14 +13,14 @@ use url::Url;
 
 use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Error, Result};
-use crate::fetch::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::http::Clients;
 use crate::limiter::RateLimiter;
+use crate::net_guard::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::numeric::saturating_cast;
 use crate::progress::Progress;
 use crate::segment::{self, SharedTable};
 use crate::target::{self, Described, Destination, Prepared, Target};
-use crate::transport::{self, Opened, Remote};
+use crate::transport::{self, Opened, Remote, RequestContext};
 use crate::units::{MIB, MIB_USIZE};
 use crate::url::without_password;
 use crate::{storage, worker};
@@ -328,17 +328,17 @@ pub enum Outcome {
 }
 
 /// State every worker of one download shares.
+///
+/// It stays with the download and its connections: the protocol layers only
+/// get [`RequestContext`] and [`Remote`], never the segment table or progress.
 pub(crate) struct Shared {
-    /// Where requests go: the URL after redirects, without credentials.
-    pub url: Url,
+    /// What every request of the download needs.
+    pub request: RequestContext,
     /// The protocol and what its connections share.
     pub remote: Remote,
-    pub ranged: bool,
-    pub total: Option<u64>,
     pub table: SharedTable,
     pub part_path: PathBuf,
     pub progress: Arc<Progress>,
-    pub cancel: CancellationToken,
     pub opts: DownloadOptions,
     /// Connections currently streaming a response body.
     pub receiving: AtomicUsize,
@@ -350,7 +350,7 @@ impl Shared {
     /// whole range otherwise (FTP, or a server without ranges).
     pub fn request_end(&self, from: u64, to: u64) -> u64 {
         let limit = match self.remote {
-            Remote::Http { .. } if self.ranged => self.opts.request_limit(),
+            Remote::Http { .. } if self.request.ranged => self.opts.request_limit(),
             _ => None,
         };
         segment::request_end(from, to, limit)
@@ -458,22 +458,21 @@ pub(crate) async fn download_guarded(
         let (saved_url, min_split) = (saved_url.clone(), opts.min_split);
         storage::blocking(move || destination.prepare(&saved_url, &described, min_split)).await?
     };
-    let file_name = target
-        .file
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    progress.start(&target.file, &file_name, total, resumed_from);
+    progress.start(&target.file, &target.name(), total, resumed_from);
 
     let shared = Arc::new(Shared {
-        url: final_url,
+        request: RequestContext {
+            url: final_url,
+            ranged,
+            total,
+            cancel,
+            user_agent: opts.user_agent.clone(),
+            stall_timeout: opts.stall_timeout,
+        },
         remote,
-        ranged,
-        total,
         table: SharedTable::new(table),
         part_path: target.part.clone(),
         progress,
-        cancel,
         opts,
         receiving: AtomicUsize::new(0),
     });
@@ -488,27 +487,36 @@ pub(crate) async fn download_guarded(
         storage::blocking(move || saver.save()).await?;
     }
 
-    // The probe response already streams from byte 0; hand it to worker 0 along with
-    // the matching range before any other worker can split it.
-    let acquired = if resumed {
-        None
-    } else {
-        shared.table.lock().acquire(0)
-    };
-    let first = if let Some(assignment) = acquired {
-        Some((assignment, body))
-    } else {
-        // Resuming (or nothing to download): the connection is kept, the
-        // transfer from byte 0 is not.
-        connection.finish(body, &shared.cancel).await;
-        None
-    };
-
+    let first = first_work(&shared, resumed, &mut connection, body).await;
     let workers = spawn_workers(&shared, &clients, connection, first).await?;
     let checkpoints = Checkpoints::spawn(saver.clone());
     let first_error = join_workers(workers).await;
     checkpoints.stop();
     storage::blocking(move || finish(&shared, &saver, target, resumed_from, first_error)).await
+}
+
+/// The work the first connection starts with. The first response already
+/// streams from byte 0; on a new download it goes to that connection with the
+/// range from byte 0, before any other connection can split it. When resuming
+/// (or with nothing to download) the connection is kept and the transfer from
+/// byte 0 is ended.
+async fn first_work(
+    shared: &Shared,
+    resumed: bool,
+    connection: &mut transport::Connection,
+    body: transport::Body,
+) -> Option<(segment::Assignment, transport::Body)> {
+    let acquired = if resumed {
+        None
+    } else {
+        shared.table.lock().acquire(0)
+    };
+    if let Some(assignment) = acquired {
+        Some((assignment, body))
+    } else {
+        connection.finish(body, &shared.request.cancel).await;
+        None
+    }
 }
 
 /// Starts the download's connections: one per [`DownloadOptions::min_split`]
@@ -522,7 +530,7 @@ async fn spawn_workers(
     connection: transport::Connection,
     mut first: Option<(segment::Assignment, transport::Body)>,
 ) -> Result<JoinSet<Result<()>>> {
-    let worker_count = if shared.ranged {
+    let worker_count = if shared.request.ranged {
         let remaining = shared.table.lock().remaining_bytes();
         let wanted: usize = saturating_cast(remaining.div_ceil(shared.opts.min_split));
         wanted.clamp(1, shared.opts.connections.max(1))
@@ -584,7 +592,7 @@ fn finish(
         let table = shared.table.lock();
         // A known size is the file's; a table resumed with every range already
         // on disk holds no range to take the size from.
-        let file_len = shared.total.unwrap_or_else(|| table.file_len());
+        let file_len = shared.request.total.unwrap_or_else(|| table.file_len());
         (table.is_complete(), table.remaining_bytes(), file_len)
     };
 
@@ -602,7 +610,7 @@ fn finish(
 
     saver.save()?;
     saver.close();
-    if shared.cancel.is_cancelled() {
+    if shared.request.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
             path: target.file,
             remaining,

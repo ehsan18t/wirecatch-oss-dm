@@ -142,7 +142,7 @@ pub enum Error {
     /// A [`Fetcher`](crate::Fetcher) refused to send a request to an address
     /// on the local network (loopback, private, link-local or unspecified),
     /// because a resource from the internet pointed there; see
-    /// [`PrivateNetwork`](crate::fetch::PrivateNetwork).
+    /// [`PrivateNetwork`](crate::PrivateNetwork).
     #[error("{url} points to a device on your own network, which Wirecatch blocks for safety")]
     PrivateNetwork {
         /// The address that was refused.
