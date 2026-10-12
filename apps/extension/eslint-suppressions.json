@@ -1,7 +1,0 @@
-{
-  "src/components/App.svelte": {
-    "max-lines": {
-      "count": 1
-    }
-  }
-}

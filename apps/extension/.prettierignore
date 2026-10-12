@@ -3,4 +3,3 @@
 node_modules/
 public/
 pnpm-lock.yaml
-eslint-suppressions.json
