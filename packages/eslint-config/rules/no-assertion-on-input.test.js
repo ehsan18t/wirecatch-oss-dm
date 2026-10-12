@@ -55,6 +55,10 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     valid('export function f(raw: unknown) { return raw as unknown; }'),
     // A literal written in place has the shape it is written with.
     valid('export const counts = {} as Record<string, number>;'),
+    // Containers whose contents are known, or asserted to contents that claim nothing.
+    valid('export const frozen = (list: string[]) => list as readonly string[];'),
+    valid('export const loose = (raw: unknown[]) => raw as readonly unknown[];'),
+    valid('export const later = (raw: Promise<Message>) => raw as Promise<unknown>;'),
   ],
   invalid: [
     invalid('export function asMessage(raw: unknown) { return raw as Message; }'),
@@ -89,5 +93,16 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     ),
     // Going through `unknown` does not launder the claim.
     invalid('export function f(raw: object) { return raw as unknown as Message; }'),
+    // A type parameter as the target claims whatever the caller picks.
+    invalid('export function cast<T>(raw: unknown): T { return raw as T; }'),
+    invalid('export function cast<T extends object>(raw: object): T { return raw as T; }'),
+    // Unchecked values inside a container claim just as much.
+    invalid(
+      'export function f(raw: unknown) { return Array.isArray(raw) ? raw as Message[] : []; }',
+    ),
+    invalid('export function f(raw: unknown[]) { return raw as Message[]; }'),
+    invalid('export function f(raw: Promise<unknown>) { return raw as Promise<Message>; }'),
+    invalid('export function f(raw: Map<string, unknown>) { return raw as Map<string, Message>; }'),
+    invalid('export function f(raw: Promise<unknown[]>) { return raw as Promise<Message[]>; }'),
   ],
 });
