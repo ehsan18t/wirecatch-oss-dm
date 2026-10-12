@@ -11,17 +11,10 @@ use wirecatch_engine::header::{
 };
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
-use wirecatch_test_support::test_data;
+use wirecatch_test_support::{TestResult, fresh_dir, test_data};
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
-
-fn temp_dir(test: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("wirecatch-hd-{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url(path), dir);
@@ -33,10 +26,8 @@ fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> D
     req
 }
 
-async fn run(req: DownloadRequest) -> Outcome {
-    download(req, Arc::new(Progress::default()), CancellationToken::new())
-        .await
-        .expect("download failed")
+async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
+    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
 }
 
 fn completed_path(outcome: Outcome) -> PathBuf {
@@ -91,11 +82,11 @@ async fn credentials_never_follow_a_redirect_to_another_origin() {
         },
     )
     .await;
-    let dir = temp_dir("cross-origin");
+    let dir = fresh_dir("cross-origin");
     let mut req = request(&origin, "start", &dir, 4);
     with_browser_headers(&mut req);
 
-    let path = completed_path(run(req).await);
+    let path = completed_path(run(req).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), target.data);
 
     // The origin the headers were given for received all of them.
@@ -142,11 +133,11 @@ async fn same_origin_redirect_keeps_credentials() {
         },
     )
     .await;
-    let dir = temp_dir("same-origin");
+    let dir = fresh_dir("same-origin");
     let mut req = request(&server, "old", &dir, 4);
     with_browser_headers(&mut req);
 
-    let path = completed_path(run(req).await);
+    let path = completed_path(run(req).await.unwrap());
     assert_eq!(path, dir.join("new.bin"), "named after the redirect target");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
@@ -179,9 +170,9 @@ async fn retry_after_in_seconds_delays_the_first_request() {
         },
     )
     .await;
-    let dir = temp_dir("retry-after-secs");
+    let dir = fresh_dir("retry-after-secs");
 
-    let path = completed_path(run(request(&server, "busy.bin", &dir, 4)).await);
+    let path = completed_path(run(request(&server, "busy.bin", &dir, 4)).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -209,9 +200,9 @@ async fn retry_after_as_a_date_is_not_retried_before_that_time() {
         },
     )
     .await;
-    let dir = temp_dir("retry-after-date");
+    let dir = fresh_dir("retry-after-date");
 
-    let path = completed_path(run(request(&server, "busy.bin", &dir, 4)).await);
+    let path = completed_path(run(request(&server, "busy.bin", &dir, 4)).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -243,9 +234,9 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
         },
     )
     .await;
-    let dir = temp_dir("retry-after-mid");
+    let dir = fresh_dir("retry-after-mid");
 
-    let path = completed_path(run(request(&server, "busy.bin", &dir, 1)).await);
+    let path = completed_path(run(request(&server, "busy.bin", &dir, 1)).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -258,7 +249,7 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
 }
 
 /// Eight connections against a server that serves two at a time.
-async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str) {
+async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str) -> TestResult {
     const ALLOWED: usize = 2;
     const CONNECTIONS: usize = 8;
     // Long enough (about 4 s) that connections that kept retrying instead of
@@ -274,13 +265,13 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
         },
     )
     .await;
-    let dir = temp_dir(test);
+    let dir = fresh_dir(test);
 
     let started = Instant::now();
-    let path = completed_path(run(request(&server, "limited.bin", &dir, CONNECTIONS)).await);
+    let path = completed_path(run(request(&server, "limited.bin", &dir, CONNECTIONS)).await?);
     let took = started.elapsed();
 
-    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    assert_eq!(std::fs::read(path)?, server.data);
     let max = server.stats.max_concurrent.load(Ordering::SeqCst);
     let refused = server.stats.refused.load(Ordering::SeqCst);
     assert!(max <= ALLOWED, "{max} connections served at once");
@@ -296,21 +287,28 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
     );
     // About 4 s of data; generous for a 2-core CI runner.
     assert!(took < Duration::from_secs(30), "took {took:?}");
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn completes_when_extra_connections_get_503() {
-    completes_within_the_server_connection_limit(Refuse::Status(503), "limit-503").await;
+    completes_within_the_server_connection_limit(Refuse::Status(503), "limit-503")
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn completes_when_extra_connections_get_429() {
-    completes_within_the_server_connection_limit(Refuse::Status(429), "limit-429").await;
+    completes_within_the_server_connection_limit(Refuse::Status(429), "limit-429")
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn completes_when_extra_connections_are_reset() {
-    completes_within_the_server_connection_limit(Refuse::Reset, "limit-reset").await;
+    completes_within_the_server_connection_limit(Refuse::Reset, "limit-reset")
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -330,10 +328,14 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
         },
     )
     .await;
-    let dir = temp_dir("limit-retry-after");
+    let dir = fresh_dir("limit-retry-after");
 
     let started = Instant::now();
-    let path = completed_path(run(request(&server, "wait.bin", &dir, CONNECTIONS)).await);
+    let path = completed_path(
+        run(request(&server, "wait.bin", &dir, CONNECTIONS))
+            .await
+            .unwrap(),
+    );
     let took = started.elapsed();
 
     assert_eq!(std::fs::read(path).unwrap(), server.data);
@@ -347,10 +349,10 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
     assert!(took < Duration::from_secs(12), "took {took:?}");
 }
 
-fn with_userinfo(mut url: wirecatch_engine::Url) -> wirecatch_engine::Url {
-    url.set_username("alice").unwrap();
-    url.set_password(Some("s3cret")).unwrap();
-    url
+fn with_userinfo(mut url: wirecatch_engine::Url) -> Option<wirecatch_engine::Url> {
+    url.set_username("alice").ok()?;
+    url.set_password(Some("s3cret")).ok()?;
+    Some(url)
 }
 
 /// `alice:s3cret` as an `Authorization` header value.
@@ -367,11 +369,11 @@ async fn url_credentials_reach_every_request_to_their_origin() {
         },
     )
     .await;
-    let dir = temp_dir("userinfo");
+    let dir = fresh_dir("userinfo");
     let mut req = request(&server, "files/private.bin", &dir, 4);
-    req.url = with_userinfo(req.url);
+    req.url = with_userinfo(req.url).unwrap();
 
-    let path = completed_path(run(req).await);
+    let path = completed_path(run(req).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -400,11 +402,11 @@ async fn url_credentials_never_follow_a_redirect_to_another_origin() {
         },
     )
     .await;
-    let dir = temp_dir("userinfo-cross");
+    let dir = fresh_dir("userinfo-cross");
     let mut req = request(&origin, "start", &dir, 4);
-    req.url = with_userinfo(req.url);
+    req.url = with_userinfo(req.url).unwrap();
 
-    let path = completed_path(run(req).await);
+    let path = completed_path(run(req).await.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), target.data);
 
     assert_eq!(origin.stats.seen()[0].header("authorization"), Some(ALICE));
@@ -423,7 +425,7 @@ async fn url_credentials_never_follow_a_redirect_to_another_origin() {
 async fn cancel_when(
     req: DownloadRequest,
     ready: impl Fn() -> bool,
-) -> wirecatch_engine::Result<Outcome> {
+) -> TestResult<wirecatch_engine::Result<Outcome>> {
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req, Arc::new(Progress::default()), cancel.clone()));
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -434,10 +436,10 @@ async fn cancel_when(
     // Let the engine settle into its wait.
     tokio::time::sleep(Duration::from_millis(200)).await;
     cancel.cancel();
-    tokio::time::timeout(Duration::from_secs(2), task)
+    let stopped = tokio::time::timeout(Duration::from_secs(2), task)
         .await
-        .expect("cancelling did not stop the download within 2 s")
-        .unwrap()
+        .map_err(|_| "cancelling did not stop the download within 2 s")?;
+    Ok(stopped?)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -450,12 +452,14 @@ async fn cancelling_while_the_server_never_answers_the_first_request() {
         },
     )
     .await;
-    let dir = temp_dir("hang-probe");
+    let dir = fresh_dir("hang-probe");
     let mut req = request(&server, "hang.bin", &dir, 4);
     req.options.stall_timeout = Duration::from_secs(60);
 
     let stats = server.stats.clone();
-    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 1).await;
+    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 1)
+        .await
+        .unwrap();
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
 }
 
@@ -472,12 +476,14 @@ async fn cancelling_while_the_server_never_answers_mid_download() {
         },
     )
     .await;
-    let dir = temp_dir("hang-mid");
+    let dir = fresh_dir("hang-mid");
     let mut req = request(&server, "hang.bin", &dir, 1);
     req.options.stall_timeout = Duration::from_secs(60);
 
     let stats = server.stats.clone();
-    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 2).await;
+    let result = cancel_when(req, || stats.requests.load(Ordering::SeqCst) >= 2)
+        .await
+        .unwrap();
     assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
 }
 
@@ -492,14 +498,14 @@ async fn a_server_that_never_answers_times_out_and_is_retried() {
         },
     )
     .await;
-    let dir = temp_dir("hang-retry");
+    let dir = fresh_dir("hang-retry");
     let mut req = request(&server, "hang.bin", &dir, 4);
     req.options.stall_timeout = Duration::from_millis(500);
 
     let outcome = tokio::time::timeout(Duration::from_secs(10), run(req))
         .await
         .expect("the download waited for an answer forever instead of timing out");
-    let path = completed_path(outcome);
+    let path = completed_path(outcome.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -525,12 +531,13 @@ async fn cancelling_during_a_long_retry_after_on_the_first_request() {
         },
     )
     .await;
-    let dir = temp_dir("retry-after-cancel-probe");
+    let dir = fresh_dir("retry-after-cancel-probe");
     let stats = server.stats.clone();
     let result = cancel_when(request(&server, "busy.bin", &dir, 4), || {
         stats.requests.load(Ordering::SeqCst) >= 1
     })
-    .await;
+    .await
+    .unwrap();
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
 }
 
@@ -550,24 +557,23 @@ async fn cancelling_during_a_long_retry_after_mid_download() {
         },
     )
     .await;
-    let dir = temp_dir("retry-after-cancel-mid");
+    let dir = fresh_dir("retry-after-cancel-mid");
     let stats = server.stats.clone();
     let result = cancel_when(request(&server, "busy.bin", &dir, 1), || {
         stats.requests.load(Ordering::SeqCst) >= 2
     })
-    .await;
+    .await
+    .unwrap();
     assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
 }
 
-async fn expect_error(server: &TestServer, path: &str, test: &str) -> Error {
-    let dir = temp_dir(test);
-    download(
-        request(server, path, &dir, 4),
-        Arc::new(Progress::default()),
-        CancellationToken::new(),
-    )
-    .await
-    .expect_err("the download should fail")
+/// Downloads `path` from `server` into a fresh folder named `test`.
+async fn run_path(
+    server: &TestServer,
+    path: &str,
+    test: &str,
+) -> wirecatch_engine::Result<Outcome> {
+    run(request(server, path, &fresh_dir(test), 4)).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -580,7 +586,9 @@ async fn a_redirect_loop_is_reported_as_such() {
         },
     )
     .await;
-    let error = expect_error(&server, "loop", "redirect-loop").await;
+    let error = run_path(&server, "loop", "redirect-loop")
+        .await
+        .unwrap_err();
     assert!(matches!(error, Error::TooManyRedirects { .. }), "{error:?}");
     // The first request plus 20 redirects followed.
     assert_eq!(server.stats.requests.load(Ordering::SeqCst), 21);
@@ -596,7 +604,7 @@ async fn a_redirect_to_another_scheme_is_refused() {
         },
     )
     .await;
-    let error = expect_error(&server, "ftp", "redirect-ftp").await;
+    let error = run_path(&server, "ftp", "redirect-ftp").await.unwrap_err();
     assert!(matches!(error, Error::InvalidUrl(_)), "{error:?}");
 }
 
@@ -614,7 +622,9 @@ async fn a_redirect_without_location_is_reported_as_such() {
         },
     )
     .await;
-    let error = expect_error(&server, "nowhere", "redirect-nowhere").await;
+    let error = run_path(&server, "nowhere", "redirect-nowhere")
+        .await
+        .unwrap_err();
     assert!(
         matches!(error, Error::RedirectWithoutLocation { status: 302, .. }),
         "{error:?}"

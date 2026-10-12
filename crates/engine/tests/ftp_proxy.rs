@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Progress, Url, download};
+use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 
 #[tokio::test(flavor = "current_thread")]
@@ -16,7 +16,7 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
     })
     .await;
     let dir = std::env::temp_dir().join(format!("wirecatch-ftp-proxy-{}", std::process::id()));
-    let url = Url::parse(&server.url("ftp", "", "file.bin")).unwrap();
+    let url = server.url("ftp", "", "file.bin");
 
     for variable in ["ALL_PROXY", "all_proxy", "FTP_PROXY", "ftp_proxy"] {
         // SAFETY: this test binary runs this one test, on one thread, so

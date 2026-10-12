@@ -12,6 +12,7 @@ const FALLBACK_NAME: &str = "download";
 
 /// Extracts the file name from a `Content-Disposition` header value.
 /// `filename*` (RFC 6266 / 5987) wins over plain `filename`.
+#[must_use]
 pub fn from_content_disposition(value: &str) -> Option<String> {
     let mut plain = None;
     for part in split_params(value) {
@@ -58,6 +59,7 @@ fn split_params(value: &str) -> Vec<&str> {
 }
 
 /// The last non-empty path segment of the URL, percent-decoded.
+#[must_use]
 pub fn from_url(url: &Url) -> Option<String> {
     let segment = url.path_segments()?.rev().find(|s| !s.is_empty())?;
     let decoded = percent_decode_str(segment).decode_utf8_lossy();
@@ -65,6 +67,7 @@ pub fn from_url(url: &Url) -> Option<String> {
 }
 
 /// Makes a name safe on both Windows and Linux.
+#[must_use]
 pub fn sanitize(name: &str) -> String {
     // Drop any directory part a server may have sent.
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
@@ -178,6 +181,7 @@ fn split_ext(name: &str) -> (&str, &str) {
 }
 
 /// Paths of the in-progress data file and its resume state for a final path.
+#[must_use]
 pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
     let mut part = final_path.as_os_str().to_owned();
     part.push(PART_EXT);
@@ -187,21 +191,22 @@ pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
 }
 
 /// First of `name`, `name (1)`, `name (2)`... whose final, part and state files are all absent.
+///
+/// Every name tried before the free one belongs to a file in `dir`, so the
+/// search ends after at most one more try than `dir` has entries.
+#[must_use]
 pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
     let (stem, ext) = split_ext(name);
-    (0..)
-        .map(|n| {
-            if n == 0 {
-                dir.join(name)
-            } else {
-                dir.join(format!("{stem} ({n}){ext}"))
-            }
-        })
-        .find(|candidate| {
-            let (part, state) = part_paths(candidate);
-            !candidate.exists() && !part.exists() && !state.exists()
-        })
-        .expect("an unbounded range always yields a free name")
+    let mut candidate = dir.join(name);
+    let mut n: u64 = 0;
+    loop {
+        let (part, state) = part_paths(&candidate);
+        if !candidate.exists() && !part.exists() && !state.exists() {
+            return candidate;
+        }
+        n += 1;
+        candidate = dir.join(format!("{stem} ({n}){ext}"));
+    }
 }
 
 #[cfg(test)]
@@ -309,7 +314,7 @@ mod tests {
         let long = format!("{}.mp4", "x".repeat(400));
         let out = sanitize(&long);
         assert!(out.len() <= MAX_NAME_BYTES);
-        assert!(out.ends_with(".mp4"));
+        assert_eq!(Path::new(&out).extension(), Some("mp4".as_ref()));
     }
 
     #[test]

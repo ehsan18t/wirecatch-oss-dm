@@ -2,7 +2,7 @@
 //! test binary of its own, with a single test, because it changes the process
 //! environment.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -10,9 +10,9 @@ use wirecatch_engine::{CancellationToken, DownloadOptions, Error, Fetcher, Priva
 
 /// A forward proxy on this computer that answers every request with `ok` and
 /// keeps each request line.
-async fn start_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+async fn start_proxy() -> std::io::Result<(u16, Arc<Mutex<Vec<String>>>)> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let log = seen.clone();
     tokio::spawn(async move {
@@ -29,7 +29,9 @@ async fn start_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
                 }
                 let text = String::from_utf8_lossy(&buf[..len]);
                 let line = text.lines().next().unwrap_or_default().to_string();
-                log.lock().unwrap().push(line);
+                log.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(line);
                 let _ = socket
                     .write_all(
                         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
@@ -38,12 +40,12 @@ async fn start_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
             });
         }
     });
-    (port, seen)
+    Ok((port, seen))
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_guard_checks_targets_but_trusts_the_proxy_the_user_set() {
-    let (port, seen) = start_proxy().await;
+    let (port, seen) = start_proxy().await.unwrap();
     // A proxy named by a host that resolves to this computer, as a proxy on
     // the local network (`proxy.corp` at 10.0.0.5) would.
     let proxy = format!("http://localhost:{port}");
@@ -69,8 +71,8 @@ async fn the_guard_checks_targets_but_trusts_the_proxy_the_user_set() {
     assert!(fetcher.blocks_private_network());
 
     // The request reaches the proxy although the proxy's name is local.
-    let fetched = fetcher.get(&start, None, 1024).await.unwrap();
-    assert_eq!(&fetched.body[..], b"ok");
+    let answer = fetcher.get(&start, None, 1024).await.unwrap();
+    assert_eq!(&answer.body[..], b"ok");
     assert_eq!(
         *seen.lock().unwrap(),
         ["GET http://93.184.215.14/stream/index.m3u8 HTTP/1.1"]

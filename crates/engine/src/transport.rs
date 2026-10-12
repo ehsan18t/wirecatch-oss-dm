@@ -18,8 +18,10 @@ use crate::http3;
 use crate::worker;
 
 /// Where the file comes from; shared by every connection of one download.
-// One per download, so the size of the larger variant does not matter.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one value per download, shared by its connections, so the size of the larger variant does not matter"
+)]
 pub(crate) enum Remote {
     Http {
         /// Which headers go where, redirect rules and timeouts.
@@ -331,8 +333,8 @@ where
                 let delay = worker::retry_delay(failures, f.retry_after);
                 tracing::warn!(error = %f.error, retry_in = ?delay, "first request failed, retrying");
                 tokio::select! {
-                    _ = cancel.cancelled() => return Err(Error::Cancelled),
-                    _ = tokio::time::sleep(delay) => {}
+                    () = cancel.cancelled() => return Err(Error::Cancelled),
+                    () = tokio::time::sleep(delay) => {}
                 }
             }
             result => return result.map_err(|f| f.error),

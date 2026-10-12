@@ -1,8 +1,8 @@
 //! Live counters for one download.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 const UNKNOWN: u64 = u64::MAX;
 
@@ -56,11 +56,7 @@ impl Progress {
 
     /// The name the file is saved under, once decided.
     pub fn file_name(&self) -> Option<String> {
-        self.target
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|t| t.file_name.clone())
+        self.target().as_ref().map(|t| t.file_name.clone())
     }
 
     /// The final destination path of the download.
@@ -73,7 +69,15 @@ impl Progress {
     /// [`DownloadRequest::exact_path`](crate::DownloadRequest::exact_path) on a
     /// later run. It stays `None` if the first request fails.
     pub fn path(&self) -> Option<PathBuf> {
-        self.target.lock().unwrap().as_ref().map(|t| t.path.clone())
+        self.target().as_ref().map(|t| t.path.clone())
+    }
+
+    /// Locks the destination. A lock poisoned by a panic in another holder is
+    /// taken over as it is, for the reason
+    /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives; the value
+    /// is replaced whole, so it is never half written either.
+    fn target(&self) -> MutexGuard<'_, Option<Target>> {
+        self.target.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn start(
@@ -83,7 +87,7 @@ impl Progress {
         total: Option<u64>,
         already_done: u64,
     ) {
-        *self.target.lock().unwrap() = Some(Target {
+        *self.target() = Some(Target {
             file_name: file_name.to_string(),
             path: path.to_path_buf(),
         });

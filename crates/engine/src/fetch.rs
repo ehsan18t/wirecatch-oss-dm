@@ -53,7 +53,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
@@ -70,6 +70,7 @@ use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::http::{self, Clients, Failure, Guard, Session};
 use crate::limiter::RateLimiter;
+use crate::numeric::clamp_to_len;
 use crate::worker;
 
 /// Size of the write buffer used by [`Fetcher::save`].
@@ -212,12 +213,12 @@ impl Fetcher {
         // The first use in a process reads the system certificate store, which
         // blocks, so that happens off the async threads.
         let clients = if Clients::shared_ready() {
-            Clients::new(options)
+            Clients::new(options)?
         } else {
             let options = options.clone();
             tokio::task::spawn_blocking(move || Clients::new(&options))
                 .await
-                .map_err(Error::task)?
+                .map_err(|e| Error::task(&e))??
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
         let protection = private_guard(&url, private_network, options.stall_timeout).await;
@@ -256,12 +257,14 @@ impl Fetcher {
 
     /// The URL this fetcher was created with, without any `user:password@`
     /// (those became an `Authorization` header for its origin).
+    #[must_use]
     pub fn url(&self) -> &Url {
         &self.inner.url
     }
 
     /// Whether requests to the local network are refused (see
     /// [`PrivateNetwork`]).
+    #[must_use]
     pub fn blocks_private_network(&self) -> bool {
         self.inner.blocking_private
     }
@@ -387,8 +390,8 @@ impl Fetcher {
                     let delay = worker::retry_delay(failures.max(1), f.retry_after);
                     warn!(error = %f.error, %url, retry_in = ?delay, "request failed, retrying");
                     tokio::select! {
-                        _ = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
-                        _ = tokio::time::sleep(delay) => {}
+                        () = self.inner.cancel.cancelled() => return Err(Error::Cancelled),
+                        () = tokio::time::sleep(delay) => {}
                     }
                 }
                 Err(f) => return Err(f.error),
@@ -432,7 +435,7 @@ impl Fetcher {
             }
             let next = tokio::select! {
                 biased;
-                _ = self.inner.cancel.cancelled() => return Err(Error::Cancelled.into()),
+                () = self.inner.cancel.cancelled() => return Err(Error::Cancelled.into()),
                 next = tokio::time::timeout(stall, body.next()) => next,
             };
             let chunk = match next {
@@ -443,13 +446,12 @@ impl Fetcher {
             };
             let mut data = &chunk[..];
             if skip > 0 {
-                let n = skip.min(data.len() as u64) as usize;
+                let n = clamp_to_len(skip, data.len());
                 data = &data[n..];
                 skip -= n as u64;
             }
             if let Some(end) = position.end {
-                let wanted = end.saturating_sub(at).min(data.len() as u64) as usize;
-                data = &data[..wanted];
+                data = &data[..clamp_to_len(end.saturating_sub(at), data.len())];
             }
             if data.is_empty() {
                 continue;
@@ -561,7 +563,11 @@ impl Sink {
                     limit: *limit,
                 });
             }
-            buf.reserve(len as usize);
+            // Only room set aside in advance: a size that does not fit in memory
+            // is left to grow as data arrives, and is refused by the limit first.
+            if let Ok(len) = usize::try_from(len) {
+                buf.reserve(len);
+            }
         }
         Ok(())
     }
@@ -629,21 +635,20 @@ pub(crate) fn is_private(ip: IpAddr) -> bool {
 /// reaching it: IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`,
 /// NAT64 `64:ff9b::a.b.c.d` and 6to4 `2002:aabb:ccdd::/48`.
 fn embedded_ipv4(v6: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
-    let s = v6.segments();
     let last = |hi: u16, lo: u16| {
-        let [a, b] = hi.to_be_bytes();
-        let [c, d] = lo.to_be_bytes();
-        std::net::Ipv4Addr::new(a, b, c, d)
+        let [first, second] = hi.to_be_bytes();
+        let [third, fourth] = lo.to_be_bytes();
+        std::net::Ipv4Addr::new(first, second, third, fourth)
     };
     if let Some(v4) = v6.to_ipv4_mapped() {
         return Some(v4);
     }
-    match s {
+    match v6.segments() {
         // `::` and `::1` are themselves, not IPv4 addresses.
         [0, 0, 0, 0, 0, 0, 0, 0 | 1] => None,
-        [0, 0, 0, 0, 0, 0, hi, lo] => Some(last(hi, lo)),
-        [0x64, 0xff9b, 0, 0, 0, 0, hi, lo] => Some(last(hi, lo)),
-        [0x2002, hi, lo, ..] => Some(last(hi, lo)),
+        [0, 0, 0, 0, 0, 0, hi, lo] | [0x64, 0xff9b, 0, 0, 0, 0, hi, lo] | [0x2002, hi, lo, ..] => {
+            Some(last(hi, lo))
+        }
         _ => None,
     }
 }
@@ -794,6 +799,14 @@ impl NetworkGuard {
         }
     }
 
+    /// Locks the names already checked. A lock poisoned by a panic in another
+    /// holder is taken over as it is, for the reason
+    /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives; the cache
+    /// holds only finished answers, so it is never half written either.
+    fn names(&self) -> MutexGuard<'_, HashMap<String, bool>> {
+        self.names.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     async fn check(&self, url: &Url) -> Result<()> {
         if url.origin() == self.origin {
             return Ok(());
@@ -802,26 +815,17 @@ impl NetworkGuard {
             Some(Host::Ipv4(ip)) => is_private(IpAddr::V4(ip)),
             Some(Host::Ipv6(ip)) => is_private(IpAddr::V6(ip)),
             Some(Host::Domain(name)) => {
-                let known = self
-                    .names
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .get(name)
-                    .copied();
-                match known {
-                    Some(refused) => refused,
-                    None => {
-                        let port = url.port_or_known_default().unwrap_or(80);
-                        let addrs = resolve(name, port, self.timeout).await;
-                        // Refused when no address outside the local network
-                        // is left, the same rule the resolver applies.
-                        let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
-                        self.names
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner())
-                            .insert(name.to_string(), refused);
-                        refused
-                    }
+                let known = self.names().get(name).copied();
+                if let Some(refused) = known {
+                    refused
+                } else {
+                    let port = url.port_or_known_default().unwrap_or(80);
+                    let addrs = resolve(name, port, self.timeout).await;
+                    // Refused when no address outside the local network
+                    // is left, the same rule the resolver applies.
+                    let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
+                    self.names().insert(name.to_string(), refused);
+                    refused
                 }
             }
             None => false,
@@ -1090,7 +1094,7 @@ mod tests {
         let mut request = crate::DownloadRequest::new(url, &dir);
         request.options.max_retries = 0;
         request.options.connect_timeout = Duration::from_secs(5);
-        let clients = crate::http::Clients::new(&request.options);
+        let clients = crate::http::Clients::new(&request.options).unwrap();
         let result = crate::download::download_guarded(
             request,
             Arc::new(crate::Progress::default()),
@@ -1112,9 +1116,12 @@ mod tests {
     fn a_host_mixing_public_and_local_answers_keeps_no_local_address() {
         let public: IpAddr = "93.184.215.14".parse().unwrap();
         let local: IpAddr = "127.0.0.1".parse().unwrap();
-        assert!(pinned_addresses(&[public, local]).is_empty());
-        assert!(pinned_addresses(&[public]).is_empty());
-        assert!(pinned_addresses(&[]).is_empty());
+        assert_eq!(
+            pinned_addresses(&[public, local]),
+            [] as [std::net::IpAddr; 0]
+        );
+        assert_eq!(pinned_addresses(&[public]), [] as [std::net::IpAddr; 0]);
+        assert_eq!(pinned_addresses(&[]), [] as [std::net::IpAddr; 0]);
         assert_eq!(pinned_addresses(&[local]), vec![local]);
     }
 
@@ -1155,7 +1162,10 @@ mod tests {
             ("https_proxy", "http://[::1]:8080"),
         ]));
         assert_eq!(hosts, ["socks.lan", "proxy.corp.example"]);
-        assert!(proxy_hosts(&env(&[("NO_PROXY", "localhost")])).is_empty());
+        assert_eq!(
+            proxy_hosts(&env(&[("NO_PROXY", "localhost")])),
+            [] as [std::string::String; 0]
+        );
     }
 
     #[tokio::test]

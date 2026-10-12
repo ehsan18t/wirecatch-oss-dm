@@ -281,9 +281,14 @@ impl Clients {
     /// Uses the operating system's root certificates, read once per process.
     /// The first call reads the certificate store, so it must not run on an
     /// async thread; see [`Clients::shared_ready`].
-    pub fn new(opts: &DownloadOptions) -> Self {
-        let tls = SHARED_TLS.get_or_init(|| tls_config(native_roots()));
-        Self::with_config(opts, tls.clone())
+    pub fn new(opts: &DownloadOptions) -> Result<Self> {
+        let tls = if let Some(tls) = SHARED_TLS.get() {
+            tls
+        } else {
+            let config = tls_config(native_roots())?;
+            SHARED_TLS.get_or_init(|| config)
+        };
+        Ok(Self::with_config(opts, tls.clone()))
     }
 
     /// Whether [`Clients::new`] would return without touching the disk.
@@ -300,7 +305,7 @@ impl Clients {
     /// Uses the given root certificates and a session cache of its own.
     #[cfg(test)]
     pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {
-        Self::with_config(opts, tls_config(roots))
+        Self::with_config(opts, tls_config(roots).unwrap())
     }
 
     fn with_config(opts: &DownloadOptions, tls: rustls::ClientConfig) -> Self {
@@ -347,24 +352,27 @@ impl Clients {
 
 /// The same TLS setup reqwest builds by default (TLS 1.2 and 1.3, the process's
 /// crypto provider or else ring, HTTP/2 offered through ALPN), built once.
-fn tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
-    let installed = rustls::crypto::CryptoProvider::get_default().cloned();
-    let builder = installed
+fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
+    let installed = rustls::crypto::CryptoProvider::get_default()
+        .cloned()
         .and_then(|provider| {
             rustls::ClientConfig::builder_with_provider(provider)
                 .with_protocol_versions(rustls::ALL_VERSIONS)
                 .ok()
-        })
-        .unwrap_or_else(|| {
-            rustls::ClientConfig::builder_with_provider(Arc::new(
-                rustls::crypto::ring::default_provider(),
-            ))
-            .with_protocol_versions(rustls::ALL_VERSIONS)
-            .expect("the ring provider supports TLS 1.2 and 1.3")
         });
+    let builder = match installed {
+        Some(builder) => builder,
+        // The ring provider supports both versions, so this only fails if the
+        // TLS library itself is broken.
+        None => rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_protocol_versions(rustls::ALL_VERSIONS)
+        .map_err(|e| Error::Internal(format!("TLS 1.2 and 1.3 are not available: {e}")))?,
+    };
     let mut config = builder.with_root_certificates(roots).with_no_client_auth();
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    config
+    Ok(config)
 }
 
 /// The operating system's trusted root certificates. Unreadable entries are
@@ -411,7 +419,7 @@ pub(crate) async fn send(
         }
         let response = tokio::select! {
             biased;
-            _ = session.cancel.cancelled() => return Err(Error::Cancelled.into()),
+            () = session.cancel.cancelled() => return Err(Error::Cancelled.into()),
             answer = tokio::time::timeout(session.answer_timeout, request.send()) => match answer {
                 Ok(response) => response?,
                 Err(_) => return Err(Error::Stalled(session.answer_timeout.as_secs()).into()),

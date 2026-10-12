@@ -12,6 +12,7 @@ use rustls::HandshakeKind;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
+use url::Url;
 
 use crate::TestCertificate;
 use crate::http::{index, time_to_send};
@@ -217,8 +218,12 @@ impl FtpServer {
 
     /// `scheme://userinfo127.0.0.1:port/path`.
     #[must_use]
-    pub fn url(&self, scheme: &str, userinfo: &str, path: &str) -> String {
-        format!("{scheme}://{userinfo}127.0.0.1:{}/{path}", self.port)
+    pub fn url(&self, scheme: &str, userinfo: &str, path: &str) -> Url {
+        Url::parse(&format!(
+            "{scheme}://{userinfo}127.0.0.1:{}/{path}",
+            self.port
+        ))
+        .unwrap()
     }
 
     /// Changes the configuration for the sessions that follow.

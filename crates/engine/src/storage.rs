@@ -103,20 +103,22 @@ mod windows {
 
     pub fn set_sparse(file: &File, sparse: bool) -> io::Result<()> {
         let input = FILE_SET_SPARSE_BUFFER {
-            SetSparse: sparse as u8,
+            SetSparse: u8::from(sparse),
         };
+        let input_len =
+            u32::try_from(size_of::<FILE_SET_SPARSE_BUFFER>()).map_err(io::Error::other)?;
         let mut returned = 0u32;
         // SAFETY: the handle is valid for the lifetime of `file`, the input buffer
         // is a properly sized FILE_SET_SPARSE_BUFFER, and no output buffer is used.
         let ok = unsafe {
             DeviceIoControl(
-                file.as_raw_handle() as _,
+                file.as_raw_handle().cast(),
                 FSCTL_SET_SPARSE,
-                &input as *const FILE_SET_SPARSE_BUFFER as *const c_void,
-                size_of::<FILE_SET_SPARSE_BUFFER>() as u32,
+                (&raw const input).cast::<c_void>(),
+                input_len,
                 ptr::null_mut(),
                 0,
-                &mut returned,
+                &raw mut returned,
                 ptr::null_mut(),
             )
         };
@@ -135,8 +137,10 @@ mod linux {
     use std::os::fd::AsRawFd;
 
     pub fn fallocate(file: &File, len: u64) -> io::Result<()> {
+        let len =
+            libc::off_t::try_from(len).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
         // SAFETY: plain syscall on a valid descriptor.
-        let rc = unsafe { libc::fallocate(file.as_raw_fd(), 0, 0, len as libc::off_t) };
+        let rc = unsafe { libc::fallocate(file.as_raw_fd(), 0, 0, len) };
         if rc == 0 {
             Ok(())
         } else {

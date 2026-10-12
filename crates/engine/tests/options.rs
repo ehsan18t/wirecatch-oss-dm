@@ -11,7 +11,7 @@ use wirecatch_engine::{
     MAX_CONNECTIONS, Progress, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::test_data;
+use wirecatch_test_support::{TestResult, test_data};
 
 /// Long enough for a refused download to return, short enough that a hang fails the test instead of stalling it.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -30,7 +30,7 @@ fn unworkable() -> Vec<Unworkable> {
         ("stall_timeout", |o| o.stall_timeout = Duration::ZERO),
         ("connect_timeout", |o| o.connect_timeout = Duration::ZERO),
         ("checkpoint_interval", |o| {
-            o.checkpoint_interval = Duration::ZERO
+            o.checkpoint_interval = Duration::ZERO;
         }),
     ]
 }
@@ -39,18 +39,20 @@ fn unworkable() -> Vec<Unworkable> {
 fn within_deadline<T: Send + 'static>(
     what: &str,
     future: impl Future<Output = T> + Send + 'static,
-) -> T {
+) -> TestResult<T> {
     let (done, finished) = mpsc::channel();
     std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let result = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("a runtime for the test");
-        let _ = done.send(runtime.block_on(future));
+            .map(|runtime| runtime.block_on(future));
+        // The receiver is gone only once the test has already failed on the deadline.
+        drop(done.send(result));
     });
-    finished
+    let finished = finished
         .recv_timeout(DEADLINE)
-        .unwrap_or_else(|_| panic!("{what} hung the download"))
+        .map_err(|_| format!("{what} hung the download"))?;
+    Ok(finished?)
 }
 
 #[test]
@@ -71,8 +73,9 @@ async fn a_download_with_an_unworkable_option_is_refused_before_any_request() {
             Arc::new(Progress::default()),
             CancellationToken::new(),
         );
-        let result =
-            tokio::task::block_in_place(|| within_deadline(&format!("a bad {name}"), refused));
+        let result = tokio::task::block_in_place(|| {
+            within_deadline(&format!("a bad {name}"), refused).unwrap()
+        });
         match result {
             Err(Error::InvalidOption(option)) => assert_eq!(option, name),
             other => panic!("a bad {name} gave {other:?}"),

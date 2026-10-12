@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
+use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 use wirecatch_test_support::test_data;
 
@@ -13,7 +13,10 @@ struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl std::io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .map_err(|_| std::io::Error::other("the log buffer's lock is poisoned"))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -45,7 +48,7 @@ async fn credentials_are_never_logged() {
     let dir = std::env::temp_dir().join(format!("wirecatch-ftp-logging-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let url = server.url("ftp", "alice:hunter2-secret@", "pub/file.bin");
-    let mut request = DownloadRequest::new(Url::parse(&url).unwrap(), &dir);
+    let mut request = DownloadRequest::new(url, &dir);
     request.options.connections = 3;
 
     let outcome = download(
@@ -59,7 +62,7 @@ async fn credentials_are_never_logged() {
     let Outcome::Completed { path, .. } = outcome else {
         panic!("expected Completed, got {outcome:?}");
     };
-    assert!(std::fs::read(&path).unwrap() == data);
+    assert_eq!(std::fs::read(&path).unwrap(), data);
     assert!(
         server.stats.count("PASS hunter2-secret") >= 1,
         "the server got the password"

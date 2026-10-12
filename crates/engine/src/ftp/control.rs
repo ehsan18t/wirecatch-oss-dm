@@ -109,7 +109,7 @@ impl Tls {
     /// The same settings with a TLS session cache of its own, for one control
     /// connection and its data connections. Those then resume only that
     /// control connection's session, never another's: servers such as vsftpd
-    /// (`require_ssl_reuse`) and ProFTPD refuse a data connection that resumes
+    /// (`require_ssl_reuse`) and `ProFTPD` refuse a data connection that resumes
     /// a different session than its control connection.
     pub fn for_new_session(&self) -> Self {
         let mut config = (*self.config).clone();

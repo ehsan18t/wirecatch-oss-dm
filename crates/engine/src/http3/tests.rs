@@ -68,7 +68,7 @@ fn http3_is_not_used_through_a_proxy() {
 fn test_data(len: usize) -> Bytes {
     Bytes::from(
         (0..len)
-            .map(|i| (i * 31 + i / 509) as u8)
+            .map(|i| (i * 31 + i / 509).to_le_bytes()[0])
             .collect::<Vec<u8>>(),
     )
 }

@@ -8,7 +8,9 @@
 //! - [`ftp::FtpServer`]: a scripted FTP and FTPS server.
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
-//! - [`test_data`]: deterministic bytes to serve.
+//! - [`test_data`]: deterministic bytes to serve, and [`fresh_dir`] and
+//!   [`files_in`] for the folders tests download into.
+//! - [`TestCertificate`]: a self-signed certificate for the TLS servers.
 //!
 //! The crate does not depend on the engine, so the engine's own unit tests can
 //! use it too.
@@ -26,6 +28,36 @@ pub mod http3;
 mod tls;
 
 pub use tls::TestCertificate;
+
+use std::path::{Path, PathBuf};
+
+/// What a test helper returns when it can fail, so the test that calls it
+/// decides how to report the failure.
+pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// An empty folder for one test, under the system's temporary folder: anything
+/// an earlier run left there is removed first. `name` must be unique among the
+/// tests of one test binary; the process id keeps binaries apart.
+#[must_use]
+pub fn fresh_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("wirecatch-test-{name}-{}", std::process::id()));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The names of the entries in `dir`, sorted.
+#[must_use]
+pub fn files_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
 
 /// Deterministic pseudo-random bytes, so a misplaced range is always detected.
 #[must_use]

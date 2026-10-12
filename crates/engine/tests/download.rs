@@ -1,3 +1,5 @@
+//! Downloads over HTTP through the public `download()` API, against the local test server: parallel connections, resuming, retries, naming and where the file goes.
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -8,17 +10,10 @@ use wirecatch_engine::{
     download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::test_data;
+use wirecatch_test_support::{TestResult, files_in, fresh_dir, test_data};
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
-
-fn temp_dir(test: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("wirecatch-it-{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url(path), dir);
@@ -30,23 +25,12 @@ fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> D
     req
 }
 
-async fn run(req: DownloadRequest) -> Outcome {
-    download(req, Arc::new(Progress::default()), CancellationToken::new())
-        .await
-        .expect("download failed")
-}
-
-fn only_file(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
+async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
+    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
 }
 
 /// Starts a download, waits until `at_least` bytes arrived, then cancels it.
-async fn pause_midway(req: DownloadRequest, at_least: u64) -> Outcome {
+async fn pause_midway(req: DownloadRequest, at_least: u64) -> TestResult<Outcome> {
     let progress = Arc::new(Progress::default());
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req, progress.clone(), cancel.clone()));
@@ -54,7 +38,7 @@ async fn pause_midway(req: DownloadRequest, at_least: u64) -> Outcome {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     cancel.cancel();
-    task.await.unwrap().expect("pausing should not fail")
+    Ok(task.await??)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -68,9 +52,11 @@ async fn parallel_download_is_byte_identical() {
         },
     )
     .await;
-    let dir = temp_dir("parallel");
+    let dir = fresh_dir("parallel");
 
-    let outcome = run(request(&server, "files/big.bin", &dir, 8)).await;
+    let outcome = run(request(&server, "files/big.bin", &dir, 8))
+        .await
+        .unwrap();
 
     let Outcome::Completed {
         path,
@@ -90,7 +76,7 @@ async fn parallel_download_is_byte_identical() {
         "expected parallel connections"
     );
     assert_eq!(
-        only_file(&dir),
+        files_in(&dir),
         vec!["big.bin"],
         "part and state files must be gone"
     );
@@ -99,9 +85,9 @@ async fn parallel_download_is_byte_identical() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn falls_back_to_one_connection_without_range_support() {
     let server = TestServer::start(test_data(3 * MIB), Config::default()).await;
-    let dir = temp_dir("norange");
+    let dir = fresh_dir("norange");
 
-    let outcome = run(request(&server, "plain.bin", &dir, 8)).await;
+    let outcome = run(request(&server, "plain.bin", &dir, 8)).await.unwrap();
 
     let Outcome::Completed { path, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -120,9 +106,9 @@ async fn unknown_length_download_completes() {
         },
     )
     .await;
-    let dir = temp_dir("unknown");
+    let dir = fresh_dir("unknown");
 
-    let outcome = run(request(&server, "stream.bin", &dir, 8)).await;
+    let outcome = run(request(&server, "stream.bin", &dir, 8)).await.unwrap();
 
     let Outcome::Completed { path, bytes, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -144,9 +130,11 @@ async fn resumes_after_pause_without_downloading_again() {
         },
     )
     .await;
-    let dir = temp_dir("resume");
+    let dir = fresh_dir("resume");
 
-    let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB as u64).await;
+    let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB as u64)
+        .await
+        .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
     assert!(dir.join("r.bin.wcpart").exists() && dir.join("r.bin.wcstate").exists());
 
@@ -154,7 +142,7 @@ async fn resumes_after_pause_without_downloading_again() {
     // buffers before a connection is dropped, which would hide real waste.
     let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
     server.configure(|c| c.per_connection_bps = Some(4 * MIB as u64));
-    let outcome = run(request(&server, "r.bin", &dir, 4)).await;
+    let outcome = run(request(&server, "r.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed {
         path, resumed_from, ..
@@ -184,16 +172,18 @@ async fn starts_over_when_the_remote_file_changed() {
         },
     )
     .await;
-    let dir = temp_dir("changed");
+    let dir = fresh_dir("changed");
 
-    let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB as u64).await;
+    let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB as u64)
+        .await
+        .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }));
 
     server.configure(|c| {
         c.per_connection_bps = None;
         c.etag = Some("\"v2\"".into());
     });
-    let outcome = run(request(&server, "c.bin", &dir, 4)).await;
+    let outcome = run(request(&server, "c.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed {
         path, resumed_from, ..
@@ -217,9 +207,9 @@ async fn retries_dropped_connections() {
         },
     )
     .await;
-    let dir = temp_dir("retry");
+    let dir = fresh_dir("retry");
 
-    let outcome = run(request(&server, "flaky.bin", &dir, 4)).await;
+    let outcome = run(request(&server, "flaky.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed { path, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -238,9 +228,9 @@ async fn retries_without_range_support_by_skipping_received_bytes() {
         },
     )
     .await;
-    let dir = temp_dir("retry-norange");
+    let dir = fresh_dir("retry-norange");
 
-    let outcome = run(request(&server, "flaky.bin", &dir, 4)).await;
+    let outcome = run(request(&server, "flaky.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed { path, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -259,10 +249,12 @@ async fn uses_content_disposition_and_never_overwrites() {
         },
     )
     .await;
-    let dir = temp_dir("naming");
+    let dir = fresh_dir("naming");
     std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
 
-    let outcome = run(request(&server, "download?id=7", &dir, 4)).await;
+    let outcome = run(request(&server, "download?id=7", &dir, 4))
+        .await
+        .unwrap();
 
     let Outcome::Completed { path, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -282,9 +274,9 @@ async fn empty_file() {
         },
     )
     .await;
-    let dir = temp_dir("empty");
+    let dir = fresh_dir("empty");
 
-    let outcome = run(request(&server, "empty.txt", &dir, 8)).await;
+    let outcome = run(request(&server, "empty.txt", &dir, 8)).await.unwrap();
 
     let Outcome::Completed { path, bytes, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -303,14 +295,14 @@ async fn rate_limiter_caps_combined_speed() {
         },
     )
     .await;
-    let dir = temp_dir("limited");
+    let dir = fresh_dir("limited");
     let mut req = request(&server, "slow.bin", &dir, 4);
     req.options.rate_limiters = vec![Arc::new(wirecatch_engine::RateLimiter::new(Some(
         MIB as u64,
     )))];
 
     let start = std::time::Instant::now();
-    let outcome = run(req).await;
+    let outcome = run(req).await.unwrap();
     let secs = start.elapsed().as_secs_f64();
 
     let Outcome::Completed { path, .. } = outcome else {
@@ -337,7 +329,7 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
         },
     )
     .await;
-    let dir = temp_dir("dropped");
+    let dir = fresh_dir("dropped");
     let progress = Arc::new(Progress::default());
     let task = tokio::spawn(download(
         request(&server, "d.bin", &dir, 2),
@@ -377,18 +369,18 @@ async fn exact_path_continues_after_the_link_changes() {
         },
     )
     .await;
-    let dir = temp_dir("exact");
+    let dir = fresh_dir("exact");
     let target = dir.join("nested").join("video.mp4");
 
     let mut first = request(&server, "old-signed-link", &dir, 4);
     first.exact_path = Some(target.clone());
-    let paused = pause_midway(first, 512 * KIB as u64).await;
+    let paused = pause_midway(first, 512 * KIB as u64).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
     server.configure(|c| c.per_connection_bps = None);
     let mut second = request(&server, "fresh-signed-link", &dir, 4);
     second.exact_path = Some(target.clone());
-    let outcome = run(second).await;
+    let outcome = run(second).await.unwrap();
 
     let Outcome::Completed {
         path, resumed_from, ..
@@ -425,7 +417,7 @@ async fn slow_to_answer(content_disposition: &str) -> TestServer {
 
 /// Runs `req`, checks that no path is known while the server has not answered
 /// yet, and returns the outcome with the path progress reported afterwards.
-async fn run_watching_path(req: DownloadRequest) -> (Outcome, Option<PathBuf>) {
+async fn run_watching_path(req: DownloadRequest) -> TestResult<(Outcome, Option<PathBuf>)> {
     let progress = Arc::new(Progress::default());
     let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -434,17 +426,19 @@ async fn run_watching_path(req: DownloadRequest) -> (Outcome, Option<PathBuf>) {
         None,
         "path known before the server answered"
     );
-    let outcome = task.await.unwrap().expect("download failed");
-    (outcome, progress.path())
+    let outcome = task.await??;
+    Ok((outcome, progress.path()))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_path_is_the_server_chosen_name_once_it_answers() {
     let server = slow_to_answer("attachment; filename=\"report.pdf\"").await;
-    let dir = temp_dir("progress-path");
+    let dir = fresh_dir("progress-path");
     std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
 
-    let (outcome, path) = run_watching_path(request(&server, "download?id=7", &dir, 4)).await;
+    let (outcome, path) = run_watching_path(request(&server, "download?id=7", &dir, 4))
+        .await
+        .unwrap();
 
     let Outcome::Completed { path: saved, .. } = outcome else {
         panic!("not completed: {outcome:?}")
@@ -456,12 +450,12 @@ async fn progress_path_is_the_server_chosen_name_once_it_answers() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_path_is_the_exact_path_once_the_server_answers() {
     let server = slow_to_answer("attachment; filename=\"ignored.pdf\"").await;
-    let dir = temp_dir("progress-exact");
+    let dir = fresh_dir("progress-exact");
     let target = dir.join("chosen").join("by-manager.bin");
     let mut req = request(&server, "file", &dir, 4);
     req.exact_path = Some(target.clone());
 
-    let (outcome, path) = run_watching_path(req).await;
+    let (outcome, path) = run_watching_path(req).await.unwrap();
 
     assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
     assert_eq!(path, Some(target));
@@ -481,7 +475,7 @@ async fn progress_path_stays_unset_when_the_first_request_fails() {
         },
     )
     .await;
-    let dir = temp_dir("progress-404");
+    let dir = fresh_dir("progress-404");
     let progress = Arc::new(Progress::default());
 
     let result = download(
@@ -514,7 +508,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
         },
     )
     .await;
-    let dir = temp_dir("resolver");
+    let dir = fresh_dir("resolver");
     let folder = dir.join("Documents");
     std::fs::create_dir_all(&folder).unwrap();
     // The resolver owns naming: an existing file is replaced, no "(1)" suffix.
@@ -552,7 +546,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
     assert_eq!(path, folder.join("report.pdf"));
     assert_eq!(progress.path(), Some(path.clone()));
     assert_eq!(std::fs::read(path).unwrap(), server.data);
-    assert_eq!(only_file(&folder), vec!["report.pdf"]);
+    assert_eq!(files_in(&folder), vec!["report.pdf"]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -565,7 +559,7 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
         },
     )
     .await;
-    let dir = temp_dir("resolver-refuses");
+    let dir = fresh_dir("resolver-refuses");
     let mut req = request(&server, "files/setup.exe", &dir, 4);
     req.resolve_path = Some(Arc::new(|remote: &RemoteFile| {
         Err(format!(
@@ -584,9 +578,9 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
         other => panic!("expected TargetRejected, got {other:?}"),
     }
     assert!(
-        only_file(&dir).is_empty(),
+        files_in(&dir).is_empty(),
         "files written: {:?}",
-        only_file(&dir)
+        files_in(&dir)
     );
     assert_eq!(progress.path(), None);
 }
@@ -603,7 +597,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         },
     )
     .await;
-    let dir = temp_dir("resolver-resume");
+    let dir = fresh_dir("resolver-resume");
     let target = dir.join("picked").join("video.mp4");
 
     let mut first = request(&server, "video", &dir, 4);
@@ -611,13 +605,13 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         let target = target.clone();
         Arc::new(move |_: &RemoteFile| Ok(target.clone()))
     });
-    let paused = pause_midway(first, 512 * KIB as u64).await;
+    let paused = pause_midway(first, 512 * KIB as u64).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
     server.configure(|c| c.per_connection_bps = None);
     let mut second = request(&server, "video", &dir, 4);
     second.exact_path = Some(target.clone());
-    let outcome = run(second).await;
+    let outcome = run(second).await.unwrap();
 
     let Outcome::Completed {
         path, resumed_from, ..
@@ -647,12 +641,12 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
         },
     )
     .await;
-    let dir = temp_dir("private-redirect");
+    let dir = fresh_dir("private-redirect");
 
     // The site's own file still downloads.
     let mut own = request(&site, "own.bin", &dir, 2);
     own.options.private_network = PrivateNetwork::Block;
-    assert!(matches!(run(own).await, Outcome::Completed { .. }));
+    assert!(matches!(run(own).await.unwrap(), Outcome::Completed { .. }));
 
     let mut req = request(&site, "video.mp4", &dir, 2);
     req.options.private_network = PrivateNetwork::Block;
@@ -665,6 +659,6 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
 
     // Without blocking (the default), the same redirect is followed.
     let req = request(&site, "video.mp4", &dir, 2);
-    assert!(matches!(run(req).await, Outcome::Completed { .. }));
+    assert!(matches!(run(req).await.unwrap(), Outcome::Completed { .. }));
     assert!(!device.stats.seen().is_empty());
 }

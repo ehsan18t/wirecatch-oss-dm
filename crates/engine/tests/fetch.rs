@@ -1,3 +1,5 @@
+//! `Fetcher`: single requests for playlists and segments, saved to memory or a file, with retries, speed limits and the local network guard.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -7,7 +9,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::test_data;
+use wirecatch_test_support::{fresh_dir, test_data};
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -16,17 +18,12 @@ fn options() -> DownloadOptions {
     options
 }
 
-async fn fetcher(url: &Url, options: &DownloadOptions) -> Fetcher {
-    Fetcher::new(url, options, CancellationToken::new())
-        .await
-        .unwrap()
+async fn fetcher(url: &Url, options: &DownloadOptions) -> wirecatch_engine::Result<Fetcher> {
+    Fetcher::new(url, options, CancellationToken::new()).await
 }
 
 fn temp_file(test: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("wirecatch-fetch-{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join("out.bin")
+    fresh_dir(test).join("out.bin")
 }
 
 #[tokio::test]
@@ -41,7 +38,9 @@ async fn gets_whole_resources_and_ranges() {
         },
     )
     .await;
-    let f = fetcher(&server.url("a/index.m3u8"), &options()).await;
+    let f = fetcher(&server.url("a/index.m3u8"), &options())
+        .await
+        .unwrap();
 
     let whole = f.get(f.url(), None, 1 << 20).await.unwrap();
     assert_eq!(whole.body[..], data[..]);
@@ -64,7 +63,7 @@ async fn gets_whole_resources_and_ranges() {
 async fn a_server_without_ranges_still_yields_the_right_bytes() {
     let data = test_data(30_000);
     let server = TestServer::start(data.clone(), Config::default()).await;
-    let f = fetcher(&server.url("seg.ts"), &options()).await;
+    let f = fetcher(&server.url("seg.ts"), &options()).await.unwrap();
     let part = f.get(f.url(), Some(20_000..20_010), 1 << 20).await.unwrap();
     assert_eq!(part.body[..], data[20_000..20_010]);
 
@@ -80,7 +79,7 @@ async fn a_server_without_ranges_still_yields_the_right_bytes() {
 #[tokio::test]
 async fn answers_over_the_limit_are_refused() {
     let server = TestServer::start(test_data(10_000), Config::default()).await;
-    let f = fetcher(&server.url("key"), &options()).await;
+    let f = fetcher(&server.url("key"), &options()).await.unwrap();
     let error = f.get(f.url(), None, 16).await.unwrap_err();
     assert!(
         matches!(error, Error::TooLarge { limit: 16, .. }),
@@ -108,7 +107,7 @@ async fn save_continues_from_the_byte_it_reached() {
         },
     )
     .await;
-    let f = fetcher(&server.url("big.ts"), &options()).await;
+    let f = fetcher(&server.url("big.ts"), &options()).await.unwrap();
     let path = temp_file("short");
     let counted = AtomicU64::new(0);
     let n = f
@@ -148,7 +147,7 @@ async fn save_survives_a_reset_without_counting_bytes_twice() {
         },
     )
     .await;
-    let f = fetcher(&server.url("big.ts"), &options()).await;
+    let f = fetcher(&server.url("big.ts"), &options()).await.unwrap();
     let path = temp_file("drop");
     let counted = AtomicU64::new(0);
     let n = f
@@ -181,8 +180,8 @@ async fn credentials_stay_with_their_origin() {
         site.base.replace("http://", "http://user:pass@")
     ))
     .unwrap();
-    let f = fetcher(&manifest, &options).await;
-    assert!(f.url().username().is_empty());
+    let f = fetcher(&manifest, &options).await.unwrap();
+    assert_eq!(f.url().username(), "");
 
     f.get(f.url(), None, 1 << 20).await.unwrap();
     f.get(&cdn.url("seg1.ts"), None, 1 << 20).await.unwrap();
@@ -218,7 +217,7 @@ async fn retry_after_is_honored() {
         },
     )
     .await;
-    let f = fetcher(&server.url("k"), &options()).await;
+    let f = fetcher(&server.url("k"), &options()).await.unwrap();
     let start = Instant::now();
     f.get(f.url(), None, 1000).await.unwrap();
     assert!(start.elapsed() >= Duration::from_secs(1));
@@ -241,7 +240,7 @@ async fn errors_that_do_not_go_away_surface_after_the_retries() {
     .await;
     let mut options = options();
     options.max_retries = 2;
-    let f = fetcher(&server.url("k"), &options).await;
+    let f = fetcher(&server.url("k"), &options).await.unwrap();
     let error = f.get(f.url(), None, 1000).await.unwrap_err();
     assert!(
         matches!(error, Error::HttpStatus { status: 500, .. }),
@@ -255,7 +254,7 @@ async fn errors_that_do_not_go_away_surface_after_the_retries() {
             requests: 0..1000,
             status: 404,
             retry_after: None,
-        })
+        });
     });
     let before = server.stats.requests.load(Ordering::SeqCst);
     assert!(matches!(
@@ -293,7 +292,7 @@ async fn cancelling_and_stalls_end_requests() {
     let mut options = options();
     options.stall_timeout = Duration::from_millis(300);
     options.max_retries = 0;
-    let f = fetcher(&server.url("k"), &options).await;
+    let f = fetcher(&server.url("k"), &options).await.unwrap();
     assert!(matches!(
         f.get(f.url(), None, 1000).await,
         Err(Error::Stalled(_))
@@ -303,7 +302,7 @@ async fn cancelling_and_stalls_end_requests() {
 #[tokio::test]
 async fn non_http_addresses_are_refused() {
     let server = TestServer::start(test_data(10), Config::default()).await;
-    let f = fetcher(&server.url("k"), &options()).await;
+    let f = fetcher(&server.url("k"), &options()).await.unwrap();
     let key = Url::parse("skd://some-drm-key").unwrap();
     assert!(matches!(
         f.get(&key, None, 16).await,
@@ -326,17 +325,15 @@ async fn rate_limits_apply() {
     let server = TestServer::start(data, Config::default()).await;
     let mut options = options();
     options.rate_limiters = vec![Arc::new(RateLimiter::new(Some(400_000)))];
-    let f = fetcher(&server.url("k"), &options).await;
+    let f = fetcher(&server.url("k"), &options).await.unwrap();
     let start = Instant::now();
     f.get(f.url(), None, 1 << 20).await.unwrap();
     // 200 kB at 400 kB/s is half a second, minus the limiter's small burst.
     assert!(start.elapsed() >= Duration::from_millis(300));
 }
 
-async fn blocking_fetcher(url: &Url, mode: PrivateNetwork) -> Fetcher {
-    Fetcher::with_private_network(url, &options(), CancellationToken::new(), mode)
-        .await
-        .unwrap()
+async fn blocking_fetcher(url: &Url, mode: PrivateNetwork) -> wirecatch_engine::Result<Fetcher> {
+    Fetcher::with_private_network(url, &options(), CancellationToken::new(), mode).await
 }
 
 #[tokio::test]
@@ -345,7 +342,9 @@ async fn the_local_network_is_blocked_when_asked() {
     let device = TestServer::start(test_data(100), Config::default()).await;
     // The test servers are on 127.0.0.1, so `Block` stands in for a site on
     // the internet: its own origin stays reachable, everything local is not.
-    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block).await;
+    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block)
+        .await
+        .unwrap();
     assert!(f.blocks_private_network());
     f.get(f.url(), None, 1000).await.unwrap();
 
@@ -397,7 +396,9 @@ async fn a_redirect_into_the_local_network_is_blocked() {
         },
     )
     .await;
-    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block).await;
+    let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block)
+        .await
+        .unwrap();
     let path =
         std::env::temp_dir().join(format!("wirecatch-fetch-redirect-{}", std::process::id()));
     let error = f
@@ -416,16 +417,18 @@ async fn the_local_network_is_allowed_for_a_local_start_or_when_asked() {
     let device = TestServer::start(test_data(100), Config::default()).await;
     // A playlist that is itself on the local network (a media server at home)
     // may point to other local addresses.
-    let auto = fetcher(&site.url("index.m3u8"), &options()).await;
+    let auto = fetcher(&site.url("index.m3u8"), &options()).await.unwrap();
     assert!(!auto.blocks_private_network());
     auto.get(&device.url("a.ts"), None, 1000).await.unwrap();
-    let allow = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Allow).await;
+    let allow = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Allow)
+        .await
+        .unwrap();
     allow.get(&device.url("b.ts"), None, 1000).await.unwrap();
     assert_eq!(device.stats.seen().len(), 2);
 
     // A public starting address turns blocking on by itself. Nothing is
     // fetched from it: the decision is made when the fetcher is created.
     let public = Url::parse("http://93.184.215.14/index.m3u8").unwrap();
-    let auto = fetcher(&public, &options()).await;
+    let auto = fetcher(&public, &options()).await.unwrap();
     assert!(auto.blocks_private_network());
 }

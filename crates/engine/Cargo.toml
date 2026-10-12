@@ -75,3 +75,6 @@ windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
 [[example]]
 name = "bench_http3"
 required-features = ["http3"]
+
+[lints]
+workspace = true

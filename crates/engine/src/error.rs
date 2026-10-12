@@ -206,6 +206,7 @@ pub enum Error {
 
 impl Error {
     /// Whether retrying the same request later can reasonably succeed.
+    #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
             Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled(_) => true,
@@ -249,7 +250,7 @@ impl Error {
     }
 
     /// For a background task that panicked or was aborted.
-    pub(crate) fn task(error: tokio::task::JoinError) -> Self {
+    pub(crate) fn task(error: &tokio::task::JoinError) -> Self {
         Error::Internal(format!("a background task failed: {error}"))
     }
 }
@@ -301,6 +302,7 @@ enum Inner {
 
 impl NetworkError {
     /// Whether a time limit ran out (connecting, or waiting for the server).
+    #[must_use]
     pub fn is_timeout(&self) -> bool {
         match &self.0 {
             Inner::Http(e) => e.is_timeout(),
@@ -312,6 +314,7 @@ impl NetworkError {
 
     /// Whether the connection could not be opened at all (name lookup, refused
     /// connection, TLS handshake).
+    #[must_use]
     pub fn is_connect(&self) -> bool {
         match &self.0 {
             Inner::Http(e) => e.is_connect(),

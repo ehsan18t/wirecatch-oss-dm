@@ -12,99 +12,135 @@
 //! `cargo run --release -p wirecatch-engine --example bench_local -- serve-ftp [port] [MiB/s per connection]`
 //!     The same with an FTP server (anonymous login, at most 4 sessions).
 
+use std::error::Error;
+use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use wirecatch_engine::numeric::approx_f64;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{ftp, test_data};
 
-const MIB: u64 = 1024 * 1024;
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+const MIB: usize = 1024 * 1024;
+/// The file the benchmark downloads.
+const BENCH_SIZE: usize = 256 * MIB;
+/// Each connection's speed on the capped server.
+const BENCH_CAP: u64 = 16 * MIB as u64;
+/// The request size limit of the last run, as video sites need.
+const BENCH_MAX_REQUEST: u64 = 10 * MIB as u64;
+/// Connection counts for the capped and the uncapped runs.
+const CAPPED_CONNECTIONS: [usize; 5] = [1, 2, 4, 8, 16];
+const UNCAPPED_CONNECTIONS: [usize; 2] = [1, 8];
+
+/// What `serve` and `serve-ftp` use when not told otherwise.
+const DEFAULT_HTTP_PORT: u16 = 8765;
+const DEFAULT_FTP_PORT: u16 = 2121;
+const DEFAULT_CAP_MIB: u64 = 4;
+const SERVE_HTTP_SIZE: usize = 512 * MIB;
+const SERVE_FTP_SIZE: usize = 256 * MIB;
+const SERVE_FTP_SESSIONS: usize = 4;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some("serve") {
-        let port: u16 = args.get(1).and_then(|p| p.parse().ok()).unwrap_or(8765);
-        let cap: u64 = args.get(2).and_then(|c| c.parse().ok()).unwrap_or(4);
-        serve(port, cap).await;
-        return;
-    }
-    if args.first().map(String::as_str) == Some("serve-ftp") {
-        let port: u16 = args.get(1).and_then(|p| p.parse().ok()).unwrap_or(2121);
-        let cap: u64 = args.get(2).and_then(|c| c.parse().ok()).unwrap_or(4);
-        serve_ftp(port, cap).await;
-        return;
-    }
-
-    let size = 256 * MIB;
-    let cap = 16 * MIB;
-    println!(
-        "File: {} MiB. Server caps each connection at {} MiB/s.\n",
-        size / MIB,
-        cap / MIB
-    );
-    let capped = TestServer::start(
-        test_data(size as usize),
-        Config {
-            ranges: true,
-            per_connection_bps: Some(cap),
-            ..Default::default()
-        },
-    )
-    .await;
-    println!(
-        "{:>12}  {:>9}  {:>10}  {:>8}",
-        "connections", "seconds", "MiB/s", "speedup"
-    );
-    let mut baseline = None;
-    for connections in [1, 2, 4, 8, 16] {
-        let secs = timed_download(&capped, connections, None).await;
-        let base = *baseline.get_or_insert(secs);
-        println!(
-            "{connections:>12}  {secs:>9.2}  {:>10.1}  {:>7.1}x",
-            size as f64 / MIB as f64 / secs,
-            base / secs
-        );
-    }
-
-    println!("\nSame file, uncapped localhost (engine and disk ceiling):\n");
-    let open = TestServer::start(
-        test_data(size as usize),
-        Config {
-            ranges: true,
-            ..Default::default()
-        },
-    )
-    .await;
-    println!("{:>12}  {:>9}  {:>10}", "connections", "seconds", "MiB/s");
-    for connections in [1, 8] {
-        let secs = timed_download(&open, connections, None).await;
-        println!(
-            "{connections:>12}  {secs:>9.2}  {:>10.1}",
-            size as f64 / MIB as f64 / secs
-        );
-    }
-
-    println!(
-        "
-Same, with requests of at most 10 MiB each:
-"
-    );
-    println!("{:>12}  {:>9}  {:>10}", "connections", "seconds", "MiB/s");
-    for connections in [1, 8] {
-        let secs = timed_download(&open, connections, Some(10 * MIB)).await;
-        println!(
-            "{connections:>12}  {secs:>9.2}  {:>10.1}",
-            size as f64 / MIB as f64 / secs
-        );
+    let port = |default| args.get(1).and_then(|p| p.parse().ok()).unwrap_or(default);
+    let cap: u64 = args
+        .get(2)
+        .and_then(|c| c.parse().ok())
+        .unwrap_or(DEFAULT_CAP_MIB);
+    match args.first().map(String::as_str) {
+        Some("serve") => serve(port(DEFAULT_HTTP_PORT), cap).await,
+        Some("serve-ftp") => serve_ftp(port(DEFAULT_FTP_PORT), cap).await,
+        _ => bench().await,
     }
 }
 
-async fn timed_download(server: &TestServer, connections: usize, max_request: Option<u64>) -> f64 {
+async fn bench() -> Result<()> {
+    let mut out = std::io::stdout().lock();
+    writeln!(
+        out,
+        "File: {} MiB. Server caps each connection at {} MiB/s.\n",
+        BENCH_SIZE / MIB,
+        BENCH_CAP / MIB as u64
+    )?;
+    let capped = TestServer::start(
+        test_data(BENCH_SIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(BENCH_CAP),
+            ..Default::default()
+        },
+    )
+    .await;
+    writeln!(
+        out,
+        "{:>12}  {:>9}  {:>10}  {:>8}",
+        "connections", "seconds", "MiB/s", "speedup"
+    )?;
+    let mut baseline = None;
+    for connections in CAPPED_CONNECTIONS {
+        let secs = timed_download(&capped, connections, None).await?;
+        let base = *baseline.get_or_insert(secs);
+        writeln!(
+            out,
+            "{connections:>12}  {secs:>9.2}  {:>10.1}  {:>7.1}x",
+            mib_per_second(secs),
+            base / secs
+        )?;
+    }
+
+    writeln!(
+        out,
+        "\nSame file, uncapped localhost (engine and disk ceiling):\n"
+    )?;
+    let open = TestServer::start(
+        test_data(BENCH_SIZE),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    for max_request in [None, Some(BENCH_MAX_REQUEST)] {
+        if max_request.is_some() {
+            writeln!(out, "\nSame, with requests of at most 10 MiB each:\n")?;
+        }
+        writeln!(
+            out,
+            "{:>12}  {:>9}  {:>10}",
+            "connections", "seconds", "MiB/s"
+        )?;
+        for connections in UNCAPPED_CONNECTIONS {
+            let secs = timed_download(&open, connections, max_request).await?;
+            writeln!(
+                out,
+                "{connections:>12}  {secs:>9.2}  {:>10.1}",
+                mib_per_second(secs)
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// The benchmark file's size over `secs`, in MiB a second.
+fn mib_per_second(secs: f64) -> f64 {
+    approx_f64((BENCH_SIZE / MIB) as u64) / secs
+}
+
+async fn timed_download(
+    server: &TestServer,
+    connections: usize,
+    max_request: Option<u64>,
+) -> Result<f64> {
     let dir = std::env::temp_dir().join(format!("wirecatch-bench-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    // Left over from an interrupted run, if it exists at all.
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir)?;
+    }
+    std::fs::create_dir_all(&dir)?;
     let mut request = DownloadRequest::new(server.url("bench.bin"), &dir);
     request.options.connections = connections;
     request.options.max_request_bytes = max_request;
@@ -115,28 +151,25 @@ async fn timed_download(server: &TestServer, connections: usize, max_request: Op
         Arc::new(Progress::default()),
         CancellationToken::new(),
     )
-    .await
-    .expect("download failed");
+    .await?;
     let secs = start.elapsed().as_secs_f64();
 
     let Outcome::Completed { path, bytes, .. } = outcome else {
-        panic!("not completed")
+        return Err(format!("the download did not complete: {outcome:?}").into());
     };
-    assert_eq!(bytes, server.data.len() as u64);
-    assert!(
-        std::fs::read(&path).unwrap() == server.data,
-        "downloaded bytes differ from the source"
-    );
-    std::fs::remove_dir_all(&dir).unwrap();
-    secs
+    if bytes != server.data.len() as u64 || std::fs::read(&path)? != server.data {
+        return Err("downloaded bytes differ from the source".into());
+    }
+    std::fs::remove_dir_all(&dir)?;
+    Ok(secs)
 }
 
-async fn serve(port: u16, cap_mib: u64) {
+async fn serve(port: u16, cap_mib: u64) -> Result<()> {
     let server = TestServer::start(
-        test_data(512 * MIB as usize),
+        test_data(SERVE_HTTP_SIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(cap_mib * MIB),
+            per_connection_bps: Some(cap_mib * MIB as u64),
             etag: Some("\"bench\"".into()),
             ..Default::default()
         },
@@ -144,41 +177,45 @@ async fn serve(port: u16, cap_mib: u64) {
     .await;
     // The test server binds a random port; forward a fixed one to it for convenience.
     let target = server.base.trim_start_matches("http://").to_string();
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
-        .await
-        .expect("port in use");
-    println!(
-        "Serving 512 MiB at http://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection). Ctrl+C to stop."
-    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+    writeln!(
+        std::io::stdout(),
+        "Serving {} MiB at http://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection). Ctrl+C to stop.",
+        SERVE_HTTP_SIZE / MIB
+    )?;
     loop {
-        let (mut inbound, _) = listener.accept().await.unwrap();
+        let (mut inbound, _) = listener.accept().await?;
         let target = target.clone();
         tokio::spawn(async move {
             if let Ok(mut outbound) = tokio::net::TcpStream::connect(target).await {
-                let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
+                // Either side closing ends the forwarding; there is nothing to report.
+                if let Err(error) = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await
+                {
+                    drop(error);
+                }
             }
         });
         tokio::time::sleep(Duration::ZERO).await;
     }
 }
 
-async fn serve_ftp(port: u16, cap_mib: u64) {
+async fn serve_ftp(port: u16, cap_mib: u64) -> Result<()> {
     let _server = ftp::FtpServer::start_on(
         port,
         ftp::FtpConfig {
-            files: vec![(
-                "file.bin".to_string(),
-                Arc::new(test_data(256 * MIB as usize)),
-            )],
+            files: vec![("file.bin".to_string(), Arc::new(test_data(SERVE_FTP_SIZE)))],
             mdtm: Some("20260101000000".to_string()),
-            max_sessions: Some((4, ftp::Refuse::Greeting421)),
-            data_bps: Some(cap_mib * MIB),
+            max_sessions: Some((SERVE_FTP_SESSIONS, ftp::Refuse::Greeting421)),
+            data_bps: Some(cap_mib * MIB as u64),
             ..Default::default()
         },
     )
     .await;
-    println!(
-        "Serving 256 MiB at ftp://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection, at most 4 sessions). Ctrl+C to stop."
-    );
-    let _ = tokio::signal::ctrl_c().await;
+    writeln!(
+        std::io::stdout(),
+        "Serving {} MiB at ftp://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection, at most {SERVE_FTP_SESSIONS} sessions). Ctrl+C to stop.",
+        SERVE_FTP_SIZE / MIB
+    )?;
+    tokio::signal::ctrl_c().await?;
+    Ok(())
 }

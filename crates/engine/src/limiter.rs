@@ -1,9 +1,11 @@
 //! Speed limiting shared across connections and downloads.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use tokio::time::Instant;
+
+use crate::numeric::approx_f64;
 
 /// Caps the combined speed of every connection that shares it.
 ///
@@ -28,6 +30,7 @@ struct Bucket {
 
 impl RateLimiter {
     /// `limit` in bytes per second; `None` is unlimited. A limit of 0 is treated as 1.
+    #[must_use]
     pub fn new(limit: Option<u64>) -> Self {
         Self {
             bucket: Mutex::new(Bucket {
@@ -40,16 +43,23 @@ impl RateLimiter {
 
     /// The current limit in bytes per second; `None` is unlimited.
     pub fn limit(&self) -> Option<u64> {
-        self.bucket.lock().unwrap().limit
+        self.bucket().limit
     }
 
     /// Changes the limit (bytes per second; `None` is unlimited). Every
     /// connection sharing this limiter follows the new limit within one chunk.
     pub fn set_limit(&self, limit: Option<u64>) {
-        let mut bucket = self.bucket.lock().unwrap();
+        let mut bucket = self.bucket();
         bucket.limit = normalize(limit);
         bucket.tokens = bucket.tokens.min(0.0);
         bucket.last = Instant::now();
+    }
+
+    /// Locks the bucket. A lock poisoned by a panic in another holder is taken
+    /// over as it is, for the reason
+    /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives.
+    fn bucket(&self) -> MutexGuard<'_, Bucket> {
+        self.bucket.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Accounts for `bytes` just received, sleeping as long as needed to stay
@@ -57,15 +67,15 @@ impl RateLimiter {
     /// control slow the sender down.
     pub(crate) async fn consume(&self, bytes: u64) {
         let wait = {
-            let mut bucket = self.bucket.lock().unwrap();
+            let mut bucket = self.bucket();
             let Some(rate) = bucket.limit else { return };
-            let rate = rate as f64;
+            let rate = approx_f64(rate);
             let now = Instant::now();
             // A quarter second of burst smooths chunk-sized jitter without letting
             // an idle limiter release a large spike.
             let burst = (rate / 4.0).max(16.0 * 1024.0);
             let refill = now.duration_since(bucket.last).as_secs_f64() * rate;
-            bucket.tokens = (bucket.tokens + refill).min(burst) - bytes as f64;
+            bucket.tokens = (bucket.tokens + refill).min(burst) - approx_f64(bytes);
             bucket.last = now;
             if bucket.tokens >= 0.0 {
                 return;

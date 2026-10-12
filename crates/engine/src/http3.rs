@@ -223,7 +223,7 @@ pub(crate) async fn open(
     let attempt = request(slot, origin, shared, session, from, to);
     let outcome = tokio::select! {
         biased;
-        _ = shared.cancel.cancelled() => return Err(Error::Cancelled.into()),
+        () = shared.cancel.cancelled() => return Err(Error::Cancelled.into()),
         outcome = attempt => outcome,
     };
     match outcome {
@@ -265,29 +265,7 @@ async fn request(
     let Some(connection) = slot.as_mut() else {
         return Err(Outcome::Unusable("no connection".into()));
     };
-
-    let mut request = ::http::Request::get(shared.url.as_str());
-    let headers = request
-        .headers_mut()
-        .ok_or_else(|| Outcome::Unusable("bad request".into()))?;
-    headers.extend(session.headers.for_url(&shared.url).clone());
-    if !headers.contains_key(USER_AGENT)
-        && let Ok(agent) = HeaderValue::from_str(&shared.opts.user_agent)
-    {
-        headers.insert(USER_AGENT, agent);
-    }
-    // Compressed transfer encodings break byte offsets.
-    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    let range = if to == crate::segment::UNKNOWN_END {
-        format!("bytes={from}-")
-    } else {
-        format!("bytes={from}-{}", to - 1)
-    };
-    let range = HeaderValue::from_str(&range).map_err(|e| Outcome::Unusable(e.to_string()))?;
-    headers.insert(RANGE, range);
-    let request = request
-        .body(())
-        .map_err(|e| Outcome::Unusable(e.to_string()))?;
+    let request = build_request(shared, session, from, to)?;
 
     let stall = shared.opts.stall_timeout;
     let exchange = async {
@@ -309,7 +287,49 @@ async fn request(
     let (stream, response) = tokio::time::timeout(stall, exchange)
         .await
         .map_err(|_| Outcome::Unusable("no answer in time".into()))??;
+    check_response(&response, shared, from)?;
+    Ok(stream)
+}
 
+/// The request for `[from, to)` with the headers the session sends to this URL.
+fn build_request(
+    shared: &Shared,
+    session: &Session,
+    from: u64,
+    to: u64,
+) -> std::result::Result<::http::Request<()>, Outcome> {
+    let mut request = ::http::Request::get(shared.url.as_str());
+    let headers = request
+        .headers_mut()
+        .ok_or_else(|| Outcome::Unusable("bad request".into()))?;
+    headers.extend(session.headers.for_url(&shared.url).clone());
+    if !headers.contains_key(USER_AGENT)
+        && let Ok(agent) = HeaderValue::from_str(&shared.opts.user_agent)
+    {
+        headers.insert(USER_AGENT, agent);
+    }
+    // Compressed transfer encodings break byte offsets.
+    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+    let range = if to == crate::segment::UNKNOWN_END {
+        format!("bytes={from}-")
+    } else {
+        format!("bytes={from}-{}", to - 1)
+    };
+    let range = HeaderValue::from_str(&range).map_err(|e| Outcome::Unusable(e.to_string()))?;
+    headers.insert(RANGE, range);
+    request
+        .body(())
+        .map_err(|e| Outcome::Unusable(e.to_string()))
+}
+
+/// Whether `response` is the range asked for, starting at `from`, of the same
+/// file: a busy answer is handled like the same answer over TCP, anything else
+/// means HTTP/3 is not usable here.
+fn check_response(
+    response: &::http::Response<()>,
+    shared: &Shared,
+    from: u64,
+) -> std::result::Result<(), Outcome> {
     let status = response.status().as_u16();
     if status == 429 || status == 503 {
         let retry_after = response
@@ -342,7 +362,7 @@ async fn request(
             {
                 return Err(Outcome::Answer(Error::RemoteChanged.into()));
             }
-            Ok(stream)
+            Ok(())
         }
         _ => Err(Outcome::Unusable(
             "the server sent the wrong range over HTTP/3".into(),

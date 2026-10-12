@@ -5,6 +5,8 @@
 //! Splitting only ever cuts above `claimed`, so a worker never loses bytes it
 //! already received, and resume always restarts from `flushed`.
 
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use serde::{Deserialize, Serialize};
 
 /// Marks a segment whose length is unknown (server sent no size).
@@ -215,6 +217,30 @@ impl SegmentTable {
             .iter()
             .map(|s| s.end.saturating_sub(s.flushed))
             .sum()
+    }
+}
+
+/// A [`SegmentTable`] shared by the connections of one download.
+#[derive(Debug)]
+pub struct SharedTable(Mutex<SegmentTable>);
+
+impl SharedTable {
+    pub fn new(table: SegmentTable) -> Self {
+        Self(Mutex::new(table))
+    }
+
+    /// Locks the table.
+    ///
+    /// A lock poisoned by a panic in another holder is taken over as it is.
+    /// Nothing done under this lock is meant to panic, so poisoning means a bug
+    /// that the panic itself has already reported. Wirecatch's release builds
+    /// abort on panic (`panic = "abort"`), so there a poisoned lock cannot be
+    /// seen at all; in debug and test builds, or a program that unwinds, the
+    /// panicking connection's task ends with
+    /// [`Error::Internal`](crate::Error::Internal). Refusing the lock as well
+    /// would only add a second, less telling panic.
+    pub fn lock(&self) -> MutexGuard<'_, SegmentTable> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

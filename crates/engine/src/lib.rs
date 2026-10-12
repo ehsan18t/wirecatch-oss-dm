@@ -206,8 +206,6 @@
 //! bulk downloads several TCP connections are as fast, and QUIC costs more
 //! processor time per byte.
 
-#![deny(missing_docs)]
-
 mod download;
 mod error;
 pub mod fetch;
@@ -217,6 +215,7 @@ mod http;
 mod http3;
 mod limiter;
 pub mod naming;
+pub mod numeric;
 mod progress;
 mod segment;
 mod state;

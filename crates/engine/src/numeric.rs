@@ -1,0 +1,112 @@
+//! Checked conversions between whole numbers and floating point.
+//!
+//! Byte counts and rates are whole numbers, but speeds, ratios and display
+//! need floating point, and numbers read from other programs (JSON, manifests)
+//! often arrive as floating point. Rust's `as` converts both ways without a
+//! word: it rounds large integers, and it turns NaN into 0 and negative or huge
+//! floats into the nearest bound. Rust has no `TryFrom<f64>` for integers
+//! either. These functions are the one place those conversions happen, so each
+//! rule is written, checked and tested once.
+//!
+//! ```
+//! use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
+//!
+//! let seconds = 2.5;
+//! let bytes_per_second = approx_f64(10 * 1024 * 1024) / seconds;
+//! assert_eq!(f64_to_u64(bytes_per_second), Some(4 * 1024 * 1024));
+//!
+//! // A duration from a JSON document: anything that is not a usable count is refused.
+//! assert_eq!(f64_to_u64(f64::NAN), None);
+//! assert_eq!(f64_to_u64(-1.0), None);
+//! assert_eq!(f64_to_u64(1e30), None);
+//! ```
+
+/// `2^64`, the first value above every `u64`. A literal, since computing it
+/// with `as` is the conversion this module exists to avoid.
+const TWO_POW_64: f64 = 18_446_744_073_709_551_616.0;
+
+/// `value` as the nearest `f64`.
+///
+/// Exact up to `2^53` (8 PiB), far beyond any byte count, size or rate a
+/// download reaches; larger values are rounded to the nearest representable
+/// `f64`. Use it for speeds, ratios and display, never to carry a count that
+/// is converted back.
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "exact below 2^53, which byte counts and rates stay far below; above it the documented rounding is the intended result"
+)]
+pub fn approx_f64(value: u64) -> f64 {
+    value as f64
+}
+
+/// `value` as a `u64`, rounded toward zero; `None` when it is NaN, infinite,
+/// negative or `2^64` and above.
+///
+/// Round first (`value.round()`) when the nearest whole number is wanted.
+/// Every negative value is refused, even one above `-1` that would truncate to
+/// zero; `-0.0` is zero.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the value is checked to be finite, not negative and below 2^64 on the line before, so `as` only drops the fraction, which is the documented rounding"
+)]
+pub fn f64_to_u64(value: f64) -> Option<u64> {
+    // Also false for NaN, which compares false with everything.
+    let in_range = (0.0..TWO_POW_64).contains(&value);
+    in_range.then_some(value as u64)
+}
+
+/// `n` as an index into a slice of length `len`: `n` itself when it fits,
+/// otherwise `len`.
+pub(crate) fn clamp_to_len(n: u64, len: usize) -> usize {
+    usize::try_from(n).map_or(len, |n| n.min(len))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn approx_f64_is_exact_up_to_two_pow_53() {
+        let exact = 1u64 << 53;
+        assert_eq!(approx_f64(exact), 9_007_199_254_740_992.0);
+        assert_eq!(approx_f64(exact - 1), 9_007_199_254_740_991.0);
+        assert_eq!(approx_f64(0), 0.0);
+    }
+
+    #[test]
+    fn f64_to_u64_truncates_values_in_range() {
+        assert_eq!(f64_to_u64(0.0), Some(0));
+        assert_eq!(f64_to_u64(-0.0), Some(0));
+        assert_eq!(f64_to_u64(1.9), Some(1));
+        assert_eq!(f64_to_u64(1.5_f64.round()), Some(2));
+        // The largest f64 below 2^64.
+        let largest = 18_446_744_073_709_549_568.0;
+        assert_eq!(f64_to_u64(largest), Some(18_446_744_073_709_549_568));
+    }
+
+    #[test]
+    fn f64_to_u64_refuses_what_is_not_a_count() {
+        for value in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            -0.5,
+            -1.0,
+            TWO_POW_64,
+            1e30,
+        ] {
+            assert_eq!(f64_to_u64(value), None, "{value}");
+        }
+    }
+
+    #[test]
+    fn clamp_to_len_never_exceeds_the_length() {
+        assert_eq!(clamp_to_len(3, 10), 3);
+        assert_eq!(clamp_to_len(10, 10), 10);
+        assert_eq!(clamp_to_len(11, 10), 10);
+        assert_eq!(clamp_to_len(u64::MAX, 10), 10);
+    }
+}

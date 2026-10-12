@@ -1,8 +1,8 @@
 //! One connection's loop: take a range, stream it to disk, take the next.
 
 use std::fs::File;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::task::JoinHandle;
@@ -11,7 +11,8 @@ use tracing::{debug, info, warn};
 use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
-use crate::segment::{Assignment, ByteRange, SegmentTable, UNKNOWN_END};
+use crate::numeric::clamp_to_len;
+use crate::segment::{Assignment, ByteRange, SharedTable, UNKNOWN_END};
 use crate::storage;
 use crate::transport::{Body, Connection};
 
@@ -25,6 +26,13 @@ const REFUSALS_BEFORE_STEPPING_BACK: u32 = 2;
 
 /// The longest normal backoff; see [`backoff`].
 const MAX_BACKOFF: Duration = Duration::from_secs(10);
+
+/// The pause after the first failure; it doubles with each failure after it.
+const FIRST_BACKOFF: Duration = Duration::from_millis(500);
+
+/// Most times the backoff doubles, which keeps the shift small; [`MAX_BACKOFF`]
+/// caps it sooner anyway.
+const MAX_DOUBLINGS: u32 = 5;
 
 /// How a stretch of streaming ended.
 enum Ended {
@@ -57,7 +65,7 @@ pub(crate) async fn run(
     loop {
         let (assignment, response) = match first.take() {
             Some((assignment, response)) => (assignment, Some(response)),
-            None => match shared.table.lock().unwrap().acquire(id) {
+            None => match shared.table.lock().acquire(id) {
                 Some(assignment) => (assignment, None),
                 None => return Ok(()),
             },
@@ -80,14 +88,14 @@ pub(crate) async fn run(
         match result {
             // `run_assignment` deals with a protocol switch and the end of one
             // request itself.
-            Ok(Ended::Done) | Ok(Ended::SwitchedProtocol) | Ok(Ended::RequestDone) => continue,
+            Ok(Ended::Done | Ended::SwitchedProtocol | Ended::RequestDone) => {}
             Ok(Ended::SteppedBack) => return Ok(()),
-            Ok(Ended::Cancelled) | Ok(Ended::Eof) => {
-                shared.table.lock().unwrap().release(assignment.index);
+            Ok(Ended::Cancelled | Ended::Eof) => {
+                shared.table.lock().release(assignment.index);
                 return Ok(());
             }
             Err(e) => {
-                shared.table.lock().unwrap().release(assignment.index);
+                shared.table.lock().release(assignment.index);
                 return Err(e);
             }
         }
@@ -115,7 +123,7 @@ async fn run_assignment(
         if shared.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
         }
-        let (from, to) = shared.table.lock().unwrap().position(index);
+        let (from, to) = shared.table.lock().position(index);
         if from >= to {
             return Ok(Ended::Done);
         }
@@ -134,14 +142,14 @@ async fn run_assignment(
         };
 
         match attempt.await {
-            Ok(Ended::SwitchedProtocol) => continue,
+            Ok(Ended::SwitchedProtocol) => {}
             // Progress: failures before it no longer count.
             Ok(Ended::RequestDone) => attempts = Attempts::default(),
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.
             Err(_) if shared.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) => {
-                let (now, _) = shared.table.lock().unwrap().position(index);
+                let (now, _) = shared.table.lock().position(index);
                 let next = attempts.after_failure(
                     &f.error,
                     f.retry_after,
@@ -158,8 +166,8 @@ async fn run_assignment(
                 };
                 warn!(error = %f.error, retry_in = ?delay, "connection failed, retrying");
                 tokio::select! {
-                    _ = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
-                    _ = tokio::time::sleep(delay) => {}
+                    () = shared.cancel.cancelled() => return Ok(Ended::Cancelled),
+                    () = tokio::time::sleep(delay) => {}
                 }
             }
         }
@@ -252,7 +260,7 @@ async fn stream(
     let outcome: Result<Ended> = loop {
         let next = tokio::select! {
             biased;
-            _ = shared.cancel.cancelled() => break Ok(Ended::Cancelled),
+            () = shared.cancel.cancelled() => break Ok(Ended::Cancelled),
             next = tokio::time::timeout(stall, body.next()) => next,
         };
         let mut data = match next {
@@ -269,17 +277,18 @@ async fn stream(
         };
 
         if skip > 0 {
-            let n = skip.min(data.len() as u64);
-            data = &data[n as usize..];
-            skip -= n;
+            let n = clamp_to_len(skip, data.len());
+            data = &data[n..];
+            skip -= n as u64;
         }
         if data.is_empty() {
             continue;
         }
 
-        let (allowed, done) = shared.table.lock().unwrap().claim(index, data.len() as u64);
+        let (allowed, done) = shared.table.lock().claim(index, data.len() as u64);
         if allowed > 0 {
-            if let Err(e) = writer.push(&data[..allowed as usize], &shared.table).await {
+            let allowed_len = clamp_to_len(allowed, data.len());
+            if let Err(e) = writer.push(&data[..allowed_len], &shared.table).await {
                 break Err(e);
             }
             shared.progress.add(allowed);
@@ -304,7 +313,7 @@ async fn stream(
     };
     match outcome? {
         Ended::Eof => {
-            let mut table = shared.table.lock().unwrap();
+            let mut table = shared.table.lock();
             let (at, end) = table.position(index);
             if end == UNKNOWN_END {
                 table.close_unknown(index);
@@ -327,9 +336,8 @@ async fn stream(
 fn is_refusal(error: &Error) -> bool {
     match error {
         Error::HttpStatus { status, .. } => matches!(status, 429 | 503),
+        // No answer in time (`Stalled`) is not a refusal either.
         Error::Network(e) => !e.is_timeout(),
-        // No answer in time is not a refusal either.
-        Error::Stalled(_) => false,
         Error::PrematureEof { .. } => true,
         // 421: too many connections. 530 on a later connection: this login
         // worked on the first one, so the server limits sessions. 425: the
@@ -344,7 +352,7 @@ fn is_refusal(error: &Error) -> bool {
 /// will come back for more work and pick this segment up). Decided under the
 /// table lock, so the segment can never be left without a connection to take it.
 fn step_back(shared: &Shared, index: usize) -> bool {
-    let mut table = shared.table.lock().unwrap();
+    let mut table = shared.table.lock();
     let others_working = shared.receiving.load(Ordering::SeqCst) > 0 && table.others_active(index);
     if others_working {
         table.release(index);
@@ -381,18 +389,18 @@ pub(crate) fn retry_delay(failures: u32, retry_after: Option<Duration>) -> Durat
 /// 0.5 s, 1 s, 2 s ... capped at 10 s, with a little jitter so workers that
 /// failed together do not retry in lockstep.
 pub(crate) fn backoff(failures: u32) -> Duration {
-    let base = 500u64
-        .saturating_mul(1 << failures.saturating_sub(1).min(5))
-        .min(MAX_BACKOFF.as_millis() as u64);
-    Duration::from_millis(base) + jitter()
+    let doublings = failures.saturating_sub(1).min(MAX_DOUBLINGS);
+    FIRST_BACKOFF
+        .saturating_mul(1 << doublings)
+        .min(MAX_BACKOFF)
+        + jitter()
 }
 
 /// 0 to 249 ms.
 fn jitter() -> Duration {
     let ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| u64::from(d.subsec_millis()) % 250)
-        .unwrap_or(0);
+        .map_or(0, |d| u64::from(d.subsec_millis()) % 250);
     Duration::from_millis(ms)
 }
 
@@ -454,7 +462,7 @@ impl Writer {
     }
 
     /// Takes `data` to write. Once a write has failed, data is dropped (and counted in [`Writer::take_dropped`]) rather than buffered, since nothing more of this segment may be written.
-    async fn push(&mut self, mut data: &[u8], table: &Mutex<SegmentTable>) -> Result<()> {
+    async fn push(&mut self, mut data: &[u8], table: &SharedTable) -> Result<()> {
         if self.failed {
             self.dropped += data.len() as u64;
             return Ok(());
@@ -472,7 +480,7 @@ impl Writer {
     }
 
     /// Starts writing the current buffer; waits for the previous write first. Does nothing once a write has failed.
-    async fn flush(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
+    async fn flush(&mut self, table: &SharedTable) -> Result<()> {
         self.wait(table).await?;
         if self.failed || self.buf.is_empty() {
             return Ok(());
@@ -501,21 +509,18 @@ impl Writer {
     }
 
     /// Waits for the write in flight and records it. On failure the writer drops what it has buffered and stops writing this segment.
-    async fn wait(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
+    async fn wait(&mut self, table: &SharedTable) -> Result<()> {
         let Some(handle) = self.in_flight.take() else {
             return Ok(());
         };
         match handle
             .await
-            .map_err(Error::task)
+            .map_err(|e| Error::task(&e))
             .and_then(|r| r.map_err(Error::from))
         {
             Ok(written) => {
                 self.unwritten -= written.range.end - written.range.start;
-                table
-                    .lock()
-                    .unwrap()
-                    .mark_flushed(written.index, written.range);
+                table.lock().mark_flushed(written.index, written.range);
                 self.spare = Some(written.buf);
                 Ok(())
             }
@@ -534,7 +539,7 @@ impl Writer {
     }
 
     /// Writes everything buffered and waits until it is on disk.
-    async fn finish(&mut self, table: &Mutex<SegmentTable>) -> Result<()> {
+    async fn finish(&mut self, table: &SharedTable) -> Result<()> {
         self.flush(table).await?;
         self.wait(table).await
     }
@@ -543,6 +548,7 @@ impl Writer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::segment::SegmentTable;
 
     /// A write failed while the next buffer was already full. Writing that buffer on the way out used to land it above the hole and count the hole as flushed, so a resumed or finished download could keep a range of zeros.
     #[tokio::test]
@@ -550,9 +556,9 @@ mod tests {
         const CAPACITY: usize = 4;
         let path = std::env::temp_dir().join(format!("wc-writer-{}", std::process::id()));
         let file = Arc::new(File::create(&path).unwrap());
-        let table = Mutex::new(SegmentTable::new(Some(16), 1));
-        table.lock().unwrap().acquire(0).unwrap();
-        table.lock().unwrap().claim(0, 8);
+        let table = SharedTable::new(SegmentTable::new(Some(16), 1));
+        table.lock().acquire(0).unwrap();
+        table.lock().claim(0, 8);
 
         let mut writer = Writer::new(Arc::clone(&file), CAPACITY);
         writer.start(0, 0);
@@ -578,7 +584,7 @@ mod tests {
         writer.push(b"CCCCCCCC", &table).await.unwrap();
         assert_eq!(writer.take_dropped(), 8);
 
-        assert_eq!(table.lock().unwrap().remaining()[0].start, 0);
+        assert_eq!(table.lock().remaining()[0].start, 0);
         assert_eq!(
             file.metadata().unwrap().len(),
             0,

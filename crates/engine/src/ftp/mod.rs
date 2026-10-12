@@ -123,7 +123,7 @@ impl Target {
         let decode = |text: &str| {
             percent_decode_str(text)
                 .decode_utf8()
-                .map(|s| s.into_owned())
+                .map(std::borrow::Cow::into_owned)
                 .map_err(|_| invalid("contains characters that are not valid UTF-8"))
         };
         let mut path = url
@@ -280,7 +280,6 @@ impl Target {
         }
         match reply.code {
             230 | 202 => {}
-            400..500 => return Err(self.reply_failure(&reply)),
             530 if first => {
                 return Err(Error::FtpLoginRefused {
                     host: self.host_name(),
@@ -293,8 +292,8 @@ impl Target {
                 }
                 .into());
             }
-            500..600 => return Err(self.reply_failure(&reply)),
-            // 332 asks for an account (ACCT), which almost no server still uses.
+            // Every other answer refuses the login: 4xx, 5xx, and 332, which
+            // asks for an account (ACCT) that almost no server still uses.
             _ => return Err(self.reply_failure(&reply)),
         }
         if self.tls.is_some() {
@@ -559,7 +558,7 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
     };
     tokio::select! {
         biased;
-        _ = cancel.cancelled() => Err(Error::Cancelled.into()),
+        () = cancel.cancelled() => Err(Error::Cancelled.into()),
         probed = work => probed,
     }
 }
@@ -589,12 +588,11 @@ impl Connection {
     /// has no control connection yet.
     pub async fn open(&mut self, shared: &Shared, from: u64) -> Result<Transfer, Failure> {
         let work = async {
-            let control = match self.control.take() {
-                Some(control) => control,
-                None => {
-                    self.tls = self.server.target.tls.as_ref().map(Tls::for_new_session);
-                    self.server.connect(self.tls.as_ref()).await?
-                }
+            let control = if let Some(control) = self.control.take() {
+                control
+            } else {
+                self.tls = self.server.target.tls.as_ref().map(Tls::for_new_session);
+                self.server.connect(self.tls.as_ref()).await?
             };
             let buffer = self.buffer.take().unwrap_or_else(|| vec![0; READ_BUFFER]);
             // Without range support, every attempt starts at 0 and the worker
@@ -606,7 +604,7 @@ impl Connection {
         };
         tokio::select! {
             biased;
-            _ = shared.cancel.cancelled() => Err(Error::Cancelled.into()),
+            () = shared.cancel.cancelled() => Err(Error::Cancelled.into()),
             started = work => started,
         }
     }
@@ -636,7 +634,7 @@ impl Connection {
                 // A pause never waits for the server's answer.
                 let reply = tokio::select! {
                     biased;
-                    _ = cancel.cancelled() => return,
+                    () = cancel.cancelled() => return,
                     reply = tokio::time::timeout(wait, control.reply()) => reply,
                 };
                 if let Ok(Ok(reply)) = reply

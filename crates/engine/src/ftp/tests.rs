@@ -100,7 +100,9 @@ fn urls_that_cannot_be_sent_safely_are_refused() {
 const MIB: usize = 1024 * 1024;
 
 fn data(len: usize) -> Vec<u8> {
-    (0..len).map(|i| (i * 7 + i / 251) as u8).collect()
+    (0..len)
+        .map(|i| (i * 7 + i / 251).to_le_bytes()[0])
+        .collect()
 }
 
 async fn secure_download(
@@ -114,7 +116,7 @@ async fn secure_download(
         server.port
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    let mut request = DownloadRequest::new(url(&server.url(scheme, "alice:pw@", "file.bin")), &dir);
+    let mut request = DownloadRequest::new(server.url(scheme, "alice:pw@", "file.bin"), &dir);
     request.options.connections = 4;
     request.options.max_retries = 0;
     let clients = Clients::with_roots(&request.options, roots);
@@ -208,7 +210,7 @@ async fn implicit_tls_download_is_byte_identical() {
         "parallel over TLS"
     );
     let handshakes = stats.data_handshakes.lock().unwrap().clone();
-    assert!(!handshakes.is_empty());
+    assert_ne!(handshakes, [] as [rustls::HandshakeKind; 0]);
     assert!(
         handshakes
             .iter()
