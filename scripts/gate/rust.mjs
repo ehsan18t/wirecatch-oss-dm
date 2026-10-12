@@ -20,7 +20,7 @@ const TAURI_CONFIG = 'apps/desktop/src-tauri/tauri.conf.json';
 /** Folders the published engine must not ship: its tests and examples use the unpublished test-support crate, so they cannot build from the package. */
 const UNPACKAGED_ENGINE_FOLDERS = ['tests/', 'examples/'];
 
-const DENY_WARNINGS = ['--', '-D', 'warnings'];
+export const DENY_WARNINGS = ['--', '-D', 'warnings'];
 
 function requireCargoTool(tool) {
   const subcommand = tool.replace(/^cargo-/, '');
