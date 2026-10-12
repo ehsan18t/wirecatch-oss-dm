@@ -6,12 +6,9 @@
 // (a new row, a status or queue change, a removal, a reorder) bumps `version`, and only then is
 // the filtered list rebuilt.
 
-/* eslint-disable svelte/prefer-svelte-reactivity --
-   The plain Map, Set and array here are deliberate: reactivity comes from `version` and from each
-   row being its own reactive object, which is what keeps updates proportional to what changed. */
-
 import type { DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
 import { track } from './reactivity';
+import { QueueDeltas, RowIndex } from './row-index';
 import { LIST_FIELDS } from './view';
 
 function reactive<T extends object>(value: T): T {
@@ -71,8 +68,7 @@ function update<K extends RowField>(
 }
 
 export class DownloadStore {
-  readonly #rows = new Map<DownloadId, DownloadSummary>();
-  #order: DownloadId[] = [];
+  readonly #rows = new RowIndex();
 
   /** Bumped when rows are added, removed or reordered, or a field used for filtering changes. */
   version = $state(0);
@@ -96,19 +92,17 @@ export class DownloadStore {
   /** All ids in queue order. Reading this subscribes to `version`. */
   get order(): readonly DownloadId[] {
     track(this.version);
-    return this.#order;
+    return this.#rows.order;
   }
 
   /** Replaces everything, for the first load. */
   load(list: readonly DownloadSummary[]): void {
     this.#rows.clear();
-    this.#order = [];
     let total = 0;
     const perQueue: Record<QueueId, number> = {};
     for (const s of list) {
-      if (this.#rows.has(s.id)) continue;
-      this.#rows.set(s.id, reactive({ ...s }));
-      this.#order.push(s.id);
+      if (this.#rows.get(s.id)) continue;
+      this.#rows.add(reactive({ ...s }));
       total += s.speed;
       perQueue[s.queue] = (perQueue[s.queue] ?? 0) + s.speed;
     }
@@ -121,62 +115,46 @@ export class DownloadStore {
   apply(changed: readonly DownloadSummary[]): void {
     let structural = false;
     let speedDelta = 0;
-    const queueDelta = new Map<QueueId, number>();
-    const addQueue = (q: QueueId, d: number) => {
-      if (d !== 0) queueDelta.set(q, (queueDelta.get(q) ?? 0) + d);
-    };
+    const queueDelta = new QueueDeltas();
     for (const s of changed) {
       const row = this.#rows.get(s.id);
       if (!row) {
-        this.#rows.set(s.id, reactive({ ...s }));
-        this.#order.push(s.id);
+        this.#rows.add(reactive({ ...s }));
         speedDelta += s.speed;
-        addQueue(s.queue, s.speed);
+        queueDelta.add(s.queue, s.speed);
         structural = true;
         continue;
       }
       if (LIST_FIELDS.some((field) => !same(row[field], s[field]))) structural = true;
       speedDelta += s.speed - row.speed;
       if (row.queue !== s.queue) {
-        addQueue(row.queue, -row.speed);
-        addQueue(s.queue, s.speed);
+        queueDelta.add(row.queue, -row.speed);
+        queueDelta.add(s.queue, s.speed);
       } else {
-        addQueue(s.queue, s.speed - row.speed);
+        queueDelta.add(s.queue, s.speed - row.speed);
       }
       for (const field of FIELDS) update(row, s, field);
     }
     if (speedDelta !== 0) this.totalSpeed += speedDelta;
-    for (const [q, d] of queueDelta) this.queueSpeed[q] = (this.queueSpeed[q] ?? 0) + d;
+    for (const [q, d] of queueDelta.entries()) this.queueSpeed[q] = (this.queueSpeed[q] ?? 0) + d;
     this.lastBatchTouched = changed.length;
     if (structural) this.version += 1;
   }
 
   /** Applies a `downloads_removed` batch. */
   remove(ids: readonly DownloadId[]): void {
-    const gone = new Set<DownloadId>();
-    for (const id of ids) {
-      const row = this.#rows.get(id);
-      if (!row) continue;
+    const removed = this.#rows.remove(ids);
+    if (removed.length === 0) return;
+    for (const row of removed) {
       this.totalSpeed -= row.speed;
       this.queueSpeed[row.queue] = (this.queueSpeed[row.queue] ?? 0) - row.speed;
-      this.#rows.delete(id);
-      gone.add(id);
     }
-    if (gone.size === 0) return;
-    this.#order = this.#order.filter((id) => !gone.has(id));
     this.version += 1;
   }
 
   /** Puts the given ids of one queue in this order, the way the core does after `reorder`. */
   reorder(queue: QueueId, idsInOrder: readonly DownloadId[]): void {
-    const inQueue = this.#order.filter((id) => this.#rows.get(id)?.queue === queue);
-    const wanted = idsInOrder.filter((id) => inQueue.includes(id));
-    const wantedSet = new Set(wanted);
-    const next = [...wanted, ...inQueue.filter((id) => !wantedSet.has(id))];
-    let i = 0;
-    this.#order = this.#order.map((id) =>
-      this.#rows.get(id)?.queue === queue ? (next[i++] ?? id) : id,
-    );
+    this.#rows.reorder(queue, idsInOrder);
     this.version += 1;
   }
 
