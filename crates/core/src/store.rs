@@ -22,8 +22,8 @@ use crate::error::{CoreError, Result};
 use crate::media::StoredMedia;
 use crate::owner_only;
 
-/// File name of the database inside the data folder.
-pub const DATABASE_FILE: &str = "wirecatch.db";
+/// File name of the database inside the data folder (`config/product.toml`).
+pub use wirecatch_product::DATABASE_FILE;
 
 /// Schema changes, applied in order. Entry `n` moves the schema to version `n + 1`.
 /// Never edit a released entry; append a new one.

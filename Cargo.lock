@@ -7502,6 +7502,7 @@ dependencies = [
  "tracing-subscriber",
  "windows-sys 0.59.0",
  "wirecatch-engine",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-streams",
  "wirecatch-test-support",
