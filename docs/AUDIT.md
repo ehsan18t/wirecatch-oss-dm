@@ -129,7 +129,8 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 | W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
 | W1 | done and independently reviewed: all 12 fixed, each with a test shown to fail without its fix, and the review's 29 defects (2 high, 7 medium, 20 low) fixed the same way. Also done alongside: per-machine install (D25). What is left of the review moved to later workstreams, listed below |
 | W14 | done (2026-10-12): every crate and package on the lint rules with the eleven exceptions listed above, reviewed as a whole by four reviewers whose findings were fixed and verified, full gate passing. What is left moved to later workstreams, listed below |
-| W2 to W13 | not started |
+| W2 | done (2026-10-12) and independently reviewed in three rounds, whose 36 defects were fixed with tests: `config/product.toml` is the only place product identity is written, generated into `wirecatch-product`, `@wirecatch/product` and every manifest (D29); the `product` check fails on a stale generated file and the `publish` group fails while a placeholder is left. XC-14 (engine part) moved to W7 and IPB-16 to W6. What is left moved to later workstreams, listed below |
+| W3 to W13 | not started |
 | W15 | planned last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
 Parts of W0 findings carried into later workstreams:
