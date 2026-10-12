@@ -3,11 +3,12 @@
   // the sample data, so each one floats inside the page, in the same cascade and with the same
   // rules as the desktop's. Loaded only with the sample backend.
   import type { DownloadId } from '@wirecatch/protocol';
-  import type { Backend } from '$lib/backend';
-  import type { OpenWindow, WindowRegistry } from './registry';
+  import type { OpenDownloadWindow } from './download-window.svelte';
+  import type { OpenWindow, WindowRegistry } from '$lib/sample-windows';
   import MockWindow from './MockWindow.svelte';
 
-  let { backend, registry }: { backend: Backend; registry: WindowRegistry } = $props();
+  let { registry, openWindow }: { registry: WindowRegistry; openWindow: OpenDownloadWindow } =
+    $props();
 
   let windows = $state<readonly OpenWindow[]>([]);
   let front = $state<string | null>(null);
@@ -22,7 +23,7 @@
 
 {#each windows as window (window.label)}
   <MockWindow
-    {backend}
+    {openWindow}
     {window}
     front={front === window.label}
     onfocus={() => registry.focus(window.label)}

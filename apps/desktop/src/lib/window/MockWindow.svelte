@@ -3,24 +3,23 @@
   import X from '@lucide/svelte/icons/x';
   import { DOWNLOAD_WINDOW_CASCADE_STEP, type DownloadId } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
-  import type { Backend } from '$lib/backend';
   import IconButton from '$lib/components/IconButton.svelte';
   import DownloadWindow from './DownloadWindow.svelte';
-  import { DownloadWindowState } from './download-window.svelte';
-  import type { OpenWindow } from './registry';
+  import type { OpenDownloadWindow } from './download-window.svelte';
+  import type { OpenWindow } from '$lib/sample-windows';
 
   /** Where the first sample window sits, down and right of the page's top left corner. */
   const CASCADE_ORIGIN = 48;
 
   let {
-    backend,
+    openWindow,
     window: open,
     front,
     onfocus,
     onclose,
     onbecame,
   }: {
-    backend: Backend;
+    openWindow: OpenDownloadWindow;
     window: OpenWindow;
     front: boolean;
     onfocus: () => void;
@@ -33,11 +32,10 @@
   // Made once for the window's life; what it shows comes from the registry only at the start.
   const win = (() => {
     const shows = open.shows;
-    return new DownloadWindowState(
-      backend,
-      shows.kind === 'question' ? { question: shows.id } : { download: shows.id },
-      { close: () => onclose(), becameDownload: (id) => onbecame(id) },
-    );
+    return openWindow(shows.kind === 'question' ? { question: shows.id } : { download: shows.id }, {
+      close: () => onclose(),
+      becameDownload: (id) => onbecame(id),
+    });
   })();
 
   onMount(() => {

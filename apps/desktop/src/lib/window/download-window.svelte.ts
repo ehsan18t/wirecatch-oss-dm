@@ -36,6 +36,9 @@ export interface WindowHost {
 /** What the window was opened for. */
 export type Target = { question: number } | { download: DownloadId };
 
+/** Makes a download window's state over a backend the caller does not hand out. */
+export type OpenDownloadWindow = (target: Target, host: WindowHost) => DownloadWindowState;
+
 /** The answer in a question window's form. */
 export interface Answer {
   fileName: string | null;

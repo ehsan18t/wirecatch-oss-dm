@@ -18,7 +18,7 @@ import type {
   QueueId,
   UiEvent,
 } from '@wirecatch/protocol';
-import type { WindowRegistry } from '../window/registry';
+import type { WindowRegistry } from '../sample-windows';
 
 export type Unsubscribe = () => void;
 

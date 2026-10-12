@@ -17,7 +17,7 @@ import type {
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
-import type { WindowRegistry } from '../../window/registry';
+import type { WindowRegistry } from '../../sample-windows';
 import { BackendError, type MediaReading } from '../types';
 import {
   categoryFor,

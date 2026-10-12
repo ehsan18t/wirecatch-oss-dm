@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { MAX_QUESTION_WINDOWS } from '@wirecatch/protocol';
-import { WindowRegistry } from './registry';
+import { WindowRegistry } from './sample-windows';
 
 describe('WindowRegistry', () => {
   it('opens at most five question windows; the rest wait their turn', () => {

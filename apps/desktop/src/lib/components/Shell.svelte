@@ -129,7 +129,7 @@
   {@const sample = app.sample}
   <!-- The sample app's download windows float in the page; the real app opens real windows. -->
   {#await import('$lib/window/MockWindows.svelte') then { default: MockWindows }}
-    <MockWindows backend={sample.backend} registry={sample.data.windows} />
+    <MockWindows registry={sample.windows} openWindow={app.openSampleWindow} />
   {/await}
 {/if}
 <CommandPalette />

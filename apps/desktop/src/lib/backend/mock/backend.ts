@@ -15,7 +15,7 @@ import type {
 } from '@wirecatch/protocol';
 import { isProgramName } from '../../filetypes';
 import { folderOf } from '../../format';
-import { WindowRegistry } from '../../window/registry';
+import { WindowRegistry } from '../../sample-windows';
 import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';

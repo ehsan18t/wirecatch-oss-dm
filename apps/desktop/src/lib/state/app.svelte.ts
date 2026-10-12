@@ -9,6 +9,7 @@ import { getContext, setContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
+import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { Addons } from './addons.svelte';
 import { Clock } from './clock.svelte';
 import { Connection } from './connection';
@@ -135,13 +136,18 @@ export class AppState {
     return this.#connection.backend;
   }
 
+  /**
+   * The state of one of the sample page's download windows (D23). The page shows them inside
+   * itself, so it needs them made over the backend that only this state holds.
+   */
+  readonly openSampleWindow: OpenDownloadWindow = (target, host) =>
+    new DownloadWindowState(this.#backend, target, host);
+
   /** The sample backend's extras (its palette actions and download windows); null on the engine. */
-  get sample(): { backend: Backend; data: SampleData } | null {
+  get sample(): SampleData | null {
     // Read first so the shell follows it: the backend itself is not reactive.
     if (!this.sampleData) return null;
-    const backend = this.#connection.loaded;
-    const data = backend?.sampleData;
-    return backend && data ? { backend, data } : null;
+    return this.#connection.loaded?.sampleData ?? null;
   }
 
   // ---- Derived views ----
