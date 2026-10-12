@@ -7,8 +7,8 @@ import { capture, cargo, cargoMetadata, GateError, options, ROOT, run } from './
 /** Features every workspace-wide cargo command needs. `test-overrides` exists for the bridge's end-to-end tests only and is never enabled in a build. */
 export const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
 
-/** Cargo tools some checks run, with the versions CI installs (`--install-tools`). */
-const TOOLS = {
+/** Cargo tools some checks run, at the versions both `--install-tools` (built from source) and CI (prebuilt, from `--tool-specs`) install. */
+export const TOOLS = {
   'cargo-deny': '0.19.0',
   'cargo-machete': '0.9.2',
 };
@@ -36,6 +36,13 @@ export function installTools() {
   for (const [tool, version] of Object.entries(TOOLS)) {
     cargo('install', tool, '--version', version, '--locked');
   }
+}
+
+/** The tools as `name@version`, comma separated: the `tool` input of the installer CI uses (taiki-e/install-action). */
+export function toolSpecs(tools = TOOLS) {
+  return Object.entries(tools)
+    .map(([tool, version]) => `${tool}@${version}`)
+    .join(',');
 }
 
 /** Tauri embeds the built frontend at compile time. When it has not been built, a placeholder page lets clippy and the tests compile, and says what to do if someone runs that build. */
@@ -73,13 +80,16 @@ function lintPolicy() {
   if (problems.length > 0) throw new GateError(problems.join('\n'));
 }
 
+function desktopExclusion({ desktop }) {
+  return desktop ? [] : ['--exclude', DESKTOP_CRATE];
+}
+
 function clippy() {
   if (options.desktop) ensureDesktopFrontend();
-  const exclusion = options.desktop ? [] : ['--exclude', DESKTOP_CRATE];
   cargo(
     'clippy',
     '--workspace',
-    ...exclusion,
+    ...desktopExclusion(options),
     '--all-targets',
     '--locked',
     ...TEST_FEATURES,
@@ -87,29 +97,26 @@ function clippy() {
   );
   // The bridge as it ships: without the test-only feature, code behind `cfg(not(feature = "test-overrides"))` is linted too.
   cargo('clippy', '-p', BRIDGE_CRATE, '--all-targets', '--locked', ...DENY_WARNINGS);
+  // The desktop crate alone, its tests included, so a feature it needs but only another crate turns on cannot hide behind the workspace build.
+  if (options.desktop)
+    cargo('clippy', '-p', DESKTOP_CRATE, '--all-targets', '--locked', ...DENY_WARNINGS);
 }
 
-function failFast() {
-  return options.failFast ? [] : ['--no-fail-fast'];
+/** The arguments of the one `cargo test` run: every crate, the desktop crate included, in one feature resolution, so the dependencies are built once. */
+export function testArguments({ desktop, failFast }) {
+  return [
+    'test',
+    '--workspace',
+    ...desktopExclusion({ desktop }),
+    '--locked',
+    ...(failFast ? [] : ['--no-fail-fast']),
+    ...TEST_FEATURES,
+  ];
 }
 
 function test() {
-  cargo(
-    'test',
-    '--workspace',
-    '--exclude',
-    DESKTOP_CRATE,
-    '--locked',
-    ...failFast(),
-    ...TEST_FEATURES,
-  );
-}
-
-/** The desktop crate is tested on its own: its Tauri build script adds link paths that break other crates' doctests when everything links together. */
-function testDesktop() {
-  if (!options.desktop) return;
-  ensureDesktopFrontend();
-  cargo('test', '-p', DESKTOP_CRATE, '--locked', ...failFast());
+  if (options.desktop) ensureDesktopFrontend();
+  cargo(...testArguments(options));
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */
@@ -168,7 +175,6 @@ export const RUST_CHECKS = {
   test,
   // The engine with its off-by-default http3 feature, which no other check compiles into a test.
   'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
-  'test-desktop': testDesktop,
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () =>
     run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], {

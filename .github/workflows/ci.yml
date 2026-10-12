@@ -20,6 +20,10 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   NODE_VERSION: "22"
+  # The first part of every Rust cache key. Raise it when a build setting changes what the caches hold so much that restoring an older one costs more than it saves.
+  CACHE_PREFIX: v1-rust
+  # Free disk below which a Rust job warns: the dependency tree grows, and a link that runs out of disk fails with a bus error rather than a clear message.
+  DISK_WARNING_GIB: "4"
 
 jobs:
   rust:
@@ -33,21 +37,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux. Windows runners already have WebView2.
-      - name: Install Tauri system packages
+      # The Ubuntu image comes with toolchains this job never uses (Android, .NET, Haskell, CodeQL); without removing them the Rust build does not fit on the runner's disk.
+      - name: Free runner disk
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          time sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux; Windows runners already have WebView2. The streams crate's join tests need a real ffmpeg; they skip without one, so Linux CI is where the real stream-copy join is proven.
+      - name: Install system packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential file libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev
-
-      # The streams crate's join tests need a real ffmpeg; they skip without one, so Linux CI is where the real stream-copy join is proven.
-      - name: Install ffmpeg
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+            libayatana-appindicator3-dev librsvg2-dev ffmpeg
           echo "WIRECATCH_TEST_FFMPEG=$(command -v ffmpeg)" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
@@ -59,8 +64,12 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
+      # Saved on main only, also when a check fails, so one failing test does not throw away the dependency builds. Pull requests restore main's caches.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: ${{ env.CACHE_PREFIX }}
+          cache-on-failure: true
+          cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Gate (Rust)
@@ -70,6 +79,16 @@ jobs:
       - name: Gate (engine release checks)
         if: runner.os == 'Linux'
         run: node scripts/gate.mjs release
+
+      - name: Disk margin
+        if: always()
+        shell: bash
+        run: |
+          df -h .
+          free_gib=$(df -k . | awk 'NR == 2 { print int($4 / 1048576) }')
+          if [ "$free_gib" -lt "$DISK_WARNING_GIB" ]; then
+            echo "::warning::Only ${free_gib} GiB of disk left after the Rust checks (warning below ${DISK_WARNING_GIB} GiB). Free more of the runner or shrink the build before it runs out."
+          fi
 
   supply-chain:
     name: Supply chain
@@ -81,9 +100,12 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
-      # Also keeps the installed tools between runs.
+      # The crate registry cargo-deny reads the dependency graph from; nothing is built here.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: ${{ env.CACHE_PREFIX }}
+          cache-on-failure: true
+          cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
@@ -93,9 +115,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # cargo-deny and cargo-machete, at the versions in scripts/gate/rust.mjs, built from their own lockfiles.
-      - name: Install gate tools
-        run: node scripts/gate.mjs --install-tools
+      # cargo-deny and cargo-machete at the versions in scripts/gate/rust.mjs, as prebuilt release binaries whose checksums the action verifies (D33).
+      - name: Read the gate tool versions
+        id: tools
+        run: echo "specs=$(node scripts/gate.mjs --tool-specs)" >> "$GITHUB_OUTPUT"
+
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: ${{ steps.tools.outputs.specs }}
+          fallback: none
 
       - name: Gate (supply chain)
         run: node scripts/gate.mjs supply-chain
@@ -120,6 +148,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: ${{ env.CACHE_PREFIX }}
+          cache-on-failure: true
+          cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
@@ -133,8 +164,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Gate (JavaScript)
+        run: node scripts/gate.mjs js
+
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main.
       - name: Choose the commits to check
+        if: runner.os == 'Linux'
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
@@ -151,5 +186,7 @@ jobs:
           fi
           echo "GATE_COMMIT_RANGE=$range" >> "$GITHUB_ENV"
 
-      - name: Gate (JavaScript and repository rules)
-        run: node scripts/gate.mjs js repo
+      # The repository rules read files, manifests and commits, and answer the same on every system, so they run once.
+      - name: Gate (repository rules)
+        if: runner.os == 'Linux'
+        run: node scripts/gate.mjs repo

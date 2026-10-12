@@ -58,6 +58,13 @@ undocumented_unsafe_blocks = "warn"
 unimplemented = "warn"
 unwrap_used = "warn"
 
+# Debug and test builds keep file and line for this workspace's code, so backtraces and panics still point at the line, and no debug info for dependencies (D33). For a debugger session, set CARGO_PROFILE_DEV_DEBUG=full.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

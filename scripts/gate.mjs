@@ -6,6 +6,7 @@
 //   node scripts/gate.mjs publish          what a release needs on top of DEFAULT
 //   node scripts/gate.mjs commit-msg FILE  check one commit message (the commit-msg hook)
 //   node scripts/gate.mjs --install-tools  install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
+//   node scripts/gate.mjs --tool-specs     print those tools as name@version, for CI's prebuilt installer
 //   node scripts/gate.mjs --list           list checks and groups
 //
 // Options, before or after the names:
@@ -19,7 +20,7 @@ import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
 import { JS_CHECKS } from './gate/javascript.mjs';
 import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
-import { DESKTOP_CRATE, installTools, RUST_CHECKS } from './gate/rust.mjs';
+import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
 import { TAURI_CHECKS } from './gate/tauri.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
@@ -52,7 +53,6 @@ const GROUPS = {
     'clippy',
     'clippy-linux',
     'test',
-    'test-desktop',
     'clippy-http3',
     'test-http3',
     'engine-docs',
@@ -87,6 +87,7 @@ function list() {
 const COMMANDS = {
   '--list': list,
   '--install-tools': installTools,
+  '--tool-specs': () => console.log(toolSpecs()),
   'commit-msg': commitMessageFile,
 };
 
