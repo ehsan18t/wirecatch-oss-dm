@@ -123,7 +123,8 @@ pub fn needs_move(old: &Path, new: &Path, old_exists: bool, new_exists: bool) ->
 }
 
 /// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive,
-/// otherwise a copy and then deleting the old folder. Returns the folder to use and what happened.
+/// otherwise [`copy_then_delete`], which never leaves a partial copy at `new`. Returns the folder
+/// to use and what happened.
 /// Blocks on the disk.
 #[must_use]
 pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
@@ -144,19 +145,29 @@ pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
     }
 }
 
-/// Copies the folder `from` to `to` (which must not exist), then deletes `from`. A copy that fails
-/// halfway is removed again, leaving `from` as it was. Blocks on the disk.
+/// Copies the folder `from` to `to` (which must not exist), then deletes `from`. The copy is made
+/// in a staging folder next to `to` and renamed to `to` only once complete, so `to` never holds a
+/// partial copy, even when the app is killed halfway; the next move removes such a leftover and
+/// starts over. `from` stays as it was until the copy is in place. Blocks on the disk.
 ///
 /// # Errors
 ///
-/// `to` exists already, or a folder or file cannot be read, made or copied. A failure to
-/// delete `from` afterwards is only logged: everything is in `to` by then.
+/// `to` exists already, a leftover staging folder cannot be removed, or a folder or file cannot
+/// be read, made, copied or renamed. A failure to delete `from` afterwards is only logged:
+/// everything is in `to` by then.
 pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
-    if let Err(e) = copy_dir(from, to) {
-        if let Err(cleanup) = std::fs::remove_dir_all(to) {
-            // Left behind, the half copy is taken for the moved folder on the next start, since
-            // `needs_move` sees that `to` exists.
-            tracing::error!(folder = %to.display(), error = %cleanup, "could not remove a half-made copy of the data folder; delete it before starting Wirecatch again");
+    if to.exists() {
+        return Err(std::io::ErrorKind::AlreadyExists.into());
+    }
+    let staging = staging_for(to);
+    match std::fs::remove_dir_all(&staging) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    if let Err(e) = copy_dir(from, &staging).and_then(|()| std::fs::rename(&staging, to)) {
+        if let Err(cleanup) = std::fs::remove_dir_all(&staging) {
+            tracing::warn!(folder = %staging.display(), error = %cleanup, "could not remove a copy of the data folder that was not put in place; the next move removes it");
         }
         return Err(e);
     }
@@ -165,6 +176,14 @@ pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
         tracing::warn!(folder = %from.display(), error = %e, "could not delete the old data folder");
     }
     Ok(())
+}
+
+/// Where a copy of the data folder `to` is made before it takes that name: next to it, so the
+/// rename is one step on the same drive.
+fn staging_for(to: &Path) -> PathBuf {
+    let mut name = to.as_os_str().to_owned();
+    name.push(".partial");
+    PathBuf::from(name)
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -311,6 +330,43 @@ mod tests {
         let missing = root.path().join("missing");
         assert!(copy_then_delete(&missing, &root.path().join("half")).is_err());
         assert!(!root.path().join("half").exists());
+    }
+
+    /// A copy cut short (the app killed, the power lost) is never taken for the moved folder:
+    /// it waits under another name, and the next move starts over from the old folder.
+    #[test]
+    fn a_copy_cut_short_is_started_over_and_never_used() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("old");
+        let new = root.path().join("new");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        let staging = staging_for(&new);
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("wirecatch.db"), b"half").unwrap();
+        std::fs::write(staging.join("stale"), b"stale").unwrap();
+
+        copy_then_delete(&old, &new).unwrap();
+        assert!(!staging.exists());
+        assert!(!new.join("stale").exists());
+        assert_eq!(
+            std::fs::read(new.join("wirecatch.db")).unwrap(),
+            b"downloads"
+        );
+    }
+
+    /// An existing `to` is refused, never copied into.
+    #[test]
+    fn copying_never_merges_into_an_existing_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("old");
+        let new = root.path().join("new");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        assert!(copy_then_delete(&old, &new).is_err());
+        assert!(old.join("wirecatch.db").exists());
+        assert!(std::fs::read_dir(&new).unwrap().next().is_none());
     }
 
     #[test]
