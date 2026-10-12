@@ -881,6 +881,37 @@ describe('downloads left paused by a restarted background', () => {
     expect(s.hub.snapshot().notice?.message).toBe(MENU_PRIVATE_WINDOW);
   });
 
+  // Recovery resumed the browser copies silently: the person was not told that the app may
+  // have one of them too, nor that one was left paused.
+  it('says the app may have a download it resumes after a restart', async () => {
+    const inFlight = new MemoryInFlight();
+    inFlight.ids = [5];
+    const downloads = new FakeDownloads();
+    downloads.browserState = {
+      state: 'in_progress',
+      paused: true,
+      filename: '/home/me/Downloads/big.zip',
+    };
+    s = await setup({ inFlight, downloads });
+    expect(downloads.log).toEqual(['resume:5']);
+    expect(s.hub.snapshot().notice).toMatchObject({ tone: 'warning' });
+    expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip .*restarted/);
+  });
+
+  it('says how to recover a download it cannot resume after a restart', async () => {
+    const inFlight = new MemoryInFlight();
+    inFlight.ids = [5];
+    const downloads = new FakeDownloads();
+    downloads.browserState = { state: 'in_progress', paused: true };
+    downloads.failing.add('resume');
+    s = await setup({ inFlight, downloads });
+    expect(s.hub.snapshot().notice).toMatchObject({
+      tone: 'error',
+      message:
+        "A download is paused in the browser. Open the browser's downloads page and click Resume.",
+    });
+  });
+
   it('leaves alone the ones that are no longer paused', async () => {
     const inFlight = new MemoryInFlight();
     inFlight.ids = [5];

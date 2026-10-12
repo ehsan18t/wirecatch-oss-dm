@@ -35,6 +35,11 @@ export function stuckPaused(name: string): string {
   return `${name} is paused in the browser. Open the browser's downloads page and click Resume.`;
 }
 
+/** A download a restarted background resumed: it was being handed over, so the app may have it too. */
+export function resumedAfterRestart(name: string): string {
+  return `${name} was being sent to Wirecatch when the extension restarted, so the browser resumed it. If Wirecatch has it too, cancel one of them.`;
+}
+
 export function mayDownloadTwice(name: string): string {
   return `${name} may be downloading twice: Wirecatch took it after all, and the browser kept its copy too. You can cancel one of them.`;
 }

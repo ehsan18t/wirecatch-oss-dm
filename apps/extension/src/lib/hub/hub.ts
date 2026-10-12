@@ -7,12 +7,13 @@ import {
   type JudgingSettings,
 } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
-import { fileNameFromUrl } from '../file-types';
+import { baseName, fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
+import { nonEmpty } from '../text';
 import { AppCalls } from './app';
 import type { HubDeps, HubTiming, MenuClick, MenuResult, MenuTab } from './deps';
 import { DuplicateWatch } from './duplicates';
@@ -28,6 +29,7 @@ import {
   mayDownloadTwice,
   mediaAnswer,
   menuNotTaken,
+  resumedAfterRestart,
   stuckPaused,
 } from './notices';
 import { Popups, type PopupChannel } from './popups';
@@ -343,8 +345,13 @@ export class Hub {
     for (const id of ids) {
       if (this.#inFlight.has(id)) continue;
       const state = await this.#deps.downloads.state(id).catch(() => null);
-      if (state?.state === 'in_progress' && state.paused) {
-        await resumeBrowserCopy(this.#deps.downloads, id);
+      if (state?.state !== 'in_progress' || !state.paused) continue;
+      const name = nonEmpty(baseName(state.filename ?? '')) ?? 'A download';
+      // Whether `add_download` went out before the restart is not known, so the app may have it.
+      const copy = await resumeBrowserCopy(this.#deps.downloads, id);
+      if (copy === 'resumed') this.#warn(resumedAfterRestart(name));
+      else if (copy === 'stuck_paused') {
+        this.#setNotice({ tone: 'error', message: stuckPaused(name), at: this.#now() });
       }
     }
     await this.#persistInFlight();

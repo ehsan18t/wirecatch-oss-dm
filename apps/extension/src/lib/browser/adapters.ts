@@ -88,7 +88,7 @@ export function browserDownloads(): BrowserDownloads {
       const [item] = await browser.downloads.search({ id });
       return item === undefined
         ? null
-        : { state: item.state, paused: item.paused, danger: item.danger };
+        : { state: item.state, paused: item.paused, danger: item.danger, filename: item.filename };
     },
     start: async (url) => {
       await browser.downloads.download({ url });

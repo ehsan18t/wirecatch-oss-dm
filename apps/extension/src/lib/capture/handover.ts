@@ -16,6 +16,8 @@ export interface DownloadState {
   paused: boolean;
   /** Chromium: the browser's safety verdict now (see `CaptureCandidate.danger`). */
   danger?: string;
+  /** Where the browser saves it; empty or missing while the browser has not chosen yet. */
+  filename?: string;
 }
 
 /** The browser download controls the handover needs (`browser.downloads`). */
