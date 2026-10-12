@@ -17,6 +17,7 @@
 
 use std::error::Error;
 use std::io::Write;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -35,7 +36,7 @@ const BENCH_CAP: u64 = 16 * MIB;
 const BENCH_MAX_REQUEST: u64 = 10 * MIB;
 /// Runs of each case when the command line does not say: enough for the median to
 /// stand still while one run is disturbed by the rest of the machine.
-const DEFAULT_RUNS: usize = 5;
+const DEFAULT_RUNS: NonZeroUsize = NonZeroUsize::new(5).unwrap();
 /// Connection counts for the capped and the uncapped runs.
 const CAPPED_CONNECTIONS: [usize; 5] = [1, 2, 4, 8, 16];
 const UNCAPPED_CONNECTIONS: [usize; 2] = [1, 8];
@@ -61,12 +62,11 @@ async fn main() -> Result<()> {
         Some("serve-ftp") => serve_ftp(port(DEFAULT_FTP_PORT), cap).await,
         Some("bench") | None => {
             let runs = match args.get(1) {
-                Some(runs) => runs.parse().map_err(|e| format!("runs {runs:?}: {e}"))?,
+                Some(runs) => runs
+                    .parse()
+                    .map_err(|e| format!("runs {runs:?} must be a whole number from 1: {e}"))?,
                 None => DEFAULT_RUNS,
             };
-            if runs == 0 {
-                return Err("runs must be at least 1".into());
-            }
             bench(runs).await
         }
         Some(other) => Err(format!(
@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn bench(runs: usize) -> Result<()> {
+async fn bench(runs: NonZeroUsize) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
@@ -157,13 +157,14 @@ struct Times {
 
 impl Times {
     /// Runs `case` `runs` times, one after another.
-    async fn measure<F, Fut>(runs: usize, mut case: F) -> Result<Self>
+    async fn measure<F, Fut>(runs: NonZeroUsize, mut case: F) -> Result<Self>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<f64>>,
     {
-        let mut secs = Vec::with_capacity(runs);
-        for _ in 0..runs {
+        // At least one run, so every index below is in range.
+        let mut secs = vec![case().await?];
+        for _ in 1..runs.get() {
             secs.push(case().await?);
         }
         secs.sort_by(f64::total_cmp);
@@ -175,8 +176,8 @@ impl Times {
         };
         Ok(Self {
             median,
-            fastest: secs[0],
-            slowest: secs[secs.len() - 1],
+            fastest: secs.iter().copied().fold(f64::INFINITY, f64::min),
+            slowest: secs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         })
     }
 
