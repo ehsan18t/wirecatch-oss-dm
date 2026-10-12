@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
-use wirecatch_engine::numeric::saturating;
+use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
@@ -193,7 +193,7 @@ pub(crate) fn merge_localized(
         .unwrap_or(DEFAULT_QUEUE_ID);
     settings::check_queue_count(queues.len())?;
     let settings = settings::validate(settings, &queues, folders)?;
-    let count = |names: &[String]| saturating::<u32, _>(names.len());
+    let count = |names: &[String]| saturating_cast::<u32, _>(names.len());
     Ok(Imported {
         settings,
         queues,

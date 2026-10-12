@@ -1,12 +1,15 @@
-//! Checked conversions between whole numbers and floating point.
+//! Checked numeric conversions: between whole numbers and floating point, and
+//! between whole-number types of different ranges.
 //!
 //! Byte counts and rates are whole numbers, but speeds, ratios and display
 //! need floating point, and numbers read from other programs (JSON, manifests)
 //! often arrive as floating point. Rust's `as` converts both ways without a
 //! word: it rounds large integers, and it turns NaN into 0 and negative or huge
 //! floats into the nearest bound. Rust has no `TryFrom<f64>` for integers
-//! either. These functions are the one place those conversions happen, so each
-//! rule is written, checked and tested once.
+//! either. Between whole-number types, `as` wraps or cuts silently, and
+//! `try_from` leaves every caller to choose a fallback. These functions are the
+//! one place those conversions happen, so each rule is written, checked and
+//! tested once.
 //!
 //! ```
 //! use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
@@ -58,53 +61,71 @@ pub fn f64_to_u64(value: f64) -> Option<u64> {
     in_range.then_some(value as u64)
 }
 
-/// A whole-number type, with its smallest and largest values.
-pub trait Bounded: Sized {
-    /// The smallest value.
-    const MIN: Self;
-    /// The largest value.
-    const MAX: Self;
-}
+/// Keeps [`saturating_cast`] to the whole-number types: the trait cannot be
+/// named outside this crate, so no other type can implement it.
+mod sealed {
+    /// A whole-number type, with its smallest value, largest value and zero.
+    pub trait Whole: Copy + PartialOrd {
+        /// The smallest value.
+        const MIN: Self;
+        /// The largest value.
+        const MAX: Self;
+        /// Zero.
+        const ZERO: Self;
+    }
 
-macro_rules! bounded {
-    ($($t:ty),*) => {
-        $(impl Bounded for $t {
-            const MIN: Self = <$t>::MIN;
-            const MAX: Self = <$t>::MAX;
-        })*
-    };
-}
+    macro_rules! whole {
+        ($($t:ty),*) => {
+            $(impl Whole for $t {
+                const MIN: Self = <$t>::MIN;
+                const MAX: Self = <$t>::MAX;
+                const ZERO: Self = 0;
+            })*
+        };
+    }
 
-bounded!(
-    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
-);
+    whole!(
+        u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+    );
+}
 
 /// `value` as a `U`, or the nearest of `U`'s bounds when it does not fit: a
 /// value too large becomes `U::MAX`, a negative one too small becomes `U::MIN`.
+/// Both types are whole-number types (`u8` to `u128`, `i8` to `i128`, `usize`,
+/// `isize`).
 ///
 /// For counts, versions and limits, where "more than can be said" is the
 /// honest answer: a list's length in a protocol's `u32`, a byte count in
-/// SQLite's signed integers, a stored count read back as unsigned. Never for a
-/// buffer size handed to the operating system, where a size larger than the
-/// buffer would be a lie; derive the buffer from the size instead.
+/// SQLite's signed integers. Never for a buffer size handed to the operating
+/// system, where a size larger than the buffer would be a lie; derive the
+/// buffer from the size instead. Nor where a value out of range means damage
+/// that should be reported rather than clamped.
 ///
 /// ```
-/// use wirecatch_engine::numeric::saturating;
+/// use wirecatch_engine::numeric::saturating_cast;
 ///
-/// assert_eq!(saturating::<u32, _>(7_usize), 7);
-/// assert_eq!(saturating::<u32, _>(u64::MAX), u32::MAX);
-/// assert_eq!(saturating::<i64, _>(u64::MAX), i64::MAX);
-/// assert_eq!(saturating::<u64, _>(-5_i64), 0);
+/// assert_eq!(saturating_cast::<u32, _>(7_usize), 7);
+/// assert_eq!(saturating_cast::<u32, _>(u64::MAX), u32::MAX);
+/// assert_eq!(saturating_cast::<i64, _>(u64::MAX), i64::MAX);
+/// assert_eq!(saturating_cast::<u64, _>(-5_i64), 0);
+/// ```
+///
+/// A floating-point value is refused at compile time; [`f64_to_u64`] converts
+/// those.
+///
+/// ```compile_fail
+/// use wirecatch_engine::numeric::saturating_cast;
+///
+/// let _: u32 = saturating_cast(1.5_f64);
 /// ```
 #[must_use]
-pub fn saturating<U, T>(value: T) -> U
+pub fn saturating_cast<U, T>(value: T) -> U
 where
-    U: TryFrom<T> + Bounded,
-    T: Copy + PartialOrd + Default,
+    T: sealed::Whole,
+    U: sealed::Whole + TryFrom<T>,
 {
-    // `T::default()` is zero for every whole-number type.
-    let negative = value < T::default();
-    U::try_from(value).unwrap_or(if negative { U::MIN } else { U::MAX })
+    let bound = if value < T::ZERO { U::MIN } else { U::MAX };
+    U::try_from(value).unwrap_or(bound)
 }
 
 /// `n` as an index into a slice of length `len`: `n` itself when it fits,
@@ -118,14 +139,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn saturating_keeps_what_fits_and_clamps_the_rest_to_the_nearest_bound() {
-        assert_eq!(saturating::<u32, _>(u64::from(u32::MAX)), u32::MAX);
-        assert_eq!(saturating::<u32, _>(u64::from(u32::MAX) + 1), u32::MAX);
-        assert_eq!(saturating::<u32, _>(0_usize), 0);
-        assert_eq!(saturating::<i64, _>(u128::MAX), i64::MAX);
-        assert_eq!(saturating::<u64, _>(i64::MIN), 0);
-        assert_eq!(saturating::<i8, _>(-1000_i32), i8::MIN);
-        assert_eq!(saturating::<i8, _>(-5_i32), -5);
+    fn saturating_cast_keeps_what_fits_and_clamps_the_rest_to_the_nearest_bound() {
+        assert_eq!(saturating_cast::<u32, _>(u64::from(u32::MAX)), u32::MAX);
+        assert_eq!(saturating_cast::<u32, _>(u64::from(u32::MAX) + 1), u32::MAX);
+        assert_eq!(saturating_cast::<u32, _>(0_usize), 0);
+        assert_eq!(saturating_cast::<i64, _>(u128::MAX), i64::MAX);
+        assert_eq!(saturating_cast::<u64, _>(i64::MIN), 0);
+        assert_eq!(saturating_cast::<i8, _>(-1000_i32), i8::MIN);
+        assert_eq!(saturating_cast::<i8, _>(-5_i32), -5);
     }
 
     #[test]

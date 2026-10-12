@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{error, warn};
-use wirecatch_engine::numeric::saturating;
+use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
@@ -781,7 +781,7 @@ fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) {
 /// conversion below never falls back.
 fn schema_version() -> u32 {
     const { assert!(MIGRATIONS.len() <= u32::MAX as usize) };
-    saturating(MIGRATIONS.len())
+    saturating_cast(MIGRATIONS.len())
 }
 
 fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
@@ -875,8 +875,8 @@ fn load(conn: &Connection) -> Result<Snapshot> {
                         "UPDATE downloads SET total = ?2, done = ?3 WHERE id = ?1",
                         params![
                             summary.id.0,
-                            summary.total.map(saturating::<i64, u64>),
-                            saturating::<i64, _>(summary.done)
+                            summary.total.map(saturating_cast::<i64, u64>),
+                            saturating_cast::<i64, _>(summary.done)
                         ],
                     )?;
                     downloads_reset += 1;
@@ -960,7 +960,7 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
             position,
             q.name,
             q.max_concurrent,
-            q.speed_limit.map(saturating::<i64, u64>),
+            q.speed_limit.map(saturating_cast::<i64, u64>),
             q.schedule.as_ref().map(to_json),
             q.is_default,
             q.paused,
@@ -1012,8 +1012,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.position,
         enum_text(&d.category),
         enum_text(&d.status),
-        d.total.map(saturating::<i64, u64>),
-        saturating::<i64, _>(d.done),
+        d.total.map(saturating_cast::<i64, u64>),
+        saturating_cast::<i64, _>(d.done),
         d.error.as_ref().map(to_json),
         d.added_at,
         d.completed_at,

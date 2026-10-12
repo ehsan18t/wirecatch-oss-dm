@@ -15,7 +15,7 @@ use crate::error::{Error, Result};
 use crate::fetch::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::http::{Clients, Validators};
 use crate::limiter::RateLimiter;
-use crate::numeric::saturating;
+use crate::numeric::saturating_cast;
 use crate::progress::Progress;
 use crate::segment::{self, SegmentTable, SharedTable};
 use crate::state::ResumeState;
@@ -563,7 +563,7 @@ fn spawn_workers(
 ) -> Result<JoinSet<Result<()>>> {
     let worker_count = if shared.ranged {
         let remaining = shared.table.lock().remaining_bytes();
-        let wanted: usize = saturating(remaining.div_ceil(shared.opts.min_split));
+        let wanted: usize = saturating_cast(remaining.div_ceil(shared.opts.min_split));
         wanted.clamp(1, shared.opts.connections.max(1))
     } else {
         1
