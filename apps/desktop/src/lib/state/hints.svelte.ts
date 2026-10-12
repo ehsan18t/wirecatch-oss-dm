@@ -1,15 +1,16 @@
 // One-time contextual hints. Each shows once, at the moment it is useful, and never again
 // after it is dismissed. Only this display preference lives in the webview's storage.
 
+import { shortcutLabel } from '../keymap';
+
 export type HintId = 'palette' | 'drag-to-queue' | 'reorder' | 'paste';
 
 export const HINT_TEXT: Record<HintId, string> = {
-  paste: 'Copy a link anywhere, then press Ctrl+V in this window to download it.',
-  palette: 'Press Ctrl+K to find any action or setting by typing a few letters.',
+  paste: `Copy a link anywhere, then press ${shortcutLabel('paste')} in this window to download it.`,
+  palette: `Press ${shortcutLabel('palette')} to find any action or setting by typing a few letters.`,
   'drag-to-queue':
     'Drag downloads onto a queue in the sidebar to move them. Each queue has its own limits and schedule.',
-  reorder:
-    'Drag downloads up or down to change the order this queue runs them in. Alt+Up and Alt+Down work too.',
+  reorder: `Drag downloads up or down to change the order this queue runs them in. ${shortcutLabel('nudge-up')} and ${shortcutLabel('nudge-down')} work too.`,
 };
 
 /* eslint-disable svelte/prefer-svelte-reactivity -- the set is replaced whole on each change. */

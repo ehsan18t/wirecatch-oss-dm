@@ -12,6 +12,7 @@
   import type { Queue } from '@wirecatch/protocol';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
   import { CATEGORIES, CATEGORY_LABEL, formatSchedule } from '$lib/format';
+  import { shortcutParts } from '$lib/keymap';
   import { formatRate, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
@@ -112,7 +113,7 @@
   <button type="button" class="palette" onclick={() => (app.paletteOpen = true)}>
     <Icon icon={Command} size="sm" />
     <span>Find any action</span>
-    <kbd>Ctrl K</kbd>
+    <kbd>{shortcutParts('palette').join(' ')}</kbd>
   </button>
 
   <div class="scroll">
@@ -261,12 +262,12 @@
     >
       <Icon icon={SettingsIcon} size="md" />
       <span class="label">Settings</span>
-      <kbd>Ctrl ,</kbd>
+      <kbd>{shortcutParts('settings').join(' ')}</kbd>
     </button>
     <button type="button" class="item" onclick={() => app.openDialog({ kind: 'shortcuts' })}>
       <Icon icon={Keyboard} size="md" />
       <span class="label">Keyboard shortcuts</span>
-      <kbd>F1</kbd>
+      <kbd>{shortcutParts('help').join(' ')}</kbd>
     </button>
     {#if app.sampleData}
       <p class="sample">Sample data. Nothing is really downloading.</p>

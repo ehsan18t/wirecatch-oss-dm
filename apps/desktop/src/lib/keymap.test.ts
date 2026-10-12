@@ -8,6 +8,7 @@ import {
   shortcutLabel,
   windowCommand,
   type KeyBinding,
+  type KeyCommand,
 } from './keymap';
 
 function press(
@@ -19,6 +20,32 @@ function press(
   if (target) target.dispatchEvent(e);
   return e;
 }
+
+/** Every shortcut name; the type makes this list whole. */
+const EVERY_COMMAND: Record<KeyCommand, true> = {
+  palette: true,
+  paste: true,
+  add: true,
+  search: true,
+  settings: true,
+  escape: true,
+  help: true,
+  down: true,
+  up: true,
+  'extend-down': true,
+  'extend-up': true,
+  'page-down': true,
+  'page-up': true,
+  first: true,
+  last: true,
+  'select-all': true,
+  'pause-resume': true,
+  open: true,
+  remove: true,
+  'nudge-up': true,
+  'nudge-down': true,
+  menu: true,
+};
 
 /** Two bindings of one scope that some key press would match both. */
 function overlap(a: KeyBinding, b: KeyBinding): boolean {
@@ -36,6 +63,11 @@ describe('keymap', () => {
         .map((b) => `${keyLabel(a)} is ${a.command} and ${b.command}`),
     );
     expect(clashes).toEqual([]);
+  });
+
+  it('has a key for every shortcut', () => {
+    const missing = Object.keys(EVERY_COMMAND).filter((c) => !KEYMAP.some((b) => b.command === c));
+    expect(missing).toEqual([]);
   });
 
   it('reads window shortcuts, with Ctrl or Command, in either case', () => {

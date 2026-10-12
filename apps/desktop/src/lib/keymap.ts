@@ -179,16 +179,26 @@ export function keyLabel(b: KeyBinding): string {
   return keyParts(b).join('+');
 }
 
-/** The first key of a shortcut as people read it, for the command palette. */
-export function shortcutLabel(command: KeyCommand): string | undefined {
+/** The first key of a shortcut. Every command has one; a test holds this. */
+function bindingOf(command: KeyCommand): KeyBinding {
   const b = KEYMAP.find((x) => x.command === command);
-  return b ? keyLabel(b) : undefined;
+  if (!b) throw new Error(`The keymap has no key for ${command}.`);
+  return b;
+}
+
+/** The first key of a shortcut as the keys pressed together, as people read them. */
+export function shortcutParts(command: KeyCommand): string[] {
+  return keyParts(bindingOf(command));
+}
+
+/** The first key of a shortcut as people read it: `Ctrl+N`. */
+export function shortcutLabel(command: KeyCommand): string {
+  return keyLabel(bindingOf(command));
 }
 
 /** The first key of a shortcut in the form `aria-keyshortcuts` takes (`Control+N`). */
-export function ariaShortcut(command: KeyCommand): string | undefined {
-  const b = KEYMAP.find((x) => x.command === command);
-  if (!b) return undefined;
+export function ariaShortcut(command: KeyCommand): string {
+  const b = bindingOf(command);
   const mods = MODIFIERS.filter((m) => b[m.flag] === true).map((m) => m.aria);
   return [...mods, b.key.length === 1 ? b.key.toUpperCase() : b.key].join('+');
 }

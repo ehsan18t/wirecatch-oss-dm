@@ -1,11 +1,13 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
   import { CATEGORY_LABEL } from '$lib/format';
+  import { shortcutParts } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
   import { STATUS_GROUP_LABEL } from '$lib/state/view';
   import Button from './Button.svelte';
 
   const app = getApp();
+  const pasteKeys = shortcutParts('paste');
 
   const firstRun = $derived(app.downloads.size === 0 && app.counts.all === 0);
   const searching = $derived(app.search.trim() !== '');
@@ -22,7 +24,10 @@
         <path d="M4 32h236" />
         <path d="M4 50h82c18 0 22-18 40-18h110" />
       </svg>
-      <h2>Copy a link, then press <kbd>Ctrl</kbd> <kbd>V</kbd> here</h2>
+      <h2>
+        Copy a link, then press {#each pasteKeys as key, i (i)}{i > 0 ? ' ' : ''}<kbd>{key}</kbd
+          >{/each} here
+      </h2>
       <p>
         Wirecatch downloads it right away, using several connections at once. Downloads you start in
         your browser show up here too once the Wirecatch extension is installed.
