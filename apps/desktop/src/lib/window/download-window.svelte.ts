@@ -320,22 +320,20 @@ export class DownloadWindowState {
     if (needsAddon && this.#installFirst(selection)) return true;
     this.busy = true;
     this.#answered = true;
-    this.error = null;
-    let id: DownloadId;
-    try {
-      id = await this.#host.backend.chooseMedia(choice.id, selection);
-    } catch (err) {
-      this.#answered = false;
-      this.busy = false;
-      if (needsAddon && isAddonRequired(err)) {
-        // The core asked for the add-on instead; the window offers it and goes on afterwards.
+    // The core may ask for the add-on instead; the window offers it and goes on afterwards.
+    const id = await this.#runner.run(
+      () => this.#host.backend.chooseMedia(choice.id, selection),
+      (err) => {
+        if (!needsAddon || !isAddonRequired(err)) return false;
         this.awaitingAddon = { selection };
         return true;
-      }
-      this.error = errorMessage(err);
-      return false;
-    }
+      },
+    );
     this.busy = false;
+    if (id === undefined) {
+      this.#answered = false;
+      return this.awaitingAddon !== null;
+    }
     await this.#started(id, selection.later);
     return true;
   }

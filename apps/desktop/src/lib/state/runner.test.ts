@@ -24,4 +24,23 @@ describe('Runner', () => {
     await runner.succeeds(() => Promise.resolve());
     expect(shown).toEqual([null, 'Offline.', null]);
   });
+
+  it('clears the last failure as a bulk action starts', async () => {
+    const clear = vi.fn();
+    const runner = new Runner(() => undefined, clear);
+    await runner.bulk([1, 2], 'pause', () => Promise.resolve());
+    expect(clear).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a failure the caller recovers from unsaid', async () => {
+    const fail = vi.fn();
+    const runner = new Runner(fail);
+    const expected = new Error('Install the add-on first.');
+    const recover = vi.fn((err: unknown) => err === expected);
+    expect(await runner.run(() => Promise.reject<number>(expected), recover)).toBeUndefined();
+    expect(recover).toHaveBeenCalledWith(expected);
+    expect(fail).not.toHaveBeenCalled();
+    await runner.run(() => Promise.reject<number>(new Error('Offline.')), recover);
+    expect(fail).toHaveBeenCalledExactlyOnceWith('Offline.');
+  });
 });

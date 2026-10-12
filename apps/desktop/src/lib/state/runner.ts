@@ -37,13 +37,19 @@ export class Runner {
     this.#clear = clear;
   }
 
-  /** Runs an action; on failure says why and gives `undefined`. */
-  async run<T>(action: () => Promise<T>): Promise<T | undefined> {
+  /**
+   * Runs an action; on failure says why and gives `undefined`. A failure `recover` handles (it
+   * returns true) is the caller's to deal with and is not said.
+   */
+  async run<T>(
+    action: () => Promise<T>,
+    recover: (err: unknown) => boolean = () => false,
+  ): Promise<T | undefined> {
     this.#clear();
     try {
       return await action();
     } catch (err) {
-      this.#fail(errorMessage(err));
+      if (!recover(err)) this.#fail(errorMessage(err));
       return undefined;
     }
   }
@@ -67,6 +73,7 @@ export class Runner {
     action: (id: DownloadId) => Promise<void>,
   ): Promise<number> {
     if (ids.length === 0) return 0;
+    this.#clear();
     const results = await Promise.allSettled(ids.map((id) => action(id)));
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     if (failures.length > 0) {
