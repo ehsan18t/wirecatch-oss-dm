@@ -93,3 +93,38 @@ test('a value that would break the quoting of a shell or NSIS script is refused'
     /contacts\.security_email/,
   );
 });
+
+test('channels differing only in letter case still clash on Windows', () => {
+  rejects(
+    changed('windows_data_folder = "Wirecatch Dev"', 'windows_data_folder = "WIRECATCH"'),
+    /own windows_data_folder/,
+  );
+  rejects(
+    changed('pipe_prefix = "wirecatch-app-dev-"', 'pipe_prefix = "WIRECATCH-APP-"'),
+    /own pipe_prefix/,
+  );
+  rejects(
+    changed('identifier = "app.wirecatch.desktop.dev"', 'identifier = "app.Wirecatch.desktop"'),
+    /identifier/,
+  );
+});
+
+test('the app, the bridge and the CLI need executables of their own', () => {
+  rejects(changed('cli = "wirecatch"', 'cli = "wirecatch-bridge"'), /executables/);
+});
+
+test('a folder or file name Windows cannot hold is refused', () => {
+  for (const bad of ['wirecatch.', 'wirecatch ', 'CON', 'nul', 'aux.db', 'COM1', 'lpt9.txt']) {
+    rejects(changed('database = "wirecatch.db"', `database = "${bad}"`), /files\.database/);
+  }
+});
+
+test('a Firefox id longer than 255 characters is refused', () => {
+  rejects(
+    changed(
+      'firefox_id = "extension@wirecatch.app"',
+      `firefox_id = "${'a'.repeat(250)}@wirecatch.app"`,
+    ),
+    /extension\.firefox_id/,
+  );
+});

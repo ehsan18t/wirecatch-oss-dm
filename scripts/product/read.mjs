@@ -21,11 +21,25 @@ const IDENTIFIER = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /** Chromium's rule for host names: lowercase letters, digits, `_` and `.`, no dot at either end and never two in a row. */
 const HOST_NAME = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/;
 const CHROMIUM_ID = /^[a-p]{32}$/;
-/** Firefox add-on ids are email-like or a braced GUID. */
-const FIREFOX_ID = /^([A-Za-z0-9._-]+@[A-Za-z0-9.-]+|\{[0-9a-fA-F-]{36}\})$/;
+/** Firefox add-on ids are email-like or a braced GUID, at most 255 characters. */
+const FIREFOX_ID_FORM = /^([A-Za-z0-9._-]+@[A-Za-z0-9.-]+|\{[0-9a-fA-F-]{36}\})$/;
+const MAX_FIREFOX_ID_LENGTH = 255;
+const FIREFOX_ID = {
+  test: (value) => value.length <= MAX_FIREFOX_ID_LENGTH && FIREFOX_ID_FORM.test(value),
+};
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-/** One folder or file name: no separator, nothing a Windows or Linux file name cannot hold. */
-const FILE_NAME = /^(?!\.{1,2}$)[^\\/:*?"<>|\p{Cc}]+$/u;
+/** One folder or file name: no separator and nothing a Windows or Linux file name cannot hold. */
+const FILE_NAME_CHARACTERS = /^(?!\.{1,2}$)[^\\/:*?"<>|\p{Cc}]+$/u;
+/** Names Windows reserves for devices, with or without an extension. */
+const RESERVED_WINDOWS_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+/** Windows drops a trailing dot or space, so the name would not be the one written here. */
+const TRAILING_DOT_OR_SPACE = /[. ]$/;
+const FILE_NAME = {
+  test: (value) =>
+    FILE_NAME_CHARACTERS.test(value) &&
+    !RESERVED_WINDOWS_NAME.test(value) &&
+    !TRAILING_DOT_OR_SPACE.test(value),
+};
 const PIPE_PREFIX = /^[A-Za-z0-9-]+-$/;
 const SOCKET = /^[a-z0-9-]+\.sock$/;
 /** Characters that would end or expand a quoted string in the generated shell and NSIS scripts or Rust and TypeScript sources; no identity value needs them. */
@@ -140,11 +154,17 @@ function crossProblems(product) {
       `extension.chromium_id ${id} does not follow from extension.chromium_public_key (that key gives ${chromiumIdOf(key)}). Change both together (D22).`,
     );
   }
+  // Windows compares folder, pipe and entry names without regard to letter case.
+  const repeats = (values) =>
+    new Set(values.map((value) => value.toLowerCase())).size !== values.length;
   for (const key of DISTINCT_PER_CHANNEL) {
     const values = CHANNELS.map((name) => product.channels[name][key]);
-    if (new Set(values).size !== values.length) {
+    if (repeats(values)) {
       problems.push(`Every channel needs its own ${key}; ${values.join(', ')} repeat one.`);
     }
+  }
+  if (repeats(Object.values(product.executables))) {
+    problems.push('The app, the bridge and the CLI need executables of their own.');
   }
   return problems;
 }
