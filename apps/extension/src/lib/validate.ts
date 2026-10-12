@@ -12,8 +12,15 @@ declare const loose: unique symbol;
 
 /**
  * True when `value` has the shape `T`. The phantom field makes `Guard<T>` invariant in `T`, so a
- * guard for a narrower or wider type than the one asked for does not compile; a plain type
- * predicate would be accepted for any wider type.
+ * guard built here for a narrower or wider type than the one asked for does not compile.
+ *
+ * Limits:
+ * - Any value typed as a plain predicate, `(value: unknown) => value is X`, lacks the phantom
+ *   fields: it is accepted for any `T` that `X` fits and passes the loose check too, whether
+ *   hand-written or an `object` guard assigned to that type. Build every guard here, typed `Guard`.
+ * - The types must match exactly: `arrayOf` checks a mutable `T[]` (not `readonly T[]`), and
+ *   `tuple` a `readonly` tuple, so a field typed as a mutable tuple cannot use it.
+ * - `fields` on a type with an index signature compiles but checks no field: do not use it for one.
  */
 export type Guard<T> = ((value: unknown) => value is T) & {
   readonly [exactly]?: (value: T) => T;
@@ -59,11 +66,7 @@ export const isBoolean: Guard<boolean> = (value): value is boolean => typeof val
 /** Accepts anything, for a field whose value is read leniently after the check. */
 export const isUnknown: Guard<unknown> = (_value): _value is unknown => true;
 
-/**
- * One of the given values, compared with `===`. Typed as a guard of a wider union, it may
- * name fewer members than the union has without the compiler noticing: use it for a single
- * tag, and `member` for a union a type defines.
- */
+/** One of the given values, compared with `===`: for a tag; a union a type defines is checked with `member`. */
 export function literal<const T extends readonly Literal[]>(...values: T): Guard<T[number]> {
   return (value): value is T[number] => values.some((v) => v === value);
 }
@@ -138,14 +141,14 @@ export function oneOf<const G extends readonly Check[]>(...guards: G): Guard<Gua
   return (value): value is Guarded<G[number]> => guards.some((guard) => guard(value));
 }
 
+/** The members of `T` as `member` takes them; nothing fits until `T` is given, as it cannot be inferred. */
+type Members<T extends string> = [T] extends [never] ? never : Record<NoInfer<T>, true>;
+
 /**
  * One member of the string union `T`. The members are given as the keys of a record
  * typed `Record<T, true>`, so the compiler rejects a list that misses a member or names
  * one that does not exist: the guard cannot fall behind the type.
  */
-/** The members of `T` as `member` takes them; nothing fits until `T` is given, as it cannot be inferred. */
-type Members<T extends string> = [T] extends [never] ? never : Record<NoInfer<T>, true>;
-
 export function member<T extends string = never>(members: Members<T>): Guard<T> {
   const known = new Set<string>(Object.keys(members));
   return (value): value is T => typeof value === 'string' && known.has(value);
