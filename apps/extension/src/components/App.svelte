@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import type { ExtensionSettings } from '@wirecatch/protocol';
   import { describeProblem } from '../lib/native/status';
   import type { PopupModel } from '../lib/popup/model.svelte';
@@ -88,6 +89,8 @@
   /** With nothing to show (never connected, no cache), say so instead of showing made-up values. */
   const showSettings = $derived(model.settings !== null);
 </script>
+
+<svelte:head><title>{PRODUCT_NAME}</title></svelte:head>
 
 <div class="popup">
   <PopupHeader {status} />

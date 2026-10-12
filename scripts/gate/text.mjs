@@ -2,9 +2,11 @@
 import { disableComments } from './comments.mjs';
 import { GateError, grepRepository } from './process.mjs';
 
+/** The em dash's code point. */
+const EM_DASH = 0x2014;
 /** Ways an em dash gets into the repository. Escapes only count in TypeScript, JavaScript and Svelte outside tests, where interface text lives: tests use them to assert there is none, and Rust tests do the same inside `#[cfg(test)]` modules that a path cannot tell apart. */
-// The entity is split so this line does not match itself.
-const EM_DASH_LITERAL = '\\x{2014}|&' + 'mdash;';
+// The character is built and the entity split so this line does not match itself. The character itself, not `\x{2014}`, goes to git: without a UTF-8 locale git's PCRE refuses code points above 255, and a literal matches its bytes in any locale.
+export const EM_DASH_LITERAL = `${String.fromCodePoint(EM_DASH)}|&${'mdash;'}`;
 const EM_DASH_ESCAPED = '\\\\u2014|\\\\u\\{2014\\}';
 const TEXT_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml'];
 const ESCAPE_SCOPE = [

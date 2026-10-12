@@ -1,7 +1,7 @@
 //! Per-user local connections between the Wirecatch app and its clients (the
 //! browser bridge and, later, the CLI).
 //!
-//! The app calls [`Listener::bind`] on [`endpoint()`] and serves each accepted
+//! The app calls [`Listener::bind`] on [`endpoint_for`] its [`Channel`] and serves each accepted
 //! [`Connection`]. A client calls [`connect`] on the same endpoint. Frames on a
 //! connection use `wirecatch_protocol::frame` (4-byte little-endian length plus
 //! JSON, capped at 1 MiB).
@@ -11,7 +11,8 @@
 //! The connection carries browser cookies, so both ends check who is on the other
 //! side, and nothing is sent before the check passes:
 //!
-//! - **Windows**: the endpoint is the named pipe `\\.\pipe\wirecatch-app-<user SID>`.
+//! - **Windows**: the endpoint is the named pipe `\\.\pipe\wirecatch-app-<user SID>`
+//!   (`wirecatch-app-dev-` for debug builds, from `config/product.toml`).
 //!   The listener creates it with `FILE_FLAG_FIRST_PIPE_INSTANCE` (so it fails
 //!   instead of joining a pipe someone else created first), rejects remote
 //!   clients, and sets an explicit security descriptor whose owner is the current
@@ -22,7 +23,8 @@
 //!   connector reads the owner of the pipe it opened and refuses it unless it is
 //!   the current user; it also opens the pipe at the identification impersonation
 //!   level so a hostile server cannot act as the client.
-//! - **Linux**: the endpoint is `$XDG_RUNTIME_DIR/wirecatch/app.sock`, or
+//! - **Linux**: the endpoint is `$XDG_RUNTIME_DIR/wirecatch/app.sock` (`app-dev.sock`
+//!   for debug builds), or
 //!   `/tmp/wirecatch-<uid>/app.sock` when `XDG_RUNTIME_DIR` is unset. The folder is
 //!   created with mode 0700 and refused if it already exists with any group or
 //!   other access, is not owned by the current user, or is a symbolic link. The
@@ -165,7 +167,21 @@ impl IpcError {
     }
 }
 
-/// Returns the endpoint of the app for the current user.
+pub use wirecatch_product::Channel;
+
+/// Returns the endpoint of the release app for the current user: the one the
+/// browser bridge and the CLI connect to. Same as
+/// `endpoint_for(Channel::Release)`.
+///
+/// # Errors
+///
+/// See [`endpoint_for`].
+pub fn endpoint() -> Result<Endpoint, IpcError> {
+    endpoint_for(Channel::Release)
+}
+
+/// Returns the endpoint of `channel`'s app for the current user. Each channel has
+/// its own (D13), so a debug build never serves or reaches an installed release.
 ///
 /// On Linux this also creates the containing folder with mode 0700 if it is
 /// missing, and refuses a folder that already exists but is not private to the
@@ -176,14 +192,14 @@ impl IpcError {
 /// [`IpcError::Io`] when the current user cannot be read (Windows) or the folder
 /// cannot be created or inspected (Linux), and [`IpcError::UnsafeDirectory`] when the
 /// folder exists but is not private to the current user.
-pub fn endpoint() -> Result<Endpoint, IpcError> {
+pub fn endpoint_for(channel: Channel) -> Result<Endpoint, IpcError> {
     #[cfg(windows)]
     {
-        windows::endpoint()
+        windows::endpoint(channel)
     }
     #[cfg(unix)]
     {
-        unix::endpoint()
+        unix::endpoint(channel)
     }
 }
 

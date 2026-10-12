@@ -11,15 +11,17 @@
     "gate": "node scripts/gate.mjs",
     "prepare": "node scripts/install-hooks.mjs",
     "protocol:generate": "pnpm --filter @wirecatch/protocol generate",
+    "product:generate": "node scripts/product/generate.mjs",
     "check": "pnpm -r --if-present check",
     "lint": "pnpm -r --if-present lint && eslint scripts eslint.config.js --max-warnings 0 && prettier --check scripts eslint.config.js",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && node --test \"scripts/**/*.test.mjs\"",
     "build": "pnpm -r --if-present build"
   },
   "devDependencies": {
     "@wirecatch/eslint-config": "workspace:*",
     "eslint": "catalog:",
     "prettier": "catalog:",
-    "prettier-plugin-svelte": "catalog:"
+    "prettier-plugin-svelte": "catalog:",
+    "smol-toml": "catalog:"
   }
 }

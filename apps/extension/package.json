@@ -10,9 +10,9 @@
     "dev:firefox": "wxt -b firefox --mv3",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:dev": "wxt build --mode development",
-    "build:store": "wxt zip --mode store",
+    "build:store": "node ../../scripts/gate.mjs publish && wxt zip --mode store",
     "build:firefox": "wxt build -b firefox --mv3",
-    "sign:firefox": "node scripts/sign-firefox.mjs",
+    "sign:firefox": "node ../../scripts/gate.mjs publish && node scripts/sign-firefox.mjs",
     "zip": "wxt zip && wxt zip -b firefox --mv3",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
@@ -21,6 +21,7 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
     "@wirecatch/units": "workspace:*"
   },

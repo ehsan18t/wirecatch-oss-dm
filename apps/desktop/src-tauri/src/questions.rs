@@ -49,7 +49,10 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::StorageFailed(error) => Attention::Notify {
-            title: "Wirecatch could not save its download list".to_owned(),
+            title: format!(
+                "{} could not save its download list",
+                crate::host::CHANNEL.name()
+            ),
             body: error.message.clone(),
         },
         _ => Attention::None,
@@ -174,7 +177,13 @@ mod tests {
             message: "The disk is full.".into(),
             fix: None,
         }));
-        assert!(matches!(failed, Attention::Notify { body, .. } if body == "The disk is full."));
+        assert!(matches!(&failed, Attention::Notify { body, .. } if body == "The disk is full."));
+        // The running app names itself: "Wirecatch Dev" in a debug build.
+        let name = crate::host::CHANNEL.name();
+        assert!(
+            matches!(&failed, Attention::Notify { title, .. } if title == &format!("{name} could not save its download list")),
+            "{failed:?}"
+        );
         assert_eq!(
             attention(&UiEvent::DownloadsRemoved(vec![])),
             Attention::None

@@ -614,3 +614,28 @@ async fn a_download_is_marked_before_it_is_finished() -> TestResult {
     assert!(!text.contains("token"), "{text}");
     Ok(())
 }
+
+/// A download added without a browser's user agent names the app and its version, never the
+/// engine library's default.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_without_a_browser_agent_names_the_app() -> TestResult {
+    let server = wirecatch_test_support::files::FileServer::start().await;
+    server.put("plain.bin", b"plain".as_slice());
+    let h = Harness::new().await?;
+    let row = h.add(server.url("plain.bin")).await?;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    let expected = format!(
+        "{}/{}",
+        wirecatch_product::PRODUCT_NAME,
+        wirecatch_product::PRODUCT_VERSION
+    );
+    let seen = server.seen_at("plain.bin");
+    assert!(!seen.is_empty());
+    for request in seen {
+        assert_eq!(
+            request.headers.get("user-agent").unwrap(),
+            expected.as_str()
+        );
+    }
+    Ok(())
+}

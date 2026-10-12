@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use wirecatch_product::BRIDGE_EXECUTABLE;
+
 /// Environment variable naming a prebuilt bridge to use instead of building one.
 pub const BRIDGE_VAR: &str = "WIRECATCH_E2E_BRIDGE";
 
@@ -22,31 +24,6 @@ pub const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 /// Read by the bridge (with `test-overrides`): a JSON array `[program, args...]`
 /// started instead of the app.
 pub const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-
-/// The extension identities the bridge was built with, read from the same file.
-const EXTENSION_IDS: &str = include_str!("../../../config/extension-ids.json");
-
-/// The origin Chrome passes for the extension (the one Chromium id every build
-/// trusts), for example `chrome-extension://<id>/`.
-#[must_use]
-pub fn chrome_origin() -> String {
-    format!("chrome-extension://{}/", extension_id("chromium_id"))
-}
-
-/// The add-on id Firefox passes for the extension.
-#[must_use]
-pub fn firefox_id() -> String {
-    extension_id("firefox_id")
-}
-
-fn extension_id(key: &str) -> String {
-    let ids: serde_json::Value =
-        serde_json::from_str(EXTENSION_IDS).expect("config/extension-ids.json is valid JSON");
-    ids[key]
-        .as_str()
-        .unwrap_or_else(|| panic!("config/extension-ids.json has no {key}"))
-        .to_string()
-}
 
 /// The path of a bridge built with `test-overrides`, building it on first use.
 #[must_use]
@@ -83,19 +60,19 @@ fn build_bridge() -> PathBuf {
     }
     let output = command
         .output()
-        .expect("could not run cargo to build wirecatch-bridge");
+        .unwrap_or_else(|e| panic!("could not run cargo to build {BRIDGE_EXECUTABLE}: {e}"));
     assert!(
         output.status.success(),
-        "building wirecatch-bridge with test-overrides failed:\n{}",
+        "building {BRIDGE_EXECUTABLE} with test-overrides failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == "wirecatch-bridge")
+        .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == BRIDGE_EXECUTABLE)
         .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-        .unwrap_or_else(|| panic!("cargo built no wirecatch-bridge executable:\n{stdout}"))
+        .unwrap_or_else(|| panic!("cargo built no {BRIDGE_EXECUTABLE} executable:\n{stdout}"))
 }
 
 /// The target folder this test executable was built in, and whether it is a

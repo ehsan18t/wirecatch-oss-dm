@@ -4,6 +4,9 @@ description = "HLS and DASH video stream downloads for Wirecatch: parallel segme
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 # Only the engine is published to crates.io.
 publish = false
 

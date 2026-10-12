@@ -5,8 +5,19 @@
 //! them would break or confuse downloads.
 
 use tracing::warn;
+use wirecatch_engine::DownloadOptions;
 use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
+use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
+
+/// The engine's request options as the app sends them when no browser handed over its own
+/// user agent: the app's name and version (`<name>/<version>`), never the engine library's
+/// default, which names the library.
+pub(crate) fn download_options() -> DownloadOptions {
+    let mut options = DownloadOptions::default();
+    options.user_agent = format!("{PRODUCT_NAME}/{PRODUCT_VERSION}");
+    options
+}
 
 /// Headers a client may never set (compared in lower case).
 const FORBIDDEN: &[&str] = &[

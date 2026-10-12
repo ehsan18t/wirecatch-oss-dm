@@ -41,14 +41,14 @@ impl TrayAction {
         }
     }
 
-    /// The menu item text.
+    /// The menu item text, naming the running app by its channel's name.
     #[must_use]
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Open => "Open Wirecatch",
-            Self::PauseAll => "Pause all",
-            Self::ResumeAll => "Resume all",
-            Self::Quit => "Quit",
+            Self::Open => format!("Open {}", crate::host::CHANNEL.name()),
+            Self::PauseAll => "Pause all".to_owned(),
+            Self::ResumeAll => "Resume all".to_owned(),
+            Self::Quit => "Quit".to_owned(),
         }
     }
 
@@ -156,7 +156,7 @@ pub const MAX_TOOLTIP_CHARS: usize = 127;
 /// The tooltip when something keeps Wirecatch from working, cut to fit.
 #[must_use]
 pub fn problem_tooltip(reason: &str) -> String {
-    let text = format!("Wirecatch could not start: {reason}");
+    let text = format!("{} could not start: {reason}", crate::host::CHANNEL.name());
     if text.chars().count() <= MAX_TOOLTIP_CHARS {
         return text;
     }
@@ -201,9 +201,11 @@ mod tests {
             assert!(!a.label().contains('\u{2014}'));
         }
         assert_eq!(TrayAction::from_id("something else"), None);
+        // The running app names itself: "Open Wirecatch Dev" in a debug build.
+        let open = format!("Open {}", crate::host::CHANNEL.name());
         assert_eq!(
             TrayAction::ALL.map(TrayAction::label),
-            ["Open Wirecatch", "Pause all", "Resume all", "Quit"]
+            [open.as_str(), "Pause all", "Resume all", "Quit"]
         );
     }
 
@@ -211,7 +213,10 @@ mod tests {
     fn a_problem_fits_in_the_tooltip() {
         assert_eq!(
             problem_tooltip("the disk is full."),
-            "Wirecatch could not start: the disk is full."
+            format!(
+                "{} could not start: the disk is full.",
+                crate::host::CHANNEL.name()
+            )
         );
         let long = problem_tooltip(&"x".repeat(500));
         assert_eq!(long.chars().count(), MAX_TOOLTIP_CHARS);

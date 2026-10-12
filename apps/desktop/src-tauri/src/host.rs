@@ -8,23 +8,26 @@ use std::path::{Path, PathBuf};
 use tokio::sync::OnceCell;
 use wirecatch_core::{KnownFolders, Manager, ManagerConfig};
 use wirecatch_ipc::{Endpoint, IpcError};
+use wirecatch_product::Channel;
 use wirecatch_protocol::wire::ProtocolError;
 
 /// Overrides the data folder, for tests and for trying things on a throwaway download list.
 /// Debug builds already keep their own folder, identity and endpoint (see [`DEV_BUILD`]).
 pub const DATA_DIR_VAR: &str = "WIRECATCH_DATA_DIR";
 
-/// Debug builds run as a separate app, "Wirecatch Dev", with their own identifier (so the
+/// Debug builds run as a separate app, [`Channel::Dev`], with their own name, identifier (so the
 /// single-instance guard does not hand launches to an installed Wirecatch), data folder and
 /// browser endpoint. A development copy can then run next to an installed one without either
 /// touching the other's downloads.
 pub const DEV_BUILD: bool = cfg!(debug_assertions);
 
-/// The identifier of debug builds; release builds use the one in `tauri.conf.json`.
-pub const DEV_IDENTIFIER: &str = "app.wirecatch.desktop.dev";
-
-/// The name debug builds show and use for their folder and start-at-sign-in entry.
-pub const DEV_NAME: &str = "Wirecatch Dev";
+/// The channel this build belongs to, which names its data folder, endpoint and start-at-sign-in
+/// entry (`config/product.toml`).
+pub const CHANNEL: Channel = if DEV_BUILD {
+    Channel::Dev
+} else {
+    Channel::Release
+};
 
 /// The download manager this process hosts, opened on first use.
 pub struct Core {
@@ -68,9 +71,9 @@ impl Core {
     }
 }
 
-/// The per-user folder for the database, cookies and add-ons: `%LOCALAPPDATA%\Wirecatch` on
-/// Windows (local, not roaming, so none of it follows a roaming profile to other computers, D21.5),
-/// `~/.local/share/wirecatch` on Linux (`Wirecatch Dev` and `wirecatch-dev` for debug builds).
+/// The per-user folder for the database, cookies and add-ons: [`Channel::data_folder`] in
+/// `%LOCALAPPDATA%` on Windows (local, not roaming, so none of it follows a roaming profile to other
+/// computers, D21.5), and in `~/.local/share` on Linux.
 ///
 /// `local_base` is the platform's local user data folder and `roaming_base` its roaming one
 /// (the same folder on Linux). A data folder an earlier version left in the roaming folder is
@@ -81,8 +84,8 @@ pub fn data_dir(local_base: &Path, roaming_base: &Path) -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_VAR).filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
     }
-    let new = data_dir_for(local_base, DEV_BUILD);
-    let old = data_dir_for(roaming_base, DEV_BUILD);
+    let new = local_base.join(CHANNEL.data_folder());
+    let old = roaming_base.join(CHANNEL.data_folder());
     let (used, migration) = migrate(&old, &new);
     match &migration {
         Migration::Nothing => {}
@@ -203,38 +206,14 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn data_dir_for(base: &Path, dev: bool) -> PathBuf {
-    base.join(match (cfg!(windows), dev) {
-        (true, false) => "Wirecatch",
-        (true, true) => DEV_NAME,
-        (false, false) => "wirecatch",
-        (false, true) => "wirecatch-dev",
-    })
-}
-
-/// The browser endpoint this build serves: the per-user endpoint, or a sibling of it for debug
-/// builds.
+/// The browser endpoint this build serves: its [`CHANNEL`]'s per-user endpoint.
 ///
 /// # Errors
 ///
 /// The current user cannot be read (Windows), or the endpoint's folder cannot be created or
-/// is not private to this user (Linux); see [`wirecatch_ipc::endpoint`].
+/// is not private to this user (Linux); see [`wirecatch_ipc::endpoint_for`].
 pub fn endpoint() -> Result<Endpoint, IpcError> {
-    let real = wirecatch_ipc::endpoint()?;
-    Ok(if DEV_BUILD { dev_endpoint(&real) } else { real })
-}
-
-/// The debug build's endpoint next to `real`: `\\.\pipe\wirecatch-app-dev-<SID>` on Windows,
-/// `app-dev.sock` in the same private folder on Linux.
-#[must_use]
-pub fn dev_endpoint(real: &Endpoint) -> Endpoint {
-    let name = real.as_os_str().to_string_lossy();
-    let dev = if let Some(rest) = name.strip_suffix("app.sock") {
-        format!("{rest}app-dev.sock")
-    } else {
-        name.replacen("wirecatch-app-", "wirecatch-app-dev-", 1)
-    };
-    Endpoint::from_raw(dev)
+    wirecatch_ipc::endpoint_for(CHANNEL)
 }
 
 /// The user's standard folders, falling back to folders under `home` when the system does not
@@ -247,20 +226,14 @@ pub fn known_folders(home: &Path) -> KnownFolders {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_product::DATABASE_FILE;
 
+    /// The tests that build their expectations from `CHANNEL` only mean something if a debug
+    /// build really is the dev channel.
     #[test]
-    fn release_and_debug_builds_keep_separate_folders() {
-        let name = |dev| {
-            data_dir_for(Path::new("base"), dev)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or_default()
-                .to_lowercase()
-        };
-        assert_eq!(name(false), "wirecatch");
-        assert_ne!(name(true), name(false));
-        assert!(name(true).ends_with("dev"));
-        assert!(data_dir_for(Path::new("base"), true).starts_with("base"));
+    fn a_debug_build_is_the_dev_channel() {
+        assert_eq!(CHANNEL == Channel::Dev, cfg!(debug_assertions));
+        assert_ne!(Channel::Dev.name(), Channel::Release.name());
     }
 
     #[test]
@@ -280,7 +253,7 @@ mod tests {
         let old = root.path().join("Roaming").join("Wirecatch");
         let new = root.path().join("Local").join("Wirecatch");
         std::fs::create_dir_all(old.join("addons").join("media")).unwrap();
-        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        std::fs::write(old.join(DATABASE_FILE), b"downloads").unwrap();
         std::fs::write(
             old.join("addons").join("media").join("yt-dlp.exe"),
             b"program",
@@ -290,7 +263,7 @@ mod tests {
         assert_eq!(migrate(&old, &new), (new.clone(), Migration::Moved));
         assert!(!old.exists());
         assert_eq!(
-            std::fs::read(new.join("wirecatch.db")).unwrap(),
+            std::fs::read(new.join(DATABASE_FILE)).unwrap(),
             b"downloads"
         );
         assert_eq!(
@@ -299,10 +272,10 @@ mod tests {
         );
         // A second start finds the new folder and leaves everything alone.
         std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("wirecatch.db"), b"stale").unwrap();
+        std::fs::write(old.join(DATABASE_FILE), b"stale").unwrap();
         assert_eq!(migrate(&old, &new), (new.clone(), Migration::Nothing));
         assert_eq!(
-            std::fs::read(new.join("wirecatch.db")).unwrap(),
+            std::fs::read(new.join(DATABASE_FILE)).unwrap(),
             b"downloads"
         );
     }
@@ -314,12 +287,12 @@ mod tests {
         let old = root.path().join("old");
         let new = root.path().join("new");
         std::fs::create_dir_all(old.join("bin")).unwrap();
-        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        std::fs::write(old.join(DATABASE_FILE), b"downloads").unwrap();
         std::fs::write(old.join("bin").join("bridge"), b"bridge").unwrap();
         copy_then_delete(&old, &new).unwrap();
         assert!(!old.exists());
         assert_eq!(
-            std::fs::read(new.join("wirecatch.db")).unwrap(),
+            std::fs::read(new.join(DATABASE_FILE)).unwrap(),
             b"downloads"
         );
         assert_eq!(
@@ -340,17 +313,17 @@ mod tests {
         let old = root.path().join("old");
         let new = root.path().join("new");
         std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        std::fs::write(old.join(DATABASE_FILE), b"downloads").unwrap();
         let staging = staging_for(&new);
         std::fs::create_dir_all(&staging).unwrap();
-        std::fs::write(staging.join("wirecatch.db"), b"half").unwrap();
+        std::fs::write(staging.join(DATABASE_FILE), b"half").unwrap();
         std::fs::write(staging.join("stale"), b"stale").unwrap();
 
         copy_then_delete(&old, &new).unwrap();
         assert!(!staging.exists());
         assert!(!new.join("stale").exists());
         assert_eq!(
-            std::fs::read(new.join("wirecatch.db")).unwrap(),
+            std::fs::read(new.join(DATABASE_FILE)).unwrap(),
             b"downloads"
         );
     }
@@ -362,24 +335,10 @@ mod tests {
         let old = root.path().join("old");
         let new = root.path().join("new");
         std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("wirecatch.db"), b"downloads").unwrap();
+        std::fs::write(old.join(DATABASE_FILE), b"downloads").unwrap();
         std::fs::create_dir_all(&new).unwrap();
         assert!(copy_then_delete(&old, &new).is_err());
-        assert!(old.join("wirecatch.db").exists());
+        assert!(old.join(DATABASE_FILE).exists());
         assert!(std::fs::read_dir(&new).unwrap().next().is_none());
-    }
-
-    #[test]
-    fn debug_builds_listen_next_to_the_real_endpoint() {
-        let pipe = Endpoint::from_raw(r"\\.\pipe\wirecatch-app-S-1-5-21-1-2-3-1001");
-        assert_eq!(
-            dev_endpoint(&pipe).to_string(),
-            r"\\.\pipe\wirecatch-app-dev-S-1-5-21-1-2-3-1001"
-        );
-        let socket = Endpoint::from_raw("/run/user/1000/wirecatch/app.sock");
-        assert_eq!(
-            dev_endpoint(&socket).to_string(),
-            "/run/user/1000/wirecatch/app-dev.sock"
-        );
     }
 }

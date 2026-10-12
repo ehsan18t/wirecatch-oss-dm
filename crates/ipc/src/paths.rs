@@ -7,42 +7,45 @@
 #[cfg(any(unix, test))]
 use std::ffi::OsStr;
 #[cfg(any(unix, test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// Prefix of the per-user pipe name on Windows.
-#[cfg(any(windows, test))]
-pub(crate) const PIPE_PREFIX: &str = r"\\.\pipe\wirecatch-app-";
-
-/// Name of the folder created inside `XDG_RUNTIME_DIR`.
+use wirecatch_product::Channel;
 #[cfg(any(unix, test))]
-pub(crate) const RUNTIME_SUBDIR: &str = "wirecatch";
+use wirecatch_product::{IPC_FALLBACK_FOLDER_PREFIX, IPC_RUNTIME_FOLDER};
 
-/// File name of the socket.
-#[cfg(any(unix, test))]
-pub(crate) const SOCKET_NAME: &str = "app.sock";
-
-/// File name of the lock that marks the live listener.
-#[cfg(unix)]
-pub(crate) const LOCK_NAME: &str = "app.lock";
-
-/// The Windows pipe name for a user, given the user's SID in string form.
+/// Where every named pipe lives on Windows.
 #[cfg(any(windows, test))]
-pub(crate) fn pipe_name(user_sid: &str) -> String {
-    format!("{PIPE_PREFIX}{user_sid}")
+const PIPE_ROOT: &str = r"\\.\pipe\";
+
+/// The lock that marks the live listener of the socket at `socket`: the socket's
+/// path with `.lock` after it. Each socket has a lock of its own, so release and
+/// debug builds can listen on sibling sockets in one folder.
+#[cfg(any(unix, test))]
+pub(crate) fn lock_path(socket: &Path) -> PathBuf {
+    let mut path = socket.as_os_str().to_owned();
+    path.push(".lock");
+    PathBuf::from(path)
 }
 
-/// The Linux socket path: `$XDG_RUNTIME_DIR/wirecatch/app.sock`, or
-/// `/tmp/wirecatch-<uid>/app.sock` when `XDG_RUNTIME_DIR` is unset, empty or not an
-/// absolute path (the XDG Base Directory specification says relative values must
-/// be ignored).
+/// The Windows pipe name of `channel` for a user, given the user's SID in string
+/// form: `\\.\pipe\wirecatch-app-<SID>` for release builds.
+#[cfg(any(windows, test))]
+pub(crate) fn pipe_name(channel: Channel, user_sid: &str) -> String {
+    format!("{PIPE_ROOT}{}{user_sid}", channel.pipe_prefix())
+}
+
+/// The Linux socket path of `channel`: `$XDG_RUNTIME_DIR/wirecatch/app.sock` for
+/// release builds, or `/tmp/wirecatch-<uid>/app.sock` when `XDG_RUNTIME_DIR` is
+/// unset, empty or not an absolute path (the XDG Base Directory specification says
+/// relative values must be ignored). Every channel's socket is in the same folder.
 #[cfg(any(unix, test))]
-pub(crate) fn socket_path(xdg_runtime_dir: Option<&OsStr>, uid: u32) -> PathBuf {
+pub(crate) fn socket_path(channel: Channel, xdg_runtime_dir: Option<&OsStr>, uid: u32) -> PathBuf {
     let usable = xdg_runtime_dir.filter(|dir| dir.as_encoded_bytes().first() == Some(&b'/'));
     let dir = match usable {
-        Some(runtime) => PathBuf::from(runtime).join(RUNTIME_SUBDIR),
-        None => PathBuf::from("/tmp").join(format!("wirecatch-{uid}")),
+        Some(runtime) => PathBuf::from(runtime).join(IPC_RUNTIME_FOLDER),
+        None => PathBuf::from("/tmp").join(format!("{IPC_FALLBACK_FOLDER_PREFIX}{uid}")),
     };
-    dir.join(SOCKET_NAME)
+    dir.join(channel.socket_name())
 }
 
 /// What is known about an existing folder, read without following symbolic links.
@@ -109,18 +112,40 @@ mod tests {
     #[test]
     fn pipe_name_embeds_the_user_sid() {
         assert_eq!(
-            pipe_name("S-1-5-21-1-2-3-1001"),
+            pipe_name(Channel::Release, "S-1-5-21-1-2-3-1001"),
             r"\\.\pipe\wirecatch-app-S-1-5-21-1-2-3-1001"
+        );
+        assert_eq!(
+            pipe_name(Channel::Dev, "S-1-5-21-1-2-3-1001"),
+            r"\\.\pipe\wirecatch-app-dev-S-1-5-21-1-2-3-1001"
+        );
+    }
+
+    #[test]
+    fn each_socket_has_its_own_lock_next_to_it() {
+        assert_eq!(
+            lock_path(Path::new("/run/user/1000/wirecatch/app.sock")),
+            Path::new("/run/user/1000/wirecatch/app.sock.lock")
+        );
+        assert_ne!(
+            lock_path(Path::new("/d/app.sock")),
+            lock_path(Path::new("/d/app-dev.sock"))
         );
     }
 
     #[test]
     fn socket_goes_in_the_runtime_dir_when_set() {
         assert_eq!(
-            socket_path(Some(OsStr::new("/run/user/1000")), 1000),
+            socket_path(Channel::Release, Some(OsStr::new("/run/user/1000")), 1000),
             PathBuf::from("/run/user/1000")
                 .join("wirecatch")
                 .join("app.sock")
+        );
+        assert_eq!(
+            socket_path(Channel::Dev, Some(OsStr::new("/run/user/1000")), 1000),
+            PathBuf::from("/run/user/1000")
+                .join("wirecatch")
+                .join("app-dev.sock")
         );
     }
 
@@ -129,12 +154,10 @@ mod tests {
         let fallback = PathBuf::from("/tmp")
             .join("wirecatch-1000")
             .join("app.sock");
-        assert_eq!(socket_path(None, 1000), fallback);
-        assert_eq!(socket_path(Some(OsStr::new("")), 1000), fallback);
-        assert_eq!(
-            socket_path(Some(OsStr::new("run/user/1000")), 1000),
-            fallback
-        );
+        let release = |dir| socket_path(Channel::Release, dir, 1000);
+        assert_eq!(release(None), fallback);
+        assert_eq!(release(Some(OsStr::new(""))), fallback);
+        assert_eq!(release(Some(OsStr::new("run/user/1000"))), fallback);
     }
 
     /// The file type bits of a folder in a mode (`S_IFDIR`, which `libc` has on Linux

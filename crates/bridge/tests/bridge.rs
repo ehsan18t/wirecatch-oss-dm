@@ -14,6 +14,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::{sleep, timeout};
 use wirecatch_ipc::{Endpoint, Listener};
+use wirecatch_product::{
+    CHROMIUM_EXTENSION_ID, CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
+};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
@@ -24,8 +27,8 @@ use wirecatch_test_support::{PrivateDir, TestResult, private_dir};
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-const CHROME_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
-const FIREFOX_ID: &str = "extension@wirecatch.app";
+const CHROME_ORIGIN: &str = CHROMIUM_EXTENSION_ORIGIN;
+const FIREFOX_ID: &str = FIREFOX_EXTENSION_ID;
 
 /// Read by `fake_app_process`, which the bridge starts in place of the app.
 const FAKE_APP_ENDPOINT: &str = "WIRECATCH_TEST_FAKE_APP_ENDPOINT";
@@ -219,7 +222,7 @@ async fn messages_and_events_pass_through_unchanged() -> TestResult {
 async fn a_firefox_caller_is_served() -> TestResult {
     let test = TestEndpoint::new()?;
     let mut listener = Listener::bind(&test.endpoint)?;
-    let manifest = std::env::temp_dir().join("app.wirecatch.bridge.json");
+    let manifest = std::env::temp_dir().join(format!("{NATIVE_HOST_NAME}.json"));
     let manifest = manifest.to_str().unwrap();
     let mut bridge = start(bridge(&[manifest, FIREFOX_ID], &test))?;
     bridge.send(&hello(5)?).await?;
@@ -239,15 +242,17 @@ async fn a_firefox_caller_is_served() -> TestResult {
 async fn callers_that_are_not_allowed_are_refused() -> TestResult {
     let test = TestEndpoint::new()?;
     let mut listener = Listener::bind(&test.endpoint)?;
-    let manifest = std::env::temp_dir().join("app.wirecatch.bridge.json");
+    let manifest = std::env::temp_dir().join(format!("{NATIVE_HOST_NAME}.json"));
     let manifest = manifest.to_str().unwrap();
+    let no_slash = format!("chrome-extension://{CHROMIUM_EXTENSION_ID}");
+    let firefox_as_origin = format!("moz-extension://{FIREFOX_EXTENSION_ID}/");
     let refused: &[&[&str]] = &[
         &[],
         &["chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"],
-        &["chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki"],
+        &[&no_slash],
         &[manifest, "evil@example.com"],
         &[manifest],
-        &["moz-extension://extension@wirecatch.app/"],
+        &[&firefox_as_origin],
     ];
     for args in refused {
         let mut bridge = start(bridge(args, &test))?;

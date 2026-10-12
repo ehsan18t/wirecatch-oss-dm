@@ -1,4 +1,5 @@
 #!/bin/sh
+# Generated from config/templates/prerm.sh and config/product.toml by `pnpm product:generate`. Do not edit: change those and run it again.
 # Wirecatch package hook, run before the .deb or .rpm package is removed.
 #
 # The app registers the browser bridge for each user on every start (D19), in that user's

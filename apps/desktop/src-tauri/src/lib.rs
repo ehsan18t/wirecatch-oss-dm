@@ -114,6 +114,7 @@ use tauri::Manager as _;
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
 use wirecatch_core::ManagerConfig;
 use wirecatch_ipc::IpcError;
+use wirecatch_product::Channel;
 
 pub use window::{BACKGROUND_FLAG, wants_background};
 
@@ -124,21 +125,14 @@ use crate::window::{Launch, LaunchLinks};
 /// The one Tauri event that carries every `UiEvent` to the webview.
 pub const EVENT_NAME: &str = "wirecatch://event";
 
-/// Name of the start-at-sign-in entry (the `Run` registry value on Windows). The NSIS uninstall
-/// hook removes the value by this name.
-pub const RELEASE_AUTOSTART_NAME: &str = "Wirecatch";
-
 /// Shown by a copy of Wirecatch that finds another one already serving this user.
 pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
 
-/// The start-at-sign-in entry's name for this build.
+/// The start-at-sign-in entry's name for this build (the `Run` registry value on Windows): its
+/// channel's name. The NSIS uninstall hook removes the release one by the same name.
 #[must_use]
 pub fn autostart_name() -> &'static str {
-    if host::DEV_BUILD {
-        host::DEV_NAME
-    } else {
-        RELEASE_AUTOSTART_NAME
-    }
+    host::CHANNEL.name()
 }
 
 /// Tells the webview it missed events and must reload everything.
@@ -178,6 +172,10 @@ pub fn run() {
     if host::DEV_BUILD {
         dev_identity(context.config_mut());
     }
+    // The name the interface shows (`getName`), so a debug build calls itself what its window does.
+    host::CHANNEL
+        .name()
+        .clone_into(&mut context.package_info_mut().name);
 
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
@@ -238,7 +236,7 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
             handle
                 .dialog()
                 .message(ALREADY_RUNNING)
-                .title("Wirecatch")
+                .title(host::CHANNEL.name())
                 .kind(MessageDialogKind::Info)
                 .show(move |_| closing.exit(0));
             return Ok(());
@@ -341,10 +339,11 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
 /// Gives a debug build its own identity, so it runs beside an installed Wirecatch: another
 /// identifier (the single-instance guard keys on it) and a title that says which one it is.
 pub fn dev_identity(config: &mut tauri::Config) {
-    host::DEV_IDENTIFIER.clone_into(&mut config.identifier);
-    config.product_name = Some(host::DEV_NAME.to_owned());
+    let dev = Channel::Dev;
+    dev.identifier().clone_into(&mut config.identifier);
+    config.product_name = Some(dev.name().to_owned());
     for window in &mut config.app.windows {
-        host::DEV_NAME.clone_into(&mut window.title);
+        dev.name().clone_into(&mut window.title);
     }
 }
 
@@ -354,11 +353,7 @@ pub fn dev_identity(config: &mut tauri::Config) {
 /// download. Instead the reason is shown in a notification and in the tray tooltip, the window
 /// shows it on its first command, and the extension gets it as a clear error on every request.
 fn unavailable(app: &tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>, reason: String) {
-    background::show_notification(
-        app,
-        "Wirecatch could not open its download list".to_owned(),
-        reason.clone(),
-    );
+    background::show_notification(app, unavailable_title(), reason.clone());
     tray::set_tooltip(app, &tray::problem_tooltip(&reason));
     if let Some(listener) = listener {
         app.state::<Lifecycle>()
@@ -366,6 +361,11 @@ fn unavailable(app: &tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>
                 listener, reason,
             )));
     }
+}
+
+/// The notification title when the manager could not open, naming the running app.
+fn unavailable_title() -> String {
+    format!("{} could not open its download list", host::CHANNEL.name())
 }
 
 /// The updater stays off until `plugins.updater` is configured with endpoints and a public key
@@ -380,6 +380,7 @@ fn updater_configured(app: &tauri::App) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_product::BRIDGE_EXECUTABLE;
 
     /// The NSIS uninstall hook cannot run in a test, so this checks it keeps its promises.
     #[test]
@@ -389,10 +390,40 @@ mod tests {
             .split("${If} $UpdateMode <> 1")
             .nth(1)
             .expect("the hook must skip update mode");
-        assert!(guarded.contains("wirecatch-bridge.exe\" uninstall"));
+        // The bridge as the Windows installer ships it, whatever system the test runs on.
+        assert!(guarded.contains(&format!("{BRIDGE_EXECUTABLE}.exe\" uninstall")));
         assert!(guarded.contains("Pop $0"), "the nsExec result is popped");
-        let run_value = format!(r#"CurrentVersion\Run" "{RELEASE_AUTOSTART_NAME}""#);
+        let run_value = format!(r#"CurrentVersion\Run" "{}""#, Channel::Release.name());
         assert!(guarded.contains(&run_value), "removes the Run value");
+    }
+
+    /// Every window's interface asks for the running app's name (`getName`), which Tauri refuses
+    /// without this permission; the interface would then fall back to the release name.
+    #[test]
+    fn every_capability_lets_its_windows_read_the_app_name() {
+        let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            let capability: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            assert!(
+                permissions.contains(&serde_json::json!("core:app:allow-name")),
+                "{} does not grant core:app:allow-name",
+                path.display()
+            );
+            checked += 1;
+        }
+        assert!(checked >= 2, "the main and download window capabilities");
+    }
+
+    #[test]
+    fn the_unavailable_notice_names_the_running_app() {
+        assert_eq!(
+            unavailable_title(),
+            format!("{} could not open its download list", host::CHANNEL.name())
+        );
     }
 
     #[test]
@@ -403,14 +434,15 @@ mod tests {
 
     #[test]
     fn a_debug_build_gets_its_own_identity() {
+        let release = Channel::Release;
         let mut config: tauri::Config = serde_json::from_value(serde_json::json!({
-            "identifier": "app.wirecatch.desktop",
-            "app": { "windows": [{ "label": "main", "title": "Wirecatch" }] }
+            "identifier": release.identifier(),
+            "app": { "windows": [{ "label": "main", "title": release.name() }] }
         }))
         .unwrap();
         dev_identity(&mut config);
-        assert_eq!(config.identifier, host::DEV_IDENTIFIER);
-        assert_ne!(config.identifier, "app.wirecatch.desktop");
-        assert_eq!(config.app.windows[0].title, host::DEV_NAME);
+        assert_eq!(config.identifier, Channel::Dev.identifier());
+        assert_ne!(config.identifier, release.identifier());
+        assert_eq!(config.app.windows[0].title, Channel::Dev.name());
     }
 }

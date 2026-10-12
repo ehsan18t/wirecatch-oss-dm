@@ -17,6 +17,7 @@ use std::process::ExitCode;
 use std::thread;
 
 use tokio::sync::mpsc;
+use wirecatch_product::BRIDGE_EXECUTABLE;
 
 /// Writes one line to stderr, never stdout; see [`log_line`].
 macro_rules! log {
@@ -28,7 +29,7 @@ pub(crate) use log;
 
 /// Writes one log line to stderr, without the panic of `eprintln!` when that fails.
 fn log_line(line: std::fmt::Arguments<'_>) {
-    stderr_may_be_closed(&writeln!(io::stderr(), "wirecatch-bridge: {line}"));
+    stderr_may_be_closed(&writeln!(io::stderr(), "{BRIDGE_EXECUTABLE}: {line}"));
 }
 
 /// Takes the outcome of writing a log line. The browser may have closed stderr, and then
@@ -55,17 +56,23 @@ const QUEUE_LEN: usize = 4;
 /// The flag that registers for every user of the computer.
 const ALL_USERS: &str = "--all-users";
 
-const USAGE: &str = "\
-wirecatch-bridge connects the Wirecatch browser extension to the Wirecatch app.
+/// What `--help` prints.
+fn usage() -> String {
+    let bridge = BRIDGE_EXECUTABLE;
+    format!(
+        "\
+{bridge} connects the Wirecatch browser extension to the Wirecatch app.
 Browsers start it on their own; you do not need to run it.
 
 Usage:
-  wirecatch-bridge install [--all-users]     Register the bridge with your browsers
-  wirecatch-bridge uninstall [--all-users]   Remove that registration
+  {bridge} install [--all-users]     Register the bridge with your browsers
+  {bridge} uninstall [--all-users]   Remove that registration
 
 --all-users registers for every user of this computer (Windows; needs
 administrator rights). The installer does this.
-";
+"
+    )
+}
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -79,7 +86,7 @@ fn main() -> ExitCode {
         (Some("install"), 1..=2, Some(scope)) => install::run(install::Command::Install, scope),
         (Some("uninstall"), 1..=2, Some(scope)) => install::run(install::Command::Uninstall, scope),
         (Some("--help" | "-h" | "help"), 1, _) => {
-            if let Err(e) = io::stdout().write_all(USAGE.as_bytes()) {
+            if let Err(e) = io::stdout().write_all(usage().as_bytes()) {
                 log!("could not print the usage: {e}");
                 return ExitCode::FAILURE;
             }
@@ -90,16 +97,10 @@ fn main() -> ExitCode {
 }
 
 fn native_messaging_host(args: &[OsString]) -> ExitCode {
-    let config = match config::Config::embedded() {
-        Ok(config) => config,
-        Err(e) => {
-            log!("{e:#}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let config = config::Config::embedded();
     if let Err(reason) = caller::identify(args, &config) {
         log!(
-            "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `wirecatch-bridge --help` for the commands you can use."
+            "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `{BRIDGE_EXECUTABLE} --help` for the commands you can use."
         );
         return ExitCode::FAILURE;
     }

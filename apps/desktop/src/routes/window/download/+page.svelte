@@ -2,6 +2,7 @@
   // A download window (D23), opened by the desktop shell as `window/download?question=<id>` or
   // `window/download?download=<id>`. It loads only its own question or download, never the
   // whole list, because every window is a webview of its own.
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
   import { followTheme } from '$lib/theme.svelte';
@@ -57,7 +58,7 @@
   followTheme(() => win?.settings?.theme);
 </script>
 
-<svelte:head><title>Wirecatch download</title></svelte:head>
+<svelte:head><title>{win?.name ?? PRODUCT_NAME} download</title></svelte:head>
 
 <main class="window" aria-label="Download">
   {#if win}

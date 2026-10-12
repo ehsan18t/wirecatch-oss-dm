@@ -4,6 +4,9 @@ description = "End-to-end tests: the real browser bridge, the manager and a loca
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 publish = false
 
 # Stands in for `wirecatch-app --background` when the bridge has to start the
@@ -17,6 +20,7 @@ test = false
 [dependencies]
 wirecatch-core.workspace = true
 wirecatch-ipc.workspace = true
+wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-test-support = { path = "../test-support", features = ["servers"] }
 anyhow.workspace = true

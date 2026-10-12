@@ -436,6 +436,7 @@ fn engine_request(
         Target::Exact => request.exact_path = Some(path),
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
+    request.options = headers::download_options();
     let options = &mut request.options;
     options.connections = bandwidth.connections;
     options.rate_limiters = bandwidth.limiters;

@@ -7462,6 +7462,7 @@ dependencies = [
  "tokio",
  "windows-sys 0.59.0",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]
@@ -7476,6 +7477,7 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "wirecatch-engine",
+ "wirecatch-product",
 ]
 
 [[package]]
@@ -7501,6 +7503,7 @@ dependencies = [
  "tracing-subscriber",
  "windows-sys 0.59.0",
  "wirecatch-engine",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-streams",
  "wirecatch-test-support",
@@ -7533,6 +7536,7 @@ dependencies = [
  "wirecatch-core",
  "wirecatch-engine",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]
@@ -7546,6 +7550,7 @@ dependencies = [
  "tokio",
  "wirecatch-core",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]
@@ -7589,9 +7594,14 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows-sys 0.59.0",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]
+
+[[package]]
+name = "wirecatch-product"
+version = "0.1.0"
 
 [[package]]
 name = "wirecatch-protocol"

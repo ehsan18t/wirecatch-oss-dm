@@ -3,6 +3,7 @@
 //
 //   node scripts/gate.mjs                  every check CI runs (see DEFAULT)
 //   node scripts/gate.mjs rust js          named checks or groups (see GROUPS)
+//   node scripts/gate.mjs publish          what a release needs on top of DEFAULT
 //   node scripts/gate.mjs commit-msg FILE  check one commit message (the commit-msg hook)
 //   node scripts/gate.mjs --install-tools  install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
 //   node scripts/gate.mjs --list           list checks and groups
@@ -18,6 +19,7 @@ import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
 import { JS_CHECKS } from './gate/javascript.mjs';
 import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
+import { PRODUCT_CHECKS } from './gate/product.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS } from './gate/rust.mjs';
 import { TAURI_CHECKS } from './gate/tauri.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
@@ -30,6 +32,7 @@ const CHECKS = {
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
   ...TAURI_CHECKS,
+  ...PRODUCT_CHECKS,
 };
 
 const GROUPS = {
@@ -48,8 +51,10 @@ const GROUPS = {
   ],
   release: ['engine-package', 'msrv'],
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
-  repo: ['text', 'exceptions', 'tauri-pairs', 'commits'],
+  repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
+  // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every release script runs this group before it builds anything.
+  publish: ['product', 'product-placeholders'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */

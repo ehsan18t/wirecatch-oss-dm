@@ -18,9 +18,9 @@
   <div class="banner" role="alert">
     <Icon icon={TriangleAlert} size="md" />
     <div class="text">
-      <p class="title">Wirecatch could not save its download list</p>
+      <p class="title">{app.name} could not save its download list</p>
       <p>
-        {app.storageProblem} Recent changes may be lost when Wirecatch closes.
+        {app.storageProblem} Recent changes may be lost when {app.name} closes.
       </p>
     </div>
     <div class="actions">

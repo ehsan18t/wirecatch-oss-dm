@@ -80,7 +80,7 @@ export const isConnectionStatus = variants<ConnectionStatus, 'state'>({
  * Firefox (toolkit/components/extensions/NativeMessaging.sys.mjs and NativeManifests.sys.mjs,
  * and toolkit/modules/subprocess), read from `port.error` because Firefox does not set
  * `runtime.lastError` for ports:
- * - "No such native application app.wirecatch.bridge": deliberately the same message for no
+ * - "No such native application <NATIVE_HOST_NAME>": deliberately the same message for no
  *   manifest, an unreadable manifest, and a manifest whose `allowed_extensions` leaves this add-on
  *   out (that reason only goes to the browser console). Our Firefox add-on always has the id every
  *   bridge lists, so for us it means Wirecatch is not installed or not registered.

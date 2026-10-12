@@ -40,7 +40,7 @@ STR-1, ENG-1, ENG-2, CORE-1, IPB-1, EXT-1, DUI-1, DUI-2, STR-2, STR-3, EXT-2, XC
 
 `config/product.toml` becomes the only place product identity is written. Rust constants, a TypeScript module and every JSON manifest are generated from it, and CI fails when a generated file is out of date.
 
-XC-1, XC-2, XC-3, XC-4, XC-5, XC-6, XC-7, XC-14, IPB-2, IPB-3, IPB-16, DRS-6, DRS-7, DRS-14, DUI-24, EXT-14
+XC-1, XC-2, XC-3, XC-4, XC-5, XC-6, XC-7, IPB-2, IPB-3, DRS-6, DRS-7, DRS-14, DUI-24, EXT-14
 
 ### W3. Generated IPC contract and typed errors
 
@@ -60,11 +60,15 @@ XC-15, DRS-3, EXT-7, CMD-14
 
 One unpublished test-support crate replaces the copied local servers and helpers. Every suite that exists runs in CI.
 
-XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-20, CORE-29, DUI-17, DUI-18, DUI-27
+XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-20, CORE-29, DUI-17, DUI-18, DUI-27, IPB-16
+
+IPB-16 moved here from W2: a test-only bridge binary only helps once the overrides are chosen by the binary rather than by a package feature, and its variable names belong with XC-13's shared test support.
 
 ### W7. Engine
 
-ENG-3, ENG-4, ENG-5, ENG-7, ENG-8, ENG-10, ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17, ENG-18, ENG-19, ENG-20, ENG-21
+ENG-3, ENG-4, ENG-5, ENG-7, ENG-8, ENG-10, ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, ENG-17, ENG-18, ENG-19, ENG-20, ENG-21, XC-14
+
+XC-14 moved here from W2, engine part only (its default user agent `wirecatch-engine/<version>` and messages without the product name): the published engine cannot depend on the product configuration. Core's user agent is done in W2.
 
 ### W8. Media pipeline
 
@@ -133,19 +137,29 @@ Parts of W0 findings carried into later workstreams:
 - XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is linted and format-checked by the root `lint` script with the same configuration, now that the gate is split into modules in `scripts/gate/` that fit the size limits. Done.
 - XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
-- XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
-- XC-32: `SECURITY.md` needs a security contact address, a product identity value (W2).
+- XC-30: `authors`, `repository` and `homepage` come from `config/product.toml`, and the `product` check requires every crate to inherit them. Done (W2).
+- XC-32: `SECURITY.md` is generated from `config/product.toml` with its security contact address, a placeholder until it is decided. Done (W2).
 
 Parts of W14 carried into later workstreams:
 
-- The desktop bridge test hard-codes the extension's Chromium origin (`apps/desktop/src-tauri/tests/bridge.rs:25`); it should come from `config/extension-ids.json` like the e2e tests (W2).
+- The desktop bridge test's Chromium origin comes from `wirecatch_product::CHROMIUM_EXTENSION_ORIGIN`, and `config/extension-ids.json` is gone. Done (W2).
 - `PrivateDir::remove` (`crates/test-support/src/lib.rs:133`) says it catches a handle left open, but only a file opened without delete sharing blocks removal, and std opens files with it, so it cannot prove the engine closed its files: say so in its docs, or check open handles another way (W6).
 - Flaky under load, each seen once: `resuming_checks_segment_sizes` (`crates/streams/tests/hls.rs:468`), `a_capture_starts_after_the_server_answers_and_completes` (`crates/e2e/tests/e2e.rs:46`, a `.wcpart` still listed after the row turned Completed), and the media tests in `apps/desktop/e2e/a11y.spec.ts` (90 s waiting for the sample download window, also on the base branch) (W6).
-- Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports (W6).
+- Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports; a `DownloadOptions::default()` in core outside `headers.rs`, which would send the engine's user agent instead of the app's (W6).
 - The HLS and DASH parsers still return `Result<_, String>` (`crates/streams/src/hls.rs:92`, `crates/streams/src/dash.rs:325` and their helpers): typed errors (W8).
 - Win32 helpers are copied: `win32_size_of` (`crates/ipc/src/windows.rs:51`, `crates/bridge/src/shell_parent.rs:89`), `os_error` (`crates/ipc/src/windows.rs:62`, `crates/bridge/src/install.rs:741`), a fourth `wide` (`crates/core/src/owner_only.rs:163`) and two current-user SID readers (`crates/core/src/owner_only.rs:124`, `crates/ipc/src/windows.rs:196`); add them to IPB-6, and the registry loop's literal 520 (`crates/bridge/src/install.rs:759`) to IPB-17 (W10).
 - Desktop lint rules, each clean today: no type argument on `querySelector` or `closest` and no `as` on DOM values (unchecked casts), no `setTimeout` in a `$effect` without its cleanup, no `vi.useRealTimers()` or timer spies outside `vitest-setup.ts`, and no import of `window/**` from `backend/**` (W12).
 - Extension lint rule: type predicates (`x is T`) only in `src/lib/validate.ts`, so only its combinators declare guards; two are outside it today (`src/lib/file-types.ts:54`, `src/lib/media/detect.ts:255`) (W13).
+
+Parts of W2 carried into later workstreams:
+
+- The product name inside prose (settings descriptions, help text, error and notice sentences, `format.ts` messages, extension notices and the extension's command description) stays literal until a translation pass gives copy a home; places that name the running app use its name already (D29.8) (W12 for the desktop, W13 for the extension).
+- EXT-14's remaining part: extension storage keys, port, menu and message ids, colours, `MEDIA_COMMAND`, `DEFAULT_QUEUE_ID` and `PAGE_SITES` are internal identifiers, not product identity (D29.4) (W13, `DEFAULT_QUEUE_ID` and the site list with W3).
+- IPB-16: a test-only bridge binary that never overwrites `wirecatch-bridge`, with its override variable names in one place (W6, with XC-13).
+- The release workflow (XC-20) runs `node scripts/gate.mjs publish` before it publishes anything; today the release scripts run it themselves (W6).
+- The engine's version follows the workspace (product) version; whether the published engine needs a version of its own is undecided (W7).
+- XC-14: after the engine's default user agent changes, `a_download_without_a_browser_agent_names_the_app` (`crates/core/tests/manager/lifecycle.rs`) should also assert the header differs from `DownloadOptions::default().user_agent`, and the add-on and media paths (`manager/addons.rs`, `manager/media.rs`) need the same check (W7).
+- `Lock::hold` in `crates/core/tests/manager/addons.rs` blocks deletion with a 0555 folder, which root ignores, so `a_failed_removal_leaves_a_consistent_state` and `a_half_finished_update_is_recorded_and_repaired` fail when tests run as root, as in containers (W6).
 
 Parts of the W1 review carried into later workstreams:
 

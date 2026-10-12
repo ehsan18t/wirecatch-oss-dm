@@ -30,7 +30,7 @@
         stroke-linejoin="round"
       />
     </svg>
-    Wirecatch
+    {app.name}
   </p>
   <p
     class="speed num"
