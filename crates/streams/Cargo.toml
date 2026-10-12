@@ -25,3 +25,4 @@ axum.workspace = true
 bytes.workspace = true
 cbc = { version = "0.1.2", features = ["alloc"] }
 tokio = { workspace = true, features = ["test-util"] }
+wirecatch-test-support = { path = "../test-support" }

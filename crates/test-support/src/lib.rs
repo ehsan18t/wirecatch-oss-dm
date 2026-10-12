@@ -5,10 +5,13 @@
 //!
 //! - [`http::TestServer`]: an HTTP server for one byte buffer, with ranges,
 //!   throttling, injected disconnects, busy answers and connection limits.
+//! - [`files::FileServer`]: an HTTP server for a set of files by path, each of
+//!   which can fail a set number of times or answer slowly.
 //! - [`ftp::FtpServer`]: a scripted FTP and FTPS server.
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
-//! - [`test_data`]: deterministic bytes to serve, and [`fresh_dir`] and
+//! - [`test_data`], [`seeded_data`] and [`ts_segment`]: deterministic bytes to
+//!   serve, and [`fresh_dir`] and
 //!   [`files_in`] for the folders tests download into.
 //! - [`TestCertificate`]: a self-signed certificate for the TLS servers.
 //!
@@ -21,6 +24,7 @@
     reason = "test support: a panic here is the failing test's report, as clippy.toml already allows inside tests, and the whole crate is only ever used by tests"
 )]
 
+pub mod files;
 pub mod ftp;
 pub mod http;
 #[cfg(feature = "http3")]
@@ -59,11 +63,24 @@ pub fn files_in(dir: &Path) -> Vec<String> {
     names
 }
 
+/// The xorshift64 generator's state for seed 1; any odd value works.
+const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
+/// The first byte of every MPEG transport stream packet.
+const TS_SYNC_BYTE: u8 = 0x47;
+
 /// Deterministic pseudo-random bytes, so a misplaced range is always detected.
+/// The same as [`seeded_data`] with seed 1.
 #[must_use]
 pub fn test_data(len: usize) -> Vec<u8> {
-    // The xorshift64 generator; the seed is any value other than zero.
-    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    seeded_data(1, len)
+}
+
+/// Deterministic pseudo-random bytes, different for each `seed`, for tests
+/// that serve several files and must tell them apart.
+#[must_use]
+pub fn seeded_data(seed: u64, len: usize) -> Vec<u8> {
+    // The xorshift64 generator; its state must not be zero, which `| 1` ensures.
+    let mut x = seed.wrapping_mul(GOLDEN_RATIO_64) | 1;
     (0..len)
         .map(|_| {
             x ^= x << 13;
@@ -73,4 +90,34 @@ pub fn test_data(len: usize) -> Vec<u8> {
             low
         })
         .collect()
+}
+
+/// [`seeded_data`] that starts with the MPEG-TS sync byte, so a stream
+/// segment, and a track joined from such segments, is recognised as `.ts`.
+#[must_use]
+pub fn ts_segment(seed: u64, len: usize) -> Vec<u8> {
+    let mut data = seeded_data(seed, len);
+    if let Some(first) = data.first_mut() {
+        *first = TS_SYNC_BYTE;
+    }
+    data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_is_seed_one() {
+        assert_eq!(test_data(64), seeded_data(1, 64));
+        assert_ne!(seeded_data(1, 64), seeded_data(2, 64));
+    }
+
+    #[test]
+    fn ts_segment_starts_with_the_sync_byte() {
+        let segment = ts_segment(7, 32);
+        assert_eq!(segment.first(), Some(&TS_SYNC_BYTE));
+        assert_eq!(segment[1..], seeded_data(7, 32)[1..]);
+        assert_eq!(ts_segment(7, 0), [] as [u8; 0]);
+    }
 }

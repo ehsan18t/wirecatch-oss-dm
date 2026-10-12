@@ -1,15 +1,14 @@
-mod common;
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Server, segment, temp_dir};
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{Error, Outcome, StreamProgress, StreamRequest, download};
+use wirecatch_test_support::files::FileServer;
+use wirecatch_test_support::{fresh_dir, ts_segment};
 
-const MPEGURL: Option<&str> = Some("application/vnd.apple.mpegurl");
+const MPEGURL: &str = "application/vnd.apple.mpegurl";
 
 /// The fake ffmpeg that `cargo test` builds from `examples/fake_ffmpeg.rs`.
 /// Missing only when the tests are built alone (`--test ffmpeg`), which
@@ -79,11 +78,11 @@ async fn run(request: StreamRequest) -> Result<Outcome, Error> {
 }
 
 /// A master playlist with video and separate audio, two segments each.
-fn video_and_audio(server: &Server) {
+fn video_and_audio(server: &FileServer) {
     for (prefix, seed) in [("v", 1), ("a", 2)] {
         let mut text = String::from("#EXTM3U\n");
         for i in 0..2 {
-            server.put(&format!("{prefix}/{i}.ts"), segment(seed * 10 + i, 1500));
+            server.put(&format!("{prefix}/{i}.ts"), ts_segment(seed * 10 + i, 1500));
             text.push_str(&format!("#EXTINF:2,\n{i}.ts\n"));
         }
         text.push_str("#EXT-X-ENDLIST\n");
@@ -105,7 +104,7 @@ fn hostile_dir(test: &str) -> PathBuf {
     } else {
         "-y it's \"odd\" & $HOME `x` (1);"
     };
-    let dir = temp_dir(test).join(name);
+    let dir = fresh_dir(test).join(name);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -113,7 +112,7 @@ fn hostile_dir(test: &str) -> PathBuf {
 #[tokio::test]
 async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     let Some(ffmpeg) = fake_ffmpeg() else { return };
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     video_and_audio(&server);
     let dir = hostile_dir("ffmpeg-args");
     let output = dir.join("-i evil name.mp4");
@@ -173,9 +172,9 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
 #[tokio::test]
 async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     let Some(ffmpeg) = fake_ffmpeg() else { return };
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     video_and_audio(&server);
-    let dir = temp_dir("ffmpeg-fail");
+    let dir = fresh_dir("ffmpeg-fail");
     let output = dir.join("fail-please.mp4");
     let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
     request.options = options();
@@ -255,7 +254,7 @@ fn probe(ffmpeg: &Path, file: &Path) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-fn serve_folder(server: &Server, dir: &Path) {
+fn serve_folder(server: &FileServer, dir: &Path) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -266,7 +265,7 @@ fn serve_folder(server: &Server, dir: &Path) {
 #[tokio::test]
 async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
-    let source = temp_dir("real-ffmpeg-source");
+    let source = fresh_dir("real-ffmpeg-source");
     generate(
         &ffmpeg,
         &source,
@@ -276,7 +275,7 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
         "v",
     );
     generate(&ffmpeg, &source, "sine=duration=3", &["-c:a", "aac"], "a");
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     serve_folder(&server, &source);
     server.put_typed(
         "master.m3u8",
@@ -301,7 +300,7 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
 #[tokio::test]
 async fn real_ffmpeg_remuxes_a_single_ts_track() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
-    let source = temp_dir("real-ffmpeg-single-source");
+    let source = fresh_dir("real-ffmpeg-single-source");
     let status = Command::new(&ffmpeg)
         .args(["-hide_banner", "-loglevel", "error", "-y"])
         .args([
@@ -336,9 +335,9 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
         .status()
         .unwrap();
     assert!(status.success());
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     serve_folder(&server, &source);
-    let dir = temp_dir("real-ffmpeg-single");
+    let dir = fresh_dir("real-ffmpeg-single");
     let mut request = StreamRequest::new(server.url("index.m3u8"), dir.join("clip"));
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
@@ -355,7 +354,7 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
 }
 
 /// A one-segment HLS stream whose only segment is `payload`.
-fn one_segment(server: &Server, payload: impl Into<bytes::Bytes>) {
+fn one_segment(server: &FileServer, payload: impl Into<bytes::Bytes>) {
     server.put("0.m4s", payload);
     server.put_typed(
         "index.m3u8",
@@ -367,10 +366,10 @@ fn one_segment(server: &Server, payload: impl Into<bytes::Bytes>) {
 #[tokio::test]
 async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     let Some(ffmpeg) = fake_ffmpeg() else { return };
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     // An ffconcat script would make ffmpeg read whatever files it names.
     one_segment(&server, "ffconcat version 1.0\nfile secret.mp4\n");
-    let dir = temp_dir("ffmpeg-unknown");
+    let dir = fresh_dir("ffmpeg-unknown");
     let output = dir.join("clip.mp4");
     let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
     request.options = options();
@@ -395,7 +394,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
 async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
     // A file elsewhere on the computer that the "segment" tries to pull in.
-    let elsewhere = temp_dir("real-ffmpeg-elsewhere");
+    let elsewhere = fresh_dir("real-ffmpeg-elsewhere");
     let secret = elsewhere.join("secret.mp4");
     let status = Command::new(&ffmpeg)
         .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
@@ -425,9 +424,9 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
          <BaseURL>file:{target}</BaseURL><SegmentBase/></Representation>\
          </AdaptationSet></Period></MPD>\n"
     );
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     one_segment(&server, payload);
-    let dir = temp_dir("real-ffmpeg-disguised");
+    let dir = fresh_dir("real-ffmpeg-disguised");
     let output = dir.join("clip.mp4");
     let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
     request.options = options();

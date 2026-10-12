@@ -460,7 +460,7 @@ fn empty(builder: response::Builder) -> Response {
 }
 
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
-fn parse_range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
+pub(crate) fn parse_range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
     let value = headers.get(header::RANGE)?.to_str().ok()?;
     let spec = value.strip_prefix("bytes=")?;
     let (first, last) = spec.split_once('-')?;

@@ -1,17 +1,16 @@
-mod common;
-
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Server, segment, temp_dir};
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{
     Choice, Error, Outcome, PrivateNetwork, StreamKind, StreamProgress, StreamRequest, download,
     inspect,
 };
+use wirecatch_test_support::files::FileServer;
+use wirecatch_test_support::{fresh_dir, ts_segment};
 
-const DASH: Option<&str> = Some("application/dash+xml");
+const DASH: &str = "application/dash+xml";
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -20,7 +19,7 @@ fn options() -> DownloadOptions {
     options
 }
 
-fn request(server: &Server, manifest: &str, output: &Path) -> StreamRequest {
+fn request(server: &FileServer, manifest: &str, output: &Path) -> StreamRequest {
     let mut request = StreamRequest::new(server.url(manifest), output);
     request.options = options();
     request
@@ -45,20 +44,20 @@ fn saved(outcome: Outcome) -> Vec<u8> {
 /// An fMP4-looking init section, so the joined track is saved as `.mp4`.
 fn init(seed: u64) -> Vec<u8> {
     let mut data = b"\0\0\0\x10ftypiso6\0\0\0\0".to_vec();
-    data.extend(segment(seed, 300));
+    data.extend(ts_segment(seed, 300));
     data
 }
 
 #[tokio::test]
 async fn number_templates_download_the_chosen_representation() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     let mut expected = std::collections::HashMap::new();
     for rep in ["v1", "v2", "a1"] {
         let mut bytes = init(rep.len() as u64 + rep.as_bytes()[1] as u64);
         server.put(&format!("dash/{rep}/init.mp4"), bytes.clone());
         // 10 s in 4 s segments: three, numbered from 1, with a width of 3.
         for n in 1..=3u64 {
-            let data = segment(n * 7 + rep.as_bytes()[1] as u64, 2000);
+            let data = ts_segment(n * 7 + rep.as_bytes()[1] as u64, 2000);
             server.put(&format!("dash/{rep}/seg-{n:03}.m4s"), data.clone());
             bytes.extend(data);
         }
@@ -106,7 +105,7 @@ async fn number_templates_download_the_chosen_representation() {
     assert_eq!(info.extension(&Choice::Skip, &Choice::Auto, true), "m4a");
     assert_eq!(info.extension(&Choice::Auto, &Choice::Skip, false), "mp4");
 
-    let dir = temp_dir("dash-number");
+    let dir = fresh_dir("dash-number");
     // Separate audio needs ffmpeg; video alone does not.
     assert!(matches!(
         run(request(&server, "dash/manifest.mpd", &dir.join("x.mp4"))).await,
@@ -132,7 +131,7 @@ async fn number_templates_download_the_chosen_representation() {
 
 #[tokio::test]
 async fn timelines_use_times_in_addresses() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     let mut expected = init(1);
     server.put("tl/init.mp4", expected.clone());
     // Times 0, 2000, 4000 (r=2), then 6000 and 7500.
@@ -143,7 +142,7 @@ async fn timelines_use_times_in_addresses() {
         (6000, 700),
         (7500, 400),
     ] {
-        let data = segment(time + 1, len);
+        let data = ts_segment(time + 1, len);
         server.put(&format!("tl/chunk-{time}.m4s"), data.clone());
         expected.extend(data);
     }
@@ -158,7 +157,7 @@ async fn timelines_use_times_in_addresses() {
   </AdaptationSet></Period></MPD>"#,
         DASH,
     );
-    let dir = temp_dir("dash-timeline");
+    let dir = fresh_dir("dash-timeline");
     assert_eq!(
         saved(
             run(request(&server, "tl/manifest.mpd", &dir.join("v.mp4")))
@@ -171,7 +170,7 @@ async fn timelines_use_times_in_addresses() {
 
 #[tokio::test]
 async fn segment_base_files_are_split_through_their_index() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     // init (ftyp), then a sidx box listing three subsegments, then the media.
     let mut file = init(5);
     let index_start = file.len() as u64;
@@ -191,7 +190,7 @@ async fn segment_base_files_are_split_through_their_index() {
     }
     file.extend(&sidx);
     for (i, size) in sizes.iter().enumerate() {
-        file.extend(segment(70 + i as u64, *size as usize));
+        file.extend(ts_segment(70 + i as u64, *size as usize));
     }
     server.put("sb/video.mp4", file.clone());
     let index_end = index_start + sidx.len() as u64 - 1;
@@ -206,7 +205,7 @@ async fn segment_base_files_are_split_through_their_index() {
         ),
         DASH,
     );
-    let dir = temp_dir("dash-sidx");
+    let dir = fresh_dir("dash-sidx");
     let mut req = request(&server, "sb/manifest.mpd", &dir.join("v.mp4"));
     req.options.connections = 4;
     assert_eq!(saved(run(req).await.unwrap()), file);
@@ -223,7 +222,7 @@ async fn segment_base_files_are_split_through_their_index() {
 
 #[tokio::test]
 async fn live_drm_and_several_periods_are_refused() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     let rep = r#"<AdaptationSet mimeType="video/mp4"><SegmentTemplate media="$Number$.m4s" duration="4"/><Representation id="v" bandwidth="1"/></AdaptationSet>"#;
     server.put_typed(
         "live.mpd",
@@ -252,7 +251,7 @@ async fn live_drm_and_several_periods_are_refused() {
     .await
     .unwrap();
     assert!(info.live);
-    let dir = temp_dir("dash-refused");
+    let dir = fresh_dir("dash-refused");
     let error = run(request(&server, "live.mpd", &dir.join("a.mp4")))
         .await
         .unwrap_err();
@@ -277,7 +276,7 @@ async fn live_drm_and_several_periods_are_refused() {
 
 #[tokio::test]
 async fn a_base_url_into_the_local_network_is_refused() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     server.put_typed(
         "lan.mpd",
         r#"<MPD type="static" mediaPresentationDuration="PT4S"><BaseURL>http://10.0.0.5/media/</BaseURL><Period>
@@ -285,7 +284,7 @@ async fn a_base_url_into_the_local_network_is_refused() {
           <Representation id="v" bandwidth="1"/></AdaptationSet></Period></MPD>"#,
         DASH,
     );
-    let dir = temp_dir("dash-private");
+    let dir = fresh_dir("dash-private");
     let mut req = request(&server, "lan.mpd", &dir.join("v.mp4"));
     req.private_network = PrivateNetwork::Block;
     let error = run(req).await.unwrap_err();
@@ -295,7 +294,7 @@ async fn a_base_url_into_the_local_network_is_refused() {
 /// A presentation duration too large for `Duration` once panicked while inspecting, and release builds abort on panic, which took down the whole app.
 #[tokio::test]
 async fn an_absurd_presentation_duration_is_not_a_crash() {
-    let server = Server::start().await;
+    let server = FileServer::start().await;
     server.put_typed(
         "huge.mpd",
         r#"<MPD type="static" mediaPresentationDuration="PT99999999999999999999S"><Period><AdaptationSet mimeType="video/mp4">
