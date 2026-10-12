@@ -35,29 +35,36 @@ function nearSegment(x, y) {
   });
 }
 
+/** Samples per pixel along each axis, for smooth edges. */
+const SAMPLES = 4;
+/** The design's box: 24 x 24 units, as in the SVG logo. */
+const BOX = 24;
+
+/** How much of a pixel the rounded square covers, and how much of that the arrow covers (0 to 1 each). */
+function coverage(px, py, size) {
+  let rect = 0;
+  let stroke = 0;
+  for (let sy = 0; sy < SAMPLES; sy += 1) {
+    for (let sx = 0; sx < SAMPLES; sx += 1) {
+      const x = ((px + (sx + 0.5) / SAMPLES) / size) * BOX;
+      const y = ((py + (sy + 0.5) / SAMPLES) / size) * BOX;
+      if (!insideRoundedRect(x, y)) continue;
+      rect += 1;
+      if (nearSegment(x, y)) stroke += 1;
+    }
+  }
+  return { alpha: rect / (SAMPLES * SAMPLES), white: rect === 0 ? 0 : stroke / rect };
+}
+
 function draw(size) {
-  const samples = 4;
   const pixels = Buffer.alloc(size * size * 4);
   for (let py = 0; py < size; py += 1) {
     for (let px = 0; px < size; px += 1) {
-      let rect = 0;
-      let stroke = 0;
-      for (let sy = 0; sy < samples; sy += 1) {
-        for (let sx = 0; sx < samples; sx += 1) {
-          const x = ((px + (sx + 0.5) / samples) / size) * 24;
-          const y = ((py + (sy + 0.5) / samples) / size) * 24;
-          if (insideRoundedRect(x, y)) {
-            rect += 1;
-            if (nearSegment(x, y)) stroke += 1;
-          }
-        }
-      }
-      const total = samples * samples;
-      const alpha = rect / total;
-      const white = rect === 0 ? 0 : stroke / rect;
+      const { alpha, white } = coverage(px, py, size);
       const i = (py * size + px) * 4;
-      for (let c = 0; c < 3; c += 1)
+      for (let c = 0; c < 3; c += 1) {
         pixels[i + c] = Math.round(BLUE[c] * (1 - white) + WHITE[c] * white);
+      }
       pixels[i + 3] = Math.round(alpha * 255);
     }
   }

@@ -7,6 +7,7 @@ import type {
   Call,
   Event,
   ExtensionSettings,
+  ExtensionSettingsPatch,
   Hello,
   Message,
   Outcome,
@@ -168,42 +169,21 @@ export class FakeApp implements NativeTransport {
     const { id, call } = message;
     this.requests.push({ id, call });
     this.onRequest?.(call);
-    if (!this.answers) return;
+    if (this.answers) this.answer(port, id, call);
+  }
+
+  /** Answers one request the way the app would, as the behavior fields say. */
+  private answer(port: FakeNativePort, id: number, call: Call): void {
     const reply = (outcome: Outcome): void => port.deliver({ kind: 'response', id, outcome });
     switch (call.method) {
       case 'hello':
-        if (!this.running && mayStartApp(call.params)) {
-          this.running = true;
-          this.starts += 1;
-        }
-        if (!this.running) {
-          reply({
-            status: 'err',
-            value: { code: 'app_not_running', message: 'Wirecatch is closed.' },
-          });
-        } else if (this.helloError !== null) {
-          reply({ status: 'err', value: this.helloError });
-        } else {
-          reply({
-            status: 'ok',
-            value: {
-              type: 'hello',
-              data: { app_version: this.appVersion, protocol_version: this.protocolVersion },
-            },
-          });
-        }
+        reply(this.hello(call.params));
         return;
       case 'get_extension_settings':
         reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
         return;
       case 'update_extension_settings':
-        if (this.updateError !== null) {
-          reply({ status: 'err', value: this.updateError });
-          return;
-        }
-        this.settings = applyPatch(this.settings, call.params);
-        reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
-        this.broadcast({ type: 'extension_settings_changed', data: this.settings });
+        this.updateSettings(call.params, reply);
         return;
       case 'list_queues':
         reply({ status: 'ok', value: { type: 'queues', data: this.queues } });
@@ -213,47 +193,86 @@ export class FakeApp implements NativeTransport {
       case 'show_window':
         reply({ status: 'ok', value: { type: 'done' } });
         return;
-      case 'withdraw_download': {
-        const behavior = this.withdrawBehavior;
-        if (behavior === 'hang') return;
-        if (typeof behavior === 'object') reply({ status: 'err', value: behavior.error });
-        else reply({ status: 'ok', value: { type: 'withdrawn', data: behavior } });
+      case 'withdraw_download':
+        this.withdraw(reply);
         return;
-      }
-      case 'add_download': {
-        const behavior = this.addBehavior;
-        if (behavior === 'hang') return;
-        if (this.addLateMs !== null) {
-          const late = this.addLateMs;
-          this.addLateMs = null;
-          setTimeout(() => this.receiveAgain(port, id, call), late);
-          return;
-        }
-        if (behavior === 'disconnect') {
-          void Promise.resolve().then(() => port.browserDisconnect('Native host has exited.'));
-          return;
-        }
-        if (behavior === 'unexpected_action') {
-          reply({
-            status: 'ok',
-            value: { type: 'download_added', data: { id: null, action: 'exploded' as AddAction } },
-          });
-          return;
-        }
-        if (typeof behavior === 'object') {
-          reply({ status: 'err', value: behavior.error });
-          return;
-        }
-        reply({
-          status: 'ok',
-          value: {
-            type: 'download_added',
-            data: { id: behavior === 'awaiting_confirmation' ? null : 7, action: behavior },
-          },
-        });
+      case 'add_download':
+        this.add(port, { id, call }, reply);
         return;
-      }
     }
+  }
+
+  private hello(params: Hello): Outcome {
+    if (!this.running && mayStartApp(params)) {
+      this.running = true;
+      this.starts += 1;
+    }
+    if (!this.running) {
+      return { status: 'err', value: { code: 'app_not_running', message: 'Wirecatch is closed.' } };
+    }
+    if (this.helloError !== null) return { status: 'err', value: this.helloError };
+    return {
+      status: 'ok',
+      value: {
+        type: 'hello',
+        data: { app_version: this.appVersion, protocol_version: this.protocolVersion },
+      },
+    };
+  }
+
+  private updateSettings(patch: ExtensionSettingsPatch, reply: (outcome: Outcome) => void): void {
+    if (this.updateError !== null) {
+      reply({ status: 'err', value: this.updateError });
+      return;
+    }
+    this.settings = applyPatch(this.settings, patch);
+    reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
+    this.broadcast({ type: 'extension_settings_changed', data: this.settings });
+  }
+
+  private withdraw(reply: (outcome: Outcome) => void): void {
+    const behavior = this.withdrawBehavior;
+    if (behavior === 'hang') return;
+    if (typeof behavior === 'object') reply({ status: 'err', value: behavior.error });
+    else reply({ status: 'ok', value: { type: 'withdrawn', data: behavior } });
+  }
+
+  /** Answers `add_download` as `addBehavior` and `addLateMs` say. */
+  private add(
+    port: FakeNativePort,
+    request: { id: number; call: Call },
+    reply: (outcome: Outcome) => void,
+  ): void {
+    const behavior = this.addBehavior;
+    if (behavior === 'hang') return;
+    if (this.addLateMs !== null) {
+      const late = this.addLateMs;
+      this.addLateMs = null;
+      setTimeout(() => this.receiveAgain(port, request.id, request.call), late);
+      return;
+    }
+    if (behavior === 'disconnect') {
+      void Promise.resolve().then(() => port.browserDisconnect('Native host has exited.'));
+      return;
+    }
+    if (behavior === 'unexpected_action') {
+      reply({
+        status: 'ok',
+        value: { type: 'download_added', data: { id: null, action: 'exploded' as AddAction } },
+      });
+      return;
+    }
+    if (typeof behavior === 'object') {
+      reply({ status: 'err', value: behavior.error });
+      return;
+    }
+    reply({
+      status: 'ok',
+      value: {
+        type: 'download_added',
+        data: { id: behavior === 'awaiting_confirmation' ? null : 7, action: behavior },
+      },
+    });
   }
 
   /** Answers a request that was held back (used by `addLateMs`), without recording it twice. */

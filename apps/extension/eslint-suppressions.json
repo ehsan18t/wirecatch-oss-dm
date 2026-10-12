@@ -1,9 +1,4 @@
 {
-  "scripts/make-icons.mjs": {
-    "max-depth": {
-      "count": 2
-    }
-  },
   "src/components/App.svelte": {
     "max-lines": {
       "count": 1
@@ -11,11 +6,6 @@
   },
   "src/entrypoints/background.ts": {
     "max-lines-per-function": {
-      "count": 1
-    }
-  },
-  "tests/fakes.ts": {
-    "complexity": {
       "count": 1
     }
   }
