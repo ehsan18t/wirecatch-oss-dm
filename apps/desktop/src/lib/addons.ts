@@ -2,6 +2,10 @@
 
 import type { AddonInfo, AddonState } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
+import { PERCENT_MAX, percentOf, roundDownTo } from './format';
+
+/** A screen reader hears an install at every quarter of it, in percent, not at every percent. */
+const ANNOUNCE_STEP = 25;
 
 /** The id of the one add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
 export const MEDIA_ADDON = 'media';
@@ -40,7 +44,7 @@ export function addonStatus(addon: AddonInfo): string {
       if (fraction === null) return 'Installing.';
       // Everything is downloaded; the files are being checked and unpacked.
       if (fraction >= 1) return 'Installing, checking the files.';
-      return `Installing, ${Math.floor(fraction * 100)}%.`;
+      return `Installing, ${percentOf(fraction)}%.`;
     }
     case 'installed':
       return addon.installed_version ? `Installed: ${addon.installed_version}.` : 'Installed.';
@@ -66,8 +70,8 @@ export function addonAnnouncement(addon: AddonInfo): string {
       return '';
     case 'installing': {
       const fraction = installFraction(state);
-      const quarter = fraction === null ? 0 : Math.floor(fraction * 4) * 25;
-      return quarter === 0 || quarter === 100
+      const quarter = fraction === null ? 0 : roundDownTo(fraction * PERCENT_MAX, ANNOUNCE_STEP);
+      return quarter === 0 || quarter === PERCENT_MAX
         ? `Installing the ${addon.name.toLowerCase()}.`
         : `${addon.name}: ${quarter}% installed.`;
     }

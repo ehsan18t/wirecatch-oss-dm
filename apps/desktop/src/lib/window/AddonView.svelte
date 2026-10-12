@@ -4,7 +4,7 @@
   // download goes on by itself once the add-on is installed.
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
-  import { hostOf } from '$lib/format';
+  import { hostOf, progressbarValue } from '$lib/format';
   import { track } from '$lib/state/reactivity';
   import { formatBytes } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
@@ -66,9 +66,7 @@
         class="wire"
         role="progressbar"
         aria-label="Installing {addon.name}"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={fraction === null ? undefined : Math.floor(fraction * 100)}
+        {...progressbarValue(fraction)}
       >
         <span class="fill" style:transform="scaleX({fraction ?? 0.05})"></span>
       </div>

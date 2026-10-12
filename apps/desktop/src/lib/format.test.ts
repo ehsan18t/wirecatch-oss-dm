@@ -13,7 +13,10 @@ import {
   formatSize,
   linkForDisplay,
   parseTime,
+  percentOf,
   processingFraction,
+  progressbarValue,
+  roundDownTo,
   shownWait,
   scheduleAllows,
   statusDetail,
@@ -37,6 +40,25 @@ describe('progress', () => {
     expect(formatPercent(999, 1000)).toBe('99%');
     expect(formatPercent(1000, 1000)).toBe('100%');
     expect(formatPercent(5, null)).toBe('');
+    expect(percentOf(0.426)).toBe(42);
+    expect(percentOf(1)).toBe(99);
+  });
+
+  it('gives a progress bar its value in percent, or none while unknown', () => {
+    expect(progressbarValue(0.5)).toEqual({
+      'aria-valuemin': 0,
+      'aria-valuemax': 100,
+      'aria-valuenow': 50,
+    });
+    expect(progressbarValue(1)['aria-valuenow']).toBe(99);
+    expect(progressbarValue(1, true)['aria-valuenow']).toBe(100);
+    expect(progressbarValue(null)['aria-valuenow']).toBeUndefined();
+  });
+
+  it('rounds down to a step', () => {
+    expect(roundDownTo(68, 25)).toBe(50);
+    expect(roundDownTo(100, 25)).toBe(100);
+    expect(roundDownTo(24.9, 25)).toBe(0);
   });
 
   it('describes size in plain words', () => {

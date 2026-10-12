@@ -46,13 +46,42 @@ export function processingFraction(
   return perMille === null || perMille === undefined ? null : Math.min(1, perMille / 1000);
 }
 
+/** A whole job in percent: the top of every progress bar. */
+export const PERCENT_MAX = 100;
+
+/**
+ * Work still under way as a whole percentage, rounded down and never 100: everything may be
+ * downloaded while the file is still being written or checked, and 100% would say it is done.
+ */
+export function percentOf(fraction: number): number {
+  return Math.min(PERCENT_MAX - 1, Math.floor(fraction * PERCENT_MAX));
+}
+
+/** `value` rounded down to a whole number of `step`s: `roundDownTo(68, 25)` is 50. */
+export function roundDownTo(value: number, step: number): number {
+  return Math.floor(value / step) * step;
+}
+
+/**
+ * The value attributes of a `role="progressbar"` element, in percent: full once `finished`,
+ * left out while the fraction is unknown (an indeterminate bar), and otherwise `percentOf`.
+ */
+export function progressbarValue(
+  fraction: number | null,
+  finished = false,
+): { 'aria-valuemin': number; 'aria-valuemax': number; 'aria-valuenow': number | undefined } {
+  return {
+    'aria-valuemin': 0,
+    'aria-valuemax': PERCENT_MAX,
+    'aria-valuenow': finished ? PERCENT_MAX : fraction === null ? undefined : percentOf(fraction),
+  };
+}
+
 /** Progress as a whole percentage string, for example `42%`. Empty when unknown. */
 export function formatPercent(done: number, total: number | null): string {
   const f = progressFraction(done, total);
   if (f === null) return '';
-  // Never show 100% before the download has actually finished.
-  const pct = f >= 1 ? 100 : Math.min(99, Math.floor(f * 100));
-  return `${pct}%`;
+  return `${f >= 1 ? PERCENT_MAX : percentOf(f)}%`;
 }
 
 /** Size column text: `1.2 GB of 4.7 GB`, `4.7 GB`, or what is known so far. */
@@ -335,7 +364,7 @@ export function statusShort(
   if (row.status === 'processing' && row.processing) {
     const label = PROCESSING_LABEL[row.processing.step];
     const fraction = processingFraction({ status: row.status, processing: row.processing });
-    return fraction === null ? label : `${label}, ${Math.min(99, Math.floor(fraction * 100))}%`;
+    return fraction === null ? label : `${label}, ${percentOf(fraction)}%`;
   }
   return STATUS_LABEL[row.status];
 }

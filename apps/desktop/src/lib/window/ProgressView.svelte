@@ -16,6 +16,7 @@
     MEDIA_SOURCE_LABEL,
     PROCESSING_LABEL,
     processingFraction,
+    progressbarValue,
     progressFraction,
     statusDetail,
     statusShort,
@@ -140,13 +141,7 @@
           aria-label={row.status === 'processing' && row.processing
             ? PROCESSING_LABEL[row.processing.step]
             : 'Downloaded'}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={finished
-            ? 100
-            : fraction === null
-              ? undefined
-              : Math.min(99, Math.floor(fraction * 100))}
+          {...progressbarValue(fraction, finished)}
         >
           {#if indeterminate}
             <span class="fill unknown"></span>

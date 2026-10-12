@@ -7,6 +7,7 @@
     installFraction,
     isInstalled,
   } from '$lib/addons';
+  import { progressbarValue } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { track } from '$lib/state/reactivity';
 
@@ -69,9 +70,7 @@
       class="wire"
       role="progressbar"
       aria-label="Installing {addon.name}"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={fraction === null ? undefined : Math.floor(fraction * 100)}
+      {...progressbarValue(fraction)}
     >
       <span
         class="fill"
