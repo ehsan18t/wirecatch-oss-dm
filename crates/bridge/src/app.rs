@@ -170,7 +170,7 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
         command.creation_flags(base | CREATE_BREAKAWAY_FROM_JOB);
         match command.spawn() {
             Ok(_child) => return Ok(()),
-            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED.cast_signed()) => {
                 log!(
                     "the browser does not let the programs it starts leave its job, so Wirecatch is being started inside it. The browser may close Wirecatch when it closes the extension's connection; if that happens, open Wirecatch yourself (or let it start with the computer) so it keeps running"
                 );

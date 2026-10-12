@@ -51,7 +51,10 @@ pub(crate) fn identify(args: &[OsString], config: &Config) -> Result<Caller, Str
             .iter()
             .find(|arg| !arg.to_str().is_some_and(|a| a.starts_with("--")))
         {
-            return Err(format!("unexpected argument {extra:?} after the origin"));
+            return Err(format!(
+                "unexpected argument {:?} after the origin",
+                extra.to_string_lossy()
+            ));
         }
         return Ok(Caller::Chromium { id: id.clone() });
     }

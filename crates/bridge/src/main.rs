@@ -7,9 +7,9 @@
 //!   this mode stdout carries only frames; every log line goes to stderr.
 //! - `wirecatch-bridge install` / `uninstall`: register or remove the host in every supported browser, for the current user or, with `--all-users` (Windows, administrator rights), for every user of the computer.
 
-// Stdout belongs to the browser in native messaging mode. Printing to it anywhere
-// else is a bug, so it is denied except in the install command.
-#![deny(clippy::print_stdout)]
+// Stdout belongs to the browser in native messaging mode, so nothing here prints
+// to it: the workspace lints forbid `print!`/`println!`, and the install command
+// writes its report through an explicit handle.
 
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -113,7 +113,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     // a blocked read never holds up shutdown.
     if let Err(e) = thread::Builder::new()
         .name("stdin".into())
-        .spawn(move || read_browser(to_relay))
+        .spawn(move || read_browser(&to_relay))
     {
         log!("could not start: {e}");
         return ExitCode::FAILURE;
@@ -160,7 +160,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
 }
 
 /// Reads frames from the browser until it closes stdin.
-fn read_browser(to_relay: mpsc::Sender<RawFrame>) {
+fn read_browser(to_relay: &mpsc::Sender<RawFrame>) {
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     loop {

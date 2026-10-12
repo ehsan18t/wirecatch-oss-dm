@@ -21,7 +21,7 @@
 //! sandbox, but the bridge they name is installed outside it, where the sandbox
 //! cannot start it, so no manifest is written there. Firefox as a Snap (Ubuntu's
 //! default) and as a Flatpak can still reach the bridge through the
-//! WebExtensions portal (`xdg-desktop-portal`), which reads the host's own
+//! `WebExtensions` portal (`xdg-desktop-portal`), which reads the host's own
 //! `~/.mozilla/native-messaging-hosts` and asks the person once; this needs
 //! portal support in the distribution. Chromium-based Flatpaks and Snaps cannot
 //! start a host outside their sandbox; use a packaged (.deb, .rpm) browser.
@@ -40,7 +40,7 @@
 //! host registering a subkey, which makes the delete fail instead of losing it.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -106,20 +106,20 @@ const MOZILLA_KEY: &str = r"Software\Mozilla";
 
 /// Chromium's per-user hosts folder on Linux: `NativeMessagingHosts` inside the
 /// browser's user data folder (`chrome::DIR_USER_NATIVE_MESSAGING`).
-const fn chromium_linux(dir: &'static [&'static str]) -> Option<LinuxHosts> {
-    Some(LinuxHosts {
+const fn chromium_linux(dir: &'static [&'static str]) -> LinuxHosts {
+    LinuxHosts {
         base: LinuxBase::ConfigHome,
         dir,
-    })
+    }
 }
 
 /// Firefox's per-user hosts folder on Linux: `~/.mozilla/native-messaging-hosts`
 /// (`XRE_USER_NATIVE_MANIFESTS` in `toolkit/xre/nsXREDirProvider.cpp`, which keeps
 /// this legacy path even for profiles in the XDG folders).
-const MOZILLA_LINUX: Option<LinuxHosts> = Some(LinuxHosts {
+const MOZILLA_LINUX: LinuxHosts = LinuxHosts {
     base: LinuxBase::Home,
     dir: &[".mozilla", "native-messaging-hosts"],
-});
+};
 
 /// The browsers `install` registers with, and where each one really looks.
 /// Entries that share a key or folder are written once.
@@ -128,13 +128,13 @@ const BROWSERS: &[Browser] = &[
         name: "Google Chrome",
         engine: Engine::Chromium,
         windows_root: Some(CHROME_KEY),
-        linux: chromium_linux(&["google-chrome", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["google-chrome", "NativeMessagingHosts"])),
     },
     Browser {
         name: "Chromium",
         engine: Engine::Chromium,
         windows_root: Some(CHROMIUM_KEY),
-        linux: chromium_linux(&["chromium", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["chromium", "NativeMessagingHosts"])),
     },
     // Edge reads its own key first, then Chromium's and Chrome's: "Native
     // messaging", Microsoft Edge developer documentation (learn.microsoft.com).
@@ -142,7 +142,7 @@ const BROWSERS: &[Browser] = &[
         name: "Microsoft Edge",
         engine: Engine::Chromium,
         windows_root: Some(r"Software\Microsoft\Edge"),
-        linux: chromium_linux(&["microsoft-edge", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["microsoft-edge", "NativeMessagingHosts"])),
     },
     // Brave does not change the Windows lookup, so it reads Chromium's and
     // Chrome's keys; on Linux it keeps its own user data folder
@@ -151,7 +151,11 @@ const BROWSERS: &[Browser] = &[
         name: "Brave",
         engine: Engine::Chromium,
         windows_root: Some(CHROME_KEY),
-        linux: chromium_linux(&["BraveSoftware", "Brave-Browser", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&[
+            "BraveSoftware",
+            "Brave-Browser",
+            "NativeMessagingHosts",
+        ])),
     },
     // Vivaldi reads Chrome's key on Windows (KeePassXC moved its Vivaldi entry
     // there in commit 2ad8036: "Vivaldi uses Chrome's registry settings").
@@ -159,13 +163,13 @@ const BROWSERS: &[Browser] = &[
         name: "Vivaldi",
         engine: Engine::Chromium,
         windows_root: Some(CHROME_KEY),
-        linux: chromium_linux(&["vivaldi", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["vivaldi", "NativeMessagingHosts"])),
     },
     Browser {
         name: "Opera",
         engine: Engine::Chromium,
         windows_root: Some(CHROME_KEY),
-        linux: chromium_linux(&["opera", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["opera", "NativeMessagingHosts"])),
     },
     // Opera GX and Arc have no Linux version.
     Browser {
@@ -186,14 +190,14 @@ const BROWSERS: &[Browser] = &[
         name: "Thorium",
         engine: Engine::Chromium,
         windows_root: Some(CHROME_KEY),
-        linux: chromium_linux(&["thorium", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["thorium", "NativeMessagingHosts"])),
     },
     // ungoogled-chromium keeps Chromium's names everywhere.
     Browser {
         name: "ungoogled-chromium",
         engine: Engine::Chromium,
         windows_root: Some(CHROMIUM_KEY),
-        linux: chromium_linux(&["chromium", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["chromium", "NativeMessagingHosts"])),
     },
     // Yandex Browser on Linux: `yandex-browser` (browserpass-native's
     // `hosts-yandex-user` target, Video DownloadHelper's companion app). Its
@@ -203,13 +207,13 @@ const BROWSERS: &[Browser] = &[
         name: "Yandex Browser",
         engine: Engine::Chromium,
         windows_root: None,
-        linux: chromium_linux(&["yandex-browser", "NativeMessagingHosts"]),
+        linux: Some(chromium_linux(&["yandex-browser", "NativeMessagingHosts"])),
     },
     Browser {
         name: "Mozilla Firefox",
         engine: Engine::Firefox,
         windows_root: Some(MOZILLA_KEY),
-        linux: MOZILLA_LINUX,
+        linux: Some(MOZILLA_LINUX),
     },
     // LibreWolf reads `~/.librewolf/native-messaging-hosts` and then Firefox's
     // folder, and keeps Firefox's key (librewolf/source `patches/mozilla_dirs.patch`).
@@ -217,7 +221,7 @@ const BROWSERS: &[Browser] = &[
         name: "LibreWolf",
         engine: Engine::Firefox,
         windows_root: Some(MOZILLA_KEY),
-        linux: MOZILLA_LINUX,
+        linux: Some(MOZILLA_LINUX),
     },
     // Waterfox reads `~/.waterfox/native-messaging-hosts` and then Firefox's
     // folder (`COMPAT_DIR_NAMES` in its `NativeManifests.sys.mjs`), and keeps
@@ -226,7 +230,7 @@ const BROWSERS: &[Browser] = &[
         name: "Waterfox",
         engine: Engine::Firefox,
         windows_root: Some(MOZILLA_KEY),
-        linux: MOZILLA_LINUX,
+        linux: Some(MOZILLA_LINUX),
     },
     // Zen changes where profiles live, not where native manifests are read
     // (zen-browser/desktop `src/toolkit/xre/nsXREDirProvider-cpp.patch`).
@@ -234,7 +238,7 @@ const BROWSERS: &[Browser] = &[
         name: "Zen",
         engine: Engine::Firefox,
         windows_root: Some(MOZILLA_KEY),
-        linux: MOZILLA_LINUX,
+        linux: Some(MOZILLA_LINUX),
     },
     // Floorp maps its own folder names back to Mozilla's
     // (Floorp `tools/patches/modules-NativeManifests.sys.patch`).
@@ -242,7 +246,7 @@ const BROWSERS: &[Browser] = &[
         name: "Floorp",
         engine: Engine::Firefox,
         windows_root: Some(MOZILLA_KEY),
-        linux: MOZILLA_LINUX,
+        linux: Some(MOZILLA_LINUX),
     },
 ];
 
@@ -586,7 +590,7 @@ pub(crate) struct RealHost;
 pub(crate) mod files {
     //! File operations shared by the real host and the test host.
 
-    use super::*;
+    use super::{Path, fs, io};
 
     pub(crate) fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
         match fs::read(path) {
@@ -697,14 +701,16 @@ mod registry {
 
 #[cfg(windows)]
 mod registry {
-    //! The registry (HKEY_CURRENT_USER or HKEY_LOCAL_MACHINE) through the Win32 API.
+    //! The registry (`HKEY_CURRENT_USER` or `HKEY_LOCAL_MACHINE`) through the Win32 API.
 
     use std::io;
     use std::ptr;
 
     use super::Hive;
 
-    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
+    use windows_sys::Win32::Foundation::{
+        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS, WIN32_ERROR,
+    };
     use windows_sys::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE,
         REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW,
@@ -722,12 +728,18 @@ mod registry {
         text.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    fn check(status: u32) -> io::Result<()> {
+    fn check(status: WIN32_ERROR) -> io::Result<()> {
         if status == ERROR_SUCCESS {
             Ok(())
         } else {
-            Err(io::Error::from_raw_os_error(status as i32))
+            Err(os_error(status))
         }
+    }
+
+    /// The Win32 error `code` as an `io::Error`. Win32 error codes are `u32`, and
+    /// `io::Error` keeps them as the same bits in an `i32`.
+    fn os_error(code: WIN32_ERROR) -> io::Error {
+        io::Error::from_raw_os_error(code.cast_signed())
     }
 
     /// Closes the key on drop.
@@ -755,7 +767,7 @@ mod registry {
                     RRF_RT_REG_SZ,
                     ptr::null_mut(),
                     buf.as_mut_ptr().cast(),
-                    &mut size,
+                    &raw mut size,
                 )
             };
             match status {
@@ -769,7 +781,7 @@ mod registry {
                 }
                 ERROR_FILE_NOT_FOUND => return Ok(None),
                 ERROR_MORE_DATA => buf.resize(size as usize / 2 + 1, 0),
-                other => return Err(io::Error::from_raw_os_error(other as i32)),
+                other => return Err(os_error(other)),
             }
         }
         Err(io::Error::other("the registry value kept changing size"))
@@ -788,7 +800,7 @@ mod registry {
                 REG_OPTION_NON_VOLATILE,
                 KEY_SET_VALUE,
                 ptr::null(),
-                &mut handle,
+                &raw mut handle,
                 ptr::null_mut(),
             )
         })?;
@@ -814,7 +826,7 @@ mod registry {
         // SAFETY: `key` is NUL-terminated.
         match unsafe { RegDeleteKeyW(root(hive), key.as_ptr()) } {
             ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
-            other => Err(io::Error::from_raw_os_error(other as i32)),
+            other => Err(os_error(other)),
         }
     }
 
@@ -828,12 +840,12 @@ mod registry {
                 wide_key.as_ptr(),
                 0,
                 KEY_QUERY_VALUE,
-                &mut handle,
+                &raw mut handle,
             )
         } {
             ERROR_SUCCESS => {}
             ERROR_FILE_NOT_FOUND => return Ok(false),
-            other => return Err(io::Error::from_raw_os_error(other as i32)),
+            other => return Err(os_error(other)),
         }
         let handle = Key(handle);
         let mut subkeys = 0u32;
@@ -845,10 +857,10 @@ mod registry {
                 ptr::null_mut(),
                 ptr::null_mut(),
                 ptr::null(),
-                &mut subkeys,
+                &raw mut subkeys,
                 ptr::null_mut(),
                 ptr::null_mut(),
-                &mut values,
+                &raw mut values,
                 ptr::null_mut(),
                 ptr::null_mut(),
                 ptr::null_mut(),
@@ -1088,11 +1100,8 @@ pub(crate) enum Scope {
     Machine,
 }
 
-/// Runs `install` or `uninstall` and prints what happened.
-#[expect(
-    clippy::print_stdout,
-    reason = "a terminal command, not native messaging mode"
-)]
+/// Runs `install` or `uninstall` and writes what happened to stdout: a terminal
+/// command, not native messaging mode, so stdout belongs to the person.
 pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
     let report = match planned_report(command, scope) {
         Ok(report) => report,
@@ -1101,22 +1110,33 @@ pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    for line in &report.lines {
-        println!("{line}");
-    }
-    if report.failures > 0 {
-        return ExitCode::FAILURE;
-    }
-    match (command, scope) {
-        (Command::Install, Scope::User) => println!("The Wirecatch browser bridge is registered."),
+    let succeeded = report.failures == 0;
+    let summary = succeeded.then_some(match (command, scope) {
+        (Command::Install, Scope::User) => "The Wirecatch browser bridge is registered.",
         (Command::Install, Scope::Machine) => {
-            println!("The Wirecatch browser bridge is registered for every user of this computer.");
+            "The Wirecatch browser bridge is registered for every user of this computer."
         }
-        (Command::Uninstall, _) => {
-            println!("The Wirecatch browser bridge is no longer registered.")
-        }
+        (Command::Uninstall, _) => "The Wirecatch browser bridge is no longer registered.",
+    });
+    // The registration is done either way, so a report nobody can read (stdout
+    // closed) is logged and does not change the exit code.
+    if let Err(e) = print_report(&report.lines, summary) {
+        crate::log!("could not write the report: {e}");
     }
-    ExitCode::SUCCESS
+    if succeeded {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Writes the report's lines and then `summary` to stdout, one per line.
+fn print_report(lines: &[String], summary: Option<&str>) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    for line in lines.iter().map(String::as_str).chain(summary) {
+        writeln!(out, "{line}")?;
+    }
+    out.flush()
 }
 
 fn planned_report(command: Command, scope: Scope) -> anyhow::Result<Report> {
@@ -1295,23 +1315,9 @@ mod tests {
 
     const ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
 
-    #[test]
-    fn windows_install_registers_every_browser_and_uninstall_restores_the_state() {
-        let temp = TempDir::new();
-        let exe = temp
-            .0
-            .join("Program Files")
-            .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
-        let local = temp.0.join("LocalAppData");
-        let layout = Layout::Windows {
-            exe: exe.clone(),
-            local_app_data: local.clone(),
-        };
-        let plan = plan(&config(), &layout).unwrap();
-        let mut host = FakeHost::default();
-
-        // Things that were there before and must survive.
+    /// Registry values and files from before Wirecatch, which install and uninstall
+    /// must leave alone.
+    fn seed_windows_state(local: &Path, host: &mut FakeHost) {
         fs::create_dir_all(local.join("Wirecatch")).unwrap();
         fs::write(local.join("Wirecatch").join("downloads.db"), b"keep").unwrap();
         host.set_registry_value(
@@ -1331,13 +1337,11 @@ mod tests {
             r"software\mozilla".into(),
             (r"Software\Mozilla".into(), None),
         );
-        let files_before = tree(&temp.0);
-        let registry_before = host.snapshot();
+    }
 
-        let report = install(&plan, &mut host);
-        assert_eq!(report.failures, 0, "{:?}", report.lines);
-
-        let dir = local.join("Wirecatch").join("NativeMessagingHosts");
+    /// Checks the two manifests a Windows install writes into `dir`, and returns
+    /// the Chromium one's path and the Firefox one's.
+    fn assert_windows_manifests(dir: &Path, exe: &Path) -> (PathBuf, PathBuf) {
         let chromium = dir.join("app.wirecatch.bridge.chromium.json");
         let firefox = dir.join("app.wirecatch.bridge.firefox.json");
         let chromium_manifest = json(&chromium);
@@ -1357,7 +1361,12 @@ mod tests {
             serde_json::json!(["extension@wirecatch.app"])
         );
         assert!(firefox_manifest.get("allowed_origins").is_none());
+        (chromium, firefox)
+    }
 
+    /// Checks that exactly the keys browsers read point to the manifests, and that
+    /// each Windows browser is covered by the key it reads.
+    fn assert_windows_keys(plan: &Plan, host: &FakeHost, chromium: &Path, firefox: &Path) {
         let chromium_path = chromium.to_str().unwrap();
         let expected = [
             (
@@ -1436,6 +1445,32 @@ mod tests {
                 "{retired}"
             );
         }
+    }
+
+    #[test]
+    fn windows_install_registers_every_browser_and_uninstall_restores_the_state() {
+        let temp = TempDir::new();
+        let exe = temp
+            .0
+            .join("Program Files")
+            .join("Wirecatch")
+            .join("wirecatch-bridge.exe");
+        let local = temp.0.join("LocalAppData");
+        let layout = Layout::Windows {
+            exe: exe.clone(),
+            local_app_data: local.clone(),
+        };
+        let plan = plan(&config(), &layout).unwrap();
+        let mut host = FakeHost::default();
+        seed_windows_state(&local, &mut host);
+        let files_before = tree(&temp.0);
+        let registry_before = host.snapshot();
+
+        let report = install(&plan, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        let dir = local.join("Wirecatch").join("NativeMessagingHosts");
+        let (chromium, firefox) = assert_windows_manifests(&dir, &exe);
+        assert_windows_keys(&plan, &host, &chromium, &firefox);
 
         // Installing again changes nothing.
         let files_installed = tree(&temp.0);
@@ -1556,19 +1591,22 @@ mod tests {
         }
     }
 
-    #[test]
-    fn linux_install_writes_every_manifest_and_uninstall_restores_the_state() {
-        let temp = TempDir::new();
-        let home = temp.0.join("home");
-        let exe = temp
-            .0
-            .join("opt")
-            .join("wirecatch")
-            .join("wirecatch-bridge");
-        let layout = Layout::linux(exe.clone(), home.clone(), None);
-        let plan = plan(&config(), &layout).unwrap();
-        let mut host = FakeHost::default();
+    /// The Chromium folders under `~/.config` that get a manifest on Linux.
+    const LINUX_CHROMIUM_DIRS: [&[&str]; 8] = [
+        &["google-chrome"],
+        // Chromium and ungoogled-chromium.
+        &["chromium"],
+        &["microsoft-edge"],
+        &["BraveSoftware", "Brave-Browser"],
+        &["vivaldi"],
+        &["opera"],
+        &["thorium"],
+        &["yandex-browser"],
+    ];
 
+    /// Browser profiles and folders from before Wirecatch, which install and
+    /// uninstall must leave alone.
+    fn seed_linux_profiles(home: &Path) {
         // A browser profile and a Firefox profile that must survive.
         fs::create_dir_all(home.join(".config").join("google-chrome").join("Default")).unwrap();
         fs::write(
@@ -1587,25 +1625,12 @@ mod tests {
         .unwrap();
         // An empty browser folder that was already there must not be removed.
         fs::create_dir_all(home.join(".config").join("vivaldi")).unwrap();
-        let before = tree(&temp.0);
+    }
 
-        let report = install(&plan, &mut host);
-        assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert!(plan.keys.is_empty(), "no registry on Linux");
-
+    /// Checks the manifest in every Chromium folder and Firefox's.
+    fn assert_linux_manifests(home: &Path, exe: &Path) {
         let config_dir = home.join(".config");
-        let chromium_dirs: [&[&str]; 8] = [
-            &["google-chrome"],
-            // Chromium and ungoogled-chromium.
-            &["chromium"],
-            &["microsoft-edge"],
-            &["BraveSoftware", "Brave-Browser"],
-            &["vivaldi"],
-            &["opera"],
-            &["thorium"],
-            &["yandex-browser"],
-        ];
-        for parts in chromium_dirs {
+        for parts in LINUX_CHROMIUM_DIRS {
             let mut dir = config_dir.clone();
             dir.extend(parts);
             let manifest = json(
@@ -1628,9 +1653,14 @@ mod tests {
             firefox["allowed_extensions"],
             serde_json::json!(["extension@wirecatch.app"])
         );
+    }
+
+    /// Checks that the plan writes one file per folder a browser reads, none
+    /// inside a sandbox, and covers every browser with a Linux version.
+    fn assert_linux_coverage(plan: &Plan, home: &Path, report: &Report) {
         // One file per folder: 8 Chromium folders and Firefox's, which LibreWolf,
         // Waterfox, Zen and Floorp read too. No Flatpak or Snap folder is written.
-        assert_eq!(plan.files.len(), chromium_dirs.len() + 1);
+        assert_eq!(plan.files.len(), LINUX_CHROMIUM_DIRS.len() + 1);
         let firefox_file = plan
             .files
             .iter()
@@ -1665,6 +1695,28 @@ mod tests {
                 report.lines
             );
         }
+    }
+
+    #[test]
+    fn linux_install_writes_every_manifest_and_uninstall_restores_the_state() {
+        let temp = TempDir::new();
+        let home = temp.0.join("home");
+        let exe = temp
+            .0
+            .join("opt")
+            .join("wirecatch")
+            .join("wirecatch-bridge");
+        let layout = Layout::linux(exe.clone(), home.clone(), None);
+        let plan = plan(&config(), &layout).unwrap();
+        let mut host = FakeHost::default();
+        seed_linux_profiles(&home);
+        let before = tree(&temp.0);
+
+        let report = install(&plan, &mut host);
+        assert_eq!(report.failures, 0, "{:?}", report.lines);
+        assert!(plan.keys.is_empty(), "no registry on Linux");
+        assert_linux_manifests(&home, &exe);
+        assert_linux_coverage(&plan, &home, &report);
 
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);

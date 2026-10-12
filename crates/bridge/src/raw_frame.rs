@@ -73,6 +73,17 @@ impl RawFrame {
         }
     }
 
+    /// A frame holding `body` byte for byte, for tests that need JSON no message
+    /// type produces (unknown fields, odd spacing, broken envelopes).
+    #[cfg(test)]
+    pub(crate) fn from_body(body: &[u8]) -> Self {
+        let mut bytes = frame::length_prefix(body.len())
+            .expect("a test body fits in one frame")
+            .to_vec();
+        bytes.extend_from_slice(body);
+        Self(bytes)
+    }
+
     fn with_header(header: [u8; 4]) -> Result<Self, FrameError> {
         let len = frame::body_len(header)?;
         let mut bytes = vec![0u8; 4 + len];
@@ -154,7 +165,7 @@ mod tests {
     use wirecatch_protocol::frame::MAX_FRAME_LEN;
 
     fn raw(body: &str) -> RawFrame {
-        next_frame(&mut io::Cursor::new(frame_of(body.as_bytes())))
+        RawFrame::from_body(body.as_bytes())
     }
 
     #[test]
@@ -176,15 +187,21 @@ mod tests {
     }
 
     fn frame_of(body: &[u8]) -> Vec<u8> {
-        let mut out = (body.len() as u32).to_le_bytes().to_vec();
-        out.extend_from_slice(body);
-        out
+        RawFrame::from_body(body).0
+    }
+
+    /// The header of a frame over the size limit, which `length_prefix` refuses
+    /// to write.
+    fn oversized_header(len: usize) -> [u8; 4] {
+        u32::try_from(len).unwrap().to_le_bytes()
     }
 
     fn next_frame(cursor: &mut io::Cursor<Vec<u8>>) -> RawFrame {
         match read_blocking(cursor).unwrap().unwrap() {
             Incoming::Frame(frame) => frame,
-            other => panic!("expected a frame, got {other:?}"),
+            oversized @ Incoming::Oversized { .. } => {
+                panic!("expected a frame, got {oversized:?}")
+            }
         }
     }
 
@@ -206,7 +223,7 @@ mod tests {
     #[test]
     fn an_oversized_frame_is_skipped_and_the_stream_stays_in_step() {
         let len = MAX_FRAME_LEN + 1;
-        let mut stream = (len as u32).to_le_bytes().to_vec();
+        let mut stream = oversized_header(len).to_vec();
         stream.resize(4 + len, b'x');
         stream.extend(frame_of(br#"{"kind":"request","id":3}"#));
         let mut cursor = io::Cursor::new(stream);
@@ -223,14 +240,14 @@ mod tests {
 
     #[test]
     fn an_oversized_frame_cut_short_is_an_error() {
-        let mut stream = ((MAX_FRAME_LEN + 1) as u32).to_le_bytes().to_vec();
+        let mut stream = oversized_header(MAX_FRAME_LEN + 1).to_vec();
         stream.extend_from_slice(b"only a little");
         assert!(read_blocking(&mut io::Cursor::new(stream)).is_err());
     }
 
     #[tokio::test]
     async fn the_app_side_still_refuses_oversized_frames() {
-        let header = ((MAX_FRAME_LEN + 1) as u32).to_le_bytes();
+        let header = oversized_header(MAX_FRAME_LEN + 1);
         let mut slice = &header[..];
         assert!(matches!(
             read_async(&mut slice).await,

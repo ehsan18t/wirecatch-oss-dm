@@ -21,6 +21,7 @@ use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
+use wirecatch_test_support::TestResult;
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -34,62 +35,61 @@ const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 
 const PATIENCE: Duration = Duration::from_secs(10);
 
-/// A private endpoint for one test. On Linux it lives in a new 0700 folder.
+/// The most memory an idle bridge may hold, resident or private.
+const IDLE_MEMORY_LIMIT: usize = 10 * 1024 * 1024;
+
+/// A private endpoint for one test, with a new folder of its own that is removed
+/// on drop. On Linux the socket lives in that folder, which is 0700 like the
+/// app's; on every platform the program the bridge "starts" by default is a
+/// missing file inside it.
 struct TestEndpoint {
     endpoint: Endpoint,
-    dir: Option<PathBuf>,
+    dir: PathBuf,
 }
 
 impl TestEndpoint {
-    fn new() -> Self {
+    fn new() -> TestResult<Self> {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let tag = format!(
             "{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         );
+        let dir = std::env::temp_dir().join(format!("wirecatch-bridge-it-{tag}"));
         #[cfg(windows)]
-        {
-            Self {
-                endpoint: Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-it-{tag}")),
-                dir: None,
-            }
-        }
+        std::fs::create_dir(&dir)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            let dir = std::env::temp_dir().join(format!("wirecatch-bridge-it-{tag}"));
-            std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-            Self {
-                endpoint: Endpoint::from_raw(dir.join("app.sock")),
-                dir: Some(dir),
-            }
+            std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+            // The umask can only remove bits; set the exact mode anyway.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
         }
+        #[cfg(windows)]
+        let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-it-{tag}"));
+        #[cfg(unix)]
+        let endpoint = Endpoint::from_raw(dir.join("app.sock"));
+        Ok(Self { endpoint, dir })
     }
 }
 
 impl Drop for TestEndpoint {
     fn drop(&mut self) {
-        if let Some(dir) = &self.dir {
-            let _ = std::fs::remove_dir_all(dir);
-        }
+        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
-/// The bridge, pointed at `endpoint`. By default "starting the app" runs a
-/// program that does not exist, so no test ever starts anything real.
-fn bridge(args: &[&str], endpoint: &Endpoint) -> Command {
-    let missing = std::env::temp_dir().join(format!(
-        "wirecatch-no-such-app-{}{}",
-        std::process::id(),
-        std::env::consts::EXE_SUFFIX
-    ));
+/// The bridge, pointed at the test's endpoint. By default "starting the app"
+/// runs a program that does not exist, so no test ever starts anything real.
+fn bridge(args: &[&str], test: &TestEndpoint) -> Command {
+    let missing = test
+        .dir
+        .join(format!("no-such-app{}", std::env::consts::EXE_SUFFIX));
     let launch = serde_json::json!([missing]).to_string();
     let mut command = Command::new(BRIDGE);
     command
         .args(args)
-        .env(ENDPOINT_VAR, endpoint.as_os_str())
+        .env(ENDPOINT_VAR, test.endpoint.as_os_str())
         .env(LAUNCH_VAR, launch)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -104,38 +104,39 @@ struct Running {
     stdout: ChildStdout,
 }
 
-fn start(mut command: Command) -> Running {
-    let mut child = command.spawn().unwrap();
+fn start(mut command: Command) -> TestResult<Running> {
+    let mut child = command.spawn()?;
     let stdin = child.stdin.take();
-    let stdout = child.stdout.take().unwrap();
-    Running {
+    let stdout = child.stdout.take().ok_or("the bridge has no stdout pipe")?;
+    Ok(Running {
         child,
         stdin,
         stdout,
-    }
+    })
 }
 
 impl Running {
-    async fn send(&mut self, bytes: &[u8]) {
-        let stdin = self.stdin.as_mut().unwrap();
-        stdin.write_all(bytes).await.unwrap();
-        stdin.flush().await.unwrap();
+    async fn send(&mut self, bytes: &[u8]) -> TestResult {
+        let stdin = self.stdin.as_mut().ok_or("stdin is already closed")?;
+        stdin.write_all(bytes).await?;
+        stdin.flush().await?;
+        Ok(())
     }
 
     /// Closes stdin (what the browser does when the port closes) and waits for a
     /// clean exit.
-    async fn close_and_wait(&mut self) {
+    async fn close_and_wait(&mut self) -> TestResult {
         drop(self.stdin.take());
         let status = timeout(PATIENCE, self.child.wait())
             .await
-            .expect("the bridge did not exit after stdin closed")
-            .unwrap();
+            .map_err(|_| "the bridge did not exit after stdin closed")??;
         assert!(status.success(), "{status}");
+        Ok(())
     }
 }
 
-fn hello(id: u64) -> Vec<u8> {
-    frame::encode(&Message::Request {
+fn hello(id: u64) -> TestResult<Vec<u8>> {
+    Ok(frame::encode(&Message::Request {
         id,
         call: Call::Hello(Hello {
             client: ClientKind::Extension,
@@ -144,41 +145,41 @@ fn hello(id: u64) -> Vec<u8> {
             browser: None,
             start_app: true,
         }),
-    })
-    .unwrap()
+    })?)
 }
 
-fn raw(body: &str) -> Vec<u8> {
-    let mut bytes = (body.len() as u32).to_le_bytes().to_vec();
+/// A frame holding `body` byte for byte, for JSON no message type produces.
+fn raw(body: &str) -> TestResult<Vec<u8>> {
+    let mut bytes = frame::length_prefix(body.len())?.to_vec();
     bytes.extend_from_slice(body.as_bytes());
-    bytes
+    Ok(bytes)
 }
 
 /// Reads one whole frame (length prefix included), or `None` at end of stream.
-async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> Option<Vec<u8>> {
+async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> TestResult<Option<Vec<u8>>> {
     timeout(PATIENCE, async {
         let mut header = [0u8; 4];
         match reader.read_exact(&mut header).await {
             Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return None,
-            Err(e) => panic!("{e}"),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e.into()),
         }
-        let len = frame::body_len(header).unwrap();
+        let len = frame::body_len(header)?;
         let mut bytes = header.to_vec();
         bytes.resize(4 + len, 0);
-        reader.read_exact(&mut bytes[4..]).await.unwrap();
-        Some(bytes)
+        reader.read_exact(&mut bytes[4..]).await?;
+        Ok(Some(bytes))
     })
     .await
-    .expect("no frame arrived in time")
+    .map_err(|_| "no frame arrived in time")?
 }
 
-fn decode(bytes: &[u8]) -> Message {
-    frame::decode(&bytes[4..]).unwrap()
+fn decode(bytes: &[u8]) -> TestResult<Message> {
+    Ok(frame::decode(&bytes[4..])?)
 }
 
-fn assert_unavailable(bytes: &[u8], expected_id: u64) -> String {
-    match decode(bytes) {
+fn assert_unavailable(bytes: &[u8], expected_id: u64) -> TestResult<String> {
+    Ok(match decode(bytes)? {
         Message::Response {
             id,
             outcome:
@@ -188,81 +189,80 @@ fn assert_unavailable(bytes: &[u8], expected_id: u64) -> String {
                 }),
         } if id == expected_id => message,
         other => panic!("expected AppUnavailable for {expected_id}, got {other:?}"),
-    }
+    })
 }
 
 #[tokio::test]
-async fn messages_and_events_pass_through_unchanged() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
+async fn messages_and_events_pass_through_unchanged() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
 
     // Unusual spacing and a field this build does not know: the bridge must not
     // re-encode anything.
     let request = raw(
         r#"{"kind":"request", "id":1,"call":{"method":"hello","params":{"client":"extension","client_version":"1","protocol_version":1,"browser":{"name":"chrome","version":"130"}}},"from_a_newer_extension":true}"#,
-    );
-    bridge.send(&request).await;
-    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
-    assert_eq!(read_frame(&mut app).await, Some(request));
+    )?;
+    bridge.send(&request).await?;
+    let mut app = timeout(PATIENCE, listener.accept()).await??;
+    assert_eq!(read_frame(&mut app).await?, Some(request));
 
     let response = raw(
         r#"{"kind":"response","id":1,"outcome":{"status":"ok","value":{"type":"hello","data":{"app_version":"0.1.0","protocol_version":1}}}, "from_a_newer_app":[1,2]}"#,
-    );
-    let event = raw(r#"{"kind":"event","event":{"type":"queues_changed","data":[]}}"#);
-    app.write_all(&response).await.unwrap();
-    app.write_all(&event).await.unwrap();
-    assert_eq!(read_frame(&mut bridge.stdout).await, Some(response));
-    assert_eq!(read_frame(&mut bridge.stdout).await, Some(event));
+    )?;
+    let event = raw(r#"{"kind":"event","event":{"type":"queues_changed","data":[]}}"#)?;
+    app.write_all(&response).await?;
+    app.write_all(&event).await?;
+    assert_eq!(read_frame(&mut bridge.stdout).await?, Some(response));
+    assert_eq!(read_frame(&mut bridge.stdout).await?, Some(event));
 
     // More traffic in both directions after the handshake.
     for id in 2..=4 {
         let request = frame::encode(&Message::Request {
             id,
             call: Call::ListQueues,
-        })
-        .unwrap();
-        bridge.send(&request).await;
-        assert_eq!(read_frame(&mut app).await, Some(request));
+        })?;
+        bridge.send(&request).await?;
+        assert_eq!(read_frame(&mut app).await?, Some(request));
         let response = frame::encode(&Message::Response {
             id,
             outcome: Outcome::Ok(Reply::Queues(Vec::new())),
-        })
-        .unwrap();
-        app.write_all(&response).await.unwrap();
-        assert_eq!(read_frame(&mut bridge.stdout).await, Some(response));
+        })?;
+        app.write_all(&response).await?;
+        assert_eq!(read_frame(&mut bridge.stdout).await?, Some(response));
     }
 
-    bridge.close_and_wait().await;
-    assert_eq!(read_frame(&mut bridge.stdout).await, None);
+    bridge.close_and_wait().await?;
+    assert_eq!(read_frame(&mut bridge.stdout).await?, None);
     // The app sees the bridge leave.
-    assert_eq!(read_frame(&mut app).await, None);
+    assert_eq!(read_frame(&mut app).await?, None);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_firefox_caller_is_served() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
+async fn a_firefox_caller_is_served() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
     let manifest = std::env::temp_dir().join("app.wirecatch.bridge.json");
     let manifest = manifest.to_str().unwrap();
-    let mut bridge = start(bridge(&[manifest, FIREFOX_ID], &test.endpoint));
-    bridge.send(&hello(5)).await;
-    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
-    assert_eq!(read_frame(&mut app).await, Some(hello(5)));
+    let mut bridge = start(bridge(&[manifest, FIREFOX_ID], &test))?;
+    bridge.send(&hello(5)?).await?;
+    let mut app = timeout(PATIENCE, listener.accept()).await??;
+    assert_eq!(read_frame(&mut app).await?, Some(hello(5)?));
     let answer = frame::encode(&Message::Response {
         id: 5,
         outcome: Outcome::Ok(Reply::Done),
-    })
-    .unwrap();
-    app.write_all(&answer).await.unwrap();
-    assert_eq!(read_frame(&mut bridge.stdout).await, Some(answer));
-    bridge.close_and_wait().await;
+    })?;
+    app.write_all(&answer).await?;
+    assert_eq!(read_frame(&mut bridge.stdout).await?, Some(answer));
+    bridge.close_and_wait().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn callers_that_are_not_allowed_are_refused() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
+async fn callers_that_are_not_allowed_are_refused() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
     let manifest = std::env::temp_dir().join("app.wirecatch.bridge.json");
     let manifest = manifest.to_str().unwrap();
     let refused: &[&[&str]] = &[
@@ -274,10 +274,10 @@ async fn callers_that_are_not_allowed_are_refused() {
         &["moz-extension://extension@wirecatch.app/"],
     ];
     for args in refused {
-        let mut bridge = start(bridge(args, &test.endpoint));
+        let mut bridge = start(bridge(args, &test))?;
         // The bridge may already be gone, so a failed write is fine.
         if let Some(stdin) = bridge.stdin.as_mut() {
-            let _ = stdin.write_all(&hello(1)).await;
+            let _ = stdin.write_all(&hello(1)?).await;
         }
         let status = timeout(PATIENCE, bridge.child.wait())
             .await
@@ -304,6 +304,7 @@ async fn callers_that_are_not_allowed_are_refused() {
             .await
             .is_err()
     );
+    Ok(())
 }
 
 /// The bridge starts this test binary in place of the app (through
@@ -352,8 +353,8 @@ fn fake_app_process() {
     });
 }
 
-fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) {
-    let test_exe = std::env::current_exe().unwrap();
+fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) -> TestResult {
+    let test_exe = std::env::current_exe()?;
     let launch = serde_json::json!([
         test_exe,
         "fake_app_process",
@@ -366,6 +367,7 @@ fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) {
         .env(LAUNCH_VAR, launch.to_string())
         .env(FAKE_APP_ENDPOINT, endpoint.as_os_str())
         .env(FAKE_APP_MODE, mode);
+    Ok(())
 }
 
 /// The bridge's own 5 second budget, plus room for process start-up on a slow
@@ -375,19 +377,21 @@ fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) {
 const BUDGET_WITH_STARTUP_MARGIN: Duration = Duration::from_secs(8);
 
 #[tokio::test]
-async fn the_app_is_started_when_it_is_not_running() {
-    let test = TestEndpoint::new();
-    let mut command = bridge(&[CHROME_ORIGIN], &test.endpoint);
-    launch_fake_app("serve", &test.endpoint, &mut command);
-    let mut bridge = start(command);
+async fn the_app_is_started_when_it_is_not_running() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut command = bridge(&[CHROME_ORIGIN], &test);
+    launch_fake_app("serve", &test.endpoint, &mut command)?;
+    let mut bridge = start(command)?;
 
     let started = Instant::now();
-    bridge.send(&hello(7)).await;
-    let answer = read_frame(&mut bridge.stdout).await.unwrap();
+    bridge.send(&hello(7)?).await?;
+    let answer = read_frame(&mut bridge.stdout)
+        .await?
+        .ok_or("the stream ended")?;
     let waited = started.elapsed();
     // A real answer, not AppUnavailable: the bridge connected within its budget.
     assert_eq!(
-        decode(&answer),
+        decode(&answer)?,
         Message::Response {
             id: 7,
             outcome: Outcome::Ok(Reply::Hello(HelloReply {
@@ -402,84 +406,106 @@ async fn the_app_is_started_when_it_is_not_running() {
     // When the browser closes the port, the browser side of the pipe closes even
     // though the app the bridge started keeps running (it must not inherit the
     // browser's pipe handles).
-    bridge.close_and_wait().await;
-    let eof = timeout(Duration::from_secs(2), read_frame(&mut bridge.stdout)).await;
-    assert_eq!(eof, Ok(None), "stdout must close when the bridge exits");
+    bridge.close_and_wait().await?;
+    let eof = timeout(Duration::from_secs(2), read_frame(&mut bridge.stdout))
+        .await
+        .map_err(|_| "stdout must close when the bridge exits")??;
+    assert_eq!(eof, None, "stdout must close when the bridge exits");
     // Still running: it accepts this connection, and then exits.
     assert!(
         wirecatch_ipc::connect(&test.endpoint).await.is_ok(),
         "the fake app should still be running"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn app_unavailable_when_the_app_cannot_be_started() {
-    let test = TestEndpoint::new();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
+async fn app_unavailable_when_the_app_cannot_be_started() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
     let started = Instant::now();
-    bridge.send(&hello(1)).await;
-    bridge.send(&hello(2)).await;
-    let first = read_frame(&mut bridge.stdout).await.unwrap();
-    let second = read_frame(&mut bridge.stdout).await.unwrap();
-    let message = assert_unavailable(&first, 1);
-    assert_unavailable(&second, 2);
+    bridge.send(&hello(1)?).await?;
+    bridge.send(&hello(2)?).await?;
+    let first = read_frame(&mut bridge.stdout)
+        .await?
+        .ok_or("the stream ended")?;
+    let second = read_frame(&mut bridge.stdout)
+        .await?
+        .ok_or("the stream ended")?;
+    let message = assert_unavailable(&first, 1)?;
+    assert_unavailable(&second, 2)?;
     assert!(message.contains("Reinstall Wirecatch"), "{message}");
     assert!(started.elapsed() < Duration::from_secs(2), "fails fast");
     // No relaunch loop: the bridge stays up answering until the browser leaves.
-    bridge.send(&hello(3)).await;
-    assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 3);
-    bridge.close_and_wait().await;
+    bridge.send(&hello(3)?).await?;
+    assert_unavailable(
+        &read_frame(&mut bridge.stdout)
+            .await?
+            .ok_or("the stream ended")?,
+        3,
+    )?;
+    bridge.close_and_wait().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn app_unavailable_when_the_app_never_starts_listening() {
-    let test = TestEndpoint::new();
-    let mut command = bridge(&[CHROME_ORIGIN], &test.endpoint);
-    launch_fake_app("never_listen", &test.endpoint, &mut command);
-    let mut bridge = start(command);
+async fn app_unavailable_when_the_app_never_starts_listening() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut command = bridge(&[CHROME_ORIGIN], &test);
+    launch_fake_app("never_listen", &test.endpoint, &mut command)?;
+    let mut bridge = start(command)?;
     let started = Instant::now();
-    bridge.send(&hello(3)).await;
-    let answer = read_frame(&mut bridge.stdout).await.unwrap();
+    bridge.send(&hello(3)?).await?;
+    let answer = read_frame(&mut bridge.stdout)
+        .await?
+        .ok_or("the stream ended")?;
     let waited = started.elapsed();
-    let message = assert_unavailable(&answer, 3);
+    let message = assert_unavailable(&answer, 3)?;
     assert!(message.contains("did not respond"), "{message}");
     assert!(
         waited >= Duration::from_millis(4900) && waited < BUDGET_WITH_STARTUP_MARGIN,
         "answered after {waited:?}, expected about 5 seconds"
     );
-    bridge.close_and_wait().await;
+    bridge.close_and_wait().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn closing_the_connection_while_the_app_starts_exits_promptly() {
-    let test = TestEndpoint::new();
-    let mut command = bridge(&[CHROME_ORIGIN], &test.endpoint);
-    launch_fake_app("never_listen", &test.endpoint, &mut command);
-    let mut bridge = start(command);
-    bridge.send(&hello(1)).await;
+async fn closing_the_connection_while_the_app_starts_exits_promptly() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut command = bridge(&[CHROME_ORIGIN], &test);
+    launch_fake_app("never_listen", &test.endpoint, &mut command)?;
+    let mut bridge = start(command)?;
+    bridge.send(&hello(1)?).await?;
     // Give the bridge time to read the message and start waiting for the app.
     sleep(Duration::from_millis(300)).await;
     let closed = Instant::now();
-    bridge.close_and_wait().await;
+    bridge.close_and_wait().await?;
     let took = closed.elapsed();
     assert!(
         took < Duration::from_secs(2),
         "took {took:?}; it must not sit out the 5 second start budget"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn the_bridge_exits_when_the_app_goes_away_so_the_extension_can_reconnect() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
-    bridge.send(&hello(1)).await;
-    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
-    read_frame(&mut app).await.unwrap();
+async fn the_bridge_exits_when_the_app_goes_away_so_the_extension_can_reconnect() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
+    bridge.send(&hello(1)?).await?;
+    let mut app = timeout(PATIENCE, listener.accept()).await??;
+    read_frame(&mut app).await?.ok_or("the stream ended")?;
     // The user quits Wirecatch with the request unanswered.
     drop(app);
     drop(listener);
-    assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 1);
+    assert_unavailable(
+        &read_frame(&mut bridge.stdout)
+            .await?
+            .ok_or("the stream ended")?,
+        1,
+    )?;
     // Then the bridge exits by itself, with stdin still open, so the browser
     // sees the port disconnect.
     let status = timeout(PATIENCE, bridge.child.wait())
@@ -487,51 +513,54 @@ async fn the_bridge_exits_when_the_app_goes_away_so_the_extension_can_reconnect(
         .expect("the bridge must exit after the app goes away")
         .unwrap();
     assert!(status.success(), "{status}");
-    assert_eq!(read_frame(&mut bridge.stdout).await, None);
+    assert_eq!(read_frame(&mut bridge.stdout).await?, None);
+    Ok(())
 }
 
 #[tokio::test]
-async fn an_oversized_message_is_skipped_and_the_session_goes_on() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
+async fn an_oversized_message_is_skipped_and_the_session_goes_on() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
 
     let len = frame::MAX_FRAME_LEN + 1;
-    let mut oversized = (len as u32).to_le_bytes().to_vec();
+    // Over the limit, so `length_prefix` would refuse to write its header.
+    let mut oversized = u32::try_from(len)?.to_le_bytes().to_vec();
     oversized.resize(4 + len, b' ');
-    bridge.send(&oversized).await;
-    bridge.send(&hello(2)).await;
+    bridge.send(&oversized).await?;
+    bridge.send(&hello(2)?).await?;
 
     // Only the message within the limit reaches the app, and it is answered.
-    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
-    assert_eq!(read_frame(&mut app).await, Some(hello(2)));
+    let mut app = timeout(PATIENCE, listener.accept()).await??;
+    assert_eq!(read_frame(&mut app).await?, Some(hello(2)?));
     let answer = frame::encode(&Message::Response {
         id: 2,
         outcome: Outcome::Ok(Reply::Done),
-    })
-    .unwrap();
-    app.write_all(&answer).await.unwrap();
-    assert_eq!(read_frame(&mut bridge.stdout).await, Some(answer));
-    bridge.close_and_wait().await;
+    })?;
+    app.write_all(&answer).await?;
+    assert_eq!(read_frame(&mut bridge.stdout).await?, Some(answer));
+    bridge.close_and_wait().await?;
+    Ok(())
 }
 
 #[tokio::test]
-async fn exits_when_the_browser_closes_the_connection_before_any_message() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
-    bridge.close_and_wait().await;
+async fn exits_when_the_browser_closes_the_connection_before_any_message() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
+    bridge.close_and_wait().await?;
     assert!(
         timeout(Duration::from_millis(300), listener.accept())
             .await
             .is_err(),
         "the bridge must not contact the app without a message"
     );
+    Ok(())
 }
 
 /// Working set and private (committed, not shared) bytes of a process.
 #[cfg(windows)]
-fn memory_of(pid: u32) -> (usize, usize) {
+fn memory_of(pid: u32) -> TestResult<(usize, usize)> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::ProcessStatus::{
         K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
@@ -539,83 +568,85 @@ fn memory_of(pid: u32) -> (usize, usize) {
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
     };
+    let size = u32::try_from(std::mem::size_of::<PROCESS_MEMORY_COUNTERS>())?;
     // SAFETY: plain Win32 calls on a handle we open and close here.
     unsafe {
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, 0, pid);
         assert!(!process.is_null());
         let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-        let ok = K32GetProcessMemoryInfo(
-            process,
-            &mut counters,
-            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
-        );
+        let ok = K32GetProcessMemoryInfo(process, &raw mut counters, size);
         CloseHandle(process);
         assert_ne!(ok, 0);
-        (counters.WorkingSetSize, counters.PagefileUsage)
+        Ok((counters.WorkingSetSize, counters.PagefileUsage))
     }
 }
 
 /// Resident and anonymous (private) resident bytes of a process.
 #[cfg(target_os = "linux")]
-fn memory_of(pid: u32) -> (usize, usize) {
-    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
-    let field = |name: &str| -> usize {
-        status
+fn memory_of(pid: u32) -> TestResult<(usize, usize)> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status"))?;
+    let field = |name: &str| -> TestResult<usize> {
+        let kib = status
             .lines()
             .find_map(|line| line.strip_prefix(name))
             .and_then(|rest| rest.split_whitespace().next())
-            .and_then(|kb| kb.parse::<usize>().ok())
-            .unwrap()
-            * 1024
+            .ok_or_else(|| format!("no {name} line in /proc/{pid}/status"))?;
+        Ok(kib.parse::<usize>()? * 1024)
     };
-    (field("VmRSS:"), field("RssAnon:"))
+    Ok((field("VmRSS:")?, field("RssAnon:")?))
 }
 
 #[tokio::test]
-async fn idle_memory_stays_under_10_mb() {
-    let test = TestEndpoint::new();
-    let mut listener = Listener::bind(&test.endpoint).unwrap();
-    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test.endpoint));
-    bridge.send(&hello(1)).await;
-    let mut app = timeout(PATIENCE, listener.accept()).await.unwrap().unwrap();
-    read_frame(&mut app).await.unwrap();
+async fn idle_memory_stays_under_10_mb() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut listener = Listener::bind(&test.endpoint)?;
+    let mut bridge = start(bridge(&[CHROME_ORIGIN], &test))?;
+    bridge.send(&hello(1)?).await?;
+    let mut app = timeout(PATIENCE, listener.accept()).await??;
+    read_frame(&mut app).await?.ok_or("the stream ended")?;
     let answer = frame::encode(&Message::Response {
         id: 1,
         outcome: Outcome::Ok(Reply::Done),
-    })
-    .unwrap();
-    app.write_all(&answer).await.unwrap();
-    read_frame(&mut bridge.stdout).await.unwrap();
+    })?;
+    app.write_all(&answer).await?;
+    read_frame(&mut bridge.stdout)
+        .await?
+        .ok_or("the stream ended")?;
 
     // Connected and idle.
     sleep(Duration::from_secs(1)).await;
     let pid = bridge.child.id().unwrap();
-    let (resident, private) = memory_of(pid);
-    let mib = |bytes: usize| bytes as f64 / (1024.0 * 1024.0);
+    let (resident, private) = memory_of(pid)?;
     eprintln!(
-        "idle bridge ({} build): resident {:.2} MiB, private {:.2} MiB",
+        "idle bridge ({} build): resident {} KiB, private {} KiB",
         if cfg!(debug_assertions) {
             "debug"
         } else {
             "release"
         },
-        mib(resident),
-        mib(private)
+        resident / 1024,
+        private / 1024
     );
-    const LIMIT: usize = 10 * 1024 * 1024;
-    assert!(resident < LIMIT, "resident {resident} bytes");
-    assert!(private < LIMIT, "private {private} bytes");
-    bridge.close_and_wait().await;
+    assert!(resident < IDLE_MEMORY_LIMIT, "resident {resident} bytes");
+    assert!(private < IDLE_MEMORY_LIMIT, "private {private} bytes");
+    bridge.close_and_wait().await?;
+    Ok(())
 }
 
 /// When the launcher itself cannot be set up, the request still gets an answer.
 #[tokio::test]
-async fn a_broken_launch_override_still_answers() {
-    let test = TestEndpoint::new();
-    let mut command = bridge(&[CHROME_ORIGIN], &test.endpoint);
+async fn a_broken_launch_override_still_answers() -> TestResult {
+    let test = TestEndpoint::new()?;
+    let mut command = bridge(&[CHROME_ORIGIN], &test);
     command.env(LAUNCH_VAR, OsString::from("[]"));
-    let mut bridge = start(command);
-    bridge.send(&hello(9)).await;
-    assert_unavailable(&read_frame(&mut bridge.stdout).await.unwrap(), 9);
-    bridge.close_and_wait().await;
+    let mut bridge = start(command)?;
+    bridge.send(&hello(9)?).await?;
+    assert_unavailable(
+        &read_frame(&mut bridge.stdout)
+            .await?
+            .ok_or("the stream ended")?,
+        9,
+    )?;
+    bridge.close_and_wait().await?;
+    Ok(())
 }

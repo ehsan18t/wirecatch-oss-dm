@@ -80,13 +80,13 @@ where
         tokio::select! {
             biased;
             result = &mut connecting => break result,
-            frame = incoming.recv(), if held.len() < MAX_HELD_WHILE_CONNECTING => match frame {
-                Some(frame) => held.push_back(frame),
-                None => {
+            frame = incoming.recv(), if held.len() < MAX_HELD_WHILE_CONNECTING => {
+                let Some(frame) = frame else {
                     log!("the browser closed the connection while Wirecatch was starting");
                     return Ended::BrowserClosed;
-                }
-            },
+                };
+                held.push_back(frame);
+            }
         }
     };
 
@@ -106,11 +106,10 @@ where
 
 /// Answers a request with `AppUnavailable`; anything else is dropped.
 async fn refuse(frame: &RawFrame, outgoing: &mpsc::Sender<RawFrame>, why: &Unavailable) {
-    match frame.envelope() {
-        Envelope::Request(Some(id)) => {
-            answer_error(outgoing, id, why.code, &why.message).await;
-        }
-        _ => log!("dropped a message from the extension because Wirecatch is unavailable"),
+    if let Envelope::Request(Some(id)) = frame.envelope() {
+        answer_error(outgoing, id, why.code, &why.message).await;
+    } else {
+        log!("dropped a message from the extension because Wirecatch is unavailable");
     }
 }
 
@@ -128,17 +127,9 @@ where
     let (mut to_app, mut from_app) = start_reading(conn, pending.clone(), outgoing.clone());
 
     loop {
-        let frame = match held.pop_front() {
-            Some(frame) => frame,
-            None => tokio::select! {
-                frame = incoming.recv() => match frame {
-                    Some(frame) => frame,
-                    None => {
-                        drop(to_app);
-                        from_app.abort();
-                        return Ended::BrowserClosed;
-                    }
-                },
+        let next = if held.is_empty() {
+            tokio::select! {
+                frame = incoming.recv() => frame,
                 // The app side ended (closed, failed, or the browser stopped
                 // reading). The reader task has finished, so everything it
                 // received is already on its way to the browser.
@@ -146,7 +137,14 @@ where
                     answer_pending(&pending, &outgoing).await;
                     return Ended::AppClosed;
                 }
-            },
+            }
+        } else {
+            held.pop_front()
+        };
+        let Some(frame) = next else {
+            drop(to_app);
+            from_app.abort();
+            return Ended::BrowserClosed;
         };
 
         if let Envelope::Request(Some(id)) = frame.envelope() {
@@ -282,13 +280,7 @@ mod tests {
     }
 
     fn raw(body: &str) -> RawFrame {
-        let mut bytes = (body.len() as u32).to_le_bytes().to_vec();
-        bytes.extend_from_slice(body.as_bytes());
-        let mut cursor = std::io::Cursor::new(bytes);
-        match raw_frame::read_blocking(&mut cursor).unwrap().unwrap() {
-            raw_frame::Incoming::Frame(frame) => frame,
-            other => panic!("{other:?}"),
-        }
+        RawFrame::from_body(body.as_bytes())
     }
 
     fn error(id: u64, code: ErrorCode, message: &str) -> RawFrame {
@@ -366,7 +358,7 @@ mod tests {
         // The bridge closed its side of the app connection.
         let mut rest = Vec::new();
         app.read_to_end(&mut rest).await.unwrap();
-        assert!(rest.is_empty());
+        assert_eq!(rest, b"");
     }
 
     #[tokio::test]

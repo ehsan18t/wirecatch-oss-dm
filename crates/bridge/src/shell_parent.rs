@@ -30,7 +30,7 @@ pub(crate) fn shell_process_id() -> Option<u32> {
             return None;
         }
         let mut pid = 0u32;
-        GetWindowThreadProcessId(shell, &mut pid);
+        GetWindowThreadProcessId(shell, &raw mut pid);
         (pid != 0).then_some(pid)
     }
 }
@@ -53,8 +53,9 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
     let dir = dir.map(|d| wide(d.as_os_str()));
     // SAFETY: zeroed is a valid empty value for these plain C structures.
     let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
-    startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+    startup.StartupInfo.cb = win32_size_of::<STARTUPINFOEXW>();
     startup.lpAttributeList = attributes.list;
+    // SAFETY: as above, an all-zero `PROCESS_INFORMATION` is a valid value to be filled in.
     let mut info: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
     // SAFETY: every pointer refers to a live, null-terminated buffer or structure owned here;
     // no handles are inherited; the environment is this process's own (null).
@@ -70,9 +71,9 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
                 | CREATE_NEW_PROCESS_GROUP
                 | CREATE_UNICODE_ENVIRONMENT,
             std::ptr::null(),
-            dir.as_ref().map_or(std::ptr::null(), |d| d.as_ptr()),
-            &startup.StartupInfo,
-            &mut info,
+            dir.as_ref().map_or(std::ptr::null(), Vec::as_ptr),
+            &raw const startup.StartupInfo,
+            &raw mut info,
         )
     };
     if created == FALSE {
@@ -81,6 +82,13 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
     drop(Handle(info.hThread));
     drop(Handle(info.hProcess));
     Ok(info.dwProcessId)
+}
+
+/// The size of `T` as the `u32` that Win32 structures record (`cb`, `dwSize`). A type of
+/// 4 GiB or more does not compile, so the conversion below never falls back.
+fn win32_size_of<T>() -> u32 {
+    const { assert!(std::mem::size_of::<T>() <= u32::MAX as usize) };
+    u32::try_from(std::mem::size_of::<T>()).unwrap_or(u32::MAX)
 }
 
 /// A process or thread handle, closed when dropped.
@@ -107,7 +115,7 @@ impl<'a> AttributeList<'a> {
     fn with_parent(parent: &'a Handle) -> io::Result<Self> {
         let mut size = 0usize;
         // SAFETY: the first call only reports the size needed.
-        unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut size) };
+        unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &raw mut size) };
         if size == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -115,7 +123,7 @@ impl<'a> AttributeList<'a> {
         let mut buffer = vec![0usize; size.div_ceil(std::mem::size_of::<usize>())];
         let list = buffer.as_mut_ptr().cast();
         // SAFETY: `list` points to `size` writable bytes owned by `buffer`.
-        if unsafe { InitializeProcThreadAttributeList(list, 1, 0, &mut size) } == FALSE {
+        if unsafe { InitializeProcThreadAttributeList(list, 1, 0, &raw mut size) } == FALSE {
             return Err(io::Error::last_os_error());
         }
         let this = Self {
@@ -129,7 +137,7 @@ impl<'a> AttributeList<'a> {
                 this.list,
                 0,
                 PROC_THREAD_ATTRIBUTE_PARENT_PROCESS as usize,
-                (&parent.0 as *const HANDLE).cast(),
+                (&raw const parent.0).cast(),
                 std::mem::size_of::<HANDLE>(),
                 std::ptr::null_mut(),
                 std::ptr::null(),
@@ -166,6 +174,8 @@ fn command_line(program: &Path, args: &[OsString]) -> OsString {
 }
 
 fn quote(line: &mut OsString, arg: &OsStr) {
+    use std::os::windows::ffi::OsStringExt;
+
     let text: Vec<u16> = arg.encode_wide().collect();
     let plain = !text.is_empty()
         && !text
@@ -193,7 +203,6 @@ fn quote(line: &mut OsString, arg: &OsStr) {
     }
     out.extend(std::iter::repeat_n(u16::from(b'\\'), backslashes * 2));
     out.push(u16::from(b'"'));
-    use std::os::windows::ffi::OsStringExt;
     line.push(OsString::from_wide(&out));
 }
 
@@ -236,13 +245,13 @@ mod tests {
         unsafe {
             let snapshot = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
             let mut entry: PROCESSENTRY32W = std::mem::zeroed();
-            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-            let mut more = Process32FirstW(snapshot.0, &mut entry) != FALSE;
+            entry.dwSize = win32_size_of::<PROCESSENTRY32W>();
+            let mut more = Process32FirstW(snapshot.0, &raw mut entry) != FALSE;
             while more {
                 if entry.th32ProcessID == pid {
                     return Some(entry.th32ParentProcessID);
                 }
-                more = Process32NextW(snapshot.0, &mut entry) != FALSE;
+                more = Process32NextW(snapshot.0, &raw mut entry) != FALSE;
             }
             None
         }

@@ -47,6 +47,7 @@ libc.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process"] }
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
+wirecatch-test-support = { path = "../test-support" }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = [
@@ -55,3 +56,6 @@ windows-sys = { workspace = true, features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
 ] }
+
+[lints]
+workspace = true
