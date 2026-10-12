@@ -7535,6 +7535,7 @@ dependencies = [
  "wirecatch-core",
  "wirecatch-engine",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]

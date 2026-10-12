@@ -16,13 +16,11 @@ use common::Sandbox;
 use tokio::process::Command;
 use wirecatch_desktop_lib::bridge::{self, BRIDGE_FILE_NAME};
 use wirecatch_ipc::{Endpoint, Listener};
+use wirecatch_product::CHROMIUM_EXTENSION_ORIGIN;
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
 use wirecatch_test_support::{TestResult, private_dir};
-
-/// The extension's Chromium origin, which every bridge allows (`config/extension-ids.json`).
-const CHROME_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
 
 /// The bridge's test-only overrides (`crates/bridge/src/app.rs`).
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -80,7 +78,7 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult
     let server = tokio::spawn(bridge::serve(listener, manager.clone()));
 
     let mut child = Command::new(&exe)
-        .arg(CHROME_ORIGIN)
+        .arg(CHROMIUM_EXTENSION_ORIGIN)
         .env(ENDPOINT_VAR, endpoint.as_os_str())
         // Whatever happens, the bridge must not start a real app.
         .env(LAUNCH_VAR, r#"["wirecatch-desktop-test-no-such-program"]"#)

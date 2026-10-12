@@ -494,7 +494,7 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
         .config()
         .product_name
         .clone()
-        .unwrap_or_else(|| "Wirecatch".to_owned());
+        .unwrap_or_else(|| crate::host::CHANNEL.name().to_owned());
     let built =
         WebviewWindowBuilder::new(app, &open.label, WebviewUrl::App(open.shows.route().into()))
             .title(title)

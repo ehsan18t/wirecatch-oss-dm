@@ -34,6 +34,7 @@ wirecatch-core.workspace = true
 # Its checked conversions between whole numbers and floating point (`numeric`).
 wirecatch-engine.workspace = true
 wirecatch-ipc.workspace = true
+wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

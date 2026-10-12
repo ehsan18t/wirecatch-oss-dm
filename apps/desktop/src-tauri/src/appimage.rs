@@ -15,8 +15,9 @@ use std::path::PathBuf;
 /// Set by the AppImage runtime to the path of the `.AppImage` file.
 pub const APPIMAGE_VAR: &str = "APPIMAGE";
 
-/// File name of the launcher script next to the private bridge; the bridge starts this name.
-pub const LAUNCHER_FILE_NAME: &str = "wirecatch-app";
+/// File name of the launcher script next to the private bridge: the app's, which the bridge
+/// starts from its own folder.
+pub const LAUNCHER_FILE_NAME: &str = wirecatch_product::APP_FILE_NAME;
 
 /// Whether `path` lies in a temporary location, where a registered program could disappear and
 /// be replaced by someone else.
