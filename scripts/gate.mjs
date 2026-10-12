@@ -32,7 +32,7 @@ const TOOLS = {
 
 /** Conventional Commit types and package scopes allowed in commit subjects (docs/ENGINEERING.md, section 9). */
 const COMMIT_TYPES = ['feat', 'fix', 'docs', 'test', 'refactor', 'perf', 'build', 'ci', 'chore', 'style', 'revert'];
-const COMMIT_SCOPES = ['engine', 'protocol', 'core', 'ipc', 'bridge', 'streams', 'cli', 'e2e', 'desktop', 'extension'];
+const COMMIT_SCOPES = ['engine', 'protocol', 'core', 'ipc', 'bridge', 'streams', 'cli', 'e2e', 'test-support', 'desktop', 'extension', 'units', 'eslint-config'];
 const MAX_SUBJECT_LENGTH = 72;
 /** Lines that credit a tool or an AI as an author. Commits are authored by the person who owns the repository. */
 const AUTHOR_CREDITS = [/^co-authored-by:/im, /noreply@anthropic\.com/i, /^\W*generated with \[[^\]]+\]\(https?:/im];
