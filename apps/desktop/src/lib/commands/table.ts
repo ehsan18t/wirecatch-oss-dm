@@ -14,6 +14,8 @@ export interface Command {
   keywords?: string;
   /** The key that does the same, as people read it. */
   shortcut?: string;
+  /** The keymap's name for that key, so the key runs this command. */
+  key?: KeyCommand;
   run: () => unknown;
 }
 
@@ -51,6 +53,7 @@ export function commandsFrom<C>(
       group,
       keywords: s.keywords === undefined ? undefined : read(s.keywords, c),
       shortcut: s.key === undefined ? undefined : shortcutLabel(s.key),
+      key: s.key,
       run: () => s.run(c),
     }));
 }

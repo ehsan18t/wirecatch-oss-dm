@@ -6,6 +6,7 @@ import { screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { describe, expect, it } from 'vitest';
+import { buildCommands } from './commands';
 import { renderApp, settle } from './testing/setup';
 
 async function setup() {
@@ -125,6 +126,42 @@ describe('keyboard only', () => {
     expect(app.screen).toBe('settings');
     await press('{Escape}');
     expect(app.screen).toBe('downloads');
+  });
+
+  it('searches what is on screen, from the key and from the palette alike', async () => {
+    const { app, press } = await setup();
+    app.openSettings();
+    await settle();
+    await press('{Control>}f{/Control}');
+    const settingsSearch = screen.getByRole('searchbox', { name: 'Search settings' });
+    expect(document.activeElement).toBe(settingsSearch);
+    settingsSearch.blur();
+    const search = buildCommands(app).find((c) => c.id === 'dl.search');
+    await search?.run();
+    await settle();
+    expect(document.activeElement).toBe(settingsSearch);
+  });
+
+  it('Escape lets go of the keyboard row when nothing is selected', async () => {
+    const { app, press } = await setup();
+    const first = app.visible[0] ?? -1;
+    app.selection.only(first);
+    app.selection.toggle(first);
+    await settle();
+    expect(app.selection.size).toBe(0);
+    expect(app.selection.active).toBe(first);
+    await press('{Escape}');
+    expect(app.selection.active).toBeNull();
+  });
+
+  it('has one command at most for each key, on either screen', async () => {
+    const { app } = await setup();
+    app.selection.only(app.visible[0] ?? -1);
+    for (const screenShown of ['downloads', 'settings'] as const) {
+      app.screen = screenShown;
+      const keys = buildCommands(app).flatMap((c) => (c.key === undefined ? [] : [c.key]));
+      expect(new Set(keys).size).toBe(keys.length);
+    }
   });
 
   it('lets the theme be picked with arrow keys', async () => {

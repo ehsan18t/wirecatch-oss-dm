@@ -7,9 +7,12 @@ import type { AppState } from '../state/app.svelte';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL, type StatusGroup } from '../state/view';
 import { commandsFrom, type Command, type CommandSpec } from './table';
 
-/** Puts the keyboard in the list's search box, with what is typed there selected. */
-export function focusSearch(): void {
-  const el = document.getElementById('list-search');
+/**
+ * Puts the keyboard in the search box of the screen shown (the list's or the settings'), with
+ * what is typed there selected.
+ */
+export function focusSearch(app: AppState): void {
+  const el = document.getElementById(app.screen === 'settings' ? 'settings-search' : 'list-search');
   if (el instanceof HTMLInputElement) {
     el.focus();
     el.select();
@@ -53,9 +56,17 @@ const DOWNLOADS: readonly CommandSpec<AppState>[] = [
     title: 'Search the list',
     key: 'search',
     keywords: 'find filter',
-    run: () => focusSearch(),
+    run: (app) => focusSearch(app),
   },
 ];
+
+const BACK: CommandSpec<AppState> = {
+  id: 'show.back',
+  title: 'Back to downloads',
+  key: 'escape',
+  when: (app) => app.screen === 'settings',
+  run: (app) => (app.screen = 'downloads'),
+};
 
 const SHOW_ALL: CommandSpec<AppState> = {
   id: 'show.all',
@@ -157,7 +168,7 @@ export function downloadCommands(app: AppState): Command[] {
 
 export function viewCommands(app: AppState): Command[] {
   return [
-    ...commandsFrom('Show', [SHOW_ALL], app),
+    ...commandsFrom('Show', [BACK, SHOW_ALL], app),
     ...STATUS_GROUPS.flatMap((group) => commandsFrom('Show', [SHOW_STATUS], { app, group })),
     ...CATEGORIES.flatMap((category) => commandsFrom('Show', [SHOW_CATEGORY], { app, category })),
     ...commandsFrom('Queues', [NEW_QUEUE], app),

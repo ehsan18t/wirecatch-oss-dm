@@ -109,18 +109,23 @@ const ORDER: readonly CommandSpec<Selected>[] = [
     keywords: 'reorder priority',
     run: (s) => s.app.actions.nudge(1),
   },
-  {
-    id: 'sel.clear',
-    title: 'Clear the selection',
-    key: 'escape',
-    run: (s) => s.app.selection.clear(),
-  },
 ];
 
+/** Escape on the list: lets go of the selection and of the row the keyboard is on. */
+const CLEAR: CommandSpec<AppState> = {
+  id: 'sel.clear',
+  title: 'Clear the selection',
+  key: 'escape',
+  when: (app) =>
+    app.screen === 'downloads' && (app.selection.size > 0 || app.selection.active !== null),
+  run: (app) => app.selection.clear(),
+};
+
 export function selectionCommands(app: AppState): Command[] {
+  const clear = commandsFrom(GROUP, [CLEAR], app);
   const rows = app.selection.rows;
   const first = rows[0];
-  if (!first) return [];
+  if (!first) return clear;
   const only = rows.length === 1 ? first : undefined;
   const s: Selected = {
     app,
@@ -133,5 +138,6 @@ export function selectionCommands(app: AppState): Command[] {
     ...app.queues.list.flatMap((queue) => commandsFrom(GROUP, [MOVE], { ...s, queue })),
     ...(only ? commandsFrom(GROUP, ONE, { ...s, only }) : []),
     ...commandsFrom(GROUP, ORDER, s),
+    ...clear,
   ];
 }

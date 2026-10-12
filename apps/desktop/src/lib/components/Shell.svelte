@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { focusSearch } from '$lib/commands';
+  import { runKey } from '$lib/commands';
   import { isDownloadDrag } from '$lib/dnd';
-  import { isEditable, windowCommand, type WindowKey } from '$lib/keymap';
+  import { isEditable, windowCommand } from '$lib/keymap';
   import { DOCK_WIDTH } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
@@ -49,31 +49,21 @@
     return e.target instanceof Element && e.target.closest('[data-download-window]') !== null;
   }
 
-  const ACTIONS: Record<Exclude<WindowKey, 'paste'>, () => void> = {
-    palette: () => {
-      if (!blocked) app.paletteOpen = !app.paletteOpen;
-    },
-    add: () => app.openDialog({ kind: 'add', urls: [] }),
-    settings: () => app.openSettings(),
-    search: () => {
-      if (app.screen === 'settings') document.getElementById('settings-search')?.focus();
-      else focusSearch();
-    },
-    help: () => app.openDialog({ kind: 'shortcuts' }),
-    escape: () => {
-      if (app.screen === 'settings') app.screen = 'downloads';
-      else app.selection.clear();
-    },
-  };
-
+  // Each key runs the palette's command for it, so a key and the palette never differ.
   function onkeydown(e: KeyboardEvent) {
     if (inDownloadWindow(e)) return;
     const command = windowCommand(e);
     if (command === null) return;
-    // The palette's own key also closes it; every other key waits while it or a dialog is open.
-    if (command !== 'palette' && (app.paletteOpen || blocked)) return;
+    if (command === 'palette') {
+      // The palette's own key also closes it.
+      e.preventDefault();
+      if (!blocked) app.paletteOpen = !app.paletteOpen;
+      return;
+    }
+    // Every other key waits while the palette or a dialog is open.
+    if (app.paletteOpen || blocked) return;
     e.preventDefault();
-    ACTIONS[command]();
+    runKey(app, command);
   }
 
   function onpaste(e: ClipboardEvent) {
