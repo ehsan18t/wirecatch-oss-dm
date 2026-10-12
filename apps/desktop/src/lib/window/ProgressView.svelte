@@ -7,6 +7,7 @@
   import Button from '$lib/components/Button.svelte';
   import ErrorFix from '$lib/components/ErrorFix.svelte';
   import CategoryIcon from '$lib/components/CategoryIcon.svelte';
+  import ProgressWire from '$lib/components/ProgressWire.svelte';
   import {
     extractUrls,
     folderOf,
@@ -16,11 +17,9 @@
     hostOf,
     MEDIA_SOURCE_LABEL,
     PROCESSING_LABEL,
-    processingFraction,
-    progressbarValue,
-    progressFraction,
     statusDetail,
     statusShort,
+    wireFraction,
   } from '$lib/format';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
   import { CLOSE_AFTER_MS, type DownloadWindowState } from './download-window.svelte';
@@ -41,9 +40,6 @@
       row.status === 'processing',
   );
   const finished = $derived(row.status === 'completed');
-  // While ffmpeg converts or joins (D24), the bar shows that step when its progress is known.
-  const processed = $derived(processingFraction(row));
-  const fraction = $derived(processed ?? progressFraction(row.done, row.total));
   const percent = $derived(finished ? '' : formatPercent(row.done, row.total));
   const detail = $derived(statusDetail(row, win.queueName(row.queue)));
   /** "1.2 GB of 4.7 GB, 25%", or the size once finished, or what is known so far. */
@@ -52,10 +48,6 @@
     const of = `${formatBytes(row.done)} of ${formatBytes(row.total)}`;
     return percent ? `${of}, ${percent}` : of;
   });
-  const indeterminate = $derived(
-    (row.status === 'processing' && processed === null) ||
-      (fraction === null && (row.status === 'downloading' || row.status === 'connecting')),
-  );
 
   // Closes by itself once finished, unless the person is looking at it or using it.
   let hovered = $state(false);
@@ -139,19 +131,14 @@
       {/if}
 
       <section class="numbers" aria-label="Progress">
-        <div
-          class="wire {row.status}"
-          role="progressbar"
-          aria-label={row.status === 'processing' && row.processing
-            ? PROCESSING_LABEL[row.processing.step]
-            : 'Downloaded'}
-          {...progressbarValue(fraction, finished)}
-        >
-          {#if indeterminate}
-            <span class="fill unknown"></span>
-          {:else}
-            <span class="fill" style:transform="scaleX({finished ? 1 : (fraction ?? 0)})"></span>
-          {/if}
+        <div class="wire">
+          <ProgressWire
+            fraction={wireFraction(row)}
+            status={row.status}
+            label={row.status === 'processing' && row.processing
+              ? PROCESSING_LABEL[row.processing.step]
+              : 'Downloaded'}
+          />
         </div>
         <dl class="facts num">
           <div>
@@ -321,45 +308,7 @@
   }
 
   .wire {
-    position: relative;
-    height: 6px;
-    overflow: hidden;
-    border-radius: 3px;
-    background: var(--wire-track);
-  }
-
-  .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left center;
-    transition: transform 240ms linear;
-  }
-
-  .fill.unknown {
-    width: 30%;
-    animation: slide 1.4s var(--ease) infinite;
-  }
-
-  @keyframes slide {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(340%);
-    }
-  }
-
-  .wire.paused .fill {
-    background: var(--warn-wire);
-  }
-
-  .wire.failed .fill {
-    background: var(--danger);
-  }
-
-  .wire.queued .fill {
-    background: var(--wire-done);
+    --wire-height: 6px;
   }
 
   .facts {

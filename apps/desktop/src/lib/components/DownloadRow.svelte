@@ -6,14 +6,14 @@
     formatEta,
     formatPercent,
     formatSize,
-    processingFraction,
-    progressFraction,
     statusShort,
+    wireFraction,
   } from '$lib/format';
   import { formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
+  import ProgressWire from './ProgressWire.svelte';
 
   let {
     id,
@@ -27,9 +27,6 @@
   const row = $derived(app.downloads.get(id));
   const selected = $derived(app.selection.has(id));
   const active = $derived(app.selection.active === id);
-  const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
-  // While ffmpeg converts or joins, the wire shows that step's progress when it is known.
-  const processed = $derived(row ? processingFraction(row) : null);
   const statusText = $derived(row ? statusShort(row) : '');
 </script>
 
@@ -80,18 +77,7 @@
       <span class="eta num" role="gridcell">{formatEta(row.eta_secs)}</span>
     {/if}
     <span class="status" role="gridcell" title={statusText}>{statusText}</span>
-    <span class="wire" aria-hidden="true">
-      {#if processed !== null}
-        <span class="fill" style:transform="scaleX({processed})"></span>
-      {:else if row.status === 'processing' || (fraction === null && (row.status === 'downloading' || row.status === 'connecting'))}
-        <span class="fill unknown"></span>
-      {:else}
-        <span
-          class="fill"
-          style:transform="scaleX({row.status === 'completed' ? 1 : (fraction ?? 0)})"
-        ></span>
-      {/if}
-    </span>
+    <span class="wire"><ProgressWire fraction={wireFraction(row)} status={row.status} /></span>
   </div>
 {/if}
 
@@ -246,52 +232,14 @@
 
   /* The wire: each row's bottom edge is its progress bar. */
   .wire {
+    --wire-height: 2px;
     position: absolute;
     right: 16px;
     bottom: 0;
     left: 18px;
-    height: 2px;
-    overflow: hidden;
-    background: var(--wire-track);
-  }
-
-  .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left center;
-    transition: transform 240ms linear;
-  }
-
-  .paused .fill {
-    background: var(--warn-wire);
-  }
-
-  .failed .fill {
-    background: var(--danger);
-  }
-
-  .queued .fill,
-  .completed .fill {
-    background: var(--wire-done);
   }
 
   .completed .wire {
     opacity: 0.45;
-  }
-
-  .fill.unknown {
-    right: auto;
-    width: 30%;
-    animation: travel 1.6s var(--ease) infinite;
-  }
-
-  @keyframes travel {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(340%);
-    }
   }
 </style>

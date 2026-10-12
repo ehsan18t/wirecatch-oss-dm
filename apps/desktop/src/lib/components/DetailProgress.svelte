@@ -3,17 +3,11 @@
   // and what is done and what is left.
   import type { DownloadSummary } from '@wirecatch/protocol';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
-  import {
-    formatEta,
-    formatPercent,
-    formatSize,
-    processingFraction,
-    progressFraction,
-  } from '$lib/format';
+  import { formatEta, formatPercent, formatSize, wireFraction } from '$lib/format';
+  import ProgressWire from './ProgressWire.svelte';
 
   let { row }: { row: DownloadSummary } = $props();
 
-  const fraction = $derived(processingFraction(row) ?? progressFraction(row.done, row.total));
   const percent = $derived(formatPercent(row.done, row.total));
 </script>
 
@@ -27,10 +21,7 @@
       {percent || formatBytes(row.done)}
     {/if}
   </p>
-  <div class="wire {row.status}" aria-hidden="true">
-    <span class="fill" style:transform="scaleX({row.status === 'completed' ? 1 : (fraction ?? 0)})"
-    ></span>
-  </div>
+  <ProgressWire fraction={wireFraction(row)} status={row.status} />
   <p class="facts num">
     <span>{formatSize(row.done, row.total, row.status)}</span>
     {#if row.status !== 'completed' && percent}
@@ -49,35 +40,6 @@
     font-weight: 600;
     font-variation-settings: 'wdth' 78;
     line-height: 1;
-  }
-
-  .wire {
-    position: relative;
-    height: 4px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: var(--wire-track);
-  }
-
-  .wire .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left center;
-    transition: transform 240ms linear;
-  }
-
-  .wire.paused .fill {
-    background: var(--warn-wire);
-  }
-
-  .wire.failed .fill {
-    background: var(--danger);
-  }
-
-  .wire.completed .fill,
-  .wire.queued .fill {
-    background: var(--wire-done);
   }
 
   .facts {

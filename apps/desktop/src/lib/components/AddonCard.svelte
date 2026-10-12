@@ -7,10 +7,10 @@
     installFraction,
     isInstalled,
   } from '$lib/addons';
-  import { progressbarValue } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { track } from '$lib/state/reactivity';
   import Button from './Button.svelte';
+  import ProgressWire from './ProgressWire.svelte';
 
   let { addon, describedby }: { addon: AddonInfo; describedby?: string } = $props();
   const app = getApp();
@@ -67,17 +67,8 @@
   {/if}
   <p class="visually-hidden" aria-live="polite">{addonAnnouncement(addon)}</p>
   {#if installing}
-    <div
-      class="wire"
-      role="progressbar"
-      aria-label="Installing {addon.name}"
-      {...progressbarValue(fraction)}
-    >
-      <span
-        class="fill"
-        class:unknown={fraction === null}
-        style:transform={fraction === null ? undefined : `scaleX(${fraction})`}
-      ></span>
+    <div class="install">
+      <ProgressWire {fraction} label="Installing {addon.name}" />
     </div>
   {/if}
   <div class="buttons">
@@ -138,35 +129,8 @@
     text-align: right;
   }
 
-  .wire {
-    position: relative;
+  .install {
     width: 220px;
-    height: 4px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: var(--wire-track);
-  }
-
-  .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left;
-    transition: transform 200ms var(--ease);
-  }
-
-  .fill.unknown {
-    width: 30%;
-    animation: slide 1.2s var(--ease) infinite;
-  }
-
-  @keyframes slide {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(340%);
-    }
   }
 
   .buttons {

@@ -1,11 +1,12 @@
 <script lang="ts">
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import X from '@lucide/svelte/icons/x';
-  import { folderOf, progressFraction } from '$lib/format';
+  import { folderOf, wireFraction } from '$lib/format';
   import { getApp, type Toast } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
   import IconButton from './IconButton.svelte';
+  import ProgressWire from './ProgressWire.svelte';
 
   let { toast }: { toast: Toast } = $props();
   const app = getApp();
@@ -17,7 +18,6 @@
   const row = $derived(
     toast.downloadId === undefined ? undefined : app.downloads.get(toast.downloadId),
   );
-  const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
   const ask = $derived(app.settings?.extension.ask_before_download ?? true);
 
   // Count down only while the person is not looking at or using the note.
@@ -48,12 +48,7 @@
         </Button>
       </div>
     </div>
-    <span class="wire" aria-hidden="true">
-      <span
-        class="fill"
-        style:transform="scaleX({row.status === 'completed' ? 1 : (fraction ?? 0)})"
-      ></span>
-    </span>
+    <span class="wire"><ProgressWire fraction={wireFraction(row)} status={row.status} /></span>
   {:else}
     <div class="body line">
       {#if toast.kind === 'error'}<Icon icon={CircleAlert} size="md" />{/if}
@@ -128,20 +123,11 @@
   }
 
   .wire {
+    --wire-height: 3px;
     position: absolute;
     right: 0;
     bottom: 0;
     left: 0;
-    height: 3px;
-    background: var(--wire-track);
-  }
-
-  .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left center;
-    transition: transform 240ms linear;
   }
 
   @keyframes arrive {

@@ -74,6 +74,21 @@ export function processingFraction(
     : Math.min(1, perMille / PER_MILLE_DONE);
 }
 
+/**
+ * How full a download's progress wire is, from 0 to 1, or `null` while it runs with no way to
+ * tell how far it is (no size yet, or a processing step that reports nothing): the wire then
+ * shows that it is moving instead. Every view of a download shows its progress this one way.
+ */
+export function wireFraction(
+  row: Pick<DownloadSummary, 'status' | 'processing' | 'done' | 'total'>,
+): number | null {
+  if (row.status === 'completed') return 1;
+  if (row.status === 'processing') return processingFraction(row);
+  const fraction = progressFraction(row.done, row.total);
+  if (fraction !== null) return fraction;
+  return row.status === 'downloading' || row.status === 'connecting' ? null : 0;
+}
+
 /** A whole job in percent: the top of every progress bar. */
 export const PERCENT_MAX = 100;
 

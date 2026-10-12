@@ -5,7 +5,8 @@
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
   import Button from '$lib/components/Button.svelte';
-  import { hostOf, progressbarValue } from '$lib/format';
+  import ProgressWire from '$lib/components/ProgressWire.svelte';
+  import { hostOf } from '$lib/format';
   import { track } from '$lib/state/reactivity';
   import { formatBytes } from '@wirecatch/units';
   import type { DownloadWindowState } from './download-window.svelte';
@@ -23,8 +24,6 @@
   const installed = $derived(isInstalled(addon));
   const failed = $derived(addon.state.type === 'failed');
   const fraction = $derived(installFraction(addon.state));
-  /** While the size is not known, the bar shows this much, so it reads as started, not empty. */
-  const UNKNOWN_PROGRESS = 0.05;
   let busy = $state(false);
 
   async function install() {
@@ -65,14 +64,7 @@
       <p>Your download continues on its own.</p>
     {:else if installing}
       <p>{addonStatus(addon)}</p>
-      <div
-        class="wire"
-        role="progressbar"
-        aria-label="Installing {addon.name}"
-        {...progressbarValue(fraction)}
-      >
-        <span class="fill" style:transform="scaleX({fraction ?? UNKNOWN_PROGRESS})"></span>
-      </div>
+      <ProgressWire {fraction} label="Installing {addon.name}" />
       <p class="muted">
         {forQuality
           ? 'Your download starts here as soon as it is ready. Keep this window open.'
@@ -125,21 +117,5 @@
   .error {
     color: var(--danger);
     font-size: var(--text-sm);
-  }
-
-  .wire {
-    position: relative;
-    height: 4px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: var(--wire-track);
-  }
-
-  .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left;
-    transition: transform 200ms var(--ease);
   }
 </style>

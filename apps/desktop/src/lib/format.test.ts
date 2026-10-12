@@ -16,6 +16,7 @@ import {
   percentOf,
   processingFraction,
   progressbarValue,
+  wireFraction,
   roundDownTo,
   shownWait,
   scheduleAllows,
@@ -53,6 +54,27 @@ describe('progress', () => {
     expect(progressbarValue(1)['aria-valuenow']).toBe(99);
     expect(progressbarValue(1, true)['aria-valuenow']).toBe(100);
     expect(progressbarValue(null)['aria-valuenow']).toBeUndefined();
+  });
+
+  it('fills a download wire one way everywhere, moving while how far is not known', () => {
+    const at = (status: DownloadSummary['status'], done: number, total: number | null) => ({
+      status,
+      done,
+      total,
+      processing: null,
+    });
+    expect(wireFraction(at('downloading', 25, 100))).toBe(0.25);
+    expect(wireFraction(at('downloading', 25, null))).toBeNull();
+    expect(wireFraction(at('connecting', 0, null))).toBeNull();
+    expect(wireFraction(at('paused', 25, null))).toBe(0);
+    expect(wireFraction(at('completed', 0, null))).toBe(1);
+    expect(wireFraction(at('processing', 100, 100))).toBeNull();
+    expect(
+      wireFraction({
+        ...at('processing', 100, 100),
+        processing: { step: 'joining', per_mille: 500 },
+      }),
+    ).toBe(0.5);
   });
 
   it('rounds down to a step', () => {
