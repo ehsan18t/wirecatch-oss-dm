@@ -354,7 +354,7 @@ pub(crate) async fn probe(
     limit: Option<u64>,
 ) -> Result<Probe, Failure> {
     if let Some(limit) = limit.filter(|&n| n > 0) {
-        let range = RequestRange::new(0, limit).unwrap_or(RequestRange::from(0));
+        let range = RequestRange::new(0, limit).ok_or_else(|| empty_range(0, limit))?;
         let probe = probe_range(client, url, session, range).await?;
         if probe.limited_without_size {
             debug!("the server sent part of the file without its size; asking for all of it");
