@@ -121,17 +121,16 @@ pub(crate) fn for_capture(
 pub(crate) fn to_map(headers: &[Header]) -> HeaderMap {
     let mut map = HeaderMap::with_capacity(headers.len());
     for header in headers.iter().filter(|h| is_allowed(&h.name)) {
-        match (
+        if let (Ok(name), Ok(value)) = (
             HeaderName::from_bytes(header.name.trim().as_bytes()),
             HeaderValue::from_str(header.value.trim()),
         ) {
-            (Ok(name), Ok(value)) => {
-                if SINGLE.contains(&name.as_str()) && map.contains_key(&name) {
-                    continue;
-                }
-                map.append(name, value);
+            if SINGLE.contains(&name.as_str()) && map.contains_key(&name) {
+                continue;
             }
-            _ => warn!(name = %header.name, "skipping a header that is not valid HTTP"),
+            map.append(name, value);
+        } else {
+            warn!(name = %header.name, "skipping a header that is not valid HTTP");
         }
     }
     map

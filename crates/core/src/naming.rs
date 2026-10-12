@@ -166,7 +166,7 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
     }
     std::fs::metadata(path)
         .ok()
-        .filter(|m| m.is_file())
+        .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
 }
 

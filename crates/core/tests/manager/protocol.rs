@@ -192,7 +192,7 @@ async fn bad_messages_get_errors_and_the_connection_survives() -> TestResult {
 
     // An unknown method still has a readable id.
     let unknown = br#"{"kind":"request","id":41,"call":{"method":"format_disk"}}"#;
-    client.stream.write_all(&framed(unknown)).await.unwrap();
+    client.stream.write_all(&framed(unknown)?).await.unwrap();
     let err = client.response(41).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidRequest);
     assert!(err.message.contains("format_disk"), "{}", err.message);
@@ -200,7 +200,7 @@ async fn bad_messages_get_errors_and_the_connection_survives() -> TestResult {
     // Garbage has no id at all.
     client
         .stream
-        .write_all(&framed(b"\x00\xffnot json"))
+        .write_all(&framed(b"\x00\xffnot json")?)
         .await
         .unwrap();
     let err = client.response(UNKNOWN_REQUEST_ID).await?.unwrap_err();
@@ -210,7 +210,8 @@ async fn bad_messages_get_errors_and_the_connection_survives() -> TestResult {
     let len = MAX_FRAME_LEN + 1;
     client
         .stream
-        .write_all(&(len as u32).to_le_bytes())
+        // Over the limit, so `length_prefix` rightly refuses to write it.
+        .write_all(&u32::try_from(len).unwrap().to_le_bytes())
         .await
         .unwrap();
     let filler = vec![b' '; 64 * 1024];
@@ -293,8 +294,8 @@ async fn settings_changes_reach_every_client() -> TestResult {
         loop {
             match client.next_event().await? {
                 Event::ExtensionSettingsChanged(s) if !s.capture_enabled => break,
-                Event::ExtensionSettingsChanged(_) => continue,
-                other => panic!("unexpected event {other:?}"),
+                Event::ExtensionSettingsChanged(_) => {}
+                other @ Event::QueuesChanged(_) => panic!("unexpected event {other:?}"),
             }
         }
     }
@@ -398,7 +399,10 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
         Some("https://example.com/page")
     );
     assert_eq!(h.manager.pending_confirmations(), vec![proposal.clone()]);
-    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
 
     // The user picks another name and folder.
     let folder = h.folders.home.join("Chosen");
@@ -417,13 +421,19 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     let row = h.manager.list_downloads().remove(0);
     assert_eq!(std::path::Path::new(&row.path), folder.join("mine.pdf"));
     h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert!(h.manager.pending_confirmations().is_empty());
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
 
     // A rejected capture downloads nothing.
     client.call(Call::AddDownload(ask("b"))).await?.unwrap();
     let second = h.manager.pending_confirmations().remove(0);
     h.manager.reject_capture(second.id).unwrap();
-    assert!(h.manager.pending_confirmations().is_empty());
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
     assert_eq!(h.manager.list_downloads().len(), 1);
     assert!(h.manager.reject_capture(second.id).is_err());
     Ok(())
@@ -487,7 +497,7 @@ async fn a_shared_confirmation_tracks_every_handover() -> TestResult {
     }
     assert_eq!(h.manager.pending_confirmations().len(), 1);
     assert_eq!(
-        h.manager.withdraw_capture("a-1").await.unwrap(),
+        h.manager.withdraw_capture("a-1").unwrap(),
         WithdrawOutcome::Withdrawn
     );
     assert_eq!(
@@ -496,10 +506,13 @@ async fn a_shared_confirmation_tracks_every_handover() -> TestResult {
         "one tab withdrew the other tab's download"
     );
     assert_eq!(
-        h.manager.withdraw_capture("a-2").await.unwrap(),
+        h.manager.withdraw_capture("a-2").unwrap(),
         WithdrawOutcome::Withdrawn
     );
-    assert!(h.manager.pending_confirmations().is_empty());
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
 
     // Confirmed: it is the app's, for every tab, whether the server answered yet or not.
     for tab in ["b-1", "b-2"] {
@@ -518,7 +531,7 @@ async fn a_shared_confirmation_tracks_every_handover() -> TestResult {
         .unwrap();
     for tab in ["b-1", "b-2"] {
         assert_eq!(
-            h.manager.withdraw_capture(tab).await.unwrap(),
+            h.manager.withdraw_capture(tab).unwrap(),
             WithdrawOutcome::AlreadyStarted,
             "{tab}"
         );
@@ -533,7 +546,7 @@ async fn a_shared_confirmation_tracks_every_handover() -> TestResult {
     h.manager.reject_capture(proposal.id).unwrap();
     for tab in ["c-1", "c-2"] {
         assert_eq!(
-            h.manager.withdraw_capture(tab).await.unwrap(),
+            h.manager.withdraw_capture(tab).unwrap(),
             WithdrawOutcome::NotFound,
             "{tab}"
         );
@@ -606,7 +619,10 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
     assert_eq!(added.action, AddAction::Queued);
     let reply = client.call(withdraw(&waiting)).await?.unwrap();
     assert_eq!(outcome(reply), WithdrawOutcome::Withdrawn);
-    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     assert_eq!(
         server
             .stats
@@ -639,7 +655,10 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
     h.manager.add_capture(asked.clone()).await.unwrap();
     let reply = client.call(withdraw(&asked)).await?.unwrap();
     assert_eq!(outcome(reply), WithdrawOutcome::Withdrawn);
-    assert!(h.manager.pending_confirmations().is_empty());
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
     Ok(())
 }
 
@@ -649,7 +668,7 @@ async fn ignored_site_edits_from_two_browsers_merge() -> TestResult {
     let mut chrome = Client::connected(&h.manager).await?;
     let mut firefox = Client::connected(&h.manager).await?;
     let edit = |add: &[&str], remove: &[&str]| {
-        let list = |l: &[&str]| Some(l.iter().map(|s| s.to_string()).collect());
+        let list = |l: &[&str]| Some(l.iter().map(std::string::ToString::to_string).collect());
         Call::UpdateExtensionSettings(ExtensionSettingsPatch {
             add_ignored_sites: list(add),
             remove_ignored_sites: list(remove),
@@ -755,10 +774,13 @@ async fn a_different_file_than_the_browser_saw_is_not_taken_over() -> TestResult
         .await
         .unwrap_err();
     assert!(err.to_string().contains("web page"), "{err}");
-    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     // Nothing was written.
     let documents = h.folders.downloads.join("Documents");
-    let left = std::fs::read_dir(&documents).map_or(0, |d| d.count());
+    let left = std::fs::read_dir(&documents).map_or(0, std::iter::Iterator::count);
     assert_eq!(left, 0, "files were left in {}", documents.display());
     Ok(())
 }
@@ -781,7 +803,7 @@ async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() ->
     let second = capture(server.url("b.pdf").to_string());
     let (added, withdrawn) = tokio::join!(h.manager.add_capture(second.clone()), async {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        h.manager.withdraw_capture(&second.handover_id).await
+        h.manager.withdraw_capture(&second.handover_id)
     });
     assert_eq!(withdrawn.unwrap(), WithdrawOutcome::Withdrawn);
     assert!(matches!(
@@ -791,11 +813,7 @@ async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() ->
     let ids: Vec<_> = h.manager.list_downloads().iter().map(|r| r.id).collect();
     assert_eq!(ids, vec![a.id.unwrap()]);
     // Once started, a withdrawal no longer takes it back.
-    let outcome = h
-        .manager
-        .withdraw_capture(&first.handover_id)
-        .await
-        .unwrap();
+    let outcome = h.manager.withdraw_capture(&first.handover_id).unwrap();
     assert_eq!(outcome, WithdrawOutcome::AlreadyStarted);
     Ok(())
 }
@@ -839,7 +857,10 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
     );
     let err = client.response(added).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::NotStarted);
-    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     Ok(())
 }
 
@@ -866,7 +887,7 @@ async fn requests_beyond_the_limit_are_refused() -> TestResult {
         (silent.accepted() > 0).then_some(())
     })
     .await;
-    let outcome = h.manager.withdraw_capture(&slow.handover_id).await.unwrap();
+    let outcome = h.manager.withdraw_capture(&slow.handover_id).unwrap();
     assert_eq!(outcome, WithdrawOutcome::Withdrawn);
     for id in ids {
         let err = client.response(id).await?.unwrap_err();
@@ -981,10 +1002,19 @@ async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() -> TestRe
     Ok(())
 }
 
-fn framed(body: &[u8]) -> Vec<u8> {
-    let mut out = (body.len() as u32).to_le_bytes().to_vec();
+fn framed(body: &[u8]) -> TestResult<Vec<u8>> {
+    let mut out = frame::length_prefix(body.len())?.to_vec();
     out.extend_from_slice(body);
-    out
+    Ok(out)
+}
+
+/// Waits for the next confirmation dialog to close and returns its id.
+async fn closed(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> TestResult<u64> {
+    loop {
+        if let UiEvent::ConfirmationClosed { id } = ui.recv().await? {
+            return Ok(id);
+        }
+    }
 }
 
 /// A confirmation dialog must close when its question goes away, whichever way.
@@ -994,22 +1024,12 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
     let mut ui = h.manager.subscribe();
-    async fn closed(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> u64 {
-        loop {
-            if let UiEvent::ConfirmationClosed { id } = ui.recv().await.unwrap() {
-                return id;
-            }
-        }
-    }
 
     let withdrawn = capture(server.url("withdrawn.bin").to_string());
     h.manager.add_capture(withdrawn.clone()).await.unwrap();
     let asked = h.manager.pending_confirmations().remove(0);
-    h.manager
-        .withdraw_capture(&withdrawn.handover_id)
-        .await
-        .unwrap();
-    assert_eq!(closed(&mut ui).await, asked.id);
+    h.manager.withdraw_capture(&withdrawn.handover_id).unwrap();
+    assert_eq!(closed(&mut ui).await?, asked.id);
 
     h.manager
         .add_capture(capture(server.url("rejected.bin").to_string()))
@@ -1017,7 +1037,7 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
         .unwrap();
     let asked = h.manager.pending_confirmations().remove(0);
     h.manager.reject_capture(asked.id).unwrap();
-    assert_eq!(closed(&mut ui).await, asked.id);
+    assert_eq!(closed(&mut ui).await?, asked.id);
 
     h.manager
         .add_capture(capture(server.url("confirmed.bin").to_string()))
@@ -1028,7 +1048,7 @@ async fn a_closed_question_is_announced_so_the_dialog_closes() -> TestResult {
         .confirm_capture(asked.id, CaptureConfirmation::default())
         .await
         .unwrap();
-    assert_eq!(closed(&mut ui).await, asked.id);
+    assert_eq!(closed(&mut ui).await?, asked.id);
     Ok(())
 }
 
@@ -1132,7 +1152,10 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
     h.wait_status(young, DownloadStatus::Completed).await;
     // Only the young download sent cookies, and none sent credentials.
     assert_eq!(server.stats.header_values("cookie"), vec!["session=abc"]);
-    assert!(server.stats.header_values("authorization").is_empty());
+    assert_eq!(
+        server.stats.header_values("authorization"),
+        [] as [std::string::String; 0]
+    );
     Ok(())
 }
 

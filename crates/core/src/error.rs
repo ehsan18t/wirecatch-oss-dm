@@ -129,6 +129,7 @@ pub(crate) async fn blocking<T: Send + 'static>(
 
 impl CoreError {
     /// The same error as sent to a protocol client.
+    #[must_use]
     pub fn to_protocol(&self) -> ProtocolError {
         let code = match self {
             CoreError::DownloadNotFound(_)

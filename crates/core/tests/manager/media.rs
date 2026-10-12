@@ -7,12 +7,12 @@ use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
-    AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, UiEvent,
-    WaitReason,
+    AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
+    UiEvent, WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind};
 
-use crate::common::{Harness, TestResult, test_data, wait_until};
+use crate::common::{Harness, TestResult, extension, test_data, wait_until};
 use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
     publish, real_ffmpeg, tell_tool, ytdlp_calls,
@@ -25,7 +25,7 @@ fn select(option: &str) -> MediaSelection {
         file_name: None,
         queue: None,
         later: false,
-        output: Default::default(),
+        output: OutputFormat::default(),
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
@@ -68,17 +68,17 @@ fn hls(server: &FileServer, live: bool, separate_audio: bool) -> Vec<u8> {
     );
     let end = if live { "" } else { "#EXT-X-ENDLIST\n" };
     let mut best = Vec::new();
-    for (n, quality) in ["720", "360", "audio"].iter().enumerate() {
+    for (n, quality) in (0u8..).zip(["720", "360", "audio"]) {
         server.put(
             &format!("hls/{quality}/index.m3u8"),
             format!(
                 "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\nseg0.ts\n#EXTINF:4.0,\nseg1.ts\n{end}"
             ),
         );
-        for seg in 0..2 {
+        for seg in 0u8..2 {
             let data: Vec<u8> = test_data(SEGMENT)
                 .into_iter()
-                .map(|b| b.wrapping_add((n * 2 + seg) as u8))
+                .map(|b| b.wrapping_add(n * 2 + seg))
                 .collect();
             if n == 0 {
                 best.extend_from_slice(&data);
@@ -134,7 +134,10 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
     })
     .await;
     assert_eq!(closed, choice.id);
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     let row = h.manager.list_downloads().remove(0);
     assert_eq!(row.category, Category::Video);
     let media = row.media.clone().unwrap();
@@ -196,7 +199,10 @@ async fn joining_separate_audio_needs_the_add_on() -> TestResult {
             .is_err()
     );
     h.manager.dismiss_media_choice(choice.id).unwrap();
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     assert!(matches!(
         h.manager.dismiss_media_choice(choice.id),
         Err(CoreError::ConfirmationNotFound(_))
@@ -220,7 +226,10 @@ async fn a_live_stream_says_so_in_the_list() -> TestResult {
         error.message
     );
     assert_eq!(error.fix, None);
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     // An unfinished video stays where its parts are.
     let elsewhere = h.folders.home.join("Elsewhere");
     let moved = h
@@ -260,8 +269,8 @@ fn cookie_use(h: &Harness) -> TestResult<Vec<bool>> {
         .collect()
 }
 
-/// YouTube is read without the browser's sign-in first: with a signed-in
-/// browser's cookies yt-dlp gets video addresses YouTube often refuses.
+/// `YouTube` is read without the browser's sign-in first: with a signed-in
+/// browser's cookies yt-dlp gets video addresses `YouTube` often refuses.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn youtube_is_read_without_the_browser_sign_in_first() -> TestResult {
     let server = FileServer::start().await;
@@ -386,7 +395,12 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
     assert_eq!(row.media.as_ref().unwrap().quality, "1080p");
     h.wait_status(row.id, DownloadStatus::Processing).await;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mp4"), "{}", done.file_name);
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mp4"),
+        "{}",
+        done.file_name
+    );
     // The fake ffmpeg wrote its arguments: a copy of both parts, no re-encoding.
     let joined = std::fs::read_to_string(&done.path).unwrap();
     let lines: Vec<&str> = joined.lines().collect();
@@ -671,7 +685,10 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
 
     assert_eq!((addon.id.as_str(), url.as_str()), ("media", page.as_str()));
     assert!(addon.size.is_some_and(|s| s > 0));
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
 
     h.manager.install_addon("media").await.unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -770,17 +787,17 @@ async fn a_withdrawn_media_capture_closes_its_question() -> TestResult {
     let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
     h.manager.add_capture(capture.clone()).await.unwrap();
     let choice = choice_requested(&mut ui).await;
-    h.manager
-        .withdraw_capture(&capture.handover_id)
-        .await
-        .unwrap();
+    h.manager.withdraw_capture(&capture.handover_id).unwrap();
     let closed = next_event(&mut ui, "closed", |e| match e {
         UiEvent::ConfirmationClosed { id } => Some(*id),
         _ => None,
     })
     .await;
     assert_eq!(closed, choice.id);
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     Ok(())
 }
 
@@ -937,7 +954,7 @@ async fn a_page_cannot_save_a_program() -> TestResult {
             .unwrap()
             .filter_map(Result::ok)
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".exe") || n.ends_with(".bat"))
+            .filter(|n| matches!(extension(n), Some("exe" | "bat")))
             .collect();
         assert!(programs.is_empty(), "{programs:?}");
     }
@@ -1000,10 +1017,7 @@ async fn stopping_yt_dlp_stops_what_it_started() -> TestResult {
     };
     wait_until("the started program beats", || beat().filter(|b| *b > 2)).await;
     // The browser takes the capture back while yt-dlp is still reading.
-    h.manager
-        .withdraw_capture(&capture.handover_id)
-        .await
-        .unwrap();
+    h.manager.withdraw_capture(&capture.handover_id).unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     let before = beat();
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
@@ -1042,7 +1056,10 @@ async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() -> TestR
         (page.as_str(), "media")
     );
     h.manager.dismiss_media_choice(waiting[0].id).unwrap();
-    assert!(h.manager.pending_addon_requests().is_empty());
+    assert_eq!(
+        h.manager.pending_addon_requests(),
+        [] as [wirecatch_core::AddonRequestItem; 0]
+    );
     Ok(())
 }
 
@@ -1075,7 +1092,10 @@ async fn a_failed_install_turns_waiting_pages_into_failed_downloads() -> TestRes
         error.message
     );
     assert_eq!(error.fix, Some(FixAction::Retry));
-    assert!(h.manager.pending_addon_requests().is_empty());
+    assert_eq!(
+        h.manager.pending_addon_requests(),
+        [] as [wirecatch_core::AddonRequestItem; 0]
+    );
     Ok(())
 }
 
@@ -1096,7 +1116,10 @@ async fn a_stale_wait_never_pops_a_question_later() -> TestResult {
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
     let row = h.wait_status(row.id, DownloadStatus::Failed).await;
     assert!(row.error.unwrap().message.contains("waited"));
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     while let Ok(event) = ui.try_recv() {
         assert!(

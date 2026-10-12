@@ -1,12 +1,15 @@
 //! Rebuilding the manager's state from the database at startup.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::NaiveDateTime;
 use wirecatch_protocol::app::DownloadStatus;
 
+use super::addons::AddonSlot;
+use super::handovers::Handovers;
 use super::state::{Counters, Entry, QueueSlot, State};
+use crate::naming::Claimed;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use crate::store::{Origin, Snapshot, StoredDownload};
 
@@ -41,7 +44,7 @@ pub(super) struct Surroundings<'a> {
 /// that a schedule had started keeps running, so interrupted work continues. A
 /// download whose file finished just before the app stopped (the file is there and
 /// its partial files are gone) is marked completed instead of downloaded again.
-pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored {
+pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored {
     let settings = snapshot
         .settings
         .map_or_else(settings::default_settings, settings::within_limits);
@@ -122,13 +125,13 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
         settings,
         queues,
         downloads: BTreeMap::new(),
-        claimed: Default::default(),
-        running: Default::default(),
+        claimed: Claimed::default(),
+        running: BTreeSet::default(),
         pending: BTreeMap::new(),
         media: BTreeMap::new(),
-        addon: Default::default(),
-        handovers: Default::default(),
-        dirty: Default::default(),
+        addon: AddonSlot::default(),
+        handovers: Handovers::default(),
+        dirty: BTreeSet::default(),
         last_checked: around.now,
         ids,
         closed: false,
@@ -142,7 +145,7 @@ pub(super) fn restore(snapshot: Snapshot, around: Surroundings<'_>) -> Restored 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::NameChoice;
+    use crate::store::{LastIds, NameChoice};
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -165,7 +168,7 @@ mod tests {
             ..Snapshot::default()
         };
         // Every path looks finished; only unsettled downloads may be marked.
-        let restored = restore(snapshot, nowhere(&|_| Some(42)));
+        let restored = restore(snapshot, &nowhere(&|_| Some(42)));
         let row = |id| &restored.state.downloads[&DownloadId(id)].row;
         for id in [1, 3] {
             assert_eq!(row(id).status, DownloadStatus::Completed);
@@ -208,7 +211,7 @@ mod tests {
 
     #[test]
     fn first_start_gets_defaults() {
-        let restored = restore(Snapshot::default(), nowhere(&|_| None));
+        let restored = restore(Snapshot::default(), &nowhere(&|_| None));
 
         assert_eq!(restored.state.queue_list(), vec![settings::default_queue()]);
         assert_eq!(restored.state.settings, settings::default_settings());
@@ -231,7 +234,7 @@ mod tests {
             ..Snapshot::default()
         };
 
-        let restored = restore(snapshot, nowhere(&|_| None));
+        let restored = restore(snapshot, &nowhere(&|_| None));
 
         let loaded = &restored.state.settings;
         assert_eq!(loaded.connections_per_download, 1);
@@ -245,7 +248,7 @@ mod tests {
     fn running_downloads_go_first_and_orphans_join_the_default_queue() {
         let snapshot = Snapshot {
             settings: None,
-            last_ids: Default::default(),
+            last_ids: LastIds::default(),
             queues: vec![settings::default_queue()],
             downloads: vec![
                 stored(1, 1, DownloadStatus::Queued),
@@ -254,7 +257,7 @@ mod tests {
             ],
             recovery: None,
         };
-        let restored = restore(snapshot, nowhere(&|_| None));
+        let restored = restore(snapshot, &nowhere(&|_| None));
         let state = &restored.state;
         let running = &state.downloads[&DownloadId(2)];
         assert_eq!(running.row.status, DownloadStatus::Queued);

@@ -762,7 +762,7 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
         _ => None,
     })
     .await;
-    assert!(summary.addons_to_offer.is_empty());
+    assert_eq!(summary.addons_to_offer, [] as [std::string::String; 0]);
     Ok(())
 }
 
@@ -909,7 +909,7 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
                 file_name: None,
                 queue: None,
                 later: false,
-                output: Default::default(),
+                output: wirecatch_protocol::app::OutputFormat::default(),
                 audio_kbps: None,
                 subtitles: Vec::new(),
                 subtitle_files: false,

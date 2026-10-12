@@ -27,8 +27,8 @@ pub(super) async fn run(weak: Weak<Inner>, rows_changed: Arc<Notify>, stopped: C
     loop {
         if !busy {
             tokio::select! {
-                _ = rows_changed.notified() => {}
-                _ = stopped.cancelled() => return,
+                () = rows_changed.notified() => {}
+                () = stopped.cancelled() => return,
             }
         }
         busy = match Manager::from_weak(&weak) {
@@ -36,8 +36,8 @@ pub(super) async fn run(weak: Weak<Inner>, rows_changed: Arc<Notify>, stopped: C
             None => return,
         };
         tokio::select! {
-            _ = tokio::time::sleep(TICK) => {}
-            _ = stopped.cancelled() => return,
+            () = tokio::time::sleep(TICK) => {}
+            () = stopped.cancelled() => return,
         }
     }
 }
@@ -83,7 +83,7 @@ impl Manager {
 
         let changed: Vec<DownloadSummary> = std::mem::take(&mut state.dirty)
             .into_iter()
-            .filter_map(|id| state.entry(id).ok().map(|e| e.summary()))
+            .filter_map(|id| state.entry(id).ok().map(super::state::Entry::summary))
             .collect();
         if !changed.is_empty() {
             self.emit(UiEvent::DownloadsChanged(changed));

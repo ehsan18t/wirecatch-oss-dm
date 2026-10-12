@@ -203,12 +203,11 @@ fn move_download_files(from: &Path, to: &Path, completed: bool) -> Result<()> {
 
 /// Renames a file, copying it when the target is on another drive.
 fn move_file(from: &Path, to: &Path) -> io::Result<()> {
-    match std::fs::rename(from, to) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            std::fs::copy(from, to)?;
-            std::fs::remove_file(from)
-        }
+    if let Ok(()) = std::fs::rename(from, to) {
+        Ok(())
+    } else {
+        std::fs::copy(from, to)?;
+        std::fs::remove_file(from)
     }
 }
 

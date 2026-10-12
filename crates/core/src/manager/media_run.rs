@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
-    PrivateNetwork, Progress, RateLimiter, Url,
+    PrivateNetwork, Progress, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
@@ -26,7 +26,7 @@ use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
 
 use super::Manager;
 use super::media::{addon_missing, cookie_header, media_options};
-use super::run::{MediaDone, RunEnd};
+use super::run::{Bandwidth, MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::MediaTools;
 use crate::clock::Clock;
@@ -65,7 +65,6 @@ type Reserve = Arc<dyn Fn(&Path, bool) -> bool + Send + Sync>;
 
 impl Manager {
     /// Starts media download `id` (the caller checked every limit).
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn start_media_run(
         &self,
         state: &mut State,
@@ -73,8 +72,7 @@ impl Manager {
         run_id: u64,
         answered: CancellationToken,
         job: MediaJob,
-        connections: usize,
-        limiters: Vec<Arc<RateLimiter>>,
+        bandwidth: Bandwidth,
     ) {
         let Some(entry) = state.downloads.get(&id) else {
             return;
@@ -92,8 +90,8 @@ impl Manager {
             }
         };
         let mut options = media_options(&entry.origin);
-        options.connections = connections.max(1);
-        options.rate_limiters = limiters;
+        options.connections = bandwidth.connections.max(1);
+        options.rate_limiters = bandwidth.limiters;
         let tools = state.addon.tools.clone();
         let manager = Arc::downgrade(&self.inner);
         let work = Job {
@@ -277,8 +275,8 @@ async fn run_page(
         let wait_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
         progress.set_retry_at(Some(job.clock.unix_millis().saturating_add(wait_ms)));
         tokio::select! {
-            _ = cancel.cancelled() => return Ok(MediaDone::Paused),
-            _ = tokio::time::sleep(*delay) => {}
+            () = cancel.cancelled() => return Ok(MediaDone::Paused),
+            () = tokio::time::sleep(*delay) => {}
         }
     }
 }
@@ -323,7 +321,7 @@ async fn page_attempt(
     let wanted: Vec<&String> = [video, audio].into_iter().flatten().collect();
     let found: Vec<&Format> = wanted
         .iter()
-        .filter_map(|id| formats.iter().find(|f| &&f.format_id == id))
+        .filter_map(|id| formats.iter().find(|f| &&f.id == id))
         .collect();
     let ourselves = !wanted.is_empty()
         && found.len() == wanted.len()
@@ -538,7 +536,7 @@ async fn fetch_extras(
                 pick: pick.clone(),
             }),
             None => {
-                warn!(language = %pick.language, "the subtitles are not in the format they claim")
+                warn!(language = %pick.language, "the subtitles are not in the format they claim");
             }
         }
     }
@@ -547,10 +545,13 @@ async fn fetch_extras(
     {
         let path = work.join("cover.image");
         match fetch_small(job, &url, &HashMap::new(), &path, MAX_COVER_BYTES, cancel).await {
-            Fetch::Done => match ImageFormat::detect(&head(&path).await) {
-                Some(format) => downloaded.cover = Some(("cover.image".into(), format)),
-                None => warn!("the video's picture is not a JPEG, PNG or WebP picture"),
-            },
+            Fetch::Done => {
+                if let Some(format) = ImageFormat::detect(&head(&path).await) {
+                    downloaded.cover = Some(("cover.image".into(), format));
+                } else {
+                    warn!("the video's picture is not a JPEG, PNG or WebP picture");
+                }
+            }
             Fetch::Stopped => return false,
             Fetch::Failed(reason) => warn!(%reason, "could not download the video's picture"),
         }
@@ -794,7 +795,7 @@ async fn inputs_for(
     })
 }
 
-/// The subtitles saved next to the file, as SubRip files in `work` with their
+/// The subtitles saved next to the file, as `SubRip` files in `work` with their
 /// language, made with ffmpeg; nothing when they go inside the file. One that
 /// ffmpeg cannot read is left out. `None` when stopped.
 async fn subtitle_files(
@@ -894,7 +895,7 @@ async fn fetch_part(
     job: &Job,
     format: &Format,
     role: &str,
-    rule: PrivateNetwork,
+    private_network: PrivateNetwork,
     work: &Path,
     progress: &MediaProgress,
     cancel: &CancellationToken,
@@ -915,49 +916,46 @@ async fn fetch_part(
         .as_deref()
         .and_then(|u| Url::parse(u).ok())
         .ok_or_else(|| refresh("The page gave an address for the video that is not valid."))?;
-    let options = part_options(job, format, rule);
+    let options = part_options(job, format, private_network);
     let part = work.join(part_name(format, role));
-    let file = match format.transport() {
-        Transport::Hls => {
-            let mut request = StreamRequest::new(url, part);
-            request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
-            request.private_network = rule;
-            request.options = options;
-            let stream = Arc::new(StreamProgress::default());
-            progress.add_stream(stream.clone());
-            match wirecatch_streams::download(request, stream, cancel.clone()).await {
-                Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
-                Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
-                Err(e) => {
-                    note_missing_ffmpeg(job, &e);
-                    return Err(stream_error(&e, work).into());
-                }
+    let file = if format.transport() == Transport::Hls {
+        let mut request = StreamRequest::new(url, part);
+        request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
+        request.private_network = private_network;
+        request.options = options;
+        let stream = Arc::new(StreamProgress::default());
+        progress.add_stream(stream.clone());
+        match wirecatch_streams::download(request, stream, cancel.clone()).await {
+            Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
+            Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
+            Err(e) => {
+                note_missing_ffmpeg(job, &e);
+                return Err(stream_error(&e, work).into());
             }
         }
-        _ => {
-            let path = part;
-            let mut request = DownloadRequest::new(url, work);
-            request.exact_path = Some(path.clone());
-            request.options = options;
-            let file = Arc::new(Progress::default());
-            progress.add_file(file.clone(), format.size());
-            match wirecatch_engine::download(request, file, cancel.clone()).await {
-                Ok(Outcome::Completed { .. }) => path,
-                Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
-                Err(e) => {
-                    let folder = job.output.parent().unwrap_or(Path::new(""));
-                    // A format address that was refused or has expired: a
-                    // fresh one from the page usually works.
-                    let error = user_error::describe(&e, folder, true);
-                    if error.fix == Some(FixAction::RefreshLink) {
-                        let status = match e {
-                            EngineError::HttpStatus { status, .. } => Some(status),
-                            _ => None,
-                        };
-                        return Err(PageError::Refused { status });
-                    }
-                    return Err(error.into());
+    } else {
+        let path = part;
+        let mut request = DownloadRequest::new(url, work);
+        request.exact_path = Some(path.clone());
+        request.options = options;
+        let file = Arc::new(Progress::default());
+        progress.add_file(file.clone(), format.size());
+        match wirecatch_engine::download(request, file, cancel.clone()).await {
+            Ok(Outcome::Completed { .. }) => path,
+            Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
+            Err(e) => {
+                let folder = job.output.parent().unwrap_or(Path::new(""));
+                // A format address that was refused or has expired: a
+                // fresh one from the page usually works.
+                let error = user_error::describe(&e, folder, true);
+                if error.fix == Some(FixAction::RefreshLink) {
+                    let status = match e {
+                        EngineError::HttpStatus { status, .. } => Some(status),
+                        _ => None,
+                    };
+                    return Err(PageError::Refused { status });
                 }
+                return Err(error.into());
             }
         }
     };
@@ -983,7 +981,7 @@ async fn finish(
     sidecars: &[(PathBuf, String)],
 ) -> Result<MediaDone, UserError> {
     let output = &job.output;
-    let (file, planned, work) = (file.to_path_buf(), output.to_path_buf(), work.to_path_buf());
+    let (file, planned, work) = (file.to_path_buf(), output.clone(), work.to_path_buf());
     let (url, referrer) = (
         job.url.to_string(),
         headers::referrer(&job.origin.headers).map(str::to_string),
@@ -1021,8 +1019,7 @@ async fn finish(
 fn sidecar_path(file: &Path, language: &str) -> PathBuf {
     let stem = file
         .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "video".into());
+        .map_or_else(|| "video".into(), |s| s.to_string_lossy().into_owned());
     let language: String = language
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')

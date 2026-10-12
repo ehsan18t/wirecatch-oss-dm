@@ -167,7 +167,6 @@ async fn handle(manager: &Manager, call: Call) -> Outcome {
         Call::AddDownload(capture) => manager.add_capture(capture).await.map(Reply::DownloadAdded),
         Call::WithdrawDownload(request) => manager
             .withdraw_capture(&request.handover_id)
-            .await
             .map(Reply::Withdrawn),
         Call::GetExtensionSettings => Ok(Reply::ExtensionSettings(manager.extension_settings())),
         Call::UpdateExtensionSettings(patch) => manager

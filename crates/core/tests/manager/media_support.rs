@@ -225,7 +225,7 @@ pub fn publish(
     })
 }
 
-/// A throwaway OpenPGP key made for the tests (seeded, so every run makes the
+/// A throwaway `OpenPGP` key made for the tests (seeded, so every run makes the
 /// same one), standing in for yt-dlp's release key; and the same key pinned.
 fn signer(seed: u64) -> TestResult<(SignedSecretKey, PinnedKey)> {
     let mut params = SecretKeyParamsBuilder::default();

@@ -155,7 +155,10 @@ async fn a_download_being_removed_cannot_be_brought_back() {
     let elsewhere = dir.path().join("elsewhere").to_string_lossy().into_owned();
     assert!(gone(manager.set_download_folder(id, &elsewhere).await));
     manager.resume_all().unwrap();
-    assert!(manager.list_downloads().is_empty());
+    assert_eq!(
+        manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
 
     removal.await.unwrap().unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;

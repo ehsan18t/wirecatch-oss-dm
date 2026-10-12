@@ -6,7 +6,7 @@ use wirecatch_protocol::app::{Category, PortablePath, Queue, Schedule, TimeOfDay
 
 use crate::common::{Harness, TestResult, tune};
 
-fn absolute(path: std::path::PathBuf) -> PortablePath {
+fn absolute(path: &std::path::Path) -> PortablePath {
     PortablePath(path.to_string_lossy().into_owned())
 }
 
@@ -31,13 +31,13 @@ async fn settings_and_queues_move_to_another_machine() -> TestResult {
     let downloads = here.folders.downloads.clone();
     let videos = here.folders.videos.clone();
     tune(&here.manager, |s| {
-        s.default_folder = absolute(downloads.join("Stuff"));
+        s.default_folder = absolute(&downloads.join("Stuff"));
         let video = s
             .categories
             .iter_mut()
             .find(|r| r.category == Category::Video)
             .unwrap();
-        video.folder = absolute(videos.join("Clips"));
+        video.folder = absolute(&videos.join("Clips"));
         s.global_speed_limit = Some(2_000_000);
         s.extension.ask_before_download = true;
         s.extension.default_queue = night.id;

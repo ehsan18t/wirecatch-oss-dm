@@ -84,6 +84,7 @@ impl KnownFolders {
     /// The current user's folders as the operating system names them. A folder the
     /// system does not name falls back to the usual subfolder of home. Returns `None`
     /// only when the home folder itself is unknown.
+    #[must_use]
     pub fn detect() -> Option<Self> {
         let home = dirs::home_dir()?;
         let or_home = |found: Option<PathBuf>, name: &str| found.unwrap_or_else(|| home.join(name));
@@ -122,6 +123,7 @@ impl KnownFolders {
     /// the real path of its nearest existing folder are checked, so a short
     /// (8.3) name, a different case, a trailing dot or a link does not get
     /// around it. Blocks on the disk.
+    #[must_use]
     pub fn is_protected(&self, path: &Path) -> bool {
         let real = |p: &Path| real_path(p);
         let mut roots: Vec<PathBuf> = self.protected.clone();
@@ -139,6 +141,7 @@ impl KnownFolders {
     /// Whether `path` is outside the home folder and every known folder (which
     /// may be moved elsewhere, such as Downloads on another drive): worth a
     /// second look before a settings file sends downloads there.
+    #[must_use]
     pub fn is_outside_user_folders(&self, path: &Path) -> bool {
         !self
             .placeholders()
@@ -150,7 +153,7 @@ impl KnownFolders {
     pub fn resolve(&self, path: &PortablePath) -> Result<PathBuf, PathError> {
         let raw = path.0.trim();
         let Some(rest) = raw.strip_prefix('{') else {
-            return self.resolve_plain(raw);
+            return Self::resolve_plain(raw);
         };
         let (name, tail) = rest
             .split_once('}')
@@ -204,6 +207,7 @@ impl KnownFolders {
     /// `path` written relative to the most specific known folder that contains it,
     /// so it resolves correctly on another machine. Placeholders and paths outside
     /// every known folder are returned unchanged.
+    #[must_use]
     pub fn to_portable(&self, path: &PortablePath) -> PortablePath {
         if path.0.trim_start().starts_with('{') {
             return path.clone();
@@ -225,7 +229,7 @@ impl KnownFolders {
         path.clone()
     }
 
-    fn resolve_plain(&self, raw: &str) -> Result<PathBuf, PathError> {
+    fn resolve_plain(raw: &str) -> Result<PathBuf, PathError> {
         let path = Path::new(raw);
         // A device (`\\.\`) or a verbatim path (`\\?\`, which turns off the usual
         // checks on names) is never a folder to download into. A verbatim network

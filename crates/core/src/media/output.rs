@@ -490,7 +490,7 @@ pub(crate) struct Variant {
 }
 
 /// The extension downloaded streams get when kept as they came: MP4 for MP4
-/// video with M4A audio, WebM for WebM with WebM, MKV for any other pair; a
+/// video with M4A audio, `WebM` for `WebM` with `WebM`, MKV for any other pair; a
 /// single file keeps its own (a media extension, never one a site chose
 /// otherwise).
 pub(crate) fn kept_ext(video: Option<&Format>, audio: Option<&Format>) -> String {
@@ -611,7 +611,7 @@ fn best_audio<'a>(formats: impl Iterator<Item = &'a Format>) -> Option<&'a Forma
 }
 
 /// The "Save as" choices of one video quality, Original first: the original
-/// formats copied into their own container, then MP4, MKV and WebM. Each takes
+/// formats copied into their own container, then MP4, MKV and `WebM`. Each takes
 /// the streams of this height that fit the container as they are, and re-encodes
 /// only what has no such stream.
 ///
@@ -652,20 +652,19 @@ pub(crate) fn video_variants(
         } else {
             best_for_fps(at.iter().copied().filter(fits), fps)
         };
-        let (video, video_action) = match video {
-            Some(v) => (v, VideoAction::Copy),
-            None => {
-                let source = original.0;
-                let codec = container.video_target();
-                let from = VideoCodec::of(source).unwrap_or(VideoCodec::Other);
-                (
-                    source,
-                    VideoAction::Encode {
-                        codec,
-                        kbps: video_kbps(from, codec, video_rate(source), height),
-                    },
-                )
-            }
+        let (video, video_action) = if let Some(v) = video {
+            (v, VideoAction::Copy)
+        } else {
+            let source = original.0;
+            let codec = container.video_target();
+            let from = VideoCodec::of(source).unwrap_or(VideoCodec::Other);
+            (
+                source,
+                VideoAction::Encode {
+                    codec,
+                    kbps: video_kbps(from, codec, video_rate(source), height),
+                },
+            )
         };
         // The video format's own audio, when it fits, else the best separate
         // audio that fits, else the original's audio re-encoded.
@@ -739,12 +738,12 @@ fn variant(
         (_, None) => Some(0),
     };
     let selection = match audio {
-        Some(a) => format!("{}+{}", video.format_id, a.format_id),
-        None => video.format_id.clone(),
+        Some(a) => format!("{}+{}", video.id, a.id),
+        None => video.id.clone(),
     };
     Variant {
-        video: Some(video.format_id.clone()),
-        audio: audio.map(|a| a.format_id.clone()),
+        video: Some(video.id.clone()),
+        audio: audio.map(|a| a.id.clone()),
         selection,
         container,
         video_action,
@@ -802,18 +801,17 @@ pub(crate) fn audio_variants(
                 .copied()
                 .filter(|a| AudioCodec::of(a).is_some_and(|c| container.holds_audio(c))),
         );
-        let (source, action) = match fitting {
-            Some(a) => (a, AudioAction::Copy),
-            None => {
-                let target = container.audio_target();
-                (
-                    best,
-                    AudioAction::Encode {
-                        codec: target,
-                        kbps: target.default_kbps(),
-                    },
-                )
-            }
+        let (source, action) = if let Some(a) = fitting {
+            (a, AudioAction::Copy)
+        } else {
+            let target = container.audio_target();
+            (
+                best,
+                AudioAction::Encode {
+                    codec: target,
+                    kbps: target.default_kbps(),
+                },
+            )
         };
         let mut v = audio_variant(
             format,
@@ -848,8 +846,8 @@ fn audio_variant(
     };
     Variant {
         video: None,
-        audio: Some(source.format_id.clone()),
-        selection: source.format_id.clone(),
+        audio: Some(source.id.clone()),
+        selection: source.id.clone(),
         container,
         video_action: VideoAction::None,
         audio_action: action,
@@ -933,14 +931,14 @@ fn plain_key(key: &str) -> bool {
         && !matches!(key, "live_chat" | "rechat" | "danmaku" | "comments")
 }
 
-/// The language code of a subtitle key: `en-orig` (YouTube's name for the
+/// The language code of a subtitle key: `en-orig` (`YouTube`'s name for the
 /// language a video is spoken in) is `en`.
 pub(crate) fn language_of(key: &str) -> String {
     key.strip_suffix("-orig").unwrap_or(key).to_string()
 }
 
 /// A language name from the site, cut to a sensible length, without control
-/// characters, and without YouTube's "(Original)".
+/// characters, and without `YouTube`'s "(Original)".
 fn clean_name(name: &str) -> String {
     let name: String = name
         .chars()
@@ -953,7 +951,7 @@ fn clean_name(name: &str) -> String {
         .to_string()
 }
 
-/// A machine translation of a subtitle (YouTube's `tlang`).
+/// A machine translation of a subtitle (`YouTube`'s `tlang`).
 fn translated(file: &SubtitleFile) -> bool {
     file.url
         .as_deref()
@@ -961,8 +959,8 @@ fn translated(file: &SubtitleFile) -> bool {
         .is_some_and(|u| u.query_pairs().any(|(k, _)| k == "tlang"))
 }
 
-/// The file of a subtitle language Wirecatch downloads: WebVTT, else SubRip,
-/// else SubStation.
+/// The file of a subtitle language Wirecatch downloads: `WebVTT`, else `SubRip`,
+/// else `SubStation`.
 pub(crate) fn pick_file(files: &[SubtitleFile]) -> Option<&SubtitleFile> {
     SUBTITLE_EXTS.iter().find_map(|ext| {
         files
@@ -1219,7 +1217,7 @@ const ANY: &[&str] = &["windows", "linux", "macos"];
 /// H.264 encoders, in the order they are tried: hardware first (NVIDIA, Intel,
 /// AMD, then the system's own Media Foundation on Windows or VA-API on Linux),
 /// then software. The media add-on's ffmpeg is an LGPL build without libx264,
-/// so its software encoder is OpenH264; a build with libx264 uses that instead.
+/// so its software encoder is `OpenH264`; a build with libx264 uses that instead.
 pub(crate) const H264_ENCODERS: &[Encoder] = &[
     Encoder {
         name: "h264_nvenc",
@@ -1286,7 +1284,7 @@ pub(crate) const H264_ENCODERS: &[Encoder] = &[
     },
 ];
 
-/// VP9 encoders (for WebM), in the order they are tried.
+/// VP9 encoders (for `WebM`), in the order they are tried.
 pub(crate) const VP9_ENCODERS: &[Encoder] = &[
     Encoder {
         name: "vp9_qsv",
@@ -1663,7 +1661,7 @@ pub(crate) fn arguments(
     args
 }
 
-/// ffmpeg's arguments to turn subtitle file `input` into SubRip at `output`.
+/// ffmpeg's arguments to turn subtitle file `input` into `SubRip` at `output`.
 pub(crate) fn srt_arguments(format: SubtitleFormat, input: &Path, output: &Path) -> Vec<OsString> {
     let mut args: Vec<OsString> = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
         .into_iter()
@@ -2006,7 +2004,7 @@ mod tests {
     }
 
     /// Hardware first in a fixed order, then software; a hardware encoder that
-    /// failed its test is skipped; libx264 is preferred to OpenH264 when the
+    /// failed its test is skipped; libx264 is preferred to `OpenH264` when the
     /// build has it; an ffmpeg that cannot be asked gets the add-on's software
     /// encoder only.
     #[test]

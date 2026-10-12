@@ -129,7 +129,7 @@ impl Manager {
     /// reads it in the background.
     pub(super) fn add_media_capture(
         &self,
-        capture: NewDownload,
+        capture: &NewDownload,
         queue: QueueId,
     ) -> Result<AddedDownload> {
         let url = parse_web_url(&capture.url)?;
@@ -170,7 +170,7 @@ impl Manager {
         let id = state.ids.pending();
         let needs_addon = kind == MediaKind::Page && state.addon.tools.is_none();
         let token = CancellationToken::new();
-        let stage = if needs_addon {
+        let first_stage = if needs_addon {
             MediaStage::NeedsAddon
         } else {
             MediaStage::Analysing(token.clone())
@@ -188,7 +188,7 @@ impl Manager {
             kind,
             title: capture.media.as_ref().and_then(|m| m.title.clone()),
             page_url: capture.page_url.clone(),
-            origin: origin_of(&capture),
+            origin: origin_of(capture),
         };
         state.media.insert(
             id,
@@ -197,7 +197,7 @@ impl Manager {
                 source,
                 queue,
                 handovers: vec![capture.handover_id.clone()],
-                stage,
+                stage: first_stage,
                 video: None,
             },
         );
@@ -218,6 +218,7 @@ impl Manager {
     /// [`dismiss_media_choice`](Self::dismiss_media_choice) and
     /// [`choose_media`](Self::choose_media) take one away (or the browser
     /// withdrawing it), so a window that was closed or reloaded gets them back.
+    #[must_use]
     pub fn pending_media_choices(&self) -> Vec<MediaChoice> {
         self.lock()
             .media
@@ -232,6 +233,7 @@ impl Manager {
     /// Captured streams and pages being read for their qualities right now, oldest
     /// first, so a window opened later can say so. Each ends with a
     /// `MediaChoiceRequested` or a `ConfirmationClosed` with its id.
+    #[must_use]
     pub fn media_being_read(&self) -> Vec<MediaReading> {
         self.lock()
             .media
@@ -372,7 +374,7 @@ impl Manager {
         let mut started = Vec::new();
         {
             let mut state = self.lock();
-            for (id, pending) in state.media.iter_mut() {
+            for (id, pending) in &mut state.media {
                 if matches!(pending.stage, MediaStage::NeedsAddon) {
                     let token = CancellationToken::new();
                     pending.stage = MediaStage::Analysing(token.clone());
@@ -391,6 +393,7 @@ impl Manager {
     /// failed download whose Retry works once the add-on is installed.
     ///
     /// [`dismiss_media_choice`]: Self::dismiss_media_choice
+    #[must_use]
     pub fn pending_addon_requests(&self) -> Vec<AddonRequestItem> {
         self.expire_addon_waits();
         let state = self.lock();
@@ -855,7 +858,7 @@ pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.headers = headers::to_map(&origin.headers);
     if let Some(agent) = &origin.user_agent {
-        options.user_agent = agent.clone();
+        options.user_agent.clone_from(agent);
     }
     options
 }

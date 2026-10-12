@@ -166,6 +166,9 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
         "{}",
         notice.message
     );
-    assert!(h.manager.list_downloads().is_empty());
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
     Ok(())
 }

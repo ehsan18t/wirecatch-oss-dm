@@ -159,31 +159,28 @@ pub(crate) fn merge_localized(
                 .iter()
                 .position(|q| !q.is_default && q.name.eq_ignore_ascii_case(&incoming.name))
         };
-        let local_id = match target {
-            Some(i) => {
-                let existing = &mut queues[i];
-                updated.push(existing.name.clone());
-                *existing = Queue {
-                    id: existing.id,
-                    is_default: existing.is_default,
-                    paused: existing.paused,
-                    running_outside_schedule: existing.running_outside_schedule,
-                    ..incoming.clone()
-                };
-                existing.id
-            }
-            None => {
-                added.push(incoming.name.clone());
-                let id = next_queue_id();
-                queues.push(Queue {
-                    id,
-                    is_default: false,
-                    paused: false,
-                    running_outside_schedule: false,
-                    ..incoming.clone()
-                });
-                id
-            }
+        let local_id = if let Some(i) = target {
+            let existing = &mut queues[i];
+            updated.push(existing.name.clone());
+            *existing = Queue {
+                id: existing.id,
+                is_default: existing.is_default,
+                paused: existing.paused,
+                running_outside_schedule: existing.running_outside_schedule,
+                ..incoming.clone()
+            };
+            existing.id
+        } else {
+            added.push(incoming.name.clone());
+            let id = next_queue_id();
+            queues.push(Queue {
+                id,
+                is_default: false,
+                paused: false,
+                running_outside_schedule: false,
+                ..incoming.clone()
+            });
+            id
         };
         ids.insert(incoming.id, local_id);
     }
@@ -271,6 +268,7 @@ fn category_folder_name(category: Category) -> &'static str {
 mod tests {
     use super::*;
     use crate::settings::{default_queue, default_settings};
+    use wirecatch_protocol::app::MediaDefaults;
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-profile-home"))
@@ -349,7 +347,7 @@ mod tests {
         old["settings"].as_object_mut().unwrap().remove("media");
         let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
         assert_eq!(read.format_version, 1);
-        assert_eq!(read.settings.media, Default::default());
+        assert_eq!(read.settings.media, MediaDefaults::default());
     }
 
     #[test]

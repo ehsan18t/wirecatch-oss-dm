@@ -17,6 +17,7 @@ use crate::{profile, settings};
 
 impl Manager {
     /// The current settings.
+    #[must_use]
     pub fn get_settings(&self) -> AppSettings {
         self.lock().settings.clone()
     }
@@ -49,6 +50,7 @@ impl Manager {
     }
 
     /// The settings the extension shows.
+    #[must_use]
     pub fn extension_settings(&self) -> ExtensionSettings {
         self.lock().settings.extension.clone()
     }
@@ -206,7 +208,8 @@ fn normalize_site_edits(patch: &mut ExtensionSettingsPatch) {
     .into_iter()
     .flatten()
     {
-        list.iter_mut()
-            .for_each(|s| *s = settings::normalize_site(s));
+        for site in list.iter_mut() {
+            *site = settings::normalize_site(site);
+        }
     }
 }

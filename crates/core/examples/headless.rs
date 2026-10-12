@@ -10,6 +10,7 @@
 //! running downloads are saved and continue on the next run with the same folder.
 //! Set `WIRECATCH_LOG=debug` for more detail.
 
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use anyhow::{Context, bail};
@@ -82,7 +83,8 @@ fn parse_args() -> anyhow::Result<(PathBuf, Vec<String>)> {
     Ok((data_dir, urls))
 }
 
-/// Prints UI events and socket events, one JSON object per line.
+/// Prints UI events and socket events, one JSON object per line, until the
+/// events end or standard output is closed.
 fn print_events(manager: &Manager) {
     tokio::spawn(print_all("ui", manager.subscribe()));
     tokio::spawn(print_all("socket", manager.subscribe_events()));
@@ -92,7 +94,13 @@ async fn print_all<T: Clone + Serialize>(label: &'static str, mut events: broadc
     loop {
         match events.recv().await {
             Ok(event) => match serde_json::to_string(&event) {
-                Ok(json) => println!("{label} {json}"),
+                // `println!` would panic once the reader has gone; stop instead.
+                Ok(json) => {
+                    if let Err(e) = writeln!(std::io::stdout().lock(), "{label} {json}") {
+                        eprintln!("stopped printing {label} events: {e}");
+                        return;
+                    }
+                }
                 Err(e) => eprintln!("could not print an event: {e}"),
             },
             Err(RecvError::Lagged(missed)) => eprintln!("({missed} {label} events skipped)"),

@@ -24,9 +24,15 @@
 //! writes a growing number to `heartbeat` every 50 ms until it is killed, as a
 //! program yt-dlp starts would run.
 
+use std::fmt::Display;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
+
+/// The exit code when standard output cannot be written, as when its reader
+/// has gone.
+const OUTPUT_FAILED: u8 = 4;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,14 +57,23 @@ fn main() -> ExitCode {
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    if name.starts_with("yt-dlp") {
+    let ran = if name.starts_with("yt-dlp") {
         ytdlp(&dir, &args)
     } else if name.starts_with("ffmpeg") {
         ffmpeg(&dir, &args)
     } else {
-        println!("deno 2.9.7 (fake)");
-        ExitCode::SUCCESS
-    }
+        say("deno 2.9.7 (fake)").map(|()| ExitCode::SUCCESS)
+    };
+    ran.unwrap_or_else(|e| {
+        eprintln!("fake tool: cannot write its output: {e}");
+        ExitCode::from(OUTPUT_FAILED)
+    })
+}
+
+/// Writes `line` to standard output. `println!` panics when the reader has
+/// gone; this reports it, and the tool fails with [`OUTPUT_FAILED`].
+fn say(line: impl Display) -> io::Result<()> {
+    writeln!(io::stdout().lock(), "{line}")
 }
 
 fn wait(file: &Path) {
@@ -76,7 +91,7 @@ fn after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|w| w[1].as_str())
 }
 
-fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
+fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     let cookies = after(args, "--cookies").map(PathBuf::from);
     let text = cookies
         .as_ref()
@@ -103,7 +118,7 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
     lines.push_str(&call.to_string());
     lines.push('\n');
     if std::fs::write(&log, lines).is_err() {
-        return ExitCode::from(3);
+        return Ok(ExitCode::from(3));
     }
 
     if args.iter().any(|a| a == "-J") {
@@ -125,67 +140,64 @@ fn ytdlp(dir: &Path, args: &[String]) -> ExitCode {
         {
             eprintln!("WARNING: something minor");
             eprintln!("ERROR: {}", reason.trim());
-            return ExitCode::from(1);
+            return Ok(ExitCode::from(1));
         }
         return match std::fs::read_to_string(dir.join("info.json")) {
-            Ok(json) => {
-                println!("{json}");
-                ExitCode::SUCCESS
-            }
+            Ok(json) => say(json).map(|()| ExitCode::SUCCESS),
             Err(e) => {
                 eprintln!("ERROR: fake yt-dlp has no info.json ({e})");
-                ExitCode::from(2)
+                Ok(ExitCode::from(2))
             }
         };
     }
 
     let Some(template) = after(args, "-o") else {
         eprintln!("ERROR: no output template");
-        return ExitCode::from(2);
+        return Ok(ExitCode::from(2));
     };
     let format = after(args, "-f").unwrap_or("best");
     let ext = std::fs::read_to_string(dir.join("download-ext")).unwrap_or_else(|_| "mp4".into());
     let out = template.replace("%(ext)s", ext.trim());
-    println!("wcprogress 10 20 NA");
-    println!("wcprogress 20 20 NA");
+    say("wcprogress 10 20 NA")?;
+    say("wcprogress 20 20 NA")?;
     if std::fs::write(&out, format!("downloaded by fake yt-dlp: {format}")).is_err() {
         eprintln!("ERROR: cannot write {out}");
-        return ExitCode::from(1);
+        return Ok(ExitCode::from(1));
     }
-    println!("{out}");
-    ExitCode::SUCCESS
+    say(out)?;
+    Ok(ExitCode::SUCCESS)
 }
 
-fn ffmpeg(dir: &Path, args: &[String]) -> ExitCode {
+fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     let Some(output) = args.last().and_then(|a| a.strip_prefix("file:")) else {
         eprintln!("fake ffmpeg: the last argument is not a file: output");
-        return ExitCode::from(2);
+        return Ok(ExitCode::from(2));
     };
     for pair in args.windows(2) {
         if pair[0] == "-i" {
             let input = pair[1].strip_prefix("file:").unwrap_or(&pair[1]);
             if !Path::new(input).is_file() {
                 eprintln!("fake ffmpeg: {input}: No such file or directory");
-                return ExitCode::from(1);
+                return Ok(ExitCode::from(1));
             }
         }
     }
     if args.iter().any(|a| a == "-progress") {
         // Half of a two-second media done, as ffmpeg reports it.
-        println!("out_time_us=1000000");
-        println!("progress=continue");
+        say("out_time_us=1000000")?;
+        say("progress=continue")?;
     }
     wait(&dir.join("ffmpeg-delay-ms"));
     let converting = args.iter().any(|a| a == "-progress");
     if converting && let Ok(reason) = std::fs::read_to_string(dir.join("ffmpeg-fail.txt")) {
         eprintln!("{}", reason.trim());
-        return ExitCode::from(1);
+        return Ok(ExitCode::from(1));
     }
     match std::fs::write(output, args.join("\n")) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => Ok(ExitCode::SUCCESS),
         Err(e) => {
             eprintln!("fake ffmpeg: {output}: {e}");
-            ExitCode::from(1)
+            Ok(ExitCode::from(1))
         }
     }
 }

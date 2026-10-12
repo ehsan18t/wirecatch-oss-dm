@@ -31,7 +31,7 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 /// The update check runs at most this often.
 const CHECK_EVERY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 /// How often the background task looks whether a check is due.
-const LOOK_EVERY: Duration = Duration::from_secs(60 * 60);
+const LOOK_EVERY: Duration = Duration::from_hours(1);
 /// Why a part did not finish when the install was stopped.
 const STOPPED: &str = "It was stopped.";
 /// How much larger than announced a release file may be. Release sizes are
@@ -118,6 +118,7 @@ impl AddonSlot {
 
 impl Manager {
     /// Every optional add-on and its state. There is one: the media add-on.
+    #[must_use]
     pub fn list_addons(&self) -> Vec<AddonInfo> {
         vec![self.addon_info(&self.lock().addon)]
     }
@@ -661,8 +662,8 @@ impl Manager {
                 }
             }
             tokio::select! {
-                _ = tokio::time::sleep(PROGRESS_EVERY) => {}
-                _ = cancel.cancelled() => return,
+                () = tokio::time::sleep(PROGRESS_EVERY) => {}
+                () = cancel.cancelled() => return,
             }
         }
     }
@@ -744,7 +745,7 @@ impl Manager {
     ///
     /// Only yt-dlp's own release folder is trusted for the files, the file's
     /// size must be known and reasonable, and its checksum comes from the
-    /// release's checksum list, which must carry a valid OpenPGP signature by
+    /// release's checksum list, which must carry a valid `OpenPGP` signature by
     /// yt-dlp's pinned release key (D21.1).
     async fn checked_release(
         &self,
@@ -852,8 +853,8 @@ impl Manager {
             manager.expire_addon_waits();
             drop(manager);
             tokio::select! {
-                _ = tokio::time::sleep(LOOK_EVERY) => {}
-                _ = stopped.cancelled() => return,
+                () = tokio::time::sleep(LOOK_EVERY) => {}
+                () = stopped.cancelled() => return,
             }
         }
     }

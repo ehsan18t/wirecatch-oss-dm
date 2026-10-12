@@ -214,10 +214,11 @@ fn check_expectation(expect: &Expectation, remote: &ServerAnswer) -> Result<(), 
         .content_type
         .as_deref()
         .is_some_and(|t| t.trim().to_ascii_lowercase().starts_with("text/html"));
-    let page_expected = expect.name.as_deref().is_some_and(|n| {
-        let n = n.to_ascii_lowercase();
-        n.ends_with(".html") || n.ends_with(".htm")
-    });
+    let page_expected = expect
+        .name
+        .as_deref()
+        .and_then(|n| Path::new(n).extension())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm"));
     if is_page && !page_expected {
         return Err(
             "The server sent a web page instead of the file, often a sign-in page. Open the page in your browser, sign in if needed, then refresh the link."

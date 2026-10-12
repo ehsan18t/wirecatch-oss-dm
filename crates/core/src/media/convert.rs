@@ -1,6 +1,6 @@
 //! Running the media add-on's ffmpeg for output formats (D24): finding a video
 //! encoder that works on this computer, converting with progress, and turning
-//! subtitles into SubRip files.
+//! subtitles into `SubRip` files.
 //!
 //! Which hardware encoder works is found once per ffmpeg by encoding a short
 //! generated clip, and remembered while the app runs. A hardware encoder that
@@ -309,7 +309,7 @@ async fn run_ffmpeg(
     }
 }
 
-/// Turns subtitle file `input` (in `format`) into a SubRip file at `output`.
+/// Turns subtitle file `input` (in `format`) into a `SubRip` file at `output`.
 pub(crate) async fn to_srt(
     tools: &MediaTools,
     format: SubtitleFormat,
@@ -414,8 +414,8 @@ mod tests {
         }
     }
 
-    /// A VP9 video and an Opus audio of two seconds, as WebM files, plus a
-    /// WebVTT and a SubRip subtitle and a metadata file with two chapters.
+    /// A VP9 video and an Opus audio of two seconds, as `WebM` files, plus a
+    /// `WebVTT` and a `SubRip` subtitle and a metadata file with two chapters.
     struct Fixture {
         dir: tempfile::TempDir,
         video: PathBuf,
@@ -525,7 +525,7 @@ mod tests {
         }
     }
 
-    /// MKV: the streams are copied, both subtitles go in as switchable SubRip
+    /// MKV: the streams are copied, both subtitles go in as switchable `SubRip`
     /// tracks with their languages, and the chapters are there.
     #[tokio::test]
     async fn real_ffmpeg_copies_into_mkv_with_subtitles_and_chapters() {
@@ -562,8 +562,8 @@ mod tests {
     }
 
     /// MP4: the VP9 video is re-encoded to H.264 with the software encoder
-    /// (OpenH264 in the add-on's build), the Opus audio to AAC, the subtitles
-    /// become mov_text and the chapters stay; the progress reaches the end.
+    /// (`OpenH264` in the add-on's build), the Opus audio to AAC, the subtitles
+    /// become `mov_text` and the chapters stay; the progress reaches the end.
     #[tokio::test]
     async fn real_ffmpeg_re_encodes_into_mp4_with_mov_text_and_chapters() {
         let Some(ffmpeg) = real_ffmpeg() else { return };
@@ -722,7 +722,7 @@ mod tests {
         assert!(!text.contains("Chapter"), "{text}");
     }
 
-    /// WebM keeps VP9 and Opus as they are and takes WebVTT subtitles.
+    /// `WebM` keeps VP9 and Opus as they are and takes `WebVTT` subtitles.
     #[tokio::test]
     async fn real_ffmpeg_copies_into_webm_with_webvtt() {
         let Some(ffmpeg) = real_ffmpeg() else { return };
@@ -747,7 +747,7 @@ mod tests {
         assert!(text.contains("Chapter #0:1"), "{text}");
     }
 
-    /// Subtitles saved next to an audio file become SubRip.
+    /// Subtitles saved next to an audio file become `SubRip`.
     #[tokio::test]
     async fn real_ffmpeg_turns_webvtt_into_srt() {
         let Some(ffmpeg) = real_ffmpeg() else { return };
@@ -801,7 +801,7 @@ mod tests {
         let ConvertError::Failed(reason) = error else {
             panic!("not a failure: {error:?}");
         };
-        assert!(!reason.is_empty());
+        assert_ne!(reason, "");
         assert!(!out.exists(), "a partial output was left");
         assert!(f.audio.is_file(), "the download is gone");
     }

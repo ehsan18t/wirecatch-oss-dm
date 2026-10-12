@@ -155,8 +155,8 @@ pub(crate) async fn run(
                 status = Some(ended);
                 tree.kill();
             }
-            _ = cancel.cancelled() => break Some(RunError::Cancelled),
-            _ = &mut deadline => break Some(RunError::TimedOut),
+            () = cancel.cancelled() => break Some(RunError::Cancelled),
+            () = &mut deadline => break Some(RunError::TimedOut),
         }
     };
     if let Some(why) = stopped {
@@ -164,16 +164,17 @@ pub(crate) async fn run(
         let _ = child.kill().await;
         return Err(why);
     }
-    let status = match status {
-        Some(status) => status,
-        None => tokio::select! {
+    let status = if let Some(status) = status {
+        status
+    } else {
+        tokio::select! {
             status = child.wait() => status,
-            _ = cancel.cancelled() => {
+            () = cancel.cancelled() => {
                 tree.kill();
                 let _ = child.kill().await;
                 return Err(RunError::Cancelled);
             }
-        },
+        }
     };
     tree.kill();
     let stdout = collected.await.unwrap_or_default();

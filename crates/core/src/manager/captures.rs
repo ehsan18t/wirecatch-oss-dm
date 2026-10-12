@@ -66,10 +66,10 @@ impl Manager {
             .as_ref()
             .is_some_and(|m| m.kind != MediaKind::Direct)
         {
-            return self.add_media_capture(capture, queue);
+            return self.add_media_capture(&capture, queue);
         }
         if ask {
-            return self.hold_for_confirmation(capture, url, queue);
+            return self.hold_for_confirmation(capture, &url, queue);
         }
 
         let added = self
@@ -90,9 +90,8 @@ impl Manager {
                 url,
             })
             .await?;
-        let row = match added {
-            None => return self.known_handover(&capture.handover_id).await,
-            Some(row) => row,
+        let Some(row) = added else {
+            return self.known_handover(&capture.handover_id).await;
         };
         let reply = AddedDownload {
             id: Some(row.id),
@@ -143,9 +142,9 @@ impl Manager {
             let timeout = tokio::time::sleep(self.inner.capture_timeout);
             tokio::select! {
                 biased;
-                _ = answered.cancelled() => {}
-                _ = exited.cancelled() => {}
-                _ = timeout => {
+                () = answered.cancelled() => {}
+                () = exited.cancelled() => {}
+                () = timeout => {
                     return Err(format!(
                         "The server did not answer within {} seconds.",
                         self.inner.capture_timeout.as_secs()
@@ -197,7 +196,7 @@ impl Manager {
     /// not yet replied `Started` to, or that was queued and has not reached the
     /// server, is dropped completely, leaving no download and no files behind.
     /// Once the app has replied `Started` (the server answered), it is the app's.
-    pub async fn withdraw_capture(&self, handover_id: &str) -> Result<WithdrawOutcome> {
+    pub fn withdraw_capture(&self, handover_id: &str) -> Result<WithdrawOutcome> {
         let download = {
             let mut state = self.lock_open()?;
             let Some(known) = state.handovers.get(handover_id).cloned() else {
@@ -243,6 +242,7 @@ impl Manager {
     }
 
     /// Captures waiting for the user's answer, oldest first.
+    #[must_use]
     pub fn pending_confirmations(&self) -> Vec<PendingCapture> {
         self.lock()
             .pending
@@ -303,6 +303,7 @@ impl Manager {
     /// capture or media choice) is about again, so the question can say so: the
     /// same address, or for a video the same page, or the same video read from
     /// another link to it. `None` when there is none, or no such question.
+    #[must_use]
     pub fn earlier_download(&self, id: u64) -> Option<DownloadSummary> {
         let state = self.lock();
         let (links, video) = if let Some(waiting) = state.pending.get(&id) {
@@ -322,13 +323,13 @@ impl Manager {
                 same_video || links.iter().any(|link| same_address(link, &row.url))
             })
             .max_by_key(|entry| (entry.row.added_at, entry.row.id))
-            .map(|entry| entry.summary())
+            .map(super::state::Entry::summary)
     }
 
     fn hold_for_confirmation(
         &self,
         capture: NewDownload,
-        url: Url,
+        url: &Url,
         queue: QueueId,
     ) -> Result<AddedDownload> {
         let mut state = self.lock_open()?;
@@ -365,7 +366,7 @@ impl Manager {
                 "{MAX_PENDING} downloads are already waiting for your confirmation. Answer some of them first."
             )));
         }
-        let file_name = naming::file_name(capture.suggested_name.as_deref(), &url)?;
+        let file_name = naming::file_name(capture.suggested_name.as_deref(), url)?;
         let category = settings::category_of(&state.settings, &file_name);
         let folder = settings::folder_for(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();

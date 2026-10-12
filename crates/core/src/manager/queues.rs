@@ -11,6 +11,7 @@ use crate::settings;
 
 impl Manager {
     /// Every queue, in sidebar order. The default queue is always there.
+    #[must_use]
     pub fn list_queues(&self) -> Vec<Queue> {
         self.lock().queue_list()
     }

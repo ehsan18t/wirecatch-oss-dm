@@ -64,6 +64,7 @@ pub struct ManualClock {
 
 impl ManualClock {
     /// A clock showing `now` as local time.
+    #[must_use]
     pub fn new(now: NaiveDateTime) -> Self {
         Self {
             now: Mutex::new(now),

@@ -12,7 +12,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::MediaKind;
 
-use crate::common::{Harness, TestResult, test_data};
+use crate::common::{Harness, TestResult, extension, test_data};
 use crate::media_support::{
     FileServer, Releases, harness, install, media_capture, next_event, publish, real_ffmpeg,
     tell_tool, ytdlp_calls,
@@ -25,7 +25,7 @@ fn mp4_data(len: usize) -> Vec<u8> {
     data
 }
 
-/// Test data that starts like a WebM file.
+/// Test data that starts like a `WebM` file.
 fn webm_data(len: usize) -> Vec<u8> {
     let mut data = test_data(len);
     data[..8].copy_from_slice(b"\x1A\x45\xDF\xA3webm");
@@ -233,7 +233,12 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
         .await;
     assert_eq!(converting.status, DownloadStatus::Processing);
     let done = h.wait_status(id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mp4"), "{}", done.file_name);
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mp4"),
+        "{}",
+        done.file_name
+    );
     assert_eq!(done.processing, None);
     assert_eq!(done.category, Category::Video);
     let args = ffmpeg_args(&done.path)?;
@@ -295,7 +300,12 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     pick.subtitles = vec!["sub:en".into()];
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mp3"), "{}", done.file_name);
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mp3"),
+        "{}",
+        done.file_name
+    );
     assert_eq!(done.category, Category::Audio);
     let args = ffmpeg_args(&done.path)?;
     assert!(has_pair(&args, "-c:a", "libmp3lame"), "{args:?}");
@@ -352,7 +362,7 @@ async fn a_failed_conversion_keeps_the_download_and_try_again_only_converts() ->
     std::fs::remove_file(crate::media_support::tool_dir(&h)?.join("ffmpeg-fail.txt")).unwrap();
     h.manager.retry(id).unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mp4"));
+    assert_eq!(extension(&done.file_name), Some("mp4"));
     assert_eq!(ytdlp_calls(&h)?.len(), calls, "the page was read again");
     assert_eq!(
         format_requests(&server),
@@ -383,7 +393,12 @@ async fn keep_the_original_saves_the_download_as_it_came() -> TestResult {
     ));
     h.manager.keep_original(id).unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mkv"), "{}", done.file_name);
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mkv"),
+        "{}",
+        done.file_name
+    );
     let args = ffmpeg_args(&done.path)?;
     assert!(has_pair(&args, "-c", "copy"), "{args:?}");
     assert!(!args.iter().any(|a| a == "-progress"), "it was converted");
@@ -510,7 +525,12 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
     pick.chapters = true;
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
-    assert!(done.file_name.ends_with(".mp4"), "{}", done.file_name);
+    assert_eq!(
+        extension(&done.file_name),
+        Some("mp4"),
+        "{}",
+        done.file_name
+    );
     let probe = std::process::Command::new(&ffmpeg)
         .args(["-hide_banner", "-i"])
         .arg(&done.path)

@@ -5,6 +5,8 @@
 //! ends the next morning. A schedule without a stop time starts the queue at
 //! `start` and lets it run until it has nothing left to do.
 
+use std::cmp::Ordering;
+
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
 use wirecatch_protocol::app::{Schedule, TimeOfDay, Weekday};
 
@@ -63,13 +65,15 @@ pub(crate) fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     };
     let today = now.date();
     let t = now.time();
-    if start < stop {
-        runs_on(schedule, today) && start <= t && t < stop
-    } else if start > stop {
-        let yesterday = today - TimeDelta::days(1);
-        (runs_on(schedule, today) && t >= start) || (runs_on(schedule, yesterday) && t < stop)
-    } else {
-        runs_on(schedule, today)
+    match start.cmp(&stop) {
+        Ordering::Less => runs_on(schedule, today) && start <= t && t < stop,
+        // The window runs past midnight.
+        Ordering::Greater => {
+            let yesterday = today - TimeDelta::days(1);
+            (runs_on(schedule, today) && t >= start) || (runs_on(schedule, yesterday) && t < stop)
+        }
+        // The same time for both: the whole day.
+        Ordering::Equal => runs_on(schedule, today),
     }
 }
 

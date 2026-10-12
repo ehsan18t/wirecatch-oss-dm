@@ -397,9 +397,9 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
             let ext = output::kept_ext(Some(v), Some(a));
             (
                 MediaJob::Page {
-                    format: format!("{}+{}", v.format_id, a.format_id),
-                    video: Some(v.format_id.clone()),
-                    audio: Some(a.format_id.clone()),
+                    format: format!("{}+{}", v.id, a.id),
+                    video: Some(v.id.clone()),
+                    audio: Some(a.id.clone()),
                     output: None,
                     keep_ext: None,
                 },
@@ -411,8 +411,8 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         } else if let Some(f) = together.or(video_only) {
             (
                 MediaJob::Page {
-                    format: f.format_id.clone(),
-                    video: Some(f.format_id.clone()),
+                    format: f.id.clone(),
+                    video: Some(f.id.clone()),
                     audio: None,
                     output: None,
                     keep_ext: None,
@@ -462,15 +462,15 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         let ext = safe_ext(audio.ext.as_deref(), Content::Audio);
         let variants = output::audio_variants(&audios, audio, &ext, duration_ms);
         offers.push(offer(
-            audio.format_id.clone(),
+            audio.id.clone(),
             format!("Audio only, {}", ext.to_ascii_uppercase()),
             None,
             audio.size(),
             Plan {
                 job: MediaJob::Page {
-                    format: audio.format_id.clone(),
+                    format: audio.id.clone(),
                     video: None,
-                    audio: Some(audio.format_id.clone()),
+                    audio: Some(audio.id.clone()),
                     output: None,
                     keep_ext: None,
                 },
@@ -590,7 +590,7 @@ mod tests {
                     option.label
                 );
             }
-            assert!(!plan.ext.is_empty());
+            assert_ne!(plan.ext, "");
         }
         let ext = |id: &str| {
             offers
@@ -776,11 +776,11 @@ mod tests {
         let (uhd, plan) = &offers[0];
 
         // Original with nothing added: exactly the download of before.
-        let plain = plan
+        let original = plan
             .resolve(&choice, &selection(&uhd.id, OutputFormat::Original))
             .unwrap();
-        assert_eq!(plain.job, plan.job);
-        assert_eq!(plain.ext, "webm");
+        assert_eq!(original.job, plan.job);
+        assert_eq!(original.ext, "webm");
 
         // MP4 with subtitles and chapters: VP9 re-encoded, AAC copied.
         let mut mp4 = selection(&uhd.id, OutputFormat::Mp4);

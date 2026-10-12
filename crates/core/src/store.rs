@@ -27,7 +27,7 @@ pub const DATABASE_FILE: &str = "wirecatch.db";
 /// Schema changes, applied in order. Entry `n` moves the schema to version `n + 1`.
 /// Never edit a released entry; append a new one.
 const MIGRATIONS: &[&str] = &[
-    r#"
+    r"
     CREATE TABLE queues (
         id             INTEGER PRIMARY KEY,
         position       INTEGER NOT NULL,
@@ -56,28 +56,28 @@ const MIGRATIONS: &[&str] = &[
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
-"#,
-    r#"
+",
+    r"
     ALTER TABLE queues ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE queues ADD COLUMN running_outside_schedule INTEGER NOT NULL DEFAULT 0;
-"#,
-    r#"
+",
+    r"
     ALTER TABLE downloads ADD COLUMN settled INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE downloads ADD COLUMN chosen_name TEXT;
     ALTER TABLE downloads ADD COLUMN chosen_folder TEXT;
-"#,
-    r#"
+",
+    r"
     ALTER TABLE downloads ADD COLUMN media TEXT;
-"#,
+",
     // D23 (2026-10-11): every browser download now opens its own window before it starts, so
     // `ask_before_download` is on by default. That default changed before the first release,
     // while stored settings still held the old one (off) that nobody chose on purpose, so the
     // setting is switched on once, here. Turning it off afterwards is kept: this runs once.
-    r#"
+    r"
     UPDATE settings
     SET value = json_set(value, '$.extension.ask_before_download', json('true'))
     WHERE key = 'app' AND json_valid(value);
-"#,
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -170,7 +170,7 @@ const BACKUP_SUFFIX: &str = ".bak-v";
 /// SQLite's own files next to the database, which belong to it and move with it.
 const SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
 /// How long a damaged list set aside, or a copy taken before an upgrade, is kept. Both hold every download's cookies, which a live download forgets after a week (D17); a month leaves time to recover a list by hand.
-const KEEP_COPIES_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+const KEEP_COPIES_FOR: Duration = Duration::from_hours(720);
 
 /// Told why saving failed after every retry.
 pub(crate) type FailureHandler = Box<dyn Fn(String) + Send>;
@@ -194,7 +194,9 @@ enum Op {
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Answers once every write sent before it is on disk; only tests wait
+    /// for that.
+    #[cfg(test)]
     Flush(oneshot::Sender<()>),
     /// Saves everything sent before it, closes the database and stops the thread.
     Close(oneshot::Sender<()>),
@@ -214,6 +216,7 @@ impl std::fmt::Debug for Op {
             Op::SaveQueues(_) => "SaveQueues",
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
+            #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
         })
@@ -254,7 +257,7 @@ impl Store {
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
             .name("wirecatch-db".into())
-            .spawn(move || run(conn, rx, on_failure))
+            .spawn(move || run(conn, &rx, &on_failure))
             .map_err(|source| CoreError::File {
                 path: path.display().to_string(),
                 source,
@@ -326,7 +329,7 @@ impl Store {
 /// told why. Writes that still fail are kept, in order, and tried again before
 /// the next writes (or after a while if none come), never dropped: a lost delete
 /// would bring back a removed download.
-fn run(conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
+fn run(conn: Connection, ops: &mpsc::Receiver<Op>, on_failure: &FailureHandler) {
     let (conn, closed) = write_until_closed(conn, ops, on_failure);
     // Closing the connection checkpoints the journal and releases the files.
     if let Err((_, e)) = conn.close() {
@@ -341,8 +344,8 @@ fn run(conn: Connection, ops: mpsc::Receiver<Op>, on_failure: FailureHandler) {
 /// gone, and returns the connection with the waiting `Close`, if any.
 fn write_until_closed(
     mut conn: Connection,
-    ops: mpsc::Receiver<Op>,
-    on_failure: FailureHandler,
+    ops: &mpsc::Receiver<Op>,
+    on_failure: &FailureHandler,
 ) -> (Connection, Option<oneshot::Sender<()>>) {
     let mut kept: Vec<Op> = Vec::new();
     loop {
@@ -370,10 +373,12 @@ fn write_until_closed(
         };
         let mut writes = std::mem::take(&mut kept);
         let retried = writes.len();
+        #[cfg(test)]
         let mut flushed = Vec::new();
         let mut closing = None;
         for op in first.into_iter().chain(ops.try_iter()) {
             match op {
+                #[cfg(test)]
                 Op::Flush(done) => flushed.push(done),
                 Op::Close(done) => {
                     // Writes sent after the close are not taken.
@@ -401,6 +406,7 @@ fn write_until_closed(
                 on_failure(e.to_string());
             }
         }
+        #[cfg(test)]
         for done in flushed {
             let _ = done.send(());
         }
@@ -472,7 +478,9 @@ fn target_of(op: &Op) -> Target {
         Op::SaveQueues(_) => Target::Queues,
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
-        Op::Flush(_) | Op::Close(_) => Target::Nothing,
+        #[cfg(test)]
+        Op::Flush(_) => Target::Nothing,
+        Op::Close(_) => Target::Nothing,
     }
 }
 
@@ -506,7 +514,9 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveQueues(queues) => save_queues(&tx, queues)?,
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
-            Op::Flush(_) | Op::Close(_) => {}
+            #[cfg(test)]
+            Op::Flush(_) => {}
+            Op::Close(_) => {}
         }
     }
     tx.commit()
@@ -760,9 +770,10 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 
 /// The stored origin of a row this build cannot read, without its sign-in, and whether this is the first start that found the row. Such a row is kept for a version that can read it (after going back to an older version, say), but nothing here can resume it or forget its sign-in after a week (D17), so it must not keep one. It is marked as having forgotten its sign-in, which also tells a later start it was already counted.
 fn without_sign_in(origin: &str) -> (String, bool) {
-    let mut value = match serde_json::from_str::<serde_json::Value>(origin) {
-        Ok(value @ serde_json::Value::Object(_)) => value,
-        _ => return (to_json(&forgotten_origin()), true),
+    let Ok(mut value @ serde_json::Value::Object(_)) =
+        serde_json::from_str::<serde_json::Value>(origin)
+    else {
+        return (to_json(&forgotten_origin()), true);
     };
     let first_seen = value.get("forgot_sign_in") != Some(&serde_json::Value::Bool(true));
     let headers = value
@@ -886,31 +897,27 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     let mut error = row
         .get::<_, Option<String>>(9)?
         .and_then(|json| from_json(&json, "download error"));
-    let media: Option<StoredMedia> = match row.get::<_, Option<String>>(16)? {
-        None => None,
-        Some(json) => match from_json(&json, "download media") {
-            Some(media) => Some(media),
-            // Media whose details are damaged must never run as a plain
-            // download of its link (a page or a playlist).
-            None => {
-                if !matches!(
-                    status,
-                    DownloadStatus::Completed | DownloadStatus::Cancelled
-                ) {
-                    status = DownloadStatus::Failed;
-                    error = Some(crate::media::unreadable());
-                }
-                Some(StoredMedia {
-                    summary: MediaSummary {
-                        quality: "Unknown".into(),
-                        source: MediaKind::Page,
-                        video_key: None,
-                    },
-                    job: Some(crate::media::MediaJob::Unreadable),
-                })
+    let media: Option<StoredMedia> = row.get::<_, Option<String>>(16)?.map(|json| {
+        // Media whose details are damaged must never run as a plain download of
+        // its link (a page or a playlist).
+        from_json(&json, "download media").unwrap_or_else(|| {
+            if !matches!(
+                status,
+                DownloadStatus::Completed | DownloadStatus::Cancelled
+            ) {
+                status = DownloadStatus::Failed;
+                error = Some(crate::media::unreadable());
             }
-        },
-    };
+            StoredMedia {
+                summary: MediaSummary {
+                    quality: "Unknown".into(),
+                    source: MediaKind::Page,
+                    video_key: None,
+                },
+                job: Some(crate::media::MediaJob::Unreadable),
+            }
+        })
+    });
     let file_name = PathBuf::from(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -950,7 +957,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     })
 }
 
-/// Unit-like enums are stored as their snake_case serde name.
+/// Unit-like enums are stored as their `snake_case` serde name.
 fn enum_text<T: Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
@@ -1318,7 +1325,7 @@ mod tests {
             .unwrap();
         conn.execute("INSERT INTO recent VALUES (1)", []).unwrap();
         let journal = std::fs::read(with_suffix(&source_path, "-wal")).unwrap();
-        assert!(!journal.is_empty());
+        assert_ne!(journal, [] as [u8; 0]);
         // Damage to pages in the file itself, past its header.
         let mut damaged = std::fs::read(&source_path).unwrap();
         let page = 4096;

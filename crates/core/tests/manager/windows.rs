@@ -4,7 +4,8 @@
 //! in the list.
 
 use wirecatch_protocol::app::{
-    AddonState, CaptureConfirmation, DownloadStatus, MediaChoice, MediaSelection, UiEvent,
+    AddonState, CaptureConfirmation, DownloadStatus, MediaChoice, MediaSelection, OutputFormat,
+    UiEvent,
 };
 use wirecatch_protocol::extension::{CaptureSource, MediaKind, NewDownload, WithdrawOutcome};
 
@@ -38,7 +39,7 @@ fn pick(option: &str, later: bool) -> MediaSelection {
         file_name: None,
         queue: None,
         later,
-        output: Default::default(),
+        output: OutputFormat::default(),
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
@@ -92,7 +93,10 @@ async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() -> TestResul
         DownloadStatus::Paused,
         "Download later never starts it"
     );
-    assert!(h.manager.pending_confirmations().is_empty());
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
 
     // The same link again: the question knows it is in the list already.
     h.manager
@@ -140,7 +144,10 @@ async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
     })
     .await;
     assert_eq!(h.manager.pending_media_choices(), vec![choice.clone()]);
-    assert!(h.manager.media_being_read().is_empty());
+    assert_eq!(
+        h.manager.media_being_read(),
+        [] as [wirecatch_core::MediaReading; 0]
+    );
 
     // One answer covers both browser captures.
     let id = h
@@ -149,12 +156,14 @@ async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
         .await
         .unwrap();
     assert_eq!(h.row(id).status, DownloadStatus::Paused, "Download later");
-    assert!(h.manager.pending_media_choices().is_empty());
+    assert_eq!(
+        h.manager.pending_media_choices(),
+        [] as [wirecatch_protocol::app::MediaChoice; 0]
+    );
     for link in [&first_link, &second_link] {
         let outcome = h
             .manager
             .withdraw_capture(&format!("media-{link}"))
-            .await
             .unwrap();
         assert_eq!(outcome, WithdrawOutcome::AlreadyStarted, "{link}");
     }
@@ -196,6 +205,9 @@ async fn a_page_being_read_is_listed_until_its_choice_comes() -> TestResult {
     assert_eq!((listed[0].id, listed[0].url.clone()), reading);
     let choice = next_choice(&mut ui).await;
     assert_eq!(choice.id, reading.0);
-    assert!(h.manager.media_being_read().is_empty());
+    assert_eq!(
+        h.manager.media_being_read(),
+        [] as [wirecatch_core::MediaReading; 0]
+    );
     Ok(())
 }

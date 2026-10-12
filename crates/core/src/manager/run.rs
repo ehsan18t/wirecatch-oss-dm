@@ -55,6 +55,14 @@ enum Ended {
     Vanished,
 }
 
+/// What a run may use of the network.
+pub(super) struct Bandwidth {
+    /// Connections per download.
+    pub connections: usize,
+    /// The speed limits the run shares: the global one, then its queue's.
+    pub limiters: Vec<Arc<RateLimiter>>,
+}
+
 impl Manager {
     /// Starts the engine on `id`. The caller has already checked every limit.
     pub(super) fn start_run(&self, state: &mut State, id: DownloadId) {
@@ -77,13 +85,15 @@ impl Manager {
             .iter()
             .find(|s| s.queue.id == entry.row.queue)
             .map(|s| s.limiter.clone());
-        let limiters: Vec<Arc<RateLimiter>> =
-            [Some(self.inner.global_limiter.clone()), queue_limiter]
+        let bandwidth = Bandwidth {
+            connections,
+            limiters: [Some(self.inner.global_limiter.clone()), queue_limiter]
                 .into_iter()
                 .flatten()
-                .collect();
+                .collect(),
+        };
         if let Some(job) = entry.media_job.clone() {
-            self.start_media_run(state, id, run_id, answered, job, connections, limiters);
+            self.start_media_run(state, id, run_id, answered, job, bandwidth);
             return;
         }
         // Until the server has answered once, the path is only a guess: let the
@@ -97,7 +107,7 @@ impl Manager {
             url: entry.row.url.clone(),
             referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
         };
-        match engine_request(entry, connections, limiters, target) {
+        match engine_request(entry, bandwidth, target) {
             #[cfg(test)]
             Ok(_) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
@@ -404,8 +414,7 @@ async fn download_marked(
 /// up front or through its resolver.
 fn engine_request(
     entry: &Entry,
-    connections: usize,
-    rate_limiters: Vec<Arc<RateLimiter>>,
+    bandwidth: Bandwidth,
     target: Target,
 ) -> Result<DownloadRequest, UserError> {
     let url = Url::parse(&entry.row.url).map_err(|e| {
@@ -423,11 +432,11 @@ fn engine_request(
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
     let options = &mut request.options;
-    options.connections = connections;
-    options.rate_limiters = rate_limiters;
+    options.connections = bandwidth.connections;
+    options.rate_limiters = bandwidth.limiters;
     options.headers = headers::to_map(&entry.origin.headers);
     if let Some(agent) = &entry.origin.user_agent {
-        options.user_agent = agent.clone();
+        options.user_agent.clone_from(agent);
     }
     Ok(request)
 }
@@ -490,8 +499,9 @@ mod tests {
         (manager, id, dir)
     }
 
-    async fn panicking_engine() -> RunEnd {
-        panic!("a bug in the engine");
+    /// A run that panics once it is polled, as a bug in the engine would.
+    fn panicking_engine() -> impl std::future::Future<Output = RunEnd> {
+        std::future::poll_fn(|_| panic!("a bug in the engine"))
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -62,12 +62,16 @@ impl Manager {
     /// [`list_queues`](Self::list_queues) returns them, and within each queue in
     /// line order (the order [`reorder`](Self::reorder) sets, new downloads last).
     /// The UI may rely on this order.
+    #[must_use]
     pub fn list_downloads(&self) -> Vec<DownloadSummary> {
         let state = self.lock();
         let mut entries: Vec<&Entry> = state.visible().collect();
         let queue_index = |id: QueueId| state.queues.iter().position(|s| s.queue.id == id);
         entries.sort_by_key(|e| (queue_index(e.row.queue), e.position));
-        entries.into_iter().map(|e| e.summary()).collect()
+        entries
+            .into_iter()
+            .map(super::state::Entry::summary)
+            .collect()
     }
 
     /// One download, as [`list_downloads`](Self::list_downloads) shows it.

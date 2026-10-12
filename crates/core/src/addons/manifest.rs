@@ -75,7 +75,7 @@ pub struct MediaAddonSources {
     /// The name of this platform's yt-dlp file in a release, for example
     /// `yt-dlp.exe`.
     pub ytdlp_asset: String,
-    /// The name of the checksum list in a yt-dlp release. Its detached OpenPGP
+    /// The name of the checksum list in a yt-dlp release. Its detached `OpenPGP`
     /// signature is the file of the same name with `.sig` added.
     pub ytdlp_checksums_asset: String,
     /// The key the checksum list of a newer yt-dlp must be signed with; a
@@ -89,6 +89,7 @@ pub struct MediaAddonSources {
 
 impl MediaAddonSources {
     /// The parts in installation order.
+    #[must_use]
     pub fn components(&self) -> [&AddonComponent; 3] {
         [&self.ytdlp, &self.ffmpeg, &self.deno]
     }
@@ -99,8 +100,8 @@ const FFMPEG_TAG: &str = "autobuild-2026-10-10-13-04";
 const FFMPEG_VERSION: &str = "n9.0.2-25-g67b60c310b";
 const DENO_VERSION: &str = "2.9.7";
 
-/// The ffmpeg shared libraries `ffmpeg` links against (BtbN LGPL shared build,
-/// FFmpeg 9.0): avcodec 63, avdevice 63, avfilter 12, avformat 63, avutil 61,
+/// The ffmpeg shared libraries `ffmpeg` links against (`BtbN` LGPL shared build,
+/// `FFmpeg` 9.0): avcodec 63, avdevice 63, avfilter 12, avformat 63, avutil 61,
 /// swresample 7 and swscale 10.
 #[cfg(windows)]
 const FFMPEG_LIBRARIES: [&str; 7] = [
@@ -128,9 +129,10 @@ const FFMPEG_LIBRARIES: [(&str, &str); 7] = [
 
 impl MediaAddonSources {
     /// The pinned official releases for this platform (Windows or Linux on
-    /// x86-64): yt-dlp from its GitHub releases, ffmpeg from BtbN's
+    /// x86-64): yt-dlp from its GitHub releases, ffmpeg from `BtbN`'s
     /// FFmpeg-Builds (LGPL, shared libraries) and Deno from its GitHub releases.
     /// The checksums were copied from each release's published checksum list.
+    #[must_use]
     pub fn official() -> Self {
         Self {
             ytdlp: official_ytdlp(),

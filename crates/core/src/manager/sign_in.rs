@@ -109,8 +109,8 @@ pub(super) async fn run_sign_in_expiry(
         drop(manager);
         let next = clock.local_now() + LOOK_EVERY;
         tokio::select! {
-            _ = clock.sleep_until(next) => {}
-            _ = stopped.cancelled() => return,
+            () = clock.sleep_until(next) => {}
+            () = stopped.cancelled() => return,
         }
     }
 }

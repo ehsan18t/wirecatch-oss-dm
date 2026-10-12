@@ -141,7 +141,7 @@ mod tests {
         let downloads: Vec<_> = (1..=5).map(|i| dl(i, 1, Activity::Waiting)).collect();
         let plan = plan(&queues, &downloads, 10);
         assert_eq!(ids(&plan.start), vec![1, 2]);
-        assert!(plan.stop.is_empty());
+        assert_eq!(plan.stop, [] as [wirecatch_protocol::DownloadId; 0]);
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod tests {
         ];
         let plan = plan(&[q], &downloads, 10);
         assert_eq!(ids(&plan.stop), vec![1]);
-        assert!(plan.start.is_empty());
+        assert_eq!(plan.start, [] as [wirecatch_protocol::DownloadId; 0]);
     }
 
     #[test]
@@ -202,7 +202,7 @@ mod tests {
     fn downloads_of_an_unknown_queue_never_run() {
         let downloads = [dl(1, 7, Activity::Waiting), dl(2, 7, Activity::Running)];
         let plan = plan(&[queue(1, 1)], &downloads, 10);
-        assert!(plan.start.is_empty());
+        assert_eq!(plan.start, [] as [wirecatch_protocol::DownloadId; 0]);
         assert_eq!(ids(&plan.stop), vec![2]);
     }
 }

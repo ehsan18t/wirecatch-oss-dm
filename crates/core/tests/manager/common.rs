@@ -21,7 +21,7 @@ pub use wirecatch_test_support::{TestResult, test_data};
 /// How long any wait in a test may take before it fails.
 pub const PATIENCE: Duration = Duration::from_secs(20);
 
-/// A ranged server with an ETag for `len` bytes of [`test_data`], sending
+/// A ranged server with an `ETag` for `len` bytes of [`test_data`], sending
 /// `bps` bytes per second per connection.
 pub async fn throttled_server(len: u64, bps: u64) -> TestResult<TestServer> {
     Ok(TestServer::start(
@@ -36,7 +36,7 @@ pub async fn throttled_server(len: u64, bps: u64) -> TestResult<TestServer> {
     .await)
 }
 
-/// A ranged server with an ETag for `len` bytes of [`test_data`], at full
+/// A ranged server with an `ETag` for `len` bytes of [`test_data`], at full
 /// speed.
 pub async fn fast_server(len: u64) -> TestResult<TestServer> {
     Ok(TestServer::start(
@@ -249,6 +249,11 @@ pub fn is_running(row: &DownloadSummary) -> bool {
         row.status,
         DownloadStatus::Connecting | DownloadStatus::Downloading
     )
+}
+
+/// The extension of file name `name`, compared as the file system wrote it.
+pub fn extension(name: &str) -> Option<&str> {
+    Path::new(name).extension().and_then(|ext| ext.to_str())
 }
 
 /// Whether `path` exists.

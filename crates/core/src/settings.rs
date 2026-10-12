@@ -38,10 +38,14 @@ const MAX_FILE_TYPE_CHARS: usize = 32;
 const MAX_FOLDER_CHARS: usize = 1024;
 
 /// Settings for a fresh install: everything works without setup (D3).
+#[must_use]
 pub fn default_settings() -> AppSettings {
     let rule = |category, folder: &str, extensions: &[&str]| CategoryRule {
         category,
-        extensions: extensions.iter().map(|e| e.to_string()).collect(),
+        extensions: extensions
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
         folder: PortablePath(format!("{{Downloads}}/{folder}")),
     };
     AppSettings {
@@ -479,7 +483,7 @@ mod tests {
 
         let mut s = default_settings();
         s.media.video.subtitle_languages =
-            vec!["EN".into(), " en ".into(), "pt-BR".into(), "".into()];
+            vec!["EN".into(), " en ".into(), "pt-BR".into(), String::new()];
         s.media.audio.audio_kbps = Some(320);
         let s = validate(s, &[default_queue()], &folders()).unwrap();
         assert_eq!(s.media.video.subtitle_languages, ["en", "pt-br"]);
@@ -546,15 +550,15 @@ mod tests {
         let many = |n: usize, f: &dyn Fn(usize) -> String| (0..n).map(f).collect::<Vec<_>>();
 
         let full = check(&|s| {
-            s.extension.ignored_sites = many(MAX_IGNORED_SITES, &|i| format!("s{i}.example"))
+            s.extension.ignored_sites = many(MAX_IGNORED_SITES, &|i| format!("s{i}.example"));
         });
         assert_eq!(full, Ok(()));
         let over = check(&|s| {
-            s.extension.ignored_sites = many(MAX_IGNORED_SITES + 1, &|i| format!("s{i}.example"))
+            s.extension.ignored_sites = many(MAX_IGNORED_SITES + 1, &|i| format!("s{i}.example"));
         });
         assert!(over.unwrap_err().contains("at most 1000"));
         let types = check(&|s| {
-            s.extension.capture_extensions = many(MAX_FILE_TYPES + 1, &|i| format!("x{i}"))
+            s.extension.capture_extensions = many(MAX_FILE_TYPES + 1, &|i| format!("x{i}"));
         });
         assert!(types.unwrap_err().contains("at most 256"));
         let long_site = check(&|s| s.extension.ignored_sites = vec!["a".repeat(300)]);
@@ -565,7 +569,7 @@ mod tests {
             check(&|s| s.categories = vec![s.categories[0].clone(); MAX_CATEGORY_RULES + 1]);
         assert!(rules.unwrap_err().contains("at most 64"));
         let deep = check(&|s| {
-            s.default_folder = PortablePath(format!("{{Downloads}}/{}", "d/".repeat(600)))
+            s.default_folder = PortablePath(format!("{{Downloads}}/{}", "d/".repeat(600)));
         });
         assert!(deep.unwrap_err().contains("at most 1024"));
         assert!(check_queue_count(MAX_QUEUES).is_ok());

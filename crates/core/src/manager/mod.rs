@@ -100,7 +100,7 @@ pub const DEFAULT_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
 ///
 /// A video server sometimes refuses a perfectly good address for a while, and
 /// an address read again from the page usually works at once, so the first try
-/// comes quickly. YouTube has been seen refusing one video for several minutes
+/// comes quickly. `YouTube` has been seen refusing one video for several minutes
 /// and then sending it as usual, so the later tries spread over about eight
 /// minutes in all, with the row saying when the next one is, rather than
 /// giving up after a minute and asking the person to press Try again. The gaps
@@ -131,36 +131,42 @@ impl ManagerConfig {
 
     /// Installs and updates the media add-on from `sources` instead of the
     /// official releases.
+    #[must_use]
     pub fn with_addon_sources(mut self, sources: MediaAddonSources) -> Self {
         self.addon_sources = sources;
         self
     }
 
     /// Uses `timeout` as the [`media_timeout`](Self::media_timeout).
+    #[must_use]
     pub fn with_media_timeout(mut self, timeout: Duration) -> Self {
         self.media_timeout = timeout;
         self
     }
 
     /// Uses `delays` as the [`media_refresh_delays`](Self::media_refresh_delays).
+    #[must_use]
     pub fn with_media_refresh_delays(mut self, delays: Vec<Duration>) -> Self {
         self.media_refresh_delays = delays;
         self
     }
 
     /// Uses `clock` instead of the real clock.
+    #[must_use]
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
         self
     }
 
     /// Uses `timeout` as the [`capture_timeout`](Self::capture_timeout).
+    #[must_use]
     pub fn with_capture_timeout(mut self, timeout: Duration) -> Self {
         self.capture_timeout = timeout;
         self
     }
 
     /// Uses `timeout` as the [`stop_timeout`](Self::stop_timeout).
+    #[must_use]
     pub fn with_stop_timeout(mut self, timeout: Duration) -> Self {
         self.stop_timeout = timeout;
         self
@@ -248,7 +254,7 @@ impl Manager {
                 now_millis,
                 finished_size: &naming::finished_size,
             };
-            let mut restored = restore::restore(snapshot, around);
+            let mut restored = restore::restore(snapshot, &around);
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             // Cookies files left by a crash: nothing may keep them.
             let _ = std::fs::remove_dir_all(&temp_at);
@@ -290,6 +296,7 @@ impl Manager {
     }
 
     /// What the person should be told about this start, such as a damaged download list that was set aside. `None` on a normal start.
+    #[must_use]
     pub fn startup_notice(&self) -> Option<&StartupNotice> {
         self.inner.startup_notice.as_ref()
     }
@@ -302,11 +309,13 @@ impl Manager {
     /// [`list_queues`](Self::list_queues), [`get_settings`](Self::get_settings) and
     /// [`pending_confirmations`](Self::pending_confirmations) before applying further
     /// events.
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<UiEvent> {
         self.inner.ui_events.subscribe()
     }
 
     /// Events for socket clients (the extension through the bridge, the CLI).
+    #[must_use]
     pub fn subscribe_events(&self) -> broadcast::Receiver<Event> {
         self.inner.wire_events.subscribe()
     }
@@ -481,9 +490,9 @@ async fn run_scheduler(
             }
         };
         tokio::select! {
-            _ = minute => {}
-            _ = queues_changed.notified() => {}
-            _ = stopped.cancelled() => return,
+            () = minute => {}
+            () = queues_changed.notified() => {}
+            () = stopped.cancelled() => return,
         }
     }
 }
