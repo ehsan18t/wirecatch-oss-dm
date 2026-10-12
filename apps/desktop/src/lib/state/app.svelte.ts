@@ -12,6 +12,7 @@ import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { Addons } from './addons.svelte';
+import { runningAppName } from './app-name';
 import { Clock } from './clock.svelte';
 import { Connection } from './connection';
 import { DownloadActions } from './download-actions.svelte';
@@ -193,7 +194,6 @@ export class AppState {
     try {
       const backend = await this.#connection.load();
       this.sampleData = backend.kind === 'mock';
-      this.name = await backend.appName();
       this.clock.follow(backend.sampleData?.now);
       return await this.#connection.listen(current, onEvent, (signal) => {
         // Events were missed: load everything again rather than show a stale list.
@@ -212,17 +212,19 @@ export class AppState {
   /** Loads the list, the queues, the settings and the waiting browser files. */
   async #load(current: () => boolean): Promise<void> {
     try {
-      const [downloads, queues, settings, pending] = await Promise.all([
+      const [downloads, queues, settings, pending, name] = await Promise.all([
         this.#backend.listDownloads(),
         this.#backend.listQueues(),
         this.#backend.getSettings(),
         this.#backend.pendingConfirmations(),
+        runningAppName(this.#backend),
       ]);
       if (!current()) return;
       this.downloads.load(downloads);
       this.queues.list = queues;
       this.settings = settings;
       this.questions.pending = pending;
+      this.name = name;
       this.loadError = null;
     } catch (err) {
       if (current()) this.loadError = errorMessage(err);

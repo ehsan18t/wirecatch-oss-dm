@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
 import { BackendError } from '../backend';
@@ -11,6 +12,16 @@ async function make() {
 }
 
 describe('AppState', () => {
+  it('loads as usual when the shell will not say its name, and shows the product name', async () => {
+    const backend = mockBackend();
+    vi.spyOn(backend, 'appName').mockRejectedValue(new Error('core:app:allow-name not allowed'));
+    const app = appState(backend);
+    await app.init();
+    expect(app.ready).toBe(true);
+    expect(app.loadError).toBeNull();
+    expect(app.name).toBe(PRODUCT_NAME);
+  });
+
   it('names itself as the running app does, so a debug build says so', async () => {
     const backend = mockBackend();
     vi.spyOn(backend, 'appName').mockResolvedValue('Wirecatch Dev');
