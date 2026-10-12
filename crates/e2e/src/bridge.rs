@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use wirecatch_product::BRIDGE_EXECUTABLE;
+
 /// Environment variable naming a prebuilt bridge to use instead of building one.
 pub const BRIDGE_VAR: &str = "WIRECATCH_E2E_BRIDGE";
 
@@ -68,7 +70,7 @@ fn build_bridge() -> PathBuf {
     stdout
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == "wirecatch-bridge")
+        .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == BRIDGE_EXECUTABLE)
         .find_map(|m| m["executable"].as_str().map(PathBuf::from))
         .unwrap_or_else(|| panic!("cargo built no wirecatch-bridge executable:\n{stdout}"))
 }
