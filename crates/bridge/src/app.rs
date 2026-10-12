@@ -349,12 +349,17 @@ mod tests {
 
     #[test]
     fn the_app_is_found_next_to_the_bridge() {
-        let bridge = Path::new("install").join("dir").join("wirecatch-bridge");
+        let bridge = Path::new("install")
+            .join("dir")
+            .join(wirecatch_product::BRIDGE_FILE_NAME);
         assert_eq!(
             app_path(&bridge),
             Some(Path::new("install").join("dir").join(APP_FILE_NAME))
         );
-        assert_eq!(app_path(Path::new("wirecatch-bridge")), None);
+        assert_eq!(
+            app_path(Path::new(wirecatch_product::BRIDGE_FILE_NAME)),
+            None
+        );
     }
 
     #[test]

@@ -1183,9 +1183,15 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
     use wirecatch_product::{
-        CHROMIUM_EXTENSION_ORIGIN, DATABASE_FILE, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
+        BRIDGE_EXECUTABLE, CHROMIUM_EXTENSION_ORIGIN, DATABASE_FILE, FIREFOX_EXTENSION_ID,
+        NATIVE_HOST_NAME,
     };
     use wirecatch_test_support::{PrivateDir, private_dir};
+
+    /// The bridge as the Windows installer ships it, whatever system the test runs on.
+    fn windows_bridge() -> String {
+        format!("{BRIDGE_EXECUTABLE}.exe")
+    }
 
     /// The key under `parent` where Windows browsers look for the bridge.
     fn hosts_key(parent: &str) -> String {
@@ -1453,7 +1459,7 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
+            .join(windows_bridge());
         let local = temp.path().join("LocalAppData");
         let layout = Layout::Windows {
             exe: exe.clone(),
@@ -1500,7 +1506,7 @@ mod tests {
         let temp = temp_dir();
         let local = temp.path().join("LocalAppData");
         let layout = Layout::Windows {
-            exe: temp.path().join("Wirecatch").join("wirecatch-bridge.exe"),
+            exe: temp.path().join("Wirecatch").join(windows_bridge()),
             local_app_data: local.clone(),
         };
         let plan = plan(&config(), &layout).unwrap();
@@ -1704,7 +1710,7 @@ mod tests {
             .path()
             .join("opt")
             .join("wirecatch")
-            .join("wirecatch-bridge");
+            .join(BRIDGE_EXECUTABLE);
         let layout = Layout::linux(exe.clone(), home.clone(), None);
         let plan = plan(&config(), &layout).unwrap();
         let mut host = FakeHost::default();
@@ -1734,7 +1740,7 @@ mod tests {
     #[test]
     fn linux_honors_xdg_config_home() {
         let layout = Layout::linux(
-            PathBuf::from("/opt/wirecatch/wirecatch-bridge"),
+            Path::new("/opt/wirecatch").join(BRIDGE_EXECUTABLE),
             PathBuf::from("/home/u"),
             Some(PathBuf::from("/home/u/cfg")),
         );
@@ -1769,7 +1775,7 @@ mod tests {
         let mine = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.path().join("a").join("wirecatch-bridge.exe"),
+                exe: temp.path().join("a").join(windows_bridge()),
                 local_app_data: local.clone(),
             },
         )
@@ -1777,7 +1783,7 @@ mod tests {
         let theirs = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.path().join("b").join("wirecatch-bridge.exe"),
+                exe: temp.path().join("b").join(windows_bridge()),
                 local_app_data: local,
             },
         )
@@ -1816,7 +1822,7 @@ mod tests {
         let plan = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.path().join("a").join("wirecatch-bridge.exe"),
+                exe: temp.path().join("a").join(windows_bridge()),
                 local_app_data: temp.path().join("LocalAppData"),
             },
         )
@@ -1838,7 +1844,7 @@ mod tests {
     #[test]
     fn a_relative_executable_path_is_refused() {
         let layout = Layout::Windows {
-            exe: PathBuf::from("wirecatch-bridge.exe"),
+            exe: PathBuf::from(windows_bridge()),
             local_app_data: std::env::temp_dir(),
         };
         assert!(plan(&config(), &layout).is_err());
@@ -1903,7 +1909,7 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
+            .join(windows_bridge());
         let (machine, user) = machine_and_user(&temp, &exe);
         let hosts = exe.parent().unwrap().join("NativeMessagingHosts");
         assert!(
@@ -1948,7 +1954,7 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
+            .join(windows_bridge());
         let (machine, user) = machine_and_user(&temp, &exe);
         let mut host = FakeHost::default();
         // This user registered on an earlier start.
@@ -1983,9 +1989,9 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
+            .join(windows_bridge());
         let (machine, user) = machine_and_user(&temp, &exe);
-        let deleted = temp.path().join("Deleted").join("wirecatch-bridge.exe");
+        let deleted = temp.path().join("Deleted").join(windows_bridge());
         let (_, deleted_user) = machine_and_user(&temp, &deleted);
         let mut host = FakeHost::default();
         assert_eq!(install(&deleted_user, &mut host).failures, 0);
@@ -2013,9 +2019,9 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
+            .join(windows_bridge());
         let (machine, user) = machine_and_user(&temp, &exe);
-        let portable = temp.path().join("Portable").join("wirecatch-bridge.exe");
+        let portable = temp.path().join("Portable").join(windows_bridge());
         files::write(&portable, b"a bridge").unwrap();
         let (_, portable_user) = machine_and_user(&temp, &portable);
         let mut host = FakeHost::default();
@@ -2041,8 +2047,8 @@ mod tests {
             .path()
             .join("Program Files")
             .join("Wirecatch")
-            .join("wirecatch-bridge.exe");
-        let portable = temp.path().join("Portable").join("wirecatch-bridge.exe");
+            .join(windows_bridge());
+        let portable = temp.path().join("Portable").join(windows_bridge());
         let (machine, _) = machine_and_user(&temp, &installed);
         let (portable_machine, portable_user) = machine_and_user(&temp, &portable);
         let mut host = FakeHost::default();
