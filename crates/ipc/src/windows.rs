@@ -30,6 +30,7 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use wirecatch_product::Channel;
 
 use crate::{Connection, Elevation, Endpoint, Inner, IpcError, paths};
 
@@ -63,11 +64,11 @@ fn os_error(code: WIN32_ERROR) -> io::Error {
     io::Error::from_raw_os_error(code.cast_signed())
 }
 
-pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
+pub(crate) fn endpoint(channel: Channel) -> Result<Endpoint, IpcError> {
     let sid = Sid::current_user()?
         .to_string_form()
         .map_err(|e| IpcError::io("Could not read your user account", e))?;
-    Ok(Endpoint::from_raw(paths::pipe_name(&sid)))
+    Ok(Endpoint::from_raw(paths::pipe_name(channel, &sid)))
 }
 
 /// A security identifier, copied out of whatever buffer Windows returned it in.
@@ -759,7 +760,7 @@ mod tests {
         let user = Sid::current_user().unwrap().to_string_form().unwrap();
         assert!(user.starts_with("S-1-5-"), "{user}");
         assert_eq!(
-            endpoint().unwrap().as_os_str(),
+            endpoint(Channel::Release).unwrap().as_os_str(),
             OsStr::new(&format!(r"\\.\pipe\wirecatch-app-{user}"))
         );
     }

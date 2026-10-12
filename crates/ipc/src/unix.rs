@@ -8,6 +8,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
 use tokio::net::{UnixListener, UnixStream};
+use wirecatch_product::Channel;
 
 use crate::paths::{self, DirFacts};
 use crate::{Connection, Endpoint, Inner, IpcError};
@@ -18,10 +19,10 @@ pub(crate) fn current_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
-pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
+pub(crate) fn endpoint(channel: Channel) -> Result<Endpoint, IpcError> {
     let uid = current_uid();
     let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
-    let path = paths::socket_path(runtime_dir.as_deref(), uid);
+    let path = paths::socket_path(channel, runtime_dir.as_deref(), uid);
     ensure_private_dir(parent_of(&path)?, uid)?;
     Ok(Endpoint::from_raw(path))
 }
@@ -295,7 +296,7 @@ mod tests {
 
     /// The app's endpoint inside `dir`.
     fn endpoint_in(dir: &PrivateDir) -> Endpoint {
-        Endpoint::from_raw(dir.path().join(paths::SOCKET_NAME))
+        Endpoint::from_raw(dir.path().join(Channel::Release.socket_name()))
     }
 
     #[tokio::test]
@@ -366,7 +367,7 @@ mod tests {
         let dir = parent.path().join("open");
         fs::create_dir(&dir).unwrap();
         fs::set_permissions(&dir, Permissions::from_mode(0o755)).unwrap();
-        let endpoint = Endpoint::from_raw(dir.join(paths::SOCKET_NAME));
+        let endpoint = Endpoint::from_raw(dir.join(Channel::Release.socket_name()));
         assert!(matches!(
             SocketListener::bind(&endpoint),
             Err(IpcError::UnsafeDirectory { .. })
