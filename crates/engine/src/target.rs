@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 use url::Url;
 
+use crate::abandon::Abandoned;
 use crate::download::{DownloadRequest, RemoteFile};
 use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Validators;
@@ -94,10 +95,16 @@ impl Destination {
         }
     }
 
-    /// Makes the destination ready: creates its folder, continues an earlier
-    /// run that can be continued and otherwise creates a new part file.
-    /// `saved_url` is what the resume file records for this download. Blocks.
-    pub fn prepare(self, saved_url: &str, file: &Described, min_split: u64) -> Result<Prepared> {
+    /// Makes the destination ready: creates its folder, continues an earlier run that can be continued and otherwise replaces what is left of it with a new part file. `saved_url` is what the resume file records for this download. Blocks.
+    ///
+    /// Creating the folder can be slow (a network drive), and the owner may drop the download meanwhile and start another run with the same files, so `abandoned` is checked again before any file is deleted or created.
+    pub fn prepare(
+        self,
+        saved_url: &str,
+        file: &Described,
+        min_split: u64,
+        abandoned: &Abandoned,
+    ) -> Result<Prepared> {
         let (target, resume) = match self {
             Self::Exact(path) => {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -110,6 +117,9 @@ impl Destination {
                 plan_in_folder(&dir, &name, saved_url, file)
             }
         };
+        #[cfg(test)]
+        abandoned.flushed();
+        abandoned.check()?;
         if let Some(saved) = resume {
             let table = SegmentTable::from_remaining(&saved.remaining, min_split);
             // `can_resume` checked that the ranges fit inside the size.
@@ -125,6 +135,9 @@ impl Destination {
                 resumed_from: kept,
             });
         }
+        // Whatever is left there cannot continue: start over.
+        discard(&target.part);
+        discard(&target.state);
         storage::create_part(&target.part, file.total)
             .context(IoAction::CreateFile, &target.part)?;
         let table = SegmentTable::new(file.total, min_split);
@@ -160,15 +173,10 @@ fn target(file: PathBuf) -> Target {
     Target { file, part, state }
 }
 
-/// [`Destination::Exact`]: the URL is not compared, only what the server says
-/// about the file. Anything left there that cannot continue is removed.
+/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file.
 fn plan_exact(path: PathBuf, file: &Described) -> (Target, Option<ResumeState>) {
     let target = target(path);
     let resume = saved_state(&target.state).filter(|saved| continues(saved, &target, file));
-    if resume.is_none() {
-        discard(&target.part);
-        discard(&target.state);
-    }
     (target, resume)
 }
 
@@ -191,8 +199,6 @@ fn plan_in_folder(
         // Same download, but it cannot continue (file changed, or no range support):
         // start over under the same name.
         info!("previous partial download cannot be resumed; starting over");
-        discard(&preferred.part);
-        discard(&preferred.state);
         return (preferred, None);
     }
     (target(naming::unique_path(dir, name)), None)
@@ -248,4 +254,35 @@ pub(crate) fn discard(path: &Path) {
 /// and rewritten without the password straight away.
 fn same_download(saved: &str, url: &str) -> bool {
     saved == url || Url::parse(saved).is_ok_and(|saved| without_password(&saved).as_str() == url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abandon::Abandonment;
+
+    /// Dropped while its folder was being created, a download deletes and
+    /// creates nothing: the files may already be a restarted run's.
+    #[test]
+    fn a_download_dropped_while_its_folder_is_made_touches_no_file() {
+        let dir = wirecatch_test_support::private_dir("prepare-dropped").unwrap();
+        let path = dir.join("f.bin");
+        let (part, state) = naming::part_paths(&path);
+        std::fs::write(&part, b"other run").unwrap();
+        std::fs::write(&state, b"other run").unwrap();
+        let abandonment = Abandonment::new();
+        let abandoned = abandonment.flag();
+        abandoned.drop_at_flush();
+        let file = Described {
+            ranged: true,
+            total: Some(10),
+            validators: Validators::default(),
+        };
+        let prepared = Destination::Exact(path).prepare("https://x/f", &file, 1, &abandoned);
+        assert!(matches!(prepared, Err(Error::Cancelled)));
+        assert_eq!(std::fs::read(&part).unwrap(), b"other run");
+        assert_eq!(std::fs::read(&state).unwrap(), b"other run");
+        drop(abandonment);
+        dir.remove().unwrap();
+    }
 }

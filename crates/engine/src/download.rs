@@ -367,7 +367,7 @@ async fn prepare(
     let (saved_url, abandoned) = (saved_url.to_string(), abandoned.clone());
     storage::blocking(move || {
         abandoned.check()?;
-        destination.prepare(&saved_url, &described, min_split)
+        destination.prepare(&saved_url, &described, min_split, &abandoned)
     })
     .await
 }
