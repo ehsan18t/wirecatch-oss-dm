@@ -10,21 +10,16 @@ import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
 import { AppCalls } from './app';
 import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
-import { DuplicateWatch } from './duplicates';
 import { planMenuClick } from './menu';
+import { NoticeBoard } from './notice-board';
 import {
   BROWSER_DOWNLOAD_FAILED,
   MEDIA_NO_SITE_ACCESS,
   MEDIA_UNREACHABLE,
   MENU_PRIVATE_WINDOW,
   NO_SITE_ACCESS,
-  copyLeftInBrowser,
-  keptInBrowser,
-  mayDownloadTwice,
   mediaAnswer,
   menuNotTaken,
-  mayDownloadTwiceAfterRestart,
-  stuckPaused,
 } from './notices';
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
@@ -79,12 +74,9 @@ export class Hub {
    * once one is chosen; those with one are persisted through `deps.inFlight`.
    */
   readonly #inFlight = new Map<number, string | null>();
-  readonly #duplicates = new DuplicateWatch((name) => this.#warn(mayDownloadTwice(name)));
   readonly #ready: Promise<void>;
   #markReady: () => void = () => undefined;
-  #notice: Notice | null = null;
-  /** Whether this run set or dismissed the notice; then the one stored by an earlier run is out of date. */
-  #noticeChanged = false;
+  readonly #notices: NoticeBoard;
 
   constructor(deps: HubDeps) {
     this.#deps = deps;
@@ -92,6 +84,11 @@ export class Hub {
     const timing = hubTiming(deps.timing);
     this.#settings = new KnownSettings(deps, this.#now, () => this.#publish());
     this.#app = new AppCalls(deps.client, timing, this.#settings, deps.userAgent);
+    this.#notices = new NoticeBoard({
+      now: this.#now,
+      store: deps.notice,
+      changed: () => this.#publish(),
+    });
     this.#popups = new Popups({ media: deps.media, run: (command) => this.#runCommand(command) });
     this.#ready = new Promise((resolve) => {
       this.#markReady = resolve;
@@ -123,8 +120,8 @@ export class Hub {
       this.#deps.notice?.load().catch(() => null) ?? Promise.resolve(null),
     ]);
     this.#settings.loaded(cached);
-    // A notice from before the browser stopped the background, unless this run already set or dismissed one.
-    if (!this.#noticeChanged) this.#notice = notice;
+    // A notice from before the browser stopped the background.
+    this.#notices.restore(notice);
     if (cached?.appClosed !== true) this.#client.start();
     this.#markReady();
     this.#publish();
@@ -136,7 +133,7 @@ export class Hub {
     return {
       status,
       ...this.#settings.view(status.state === 'connected'),
-      notice: this.#notice,
+      notice: this.#notices.current,
     };
   }
 
@@ -166,7 +163,7 @@ export class Hub {
       const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
 
       if (!(await this.#siteAccess(candidate.url))) {
-        this.#warn(`${name} stayed in the browser. ${NO_SITE_ACCESS}`);
+        this.#notices.warn(`${name} stayed in the browser. ${NO_SITE_ACCESS}`);
         return null;
       }
 
@@ -186,7 +183,7 @@ export class Hub {
           userAgent: this.#deps.userAgent,
         },
       );
-      this.#noticeFor(result, name);
+      this.#notices.handover(result, name);
       return result;
     } finally {
       this.#inFlight.delete(item.id);
@@ -204,7 +201,7 @@ export class Hub {
       case 'failed':
         return 'failed';
       case 'private_window':
-        this.#warn(MENU_PRIVATE_WINDOW);
+        this.#notices.warn(MENU_PRIVATE_WINDOW);
         return 'private_window';
       case 'browser':
         return this.#browserFallback(plan.url, plan.message);
@@ -244,7 +241,7 @@ export class Hub {
       source: 'context_menu',
     });
     if (result.taken) return 'handed_over';
-    if (result.uncertain) this.#duplicates.keptUncertain(handoverId, name);
+    if (result.uncertain) this.#notices.keptUncertain(handoverId, name);
     return this.#browserFallback(url, menuNotTaken(name, result.detail));
   }
 
@@ -289,10 +286,10 @@ export class Hub {
   async #browserFallback(url: string, message: string): Promise<'browser' | 'failed'> {
     try {
       await this.#deps.downloads.start(url);
-      this.#warn(message);
+      this.#notices.warn(message);
       return 'browser';
     } catch {
-      this.#setNotice({ tone: 'error', message: BROWSER_DOWNLOAD_FAILED, at: this.#now() });
+      this.#notices.error(BROWSER_DOWNLOAD_FAILED);
       return 'failed';
     }
   }
@@ -368,13 +365,7 @@ export class Hub {
       // The app may need connecting, or starting, first: this is the handover the person started.
       withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
     });
-    if (result === 'copy_left') this.#warn(copyLeftInBrowser(name));
-    if (result === 'stuck_paused') {
-      this.#setNotice({ tone: 'error', message: stuckPaused(name), at: this.#now() });
-    }
-    if (result === 'uncertain' && !this.#duplicates.keptUncertain(entry.handoverId, name)) {
-      this.#warn(mayDownloadTwiceAfterRestart(name));
-    }
+    this.#notices.recovered(result, name, entry.handoverId);
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
@@ -396,7 +387,7 @@ export class Hub {
         await this.#app.showWindow();
         return;
       case 'dismiss_notice':
-        this.#setNotice(null);
+        this.#notices.dismiss();
         return;
       case 'pause_all':
         await this.#app.call({ method: 'pause_all' });
@@ -444,7 +435,7 @@ export class Hub {
       if (reply.type !== 'download_added') return;
     }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
-    this.#duplicates.confirmedLate(call.params.handover_id, name);
+    this.#notices.confirmedLate(call.params.handover_id, name);
   }
 
   /** The app's settings, or the cached copy when the app is not connected; null before either is known. */
@@ -452,42 +443,9 @@ export class Hub {
     return this.#settings.known();
   }
 
-  /** Tells the person what became of a browser download, when there is something to say. */
-  #noticeFor(result: HandoverResult, name: string): void {
-    if (result.kind === 'handed_over') {
-      if (!result.browserCopyRemoved) this.#warn(copyLeftInBrowser(name));
-      return;
-    }
-    // The person cancelled it in the browser meanwhile, or it finished: nothing to say.
-    if (result.browserCopy === 'gone') return;
-    if (result.browserCopy === 'stuck_paused') {
-      this.#setNotice({ tone: 'error', message: stuckPaused(name), at: this.#now() });
-      return;
-    }
-    // The app took it after all: the duplicate warning says so instead.
-    const { handoverId } = result;
-    if (result.uncertain && handoverId !== null) {
-      if (this.#duplicates.keptUncertain(handoverId, name)) return;
-    }
-    const message = keptInBrowser(result, name);
-    if (message !== null) this.#warn(message);
-  }
-
   /** Shows a message in the popup (and the badge), for answers that have nowhere else to go. */
   notify(tone: Notice['tone'], message: string): void {
-    this.#setNotice({ tone, message, at: this.#now() });
-  }
-
-  #warn(message: string): void {
-    this.#setNotice({ tone: 'warning', message, at: this.#now() });
-  }
-
-  #setNotice(notice: Notice | null): void {
-    this.#notice = notice;
-    this.#noticeChanged = true;
-    // Session storage unavailable: the notice then lasts as long as this background script.
-    this.#deps.notice?.save(notice).catch(() => undefined);
-    this.#publish();
+    this.#notices.notify(tone, message);
   }
 
   #publish(): void {
