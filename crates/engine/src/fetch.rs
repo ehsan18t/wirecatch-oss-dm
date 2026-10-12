@@ -30,7 +30,7 @@ const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 
 /// Makes requests that share one set of credentials, limits and rules.
 ///
-/// [`download`](crate::download) handles one large file. Some callers instead
+/// [`download`](fn@crate::download) handles one large file. Some callers instead
 /// need many small requests that belong together: the playlist of a video
 /// stream, its decryption keys and its segments. A [`Fetcher`] makes those
 /// requests with everything a download already does:

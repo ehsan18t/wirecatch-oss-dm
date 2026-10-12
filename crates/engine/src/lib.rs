@@ -9,7 +9,7 @@
 //!
 //! # Quick start
 //!
-//! Build a [`DownloadRequest`], hand it to [`download`] with a [`Progress`] to
+//! Build a [`DownloadRequest`], hand it to [`download`](fn@download) with a [`Progress`] to
 //! watch and a [`CancellationToken`] to pause with, and await the [`Outcome`]:
 //!
 //! ```
@@ -62,7 +62,7 @@
 //! }
 //! ```
 //!
-//! [`download`] needs a Tokio runtime with the time and I/O drivers enabled
+//! [`download`](fn@download) needs a Tokio runtime with the time and I/O drivers enabled
 //! (`#[tokio::main]` has both).
 //!
 //! # What happens during a download
@@ -160,7 +160,7 @@
 //! # FTP and FTPS
 //!
 //! `ftp://`, `ftps://` and `ftpes://` links download through the same
-//! [`download`] call, with the same parallel connections, resume files, speed
+//! [`download`](fn@download) call, with the same parallel connections, resume files, speed
 //! limits and retries:
 //!
 //! | Link | Encryption | Default port |

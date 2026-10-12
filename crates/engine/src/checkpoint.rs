@@ -169,7 +169,7 @@ pub(crate) struct Checkpoints {
 }
 
 impl Checkpoints {
-    /// Saves every [`DownloadOptions::checkpoint_interval`] until the download
+    /// Saves every [`DownloadOptions::checkpoint_interval`](crate::DownloadOptions::checkpoint_interval) until the download
     /// is cancelled or this is dropped.
     pub fn spawn(saver: Arc<ResumeSaver>) -> Self {
         let every = saver.shared.opts.checkpoint_interval;
