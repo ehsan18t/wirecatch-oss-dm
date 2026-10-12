@@ -397,6 +397,27 @@ mod tests {
         assert!(guarded.contains(&run_value), "removes the Run value");
     }
 
+    /// Every window's interface asks for the running app's name (`getName`), which Tauri refuses
+    /// without this permission; the interface would then fall back to the release name.
+    #[test]
+    fn every_capability_lets_its_windows_read_the_app_name() {
+        let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            let capability: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let permissions = capability["permissions"].as_array().unwrap();
+            assert!(
+                permissions.contains(&serde_json::json!("core:app:allow-name")),
+                "{} does not grant core:app:allow-name",
+                path.display()
+            );
+            checked += 1;
+        }
+        assert!(checked >= 2, "the main and download window capabilities");
+    }
+
     #[test]
     fn the_unavailable_notice_names_the_running_app() {
         assert_eq!(
