@@ -31,8 +31,7 @@
 </script>
 
 <WindowFrame title="Download this file?" description="From your browser. Change anything you like.">
-  <!-- Enter in any field below is Download now (see keys.ts); the keys come from the fields. -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Enter in any field, radio buttons and checkboxes included, is Download now: see keys.ts) -->
   <form
     id="{uid}-form"
     class="form"

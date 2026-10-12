@@ -98,10 +98,7 @@
 
 <svelte:window onfocus={updateFocus} onblur={updateFocus} />
 
-<!-- The window's root watches the pointer and the focus inside it, so a finished download's
-     window does not close under the person, and takes Escape from its inline questions first;
-     the controls inside are the interactive elements. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_no_static_element_interactions (the root watches pointer and focus inside the window so a finished one does not close under the person, and takes Escape for its inline questions first) -->
 <div
   class="progress-window"
   bind:this={root}
