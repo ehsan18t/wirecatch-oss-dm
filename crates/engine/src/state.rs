@@ -193,4 +193,59 @@ mod tests {
             );
         }
     }
+
+    /// A download of unknown size cannot resume; its resume file is set aside
+    /// without a warning that its ranges are damaged.
+    #[test]
+    fn an_unknown_size_is_not_taken_for_damaged_ranges() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct Captured(Arc<Mutex<Vec<u8>>>);
+        impl Write for Captured {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let v = validators(None);
+        let unknown = ResumeState::new("https://x/f", None, true, &v, Vec::new());
+        let resumes =
+            tracing::subscriber::with_default(subscriber, || unknown.can_resume(true, None, &v));
+        assert!(!resumes);
+        let logged = || String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert!(logged().is_empty(), "{}", logged());
+
+        // The capture works: damaged ranges of a known size are logged.
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer({
+                let writer = captured.clone();
+                move || writer.clone()
+            })
+            .finish();
+        let damaged = ResumeState::new(
+            "https://x/f",
+            Some(10),
+            true,
+            &v,
+            vec![ByteRange { start: 5, end: 50 }],
+        );
+        tracing::subscriber::with_default(subscriber, || damaged.can_resume(true, Some(10), &v));
+        assert!(
+            logged().contains("cannot belong to the file"),
+            "{}",
+            logged()
+        );
+    }
 }
