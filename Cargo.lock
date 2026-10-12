@@ -7477,6 +7477,7 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "wirecatch-engine",
+ "wirecatch-product",
 ]
 
 [[package]]

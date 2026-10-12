@@ -40,7 +40,7 @@ const PROGRESS_CHARS: &str = "=> ";
 ///
 /// Run the same command again after an interruption to continue where it stopped.
 #[derive(Parser, Debug)]
-#[command(name = "wirecatch", version)]
+#[command(name = wirecatch_product::CLI_EXECUTABLE, version)]
 struct Args {
     /// The URL to download: http, https, ftp, ftps or ftpes.
     ///
