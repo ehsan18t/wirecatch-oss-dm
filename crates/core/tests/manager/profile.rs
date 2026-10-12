@@ -144,6 +144,29 @@ async fn a_profile_from_a_newer_version_is_refused() -> TestResult {
     Ok(())
 }
 
+/// A profile refused after its queues were merged (here for its settings) uses
+/// up no queue ids: the next queue made by hand gets the id it would have got
+/// without the import.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_import_uses_up_no_queue_ids() -> TestResult {
+    let here = Harness::new().await?;
+    here.manager.create_queue("Night")?;
+    let file = here.root.path().join("profile.json");
+    here.manager.export_settings(&file).await.unwrap();
+    let mut profile: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    profile["settings"]["connections_per_download"] = 0.into();
+    std::fs::write(&file, profile.to_string()).unwrap();
+
+    let there = Harness::new().await?;
+    let first = there.manager.create_queue("First")?;
+    let err = there.manager.import_settings(&file).await.unwrap_err();
+    assert!(matches!(err, CoreError::Invalid(_)), "{err}");
+    let second = there.manager.create_queue("Second")?;
+    assert_eq!(second.id.0, first.id.0 + 1, "the refused import took an id");
+    Ok(())
+}
+
 /// The import is previewed before anything changes: folders as they would
 /// resolve here (a startup folder refused and replaced, a folder outside the
 /// person's own flagged), queues added and updated, add-ons to offer.

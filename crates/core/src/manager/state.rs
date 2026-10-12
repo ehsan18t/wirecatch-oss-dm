@@ -53,7 +53,7 @@ pub(super) struct State {
 }
 
 /// Sources of fresh ids and positions.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct Counters {
     pub download: i64,
     pub queue: i64,

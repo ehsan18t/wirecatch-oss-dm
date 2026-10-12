@@ -3,9 +3,9 @@
 //!
 //! Each file is served with byte ranges and an optional `Content-Type`. A
 //! file can be made to fail a set number of times, to answer slowly or to be
-//! sent at a limited speed, and
-//! every request is logged with its headers, so a test can check what was
-//! asked for, how often and how many requests ran at once.
+//! sent at a limited speed, and every request is logged with its headers, so
+//! a test can check what was asked for, how often and how many requests ran
+//! at once.
 //!
 //! ```no_run
 //! # async fn example() {

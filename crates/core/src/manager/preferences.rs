@@ -140,10 +140,12 @@ impl Manager {
         {
             let mut state = self.lock_open()?;
             let current = state.queue_list();
+            // Ids for added queues come from a copy of the counters, kept only
+            // once the profile is accepted, so a refused one uses up none.
+            let mut ids = state.ids.clone();
             let mut imported =
-                profile::merge_localized(localized, &current, &self.inner.folders, || {
-                    state.ids.queue()
-                })?;
+                profile::merge_localized(localized, &current, &self.inner.folders, || ids.queue())?;
+            state.ids = ids;
             self.inner.store.save_last_ids(state.ids.last());
             for queue in imported.queues {
                 match state.slot_mut(queue.id) {
