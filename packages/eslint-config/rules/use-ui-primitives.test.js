@@ -53,6 +53,15 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
     // A name declared from itself does not loop.
     valid(`${script('let Loop = Loop;')}<Loop />`),
+    // A name that shadows an icon is another value.
+    valid(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';\nimport Dialog from './Dialog.svelte';")}<Icon icon={X} />{#each [Dialog] as X}<X />{/each}`,
+    ),
+    valid(
+      `${script("import Dialog from './Dialog.svelte';\nfunction pick() { const Close = Dialog; return Close; }\nimport X from '@lucide/svelte/icons/x';\nconst Close = Dialog;\nvoid X; void pick;")}<Close />`,
+    ),
+    // A class name from a name that holds another class.
+    valid(`${script("const cls = 'btn-row';")}<button type="button" class={cls}>Row</button>`),
   ],
   invalid: [
     primitiveClass('<button type="button" class="btn primary">Save</button>'),
@@ -86,6 +95,23 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     directIcon(`${script("import X from '@lucide/svelte/icons/x';")}<svelte:component this={X} />`),
     directIcon(
       `${script("import * as L from '@lucide/svelte';\nconst Close = L.X;")}<svelte:component this={Close} size={14} />`,
+    ),
+    // Through a rune, and through an {#each} over icons, written in place or named.
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Check from '@lucide/svelte/icons/check';\nconst D = $derived(on ? X : Check);")}<D />`,
+    ),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';")}{#each [X] as I (I)}<I />{/each}`,
+    ),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst icons = [X];")}{#each icons as I (I)}<I />{/each}`,
+    ),
+    // A primitive's class through a name.
+    primitiveClass(
+      `${script("const cls = 'btn';")}<button type="button" class={cls}>Save</button>`,
+    ),
+    primitiveClass(
+      `${script("const base = 'icon-btn';\nconst cls = $derived(small ? base : 'x');")}<button type="button" class={[cls]}>x</button>`,
     ),
   ],
 });
