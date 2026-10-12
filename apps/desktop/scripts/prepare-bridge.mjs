@@ -1,11 +1,6 @@
-// Builds the browser bridge and puts it where the Tauri bundler expects a sidecar:
-// src-tauri/binaries/wirecatch-bridge-<target triple>[.exe]. The bundler installs it next to
-// the app as plain `wirecatch-bridge[.exe]`, which is where the bridge and the app look for each
-// other (D19). The name comes from `externalBin` in tauri.bundle.conf.json, which
-// `pnpm product:generate` writes from config/product.toml, as it does the bridge's binary name.
+// Builds the browser bridge and copies it where the Tauri bundler expects its sidecar, src-tauri/binaries/<name>-<target triple>[.exe]; the bundler installs it next to the app under its plain name, where the bridge and the app look for each other (D19). The name is the one `externalBin` lists in tauri.bundle.conf.json, which is generated from config/product.toml.
 //
-// Usage: node scripts/prepare-bridge.mjs [--release]. Both profiles trust the same extensions
-// (D22); no cargo feature is turned on.
+// Usage: node scripts/prepare-bridge.mjs [--release]. No cargo feature is turned on: both profiles trust the same extensions (D22).
 
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -25,8 +20,15 @@ if (release) {
       cwd: root,
       stdio: 'inherit',
     });
-  } catch {
-    console.error('The product identity is not ready for a release; see the message above.');
+  } catch (error) {
+    // A check that ran has printed why it failed; one that could not start has not.
+    const started =
+      typeof error === 'object' && error !== null && 'status' in error && error.status !== null;
+    console.error(
+      started
+        ? 'The product identity is not ready for a release; see the message above.'
+        : `Could not run the release check: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
