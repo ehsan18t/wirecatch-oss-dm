@@ -33,6 +33,25 @@ const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/*
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
 
+/**
+ * Components show state and report what the person did; they never reach the backend through the app state either (the desktop app keeps its components in src/lib/components and its state in `app`). Imports of the backend are banned by each package's own layer rules; this closes the path through `app.backend`, in member access and destructuring alike.
+ */
+const COMPONENT_LAYER = {
+  files: ['src/lib/components/**'],
+  ignores: TEST_FILES,
+  rules: {
+    'no-restricted-properties': [
+      'error',
+      {
+        object: 'app',
+        property: 'backend',
+        message:
+          'Components get what they need from state; add a method to the state class that calls the backend.',
+      },
+    ],
+  },
+};
+
 /** The rules every package follows, on top of the recommended and strict sets. */
 const BASELINE_RULES = {
   // Correctness. TypeScript already reports undefined names, and `no-undef` does not understand type-only globals.
@@ -144,6 +163,7 @@ export function wirecatch({
     },
     { files: untypedFiles, ...ts.configs.disableTypeChecked },
     { files: untypedFiles, rules: { 'wirecatch/no-assertion-on-input': 'off' } },
+    COMPONENT_LAYER,
     ...layers,
   );
 }
