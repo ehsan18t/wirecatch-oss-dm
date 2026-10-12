@@ -1,13 +1,46 @@
 /// <reference types="vitest/config" />
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
-import { defineConfig } from 'vite';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { defineConfig, type Plugin } from 'vite';
 
 /** Set by `tauri dev` to serve a device on the network; unset or empty means this machine only. */
 const host = process.env.TAURI_DEV_HOST ?? '';
 
+/**
+ * What decides how a module compiles besides its own source: the installed versions (the
+ * lockfile), the Svelte and TypeScript options and the plugin options in this file. Vitest's
+ * module cache key leaves them out and the cache survives `pnpm install`, so they are hashed
+ * into the key here. SvelteKit writes .svelte-kit/tsconfig.json on sync, so it may not be there
+ * yet.
+ */
+const COMPILE_INPUTS = [
+  '../../pnpm-lock.yaml',
+  './svelte.config.js',
+  './vite.config.ts',
+  './tsconfig.json',
+  './.svelte-kit/tsconfig.json',
+];
+
+function moduleCacheKey(): Plugin {
+  const hash = createHash('sha256');
+  for (const file of COMPILE_INPUTS) {
+    const url = new URL(file, import.meta.url);
+    hash.update(file);
+    if (existsSync(url)) hash.update(readFileSync(url));
+  }
+  const key = hash.digest('hex');
+  return {
+    name: 'wirecatch:module-cache-key',
+    configureVitest({ defineCacheKeyGenerator }) {
+      defineCacheKeyGenerator(() => key);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [sveltekit(), svelteTesting()],
+  plugins: [sveltekit(), svelteTesting(), moduleCacheKey()],
   // Tauri expects a fixed port and fails if it is taken.
   clearScreen: false,
   server: {
@@ -23,7 +56,7 @@ export default defineConfig({
     setupFiles: ['./vitest-setup.ts'],
     restoreMocks: true,
     // Compiled modules are kept on disk between runs, so a run does not compile the same Svelte
-    // modules again.
+    // modules again; moduleCacheKey above keys that cache on what changes their output.
     fsModuleCache: true,
     // Building a jsdom window for every test file was the largest share of a run, and when the
     // machine was busy the full-app tests ran past their time limit. Test files share one window
