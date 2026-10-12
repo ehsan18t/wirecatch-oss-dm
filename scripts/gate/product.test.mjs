@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { generate } from '../product/generate.mjs';
 import { outputs } from '../product/outputs.mjs';
-import { remainingPlaceholders, staleOutputs } from './product.mjs';
+import { crateMetadataProblems, remainingPlaceholders, staleOutputs } from './product.mjs';
 import { ROOT } from './process.mjs';
 
 /** What the generator reads besides its outputs: the identity, the templates, and the formatting settings. */
@@ -49,6 +49,17 @@ test('a Cargo.lock that still records another version of a workspace crate is st
   );
   assert.deepEqual(await staleOutputs(root), ['Cargo.lock']);
   edit('Cargo.lock', (text) => text.replace('version = "0.0.9"', 'version = "0.1.0"'));
+});
+
+test('a crate that writes its own authors, repository or homepage is reported', async () => {
+  assert.deepEqual(crateMetadataProblems(root), []);
+  edit('crates/cli/Cargo.toml', (text) =>
+    text.replace('authors.workspace = true', 'authors = ["Someone"]'),
+  );
+  assert.match(crateMetadataProblems(root).join('\n'), /crates\/cli\/Cargo\.toml.*authors/);
+  edit('crates/cli/Cargo.toml', (text) =>
+    text.replace('authors = ["Someone"]', 'authors.workspace = true'),
+  );
 });
 
 test('a change to product.toml makes every file that carries the value stale', async () => {
