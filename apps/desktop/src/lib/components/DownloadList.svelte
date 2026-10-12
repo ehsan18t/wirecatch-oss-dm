@@ -69,7 +69,7 @@
   });
 
   function idFrom(e: Event): DownloadId | null {
-    const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-id]');
+    const el = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-id]') : null;
     return el ? Number(el.dataset.id) : null;
   }
 

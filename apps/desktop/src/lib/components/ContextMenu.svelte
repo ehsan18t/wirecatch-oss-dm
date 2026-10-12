@@ -85,7 +85,7 @@
     if (el) size = { width: el.offsetWidth, height: el.offsetHeight };
     buttons()[0]?.focus();
     const away = (e: PointerEvent) => {
-      if (el && !el.contains(e.target as Node)) onclose(false);
+      if (el && !(e.target instanceof Node && el.contains(e.target))) onclose(false);
     };
     window.addEventListener('pointerdown', away, true);
     return () => window.removeEventListener('pointerdown', away, true);
@@ -93,7 +93,8 @@
 
   function onkeydown(e: KeyboardEvent) {
     const all = buttons();
-    const i = all.indexOf(document.activeElement as HTMLButtonElement);
+    const active = document.activeElement;
+    const i = active instanceof HTMLButtonElement ? all.indexOf(active) : -1;
     if (e.key === 'ArrowDown') all[(i + 1) % all.length]?.focus();
     else if (e.key === 'ArrowUp') all[(i - 1 + all.length) % all.length]?.focus();
     else if (e.key === 'Home') all[0]?.focus();
