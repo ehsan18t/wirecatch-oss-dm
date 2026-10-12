@@ -12,31 +12,18 @@ import {
   splitSize,
   toBytes,
 } from './index';
+import CASES from './format-bytes.cases.json';
 
 describe('formatBytes', () => {
-  it('uses short units with three significant digits at most', () => {
-    expect(formatBytes(0)).toBe('0 B');
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(1536)).toBe('1.50 KB');
-    expect(formatBytes(15 * MB)).toBe('15.0 MB');
-    expect(formatBytes(820 * MB)).toBe('820 MB');
-    expect(formatBytes(6.1 * GB)).toBe('6.10 GB');
+  // The cases the Rust copy of this function is held to as well.
+  it.each(CASES)('shows $bytes bytes as $shown', ({ bytes, shown }) => {
+    expect(formatBytes(bytes)).toBe(shown);
+  });
+
+  it('shows what is not a size as nothing, and a fraction of a byte rounded', () => {
     expect(formatBytes(-1)).toBe('0 B');
     expect(formatBytes(Number.NaN)).toBe('0 B');
-  });
-
-  it('keeps three significant digits when rounding reaches the next step', () => {
-    // 99.998 KB rounds to 100, which shows no decimals.
-    expect(formatBytes(102_398)).toBe('100 KB');
-    // 9.999 KB rounds to 10, which shows one decimal.
-    expect(formatBytes(10_239)).toBe('10.0 KB');
-  });
-
-  it('carries into the next unit when rounding reaches 1024', () => {
-    expect(formatBytes(MB - 1)).toBe('1.00 MB');
     expect(formatBytes(KB - 0.4)).toBe('1.00 KB');
-    expect(formatBytes(GB - 1)).toBe('1.00 GB');
-    expect(formatBytes(MB - KB)).toBe('1023 KB');
   });
 });
 

@@ -1,0 +1,62 @@
+[
+  {
+    "bytes": 0,
+    "shown": "0 B"
+  },
+  {
+    "bytes": 512,
+    "shown": "512 B"
+  },
+  {
+    "bytes": 1023,
+    "shown": "1023 B"
+  },
+  {
+    "bytes": 1024,
+    "shown": "1.00 KB"
+  },
+  {
+    "bytes": 1536,
+    "shown": "1.50 KB"
+  },
+  {
+    "bytes": 10239,
+    "shown": "10.0 KB"
+  },
+  {
+    "bytes": 102398,
+    "shown": "100 KB"
+  },
+  {
+    "bytes": 1047552,
+    "shown": "1023 KB"
+  },
+  {
+    "bytes": 1048575,
+    "shown": "1.00 MB"
+  },
+  {
+    "bytes": 1048576,
+    "shown": "1.00 MB"
+  },
+  {
+    "bytes": 15728640,
+    "shown": "15.0 MB"
+  },
+  {
+    "bytes": 209715200,
+    "shown": "200 MB"
+  },
+  {
+    "bytes": 859832320,
+    "shown": "820 MB"
+  },
+  {
+    "bytes": 1073741823,
+    "shown": "1.00 GB"
+  },
+  {
+    "bytes": 6549825126,
+    "shown": "6.10 GB"
+  }
+]

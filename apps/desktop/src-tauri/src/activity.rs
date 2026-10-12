@@ -273,20 +273,28 @@ mod tests {
             tooltip(3, 12 * MIB + 400 * KIB),
             "Wirecatch: 3 downloads, 12.4 MB/s"
         );
-        assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(200 * MIB), "200 MB");
+    }
+
+    /// The sizes `formatBytes` in `@wirecatch/units` is held to, so both read alike.
+    const SHARED_SIZE_CASES: &str =
+        include_str!("../../../../packages/units/src/format-bytes.cases.json");
+
+    #[derive(serde::Deserialize)]
+    struct SizeCase {
+        bytes: u64,
+        shown: String,
     }
 
     /// Rounding can reach the next unit or need fewer decimals: the shown value
     /// is what is checked, never the value before rounding.
     #[test]
-    fn sizes_that_round_up_keep_the_unit_and_decimals_of_the_rounded_value() {
-        assert_eq!(format_bytes(1023), "1023 B");
-        assert_eq!(format_bytes(1024), "1.00 KB");
-        assert_eq!(format_bytes(10_239), "10.0 KB");
-        assert_eq!(format_bytes(102_398), "100 KB");
-        assert_eq!(format_bytes(1_048_575), "1.00 MB");
-        assert_eq!(format_bytes(1_048_576), "1.00 MB");
+    fn sizes_read_as_in_the_units_package() {
+        let cases: Vec<SizeCase> = serde_json::from_str(SHARED_SIZE_CASES).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            assert_eq!(format_bytes(case.bytes), case.shown, "{} bytes", case.bytes);
+        }
+        // Beyond what a JavaScript number holds exactly, so not a shared case.
         assert_eq!(format_bytes(u64::MAX), "16777216 TB");
     }
 
