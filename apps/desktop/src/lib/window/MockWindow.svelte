@@ -9,6 +9,9 @@
   import { DownloadWindowState } from './download-window.svelte';
   import { CASCADE_STEP, type OpenWindow } from './registry';
 
+  /** Where the first sample window sits, down and right of the page's top left corner. */
+  const CASCADE_ORIGIN = 48;
+
   let {
     backend,
     window: open,
@@ -26,6 +29,7 @@
   } = $props();
 
   const uid = $props.id();
+  const offset = $derived(CASCADE_ORIGIN + open.slot * CASCADE_STEP);
   // Made once for the window's life; what it shows comes from the registry only at the start.
   const win = (() => {
     const shows = open.shows;
@@ -50,8 +54,8 @@
   role="region"
   aria-labelledby="{uid}-bar"
   data-label={open.label}
-  style:left="{48 + open.slot * CASCADE_STEP}px"
-  style:top="{48 + open.slot * CASCADE_STEP}px"
+  style:left="{offset}px"
+  style:top="{offset}px"
   onpointerdown={onfocus}
   onfocusin={onfocus}
 >

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { focusSearch } from '$lib/commands';
   import { isDownloadDrag } from '$lib/dnd';
+  import { DOCK_WIDTH } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import CommandPalette from './CommandPalette.svelte';
@@ -16,13 +17,7 @@
 
   const app = getApp();
 
-  /**
-   * Below this width the detail panel floats over the list instead of taking a column. It docks
-   * whenever the list beside it still has room for Name, Size, Done and Status: sidebar (236)
-   * plus panel (316) plus 600 for the list, which then shows its narrowest set of columns.
-   */
-  const DOCK_WIDTH = 236 + 316 + 600;
-
+  // Below DOCK_WIDTH the detail panel floats over the list instead of taking a column.
   onMount(() => {
     const query = window.matchMedia(`(min-width: ${DOCK_WIDTH}px)`);
     const update = () => (app.wide = query.matches);
@@ -169,12 +164,12 @@
   .app {
     position: relative;
     display: grid;
-    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     height: 100vh;
   }
 
   .app.docked {
-    grid-template-columns: 236px minmax(0, 1fr) auto;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
   }
 
   .main {

@@ -47,7 +47,7 @@
     draggable="true"
   >
     <span class="icon" role="gridcell"><CategoryIcon category={row.category} /></span>
-    <span class="name" role="gridcell" title={row.file_name}>{row.file_name}</span>
+    <span class="name" role="gridcell" title={row.file_name} data-menu-anchor>{row.file_name}</span>
     {#if row.status === 'failed' && row.error}
       <span class="error" role="gridcell">
         <span class="message" title={row.error.message}>{row.error.message}</span>

@@ -22,5 +22,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     setupFiles: ['./vitest-setup.ts'],
     restoreMocks: true,
+    // src/lib/layout.ts reads its lengths from the text of app.css, so tests need the real file.
+    css: { include: [/\/src\/app\.css/] },
   },
 });

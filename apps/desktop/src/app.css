@@ -39,8 +39,15 @@
   --radius-s: 4px;
   --radius-m: 7px;
   --radius-l: 11px;
-  --row-h: 44px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Layout lengths. src/lib/layout.ts reads these from this file's text and takes the first match,
+     so keep them in pixels and never define them again further down. The list's minimum is the
+     width at which it still shows Name, Size, Done and Status beside a docked panel. */
+  --row-h: 44px;
+  --sidebar-width: 236px;
+  --detail-width: 316px;
+  --list-min-width: 600px;
 
   /* Icons come in four sizes (see Icon.svelte); file type pictures use the thinner stroke. */
   --icon-xs: 12px;

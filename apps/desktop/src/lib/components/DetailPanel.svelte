@@ -317,7 +317,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: 316px;
+    width: var(--detail-width);
     min-height: 0;
     padding: 18px 18px 20px;
     overflow-y: auto;

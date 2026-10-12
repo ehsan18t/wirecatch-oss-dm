@@ -8,8 +8,13 @@
   let { x, y, onclose }: { x: number; y: number; onclose: (refocusList: boolean) => void } =
     $props();
 
+  /** The least room kept between the menu and the window's edges, in pixels. */
+  const EDGE = 4;
+
   const app = getApp();
   let el = $state<HTMLDivElement>();
+  // The menu's own size, measured once it is in the page (zero until then).
+  let size = $state({ width: 0, height: 0 });
 
   interface Item {
     label: string;
@@ -75,15 +80,16 @@
     return out;
   })();
 
-  // Keep the menu inside the window.
-  const left = $derived(Math.max(4, Math.min(x, window.innerWidth - 220)));
-  const top = $derived(Math.max(4, Math.min(y, window.innerHeight - items.length * 32 - 16)));
+  // Keep the menu inside the window, from its measured size rather than an assumed one.
+  const left = $derived(Math.max(EDGE, Math.min(x, window.innerWidth - size.width - EDGE)));
+  const top = $derived(Math.max(EDGE, Math.min(y, window.innerHeight - size.height - EDGE)));
 
   function buttons(): HTMLButtonElement[] {
     return el ? [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')] : [];
   }
 
   onMount(() => {
+    if (el) size = { width: el.offsetWidth, height: el.offsetHeight };
     buttons()[0]?.focus();
     const away = (e: PointerEvent) => {
       if (el && !el.contains(e.target as Node)) onclose(false);
@@ -133,6 +139,7 @@
   .menu {
     position: fixed;
     z-index: 30;
+    width: max-content;
     min-width: 200px;
     padding: 4px;
     border: 1px solid var(--line);

@@ -2,6 +2,7 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
+  import { ROW_HEIGHT } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
   import { HINT_TEXT, type HintId } from '$lib/state/hints.svelte';
   import { track } from '$lib/state/reactivity';
@@ -12,21 +13,22 @@
 
   const app = getApp();
 
-  /** Must match `--row-h` in app.css. */
-  const ROW = 44;
   const OVERSCAN = 6;
+  /** The list's height before layout gives it one (and in tests): a typical window. */
+  const ASSUMED_HEIGHT = 800;
 
   let viewport = $state<HTMLDivElement>();
   let scrollTop = $state(0);
-  let height = $state(600);
+  let height = $state(0);
   let dropIndex = $state<number | null>(null);
   let menu = $state<{ x: number; y: number } | null>(null);
 
   const ids = $derived(app.visible);
-  // Before layout (and in tests) there is no height yet; assume a typical window.
-  const viewHeight = $derived(height > 0 ? height : 800);
-  const start = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
-  const end = $derived(Math.min(ids.length, Math.ceil((scrollTop + viewHeight) / ROW) + OVERSCAN));
+  const viewHeight = $derived(height > 0 ? height : ASSUMED_HEIGHT);
+  const start = $derived(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN));
+  const end = $derived(
+    Math.min(ids.length, Math.ceil((scrollTop + viewHeight) / ROW_HEIGHT) + OVERSCAN),
+  );
   const windowIds = $derived(ids.slice(start, end));
   const canReorder = $derived(app.view.kind === 'queue' && app.sort === 'queue');
 
@@ -46,9 +48,10 @@
     if (!el) return;
     const i = ids.indexOf(id);
     if (i < 0) return;
-    const top = i * ROW;
+    const top = i * ROW_HEIGHT;
     if (top < el.scrollTop) el.scrollTop = top;
-    else if (top + ROW > el.scrollTop + el.clientHeight) el.scrollTop = top + ROW - el.clientHeight;
+    else if (top + ROW_HEIGHT > el.scrollTop + el.clientHeight)
+      el.scrollTop = top + ROW_HEIGHT - el.clientHeight;
   }
 
   // Keep the keyboard row on screen, but only when the keyboard row itself changes. The list
@@ -98,14 +101,16 @@
   function openMenuAtActive() {
     if (app.active === null || !viewport) return;
     if (!app.selection.has(app.active)) app.selectOnly(app.active);
-    const el = document.getElementById(`row-${app.active}`);
-    const box = (el ?? viewport).getBoundingClientRect();
-    menu = { x: box.left + 48, y: box.top + box.height };
+    const row = document.getElementById(`row-${app.active}`);
+    const rowBox = (row ?? viewport).getBoundingClientRect();
+    // Under the row, lined up with its name.
+    const nameBox = row?.querySelector('[data-menu-anchor]')?.getBoundingClientRect() ?? rowBox;
+    menu = { x: nameBox.left, y: rowBox.bottom };
   }
 
   function onkeydown(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
-    const page = Math.max(1, Math.floor(viewHeight / ROW) - 1);
+    const page = Math.max(1, Math.floor(viewHeight / ROW_HEIGHT) - 1);
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
       void app.nudge(e.key === 'ArrowUp' ? -1 : 1);
@@ -174,7 +179,7 @@
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
     const rect = viewport.getBoundingClientRect();
     const y = e.clientY - rect.top + viewport.scrollTop;
-    dropIndex = Math.max(0, Math.min(ids.length, Math.round(y / ROW)));
+    dropIndex = Math.max(0, Math.min(ids.length, Math.round(y / ROW_HEIGHT)));
   }
 
   function ondrop(e: DragEvent) {
@@ -244,14 +249,14 @@
     ondragend={() => (dropIndex = null)}
     {ondrop}
   >
-    <div class="canvas" style:height="{ids.length * ROW}px">
-      <div class="window" style:transform="translateY({start * ROW}px)">
+    <div class="canvas" style:height="{ids.length * ROW_HEIGHT}px">
+      <div class="window" style:transform="translateY({start * ROW_HEIGHT}px)">
         {#each windowIds as id, i (id)}
           <DownloadRow {id} index={start + i} dropBefore={dropIndex === start + i} />
         {/each}
       </div>
       {#if dropIndex !== null && dropIndex === ids.length}
-        <div class="drop-end" style:top="{ids.length * ROW - 1}px"></div>
+        <div class="drop-end" style:top="{ids.length * ROW_HEIGHT - 1}px"></div>
       {/if}
     </div>
   </div>
