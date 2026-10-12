@@ -15,7 +15,7 @@ export type { Command, CommandGroup } from './table';
 export function buildCommands(app: AppState): Command[] {
   // Only the mock backend has sample-data actions; they live in the mock module, so none of
   // their text ships in a production build.
-  const sample = app.ready ? app.backend.sampleData : undefined;
+  const sample = app.sample?.data;
   return [
     ...selectionCommands(app),
     ...downloadCommands(app),

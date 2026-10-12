@@ -19,6 +19,11 @@ export class Connection {
     }
   }
 
+  /** The backend, once `load` has finished; null before. */
+  get loaded(): Backend | null {
+    return this.#loaded;
+  }
+
   /** The backend. Throws before `load` has finished. */
   get backend(): Backend {
     if (!this.#loaded) throw new Error('The backend is not loaded yet.');

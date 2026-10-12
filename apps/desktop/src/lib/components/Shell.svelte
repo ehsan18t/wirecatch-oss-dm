@@ -140,11 +140,11 @@
 </div>
 
 <Dialogs />
-{#if app.sampleData && app.backend.sampleData}
-  {@const sample = app.backend.sampleData}
+{#if app.sample}
+  {@const sample = app.sample}
   <!-- The sample app's download windows float in the page; the real app opens real windows. -->
   {#await import('$lib/window/MockWindows.svelte') then { default: MockWindows }}
-    <MockWindows backend={app.backend} registry={sample.windows} />
+    <MockWindows backend={sample.backend} registry={sample.data.windows} />
   {/await}
 {/if}
 <CommandPalette />

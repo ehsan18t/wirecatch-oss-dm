@@ -32,7 +32,7 @@
   const single = $derived(urls.length === 1 ? urls[0] : undefined);
 
   async function chooseFolder() {
-    const picked = await app.backend.pickFolder(folder ?? undefined);
+    const picked = await app.pickFolder(folder ?? undefined);
     if (picked) folder = picked;
   }
 

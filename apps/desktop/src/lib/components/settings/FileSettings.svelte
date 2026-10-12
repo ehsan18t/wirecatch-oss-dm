@@ -22,7 +22,7 @@
   }
 
   async function pickCategoryFolder(category: Category) {
-    const picked = await app.backend.pickFolder(ruleFor(category)?.folder);
+    const picked = await app.pickFolder(ruleFor(category)?.folder);
     if (!picked) return;
     save((d) => {
       const rule = d.categories.find((r) => r.category === category);
@@ -32,7 +32,7 @@
   }
 
   async function pickDefaultFolder() {
-    const picked = await app.backend.pickFolder(settings.default_folder);
+    const picked = await app.pickFolder(settings.default_folder);
     if (picked) save((d) => void (d.default_folder = picked));
   }
 

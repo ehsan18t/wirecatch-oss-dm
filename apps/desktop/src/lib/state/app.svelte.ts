@@ -6,7 +6,7 @@
 
 import type { AppSettings, DownloadId, QueueId, UiEvent } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
-import type { Backend } from '../backend';
+import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { Addons } from './addons.svelte';
@@ -67,16 +67,16 @@ export class AppState {
     (id) => this.downloads.get(id),
   );
   readonly questions = new Questions();
-  readonly addons = new Addons(() => this.backend, this.#runner, this.toasts);
+  readonly addons = new Addons(() => this.#backend, this.#runner, this.toasts);
   readonly queues = new Queues({
-    backend: () => this.backend,
+    backend: () => this.#backend,
     runner: this.#runner,
     toasts: this.toasts,
     now: () => this.clock.now,
     counts: () => this.counts,
   });
   readonly transfer = new SettingsTransfer({
-    backend: () => this.backend,
+    backend: () => this.#backend,
     runner: this.#runner,
     imported: (settings, queues) => {
       if (settings) this.settings = settings;
@@ -84,7 +84,7 @@ export class AppState {
     },
   });
   readonly actions = new DownloadActions({
-    backend: () => this.backend,
+    backend: () => this.#backend,
     runner: this.#runner,
     toasts: this.toasts,
     downloads: this.downloads,
@@ -96,7 +96,7 @@ export class AppState {
   });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>
-    this.#runner.succeeds(() => this.backend.changeSettings(patch)),
+    this.#runner.succeeds(() => this.#backend.changeSettings(patch)),
   );
 
   settings = $state<AppSettings | null>(null);
@@ -130,9 +130,18 @@ export class AppState {
     this.#connection = new Connection(backend);
   }
 
-  /** The backend. Available once `init` has started; components only use it after loading. */
-  get backend(): Backend {
+  /** The backend, once `init` has loaded it. Only state talks to it; components call actions. */
+  get #backend(): Backend {
     return this.#connection.backend;
+  }
+
+  /** The sample backend's extras (its palette actions and download windows); null on the engine. */
+  get sample(): { backend: Backend; data: SampleData } | null {
+    // Read first so the shell follows it: the backend itself is not reactive.
+    if (!this.sampleData) return null;
+    const backend = this.#connection.loaded;
+    const data = backend?.sampleData;
+    return backend && data ? { backend, data } : null;
   }
 
   // ---- Derived views ----
@@ -175,7 +184,7 @@ export class AppState {
     // Neither is needed for the list, so neither holds it up.
     void this.addons.load();
     void this.#takeLaunchLinks();
-    void this.questions.restore(this.backend);
+    void this.questions.restore(this.#backend);
   }
 
   /** Loads the backend and listens to it; false when superseded or when that failed, which is then shown. */
@@ -202,10 +211,10 @@ export class AppState {
   async #load(current: () => boolean): Promise<void> {
     try {
       const [downloads, queues, settings, pending] = await Promise.all([
-        this.backend.listDownloads(),
-        this.backend.listQueues(),
-        this.backend.getSettings(),
-        this.backend.pendingConfirmations(),
+        this.#backend.listDownloads(),
+        this.#backend.listQueues(),
+        this.#backend.getSettings(),
+        this.#backend.pendingConfirmations(),
       ]);
       if (!current()) return;
       this.downloads.load(downloads);
@@ -222,7 +231,7 @@ export class AppState {
   async #takeLaunchLinks(): Promise<void> {
     let links: string[];
     try {
-      links = await this.backend.takeLaunchLinks();
+      links = await this.#backend.takeLaunchLinks();
     } catch {
       return;
     }
@@ -286,16 +295,26 @@ export class AppState {
     return true;
   }
 
+  /** Asks for a folder, starting at `current`; null when none was picked or the picker failed. */
+  async pickFolder(current?: string): Promise<string | null> {
+    return (await this.#runner.run(() => this.#backend.pickFolder(current))) ?? null;
+  }
+
+  /** Tells the shell the first view is drawn, so it shows the window; without a backend, nothing. */
+  async mainWindowReady(): Promise<void> {
+    await this.#connection.loaded?.mainWindowReady().catch(() => undefined);
+  }
+
   /** Brings every waiting question's window to the front, opening closed ones again. */
   async showQuestionWindows(): Promise<void> {
     this.paletteOpen = false;
-    await this.#runner.run(() => this.backend.showQuestionWindows());
+    await this.#runner.run(() => this.#backend.showQuestionWindows());
   }
 
   /** Opens (or brings forward) a download's own progress window. */
   async showProgressWindow(id: DownloadId): Promise<void> {
     this.paletteOpen = false;
-    await this.#runner.run(() => this.backend.showProgressWindow(id));
+    await this.#runner.run(() => this.#backend.showProgressWindow(id));
   }
 
   // ---- Settings ----
