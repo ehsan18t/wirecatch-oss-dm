@@ -124,7 +124,7 @@ Decided by the lead on 2026-10-11 after the cross-component security review.
 1. Media add-on updates verify yt-dlp's OpenPGP signature on `SHA2-256SUMS` against a fingerprint pinned in the app (pure-Rust `pgp` crate, verification only, in `wirecatch-core`). The 48-hour maturity delay applies to every install path (quiet update, Update button, repair, reinstall), not just quiet updates.
 2. Program types (exe, msi, scripts, installers and similar) stay in the browser by default, so the browser's Safe Browsing and download warnings apply. Downloads the browser flags as dangerous are never taken over.
 3. ffmpeg only ever reads local files of the formats we expect: explicit input format, `-protocol_whitelist file` and a format whitelist on every input. Pinned add-on sources must be long-lived; a remux-only ffmpeg built by our own CI and published with our releases replaces the general build once the GitHub organization exists.
-4. CI keeps actions pinned by SHA and gets Dependabot for actions, Cargo and npm, plus `cargo audit`.
+4. CI keeps actions pinned by SHA and gets Dependabot for actions, Cargo and npm, plus `cargo audit`. The Dependabot part is superseded by D28.
 5. The app's data folder moves to the local (non-roaming) app data folder, so cookies and add-on programs never follow roaming profiles.
 6. Superseded by D22: every bridge build trusts the one Chromium id that follows from our extension key, and the `dev-extension` feature is gone.
 
@@ -189,6 +189,13 @@ Decided during the extension's W14 review: a download the extension takes from t
 7. `native/client.ts`: `start()` connects only when there is no port and no retry pending, so a port with requests on it is never replaced. An answer that cannot be read fails its request at once as `unreadable`; a late one counts only as a possible confirmation, and an error answer that cannot be read drops the port and is never taken as one.
 8. Tests: `tests/handover.test.ts` and `tests/native-client.test.ts` cover each case against the real hub, handover and client; `tests/hub-parts.test.ts`, `tests/register.test.ts` and `tests/popup.test.ts` cover the notice list.
 9. Known limit: the app keeps handover ids in memory only. If it restarted after taking a download, `withdraw_download` answers `not_found`, so the browser resumes its copy while the app may restore its own: two copies with no warning. Saving handover ids in the app would close this.
+
+### D28. Outdated dependencies are reported, never proposed as pull requests
+Decided by the user on 2026-10-12, after closing the five pull requests Dependabot had opened.
+1. Nothing opens pull requests or issues for dependency updates. `.github/dependabot.yml` is gone, so Dependabot version updates are off for actions, Cargo and npm.
+2. `.github/workflows/outdated.yml` runs `scripts/outdated.mjs` every Monday and on demand. It writes one report to the run's summary: the direct dependencies of every Cargo workspace crate with a newer compatible or incompatible version (from `cargo update --dry-run --verbose` and `cargo metadata`, so no extra tool is installed), `pnpm outdated --recursive`, and the pinned actions whose repository has a newer release. An outdated dependency never fails the run; only a part of the report that could not be produced does.
+3. The maintainer reads the report and updates on purpose, one reviewed commit at a time, with its changelog read and its code changes made by cause.
+4. Advisories are unchanged: `cargo deny` and `npm audit` in the gate on every push, and weekly in `audit.yml`. GitHub's separate "Dependabot security updates" repository setting also opens pull requests; only the maintainer can turn it off, in the repository's settings.
 
 ## Assumptions (not yet confirmed)
 
