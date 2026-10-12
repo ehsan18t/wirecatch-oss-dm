@@ -1,22 +1,13 @@
 import { after, describe, it } from 'node:test';
-import { fileURLToPath } from 'node:url';
 import { RuleTester } from 'eslint';
-import ts from 'typescript-eslint';
 import { noAssertionOnInput } from './no-assertion-on-input.js';
+import { filename, typedRuleTester } from './typed-rule-tester.js';
 
 RuleTester.describe = describe;
 RuleTester.it = it;
 RuleTester.afterAll = after;
 
-// Typed rules need a program: the tests lint fixtures/file.ts with the code each one gives.
-const fixtures = fileURLToPath(new URL('fixtures/', import.meta.url));
-const tester = new RuleTester({
-  languageOptions: {
-    parser: ts.parser,
-    parserOptions: { project: './tsconfig.json', tsconfigRootDir: fixtures },
-  },
-});
-const filename = fileURLToPath(new URL('fixtures/file.ts', import.meta.url));
+const tester = typedRuleTester();
 const DECLARATIONS = `
 interface Message { type: string }
 declare function isMessage(raw: unknown): raw is Message;
