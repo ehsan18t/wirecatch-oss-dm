@@ -51,6 +51,8 @@ pub(crate) fn identify(args: &[OsString], config: &Config) -> Result<Caller, Str
             .iter()
             .find(|arg| !arg.to_str().is_some_and(|a| a.starts_with("--")))
         {
+            // Quoted and escaped; an argument that is not valid Unicode shows its
+            // unreadable parts as U+FFFD.
             return Err(format!(
                 "unexpected argument {:?} after the origin",
                 extra.to_string_lossy()

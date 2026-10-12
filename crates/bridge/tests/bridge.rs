@@ -21,7 +21,6 @@ use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
-use wirecatch_test_support::TestResult;
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -34,6 +33,11 @@ const FAKE_APP_ENDPOINT: &str = "WIRECATCH_TEST_FAKE_APP_ENDPOINT";
 const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 
 const PATIENCE: Duration = Duration::from_secs(10);
+
+/// What a test helper returns when it can fail, so the test that calls it
+/// decides how to report the failure (the same shape as the test-support crate's,
+/// whose servers the bridge does not need).
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// The most memory an idle bridge may hold, resident or private.
 const IDLE_MEMORY_LIMIT: usize = 10 * 1024 * 1024;

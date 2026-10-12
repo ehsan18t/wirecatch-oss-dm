@@ -374,29 +374,28 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         );
+        let dir = std::env::temp_dir().join(format!("wirecatch-bridge-unit-{tag}"));
         #[cfg(windows)]
-        {
-            (
-                Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-unit-{tag}")),
-                TestDir(None),
-            )
-        }
+        std::fs::create_dir(&dir).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-            let dir = std::env::temp_dir().join(format!("wirecatch-bridge-unit-{tag}"));
             std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            // The umask can only remove bits; set the exact mode anyway.
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-            (Endpoint::from_raw(dir.join("app.sock")), TestDir(Some(dir)))
         }
+        #[cfg(windows)]
+        let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-bridge-unit-{tag}"));
+        #[cfg(unix)]
+        let endpoint = Endpoint::from_raw(dir.join("app.sock"));
+        (endpoint, TestDir(dir))
     }
 
-    struct TestDir(Option<PathBuf>);
+    /// A folder of one test's own (on Linux it holds the socket), removed on drop.
+    struct TestDir(PathBuf);
     impl Drop for TestDir {
         fn drop(&mut self) {
-            if let Some(dir) = &self.0 {
-                let _ = std::fs::remove_dir_all(dir);
-            }
+            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
 

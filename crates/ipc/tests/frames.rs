@@ -7,36 +7,36 @@ use wirecatch_ipc::{Connection, Endpoint, IpcError, Listener, connect};
 use wirecatch_protocol::frame::{read_async, write_async};
 use wirecatch_protocol::wire::{Call, Event, Message, Outcome, Reply};
 
-/// A fresh endpoint nobody else uses. On Linux it lives in a new 0700 folder that
-/// the returned guard removes.
-fn test_endpoint() -> (Endpoint, Guard) {
+/// A fresh endpoint nobody else uses, with a new folder of its own that the
+/// returned guard removes. On Linux the socket lives in that folder, which is 0700
+/// like the app's.
+fn test_endpoint() -> std::io::Result<(Endpoint, Guard)> {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let tag = format!("{}-{n}", std::process::id());
+    let dir = std::env::temp_dir().join(format!("wirecatch-ipc-it-{tag}"));
     #[cfg(windows)]
-    {
-        (
-            Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-ipc-it-{tag}")),
-            Guard(None),
-        )
-    }
+    std::fs::create_dir(&dir)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-        let dir = std::env::temp_dir().join(format!("wirecatch-ipc-it-{tag}"));
-        std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        (Endpoint::from_raw(dir.join("app.sock")), Guard(Some(dir)))
+        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+        // The umask can only remove bits; set the exact mode anyway.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(windows)]
+    let endpoint = Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-ipc-it-{tag}"));
+    #[cfg(unix)]
+    let endpoint = Endpoint::from_raw(dir.join("app.sock"));
+    Ok((endpoint, Guard(dir)))
 }
 
-struct Guard(Option<std::path::PathBuf>);
+/// Removes the test's folder when dropped.
+struct Guard(std::path::PathBuf);
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        if let Some(dir) = &self.0 {
-            let _ = std::fs::remove_dir_all(dir);
-        }
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -44,7 +44,7 @@ fn assert_send<T: Send + Unpin>(_: &T) {}
 
 #[tokio::test]
 async fn requests_responses_and_events_cross_a_connection() {
-    let (endpoint, _guard) = test_endpoint();
+    let (endpoint, _guard) = test_endpoint().unwrap();
     let mut listener = Listener::bind(&endpoint).unwrap();
     assert_eq!(listener.endpoint(), &endpoint);
 
@@ -107,7 +107,7 @@ async fn requests_responses_and_events_cross_a_connection() {
 
 #[tokio::test]
 async fn several_clients_are_served_one_after_another() {
-    let (endpoint, _guard) = test_endpoint();
+    let (endpoint, _guard) = test_endpoint().unwrap();
     let mut listener = Listener::bind(&endpoint).unwrap();
     let server = tokio::spawn(async move {
         for _ in 0..3 {
@@ -130,7 +130,7 @@ async fn several_clients_are_served_one_after_another() {
 
 #[tokio::test]
 async fn connecting_without_a_listener_reports_not_running() {
-    let (endpoint, _guard) = test_endpoint();
+    let (endpoint, _guard) = test_endpoint().unwrap();
     assert!(matches!(
         connect(&endpoint).await,
         Err(IpcError::NotRunning { .. })

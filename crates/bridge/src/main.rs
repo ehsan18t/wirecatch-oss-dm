@@ -8,8 +8,8 @@
 //! - `wirecatch-bridge install` / `uninstall`: register or remove the host in every supported browser, for the current user or, with `--all-users` (Windows, administrator rights), for every user of the computer.
 
 // Stdout belongs to the browser in native messaging mode, so nothing here prints
-// to it: the workspace lints forbid `print!`/`println!`, and the install command
-// writes its report through an explicit handle.
+// to it: the workspace lints warn on `print!`/`println!` (and the gate denies
+// warnings), and the install command writes its report through an explicit handle.
 
 use std::ffi::OsString;
 use std::io::{self, Write};

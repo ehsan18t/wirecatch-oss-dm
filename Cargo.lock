@@ -7463,7 +7463,6 @@ dependencies = [
  "windows-sys 0.59.0",
  "wirecatch-ipc",
  "wirecatch-protocol",
- "wirecatch-test-support",
 ]
 
 [[package]]
