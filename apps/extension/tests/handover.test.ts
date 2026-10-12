@@ -974,6 +974,49 @@ describe('downloads left paused by a restarted background', () => {
     expect(notice.value).toEqual([]);
   });
 
+  describe('a stored notice asking to resume a download', () => {
+    const stuck: Notice = {
+      id: 'd4',
+      downloadId: 4,
+      untilResumed: true,
+      tone: 'error',
+      message: 'big.zip is paused in the browser.',
+      at: 1,
+    };
+
+    it('stays away once the browser reports the download running while it loads', async () => {
+      const notice = new MemoryNotice();
+      notice.value = [stuck];
+      const release = notice.hold();
+      s = await setup({ notice, start: false });
+      s.hub.onDownloadMoved(4);
+      release();
+      await s.started;
+      expect(s.hub.snapshot().notices).toEqual([]);
+    });
+
+    it.each([
+      ['running', { state: 'in_progress', paused: false }],
+      ['finished', { state: 'complete', paused: false }],
+      ['gone', null],
+    ] as const)('is cleared on load when the download is %s', async (_label, state) => {
+      const notice = new MemoryNotice();
+      notice.value = [stuck];
+      const downloads = new FakeDownloads();
+      downloads.states.set(4, state === null ? null : { ...state });
+      s = await setup({ notice, downloads });
+      expect(s.hub.snapshot().notices).toEqual([]);
+      expect(notice.value).toEqual([]);
+    });
+
+    it('stays on load while the download is still paused', async () => {
+      const notice = new MemoryNotice();
+      notice.value = [stuck];
+      s = await setup({ notice });
+      expect(s.hub.snapshot().notices).toEqual([stuck]);
+    });
+  });
+
   it('keeps a notice raised while the stored one was loading', async () => {
     const notice = new MemoryNotice();
     notice.value = [

@@ -24,6 +24,8 @@ export interface NoticeBoardDeps {
   store?: NoticeStore;
   /** Called after every change, to publish the notices. */
   changed(): void;
+  /** Whether the browser still lists the download as paused (or cannot say). */
+  stillPaused?(downloadId: number): Promise<boolean>;
 }
 
 /** What a new notice is about: one browser download (a newer notice about it replaces this one), or nothing in particular. */
@@ -46,6 +48,8 @@ export class NoticeBoard {
   #notices: Notice[] = [];
   /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
   readonly #dismissed = new Set<string>();
+  /** Downloads reported running or finished in this run, whose stored notices asking to resume them are done. */
+  readonly #moved = new Set<number>();
   #nextId = 1;
 
   constructor(deps: NoticeBoardDeps) {
@@ -56,15 +60,28 @@ export class NoticeBoard {
     return this.#notices;
   }
 
-  /** Adds the notices an earlier run stored to those of this run, except the ones dismissed or replaced since. */
+  /**
+   * Adds the notices an earlier run stored to those of this run, except the ones dismissed,
+   * replaced or resolved since. The browser is asked again about each download a notice asks to
+   * resume, since one resumed while no background ran was never reported.
+   */
   async load(): Promise<void> {
     const stored = (await this.#deps.store?.load().catch(() => [])) ?? [];
-    const kept = stored.filter(
-      (old) =>
-        !this.#dismissed.has(old.id) &&
-        !this.#notices.some((now) => now.id === old.id || sameDownload(now, old)),
-    );
+    const kept: Notice[] = [];
+    for (const old of stored) {
+      if (this.#dismissed.has(old.id)) continue;
+      if (this.#notices.some((now) => now.id === old.id || sameDownload(now, old))) continue;
+      if (old.untilResumed && !(await this.#stillPaused(old.downloadId))) continue;
+      kept.push(old);
+    }
     this.#notices = newestFirst([...this.#notices, ...kept]);
+    if (kept.length !== stored.length) this.#deps.store?.save(this.#notices).catch(() => undefined);
+  }
+
+  async #stillPaused(downloadId: number | null): Promise<boolean> {
+    if (downloadId === null) return true;
+    if (this.#moved.has(downloadId)) return false;
+    return (await this.#deps.stillPaused?.(downloadId).catch(() => true)) ?? true;
   }
 
   warn(message: string, about: About = {}): void {
@@ -98,6 +115,7 @@ export class NoticeBoard {
 
   /** The browser reports a download running or finished: a notice asking to resume it is done. */
   downloadMoved(downloadId: number): void {
+    this.#moved.add(downloadId);
     const left = this.#notices.filter((n) => !(n.downloadId === downloadId && n.untilResumed));
     if (left.length !== this.#notices.length) this.#set(left);
   }

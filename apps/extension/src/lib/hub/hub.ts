@@ -1,6 +1,11 @@
 import type { Call, Event, ExtensionSettings, Outcome } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
-import { handOver, type HandoverResult, type JudgingSettings } from '../capture/handover';
+import {
+  handOver,
+  readBrowserCopy,
+  type HandoverResult,
+  type JudgingSettings,
+} from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
@@ -88,6 +93,10 @@ export class Hub {
       now: this.#now,
       store: deps.notice,
       changed: () => this.#publish(),
+      stillPaused: async (id) => {
+        const state = await readBrowserCopy(deps.downloads, id);
+        return state === 'unreadable' || (state?.state === 'in_progress' && state.paused);
+      },
     });
     this.#popups = new Popups({ media: deps.media, run: (command) => this.#runCommand(command) });
     this.#ready = new Promise((resolve) => {
