@@ -266,7 +266,7 @@ pub enum OutputFormat {
     Mp4,
     /// Matroska video, which holds any codec and subtitle tracks.
     Mkv,
-    /// `WebM` video, the open format browsers play.
+    /// WebM video, the open format browsers play.
     Webm,
     /// MP3 audio.
     Mp3,

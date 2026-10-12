@@ -106,7 +106,7 @@ pub(crate) struct Plan {
     pub tracks: Vec<Track>,
 }
 
-/// Query parameters that sign a link or say when it expires, compared without case. Their values change every time a link is refreshed while the content stays the same, so the fingerprint keeps only their names. Covers `CloudFront`, Akamai, S3, Google Cloud Storage, nginx `secure_link` and the common generic names.
+/// Query parameters that sign a link or say when it expires, compared without case. Their values change every time a link is refreshed while the content stays the same, so the fingerprint keeps only their names. Covers CloudFront, Akamai, S3, Google Cloud Storage, nginx `secure_link` and the common generic names.
 const SIGNING_PARAMETERS: &[&str] = &[
     "token",
     "__token__",

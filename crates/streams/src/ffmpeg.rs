@@ -76,7 +76,7 @@ pub enum InputFormat {
     Mp4,
     /// Matroska (`.mkv`).
     Matroska,
-    /// `WebM`, the Matroska flavor browsers play (`.webm`).
+    /// WebM, the Matroska flavor browsers play (`.webm`).
     WebM,
     /// Raw AAC audio in ADTS frames (`.aac`), as in HLS packed audio.
     Aac,
@@ -228,7 +228,7 @@ fn read_up_to(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
     Ok(len)
 }
 
-/// The full length of the `ID3v2` tag `head` starts with, if it starts with one.
+/// The full length of the ID3v2 tag `head` starts with, if it starts with one.
 fn id3_len(head: &[u8]) -> Option<u64> {
     let header = head.get(..10)?;
     if !header.starts_with(b"ID3") || header[6..10].iter().any(|b| b & 0x80 != 0) {

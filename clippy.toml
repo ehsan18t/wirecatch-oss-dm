@@ -6,3 +6,6 @@ allow-print-in-tests = true
 
 # docs/ENGINEERING.md, section 4: a function past 80 lines is a signal to split.
 too-many-lines-threshold = 80
+
+# Product and format names that read as names in documentation, not as code. `..` keeps clippy's defaults.
+doc-valid-idents = ["..", "WebM", "FairPlay", "PlayReady", "CloudFront", "ID3v2"]
