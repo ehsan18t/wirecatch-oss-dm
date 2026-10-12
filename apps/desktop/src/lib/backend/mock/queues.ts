@@ -1,12 +1,14 @@
 // What the mock core does to queues: create, edit, pause, start now and delete them.
 
-import type { DownloadSummary, Queue, QueueId } from '@wirecatch/protocol';
+import {
+  NEW_QUEUE_MAX_CONCURRENT,
+  type DownloadSummary,
+  type Queue,
+  type QueueId,
+} from '@wirecatch/protocol';
 import { scheduleAllows } from '../../format';
 import { BackendError } from '../types';
 import type { MockState } from './state';
-
-/** How many downloads a new queue runs at once. */
-const NEW_QUEUE_MAX_CONCURRENT = 2;
 
 const NO_QUEUE_NAME = 'Give the queue a name.';
 

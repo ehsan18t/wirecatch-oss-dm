@@ -19,8 +19,10 @@
   let text = $state(start.text);
   let fileName = $state('');
   let folder = $state<string | null>(null);
-  let queue = $state<QueueId>(
-    start.queue ?? (app.view.kind === 'queue' ? app.view.id : (app.queues.defaultQueue?.id ?? 1)),
+  // No queue (none listed yet) lets the core put the downloads in its default queue.
+  let queue = $state<QueueId | null>(
+    start.queue ??
+      (app.view.kind === 'queue' ? app.view.id : (app.queues.defaultQueue?.id ?? null)),
   );
   let error = $state('');
   let busy = $state(false);
