@@ -119,6 +119,7 @@ export class DownloadWindowState {
 
   /** Loads the window's question or download and starts listening. */
   async init(): Promise<void> {
+    this.#teardown();
     const generation = ++this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
     try {
@@ -179,6 +180,10 @@ export class DownloadWindowState {
 
   dispose(): void {
     this.#generation += 1;
+    this.#teardown();
+  }
+
+  #teardown(): void {
     this.clock.stop();
     this.#unsubscribe?.();
     this.#unsubscribe = null;

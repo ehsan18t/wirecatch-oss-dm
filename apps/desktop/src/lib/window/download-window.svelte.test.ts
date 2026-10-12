@@ -314,6 +314,18 @@ describe('a progress window', () => {
 });
 
 describe('closing a window', () => {
+  it('lets go of its first listener when loaded again', async () => {
+    const b = backend();
+    const first = vi.fn();
+    const second = vi.fn();
+    vi.spyOn(b, 'subscribe').mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const { win } = windowState(b, { question: 1 });
+    await win.init();
+    await win.init();
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).not.toHaveBeenCalled();
+  });
+
   it('lets go of its listener when closed while it still loads', async () => {
     const b = backend();
     const stop = vi.fn();
