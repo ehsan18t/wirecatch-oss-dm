@@ -2,7 +2,7 @@
 
 This is how code in Wirecatch is written. It applies to every package and every contributor, human or agent. Each rule says how it is enforced: **gate** means `pnpm gate` (and CI, which runs the same checks) fails when it is broken, **review** means a reviewer checks it. A rule enforced only by review is a candidate for a new check; propose one when you find a way.
 
-The Rust lint rules marked **gate** apply to a crate once it follows the workspace lints. Until every crate does ([AUDIT](AUDIT.md) W14; the crates still to go are `LINT_PENDING` in `scripts/gate.mjs`), they are review rules in the others. The ESLint rules apply everywhere, with the violations that predate them recorded in each app's `eslint-suppressions.json`.
+Every crate follows the workspace lints (`[lints] workspace = true`; the gate's `lint-policy` check fails a crate that does not), and every TypeScript and Svelte package uses the one shared ESLint configuration. Nothing is recorded as an accepted violation: there are no suppression files. The few exceptions are single `#[expect(..., reason = "...")]` attributes or one disable comment with a `--` reason, each where the rule is wrong for that line, listed in [AUDIT](AUDIT.md) W14.
 
 The gates are a floor. Passing them does not make a change good; breaking them makes it wrong.
 
@@ -35,7 +35,7 @@ Every literal that encodes a decision gets a name and a doc comment saying why i
 - Units are part of the name or the type: `Duration` and `PROGRESS_REFRESH`, never `100` and a comment.
 - UI values come from design tokens in `app.css`, never raw pixels or colors in a component.
 
-Enforced by: gate for TypeScript (`no-magic-numbers`), review for Rust and CSS.
+Enforced by: gate for TypeScript (`wirecatch/no-magic-numbers`, which reports every number except those that build the value of a module-level `const`, so `const MAX_URL_LENGTH = 8 * 1024` is fine), review for Rust and CSS.
 
 ## 3. Reuse before writing
 
@@ -110,7 +110,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - Every `{#each}` has a key. Lists that can be long are virtualized. A progress tick updates the rows that changed, not the whole list.
 - Functions stay under 80 lines and a complexity of 12, files under 400 lines. Gate.
 
-No app records lint violations any more, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place, on that one line, with a `--` reason.
+There are no suppression files, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place: on that one line, with a `--` reason, never file-wide.
 
 ## 6. Logging
 

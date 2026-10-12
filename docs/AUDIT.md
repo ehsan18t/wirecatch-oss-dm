@@ -96,7 +96,15 @@ EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16
 
 The W0 baseline found 1,477 clippy warnings and 787 ESLint errors. Each package is brought to zero while its workstream is open, and the gates then hold it there.
 
-When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ path = "std::thread::sleep", ... }]` to `clippy.toml`. A `clippy.toml` setting applies to every crate at once, so it cannot follow the per-crate opt-in; today it would flag fixed sleeps in core, e2e and the desktop tests (W6).
+Done on 2026-10-12: every crate follows the workspace lints, both apps' suppression files are deleted, and `std::thread::sleep` is banned in `clippy.toml`. 2,204 violations were fixed by cause, not silenced. The exceptions left, each a single attribute or comment with its reason:
+
+- E1: the mulberry32 constants in the desktop sample backend (`backend/mock/rng.ts`), which define the algorithm.
+- E2: `clippy::large_enum_variant` on the protocol's `Message`; E3: the same on the engine's `Remote`.
+- E4: `clippy::struct_excessive_bools` on `AppSettings`, whose bools are independent settings.
+- E5: test-support lints on `crates/e2e`; E6: the same on `crates/test-support`.
+- E7, E8: the checked numeric conversions in `wirecatch_engine::numeric`.
+
+The lead's decisions on the way: `wirecatch/no-magic-numbers` lets named module constants be written as they read; a shared, unpublished `crates/test-support` holds every test server (D26); engine locks recover from poisoning through one accessor per struct; Rust-owned facts the apps need are generated into `@wirecatch/protocol`; `@wirecatch/units` holds byte units for both apps; icon sizes and dialog widths are a scale of tokens in `app.css` (approved by the maintainer). New gate rules keep the result: `wirecatch/no-assertion-on-input` (no `as`, `<T>` or `!` on a value typed `any` or `unknown`, every package), `wirecatch/use-ui-primitives` (desktop buttons and icons through the primitives) and the `std::thread::sleep` ban. The desktop tests share one test window per worker (`isolate: false`), guarded by a reset after every file and a ban on module mocks, which made them pass reliably under load.
 
 ## Status
 
@@ -104,13 +112,12 @@ When the last crate leaves `LINT_PENDING`, also add `disallowed-methods = [{ pat
 |---|---|
 | W0 | done and independently reviewed; the review's 20 defects are fixed. What is left of its findings moved to later workstreams, listed below |
 | W1 | done and independently reviewed: all 12 fixed, each with a test shown to fail without its fix, and the review's 29 defects (2 high, 7 medium, 20 low) fixed the same way. Also done alongside: per-machine install (D25). What is left of the review moved to later workstreams, listed below |
-| W14 | next, moved ahead of W2 at the maintainer's request (2026-10-12): the recorded ESLint violations and the crates outside the workspace lints are fixed by cause until both suppression files are gone, then reviewed by an agent that did not write the fixes |
+| W14 | fixed (2026-10-12): every crate on the workspace lints, no suppression files, `thread::sleep` banned; each part was verified by an agent that did not write it. Review of the whole workstream running |
 | W2 to W13 | not started |
 
 Parts of W0 findings carried into later workstreams:
 
-- XC-22: the remaining crates opt into the workspace lints and drop their own `missing_docs` attributes (W14), then `std::thread::sleep` is banned in `clippy.toml`.
-- XC-23: `packages/` and `scripts/` are not yet linted or formatted (W14).
+- XC-23: `packages/units` is linted, formatted and type-checked; `packages/eslint-config`, `packages/protocol/scripts` and `scripts/` are not yet (W6).
 - XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
