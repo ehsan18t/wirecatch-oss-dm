@@ -8,7 +8,7 @@ use wirecatch_core::CoreError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
-    ProcessingStep, UiEvent,
+    ProcessingStep, StreamAction, UiEvent,
 };
 use wirecatch_protocol::extension::MediaKind;
 
@@ -176,22 +176,25 @@ async fn a_page_offers_formats_subtitles_and_chapters() {
         .iter()
         .find(|f| f.format == OutputFormat::Mp4)
         .unwrap();
-    assert!(mp4.converts_video && !mp4.converts_audio);
+    assert_eq!(
+        (mp4.video, mp4.audio),
+        (StreamAction::Encode, StreamAction::Copy)
+    );
     assert_eq!(mp4.video_codec.as_deref(), Some("H.264"));
     let full_hd = &choice.options[1];
-    let converts: Vec<(OutputFormat, bool)> = full_hd
+    let video: Vec<(OutputFormat, StreamAction)> = full_hd
         .outputs
         .iter()
-        .map(|f| (f.format, f.converts_video))
+        .map(|f| (f.format, f.video))
         .collect();
     // 1080p comes as H.264 only: MP4 takes it as is, WebM needs VP9.
     assert_eq!(
-        converts,
+        video,
         [
-            (OutputFormat::Original, false),
-            (OutputFormat::Mp4, false),
-            (OutputFormat::Mkv, false),
-            (OutputFormat::Webm, true)
+            (OutputFormat::Original, StreamAction::Copy),
+            (OutputFormat::Mp4, StreamAction::Copy),
+            (OutputFormat::Mkv, StreamAction::Copy),
+            (OutputFormat::Webm, StreamAction::Encode)
         ]
     );
     // Asking for a format the row does not offer, or a subtitle the video

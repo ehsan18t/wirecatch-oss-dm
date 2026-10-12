@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use wirecatch_protocol::app::{
-    FixAction, MediaChoice, MediaOption, MediaSelection, OutputFit, OutputFormat, UserError,
+    FixAction, MediaChoice, MediaOption, MediaSelection, OutputFit, OutputFormat, StreamAction,
+    UserError,
 };
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
@@ -42,8 +43,12 @@ fn offer(id: String, label: String, height: Option<u32>, size: Option<u64>, plan
         vec![OutputFit {
             format: OutputFormat::Original,
             ext: plan.ext.clone(),
-            converts_video: false,
-            converts_audio: false,
+            video: if plan.audio_only {
+                StreamAction::None
+            } else {
+                StreamAction::Copy
+            },
+            audio: StreamAction::Copy,
             video_codec: None,
             audio_codec: None,
             audio_kbps: None,
@@ -685,12 +690,25 @@ mod tests {
                 OutputFormat::Webm
             ]
         );
-        let converts: Vec<bool> = uhd.outputs.iter().map(|f| f.converts_video).collect();
-        assert_eq!(converts, [false, true, false, false]);
+        let video: Vec<StreamAction> = uhd.outputs.iter().map(|f| f.video).collect();
+        assert_eq!(
+            video,
+            [
+                StreamAction::Copy,
+                StreamAction::Encode,
+                StreamAction::Copy,
+                StreamAction::Copy
+            ]
+        );
         assert_eq!(uhd.outputs[0].ext, "webm");
         // 1080p has H.264: MP4 copies it.
         let (full_hd, _) = &offers[1];
-        assert!(full_hd.outputs.iter().all(|f| !f.converts_video));
+        assert!(
+            full_hd
+                .outputs
+                .iter()
+                .all(|f| f.video == StreamAction::Copy)
+        );
         let (audio, _) = offers.last().unwrap();
         assert!(audio.audio_only);
         let formats: Vec<OutputFormat> = audio.outputs.iter().map(|f| f.format).collect();
@@ -705,6 +723,35 @@ mod tests {
                 OutputFormat::Wav
             ]
         );
+    }
+
+    #[test]
+    fn a_stream_is_offered_only_as_it_comes() {
+        let stream = |audio_only: bool| {
+            let plan = Plan {
+                job: MediaJob::Stream {
+                    video: if audio_only {
+                        Pick::Skip
+                    } else {
+                        Pick::Track("v".into())
+                    },
+                    audio: Pick::Track("a".into()),
+                },
+                ext: "mp4".into(),
+                quality: "720p".into(),
+                audio_only,
+                needs_ffmpeg: false,
+                variants: Vec::new(),
+            };
+            let (option, _) = offer("s0".into(), "720p, MP4".into(), None, None, plan);
+            let [fit] = option.outputs.as_slice() else {
+                panic!("a stream offers one choice");
+            };
+            assert_eq!(fit.format, OutputFormat::Original);
+            (fit.video, fit.audio)
+        };
+        assert_eq!(stream(false), (StreamAction::Copy, StreamAction::Copy));
+        assert_eq!(stream(true), (StreamAction::None, StreamAction::Copy));
     }
 
     #[test]

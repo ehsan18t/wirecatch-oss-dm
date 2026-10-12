@@ -318,11 +318,20 @@ impl OutputFormat {
     }
 }
 
+/// What happens to the video or to the audio of a quality saved as one [`OutputFormat`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum StreamAction {
+    /// There is none: an audio-only quality has no video.
+    None,
+    /// Copied into the file as it is, which takes seconds.
+    Copy,
+    /// Re-encoded, which takes longer and keeps the processor or graphics chip busy.
+    Encode,
+}
+
 /// How one quality is saved as one [`OutputFormat`].
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "temporary: converts_video and converts_audio are the video and audio actions the core already models as enums, and become those enums when W3 and W8 change this wire type together with the desktop that reads it"
-)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OutputFit {
@@ -330,12 +339,12 @@ pub struct OutputFit {
     pub format: OutputFormat,
     /// The file's extension, without the dot, for example `mp4`.
     pub ext: String,
-    /// The video must be re-encoded: it takes longer and keeps the processor or graphics
-    /// chip busy. `false` when the video is copied as is (seconds) or there is none.
-    pub converts_video: bool,
-    /// The audio must be re-encoded with the default audio quality (quick). Picking an audio
-    /// quality for an audio format always re-encodes it.
-    pub converts_audio: bool,
+    /// What happens to the video.
+    pub video: StreamAction,
+    /// What happens to the audio when no audio quality is picked; re-encoding then uses the
+    /// format's default quality, which is quick. Picking an audio quality for an audio format
+    /// always re-encodes it.
+    pub audio: StreamAction,
     /// The video codec saved, in plain words ("H.264", "VP9", "AV1"), when there is video.
     pub video_codec: Option<String>,
     /// The downloaded audio's codec, in plain words ("AAC", "Opus").

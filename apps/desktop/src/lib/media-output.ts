@@ -77,7 +77,7 @@ export function kbpsFor(
   const choices = KBPS_CHOICES[format];
   if (!choices) return null;
   if (wanted !== null) return nearestKbps(choices, wanted);
-  if (fit && !fit.converts_audio) return null;
+  if (fit && fit.audio !== 'encode') return null;
   return DEFAULT_KBPS[format] ?? choices[0] ?? null;
 }
 
@@ -149,8 +149,8 @@ export function rowTag(
   if (format === 'original') return null;
   const fit = fitFor(option, format);
   if (!fit) return null;
-  if (fit.converts_video) return 'converts';
-  if (option.audio_only && (fit.converts_audio || kbps !== null)) return 'converts';
+  if (fit.video === 'encode') return 'converts';
+  if (option.audio_only && (fit.audio === 'encode' || kbps !== null)) return 'converts';
   return 'copied';
 }
 
@@ -163,16 +163,16 @@ export function conversionNote(
   if (!fit || format === 'original') return null;
   const name = FORMAT_LABEL[format];
   if (fit.video_codec === null) {
-    if (fit.converts_audio || kbps !== null) {
+    if (fit.audio === 'encode' || kbps !== null) {
       const at = kbps !== null ? ` at ${kbps} kbps` : '';
       return `The audio is converted to ${name}${at} after it is downloaded, which is quick.`;
     }
     return `No conversion: the audio is copied into ${name} as it is.`;
   }
-  if (fit.converts_video) {
+  if (fit.video === 'encode') {
     return `This quality has no ${name} version, so Wirecatch converts the video to ${fit.video_codec} after downloading it. That takes longer and keeps the processor or graphics card busy.`;
   }
-  if (fit.converts_audio) {
+  if (fit.audio === 'encode') {
     const from = fit.audio_codec ? ` (${fit.audio_codec})` : '';
     return `The video is copied as it is; only the audio${from} is converted for ${name}, which is quick.`;
   }

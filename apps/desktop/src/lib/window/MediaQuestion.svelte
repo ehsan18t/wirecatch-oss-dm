@@ -192,7 +192,7 @@
                     kbps = v === '' ? null : Number(v);
                   }}
                 >
-                  {#if !fit.converts_audio}
+                  {#if fit.audio !== 'encode'}
                     <option value=""
                       >As downloaded{fit.audio_kbps === null
                         ? ''

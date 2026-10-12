@@ -128,7 +128,7 @@ function processingStep(
   selection: MediaSelection,
   extras: boolean,
 ): ProcessingStep | null {
-  if (fit.converts_video || fit.converts_audio || selection.audio_kbps !== null) {
+  if (fit.video === 'encode' || fit.audio === 'encode' || selection.audio_kbps !== null) {
     return 'converting';
   }
   return selection.output !== 'original' || extras ? 'finishing' : null;

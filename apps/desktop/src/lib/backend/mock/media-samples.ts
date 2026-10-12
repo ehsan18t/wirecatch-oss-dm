@@ -58,8 +58,14 @@ const H264 = {
   audio_kbps: 128,
   ...VIDEO_EXTRAS,
 } as const;
-const AAC_AUDIO = { audio_codec: 'AAC', audio_kbps: 129, outputKbps: 129, chapters: true } as const;
-const OPUS_AUDIO = { audio_codec: 'Opus', audio_kbps: 160 } as const;
+const AAC_AUDIO = {
+  video: 'none',
+  audio_codec: 'AAC',
+  audio_kbps: 129,
+  outputKbps: 129,
+  chapters: true,
+} as const;
+const OPUS_AUDIO = { video: 'none', audio_codec: 'Opus', audio_kbps: 160 } as const;
 
 /**
  * The sample qualities, best first: 4K only as VP9 (MP4 converts it), 1080p and 720p as H.264
@@ -80,7 +86,7 @@ const SAMPLE_QUALITIES: readonly SampleQuality[] = [
         video_codec: 'H.264',
         audio_codec: 'AAC',
         audio_kbps: 128,
-        converts_video: true,
+        video: 'encode',
         size: 2600 * MB,
       },
       { ...VP9, format: 'mkv', ext: 'mkv', size: 1840 * MB },
@@ -103,7 +109,7 @@ const SAMPLE_QUALITIES: readonly SampleQuality[] = [
         video_codec: 'VP9',
         audio_codec: 'Opus',
         audio_kbps: 160,
-        converts_video: true,
+        video: 'encode',
         size: 480 * MB,
       },
     ],
@@ -122,8 +128,8 @@ const SAMPLE_QUALITIES: readonly SampleQuality[] = [
         format: 'webm',
         ext: 'webm',
         video_codec: 'VP9',
-        converts_video: true,
-        converts_audio: true,
+        video: 'encode',
+        audio: 'encode',
         size: 230 * MB,
       },
     ],
@@ -135,12 +141,12 @@ const SAMPLE_QUALITIES: readonly SampleQuality[] = [
     needsFfmpeg: false,
     original: { ...AAC_AUDIO, format: 'original', ext: 'm4a' },
     conversions: [
-      { ...OPUS_AUDIO, format: 'mp3', ext: 'mp3', converts_audio: true, outputKbps: 192 },
+      { ...OPUS_AUDIO, format: 'mp3', ext: 'mp3', audio: 'encode', outputKbps: 192 },
       { ...AAC_AUDIO, format: 'm4a', ext: 'm4a' },
       { ...OPUS_AUDIO, format: 'opus', ext: 'opus', outputKbps: 160 },
-      { ...OPUS_AUDIO, format: 'flac', ext: 'flac', converts_audio: true },
+      { ...OPUS_AUDIO, format: 'flac', ext: 'flac', audio: 'encode' },
       // Uncompressed: 48,000 samples a second, 16 bits each, two channels.
-      { ...OPUS_AUDIO, format: 'wav', ext: 'wav', converts_audio: true, outputKbps: 1536 },
+      { ...OPUS_AUDIO, format: 'wav', ext: 'wav', audio: 'encode', outputKbps: 1536 },
     ],
   },
 ];
@@ -157,8 +163,8 @@ function toFit({ format, ext, size, outputKbps, ...rest }: SampleFit): OutputFit
   return {
     format,
     ext,
-    converts_video: false,
-    converts_audio: false,
+    video: 'copy',
+    audio: 'copy',
     video_codec: null,
     audio_codec: null,
     audio_kbps: null,

@@ -9,7 +9,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use wirecatch_protocol::app::{MediaSubtitle, OutputFit, OutputFormat, PER_MILLE_DONE};
+use wirecatch_protocol::app::{
+    MediaSubtitle, OutputFit, OutputFormat, PER_MILLE_DONE, StreamAction,
+};
 use wirecatch_streams::{InputFormat, ffmpeg_input_args};
 
 use super::ytdlp::{Chapter, Format, Info, SubtitleFile};
@@ -346,6 +348,17 @@ pub(crate) enum VideoAction {
     },
 }
 
+impl VideoAction {
+    /// What the quality window is told about it, without the codec and bit rate.
+    pub fn stream(self) -> StreamAction {
+        match self {
+            VideoAction::None => StreamAction::None,
+            VideoAction::Copy => StreamAction::Copy,
+            VideoAction::Encode { .. } => StreamAction::Encode,
+        }
+    }
+}
+
 /// What happens to the audio of a download being saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -358,6 +371,17 @@ pub(crate) enum AudioAction {
         codec: AudioCodec,
         kbps: Option<u32>,
     },
+}
+
+impl AudioAction {
+    /// What the quality window is told about it, without the codec and bit rate.
+    pub fn stream(self) -> StreamAction {
+        match self {
+            AudioAction::None => StreamAction::None,
+            AudioAction::Copy => StreamAction::Copy,
+            AudioAction::Encode { .. } => StreamAction::Encode,
+        }
+    }
 }
 
 /// One subtitle language chosen for a download, found again by its key when the
@@ -721,8 +745,8 @@ fn variant(
         fit: OutputFit {
             format,
             ext: ext.to_string(),
-            converts_video: matches!(video_action, VideoAction::Encode { .. }),
-            converts_audio: matches!(audio_action, AudioAction::Encode { .. }),
+            video: video_action.stream(),
+            audio: audio_action.stream(),
             video_codec: video_codec.map(|c| c.name().to_string()),
             audio_codec: audio_codec.map(|c| c.name().to_string()),
             audio_kbps: audio_source.and_then(audio_rate),
@@ -825,8 +849,8 @@ fn audio_variant(
         fit: OutputFit {
             format,
             ext: ext.to_string(),
-            converts_video: false,
-            converts_audio: matches!(action, AudioAction::Encode { .. }),
+            video: StreamAction::None,
+            audio: action.stream(),
             video_codec: None,
             audio_codec: codec.map(|c| c.name().to_string()),
             audio_kbps: audio_rate(source),
@@ -1834,7 +1858,10 @@ mod tests {
         let by = |format: OutputFormat| variants.iter().find(|v| v.fit.format == format).unwrap();
         let original = by(OutputFormat::Original);
         assert_eq!(original.selection, "303+251");
-        assert!(!original.fit.converts_video && !original.fit.converts_audio);
+        assert_eq!(
+            (original.fit.video, original.fit.audio),
+            (StreamAction::Copy, StreamAction::Copy)
+        );
         let mp4 = by(OutputFormat::Mp4);
         assert_eq!(mp4.selection, "299+140", "the 60 fps H.264 and the AAC");
         assert_eq!(mp4.video_action, VideoAction::Copy);
@@ -1842,7 +1869,7 @@ mod tests {
         assert_eq!(mp4.fit.video_codec.as_deref(), Some("H.264"));
         let webm = by(OutputFormat::Webm);
         assert_eq!(webm.selection, "303+251");
-        assert!(!webm.fit.converts_video);
+        assert_eq!(webm.fit.video, StreamAction::Copy);
         let mkv = by(OutputFormat::Mkv);
         assert_eq!(mkv.selection, "303+251");
         assert_eq!(mkv.container, Container::Mkv);
@@ -1862,7 +1889,10 @@ mod tests {
             .find(|v| v.fit.format == OutputFormat::Mp4)
             .unwrap();
         assert_eq!(mp4.selection, "313+140");
-        assert!(mp4.fit.converts_video && !mp4.fit.converts_audio);
+        assert_eq!(
+            (mp4.fit.video, mp4.fit.audio),
+            (StreamAction::Encode, StreamAction::Copy)
+        );
         let VideoAction::Encode { codec, kbps } = mp4.video_action else {
             panic!("not re-encoded: {:?}", mp4.video_action);
         };
@@ -1883,7 +1913,10 @@ mod tests {
             .iter()
             .find(|v| v.fit.format == OutputFormat::Webm)
             .unwrap();
-        assert!(webm.fit.converts_video && webm.fit.converts_audio);
+        assert_eq!(
+            (webm.fit.video, webm.fit.audio),
+            (StreamAction::Encode, StreamAction::Encode)
+        );
         assert_eq!(webm.fit.size, None, "no length, no estimate");
         assert!(webm.fit.embeds_subtitles && webm.fit.chapters);
     }
@@ -1916,7 +1949,7 @@ mod tests {
                 ..
             }
         ));
-        assert!(webm.fit.converts_video);
+        assert_eq!(webm.fit.video, StreamAction::Encode);
     }
 
     #[test]
@@ -1946,8 +1979,9 @@ mod tests {
         );
         assert_eq!(mp3.fit.size, Some(192 * 8_000 / 8));
         assert!(!by(OutputFormat::Flac).fit.lossless_source);
-        assert!(by(OutputFormat::Wav).fit.converts_audio);
+        assert_eq!(by(OutputFormat::Wav).fit.audio, StreamAction::Encode);
         assert!(variants.iter().all(|v| !v.fit.embeds_subtitles));
+        assert!(variants.iter().all(|v| v.fit.video == StreamAction::None));
     }
 
     #[test]

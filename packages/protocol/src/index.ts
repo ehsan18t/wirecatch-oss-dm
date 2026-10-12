@@ -55,6 +55,7 @@ export type { QueueSummary } from "./generated/QueueSummary";
 export type { Reply } from "./generated/Reply";
 export type { Schedule } from "./generated/Schedule";
 export type { SettingsProfile } from "./generated/SettingsProfile";
+export type { StreamAction } from "./generated/StreamAction";
 export type { Theme } from "./generated/Theme";
 export type { TimeOfDay } from "./generated/TimeOfDay";
 export type { UiEvent } from "./generated/UiEvent";

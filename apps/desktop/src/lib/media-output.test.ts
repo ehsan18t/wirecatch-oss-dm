@@ -17,8 +17,8 @@ function fit(format: OutputFormat, rest: Partial<OutputFit> = {}): OutputFit {
   return {
     format,
     ext: format === 'original' ? 'webm' : format,
-    converts_video: false,
-    converts_audio: false,
+    video: 'copy',
+    audio: 'copy',
     video_codec: 'VP9',
     audio_codec: 'Opus',
     audio_kbps: 160,
@@ -28,6 +28,11 @@ function fit(format: OutputFormat, rest: Partial<OutputFit> = {}): OutputFit {
     chapters: true,
     ...rest,
   };
+}
+
+/** A format of an audio-only quality, which has no video. */
+function audioFit(format: OutputFormat, rest: Partial<OutputFit> = {}): OutputFit {
+  return fit(format, { video: 'none', video_codec: null, ...rest });
 }
 
 const uhd: MediaOption = {
@@ -40,7 +45,7 @@ const uhd: MediaOption = {
   needs_ffmpeg: true,
   outputs: [
     fit('original'),
-    fit('mp4', { converts_video: true, video_codec: 'H.264', audio_codec: 'AAC', audio_kbps: 128 }),
+    fit('mp4', { video: 'encode', video_codec: 'H.264', audio_codec: 'AAC', audio_kbps: 128 }),
     fit('mkv'),
     fit('webm'),
   ],
@@ -55,18 +60,16 @@ const audio: MediaOption = {
   size: 100,
   needs_ffmpeg: false,
   outputs: [
-    fit('original', { ext: 'm4a', video_codec: null, audio_codec: 'AAC', audio_kbps: 129 }),
-    fit('mp3', {
-      video_codec: null,
-      converts_audio: true,
+    audioFit('original', { ext: 'm4a', audio_codec: 'AAC', audio_kbps: 129 }),
+    audioFit('mp3', {
+      audio: 'encode',
       embeds_subtitles: false,
       chapters: false,
     }),
-    fit('m4a', { video_codec: null, audio_codec: 'AAC', audio_kbps: 129, embeds_subtitles: false }),
-    fit('opus', { video_codec: null, embeds_subtitles: false, chapters: false }),
-    fit('flac', {
-      video_codec: null,
-      converts_audio: true,
+    audioFit('m4a', { audio_codec: 'AAC', audio_kbps: 129, embeds_subtitles: false }),
+    audioFit('opus', { embeds_subtitles: false, chapters: false }),
+    audioFit('flac', {
+      audio: 'encode',
       embeds_subtitles: false,
       chapters: false,
     }),
@@ -170,9 +173,7 @@ describe('the Save as part of a quality window (D24)', () => {
     expect(conversionNote(out(uhd, 'mkv'), 'mkv', null)).toMatch(
       /^No conversion: .* takes seconds\.$/,
     );
-    expect(
-      conversionNote(fit('mp4', { converts_audio: true, audio_codec: 'Opus' }), 'mp4', null),
-    ).toBe(
+    expect(conversionNote(fit('mp4', { audio: 'encode', audio_codec: 'Opus' }), 'mp4', null)).toBe(
       'The video is copied as it is; only the audio (Opus) is converted for MP4, which is quick.',
     );
     expect(conversionNote(out(audio, 'mp3'), 'mp3', 320)).toBe(
