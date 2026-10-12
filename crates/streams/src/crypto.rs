@@ -9,11 +9,12 @@ use std::io::{self, Read, Write};
 use aes::Aes128;
 use cbc::cipher::generic_array::GenericArray;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use wirecatch_engine::units::KIB_USIZE;
 
 const BLOCK: usize = 16;
 
 /// Bytes decrypted per step.
-const CHUNK: usize = 256 * 1024;
+const CHUNK: usize = 256 * KIB_USIZE;
 
 /// Decrypts `input` into `output` and returns the length of the plain text,
 /// or `None` when the data does not decrypt (the padding is wrong, so the key

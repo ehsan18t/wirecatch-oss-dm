@@ -7,13 +7,12 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
+use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
 use wirecatch_test_support::{TestResult, files_in, fresh_dir, test_data};
-
-const MIB: usize = 1024 * 1024;
 
 fn serving(data: &[u8]) -> FtpConfig {
     FtpConfig {
@@ -48,10 +47,10 @@ fn completed(outcome: Outcome) -> (PathBuf, u64, u64) {
 
 #[tokio::test]
 async fn plain_download_is_byte_identical_over_parallel_connections() {
-    let data = test_data(8 * MIB + 12_345);
+    let data = test_data(8 * MIB_USIZE + 12_345);
     let mut config = serving(&data);
     // Slow enough per connection that the other connections join in.
-    config.data_bps = Some(8 * MIB as u64);
+    config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("parallel");
 
@@ -97,10 +96,10 @@ async fn plain_download_is_byte_identical_over_parallel_connections() {
 
 #[tokio::test]
 async fn resumes_after_cancel_without_downloading_again() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.login = Some(("alice".into(), "s3cret word".into()));
-    config.data_bps = Some(2 * MIB as u64);
+    config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("resume");
     let url = server.url("ftp", "alice:s3cret%20word@", "pub/file.bin");
@@ -111,7 +110,7 @@ async fn resumes_after_cancel_without_downloading_again() {
     {
         let (progress, cancel) = (progress.clone(), cancel.clone());
         tokio::spawn(async move {
-            while progress.done() < 2 * MIB as u64 {
+            while progress.done() < 2 * MIB {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             cancel.cancel();
@@ -140,10 +139,10 @@ async fn resumes_after_cancel_without_downloading_again() {
     // socket buffers (several per connection with Linux autotuning) before an
     // early-closed data connection is dropped, which counts as sent but is never
     // read and would hide real waste.
-    server.configure(|c| c.data_bps = Some(8 * MIB as u64));
+    server.configure(|c| c.data_bps = Some(8 * MIB));
     let (path, bytes, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
     assert_eq!(bytes, data.len() as u64);
-    assert!(resumed_from >= 2 * MIB as u64, "kept {resumed_from} bytes");
+    assert!(resumed_from >= 2 * MIB, "kept {resumed_from} bytes");
     assert!(
         std::fs::read(&path).unwrap() == data,
         "downloaded bytes differ"
@@ -161,17 +160,17 @@ async fn resumes_after_cancel_without_downloading_again() {
             .lock()
             .unwrap()
             .iter()
-            .any(|&o| o >= 2 * MIB as u64)
+            .any(|&o| o >= 2 * MIB)
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.login = Some(("alice".into(), "s3cret".into()));
-    config.data_bps = Some(2 * MIB as u64);
+    config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("old-state");
     let url = server.url("ftp", "alice:s3cret@", "pub/file.bin");
@@ -183,7 +182,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
         (cancel, progress)
     };
 
-    let (cancel, progress) = pause_after(MIB as u64);
+    let (cancel, progress) = pause_after(MIB);
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
         .unwrap();
@@ -197,7 +196,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     std::fs::write(&state_path, with_password).unwrap();
 
     // The next run continues it, and the resume file it leaves has no password.
-    let (cancel, progress) = pause_after(3 * MIB as u64);
+    let (cancel, progress) = pause_after(3 * MIB);
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
         .unwrap();
@@ -208,7 +207,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
 
     server.configure(|c| c.data_bps = None);
     let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
-    assert!(resumed_from >= 3 * MIB as u64, "kept {resumed_from} bytes");
+    assert!(resumed_from >= 3 * MIB, "kept {resumed_from} bytes");
     assert!(
         std::fs::read(&path).unwrap() == data,
         "downloaded bytes differ"
@@ -219,9 +218,9 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
 
 #[tokio::test]
 async fn a_changed_file_starts_over_instead_of_resuming() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
-    config.data_bps = Some(MIB as u64);
+    config.data_bps = Some(MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("changed");
     let url = server.url("ftp", "", "pub/file.bin");
@@ -231,7 +230,7 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
     {
         let (progress, cancel) = (progress.clone(), cancel.clone());
         tokio::spawn(async move {
-            while progress.done() < MIB as u64 / 2 {
+            while progress.done() < MIB / 2 {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             cancel.cancel();
@@ -259,10 +258,10 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
 }
 
 async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResult {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.max_sessions = Some((2, refuse));
-    config.data_bps = Some(8 * MIB as u64);
+    config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir(test);
 
@@ -402,7 +401,7 @@ async fn a_missing_file_is_reported_and_nothing_is_written() {
 
 #[tokio::test]
 async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::NoEpsv);
     // A server naming another machine must not send the client there.
@@ -428,7 +427,7 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
 
 #[tokio::test]
 async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::EpsvGarbage);
     let server = FtpServer::start(config).await;
@@ -451,7 +450,7 @@ async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
 
 #[tokio::test]
 async fn paths_are_sent_as_utf8() {
-    let data = test_data(2 * MIB);
+    let data = test_data(2 * MIB_USIZE);
     let mut config = serving(&data);
     config.files = vec![(
         "pub/\u{fc}bung \u{2013} 1.bin".to_string(),
@@ -475,7 +474,7 @@ async fn paths_are_sent_as_utf8() {
 
 #[tokio::test]
 async fn a_server_refusing_utf8_mode_still_downloads() {
-    let data = test_data(MIB);
+    let data = test_data(MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::RefuseOpts);
     let server = FtpServer::start(config).await;
@@ -497,7 +496,7 @@ async fn a_server_refusing_utf8_mode_still_downloads() {
 
 #[tokio::test]
 async fn a_server_without_rest_is_downloaded_over_one_connection() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::NoRest);
     let server = FtpServer::start(config).await;
@@ -519,10 +518,10 @@ async fn a_server_without_rest_is_downloaded_over_one_connection() {
 
 #[tokio::test]
 async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::NoSize);
-    config.data_bps = Some(8 * MIB as u64);
+    config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("no-size");
 
@@ -554,7 +553,7 @@ async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
 
 #[tokio::test]
 async fn dropped_data_connections_are_retried() {
-    let data = test_data(3 * MIB);
+    let data = test_data(3 * MIB_USIZE);
     let mut config = serving(&data);
     config.drop_first = Some((2, 100_000));
     let server = FtpServer::start(config).await;
@@ -659,9 +658,9 @@ fn since(at: &OnceLock<Instant>) -> Option<Duration> {
 
 #[tokio::test]
 async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
-    config.data_bps = Some(2 * MIB as u64);
+    config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("held-426");
     let url = server.url("ftp", "", "pub/file.bin");
@@ -670,7 +669,7 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     let cancel = CancellationToken::new();
     let progress = Arc::new(Progress::default());
     let seen = progress.clone();
-    cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    cancel_when(&cancel, move || seen.done() >= MIB);
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
         .unwrap();
@@ -701,9 +700,9 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
 
 #[tokio::test]
 async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
-    config.data_bps = Some(4 * MIB as u64);
+    config.data_bps = Some(4 * MIB);
     let server = FtpServer::start(config).await;
     let dir = fresh_dir("reuse");
     let url = server.url("ftp", "", "pub/file.bin");
@@ -713,7 +712,7 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
     let cancel = CancellationToken::new();
     let progress = Arc::new(Progress::default());
     let seen = progress.clone();
-    cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    cancel_when(&cancel, move || seen.done() >= MIB);
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
         .unwrap();
@@ -746,9 +745,9 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
 
 #[tokio::test]
 async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
-    config.data_bps = Some(2 * MIB as u64);
+    config.data_bps = Some(2 * MIB);
     // Only the first session is greeted; the others wait forever.
     config.silent_after = Some(1);
     let server = FtpServer::start(config).await;
@@ -757,7 +756,7 @@ async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     let cancel = CancellationToken::new();
     let progress = Arc::new(Progress::default());
     let seen = progress.clone();
-    let paused_at = cancel_when(&cancel, move || seen.done() >= MIB as u64);
+    let paused_at = cancel_when(&cancel, move || seen.done() >= MIB);
     let outcome = download(
         request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
         progress,

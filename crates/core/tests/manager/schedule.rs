@@ -6,8 +6,7 @@ use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Schedule, TimeOfDay, Weekday};
 
 use crate::common::{Harness, TestResult, fast_server, is_running, monday, throttled_server};
-
-const KIB: u64 = 1024;
+use wirecatch_engine::units::KIB;
 
 fn schedule_default_queue(h: &Harness, schedule: Schedule) -> TestResult {
     let mut queue = h

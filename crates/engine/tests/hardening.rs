@@ -9,18 +9,16 @@ use std::time::{Duration, Instant, SystemTime};
 use wirecatch_engine::header::{
     AUTHORIZATION, COOKIE, HeaderValue, PROXY_AUTHORIZATION, REFERER, USER_AGENT,
 };
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
 use wirecatch_test_support::{TestResult, fresh_dir, test_data};
 
-const KIB: usize = 1024;
-const MIB: usize = 1024 * KIB;
-
 fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url(path), dir);
     req.options.connections = connections;
-    req.options.min_split = 128 * KIB as u64;
-    req.options.buffer_size = 64 * KIB;
+    req.options.min_split = 128 * KIB;
+    req.options.buffer_size = 64 * KIB_USIZE;
     req.options.stall_timeout = Duration::from_secs(5);
     req.options.checkpoint_interval = Duration::from_millis(100);
     req
@@ -65,10 +63,10 @@ const CREDENTIALS: [&str; 4] = [
 async fn credentials_never_follow_a_redirect_to_another_origin() {
     // Throttled so several workers really do send their own requests.
     let target = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB as u64),
+            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -124,10 +122,10 @@ async fn credentials_never_follow_a_redirect_to_another_origin() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn same_origin_redirect_keeps_credentials() {
     let server = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB as u64),
+            per_connection_bps: Some(4 * MIB),
             redirect: Some(("/old".into(), "/files/new.bin".into())),
             ..Default::default()
         },
@@ -158,7 +156,7 @@ async fn same_origin_redirect_keeps_credentials() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retry_after_in_seconds_delays_the_first_request() {
     let server = TestServer::start(
-        test_data(256 * KIB),
+        test_data(256 * KIB_USIZE),
         Config {
             ranges: true,
             busy: Some(Busy {
@@ -188,7 +186,7 @@ async fn retry_after_as_a_date_is_not_retried_before_that_time() {
     // HTTP dates have whole seconds, so this lands 1 to 2 seconds from now.
     let not_before = httpdate::fmt_http_date(SystemTime::now() + Duration::from_secs(2));
     let server = TestServer::start(
-        test_data(256 * KIB),
+        test_data(256 * KIB_USIZE),
         Config {
             ranges: true,
             busy: Some(Busy {
@@ -221,10 +219,10 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
     // 503 and Retry-After. With one connection there is no one else to take
     // over, so the connection must wait and try again.
     let server = TestServer::start(
-        test_data(MIB),
+        test_data(MIB_USIZE),
         Config {
             ranges: true,
-            short_first: Some(256 * KIB as u64),
+            short_first: Some(256 * KIB),
             busy: Some(Busy {
                 requests: 1..2,
                 status: 503,
@@ -256,10 +254,10 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
     // stepping back would be refused at least four times each (at about 0, 0.6,
     // 1.6 and 3.6 s), well above the bound below even on a slow machine.
     let server = TestServer::start(
-        test_data(8 * MIB),
+        test_data(8 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB as u64),
+            per_connection_bps: Some(MIB),
             max_connections: Some((ALLOWED, refuse)),
             ..Default::default()
         },
@@ -318,10 +316,10 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
     const ALLOWED: usize = 2;
     const CONNECTIONS: usize = 8;
     let server = TestServer::start(
-        test_data(4 * MIB),
+        test_data(4 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(2 * MIB as u64),
+            per_connection_bps: Some(2 * MIB),
             max_connections: Some((ALLOWED, Refuse::Status(503))),
             refuse_retry_after: Some("20".into()),
             ..Default::default()
@@ -361,10 +359,10 @@ const ALICE: &str = "Basic YWxpY2U6czNjcmV0";
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn url_credentials_reach_every_request_to_their_origin() {
     let server = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB as u64),
+            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -386,10 +384,10 @@ async fn url_credentials_reach_every_request_to_their_origin() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn url_credentials_never_follow_a_redirect_to_another_origin() {
     let target = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB as u64),
+            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -445,7 +443,7 @@ async fn cancel_when(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancelling_while_the_server_never_answers_the_first_request() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             hang: Some(0..usize::MAX),
             ..Default::default()
@@ -467,10 +465,10 @@ async fn cancelling_while_the_server_never_answers_the_first_request() {
 async fn cancelling_while_the_server_never_answers_mid_download() {
     // The first response is short; the request for the rest is never answered.
     let server = TestServer::start(
-        test_data(MIB),
+        test_data(MIB_USIZE),
         Config {
             ranges: true,
-            short_first: Some(256 * KIB as u64),
+            short_first: Some(256 * KIB),
             hang: Some(1..usize::MAX),
             ..Default::default()
         },
@@ -490,7 +488,7 @@ async fn cancelling_while_the_server_never_answers_mid_download() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_server_that_never_answers_times_out_and_is_retried() {
     let server = TestServer::start(
-        test_data(256 * KIB),
+        test_data(256 * KIB_USIZE),
         Config {
             ranges: true,
             hang: Some(0..1),
@@ -519,7 +517,7 @@ async fn a_server_that_never_answers_times_out_and_is_retried() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancelling_during_a_long_retry_after_on_the_first_request() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             ranges: true,
             busy: Some(Busy {
@@ -544,10 +542,10 @@ async fn cancelling_during_a_long_retry_after_on_the_first_request() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancelling_during_a_long_retry_after_mid_download() {
     let server = TestServer::start(
-        test_data(MIB),
+        test_data(MIB_USIZE),
         Config {
             ranges: true,
-            short_first: Some(256 * KIB as u64),
+            short_first: Some(256 * KIB),
             busy: Some(Busy {
                 requests: 1..2,
                 status: 503,
@@ -579,7 +577,7 @@ async fn run_path(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_redirect_loop_is_reported_as_such() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             redirect: Some(("/loop".into(), "/loop".into())),
             ..Default::default()
@@ -597,7 +595,7 @@ async fn a_redirect_loop_is_reported_as_such() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_redirect_to_another_scheme_is_refused() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             redirect: Some(("/ftp".into(), "ftp://files.example/a.bin".into())),
             ..Default::default()
@@ -611,7 +609,7 @@ async fn a_redirect_to_another_scheme_is_refused() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_redirect_without_location_is_reported_as_such() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             busy: Some(Busy {
                 requests: 0..usize::MAX,

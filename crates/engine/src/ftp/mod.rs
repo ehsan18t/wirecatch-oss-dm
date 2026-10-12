@@ -37,11 +37,12 @@ use url::{Host, Url};
 use crate::download::{DownloadOptions, Shared};
 use crate::error::Error;
 use crate::http::{Failure, Validators};
+use crate::units::KIB_USIZE;
 use control::{Control, Reply, Stream, Tls};
 
 /// Bytes read from a data connection at once. One buffer per connection,
 /// reused for every range it downloads.
-const READ_BUFFER: usize = 128 * 1024;
+const READ_BUFFER: usize = 128 * KIB_USIZE;
 
 /// How long to wait for the server's answer after closing a data connection
 /// early, before giving up on reusing the control connection.

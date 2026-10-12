@@ -13,13 +13,14 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use wirecatch_engine::CancellationToken;
+use wirecatch_engine::units::{KIB_USIZE, MIB};
 
 /// Largest standard output collected (yt-dlp's description of a page is a few MB).
-const MAX_STDOUT: u64 = 64 * 1024 * 1024;
+const MAX_STDOUT: u64 = 64 * MIB;
 /// Lines of standard error kept for an error message.
 const STDERR_TAIL: usize = 20;
 /// Longest line passed on; longer ones are cut.
-const MAX_LINE: usize = 16 * 1024;
+const MAX_LINE: usize = 16 * KIB_USIZE;
 
 /// How a program ended.
 #[derive(Debug)]

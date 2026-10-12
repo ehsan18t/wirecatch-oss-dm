@@ -20,15 +20,14 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use wirecatch_engine::numeric::approx_f64;
+use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
 use wirecatch_test_support::TestCertificate;
 use wirecatch_test_support::http3::{self as servers, Counts};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-const MIB: usize = 1024 * 1024;
 /// The file the benchmark downloads.
-const SIZE: usize = 256 * MIB;
+const SIZE: usize = 256 * MIB_USIZE;
 /// Connection counts to compare.
 const CONNECTIONS: [usize; 2] = [4, 8];
 /// Runs per setting; the fastest counts, since slower runs only add noise.
@@ -66,7 +65,7 @@ async fn run(cert: TestCertificate) -> Result<()> {
         out,
         "File: {} MiB over localhost. CPU is the whole process (client and server).
 ",
-        SIZE / MIB
+        SIZE / MIB_USIZE
     )?;
     writeln!(
         out,
@@ -94,7 +93,7 @@ async fn run(cert: TestCertificate) -> Result<()> {
                 out,
                 "{:>8}  {connections:>11}  {secs:>8.2}  {:>8.1}  {cpu:>8.2}  {:>8.0}%",
                 if http3 { "HTTP/3" } else { "HTTP/2" },
-                approx_f64((SIZE / MIB) as u64) / secs,
+                approx_f64((SIZE / MIB_USIZE) as u64) / secs,
                 share * PERCENT
             )?;
         }

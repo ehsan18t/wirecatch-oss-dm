@@ -263,7 +263,7 @@ pub fn request_end(from: u64, to: u64, limit: Option<u64>) -> u64 {
 /// Rounds a split point down to a 64 KiB boundary so writes stay page aligned,
 /// unless that would fall at or below `floor`.
 fn align_down(at: u64, floor: u64) -> u64 {
-    const ALIGN: u64 = 64 * 1024;
+    const ALIGN: u64 = 64 * crate::units::KIB;
     let aligned = at - at % ALIGN;
     if aligned > floor { aligned } else { at }
 }
@@ -274,8 +274,7 @@ mod proptests;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const MIB: u64 = 1024 * 1024;
+    use crate::units::MIB;
 
     fn range(start: u64, end: u64) -> ByteRange {
         ByteRange { start, end }

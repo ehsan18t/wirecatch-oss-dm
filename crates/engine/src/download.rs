@@ -20,15 +20,13 @@ use crate::progress::Progress;
 use crate::segment::{self, SegmentTable, SharedTable};
 use crate::state::ResumeState;
 use crate::transport::{self, Opened, Remote};
+use crate::units::{MIB, MIB_USIZE};
 use crate::{ftp, naming, storage, worker};
-
-/// One mebibyte, the unit of the buffer and split sizes.
-const MIB: usize = 1024 * 1024;
 
 /// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
 pub const MAX_CONNECTIONS: usize = 64;
 /// Largest buffer one connection may fill before writing ([`DownloadOptions::buffer_size`]): 64 MiB. Each connection holds two, so this bounds memory, and a larger one would gain nothing.
-pub const MAX_BUFFER_SIZE: usize = 64 * MIB;
+pub const MAX_BUFFER_SIZE: usize = 64 * MIB_USIZE;
 
 /// Tuning for a download. The defaults suit most connections.
 ///
@@ -152,8 +150,8 @@ impl Default for DownloadOptions {
     fn default() -> Self {
         Self {
             connections: 8,
-            min_split: MIB as u64,
-            buffer_size: MIB,
+            min_split: MIB,
+            buffer_size: MIB_USIZE,
             max_retries: 6,
             stall_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(15),

@@ -71,10 +71,11 @@ use crate::error::{Error, Result};
 use crate::http::{self, Clients, Failure, Guard, Session};
 use crate::limiter::RateLimiter;
 use crate::numeric::clamp_to_len;
+use crate::units::KIB_USIZE;
 use crate::worker;
 
 /// Size of the write buffer used by [`Fetcher::save`].
-const SAVE_BUFFER: usize = 256 * 1024;
+const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 
 /// Whether a [`Fetcher`] may send requests to the local network. These
 /// addresses count as local:

@@ -40,6 +40,7 @@ use crate::media::ytdlp::{self, Fetched, Format, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::store::Origin;
 use crate::{headers, user_error};
+use wirecatch_engine::units::MIB;
 
 /// Everything a media run needs, copied out of the manager's state.
 struct Job {
@@ -428,9 +429,9 @@ struct DownloadedSubtitle {
 /// The list's name in the work folder.
 const DOWNLOADED: &str = "downloaded.json";
 /// The largest subtitle file taken.
-const MAX_SUBTITLE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_SUBTITLE_BYTES: u64 = 20 * MIB;
 /// The largest cover picture taken.
-const MAX_COVER_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_COVER_BYTES: u64 = 10 * MIB;
 
 impl Downloaded {
     fn of_media(files: &[PathBuf]) -> Self {
@@ -676,7 +677,7 @@ async fn fetch_small(
         Ok(Outcome::Completed { .. }) => Fetch::Done,
         _ if cancel.is_cancelled() => Fetch::Stopped,
         Ok(_) | Err(EngineError::Cancelled) => {
-            Fetch::Failed(format!("it is larger than {} MB", limit / (1024 * 1024)))
+            Fetch::Failed(format!("it is larger than {} MB", limit / MIB))
         }
         Err(e) => Fetch::Failed(e.to_string()),
     }

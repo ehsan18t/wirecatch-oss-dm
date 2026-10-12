@@ -14,10 +14,11 @@ use wirecatch_protocol::app::{
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
+use wirecatch_engine::units::MIB;
 
 /// Largest profile file accepted. Real ones are a few kilobytes; the limits on
 /// queues and lists keep even a full one far below this.
-const MAX_PROFILE_BYTES: u64 = 1024 * 1024;
+const MAX_PROFILE_BYTES: u64 = MIB;
 
 /// A profile of the current settings and queues, with every folder written
 /// relative to the user's standard folders where possible.
@@ -110,7 +111,7 @@ pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
     if bytes.len() as u64 > MAX_PROFILE_BYTES {
         return Err(CoreError::InvalidProfile(format!(
             "it is larger than {} MB",
-            MAX_PROFILE_BYTES / (1024 * 1024)
+            MAX_PROFILE_BYTES / MIB
         )));
     }
     Ok(bytes)

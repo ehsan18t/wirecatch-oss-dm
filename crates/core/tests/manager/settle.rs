@@ -4,8 +4,7 @@
 use wirecatch_protocol::app::{Category, DownloadStatus, UiEvent};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data};
-
-const KIB: usize = 1024;
+use wirecatch_engine::units::KIB_USIZE;
 
 async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
     TestServer::start(
@@ -23,7 +22,7 @@ async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
-    let server = server_naming("Holiday Movie.mp4", 512 * KIB, Some(128 * 1024)).await;
+    let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * 1024)).await;
     let mut h = Harness::new().await?;
     let mut events = h.manager.subscribe();
     let row = h.add(&server.url("dl?id=1")).await?;
@@ -67,7 +66,7 @@ async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_users_name_and_folder_win() -> TestResult {
-    let server = server_naming("server.mp4", 4 * KIB, None).await;
+    let server = server_naming("server.mp4", 4 * KIB_USIZE, None).await;
     let h = Harness::new().await?;
     let chosen = h.root.path().join("chosen");
     let row = h
@@ -86,7 +85,7 @@ async fn the_users_name_and_folder_win() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_folder_chosen_before_the_server_answers_is_kept() -> TestResult {
     let server = TestServer::start(
-        test_data(4 * KIB),
+        test_data(4 * KIB_USIZE),
         Config {
             ranges: true,
             etag: Some("\"v1\"".into()),
@@ -118,7 +117,7 @@ async fn a_folder_chosen_before_the_server_answers_is_kept() -> TestResult {
 /// leave the old one behind.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
-    let len = 512 * KIB;
+    let len = 512 * KIB_USIZE;
     let server = server_naming("report.pdf", len, Some(128 * 1024)).await;
     let h = Harness::new().await?;
     let documents = h.folders.downloads.join("Documents");
@@ -161,7 +160,7 @@ async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_server_name_twice_gets_a_free_name() -> TestResult {
-    let server = server_naming("report.pdf", 4 * KIB, None).await;
+    let server = server_naming("report.pdf", 4 * KIB_USIZE, None).await;
     let h = Harness::new().await?;
     let first = h.add(&server.url("a")).await?.id;
     let second = h.add(&server.url("b")).await?.id;
@@ -180,7 +179,7 @@ async fn the_same_server_name_twice_gets_a_free_name() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_content_type_places_a_file_without_an_extension() -> TestResult {
     let server = TestServer::start(
-        test_data(4 * KIB),
+        test_data(4 * KIB_USIZE),
         Config {
             ranges: true,
             content_type: Some("audio/mpeg".into()),

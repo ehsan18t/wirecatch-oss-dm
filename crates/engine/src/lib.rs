@@ -221,6 +221,7 @@ mod segment;
 mod state;
 mod storage;
 mod transport;
+pub mod units;
 mod worker;
 
 pub use download::{

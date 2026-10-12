@@ -4,8 +4,7 @@
 use wirecatch_protocol::app::DownloadStatus;
 
 use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server};
-
-const KIB: u64 = 1024;
+use wirecatch_engine::units::KIB;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> TestResult {

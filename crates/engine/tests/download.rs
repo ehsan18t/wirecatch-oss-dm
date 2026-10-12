@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, RemoteFile,
     download,
@@ -12,14 +13,11 @@ use wirecatch_engine::{
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::{TestResult, files_in, fresh_dir, test_data};
 
-const KIB: usize = 1024;
-const MIB: usize = 1024 * KIB;
-
 fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url(path), dir);
     req.options.connections = connections;
-    req.options.min_split = 128 * KIB as u64;
-    req.options.buffer_size = 64 * KIB;
+    req.options.min_split = 128 * KIB;
+    req.options.buffer_size = 64 * KIB_USIZE;
     req.options.stall_timeout = Duration::from_secs(5);
     req.options.checkpoint_interval = Duration::from_millis(100);
     req
@@ -44,10 +42,10 @@ async fn pause_midway(req: DownloadRequest, at_least: u64) -> TestResult<Outcome
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn parallel_download_is_byte_identical() {
     let server = TestServer::start(
-        test_data(8 * MIB + 12_345),
+        test_data(8 * MIB_USIZE + 12_345),
         Config {
             ranges: true,
-            per_connection_bps: Some(8 * MIB as u64),
+            per_connection_bps: Some(8 * MIB),
             ..Default::default()
         },
     )
@@ -84,7 +82,7 @@ async fn parallel_download_is_byte_identical() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn falls_back_to_one_connection_without_range_support() {
-    let server = TestServer::start(test_data(3 * MIB), Config::default()).await;
+    let server = TestServer::start(test_data(3 * MIB_USIZE), Config::default()).await;
     let dir = fresh_dir("norange");
 
     let outcome = run(request(&server, "plain.bin", &dir, 8)).await.unwrap();
@@ -99,7 +97,7 @@ async fn falls_back_to_one_connection_without_range_support() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unknown_length_download_completes() {
     let server = TestServer::start(
-        test_data(MIB + 7),
+        test_data(MIB_USIZE + 7),
         Config {
             omit_length: true,
             ..Default::default()
@@ -119,12 +117,12 @@ async fn unknown_length_download_completes() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn resumes_after_pause_without_downloading_again() {
-    let len = 4 * MIB;
+    let len = 4 * MIB_USIZE;
     let server = TestServer::start(
         test_data(len),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB as u64),
+            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
@@ -132,7 +130,7 @@ async fn resumes_after_pause_without_downloading_again() {
     .await;
     let dir = fresh_dir("resume");
 
-    let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB as u64)
+    let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB)
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
@@ -141,7 +139,7 @@ async fn resumes_after_pause_without_downloading_again() {
     // Keep the server throttled: unthrottled, localhost fills megabytes of socket
     // buffers before a connection is dropped, which would hide real waste.
     let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
-    server.configure(|c| c.per_connection_bps = Some(4 * MIB as u64));
+    server.configure(|c| c.per_connection_bps = Some(4 * MIB));
     let outcome = run(request(&server, "r.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed {
@@ -150,7 +148,7 @@ async fn resumes_after_pause_without_downloading_again() {
     else {
         panic!("not completed: {outcome:?}")
     };
-    assert!(resumed_from >= MIB as u64, "kept only {resumed_from} bytes");
+    assert!(resumed_from >= MIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
     let sent = server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before;
     let needed = len as u64 - resumed_from;
@@ -163,10 +161,10 @@ async fn resumes_after_pause_without_downloading_again() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn starts_over_when_the_remote_file_changed() {
     let server = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB as u64),
+            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
@@ -174,7 +172,7 @@ async fn starts_over_when_the_remote_file_changed() {
     .await;
     let dir = fresh_dir("changed");
 
-    let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB as u64)
+    let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB)
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }));
@@ -199,10 +197,10 @@ async fn starts_over_when_the_remote_file_changed() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retries_dropped_connections() {
     let server = TestServer::start(
-        test_data(3 * MIB),
+        test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
-            drop_first: Some((3, 300 * KIB as u64)),
+            drop_first: Some((3, 300 * KIB)),
             ..Default::default()
         },
     )
@@ -221,9 +219,9 @@ async fn retries_dropped_connections() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn retries_without_range_support_by_skipping_received_bytes() {
     let server = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
-            drop_first: Some((1, 500 * KIB as u64)),
+            drop_first: Some((1, 500 * KIB)),
             ..Default::default()
         },
     )
@@ -241,7 +239,7 @@ async fn retries_without_range_support_by_skipping_received_bytes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn uses_content_disposition_and_never_overwrites() {
     let server = TestServer::start(
-        test_data(64 * KIB),
+        test_data(64 * KIB_USIZE),
         Config {
             ranges: true,
             content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
@@ -288,7 +286,7 @@ async fn empty_file() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn rate_limiter_caps_combined_speed() {
     let server = TestServer::start(
-        test_data(2 * MIB),
+        test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
             ..Default::default()
@@ -297,9 +295,7 @@ async fn rate_limiter_caps_combined_speed() {
     .await;
     let dir = fresh_dir("limited");
     let mut req = request(&server, "slow.bin", &dir, 4);
-    req.options.rate_limiters = vec![Arc::new(wirecatch_engine::RateLimiter::new(Some(
-        MIB as u64,
-    )))];
+    req.options.rate_limiters = vec![Arc::new(wirecatch_engine::RateLimiter::new(Some(MIB)))];
 
     let start = std::time::Instant::now();
     let outcome = run(req).await.unwrap();
@@ -320,10 +316,10 @@ async fn rate_limiter_caps_combined_speed() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_dropped_download_never_writes_its_resume_file_again() {
     let server = TestServer::start(
-        test_data(4 * MIB),
+        test_data(4 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(256 * KIB as u64),
+            per_connection_bps: Some(256 * KIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
@@ -336,7 +332,7 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
         progress.clone(),
         CancellationToken::new(),
     ));
-    while progress.done() < 64 * KIB as u64 {
+    while progress.done() < 64 * KIB {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     task.abort();
@@ -360,10 +356,10 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exact_path_continues_after_the_link_changes() {
     let server = TestServer::start(
-        test_data(3 * MIB),
+        test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB as u64),
+            per_connection_bps: Some(MIB),
             etag: Some("\"same\"".into()),
             ..Default::default()
         },
@@ -374,7 +370,7 @@ async fn exact_path_continues_after_the_link_changes() {
 
     let mut first = request(&server, "old-signed-link", &dir, 4);
     first.exact_path = Some(target.clone());
-    let paused = pause_midway(first, 512 * KIB as u64).await.unwrap();
+    let paused = pause_midway(first, 512 * KIB).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
     server.configure(|c| c.per_connection_bps = None);
@@ -389,10 +385,7 @@ async fn exact_path_continues_after_the_link_changes() {
         panic!("not completed: {outcome:?}")
     };
     assert_eq!(path, target);
-    assert!(
-        resumed_from >= 512 * KIB as u64,
-        "kept only {resumed_from} bytes"
-    );
+    assert!(resumed_from >= 512 * KIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 }
 
@@ -400,7 +393,7 @@ async fn exact_path_continues_after_the_link_changes() {
 /// second during which the link has not been proven yet.
 async fn slow_to_answer(content_disposition: &str) -> TestServer {
     TestServer::start(
-        test_data(256 * KIB),
+        test_data(256 * KIB_USIZE),
         Config {
             ranges: true,
             content_disposition: Some(content_disposition.to_string()),
@@ -464,7 +457,7 @@ async fn progress_path_is_the_exact_path_once_the_server_answers() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_path_stays_unset_when_the_first_request_fails() {
     let server = TestServer::start(
-        test_data(KIB),
+        test_data(KIB_USIZE),
         Config {
             busy: Some(Busy {
                 requests: 0..usize::MAX,
@@ -499,7 +492,7 @@ async fn progress_path_stays_unset_when_the_first_request_fails() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
     let server = TestServer::start(
-        test_data(512 * KIB),
+        test_data(512 * KIB_USIZE),
         Config {
             ranges: true,
             content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
@@ -535,7 +528,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
         .clone()
         .expect("resolver was not called");
     assert_eq!(remote.suggested_name, "report.pdf");
-    assert_eq!(remote.total, Some(512 * KIB as u64));
+    assert_eq!(remote.total, Some(512 * KIB));
     assert_eq!(remote.content_type.as_deref(), Some("application/pdf"));
     assert_eq!(remote.final_url, server.url("download?id=7"));
     assert!(remote.resumable);
@@ -552,7 +545,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn path_resolver_can_refuse_the_file_with_nothing_written() {
     let server = TestServer::start(
-        test_data(64 * KIB),
+        test_data(64 * KIB_USIZE),
         Config {
             ranges: true,
             ..Default::default()
@@ -588,10 +581,10 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_resolved_path_resumes_later_as_exact_path() {
     let server = TestServer::start(
-        test_data(3 * MIB),
+        test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB as u64),
+            per_connection_bps: Some(MIB),
             etag: Some("\"same\"".into()),
             ..Default::default()
         },
@@ -605,7 +598,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         let target = target.clone();
         Arc::new(move |_: &RemoteFile| Ok(target.clone()))
     });
-    let paused = pause_midway(first, 512 * KIB as u64).await.unwrap();
+    let paused = pause_midway(first, 512 * KIB).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
     server.configure(|c| c.per_connection_bps = None);
@@ -620,10 +613,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         panic!("not completed: {outcome:?}")
     };
     assert_eq!(path, target);
-    assert!(
-        resumed_from >= 512 * KIB as u64,
-        "kept only {resumed_from} bytes"
-    );
+    assert!(resumed_from >= 512 * KIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 }
 
@@ -632,9 +622,9 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
 /// redirected to a device at home, and the device is never contacted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
-    let device = TestServer::start(test_data(10 * KIB), Config::default()).await;
+    let device = TestServer::start(test_data(10 * KIB_USIZE), Config::default()).await;
     let site = TestServer::start(
-        test_data(10 * KIB),
+        test_data(10 * KIB_USIZE),
         Config {
             redirect: Some(("/video.mp4".into(), device.url("secret").to_string())),
             ..Default::default()

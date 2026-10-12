@@ -13,6 +13,7 @@ use super::*;
 use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
+use crate::units::{MIB, MIB_USIZE};
 use reqwest::header::HeaderValue;
 use wirecatch_test_support::http3::{self as servers, Counts};
 use wirecatch_test_support::{TestCertificate, private_dir};
@@ -73,8 +74,6 @@ fn test_data(len: usize) -> Bytes {
     )
 }
 
-const MIB: usize = 1024 * 1024;
-
 /// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
 /// No retries are allowed: falling back from HTTP/3 must never need one.
 async fn fetch(
@@ -125,7 +124,7 @@ fn requests(counts: &Counts) -> usize {
 
 #[tokio::test]
 async fn downloads_over_http3_when_the_server_advertises_it() {
-    let data = test_data(8 * MIB + 777);
+    let data = test_data(8 * MIB_USIZE + 777);
     let cert = TestCertificate::new();
     let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}"; ma=3600"#);
@@ -142,7 +141,7 @@ async fn downloads_over_http3_when_the_server_advertises_it() {
 /// 127.0.0.1: QUIC must go to the address the first request reached.
 #[tokio::test]
 async fn quic_goes_to_the_address_the_first_request_reached() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let cert = TestCertificate::new();
     let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
@@ -161,7 +160,7 @@ async fn quic_goes_to_the_address_the_first_request_reached() {
 
 #[tokio::test]
 async fn http3_is_not_used_unless_switched_on() {
-    let data = test_data(4 * MIB);
+    let data = test_data(4 * MIB_USIZE);
     let cert = TestCertificate::new();
     let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
@@ -181,7 +180,7 @@ async fn http3_is_not_used_unless_switched_on() {
 
 #[tokio::test]
 async fn falls_back_to_tcp_when_quic_is_blocked() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let cert = TestCertificate::new();
     let (_socket, blocked_port) = servers::blackhole();
     let alt_svc = format!(r#"h3=":{blocked_port}""#);
@@ -197,7 +196,7 @@ async fn falls_back_to_tcp_when_quic_is_blocked() {
 
 #[tokio::test]
 async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
-    let data = test_data(8 * MIB);
+    let data = test_data(8 * MIB_USIZE);
     let cert = TestCertificate::new();
     let (h3_port, h3) =
         servers::start_h3_breaking(data.clone(), &cert, Some(100_000), Duration::ZERO);
@@ -220,10 +219,14 @@ async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
 /// must still finish over TCP: a switch of protocol is not a failed attempt.
 #[tokio::test]
 async fn falling_back_mid_stream_does_not_use_up_a_retry() {
-    let data = test_data(16 * MIB);
+    let data = test_data(16 * MIB_USIZE);
     let cert = TestCertificate::new();
-    let (h3_port, h3) =
-        servers::start_h3_breaking(data.clone(), &cert, Some(7 * MIB), Duration::from_secs(1));
+    let (h3_port, h3) = servers::start_h3_breaking(
+        data.clone(),
+        &cert,
+        Some(7 * MIB_USIZE),
+        Duration::from_secs(1),
+    );
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
@@ -231,7 +234,7 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
     // connection finishes its half and stops before HTTP/3 breaks.
     let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
         o.connections = 2;
-        o.min_split = 4 * MIB as u64;
+        o.min_split = 4 * MIB;
     })
     .await;
 
@@ -244,13 +247,13 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
 /// too, and so does the first one over TCP.
 #[tokio::test]
 async fn http3_requests_keep_to_the_request_limit() {
-    let data = test_data(8 * MIB + 777);
+    let data = test_data(8 * MIB_USIZE + 777);
     let cert = TestCertificate::new();
     let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let limit = MIB as u64 / 2;
+    let limit = MIB / 2;
     let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "limited", |o| {
         o.max_request_bytes = Some(limit);
     })

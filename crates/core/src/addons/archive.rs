@@ -14,9 +14,10 @@ use std::path::{Component, Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use super::manifest::{AddonComponent, ArchiveKind};
+use wirecatch_engine::units::{GIB, MIB_USIZE};
 
 /// Largest single file accepted from an archive (Deno is about 100 MB).
-const MAX_FILE: u64 = 1024 * 1024 * 1024;
+const MAX_FILE: u64 = GIB;
 
 /// Opens a downloaded release file for checking and unpacking. On Windows no
 /// other program may write to, replace or delete it while it is open, so the
@@ -48,7 +49,7 @@ pub(crate) fn sha256_file(path: &Path) -> io::Result<String> {
 pub(crate) fn sha256_of(file: &mut File) -> io::Result<String> {
     file.seek(SeekFrom::Start(0))?;
     let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 1024 * 1024];
+    let mut buf = vec![0u8; MIB_USIZE];
     loop {
         let n = file.read(&mut buf)?;
         if n == 0 {

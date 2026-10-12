@@ -10,6 +10,7 @@ use super::*;
 use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
+use crate::units::{MIB, MIB_USIZE};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, test_tls};
 use wirecatch_test_support::private_dir;
 
@@ -98,8 +99,6 @@ fn urls_that_cannot_be_sent_safely_are_refused() {
     }
 }
 
-const MIB: usize = 1024 * 1024;
-
 fn data(len: usize) -> Vec<u8> {
     (0..len)
         .map(|i| (i * 7 + i / 251).to_le_bytes()[0])
@@ -130,7 +129,7 @@ fn served(file: &[u8]) -> FtpConfig {
     FtpConfig {
         files: vec![("file.bin".to_string(), Arc::new(file.to_vec()))],
         login: Some(("alice".into(), "pw".into())),
-        data_bps: Some(8 * MIB as u64),
+        data_bps: Some(8 * MIB),
         ..Default::default()
     }
 }
@@ -147,7 +146,7 @@ fn check_completed(outcome: Outcome, file: &[u8]) {
 
 #[tokio::test]
 async fn explicit_tls_download_is_byte_identical() {
-    let file = data(6 * MIB + 99);
+    let file = data(6 * MIB_USIZE + 99);
     let (tls, roots) = test_tls();
     let mut config = served(&file);
     config.tls = Some(tls);
@@ -184,7 +183,7 @@ async fn explicit_tls_download_is_byte_identical() {
 
 #[tokio::test]
 async fn implicit_tls_download_is_byte_identical() {
-    let file = data(6 * MIB);
+    let file = data(6 * MIB_USIZE);
     let (tls, roots) = test_tls();
     let mut config = served(&file);
     config.tls = Some(tls);

@@ -9,14 +9,12 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, RateLimiter, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{fresh_dir, test_data};
-
-const KIB: usize = 1024;
-const MIB: usize = 1024 * KIB;
 
 /// A server with ranges that refuses requests for more than `limit` bytes.
 async fn strict_server(len: usize, limit: u64, bps: Option<u64>) -> TestServer {
@@ -41,8 +39,8 @@ fn request(
 ) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url("video.mp4"), dir);
     req.options.connections = connections;
-    req.options.min_split = 128 * KIB as u64;
-    req.options.buffer_size = 64 * KIB;
+    req.options.min_split = 128 * KIB;
+    req.options.buffer_size = 64 * KIB_USIZE;
     req.options.stall_timeout = Duration::from_secs(5);
     req.options.checkpoint_interval = Duration::from_millis(100);
     req.options.max_request_bytes = limit;
@@ -82,9 +80,9 @@ fn assert_all_within(server: &TestServer, limit: u64) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
-    let limit = 512 * KIB as u64;
+    let limit = 512 * KIB;
     // Slow enough per connection that idle connections split the busy ones.
-    let server = strict_server(5 * MIB + 333, limit, Some(4 * MIB as u64)).await;
+    let server = strict_server(5 * MIB_USIZE + 333, limit, Some(4 * MIB)).await;
     let dir = fresh_dir("split");
 
     let (path, _) = completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
@@ -97,14 +95,14 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
     );
     // Every byte arrived once, give or take ranges cut short by a split.
     let sent = server.stats.bytes_sent.load(Ordering::SeqCst);
-    assert!(sent < server.data.len() as u64 + MIB as u64, "sent {sent}");
+    assert!(sent < server.data.len() as u64 + MIB, "sent {sent}");
 }
 
 /// Without the limit the same server refuses the download: the test above
 /// passes only because the limit is kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn without_the_limit_the_strict_server_refuses() {
-    let server = strict_server(2 * MIB, 512 * KIB as u64, None).await;
+    let server = strict_server(2 * MIB_USIZE, 512 * KIB, None).await;
     let dir = fresh_dir("unlimited");
 
     let error = download(
@@ -124,8 +122,8 @@ async fn without_the_limit_the_strict_server_refuses() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connection() {
-    let limit = 256 * KIB as u64;
-    let len = 3 * MIB + 5;
+    let limit = 256 * KIB;
+    let len = 3 * MIB_USIZE + 5;
     let server = strict_server(len, limit, None).await;
     let dir = fresh_dir("keepalive");
 
@@ -157,9 +155,9 @@ async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connecti
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_paused_download_resumes_with_limited_requests() {
-    let limit = 256 * KIB as u64;
-    let len = 4 * MIB;
-    let server = strict_server(len, limit, Some(MIB as u64)).await;
+    let limit = 256 * KIB;
+    let len = 4 * MIB_USIZE;
+    let server = strict_server(len, limit, Some(MIB)).await;
     let dir = fresh_dir("resume");
 
     let progress = Arc::new(Progress::default());
@@ -169,7 +167,7 @@ async fn a_paused_download_resumes_with_limited_requests() {
         progress.clone(),
         cancel.clone(),
     ));
-    while progress.done() < MIB as u64 {
+    while progress.done() < MIB {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     cancel.cancel();
@@ -179,11 +177,11 @@ async fn a_paused_download_resumes_with_limited_requests() {
 
     let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
     let seen_before = server.stats.seen().len();
-    server.configure(|c| c.per_connection_bps = Some(4 * MIB as u64));
+    server.configure(|c| c.per_connection_bps = Some(4 * MIB));
     let (path, resumed_from) =
         completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
 
-    assert!(resumed_from >= MIB as u64, "kept only {resumed_from} bytes");
+    assert!(resumed_from >= MIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
     assert_all_within(&server, limit);
     // The second run fetched what was missing, not the whole file again.
@@ -203,13 +201,13 @@ async fn a_paused_download_resumes_with_limited_requests() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn limited_requests_are_retried_after_dropped_connections() {
-    let limit = 512 * KIB as u64;
+    let limit = 512 * KIB;
     let server = TestServer::start(
-        test_data(3 * MIB),
+        test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
             max_range: Some(limit),
-            drop_first: Some((3, 100 * KIB as u64)),
+            drop_first: Some((3, 100 * KIB)),
             ..Default::default()
         },
     )
@@ -229,9 +227,9 @@ async fn limited_requests_are_retried_after_dropped_connections() {
 /// stall timeout ends the wait and the request is sent again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_request_that_hangs_is_given_up_after_the_stall_timeout_and_sent_again() {
-    let limit = 256 * KIB as u64;
+    let limit = 256 * KIB;
     let server = TestServer::start(
-        test_data(MIB),
+        test_data(MIB_USIZE),
         Config {
             ranges: true,
             max_range: Some(limit),
@@ -258,11 +256,11 @@ async fn a_request_that_hangs_is_given_up_after_the_stall_timeout_and_sent_again
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn limited_requests_keep_to_the_speed_limit() {
-    let limit = 128 * KIB as u64;
-    let server = strict_server(2 * MIB, limit, None).await;
+    let limit = 128 * KIB;
+    let server = strict_server(2 * MIB_USIZE, limit, None).await;
     let dir = fresh_dir("speed");
     let mut req = request(&server, &dir, 4, Some(limit));
-    req.options.rate_limiters = vec![Arc::new(RateLimiter::new(Some(MIB as u64)))];
+    req.options.rate_limiters = vec![Arc::new(RateLimiter::new(Some(MIB)))];
 
     let start = Instant::now();
     let (path, _) = completed(run(req).await.unwrap());
@@ -278,14 +276,14 @@ async fn limited_requests_keep_to_the_speed_limit() {
 /// without the limit; a small file fits in the first request.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn whole_answers_and_small_files_take_one_request() {
-    let limit = 256 * KIB as u64;
-    let plain = TestServer::start(test_data(MIB + 1), Config::default()).await;
+    let limit = 256 * KIB;
+    let plain = TestServer::start(test_data(MIB_USIZE + 1), Config::default()).await;
     let dir = fresh_dir("plain");
     let (path, _) = completed(run(request(&plain, &dir, 4, Some(limit))).await.unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), plain.data);
     assert_eq!(plain.stats.requests.load(Ordering::SeqCst), 1);
 
-    let small = strict_server(100 * KIB, limit, None).await;
+    let small = strict_server(100 * KIB_USIZE, limit, None).await;
     let dir = fresh_dir("small");
     let (path, _) = completed(run(request(&small, &dir, 4, Some(limit))).await.unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), small.data);
@@ -301,9 +299,9 @@ async fn whole_answers_and_small_files_take_one_request() {
 /// asked for whole, as without the limit, instead of ending after one piece.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_range_answer_without_a_size_is_asked_for_whole() {
-    let limit = 256 * KIB as u64;
+    let limit = 256 * KIB;
     let server = TestServer::start(
-        test_data(MIB + 17),
+        test_data(MIB_USIZE + 17),
         Config {
             ranges: true,
             unknown_total: true,

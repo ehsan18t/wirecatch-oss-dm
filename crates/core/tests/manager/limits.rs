@@ -9,8 +9,7 @@ use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Queue, UiEvent};
 
 use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, tune};
-
-const KIB: u64 = 1024;
+use wirecatch_engine::units::KIB;
 
 fn set_queue(
     h: &Harness,

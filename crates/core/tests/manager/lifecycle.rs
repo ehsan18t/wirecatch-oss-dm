@@ -11,8 +11,7 @@ use crate::common::{
     Harness, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
     wait_until,
 };
-
-const KIB: u64 = 1024;
+use wirecatch_engine::units::KIB;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {

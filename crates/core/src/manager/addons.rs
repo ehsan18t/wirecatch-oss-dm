@@ -25,6 +25,7 @@ use crate::addons::manifest::{self, AddonComponent, MEDIA_ADDON_ID};
 use crate::addons::{self, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
 use crate::user_error;
+use wirecatch_engine::units::{KIB, MIB};
 
 /// How often the progress of an install is reported.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
@@ -38,7 +39,7 @@ const STOPPED: &str = "It was stopped.";
 /// exact byte counts; the margin is only a small allowance.
 const SIZE_MARGIN: u64 = 4096;
 /// Largest yt-dlp release file accepted from an update (it is about 40 MB).
-const MAX_UPDATE_SIZE: u64 = 200 * 1024 * 1024;
+const MAX_UPDATE_SIZE: u64 = 200 * MIB;
 /// A new yt-dlp release is installed (quietly, with the Update button, by a
 /// repair or a reinstall) only once it is this old, so a broken or tampered
 /// release has time to be noticed and withdrawn (D21.1).
@@ -48,9 +49,9 @@ const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 /// How many of the newest yt-dlp releases are looked at for one old enough.
 const RELEASES_LOOKED_AT: usize = 10;
 /// Largest GitHub release description or checksum list read.
-const MAX_METADATA: u64 = 4 * 1024 * 1024;
+const MAX_METADATA: u64 = 4 * MIB;
 /// Largest signature file read (yt-dlp's is under 1 KB).
-const MAX_SIGNATURE: u64 = 64 * 1024;
+const MAX_SIGNATURE: u64 = 64 * KIB;
 
 /// Why looking up the newest yt-dlp gave nothing.
 enum Lookup {

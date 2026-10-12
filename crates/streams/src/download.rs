@@ -12,6 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
+use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_engine::{Fetcher, naming};
 
 use crate::crypto;
@@ -269,7 +270,7 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
                 // Streamed file to file: memory use does not grow with the
                 // segment's size.
                 let mut input = File::open(&part)?;
-                let mut output = BufWriter::with_capacity(256 * 1024, File::create(&path)?);
+                let mut output = BufWriter::with_capacity(256 * KIB_USIZE, File::create(&path)?);
                 let Some(len) = crypto::decrypt(&mut input, &mut output, &key, &iv)? else {
                     drop(output);
                     let _ = fs::remove_file(&path);

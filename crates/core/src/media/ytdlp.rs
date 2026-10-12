@@ -22,6 +22,7 @@ use wirecatch_protocol::app::{FixAction, UserError};
 use super::MediaProgress;
 use super::process::{self, Output, Ran, RunError};
 use crate::addons::MediaTools;
+use wirecatch_engine::units::{GIB, KIB};
 
 /// What yt-dlp says about a page (the fields Wirecatch reads).
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -163,11 +164,11 @@ pub(crate) struct DownloaderOptions {
 
 /// The smallest `http_chunk_size` taken from yt-dlp. Anything smaller would
 /// mean many thousands of requests for one video, so it is not a real limit.
-const MIN_REQUEST_LIMIT: u64 = 64 * 1024;
+const MIN_REQUEST_LIMIT: u64 = 64 * KIB;
 
 /// The largest request limit used. A larger `http_chunk_size` is cut to this:
 /// asking for less than a server allows is always fine.
-const MAX_REQUEST_LIMIT: u64 = 1024 * 1024 * 1024;
+const MAX_REQUEST_LIMIT: u64 = GIB;
 
 impl Format {
     pub fn has_video(&self) -> bool {

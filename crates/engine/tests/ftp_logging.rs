@@ -3,6 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 use wirecatch_test_support::{private_dir, test_data};
@@ -38,7 +39,7 @@ async fn credentials_are_never_logged() {
         .finish();
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    let data = test_data(2 * 1024 * 1024);
+    let data = test_data(2 * MIB_USIZE);
     let server = FtpServer::start(FtpConfig {
         files: vec![("pub/file.bin".to_string(), Arc::new(data.clone()))],
         login: Some(("alice".into(), "hunter2-secret".into())),

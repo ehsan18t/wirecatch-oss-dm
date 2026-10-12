@@ -18,19 +18,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use wirecatch_engine::numeric::approx_f64;
+use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{ftp, test_data};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
-const MIB: usize = 1024 * 1024;
 /// The file the benchmark downloads.
-const BENCH_SIZE: usize = 256 * MIB;
+const BENCH_SIZE: usize = 256 * MIB_USIZE;
 /// Each connection's speed on the capped server.
-const BENCH_CAP: u64 = 16 * MIB as u64;
+const BENCH_CAP: u64 = 16 * MIB;
 /// The request size limit of the last run, as video sites need.
-const BENCH_MAX_REQUEST: u64 = 10 * MIB as u64;
+const BENCH_MAX_REQUEST: u64 = 10 * MIB;
 /// Connection counts for the capped and the uncapped runs.
 const CAPPED_CONNECTIONS: [usize; 5] = [1, 2, 4, 8, 16];
 const UNCAPPED_CONNECTIONS: [usize; 2] = [1, 8];
@@ -39,8 +38,8 @@ const UNCAPPED_CONNECTIONS: [usize; 2] = [1, 8];
 const DEFAULT_HTTP_PORT: u16 = 8765;
 const DEFAULT_FTP_PORT: u16 = 2121;
 const DEFAULT_CAP_MIB: u64 = 4;
-const SERVE_HTTP_SIZE: usize = 512 * MIB;
-const SERVE_FTP_SIZE: usize = 256 * MIB;
+const SERVE_HTTP_SIZE: usize = 512 * MIB_USIZE;
+const SERVE_FTP_SIZE: usize = 256 * MIB_USIZE;
 const SERVE_FTP_SESSIONS: usize = 4;
 
 #[tokio::main]
@@ -63,8 +62,8 @@ async fn bench() -> Result<()> {
     writeln!(
         out,
         "File: {} MiB. Server caps each connection at {} MiB/s.\n",
-        BENCH_SIZE / MIB,
-        BENCH_CAP / MIB as u64
+        BENCH_SIZE / MIB_USIZE,
+        BENCH_CAP / MIB
     )?;
     let capped = TestServer::start(
         test_data(BENCH_SIZE),
@@ -127,7 +126,7 @@ async fn bench() -> Result<()> {
 
 /// The benchmark file's size over `secs`, in MiB a second.
 fn mib_per_second(secs: f64) -> f64 {
-    approx_f64((BENCH_SIZE / MIB) as u64) / secs
+    approx_f64((BENCH_SIZE / MIB_USIZE) as u64) / secs
 }
 
 async fn timed_download(
@@ -169,7 +168,7 @@ async fn serve(port: u16, cap_mib: u64) -> Result<()> {
         test_data(SERVE_HTTP_SIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(cap_mib * MIB as u64),
+            per_connection_bps: Some(cap_mib * MIB),
             etag: Some("\"bench\"".into()),
             ..Default::default()
         },
@@ -181,7 +180,7 @@ async fn serve(port: u16, cap_mib: u64) -> Result<()> {
     writeln!(
         std::io::stdout(),
         "Serving {} MiB at http://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection). Ctrl+C to stop.",
-        SERVE_HTTP_SIZE / MIB
+        SERVE_HTTP_SIZE / MIB_USIZE
     )?;
     loop {
         let (mut inbound, _) = listener.accept().await?;
@@ -206,7 +205,7 @@ async fn serve_ftp(port: u16, cap_mib: u64) -> Result<()> {
             files: vec![("file.bin".to_string(), Arc::new(test_data(SERVE_FTP_SIZE)))],
             mdtm: Some("20260101000000".to_string()),
             max_sessions: Some((SERVE_FTP_SESSIONS, ftp::Refuse::Greeting421)),
-            data_bps: Some(cap_mib * MIB as u64),
+            data_bps: Some(cap_mib * MIB),
             ..Default::default()
         },
     )
@@ -214,7 +213,7 @@ async fn serve_ftp(port: u16, cap_mib: u64) -> Result<()> {
     writeln!(
         std::io::stdout(),
         "Serving {} MiB at ftp://127.0.0.1:{port}/file.bin ({cap_mib} MiB/s per connection, at most {SERVE_FTP_SESSIONS} sessions). Ctrl+C to stop.",
-        SERVE_FTP_SIZE / MIB
+        SERVE_FTP_SIZE / MIB_USIZE
     )?;
     tokio::signal::ctrl_c().await?;
     Ok(())

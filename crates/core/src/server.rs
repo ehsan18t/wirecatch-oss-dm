@@ -28,13 +28,14 @@ use wirecatch_protocol::wire::{
 };
 
 use crate::manager::Manager;
+use wirecatch_engine::units::KIB_USIZE;
 
 /// Most requests from one connection that may be handled at once. A request beyond
 /// this gets an error at once, so a client cannot pile up unbounded work.
 pub const MAX_REQUESTS_IN_FLIGHT: usize = 64;
 
 /// How much to read from the stream at a time.
-const READ_CHUNK: usize = 16 * 1024;
+const READ_CHUNK: usize = 16 * KIB_USIZE;
 
 /// Serves one client until it disconnects, refuses the handshake, or the stream fails.
 ///
