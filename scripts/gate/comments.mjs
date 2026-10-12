@@ -1,68 +1,119 @@
-// Reads the comments that switch a lint off in TypeScript, JavaScript and Svelte: ESLint disable comments and svelte-ignore comments.
+// Reads the comments that switch a lint off or configure the linter in place, in TypeScript, JavaScript and Svelte: ESLint disable comments, ESLint inline configuration (`/* eslint rule: off */`, `/* global */`, `/* eslint-env */`) and svelte-ignore comments.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, ROOT } from './process.mjs';
 
-/** Files that may hold disable comments: everything ESLint and Svelte read, except the gate's own modules, whose patterns name them. */
+/** Files that may hold such comments: everything ESLint and Svelte read, except the gate's own modules, whose patterns name them. */
 const COMMENT_SCOPE = [
   '*.ts',
+  '*.mts',
+  '*.cts',
+  '*.tsx',
   '*.js',
   '*.mjs',
   '*.cjs',
+  '*.jsx',
   '*.svelte',
   ':!scripts/gate.mjs',
   ':!scripts/gate/**',
 ];
+/** What a file must contain to be read at all. */
+const ANY_DIRECTIVE = 'eslint|svelte-ignore|/\\*\\s*globals?\\s';
+/** The start of a comment, in a script (`//`, `/*`) or in Svelte markup (`<!--`). */
+const OPEN = String.raw`(\/\/|\/\*|<!--)\s*`;
+/** The end of a comment's text: its closing marker, or the end of the line. */
+const CLOSE = String.raw`(.*?)(?:\*\/|-->|$)`;
 /** An ESLint disable comment in any of its forms, with the rules and reason that follow it. */
-const ESLINT_DISABLE =
-  /(?:\/\/|\/\*|<!--)\s*eslint-disable(?:-next-line|-line)?(?=\s|\*\/|-->|$)(.*?)(?:\*\/|-->|$)/gm;
+const ESLINT_DISABLE = new RegExp(
+  `${OPEN}eslint-disable(?:-next-line|-line)?(?=\\s|\\*\\/|-->|$)${CLOSE}`,
+  'gm',
+);
+/** ESLint configuration written in a comment: rule settings, globals and environments. ESLint reads these from block comments only. */
+const INLINE_CONFIG = new RegExp(`${OPEN}(eslint|globals?|eslint-env|exported)\\s${CLOSE}`, 'gm');
 /** A svelte-ignore comment, in markup or in a script, with the codes and reason that follow it. */
-const SVELTE_IGNORE = /(?:<!--|\/\/|\/\*)\s*svelte-ignore\s(.*?)(?:-->|\*\/|$)/gm;
+const SVELTE_IGNORE = new RegExp(`${OPEN}svelte-ignore\\s${CLOSE}`, 'gm');
 /** Svelte reads the codes, separated by commas, from the start of a svelte-ignore comment and treats what follows as prose. */
 const SVELTE_IGNORE_CODES = /^\s*[\w$-]+(?:\s*,\s*[\w$-]+)*/;
 /** Where a comment's reason starts: ESLint's `--` separator, which svelte-ignore comments use too. */
 const REASON_SEPARATOR = /(?:^|\s)--+\s+\S/;
+const REASON_SPLIT = /\s--+\s/;
+
+/** The names a comment's list gives, before its reason: `a, b -- why` gives `a` and `b`. */
+function listedNames(text) {
+  const [names] = text.split(REASON_SPLIT);
+  return names
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .sort();
+}
+
+/** The rules an inline `eslint` comment configures: the names before each `:`, outside the brackets of their settings. */
+function configuredRules(text) {
+  let settings = text.split(REASON_SPLIT)[0];
+  while (/[[{][^[\]{}]*[\]}]/.test(settings))
+    settings = settings.replace(/[[{][^[\]{}]*[\]}]/g, '');
+  return [...settings.matchAll(/([@\w][\w@/-]*)\s*:/g)].map((m) => m[1]).sort();
+}
+
+function eslintDisables(text, site) {
+  return [...text.matchAll(ESLINT_DISABLE)].map((match) => {
+    const lints = listedNames(match[2]);
+    return {
+      ...site(match),
+      kind: 'eslint-disable',
+      markup: match[1] === '<!--',
+      lints: lints.length > 0 ? lints : ['(every rule)'],
+      reason: REASON_SEPARATOR.test(match[2]),
+    };
+  });
+}
+
+function inlineConfigs(text, site) {
+  return [...text.matchAll(INLINE_CONFIG)]
+    .filter((match) => match[1] !== '//')
+    .map((match) => {
+      const kind = match[2] === 'eslint' ? 'eslint inline config' : match[2];
+      const lints = match[2] === 'eslint' ? configuredRules(match[3]) : listedNames(match[3]);
+      return {
+        ...site(match),
+        kind,
+        markup: match[1] === '<!--',
+        lints,
+        reason: REASON_SEPARATOR.test(match[3]),
+      };
+    });
+}
+
+function svelteIgnores(text, site) {
+  return [...text.matchAll(SVELTE_IGNORE)].map((match) => {
+    const codes = SVELTE_IGNORE_CODES.exec(match[2])?.[0] ?? '';
+    const reason = REASON_SEPARATOR.test(match[2].slice(codes.length).trim());
+    return {
+      ...site(match),
+      kind: 'svelte-ignore',
+      markup: match[1] === '<!--',
+      lints: listedNames(codes),
+      reason,
+    };
+  });
+}
 
 /** The comments of one file. */
 function commentsIn(file) {
   const text = readFileSync(join(ROOT, file), 'utf8');
-  const lineOf = (index) => text.slice(0, index).split('\n').length;
-  const found = [];
-  for (const match of text.matchAll(ESLINT_DISABLE)) {
-    const [rules] = match[1].split(/\s--+\s/);
-    const lints = rules
-      .split(',')
-      .map((rule) => rule.trim())
-      .filter(Boolean);
-    found.push({
-      file,
-      line: lineOf(match.index),
-      kind: 'eslint-disable',
-      lints: lints.length > 0 ? lints.sort() : ['(every rule)'],
-      reason: REASON_SEPARATOR.test(match[1]),
-    });
-  }
-  for (const match of text.matchAll(SVELTE_IGNORE)) {
-    const codes = SVELTE_IGNORE_CODES.exec(match[1])?.[0] ?? '';
-    const lints = codes
-      .split(',')
-      .map((code) => code.trim())
-      .filter(Boolean);
-    found.push({
-      file,
-      line: lineOf(match.index),
-      kind: 'svelte-ignore',
-      lints: lints.sort(),
-      reason: REASON_SEPARATOR.test(match[1].slice(codes.length).trim()),
-    });
-  }
-  return found;
+  const site = (match) => ({ file, line: text.slice(0, match.index).split('\n').length });
+  return [
+    ...eslintDisables(text, site),
+    ...inlineConfigs(text, site),
+    ...svelteIgnores(text, site),
+  ];
 }
 
 let cached = null;
 
-/** Every ESLint disable comment and svelte-ignore comment: the file and line it is on, what it switches off, and whether it gives a reason. Read once per gate run. */
+/** Every such comment: the file and line it is on, its kind, whether it is in Svelte markup, what it switches off or configures, and whether it gives a reason. Read once per gate run. */
 export function disableComments() {
-  cached ??= filesMatching('eslint-disable|svelte-ignore', COMMENT_SCOPE).flatMap(commentsIn);
+  cached ??= filesMatching(ANY_DIRECTIVE, COMMENT_SCOPE).flatMap(commentsIn);
   return cached;
 }

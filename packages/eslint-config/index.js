@@ -86,6 +86,11 @@ const BASELINE_RULES = {
   '@eslint-community/eslint-comments/require-description': ['error', { ignore: ['eslint-enable'] }],
   '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
   '@eslint-community/eslint-comments/disable-enable-pair': 'error',
+  // The configuration lives in eslint.config.js, never in a comment: no rule settings, globals or environments written as comments, which would switch a rule off without the reason a disable comment needs.
+  '@eslint-community/eslint-comments/no-use': [
+    'error',
+    { allow: ['eslint-disable', 'eslint-disable-next-line', 'eslint-enable'] },
+  ],
   // Size limits.
   complexity: ['error', MAX_COMPLEXITY],
   'max-depth': ['error', MAX_DEPTH],
