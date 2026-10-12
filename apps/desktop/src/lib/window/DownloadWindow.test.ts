@@ -131,3 +131,24 @@ describe('a finished download’s window', () => {
     expect(host.close).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a download window and the clock', () => {
+  it('says when the file was downloaded before by the clock the app follows', async () => {
+    // The sample backend runs at NOON on 10 October 2026, whatever the date on this machine.
+    const b = mockBackend({ empty: true });
+    b.simulateConfirmation();
+    const [first] = await b.pendingConfirmations();
+    const id = await b.confirmCapture(first?.id ?? -1, {
+      file_name: null,
+      folder: null,
+      queue: null,
+      later: false,
+    });
+    for (let i = 0; i < 2000 && (await b.getDownload(id)).status !== 'completed'; i++) b.tick(5000);
+    // The mock sends four sample files in turn; the fifth is the first one again.
+    for (let i = 0; i < 4; i++) b.simulateConfirmation();
+    const again = (await b.pendingConfirmations()).at(-1);
+    await show(b, { question: again?.id ?? -1 });
+    expect(screen.getByRole('note')).toHaveTextContent(/^You downloaded this today at /);
+  });
+});

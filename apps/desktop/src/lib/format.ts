@@ -260,7 +260,7 @@ export function hostOf(url: string): string {
 }
 
 /** A date for the detail panel, for example `Today, 14:05` or `3 Oct 2026, 09:12`. */
-export function formatDate(ms: number, now: Date = new Date()): string {
+export function formatDate(ms: number, now: Date): string {
   const d = new Date(ms);
   const time = formatTime(timeOfDay(d));
   const sameDay = (a: Date, b: Date) =>
@@ -419,8 +419,7 @@ function whenSaid(ms: number, now: Date): string {
  * One line for a download window whose download is already in the list (D23), for example
  * "You downloaded this today at 18:38." or "This is already downloading."
  */
-export function earlierNote(row: DownloadSummary, nowMs: number = Date.now()): string {
-  const now = new Date(nowMs);
+export function earlierNote(row: DownloadSummary, now: Date): string {
   switch (row.status) {
     case 'completed':
       return `You downloaded this ${whenSaid(row.completed_at ?? row.added_at, now)}.`;

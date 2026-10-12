@@ -53,7 +53,7 @@
     </div>
 
     {#if win.earlier}
-      <p class="earlier" role="note">{earlierNote(win.earlier, win.openedAt)}</p>
+      <p class="earlier" role="note">{earlierNote(win.earlier, win.clock.now)}</p>
     {/if}
 
     <label class="form-stack">

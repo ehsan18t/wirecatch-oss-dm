@@ -20,8 +20,8 @@ export class Clock {
     return dateAt(this.nowMs);
   }
 
-  /** Reads the time from `source` from now on, starting now. */
-  follow(source: () => number): void {
+  /** Reads the time from `source` (the system clock when there is none) from now on, starting now. */
+  follow(source: () => number = () => Date.now()): void {
     this.#source = source;
     this.nowMs = source();
   }

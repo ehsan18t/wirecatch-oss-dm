@@ -17,6 +17,7 @@ import type {
 } from '@wirecatch/protocol';
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend';
+import { Clock } from '../state/clock.svelte';
 import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
 import { errorMessage, Runner } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
@@ -83,8 +84,8 @@ export class DownloadWindowState {
   busy = $state(false);
   /** A quality picked that needs the media add-on: it downloads once the add-on is in. */
   awaitingAddon = $state<{ selection: MediaSelection } | null>(null);
-  /** When the window opened, in ms; its note on an earlier download says "today" against this. */
-  readonly openedAt = Date.now();
+  /** The time its note on an earlier download says "today" against, as in the main window. */
+  readonly clock = new Clock();
 
   #answered = false;
   #unsubscribe: (() => void) | null = null;
@@ -124,6 +125,8 @@ export class DownloadWindowState {
         return;
       }
       this.#unsubscribe = unsubscribe;
+      this.clock.follow(this.#backend.sampleData?.now);
+      this.clock.start();
       const [queues, settings] = await Promise.all([
         this.#backend.listQueues(),
         this.#backend.getSettings(),
@@ -171,6 +174,7 @@ export class DownloadWindowState {
 
   dispose(): void {
     this.#generation += 1;
+    this.clock.stop();
     this.#unsubscribe?.();
     this.#unsubscribe = null;
   }

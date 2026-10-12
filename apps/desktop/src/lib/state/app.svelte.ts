@@ -192,7 +192,7 @@ export class AppState {
     try {
       const backend = await this.#connection.load();
       this.sampleData = backend.kind === 'mock';
-      this.clock.follow(backend.sampleData?.now ?? (() => Date.now()));
+      this.clock.follow(backend.sampleData?.now);
       return await this.#connection.listen(current, onEvent, (signal) => {
         // Events were missed: load everything again rather than show a stale list.
         if (signal === 'resync') void this.init();
