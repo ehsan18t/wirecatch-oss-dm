@@ -42,9 +42,13 @@
     }
     const shell = createDownloadWindowBackend();
     backend = shell;
-    const state = new DownloadWindowState(shell, wanted, {
-      close: () => void shell.closeDownloadWindow().catch(() => window.close()),
-    });
+    const state = new DownloadWindowState(
+      {
+        backend: shell,
+        close: () => void shell.closeDownloadWindow().catch(() => window.close()),
+      },
+      wanted,
+    );
     win = state;
     void state.init();
     return () => state.dispose();

@@ -27,26 +27,29 @@ function updateNote(media: AddonInfo): { kind: 'info' | 'error'; text: string } 
   }
 }
 
+/** What the add-ons need from the window they are shown in. */
+export interface AddonsHost {
+  backend: () => Backend;
+  runner: Runner;
+  toasts: Toasts;
+}
+
 export class Addons {
   /** Add-ons and their state; `null` until loaded. */
   list = $state<AddonInfo[] | null>(null);
   /** Why the add-ons could not be listed, shown in their settings section. */
   error = $state<string | null>(null);
 
-  readonly #backend: () => Backend;
-  readonly #runner: Runner;
-  readonly #toasts: Toasts;
+  readonly #host: AddonsHost;
 
-  constructor(backend: () => Backend, runner: Runner, toasts: Toasts) {
-    this.#backend = backend;
-    this.#runner = runner;
-    this.#toasts = toasts;
+  constructor(host: AddonsHost) {
+    this.#host = host;
   }
 
   /** Lists the add-ons. A failure is shown in their settings section, not as an error note. */
   async load(): Promise<void> {
     try {
-      this.list = await this.#backend().listAddons();
+      this.list = await this.#host.backend().listAddons();
       this.error = null;
     } catch (err) {
       this.error = errorMessage(err);
@@ -60,31 +63,31 @@ export class Addons {
   }
 
   install(id: string): Promise<boolean> {
-    return this.#runner.succeeds(() => this.#backend().installAddon(id));
+    return this.#host.runner.succeeds(() => this.#host.backend().installAddon(id));
   }
 
   async update(id: string): Promise<void> {
-    await this.#runner.run(() => this.#backend().updateAddon(id));
+    await this.#host.runner.run(() => this.#host.backend().updateAddon(id));
   }
 
   async remove(id: string): Promise<void> {
-    await this.#runner.run(() => this.#backend().removeAddon(id));
+    await this.#host.runner.run(() => this.#host.backend().removeAddon(id));
   }
 
   /** Stops an install or update in progress; an update keeps the installed version. */
   async cancel(id: string): Promise<void> {
-    await this.#runner.run(() => this.#backend().cancelAddonOperation(id));
+    await this.#host.runner.run(() => this.#host.backend().cancelAddonOperation(id));
   }
 
   /** Looks for a newer media add-on now and says what was found, in plain words. */
   async checkUpdates(): Promise<void> {
-    const addons = await this.#runner.run(() => this.#backend().checkAddonUpdates());
+    const addons = await this.#host.runner.run(() => this.#host.backend().checkAddonUpdates());
     if (!addons) return;
     this.list = addons;
     const media = addons.find((a) => a.id === MEDIA_ADDON);
     if (!media) return;
     const note = updateNote(media);
-    if (note.kind === 'error') this.#toasts.fail(note.text);
-    else this.#toasts.notify(note.text);
+    if (note.kind === 'error') this.#host.toasts.fail(note.text);
+    else this.#host.toasts.notify(note.text);
   }
 }

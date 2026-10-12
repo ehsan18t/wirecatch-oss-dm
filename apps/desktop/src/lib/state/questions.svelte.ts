@@ -4,6 +4,11 @@
 import type { MediaChoice, PendingCapture } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 
+/** What the questions need from the window they are counted in. */
+export interface QuestionsHost {
+  backend: () => Backend;
+}
+
 export class Questions {
   /** Browser files waiting for an answer. */
   pending = $state<PendingCapture[]>([]);
@@ -11,6 +16,12 @@ export class Questions {
   mediaChoices = $state<MediaChoice[]>([]);
   /** Video pages waiting for the media add-on, by question id. */
   addonPages = $state<number[]>([]);
+
+  readonly #host: QuestionsHost;
+
+  constructor(host: QuestionsHost) {
+    this.#host = host;
+  }
 
   /**
    * How many downloads wait for an answer: browser files, videos waiting for a quality, and
@@ -29,7 +40,8 @@ export class Questions {
    * The questions open in the core: exactly what is open now, so one answered anywhere is never
    * counted again. Confirmations come with the main load.
    */
-  async restore(backend: Backend): Promise<void> {
+  async restore(): Promise<void> {
+    const backend = this.#host.backend();
     try {
       this.mediaChoices = await backend.pendingMediaChoices();
     } catch {

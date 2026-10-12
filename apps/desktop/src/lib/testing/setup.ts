@@ -37,7 +37,7 @@ export function appState(backend: Backend | (() => Promise<Backend>) = mockBacke
 /** A download window's state, not yet loaded, disposed after the test; `host` records its calls. */
 export function windowState(backend: Backend, target: Target) {
   const host = { close: vi.fn(), becameDownload: vi.fn() };
-  const win = new DownloadWindowState(backend, target, host);
+  const win = new DownloadWindowState({ ...host, backend }, target);
   onTestFinished(() => win.dispose());
   return { win, host };
 }

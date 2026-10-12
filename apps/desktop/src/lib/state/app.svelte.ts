@@ -63,12 +63,16 @@ export class AppState {
   /** The time schedule labels follow. */
   readonly clock = new Clock();
   readonly #runner = new Runner((text) => this.toasts.fail(text));
-  readonly selection = new Selection(
-    () => this.visible,
-    (id) => this.downloads.get(id),
-  );
-  readonly questions = new Questions();
-  readonly addons = new Addons(() => this.#backend, this.#runner, this.toasts);
+  readonly selection = new Selection({
+    visible: () => this.visible,
+    row: (id) => this.downloads.get(id),
+  });
+  readonly questions = new Questions({ backend: () => this.#backend });
+  readonly addons = new Addons({
+    backend: () => this.#backend,
+    runner: this.#runner,
+    toasts: this.toasts,
+  });
   readonly queues = new Queues({
     backend: () => this.#backend,
     runner: this.#runner,
@@ -141,7 +145,7 @@ export class AppState {
    * itself, so it needs them made over the backend that only this state holds.
    */
   readonly openSampleWindow: OpenDownloadWindow = (target, host) =>
-    new DownloadWindowState(this.#backend, target, host);
+    new DownloadWindowState({ ...host, backend: this.#backend }, target);
 
   /** The sample backend's extras (its palette actions and download windows); null on the engine. */
   get sample(): SampleData | null {
@@ -190,7 +194,7 @@ export class AppState {
     // Neither is needed for the list, so neither holds it up.
     void this.addons.load();
     void this.#takeLaunchLinks();
-    void this.questions.restore(this.#backend);
+    void this.questions.restore();
   }
 
   /** Loads the backend and listens to it; false when superseded or when that failed, which is then shown. */

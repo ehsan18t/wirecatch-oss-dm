@@ -4,29 +4,31 @@
 import type { DownloadId, DownloadSummary } from '@wirecatch/protocol';
 import { SvelteSet } from 'svelte/reactivity';
 
+/** What the selection needs from the list it selects in. */
+export interface SelectionHost {
+  /** The list's order. */
+  visible: () => readonly DownloadId[];
+  /** Finds a download. */
+  row: (id: DownloadId) => DownloadSummary | undefined;
+}
+
 export class Selection {
   readonly ids = new SvelteSet<DownloadId>();
   /** The row the keyboard is on. */
   active = $state<DownloadId | null>(null);
   /** Where a Shift range starts: the row last clicked or chosen. */
   #anchor: DownloadId | null = null;
-  readonly #visible: () => readonly DownloadId[];
-  readonly #row: (id: DownloadId) => DownloadSummary | undefined;
+  readonly #host: SelectionHost;
 
-  /** `visible` is the list's order; `row` finds a download. */
-  constructor(
-    visible: () => readonly DownloadId[],
-    row: (id: DownloadId) => DownloadSummary | undefined,
-  ) {
-    this.#visible = visible;
-    this.#row = row;
+  constructor(host: SelectionHost) {
+    this.#host = host;
   }
 
   /** The selected downloads that are still in the list. */
   rows = $derived.by(() => {
     const rows: DownloadSummary[] = [];
     for (const id of this.ids) {
-      const row = this.#row(id);
+      const row = this.#host.row(id);
       if (row) rows.push(row);
     }
     return rows;
@@ -61,7 +63,7 @@ export class Selection {
 
   /** Selects from the last clicked row to this one, in display order. */
   range(id: DownloadId, additive = false): void {
-    const list = this.#visible();
+    const list = this.#host.visible();
     const from = this.#anchor === null ? -1 : list.indexOf(this.#anchor);
     const to = list.indexOf(id);
     if (from < 0 || to < 0) {
@@ -79,7 +81,7 @@ export class Selection {
 
   /** Selects every download the list shows. */
   all(): void {
-    for (const id of this.#visible()) this.ids.add(id);
+    for (const id of this.#host.visible()) this.ids.add(id);
   }
 
   clear(): void {
@@ -90,7 +92,7 @@ export class Selection {
 
   /** Arrow keys: move the keyboard row, optionally extending the selection. */
   move(delta: number, extend: boolean): void {
-    const list = this.#visible();
+    const list = this.#host.visible();
     if (list.length === 0) return;
     const current = this.active === null ? -1 : list.indexOf(this.active);
     const next =

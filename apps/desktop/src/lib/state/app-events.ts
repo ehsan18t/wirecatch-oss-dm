@@ -1,9 +1,34 @@
 // What the main window does with each of the core's events.
 
-import type { AppState } from './app.svelte';
+import type { AppSettings } from '@wirecatch/protocol';
+import type { Addons } from './addons.svelte';
+import type { DownloadStore } from './downloads.svelte';
 import { ignore, type UiEventHandlers } from './events';
+import type { Questions } from './questions.svelte';
+import type { Queues } from './queues.svelte';
+import type { Selection } from './selection.svelte';
+import type { SettingsTransfer } from './settings-transfer.svelte';
+import type { Toasts } from './toasts.svelte';
+import type { View } from './view';
 
-export function mainWindowEvents(app: AppState): UiEventHandlers {
+/** What the core's events change in the main window. */
+export interface MainWindowEventsHost {
+  readonly downloads: Pick<DownloadStore, 'apply' | 'remove'>;
+  readonly selection: Pick<Selection, 'forget'>;
+  readonly queues: Pick<Queues, 'list'>;
+  view: View;
+  settings: AppSettings | null;
+  readonly toasts: Pick<Toasts, 'captured'>;
+  readonly questions: Pick<
+    Questions,
+    'confirmationRequested' | 'mediaChoiceRequested' | 'analysing' | 'addonRequired' | 'closed'
+  >;
+  readonly addons: Pick<Addons, 'changed'>;
+  readonly transfer: Pick<SettingsTransfer, 'lastImport'>;
+  storageProblem: string | null;
+}
+
+export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
   return {
     downloads_changed: (e) => app.downloads.apply(e.data),
     downloads_removed: (e) => {

@@ -8,7 +8,7 @@ import type { Runner } from './runner';
 const EXPORT_FILE_NAME = 'wirecatch-settings.json';
 
 /** Where an import puts what it read back. */
-export interface TransferHost {
+export interface SettingsTransferHost {
   backend: () => Backend;
   runner: Runner;
   imported: (settings: AppSettings | undefined, queues: Queue[] | undefined) => void;
@@ -22,9 +22,9 @@ export class SettingsTransfer {
    * shows this and applies the file only when the person says so.
    */
   importPreview = $state<{ path: string; preview: ImportPreview } | null>(null);
-  readonly #host: TransferHost;
+  readonly #host: SettingsTransferHost;
 
-  constructor(host: TransferHost) {
+  constructor(host: SettingsTransferHost) {
     this.#host = host;
   }
 
