@@ -1113,6 +1113,18 @@ mod tests {
     use crate::addons::InstalledComponent;
     use crate::addons::manifest::ArchiveKind;
 
+    /// Add-on downloads name the app, never the engine library's default.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn add_on_downloads_name_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let folders = crate::KnownFolders::under_home(dir.path().join("home"));
+        let config = crate::ManagerConfig::new(dir.path().join("data"), folders);
+        let manager = Manager::open(config).await.unwrap();
+        let agent = manager.addon_download_options().user_agent;
+        assert_eq!(agent, crate::headers::download_options().user_agent);
+        assert_ne!(agent, DownloadOptions::default().user_agent);
+    }
+
     /// A quiet or stopped install is not shown when it fails, unless it lost a
     /// part: the add-on then no longer works, and the person must hear why.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

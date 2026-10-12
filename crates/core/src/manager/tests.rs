@@ -14,6 +14,24 @@ use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 
 use super::Manager;
+
+/// A media download without a browser's agent names the app, never the engine
+/// library's default; with one, it is the browser's.
+#[test]
+fn media_requests_name_the_app_or_the_browser() {
+    let mut origin = crate::store::Origin::default();
+    let agent = super::media::media_options(&origin).user_agent;
+    assert_eq!(agent, crate::headers::download_options().user_agent);
+    assert_ne!(
+        agent,
+        wirecatch_engine::DownloadOptions::default().user_agent
+    );
+    origin.user_agent = Some("TestBrowser/1".into());
+    assert_eq!(
+        super::media::media_options(&origin).user_agent,
+        "TestBrowser/1"
+    );
+}
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
 use super::settle::ServerAnswer;
 use crate::error::CoreError;

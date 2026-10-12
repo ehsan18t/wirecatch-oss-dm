@@ -629,6 +629,11 @@ async fn a_download_without_a_browser_agent_names_the_app() -> TestResult {
         wirecatch_product::PRODUCT_NAME,
         wirecatch_product::PRODUCT_VERSION
     );
+    assert_ne!(
+        expected,
+        wirecatch_engine::DownloadOptions::default().user_agent,
+        "the app's agent must not be the engine library's"
+    );
     let seen = server.seen_at("plain.bin");
     assert!(!seen.is_empty());
     for request in seen {
