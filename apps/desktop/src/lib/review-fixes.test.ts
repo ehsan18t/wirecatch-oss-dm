@@ -2,22 +2,20 @@
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockBackend } from './backend/mock';
+import { describe, expect, it, vi } from 'vitest';
+import type { MockBackend } from './backend/mock';
 import { buildCommands, searchCommands } from './commands';
-import { AppState } from './state/app.svelte';
-import { downloadWindow, NOON, renderApp, rowByName, settle } from './testing/setup';
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
+import {
+  appState,
+  downloadWindow,
+  mockBackend,
+  renderApp,
+  rowByName,
+  settle,
+} from './testing/setup';
 
 async function setup(options: Parameters<typeof renderApp>[0] = {}) {
   const r = await renderApp(options);
-  current = r;
   const user = userEvent.setup();
   const click = async (el: HTMLElement) => {
     await user.click(el);
@@ -145,7 +143,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
   });
 
   it('the mock ends "start now" once the queue is empty', async () => {
-    const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    const backend = mockBackend({ empty: true });
     const q = (await backend.listQueues()).find((x) => x.id === 2);
     await backend.addDownload({
       url: 'https://x.org/a.zip',
@@ -179,9 +177,9 @@ describe('7. Try again does not double the listeners', () => {
   });
 
   it('dispose before the backend is ready leaves nothing listening', async () => {
-    const backend = new MockBackend({ autoTick: false, now: () => NOON });
+    const backend = mockBackend();
     const ready = Promise.withResolvers<MockBackend>();
-    const app = new AppState(() => ready.promise);
+    const app = appState(() => ready.promise);
     const started = app.init();
     app.dispose();
     ready.resolve(backend);
@@ -354,11 +352,9 @@ describe('21. right-click menu on rows', () => {
 describe('a password in a link is never shown or copied', () => {
   it('the detail panel and Copy link use the hidden form', async () => {
     const { app, backend, click } = await setup({ empty: true });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
+    // The clipboard is the one user-event puts in place for the test and takes away after it;
+    // restoreMocks puts the spied method back.
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText');
     const id = await backend.addDownload({
       url: 'https://ada:s3cret@example.com/files/locked.zip',
       queue: null,

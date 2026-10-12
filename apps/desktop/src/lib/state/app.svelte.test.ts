@@ -1,24 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOON } from '$lib/testing/setup';
-import { MockBackend } from '../backend/mock';
+import { describe, expect, it, vi } from 'vitest';
+import { appState, mockBackend } from '$lib/testing/setup';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
-import { AppState } from './app.svelte';
-
-// Every app a test makes is disposed after it, even when the test fails, so no clock or
-// interval keeps running into the tests and files after it.
-const apps: AppState[] = [];
-function keep(app: AppState): AppState {
-  apps.push(app);
-  return app;
-}
-afterEach(() => {
-  for (const app of apps.splice(0)) app.dispose();
-});
 
 async function make() {
-  const backend = new MockBackend({ autoTick: false, now: () => NOON });
-  const app = keep(new AppState(backend));
+  const backend = mockBackend();
+  const app = appState(backend);
   await app.init();
   return { app, backend };
 }
@@ -35,21 +22,21 @@ describe('AppState', () => {
   });
 
   it('shows a readable error when the backend is not there', async () => {
-    const backend = new MockBackend({ autoTick: false });
+    const backend = mockBackend();
     vi.spyOn(backend, 'listDownloads').mockRejectedValue(
       new BackendError('Wirecatch is not connected to its download engine yet.'),
     );
-    const app = keep(new AppState(backend));
+    const app = appState(backend);
     await app.init();
     expect(app.loadError).toMatch(/not connected/);
   });
 
   it('stops listening to events when the shell signals cannot be heard', async () => {
-    const backend = new MockBackend({ autoTick: false });
+    const backend = mockBackend();
     const stopEvents = vi.fn();
     vi.spyOn(backend, 'subscribe').mockResolvedValue(stopEvents);
     vi.spyOn(backend, 'onShellSignal').mockRejectedValue(new BackendError('No shell.'));
-    const app = keep(new AppState(backend));
+    const app = appState(backend);
     await app.init();
     expect(app.loadError).toBe('No shell.');
     expect(stopEvents).toHaveBeenCalledOnce();

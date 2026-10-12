@@ -2,20 +2,12 @@
 // under the active row's name.
 
 import { fireEvent, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
+import { describe, expect, it, vi } from 'vitest';
 import { renderApp, rowByName, settle } from '$lib/testing/setup';
 
 /** A menu wider and taller than any fixed guess, as long queue names make it. */
 const MENU = { width: 260, height: 300 };
 const EDGE = 4;
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
 
 /** jsdom does no layout; give the menu the size a browser would. */
 function measureMenusAs(size: { width: number; height: number }) {
@@ -30,7 +22,7 @@ function measureMenusAs(size: { width: number; height: number }) {
 describe('the right-click menu', () => {
   it('keeps its measured box inside the window near the bottom right corner', async () => {
     measureMenusAs(MENU);
-    current = await renderApp();
+    await renderApp();
     await fireEvent.contextMenu(rowByName('LibreOffice'), {
       clientX: window.innerWidth - 1,
       clientY: window.innerHeight - 1,
@@ -42,7 +34,7 @@ describe('the right-click menu', () => {
   });
 
   it('opens from the keyboard under the active row, lined up with its name', async () => {
-    current = await renderApp();
+    await renderApp();
     const row = rowByName('LibreOffice');
     const name = row.querySelector('[data-menu-anchor]');
     if (!name) throw new Error('the row has no name cell');

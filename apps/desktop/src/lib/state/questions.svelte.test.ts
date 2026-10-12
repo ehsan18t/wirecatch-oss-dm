@@ -4,30 +4,17 @@
 // mock backend.
 
 import type { UiEvent } from '@wirecatch/protocol';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOON } from '$lib/testing/setup';
-import { MockBackend } from '../backend/mock';
+import { describe, expect, it, vi } from 'vitest';
+import { appState, mockBackend } from '$lib/testing/setup';
 import type { ShellSignal } from '../backend';
 import { buildCommands } from '../commands';
-import { AppState } from './app.svelte';
-
-// Every app a test makes is disposed after it, even when the test fails, so no clock or
-// interval keeps running into the tests and files after it.
-const apps: AppState[] = [];
-function keep(app: AppState): AppState {
-  apps.push(app);
-  return app;
-}
-afterEach(() => {
-  for (const app of apps.splice(0)) app.dispose();
-});
 
 function backend() {
-  return new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+  return mockBackend({ empty: true });
 }
 
 async function make(b = backend()) {
-  const app = keep(new AppState(b));
+  const app = appState(b);
   await app.init();
   // The add-ons load in the background after the list.
   await vi.waitFor(() => expect(app.addons.list).not.toBeNull());
@@ -214,7 +201,7 @@ describe('shell signals', () => {
       .spyOn(b, 'takeLaunchLinks')
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce(['https://example.com/a.zip', 'https://example.com/b.zip']);
-    const app = keep(new AppState(b));
+    const app = appState(b);
     await app.init();
     await vi.waitFor(() => expect(links).toHaveBeenCalledTimes(1));
     expect(app.dialog).toBeNull();
@@ -239,7 +226,7 @@ describe('shell signals', () => {
       push = listener;
       return Promise.resolve(vi.fn());
     });
-    const app = keep(new AppState(b));
+    const app = appState(b);
     await app.init();
     push?.({ type: 'storage_failed', data: { message: 'Could not save.', fix: null } });
     // A banner that stays, not a note that fades.

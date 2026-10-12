@@ -4,23 +4,14 @@
 import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
-import { afterEach, describe, expect, it } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
+import { describe, expect, it } from 'vitest';
 import { renderApp, settle } from '$lib/testing/setup';
 
 /** More downloads at once than the desktop used to allow (32), and fewer than the core's limit. */
 const MANY_AT_ONCE = 50;
 
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
-
 async function openSettings() {
   const r = await renderApp();
-  current = r;
   r.app.openSettings();
   await settle();
   return r;

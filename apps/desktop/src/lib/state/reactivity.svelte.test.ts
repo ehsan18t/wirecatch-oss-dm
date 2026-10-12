@@ -1,7 +1,6 @@
 import { flushSync } from 'svelte';
 import { describe, expect, it } from 'vitest';
-import { MockBackend } from '../backend/mock';
-import { AppState } from './app.svelte';
+import { appState, mockBackend } from '$lib/testing/setup';
 import { track } from './reactivity';
 
 describe('track', () => {
@@ -31,8 +30,8 @@ describe('state loaded from the sample backend', () => {
   // Vitest's vm pools), Svelte would leave them as they are, and the tests would see a shallowly
   // reactive app while the real one is deeply reactive.
   it('is deeply reactive, so a nested write runs effects again', async () => {
-    const backend = new MockBackend({ autoTick: false });
-    const app = new AppState(backend);
+    const backend = mockBackend();
+    const app = appState(backend);
     await app.init();
     const queue = app.queues.list[0];
     if (!queue) throw new Error('the sample has no queue');
@@ -48,6 +47,5 @@ describe('state loaded from the sample backend', () => {
     expect(seen.at(-1)).toBe('Renamed');
     expect(seen).toHaveLength(2);
     cleanup();
-    app.dispose();
   });
 });

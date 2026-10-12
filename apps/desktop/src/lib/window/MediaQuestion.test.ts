@@ -3,34 +3,22 @@
 
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockBackend } from '$lib/backend/mock';
-import { NOON, settle } from '$lib/testing/setup';
+import { describe, expect, it } from 'vitest';
+import type { MockBackend } from '$lib/backend/mock';
+import { mockBackend, settle, windowState } from '$lib/testing/setup';
 import DownloadWindow from './DownloadWindow.svelte';
-import { DownloadWindowState } from './download-window.svelte';
-
-let cleanup: (() => void) | undefined;
-afterEach(() => {
-  cleanup?.();
-  cleanup = undefined;
-});
 
 /** The sample backend with the media add-on installed and one video page asking for a quality. */
 async function asking(change?: (b: MockBackend) => Promise<void>) {
-  const b = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+  const b = mockBackend({ empty: true });
   await b.installAddon('media');
   b.tick(4500);
   await change?.(b);
   b.simulateMediaChoice();
   const [choice] = await b.pendingMediaChoices();
-  const host = { close: vi.fn(), becameDownload: vi.fn() };
-  const win = new DownloadWindowState(b, { question: choice?.id ?? -1 }, host);
+  const { win, host } = windowState(b, { question: choice?.id ?? -1 });
   await win.init();
-  const view = render(DownloadWindow, { props: { win } });
-  cleanup = () => {
-    win.dispose();
-    view.unmount();
-  };
+  render(DownloadWindow, { props: { win } });
   await settle();
   return { b, win, host, user: userEvent.setup() };
 }

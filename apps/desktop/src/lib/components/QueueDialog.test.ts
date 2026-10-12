@@ -4,8 +4,7 @@
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS, NEW_QUEUE_MAX_CONCURRENT } from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
-import { afterEach, describe, expect, it } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
+import { describe, expect, it } from 'vitest';
 import { renderApp, settle } from '$lib/testing/setup';
 
 /** More downloads at once than the desktop used to allow (32), and fewer than the core's limit. */
@@ -13,17 +12,9 @@ const MANY_AT_ONCE = 50;
 /** A queue speed limit below a megabyte, typed in kilobytes. */
 const SLOW_LIMIT_KB = 300;
 
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
-
 /** Opens the dialog for the sample queue named `name`, or for a new queue. */
 async function openQueueDialog(name: string | null) {
   const r = await renderApp();
-  current = r;
   const id = name === null ? null : (r.app.queues.list.find((q) => q.name === name)?.id ?? null);
   r.app.openDialog({ kind: 'queue', id });
   await settle();

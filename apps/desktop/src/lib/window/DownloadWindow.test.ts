@@ -4,34 +4,26 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockBackend } from '$lib/backend/mock';
-import { NOON, settle } from '$lib/testing/setup';
+import type { MockBackend } from '$lib/backend/mock';
+import { mockBackend, settle, windowState } from '$lib/testing/setup';
 import DownloadWindow from './DownloadWindow.svelte';
-import { CLOSE_AFTER_MS, DownloadWindowState, type Target } from './download-window.svelte';
+import { CLOSE_AFTER_MS, type Target } from './download-window.svelte';
 
-let cleanup: (() => void) | undefined;
 afterEach(() => {
-  cleanup?.();
-  cleanup = undefined;
   vi.useRealTimers();
 });
 
 async function show(b: MockBackend, target: Target) {
-  const host = { close: vi.fn(), becameDownload: vi.fn() };
-  const win = new DownloadWindowState(b, target, host);
+  const { win, host } = windowState(b, target);
   await win.init();
-  const view = render(DownloadWindow, { props: { win } });
-  cleanup = () => {
-    win.dispose();
-    view.unmount();
-  };
+  render(DownloadWindow, { props: { win } });
   await settle();
   return { win, host };
 }
 
 describe('a download window with the keyboard', () => {
   it('starts with the focus on Download now, so Enter downloads', async () => {
-    const b = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    const b = mockBackend({ empty: true });
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
     const { win, host } = await show(b, { question: asked?.id ?? -1 });
@@ -54,7 +46,7 @@ describe('a download window with the keyboard', () => {
   });
 
   it('closes with Escape and leaves the question waiting', async () => {
-    const b = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    const b = mockBackend({ empty: true });
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
     const { host } = await show(b, { question: choice?.id ?? -1 });
@@ -70,7 +62,7 @@ describe('a download window with the keyboard', () => {
   });
 
   it('asks before Cancel removes a download, and Escape keeps it', async () => {
-    const b = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    const b = mockBackend({ empty: true });
     const id = await b.addDownload({
       url: 'https://example.com/big.iso',
       queue: null,
@@ -99,7 +91,7 @@ describe('a download window with the keyboard', () => {
 
 describe('a finished download’s window', () => {
   async function finished() {
-    const b = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+    const b = mockBackend({ empty: true });
     const id = await b.addDownload({
       url: 'https://example.com/small.zip',
       queue: null,

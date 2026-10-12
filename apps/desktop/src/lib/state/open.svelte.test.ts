@@ -1,14 +1,12 @@
 // Opening finished files: a program asks first; anything else opens at once.
 
 import { describe, expect, it } from 'vitest';
-import { NOON } from '$lib/testing/setup';
-import { MockBackend } from '../backend/mock';
+import { appState, mockBackend } from '$lib/testing/setup';
 import { isProgramName } from '../filetypes';
-import { AppState } from './app.svelte';
 
 async function finished(url: string) {
-  const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });
-  const app = new AppState(backend);
+  const backend = mockBackend({ empty: true });
+  const app = appState(backend);
   await app.init();
   const id = await backend.addDownload({
     url,
@@ -34,7 +32,6 @@ describe('opening a finished file', () => {
     await app.actions.openProgram(id);
     expect(app.dialog).toBeNull();
     expect(backend.opened).toEqual([id]);
-    app.dispose();
   });
 
   it('opens other files at once', async () => {
@@ -42,13 +39,11 @@ describe('opening a finished file', () => {
     await app.actions.openFile(id);
     expect(app.dialog).toBeNull();
     expect(backend.opened).toEqual([id]);
-    app.dispose();
   });
 
   it('refuses a program that skipped the question', async () => {
-    const { app, backend, id } = await finished('https://example.com/install.sh');
+    const { backend, id } = await finished('https://example.com/install.sh');
     await expect(backend.openFile(id)).rejects.toThrow(/can run code/);
-    app.dispose();
   });
 
   it('asks for every type not known to be safe, in any case', () => {

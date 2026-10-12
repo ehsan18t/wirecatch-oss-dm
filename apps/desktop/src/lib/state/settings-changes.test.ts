@@ -1,6 +1,6 @@
 import type { AppSettings, AppSettingsPatch } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
-import { MockBackend } from '../backend/mock';
+import { mockBackend } from '$lib/testing/setup';
 import {
   applyPatch,
   changeSettings,
@@ -11,7 +11,7 @@ import {
 } from './settings-changes.svelte';
 
 async function settings(): Promise<AppSettings> {
-  return new MockBackend({ empty: true }).getSettings();
+  return mockBackend({ empty: true }).getSettings();
 }
 
 describe('settingsPatch', () => {
@@ -109,7 +109,7 @@ describe('SettingsWriter', () => {
 // reached it yet was quietly undone.
 describe('two windows changing settings at once', () => {
   it('keeps both changes', async () => {
-    const backend = new MockBackend({ empty: true });
+    const backend = mockBackend({ empty: true });
     const start = await backend.getSettings();
     const send = (patch: AppSettingsPatch) => backend.changeSettings(patch).then(() => true);
     const main: SettingsHolder = { settings: structuredClone(start) };

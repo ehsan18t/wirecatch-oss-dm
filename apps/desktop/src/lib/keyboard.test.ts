@@ -5,20 +5,11 @@
 import { screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { afterEach, describe, expect, it } from 'vitest';
-import type { AppState } from './state/app.svelte';
+import { describe, expect, it } from 'vitest';
 import { renderApp, settle } from './testing/setup';
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
 
 async function setup() {
   const r = await renderApp();
-  current = r;
   const user = userEvent.setup();
   const press = async (keys: string) => {
     await user.keyboard(keys);
@@ -189,7 +180,7 @@ describe('automated accessibility checks (axe)', { timeout: 60_000 }, () => {
   });
 
   it('first run', async () => {
-    current = await renderApp({ empty: true });
+    await renderApp({ empty: true });
     expect(screen.getByText(/then press/)).toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });

@@ -2,21 +2,12 @@
 // text around it.
 
 import { screen, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { fileType } from '$lib/filetypes';
-import type { AppState } from '$lib/state/app.svelte';
 import { renderApp, settle } from '$lib/testing/setup';
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
 
 async function askToOpen(url: string) {
   const r = await renderApp({ empty: true });
-  current = r;
   const id = await r.backend.addDownload({
     url,
     queue: null,

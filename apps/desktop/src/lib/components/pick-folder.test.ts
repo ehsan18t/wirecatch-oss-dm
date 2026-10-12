@@ -2,22 +2,13 @@
 // silently with an unhandled rejection.
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
+import { describe, expect, it, vi } from 'vitest';
 import { renderApp, settle } from '$lib/testing/setup';
 
 const NO_PICKER = 'The folder picker could not open.';
 
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
-
 async function withFailingPicker() {
   const r = await renderApp();
-  current = r;
   vi.spyOn(r.backend, 'pickFolder').mockRejectedValue(new Error(NO_PICKER));
   return r;
 }

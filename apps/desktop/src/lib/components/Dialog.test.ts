@@ -3,21 +3,12 @@
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildCommands } from '$lib/commands';
-import type { AppState } from '$lib/state/app.svelte';
 import { renderApp, settle } from '$lib/testing/setup';
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
 
 async function setup() {
   const r = await renderApp({ empty: true });
-  current = r;
   return r;
 }
 

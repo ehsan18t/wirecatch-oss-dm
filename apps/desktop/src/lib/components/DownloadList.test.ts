@@ -4,22 +4,17 @@
 import { screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
 import { HINT_TEXT, Hints } from '$lib/state/hints.svelte';
 import { renderApp, settle } from '$lib/testing/setup';
 
-let current: { app: AppState; unmount: () => void } | undefined;
 afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
   localStorage.clear();
 });
 
 describe('the list hints', () => {
   it('go away with Got it and stay dismissed the next time the app starts', async () => {
     localStorage.clear();
-    current = await renderApp();
+    await renderApp();
     const note = screen.getByRole('note');
     expect(note).toHaveTextContent(HINT_TEXT['drag-to-queue']);
 

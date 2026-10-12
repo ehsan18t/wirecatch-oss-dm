@@ -4,21 +4,12 @@
 
 import { within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
-import type { AppState } from '$lib/state/app.svelte';
+import { describe, expect, it } from 'vitest';
 import { downloadWindow, renderApp, settle } from '$lib/testing/setup';
-
-let current: { app: AppState; unmount: () => void } | undefined;
-afterEach(() => {
-  current?.app.dispose();
-  current?.unmount();
-  current = undefined;
-});
 
 describe('the add-on offer', () => {
   it('keeps one live region from before the install starts', async () => {
     const r = await renderApp({ empty: true });
-    current = r;
     r.backend.simulateAddonRequired();
     const window = within(await downloadWindow());
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent(

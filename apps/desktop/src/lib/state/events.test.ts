@@ -1,8 +1,6 @@
 import type { UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { MockBackend } from '../backend/mock';
-import { DownloadWindowState } from '../window/download-window.svelte';
-import { AppState } from './app.svelte';
+import { appState, mockBackend, windowState } from '$lib/testing/setup';
 import { dispatch, HeldEvents, type UiEventHandlers } from './events';
 
 const FORWARD: UiEvent = { type: 'window_requested' };
@@ -60,7 +58,7 @@ describe('event handler tables', () => {
   });
 
   it('keep a storage failure in the main window, and change nothing for a window request', async () => {
-    const app = new AppState(new MockBackend({ autoTick: false }));
+    const app = appState();
     await app.init();
     const notes = app.toasts.items.length;
     app.handle(FORWARD);
@@ -68,15 +66,14 @@ describe('event handler tables', () => {
     app.handle(STORAGE);
     expect(app.storageProblem).toBe('Disk full.');
     expect(app.toasts.items.length).toBe(notes);
-    app.dispose();
   });
 
   it('leave a question window alone for events about another question', async () => {
-    const backend = new MockBackend({ autoTick: false, empty: true });
+    const backend = mockBackend({ empty: true });
     backend.simulateConfirmation();
     const [asked] = await backend.pendingConfirmations();
     const id = asked?.id ?? -1;
-    const win = new DownloadWindowState(backend, { question: id }, { close: vi.fn() });
+    const { win } = windowState(backend, { question: id });
     await win.init();
     expect(win.question?.kind).toBe('capture');
     win.handle({ type: 'media_analysing', data: { id: id + 1, url: 'https://example.com/v' } });
@@ -86,6 +83,5 @@ describe('event handler tables', () => {
     expect(win.question?.kind).toBe('capture');
     win.handle({ type: 'confirmation_closed', data: { id } });
     expect(win.phase).toBe('gone');
-    win.dispose();
   });
 });

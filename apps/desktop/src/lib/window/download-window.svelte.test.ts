@@ -3,22 +3,16 @@
 // that follows.
 
 import { describe, expect, it, vi } from 'vitest';
-import { NOON } from '$lib/testing/setup';
-import { MockBackend } from '../backend/mock';
-import {
-  ANSWERED_ELSEWHERE,
-  DownloadWindowState,
-  READING_ENDED,
-  type Target,
-} from './download-window.svelte';
+import { mockBackend, windowState } from '$lib/testing/setup';
+import type { MockBackend } from '../backend/mock';
+import { ANSWERED_ELSEWHERE, READING_ENDED, type Target } from './download-window.svelte';
 
 function backend() {
-  return new MockBackend({ autoTick: false, now: () => NOON, empty: true });
+  return mockBackend({ empty: true });
 }
 
 async function open(b: MockBackend, target: Target) {
-  const host = { close: vi.fn(), becameDownload: vi.fn() };
-  const win = new DownloadWindowState(b, target, host);
+  const { win, host } = windowState(b, target);
   await win.init();
   await vi.waitFor(() => expect(win.addon).not.toBeNull());
   return { win, host };
@@ -60,7 +54,6 @@ describe('a browser file', () => {
     b.tick(1000);
     expect(win.row?.status).toBe('downloading');
     expect(win.row?.done).toBeGreaterThan(0);
-    win.dispose();
   });
 
   it('Download later adds it paused and closes the window', async () => {
@@ -72,7 +65,6 @@ describe('a browser file', () => {
     expect(host.close).toHaveBeenCalledTimes(1);
     const id = host.becameDownload.mock.calls[0]?.[0] as number;
     expect((await b.getDownload(id)).status).toBe('paused');
-    win.dispose();
   });
 
   it('closes when downloads start, if the person chose that', async () => {
@@ -85,7 +77,6 @@ describe('a browser file', () => {
     await win.confirm(keep, false);
     expect(host.close).toHaveBeenCalledTimes(1);
     expect(win.phase).toBe('ask');
-    win.dispose();
   });
 
   it('Start downloads without asking turns the window off for files', async () => {
@@ -95,7 +86,6 @@ describe('a browser file', () => {
     const { win } = await open(b, { question: asked?.id ?? -1 });
     await win.setStartWithoutAsking(true);
     expect((await b.getSettings()).extension.ask_before_download).toBe(false);
-    win.dispose();
   });
 
   it('only Cancel discards; closing the window does not', async () => {
@@ -111,7 +101,6 @@ describe('a browser file', () => {
     await win.discard();
     expect(reject).toHaveBeenCalledTimes(1);
     expect(await b.pendingConfirmations()).toHaveLength(0);
-    win.dispose();
   });
 
   it('says when the file is already in the list', async () => {
@@ -125,7 +114,6 @@ describe('a browser file', () => {
     expect(again?.url).toBe(first?.url);
     const { win } = await open(b, { question: again?.id ?? -1 });
     expect(win.earlier?.status).toBe('paused');
-    win.dispose();
   });
 
   it('a question answered before its window loaded is never asked again', async () => {
@@ -136,7 +124,6 @@ describe('a browser file', () => {
     const { win } = await open(b, { question: asked?.id ?? -1 });
     expect(win.phase).toBe('gone');
     expect(win.goneReason).toBe(ANSWERED_ELSEWHERE);
-    win.dispose();
   });
 
   it('says so when it is answered elsewhere or taken back', async () => {
@@ -147,7 +134,6 @@ describe('a browser file', () => {
     b.simulateAnsweredElsewhere();
     expect(win.phase).toBe('gone');
     expect(win.goneReason).toBe(ANSWERED_ELSEWHERE);
-    win.dispose();
   });
 
   it('keeps the question when the answer fails, and says why', async () => {
@@ -162,7 +148,6 @@ describe('a browser file', () => {
     // A later close from elsewhere is news again.
     b.simulateAnsweredElsewhere();
     expect(win.phase).toBe('gone');
-    win.dispose();
   });
 });
 
@@ -173,13 +158,11 @@ describe('a video', () => {
     try {
       b.simulateSlowReading();
       const id = b.windows.windows[0]?.shows.id ?? -1;
-      const host = { close: vi.fn() };
-      const win = new DownloadWindowState(b, { question: id }, host);
+      const { win } = windowState(b, { question: id });
       await win.init();
       expect(win.question?.kind).toBe('reading');
       await vi.advanceTimersByTimeAsync(3000);
       expect(win.question?.kind).toBe('choice');
-      win.dispose();
     } finally {
       vi.useRealTimers();
     }
@@ -202,14 +185,13 @@ describe('a video', () => {
     try {
       b.simulateSlowReading();
       const id = b.windows.windows[0]?.shows.id ?? -1;
-      const win = new DownloadWindowState(b, { question: id }, { close: vi.fn() });
+      const { win } = windowState(b, { question: id });
       await win.init();
       expect(win.earlier?.id).toBe(earlierId);
       await vi.advanceTimersByTimeAsync(3000);
       expect(win.question?.kind).toBe('choice');
       // A note that could not be checked again is not shown as if it still held.
       expect(win.earlier).toBeNull();
-      win.dispose();
     } finally {
       vi.useRealTimers();
     }
@@ -221,12 +203,11 @@ describe('a video', () => {
     try {
       b.simulateSlowReading();
       const id = b.windows.windows[0]?.shows.id ?? -1;
-      const win = new DownloadWindowState(b, { question: id }, { close: vi.fn() });
+      const { win } = windowState(b, { question: id });
       await win.init();
       win.handle({ type: 'confirmation_closed', data: { id } });
       expect(win.phase).toBe('gone');
       expect(win.goneReason).toBe(READING_ENDED);
-      win.dispose();
     } finally {
       vi.useRealTimers();
     }
@@ -246,7 +227,6 @@ describe('a video', () => {
     await vi.waitFor(() => expect(win.phase).toBe('progress'));
     expect(win.awaitingAddon).toBeNull();
     expect(win.row?.media?.quality).toBe('2160p');
-    win.dispose();
   });
 
   it('gives the quality list back when the add-on is not wanted or its install stops', async () => {
@@ -263,7 +243,6 @@ describe('a video', () => {
     expect(win.phase).toBe('ask');
     // Nothing was answered.
     expect(await b.pendingMediaChoices()).toHaveLength(1);
-    win.dispose();
   });
 
   it('a page waiting for the add-on goes on to its quality list once installed', async () => {
@@ -275,7 +254,6 @@ describe('a video', () => {
     await win.installAddon();
     b.tick(4500);
     await vi.waitFor(() => expect(win.question?.kind).toBe('choice'));
-    win.dispose();
   });
 
   it('Download later adds the picked quality paused', async () => {
@@ -287,7 +265,6 @@ describe('a video', () => {
     expect(host.close).toHaveBeenCalledTimes(1);
     const id = host.becameDownload.mock.calls[0]?.[0] as number;
     expect((await b.getDownload(id)).status).toBe('paused');
-    win.dispose();
   });
 });
 
@@ -312,7 +289,6 @@ describe('a progress window', () => {
     expect(win.row?.done).not.toBe(12345);
     win.handle({ type: 'downloads_changed', data: [other, mine] });
     expect(win.row?.done).toBe(42);
-    win.dispose();
   });
 
   it('pauses, resumes, and Cancel removes it with its partial file', async () => {
@@ -327,7 +303,6 @@ describe('a progress window', () => {
     await win.cancelDownload();
     expect(remove).toHaveBeenCalledWith([win.downloadId], true);
     expect(host.close).toHaveBeenCalledTimes(1);
-    win.dispose();
   });
 
   it('says so when its download leaves the list', async () => {
@@ -335,6 +310,5 @@ describe('a progress window', () => {
     const { win } = await running(b);
     await b.remove([win.downloadId ?? -1], false);
     expect(win.phase).toBe('gone');
-    win.dispose();
   });
 });
