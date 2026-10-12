@@ -59,6 +59,11 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
+      # The clippy-linux check lints the crates that compile no C for Linux from this system, which needs only the standard library of the Linux target.
+      - name: Add the Linux target
+        if: runner.os != 'Linux'
+        run: rustup target add x86_64-unknown-linux-gnu
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

@@ -60,6 +60,7 @@ const DESKTOP_CRATE = 'wirecatch-desktop';
 const DESKTOP_APP = 'apps/desktop';
 const TAURI_CONFIG = 'apps/desktop/src-tauri/tauri.conf.json';
 const ENGINE_CRATE = 'wirecatch-engine';
+const BRIDGE_CRATE = 'wirecatch-bridge';
 
 /** Command-line options. */
 const options = { desktop: true, failFast: true };
@@ -184,7 +185,46 @@ function clippy() {
   const exclusion = options.desktop ? [] : ['--exclude', DESKTOP_CRATE];
   cargo('clippy', '--workspace', ...exclusion, '--all-targets', '--locked', ...TEST_FEATURES, '--', '-D', 'warnings');
   // The bridge as it ships: without the test-only feature, code behind `cfg(not(feature = "test-overrides"))` is linted too.
-  cargo('clippy', '-p', 'wirecatch-bridge', '--all-targets', '--locked', '--', '-D', 'warnings');
+  cargo('clippy', '-p', BRIDGE_CRATE, '--all-targets', '--locked', '--', '-D', 'warnings');
+}
+
+/** The system Linux CI checks, linted from other systems by `clippy-linux`. */
+const LINUX_TARGET = 'x86_64-unknown-linux-gnu';
+/** A package in a crate's dependency tree that compiles C for the target (ring and bundled SQLite build with it), which needs a C compiler for Linux. */
+const C_COMPILER_CRATE = /^cc v/m;
+
+/**
+ * The workspace crates that can be linted for Linux without a C compiler for Linux: those whose dependency tree for Linux, dev-dependencies included (`--all-targets`), never compiles C. `cargo tree` resolves each crate's features on its own, as the lint run does. The list grows by itself as crates stop depending on ring and other C code.
+ */
+function linuxLintableCrates() {
+  return cargoMetadata()
+    .packages.map((pkg) => pkg.name)
+    .filter((name) => {
+      const args = ['tree', '-p', name, '--target', LINUX_TARGET, '--edges', 'normal,build,dev', '--prefix', 'none', '--format', '{p}', '--locked'];
+      return !C_COMPILER_CRATE.test(capture('cargo', args).out);
+    });
+}
+
+/**
+ * Lints for Linux from Windows and macOS, so code behind `cfg(unix)` or `cfg(target_os = "linux")` is checked before Linux CI sees it. On Linux the `clippy` check already covers it. Crates that compile C for their target cannot be checked this way without a C cross-compiler, so only the crates that do not are (see linuxLintableCrates).
+ */
+function clippyLinux() {
+  if (process.platform === 'linux') {
+    console.log('Skipped on Linux, where the clippy check already lints for Linux.');
+    return;
+  }
+  const installed = capture('rustup', ['target', 'list', '--installed']).out.split(/\r?\n/);
+  if (!installed.includes(LINUX_TARGET)) {
+    throw new GateError(`The ${LINUX_TARGET} target is not installed, so code for Linux cannot be linted here. Add it with \`rustup target add ${LINUX_TARGET}\` (only its standard library; no C compiler is needed).`);
+  }
+  const crates = linuxLintableCrates();
+  if (crates.length === 0) throw new GateError('No workspace crate can be linted for Linux from this system; every one compiles C.');
+  console.log(`Linting for ${LINUX_TARGET}: ${crates.join(', ')}.`);
+  const packages = crates.flatMap((name) => ['-p', name]);
+  const target = ['--target', LINUX_TARGET];
+  const features = crates.includes(BRIDGE_CRATE) ? TEST_FEATURES : [];
+  cargo('clippy', ...target, ...packages, '--all-targets', '--locked', ...features, '--', '-D', 'warnings');
+  if (crates.includes(BRIDGE_CRATE)) cargo('clippy', ...target, '-p', BRIDGE_CRATE, '--all-targets', '--locked', '--', '-D', 'warnings');
 }
 
 /**
@@ -478,6 +518,7 @@ const CHECKS = {
   'lint-policy': lintPolicy,
   'cfg-allow': conditionalAllows,
   clippy,
+  'clippy-linux': clippyLinux,
   'clippy-http3': () => cargo('clippy', '-p', ENGINE_CRATE, '-p', 'wirecatch-cli', '--all-targets', '--locked', '--features', 'wirecatch-engine/http3,wirecatch-cli/http3', '--', '-D', 'warnings'),
   test,
   // The engine with its off-by-default http3 feature, which no other check compiles into a test.
@@ -510,7 +551,7 @@ const CHECKS = {
 
 const GROUPS = {
   // The http3 checks run here, on every system CI tests, because QUIC sockets behave differently on Windows.
-  rust: ['fmt', 'lint-policy', 'cfg-allow', 'clippy', 'test', 'test-desktop', 'clippy-http3', 'test-http3', 'engine-docs'],
+  rust: ['fmt', 'lint-policy', 'cfg-allow', 'clippy', 'clippy-linux', 'test', 'test-desktop', 'clippy-http3', 'test-http3', 'engine-docs'],
   release: ['engine-package', 'msrv'],
   js: ['protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'tauri-pairs', 'commits'],

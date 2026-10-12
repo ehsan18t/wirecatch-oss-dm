@@ -15,7 +15,7 @@ A fact written in two places will disagree with itself. Each kind of fact has on
 | Product identity: names, ids, app identifiers, host and pipe names, folder names, URLs, emails | `config/product.toml`, generated into Rust, TypeScript and every manifest. Being introduced ([AUDIT](AUDIT.md) W2); until then `config/extension-ids.json` holds the extension ids and the rest are named constants | review (a gate check that generated files are current comes with W2) |
 | Anything that crosses a process boundary: types, command and event names, limits, defaults, error codes | `crates/protocol`, generated into `packages/protocol` (D15) | gate (`protocol`) |
 | Commands every check runs, and the versions of the cargo tools they use | `scripts/gate.mjs` | review |
-| Rust lint policy | `[workspace.lints]` in `Cargo.toml` and `clippy.toml` | gate (`lint-policy` checks every crate follows it or is listed as pending) |
+| Rust lint policy | `[workspace.lints]` in `Cargo.toml` and `clippy.toml` | gate (`lint-policy` checks every crate follows it; `clippy` lints for the system it runs on, and `clippy-linux` lints for Linux from Windows and macOS every crate whose dependencies compile no C, so code behind `cfg(unix)` is checked before Linux CI sees it) |
 | TypeScript and Svelte lint policy | `packages/eslint-config` | review |
 | Formatting | `rustfmt.toml`, `.prettierrc.json` | gate for Rust and the two apps; review for `packages/` and `scripts/` |
 | Shared Rust dependency versions | `[workspace.dependencies]` | review |
