@@ -12,10 +12,8 @@ import {
 } from '@wirecatch/protocol';
 import { isEvent, isOutcome } from '../protocol';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
+import { formatBytes } from '@wirecatch/units';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
-
-/** Largest message the bridge accepts (D14): the frame limit of every local connection, as `crates/protocol` sets it. */
-export const MAX_MESSAGE_BYTES = MAX_FRAME_LEN;
 
 /** How many timed-out requests are remembered so a late answer can still be recognized. */
 const LATE_MEMORY = 64;
@@ -364,11 +362,12 @@ export class NativeClient {
     if (this.#nextId === UNKNOWN_REQUEST_ID) this.#nextId += 1;
     const message: Message = { kind: 'request', id, call };
     // Checked here so one oversized request fails on its own instead of making the bridge drop the port.
-    if (utf8Length(JSON.stringify(message)) > MAX_MESSAGE_BYTES) {
+    // MAX_FRAME_LEN is the largest message the bridge accepts (D14), as `crates/protocol` sets it.
+    if (utf8Length(JSON.stringify(message)) > MAX_FRAME_LEN) {
       return Promise.reject(
         new RequestError(
           'too_large',
-          'This request is too large to send to Wirecatch (over 1 MiB). Try a shorter list or a shorter address.',
+          `This request is too large to send to Wirecatch (over ${formatBytes(MAX_FRAME_LEN)}). Try a shorter list or a shorter address.`,
         ),
       );
     }

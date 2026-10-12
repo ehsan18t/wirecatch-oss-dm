@@ -1,11 +1,7 @@
-import { UNKNOWN_REQUEST_ID, type Event, type Hello } from '@wirecatch/protocol';
+import { MAX_FRAME_LEN, UNKNOWN_REQUEST_ID, type Event, type Hello } from '@wirecatch/protocol';
+import { formatBytes } from '@wirecatch/units';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  MAX_MESSAGE_BYTES,
-  NativeClient,
-  RequestError,
-  type Backoff,
-} from '../src/lib/native/client';
+import { NativeClient, RequestError, type Backoff } from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
 import { patchOf } from '../src/lib/protocol';
 import { FakeApp, flush } from './fakes';
@@ -215,7 +211,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     const port = app.openPort;
-    const huge = 'x'.repeat(MAX_MESSAGE_BYTES);
+    const huge = 'x'.repeat(MAX_FRAME_LEN);
     const error = await client
       .request(
         { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) },
@@ -223,7 +219,9 @@ describe('NativeClient', () => {
       )
       .catch((e: unknown) => e);
     expect(error).toMatchObject({ kind: 'too_large' });
-    expect((error as RequestError).message).toContain('too large');
+    expect((error as RequestError).message).toContain(
+      `too large to send to Wirecatch (over ${formatBytes(MAX_FRAME_LEN)})`,
+    );
     expect(app.calls('update_extension_settings')).toHaveLength(0);
     expect(client.status.state).toBe('connected');
     expect(app.openPort).toBe(port);

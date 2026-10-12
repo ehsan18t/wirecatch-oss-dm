@@ -1,3 +1,4 @@
+import { MB } from '@wirecatch/units';
 import type { DetectedKind, Detection } from './detect';
 import {
   arrayOf,
@@ -50,7 +51,7 @@ export const MAX_ITEMS_PER_TAB = 30;
  * inside its quota (10 MB in Chromium), which the in-flight download list shares.
  * The lists of the tabs that changed last are kept first.
  */
-export const MAX_SAVED_CHARS = 1024 * 1024;
+export const MAX_SAVED_CHARS = MB;
 
 /** Room for the kind a key puts before its address (`direct:`), with some to spare. */
 const KEY_PREFIX_ROOM = 16;

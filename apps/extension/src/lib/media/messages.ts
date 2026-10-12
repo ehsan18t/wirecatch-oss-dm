@@ -2,6 +2,7 @@
  * One-off messages between the media button (a content script) and the background
  * script. Kept apart from the popup messages so the content script stays tiny.
  */
+import { KB } from '@wirecatch/units';
 import {
   isBoolean,
   isString,
@@ -50,7 +51,7 @@ export function mediaButtonOn(stored: unknown): boolean {
  * network. Real media addresses are far shorter; longer ones are not worth handing
  * over and would only fill the session storage the lists are saved to.
  */
-export const MAX_MEDIA_URL_LENGTH = 8 * 1024;
+export const MAX_MEDIA_URL_LENGTH = 8 * KB;
 /** Longest title sent from a page. */
 export const MAX_TITLE_LENGTH = 1024;
 export const MEDIA_DOWNLOAD = 'wirecatch:media-download';

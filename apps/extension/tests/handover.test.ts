@@ -2,7 +2,7 @@
  * The most important rule: no download is ever lost. These tests run the real hub,
  * handover and native client against a fake browser downloads API and a fake port.
  */
-import type { NewDownload } from '@wirecatch/protocol';
+import { MAX_FRAME_LEN, type NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
 import type { CachedSettings, SettingsCache } from '../src/lib/hub/deps';
@@ -264,7 +264,7 @@ describe('handover', () => {
 
   it('fails one oversized request on its own and keeps the connection', async () => {
     s = await setup();
-    const hugeCookieSite = 'https://example.com/' + 'x'.repeat(1024 * 1024);
+    const hugeCookieSite = 'https://example.com/' + 'x'.repeat(MAX_FRAME_LEN);
     const result = await s.hub.onDownload(
       downloadItem({ url: hugeCookieSite, finalUrl: hugeCookieSite }),
     );
