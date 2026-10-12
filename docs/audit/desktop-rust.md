@@ -1,5 +1,7 @@
 # Audit: apps/desktop/src-tauri (Rust side of the Tauri app)
 
+> This audit is a snapshot: its paths and line numbers name the code as it was when the audit was made (it was recorded in commit 0bd101a). Some files have since moved or been split, so a path that no longer exists, or a line that no longer matches, refers to the code of that time; `git log -- <path>` shows the commit that moved or removed it.
+
 Scope read in full: `src/*.rs` (lib, commands, api, host, window, download_windows, questions, background, lifecycle, sleep, tray, activity, bridge, appimage, autostart, updates), `tauri.conf.json`, `tauri.bundle.conf.json`, `capabilities/*.json`, `build.rs`, `Cargo.toml`, `windows/hooks.nsh`, `linux/prerm.sh`, `examples/send_capture.rs`, and the test file list. Paths below are relative to `apps/desktop/src-tauri` unless they start with another package.
 
 ## DRS-1 Every IPC error is a bare String, and the frontend tells errors apart by matching message prefixes

@@ -162,7 +162,8 @@ export interface HandoverInput {
  *
  * 1. Pause the browser download. If that fails, leave it alone.
  * 2. Check the settings again (the app's live ones when it can be reached) and build the request.
- * 3. Send `add_download` with a fresh handover id; if no answer comes back, withdraw it (see `submit`).
+ * 3. Send `add_download` under the handover id the caller chose and saved before pausing; if
+ *    no answer comes back, withdraw it (see `submit`).
  * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy,
  *    if it is still paused (see `removeBrowserCopy`).
  *    Only `started` means the app has reached the server and data is flowing. `queued` and
