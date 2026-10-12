@@ -130,6 +130,7 @@ async fn number_templates_download_the_chosen_representation() {
     let mut req = request(&server, "dash/manifest.mpd", &dir.join("audio.mp4"));
     req.video = Choice::Skip;
     assert_eq!(saved(run(req).await.unwrap()).unwrap(), expected["a1"]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -170,6 +171,7 @@ async fn timelines_use_times_in_addresses() {
         .unwrap(),
         expected
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -223,6 +225,7 @@ async fn segment_base_files_are_split_through_their_index() {
             .filter(|s| s.path == "/sb/video.mp4")
             .all(|s| s.header("range").is_some())
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -277,6 +280,7 @@ async fn live_drm_and_several_periods_are_refused() {
         !server.seen().iter().any(|s| s.has_extension("m4s")),
         "nothing fetched"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -294,6 +298,7 @@ async fn a_base_url_into_the_local_network_is_refused() {
     req.private_network = PrivateNetwork::Block;
     let error = run(req).await.unwrap_err();
     assert!(matches!(error, Error::PrivateNetwork), "{error}");
+    dir.remove().unwrap();
 }
 
 /// A presentation duration too large for `Duration` once panicked while inspecting, and release builds abort on panic, which took down the whole app.

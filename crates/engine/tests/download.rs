@@ -78,6 +78,7 @@ async fn parallel_download_is_byte_identical() {
         vec!["big.bin"],
         "part and state files must be gone"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -92,6 +93,7 @@ async fn falls_back_to_one_connection_without_range_support() {
     };
     assert_eq!(std::fs::read(path).unwrap(), server.data);
     assert_eq!(server.stats.max_concurrent.load(Ordering::SeqCst), 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -113,6 +115,7 @@ async fn unknown_length_download_completes() {
     };
     assert_eq!(bytes, server.data.len() as u64);
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -156,6 +159,7 @@ async fn resumes_after_pause_without_downloading_again() {
         sent < needed + (len / 8) as u64,
         "second run fetched {sent} bytes to fill {needed}"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -192,6 +196,7 @@ async fn starts_over_when_the_remote_file_changed() {
     assert_eq!(path, dir.join("c.bin"), "should reuse the same name");
     assert_eq!(resumed_from, 0);
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -214,6 +219,7 @@ async fn retries_dropped_connections() {
     };
     assert_eq!(std::fs::read(path).unwrap(), server.data);
     assert!(server.stats.requests.load(Ordering::SeqCst) > 3);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -234,6 +240,7 @@ async fn retries_without_range_support_by_skipping_received_bytes() {
         panic!("not completed: {outcome:?}")
     };
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -260,6 +267,7 @@ async fn uses_content_disposition_and_never_overwrites() {
     assert_eq!(path, dir.join("report (1).pdf"));
     assert_eq!(std::fs::read(dir.join("report.pdf")).unwrap(), b"keep me");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -281,6 +289,7 @@ async fn empty_file() {
     };
     assert_eq!(bytes, 0);
     assert_eq!(std::fs::read(path).unwrap(), b"");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -307,6 +316,7 @@ async fn rate_limiter_caps_combined_speed() {
     assert_eq!(std::fs::read(path).unwrap(), server.data);
     // 2 MiB at 1 MiB/s, less the quarter-second burst allowance.
     assert!(secs >= 1.6, "finished in {secs:.2} s despite the limit");
+    dir.remove().unwrap();
 }
 
 /// A caller may drop a download's future before it ends (a manager abandons a
@@ -351,6 +361,7 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
         "the dropped download wrote its resume file again"
     );
     assert!(!part.exists());
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -387,6 +398,7 @@ async fn exact_path_continues_after_the_link_changes() {
     assert_eq!(path, target);
     assert!(resumed_from >= 512 * KIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 /// A server whose first answer is `503` with `Retry-After: 1`, so there is a
@@ -438,6 +450,7 @@ async fn progress_path_is_the_server_chosen_name_once_it_answers() {
     };
     assert_eq!(saved, dir.join("report (1).pdf"));
     assert_eq!(path, Some(saved));
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -452,6 +465,7 @@ async fn progress_path_is_the_exact_path_once_the_server_answers() {
 
     assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
     assert_eq!(path, Some(target));
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -487,6 +501,7 @@ async fn progress_path_stays_unset_when_the_first_request_fails() {
     );
     assert_eq!(progress.path(), None);
     assert_eq!(progress.file_name(), None);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -540,6 +555,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
     assert_eq!(progress.path(), Some(path.clone()));
     assert_eq!(std::fs::read(path).unwrap(), server.data);
     assert_eq!(files_in(&folder), vec!["report.pdf"]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -576,6 +592,7 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
         files_in(&dir)
     );
     assert_eq!(progress.path(), None);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -615,6 +632,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
     assert_eq!(path, target);
     assert!(resumed_from >= 512 * KIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
 }
 
 /// With the local network blocked, a download from a site (127.0.0.1 stands in
@@ -651,4 +669,5 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
     let req = request(&site, "video.mp4", &dir, 2);
     assert!(matches!(run(req).await.unwrap(), Outcome::Completed { .. }));
     assert!(!device.stats.seen().is_empty());
+    dir.remove().unwrap();
 }

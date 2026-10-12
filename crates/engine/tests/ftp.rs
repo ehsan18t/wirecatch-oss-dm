@@ -91,6 +91,7 @@ async fn plain_download_is_byte_identical_over_parallel_connections() {
     ] {
         assert!(stats.count(command) >= 1, "{command} was sent");
     }
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -161,6 +162,7 @@ async fn resumes_after_cancel_without_downloading_again() {
             .iter()
             .any(|&o| o >= 2 * MIB)
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -211,6 +213,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
         "downloaded bytes differ"
     );
     assert_eq!(files_in(&dir), ["file.bin"]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -251,6 +254,7 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
         std::fs::read(&path).unwrap() == new_data,
         "the new version, not a mix"
     );
+    dir.remove().unwrap();
 }
 
 async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResult {
@@ -276,6 +280,7 @@ async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResul
         2,
         "both allowed sessions were used"
     );
+    dir.remove()?;
     Ok(())
 }
 
@@ -333,6 +338,7 @@ async fn a_wrong_password_is_a_plain_language_error() {
         "a refused login is not retried"
     );
     assert!(files_in(&dir).is_empty(), "nothing written");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -362,6 +368,7 @@ async fn a_refused_anonymous_login_says_to_add_a_login() {
         text.contains("ftp://user:password@127.0.0.1/path"),
         "{text}"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -389,6 +396,7 @@ async fn a_missing_file_is_reported_and_nothing_is_written() {
         "says how to fix the path: {error}"
     );
     assert!(files_in(&dir).is_empty(), "nothing written");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -414,6 +422,7 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
     let stats = &server.stats;
     assert!(stats.count("PASV") >= 2);
     assert_eq!(stats.count("EPSV"), 1, "a refused EPSV is not asked again");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -436,6 +445,7 @@ async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
     );
     assert_eq!(server.stats.count("EPSV"), 1, "not asked again");
     assert!(server.stats.count("PASV") >= 2);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -459,6 +469,7 @@ async fn paths_are_sent_as_utf8() {
         "downloaded bytes differ"
     );
     assert!(server.stats.count("OPTS UTF8 ON") >= 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -480,6 +491,7 @@ async fn a_server_refusing_utf8_mode_still_downloads() {
         "downloaded bytes differ"
     );
     assert!(server.stats.count("OPTS UTF8 ON") >= 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -501,6 +513,7 @@ async fn a_server_without_rest_is_downloaded_over_one_connection() {
         "downloaded bytes differ"
     );
     assert_eq!(server.stats.transfers.load(Ordering::SeqCst), 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -535,6 +548,7 @@ async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
         server.stats.max_transfers.load(Ordering::SeqCst) >= 2,
         "still split"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -556,6 +570,7 @@ async fn dropped_data_connections_are_retried() {
         "downloaded bytes differ"
     );
     assert!(server.stats.transfers.load(Ordering::SeqCst) >= 3);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -571,6 +586,7 @@ async fn an_empty_file_completes() {
 
     assert_eq!(bytes, 0);
     assert_eq!(std::fs::read(&path).unwrap(), b"");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -602,6 +618,7 @@ async fn ftpes_never_falls_back_to_an_unencrypted_login() {
     );
     assert_eq!(server.stats.count("PASS"), 0);
     assert_eq!(files_in(&dir), [] as [std::string::String; 0]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -614,6 +631,7 @@ async fn a_folder_link_is_refused_before_connecting() {
     assert!(matches!(error, Error::InvalidUrl(_)), "{error:?}");
     assert!(error.to_string().contains("folder"), "{error}");
     assert_eq!(server.stats.sessions.load(Ordering::SeqCst), 0);
+    dir.remove().unwrap();
 }
 
 /// Cancels `cancel` once `ready` holds, and records when.
@@ -677,6 +695,7 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
     assert!(took < Duration::from_secs(2), "paused after {took:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -721,6 +740,7 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
         logins < transfers,
         "{logins} logins for {transfers} transfers"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -748,6 +768,7 @@ async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
     assert!(took < Duration::from_secs(2), "paused after {took:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -772,6 +793,7 @@ async fn cancelling_before_the_server_greets_returns_at_once() {
     assert!(matches!(error, Error::Cancelled), "{error:?}");
     assert!(took < Duration::from_secs(2), "returned after {took:?}");
     assert_eq!(files_in(&dir), [] as [std::string::String; 0]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -788,4 +810,5 @@ async fn an_unsupported_scheme_is_reported_without_the_password() {
         !text.contains("hunter2"),
         "the password is not in the message: {text}"
     );
+    dir.remove().unwrap();
 }

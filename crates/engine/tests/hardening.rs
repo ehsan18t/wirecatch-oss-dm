@@ -117,6 +117,7 @@ async fn credentials_never_follow_a_redirect_to_another_origin() {
         assert_eq!(request.header("referer"), Some("https://site.example/"));
         assert_eq!(request.header("user-agent"), Some("TestBrowser/1.0"));
     }
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -151,6 +152,7 @@ async fn same_origin_redirect_keeps_credentials() {
             );
         }
     }
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -179,6 +181,7 @@ async fn retry_after_in_seconds_delays_the_first_request() {
     // The usual first backoff is under 0.75 s, so this proves the header was used.
     assert!(waited >= Duration::from_secs(1), "retried after {waited:?}");
     assert!(waited < Duration::from_secs(3), "retried after {waited:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -211,6 +214,7 @@ async fn retry_after_as_a_date_is_not_retried_before_that_time() {
         "retried {:?} before {not_before}",
         deadline.duration_since(seen[1].wall).unwrap_or_default()
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -244,6 +248,7 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
     assert_eq!(seen[2].header("range"), seen[1].header("range"));
     let waited = seen[2].at - seen[1].at;
     assert!(waited >= Duration::from_secs(1), "retried after {waited:?}");
+    dir.remove().unwrap();
 }
 
 /// Eight connections against a server that serves two at a time.
@@ -285,6 +290,7 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
     );
     // About 4 s of data; generous for a 2-core CI runner.
     assert!(took < Duration::from_secs(30), "took {took:?}");
+    dir.remove()?;
     Ok(())
 }
 
@@ -345,6 +351,7 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
     );
     // About 1 s of data; anything near 20 s means a part waited out Retry-After.
     assert!(took < Duration::from_secs(12), "took {took:?}");
+    dir.remove().unwrap();
 }
 
 fn with_userinfo(mut url: wirecatch_engine::Url) -> Option<wirecatch_engine::Url> {
@@ -379,6 +386,7 @@ async fn url_credentials_reach_every_request_to_their_origin() {
     for request in &seen {
         assert_eq!(request.header("authorization"), Some(ALICE), "{request:?}");
     }
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -416,6 +424,7 @@ async fn url_credentials_never_follow_a_redirect_to_another_origin() {
             "{request:?}"
         );
     }
+    dir.remove().unwrap();
 }
 
 /// Runs `req` in the background and cancels it once `ready` holds, then
@@ -459,6 +468,7 @@ async fn cancelling_while_the_server_never_answers_the_first_request() {
         .await
         .unwrap();
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -483,6 +493,7 @@ async fn cancelling_while_the_server_never_answers_mid_download() {
         .await
         .unwrap();
     assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -512,6 +523,7 @@ async fn a_server_that_never_answers_times_out_and_is_retried() {
         waited >= Duration::from_millis(500),
         "retried after {waited:?}, before the timeout"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -537,6 +549,7 @@ async fn cancelling_during_a_long_retry_after_on_the_first_request() {
     .await
     .unwrap();
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -563,6 +576,7 @@ async fn cancelling_during_a_long_retry_after_mid_download() {
     .await
     .unwrap();
     assert!(matches!(result, Ok(Outcome::Paused { .. })), "{result:?}");
+    dir.remove().unwrap();
 }
 
 /// Downloads `path` from `server` into `dir`.

@@ -1104,6 +1104,7 @@ mod tests {
             0,
             "a connection reached the local address"
         );
+        dir.remove().unwrap();
     }
 
     #[test]

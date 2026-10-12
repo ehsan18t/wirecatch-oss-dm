@@ -127,7 +127,7 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     let ffmpeg = fake_ffmpeg().unwrap();
     let server = FileServer::start().await;
     video_and_audio(&server).unwrap();
-    let (_root, dir) = hostile_dir("ffmpeg-args").unwrap();
+    let (root, dir) = hostile_dir("ffmpeg-args").unwrap();
     let output = dir.join("-i evil name.mp4");
     let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
     request.options = options();
@@ -180,6 +180,7 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
         ]
     );
     assert!(!work.exists(), "temporary files are removed");
+    root.remove().unwrap();
 }
 
 #[tokio::test]
@@ -220,6 +221,7 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
         .map(|s| s.path.clone())
         .collect();
     assert!(fetched_again.is_empty(), "{fetched_again:?}");
+    dir.remove().unwrap();
 }
 
 /// Writes a short HLS stream with a real ffmpeg (stream copy friendly codecs:
@@ -297,7 +299,7 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
          #EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS=\"mp4v.20.9,mp4a.40.2\",AUDIO=\"aud\"\nv.m3u8\n",
         MPEGURL,
     );
-    let (_root, dir) = hostile_dir("real-ffmpeg").unwrap();
+    let (root, dir) = hostile_dir("real-ffmpeg").unwrap();
     let mut request = StreamRequest::new(server.url("master.m3u8"), dir.join("-out video.mp4"));
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
@@ -309,6 +311,8 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
     let report = probe(&ffmpeg, &path).unwrap();
     assert!(report.contains("Video: mpeg4"), "{report}");
     assert!(report.contains("Audio: aac"), "{report}");
+    root.remove().unwrap();
+    source.remove().unwrap();
 }
 
 #[tokio::test]
@@ -365,6 +369,8 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
         report.contains("Video: mpeg4") && report.contains("Audio: aac"),
         "{report}"
     );
+    dir.remove().unwrap();
+    source.remove().unwrap();
 }
 
 /// A one-segment HLS stream whose only segment is `payload`.
@@ -402,6 +408,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     // The fake ffmpeg would have written the output had it been started.
     assert!(!output.exists());
     assert!(dir.join("clip.mp4.wcstream").join("track0").is_file());
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -453,4 +460,6 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     for name in ["clip.mp4", "clip.mkv"] {
         assert!(!dir.join(name).exists(), "{name} was written");
     }
+    dir.remove().unwrap();
+    elsewhere.remove().unwrap();
 }

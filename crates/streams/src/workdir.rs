@@ -210,5 +210,6 @@ mod tests {
         assert!(!work.segment_path(0, 0).exists());
         work.remove().unwrap();
         assert!(!path_for(&out).exists());
+        dir.remove().unwrap();
     }
 }

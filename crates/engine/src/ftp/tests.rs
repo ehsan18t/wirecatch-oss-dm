@@ -179,6 +179,7 @@ async fn explicit_tls_download_is_byte_identical() {
             .all(|&kind| kind == HandshakeKind::Resumed),
         "every data connection resumes its own control connection's session (the server seals each session's tickets with its own key), as vsftpd and ProFTPD require: {handshakes:?}"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -218,6 +219,7 @@ async fn implicit_tls_download_is_byte_identical() {
             .all(|&kind| kind == HandshakeKind::Resumed),
         "every data connection resumes its own control session: {handshakes:?}"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -240,6 +242,7 @@ async fn an_untrusted_certificate_is_refused() {
     assert!(network.is_connect());
     assert!(error.to_string().contains("certificate"), "{error}");
     assert_eq!(server.stats.count("USER"), 0, "no credentials sent");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -266,6 +269,7 @@ async fn a_reply_sent_ahead_of_encryption_is_refused() {
         "{error}"
     );
     assert_eq!(server.stats.count("USER"), 0, "no credentials sent");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -289,4 +293,5 @@ async fn a_server_refusing_to_encrypt_data_is_not_used() {
     assert_eq!(server.stats.count("PROT P"), 1);
     assert_eq!(server.stats.count("RETR"), 0, "nothing sent in the clear");
     assert_eq!(server.stats.count("EPSV"), 0);
+    dir.remove().unwrap();
 }

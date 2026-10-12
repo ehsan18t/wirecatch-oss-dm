@@ -320,9 +320,9 @@ mod tests {
     #[test]
     fn unique_path_skips_existing_files() {
         let dir = wirecatch_test_support::private_dir("naming").unwrap();
-        let dir = dir.path();
         std::fs::write(dir.join("f.zip"), b"x").unwrap();
         std::fs::write(dir.join("f (1).zip.wcpart"), b"x").unwrap();
-        assert_eq!(unique_path(dir, "f.zip"), dir.join("f (2).zip"));
+        assert_eq!(unique_path(&dir, "f.zip"), dir.join("f (2).zip"));
+        dir.remove().unwrap();
     }
 }

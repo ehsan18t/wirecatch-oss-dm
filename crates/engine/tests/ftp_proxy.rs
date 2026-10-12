@@ -65,4 +65,5 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
     )
     .await
     .unwrap();
+    dir.remove().unwrap();
 }

@@ -96,6 +96,7 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
     // Every byte arrived once, give or take ranges cut short by a split.
     let sent = server.stats.bytes_sent.load(Ordering::SeqCst);
     assert!(sent < server.data.len() as u64 + MIB, "sent {sent}");
+    dir.remove().unwrap();
 }
 
 /// Without the limit the same server refuses the download: the test above
@@ -118,6 +119,7 @@ async fn without_the_limit_the_strict_server_refuses() {
         "{error:?}"
     );
     assert_eq!(server.stats.seen()[0].header("range"), Some("bytes=0-"));
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -151,6 +153,7 @@ async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connecti
     // The end of one request is not a failure: the next one goes out at once,
     // with no pause for a retry (13 retries would take over 6 s).
     assert!(took < Duration::from_secs(3), "took {took:?}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -197,6 +200,7 @@ async fn a_paused_download_resumes_with_limited_requests() {
             .iter()
             .any(|s| s.range().is_some_and(|(start, _)| start > 0)),
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -221,6 +225,7 @@ async fn limited_requests_are_retried_after_dropped_connections() {
         let (start, end) = s.range().unwrap();
         assert!(end.unwrap() - start <= limit);
     }
+    dir.remove().unwrap();
 }
 
 /// A server that stops answering in the middle of a series of requests: the
@@ -252,6 +257,7 @@ async fn a_request_that_hangs_is_given_up_after_the_stall_timeout_and_sent_again
         "the hung request was sent again"
     );
     assert_eq!(seen.len(), 5);
+    dir.remove().unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -270,6 +276,7 @@ async fn limited_requests_keep_to_the_speed_limit() {
     assert_all_within(&server, limit);
     // 2 MiB at 1 MiB/s, less the quarter-second burst allowance.
     assert!(secs >= 1.6, "finished in {secs:.2} s despite the limit");
+    dir.remove().unwrap();
 }
 
 /// A server without byte ranges sends the whole file to the first request, as
@@ -282,6 +289,7 @@ async fn whole_answers_and_small_files_take_one_request() {
     let (path, _) = completed(run(request(&plain, &dir, 4, Some(limit))).await.unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), plain.data);
     assert_eq!(plain.stats.requests.load(Ordering::SeqCst), 1);
+    dir.remove().unwrap();
 
     let small = strict_server(100 * KIB_USIZE, limit, None).await;
     let dir = private_dir("small").unwrap();
@@ -292,6 +300,7 @@ async fn whole_answers_and_small_files_take_one_request() {
         small.stats.seen()[0].header("range"),
         Some(format!("bytes=0-{}", limit - 1).as_str())
     );
+    dir.remove().unwrap();
 }
 
 /// A server that answers the limited first request with part of the file and
@@ -327,4 +336,5 @@ async fn a_range_answer_without_a_size_is_asked_for_whole() {
             Some("bytes=0-".into())
         ]
     );
+    dir.remove().unwrap();
 }

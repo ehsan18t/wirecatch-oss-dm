@@ -82,6 +82,7 @@ async fn a_download_with_an_unworkable_option_is_refused_before_any_request() {
         }
     }
     assert_eq!(server.stats.requests.load(Ordering::SeqCst), 0);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]

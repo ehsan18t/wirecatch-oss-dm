@@ -71,6 +71,7 @@ async fn a_server_without_ranges_still_yields_the_right_bytes() {
         .unwrap();
     assert_eq!(n, 28_995);
     assert_eq!(std::fs::read(&path).unwrap()[..], data[5..29_000]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -131,6 +132,7 @@ async fn save_continues_from_the_byte_it_reached() {
             Some("bytes=100000-399999".to_string())
         ]
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -159,6 +161,7 @@ async fn save_survives_a_reset_without_counting_bytes_twice() {
     assert_eq!(counted.load(Ordering::Relaxed), data.len() as u64);
     assert_eq!(std::fs::read(&path).unwrap(), data);
     assert!(server.stats.requests.load(Ordering::SeqCst) >= 2);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -407,6 +410,7 @@ async fn a_redirect_into_the_local_network_is_blocked() {
     assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
     assert_eq!(site.stats.seen().len(), 1, "the site answered the redirect");
     assert!(device.stats.seen().is_empty(), "the hop was never sent");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]

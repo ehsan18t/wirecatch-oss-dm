@@ -65,8 +65,9 @@ pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>
 /// On Unix it is created with mode 0700, like the app's runtime folder, so a
 /// socket inside it is as private as the app's. [`PrivateDir::endpoint_name`]
 /// names a local endpoint of the folder's own, for tests that run a server on
-/// it. `name` says which tests the folder belongs to; the process id and a
-/// counter keep every call apart.
+/// it. `name` says which tests the folder belongs to; the process id, a
+/// counter and the clock keep every call apart, also from folders a killed
+/// earlier run left behind.
 ///
 /// # Errors
 ///
@@ -90,7 +91,11 @@ pub fn private_dir(name: &str) -> TestResult<PrivateDir> {
         // The umask can only remove bits; set the exact mode anyway.
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(OWNER_ONLY))?;
     }
-    Ok(PrivateDir { path, leaf })
+    Ok(PrivateDir {
+        path,
+        leaf,
+        removed: false,
+    })
 }
 
 /// The mode of a folder only its owner can read, write and enter.
@@ -103,6 +108,8 @@ pub struct PrivateDir {
     path: PathBuf,
     /// The folder's own name, unique to this call.
     leaf: String,
+    /// Removed already by [`PrivateDir::remove`].
+    removed: bool,
 }
 
 impl PrivateDir {
@@ -122,6 +129,32 @@ impl PrivateDir {
             self.path.join("app.sock").into_os_string()
         }
     }
+
+    /// Removes the folder with everything in it, and says whether that worked.
+    ///
+    /// On Windows a file held open without delete sharing cannot be deleted, so
+    /// a test that ends with `dir.remove()?` also catches such a handle left
+    /// open by the code it tested. Dropping the folder cannot fail the test.
+    /// When removing fails, the drop that follows tries again and reports a
+    /// folder it cannot remove either, like any other left behind.
+    ///
+    /// # Errors
+    ///
+    /// The folder or something in it could not be removed; the error names the
+    /// folder.
+    pub fn remove(mut self) -> std::io::Result<()> {
+        std::fs::remove_dir_all(&self.path).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "could not remove {} ({error}); a file in it may still be open",
+                    self.path.display()
+                ),
+            )
+        })?;
+        self.removed = true;
+        Ok(())
+    }
 }
 
 impl std::ops::Deref for PrivateDir {
@@ -140,8 +173,11 @@ impl AsRef<Path> for PrivateDir {
 
 impl Drop for PrivateDir {
     fn drop(&mut self) {
-        // A folder already gone is fine: the test removed it itself. Any other failure is
-        // not the test's, but it leaves a folder behind in the temporary folder.
+        if self.removed {
+            return;
+        }
+        // A drop cannot fail the test, so a folder that cannot be removed is only
+        // reported; one the test already removed by hand is fine.
         if let Err(error) = std::fs::remove_dir_all(&self.path)
             && error.kind() != std::io::ErrorKind::NotFound
         {
@@ -205,6 +241,29 @@ pub fn ts_segment(seed: u64, len: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file held open without sharing keeps its folder on Windows: the error
+    /// says which folder and why, and the folder is still there.
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_with_a_file_held_open_says_so() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = private_dir("open-file").unwrap();
+        let path = dir.path().to_path_buf();
+        let held = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .share_mode(0)
+            .open(dir.join("held.bin"))
+            .unwrap();
+        let error = dir.remove().unwrap_err().to_string();
+        assert!(error.contains(&path.display().to_string()), "{error}");
+        assert!(error.contains("still be open"), "{error}");
+        assert!(path.exists());
+        drop(held);
+        std::fs::remove_dir_all(&path).unwrap();
+    }
 
     #[test]
     fn test_data_is_seed_one() {

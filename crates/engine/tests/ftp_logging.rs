@@ -73,4 +73,5 @@ async fn credentials_are_never_logged() {
         "commands are logged: {logs}"
     );
     assert!(!logs.contains("hunter2"), "the password is never logged");
+    dir.remove().unwrap();
 }

@@ -156,7 +156,6 @@ mod tests {
     #[test]
     fn out_of_order_positional_writes_assemble_the_file() {
         let dir = wirecatch_test_support::private_dir("storage").unwrap();
-        let dir = dir.path();
         let part = dir.join("f.bin.wcpart");
         let done = dir.join("f.bin");
 
@@ -168,5 +167,6 @@ mod tests {
         finalize(&part, &done, 10).unwrap();
 
         assert_eq!(std::fs::read(&done).unwrap(), b"0123456789");
+        dir.remove().unwrap();
     }
 }

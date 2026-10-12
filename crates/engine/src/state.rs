@@ -115,5 +115,6 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(101), &v));
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
+        dir.remove().unwrap();
     }
 }

@@ -591,6 +591,8 @@ mod tests {
             0,
             "nothing lands above the hole"
         );
+        drop(file);
+        dir.remove().unwrap();
     }
 
     #[test]

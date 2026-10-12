@@ -130,6 +130,7 @@ async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_ord
         low.concat(),
         "still the 360p quality"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -185,6 +186,7 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
         run(req).await,
         Err(Error::NoSuchTrack { kind: "video", .. })
     ));
+    dir.remove().unwrap();
 }
 
 fn encrypt(plain: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
@@ -231,6 +233,7 @@ async fn aes_128_segments_are_decrypted_with_explicit_and_sequence_ivs() {
     assert_eq!(std::fs::read(path).unwrap(), plain.concat());
     assert_eq!(server.requests("keys/1"), 1, "each key is fetched once");
     assert_eq!(server.requests("keys/2"), 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -275,6 +278,7 @@ async fn a_wrong_key_is_a_clear_error() {
         error.to_string().contains("5 bytes long instead of 16"),
         "{error}"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -327,6 +331,7 @@ async fn byte_ranges_and_init_sections_rebuild_the_file() {
     ];
     expected.sort();
     assert_eq!(ranges, expected);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -352,6 +357,7 @@ async fn parallel_downloads_join_in_playlist_order() {
     assert_eq!(progress.segments_total(), 40);
     assert_eq!(progress.bytes(), segments.concat().len() as u64);
     assert_eq!(progress.stage(), Stage::Finished);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -400,6 +406,7 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     unique.sort();
     unique.dedup();
     assert_eq!(unique.len(), again.len());
+    dir.remove().unwrap();
 }
 
 /// Signed links carry a fresh token in every segment query. Refreshing the link, which the errors for an expired link ask for, used to change the plan's fingerprint and delete every segment already downloaded.
@@ -453,6 +460,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
         .filter(|s| s.has_extension("ts"))
         .count();
     assert_eq!(fetched, left, "only the missing segments are fetched again");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -492,6 +500,7 @@ async fn resuming_checks_segment_sizes() {
         .collect();
     again.sort();
     assert_eq!(again, ["/s/seg1.ts", "/s/seg3.ts"]);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -521,6 +530,7 @@ async fn live_streams_are_refused_with_a_plain_message() {
         "This video is a live broadcast. Wirecatch can download it after the broadcast ends."
     );
     assert_eq!(server.requests("live/seg0.ts"), 0);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -560,6 +570,7 @@ async fn credentials_stay_with_the_playlist_origin() {
     for seen in at_cdn {
         assert_eq!(seen.header("cookie"), None, "{} got the cookie", seen.path);
     }
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -607,6 +618,7 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
         "{message}"
     );
     assert!(message.contains("500"), "{message}");
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -640,6 +652,7 @@ async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
     let mut req = request(&server, "av.m3u8", &dir.join("v.mp4"));
     req.audio = Choice::Skip;
     completed(run(req).await.unwrap());
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -752,6 +765,7 @@ async fn the_extension_is_known_in_advance() {
         dir.join("clip.mp4"),
         "the forecast matches the result"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -785,6 +799,7 @@ async fn a_changed_extension_never_replaces_another_file() {
     );
     assert_eq!(path, dir.join("exact.ts"));
     assert_eq!(std::fs::read(&path).unwrap(), segments.concat());
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -830,6 +845,7 @@ async fn streams_from_the_internet_cannot_reach_the_local_network() {
     let error = run(auto).await.unwrap_err();
     assert!(matches!(error, Error::Decrypt { .. }), "{error}");
     assert_eq!(device.requests("key"), 1);
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -850,6 +866,7 @@ async fn no_more_than_the_configured_connections_are_used() {
         3,
         "exactly the configured number at most"
     );
+    dir.remove().unwrap();
 }
 
 #[tokio::test]
@@ -893,6 +910,7 @@ async fn speed_limits_apply_to_streams() {
         full_speed < expected / 2,
         "without a limit it took {full_speed:?}"
     );
+    dir.remove().unwrap();
 }
 
 /// A segment duration too large for `Duration` (about 1.8e19 seconds) once panicked while inspecting, and release builds abort on panic, which took down the whole app.

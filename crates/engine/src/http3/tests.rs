@@ -115,6 +115,7 @@ async fn fetch_from(
         panic!("expected Completed, got {outcome:?}");
     };
     let bytes = std::fs::read(&path).unwrap();
+    dir.remove().unwrap();
     (bytes, took)
 }
 
