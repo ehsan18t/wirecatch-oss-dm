@@ -11,7 +11,7 @@ use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
 
 /// The engine's request options as the app sends them when no browser handed over its own
-/// user agent: the app's name and version (`Wirecatch/0.1.0`), never the engine library's
+/// user agent: the app's name and version (`<name>/<version>`), never the engine library's
 /// default, which names the library.
 pub(crate) fn download_options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
