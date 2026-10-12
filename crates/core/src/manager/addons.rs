@@ -35,6 +35,25 @@ const CHECK_EVERY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 const LOOK_EVERY: Duration = Duration::from_hours(1);
 /// Why a part did not finish when the install was stopped.
 const STOPPED: &str = "It was stopped.";
+
+/// Why installing or updating the media add-on failed.
+#[derive(Debug)]
+struct InstallFailure {
+    /// What went wrong, in sentences.
+    reason: String,
+    /// A part that was installed is gone: the new one could not be put in place
+    /// and the old one could not be put back, so the add-on no longer works.
+    part_lost: bool,
+}
+
+impl From<String> for InstallFailure {
+    fn from(reason: String) -> Self {
+        Self {
+            reason,
+            part_lost: false,
+        }
+    }
+}
 /// How much larger than announced a release file may be. Release sizes are
 /// exact byte counts; the margin is only a small allowance.
 const SIZE_MARGIN: u64 = 4096;
@@ -482,7 +501,7 @@ impl Manager {
     /// Records how an install ended and tells everyone.
     fn end_addon_op(
         &self,
-        result: std::result::Result<(Record, Option<MediaTools>), String>,
+        result: std::result::Result<(Record, Option<MediaTools>), InstallFailure>,
         cancelled: bool,
     ) {
         let mut state = self.lock();
@@ -504,11 +523,15 @@ impl Manager {
                 }
                 info!("the media add-on is installed");
             }
-            Err(_) if cancelled => {}
-            Err(reason) if quiet => warn!(%reason, "a quiet update of the media add-on failed"),
-            Err(reason) => {
+            // A stopped or quiet install stays quiet unless it broke what was
+            // installed.
+            Err(InstallFailure { reason, part_lost }) if part_lost || !(cancelled || quiet) => {
                 warn!(%reason, "installing the media add-on failed");
                 state.addon.failure = Some(format!("Installing the media add-on failed. {reason}"));
+            }
+            Err(_) if cancelled => {}
+            Err(InstallFailure { reason, .. }) => {
+                warn!(%reason, "a quiet update of the media add-on failed");
             }
         }
         self.emit_addons(&state.addon);
@@ -532,7 +555,7 @@ impl Manager {
         &self,
         plan: Vec<AddonComponent>,
         cancel: CancellationToken,
-    ) -> std::result::Result<(Record, Option<MediaTools>), String> {
+    ) -> std::result::Result<(Record, Option<MediaTools>), InstallFailure> {
         let dir = self.inner.addon_dir.clone();
         let work = dir.join(".work");
         let made = work.clone();
@@ -585,10 +608,10 @@ impl Manager {
         }
         reporter.abort();
         if let Some(reason) = failure {
-            return Err(reason);
+            return Err(reason.into());
         }
         if cancel.is_cancelled() || staged.len() != plan.len() {
-            return Err(STOPPED.into());
+            return Err(STOPPED.to_string().into());
         }
         let base = self.lock().addon.record.clone();
         self.blocking(move || {
@@ -1026,7 +1049,7 @@ fn swap_in(
     mut record: Record,
     staged: Vec<(AddonComponent, (PathBuf, archive::Installed))>,
     mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
-) -> std::result::Result<(Record, Option<MediaTools>), String> {
+) -> std::result::Result<(Record, Option<MediaTools>), InstallFailure> {
     for (component, (stage, files)) in staged {
         let target = dir.join(&component.name);
         let old = work.join(format!("old-{}", component.name));
@@ -1050,15 +1073,15 @@ fn swap_in(
                 if let Err(error) = record.save(dir) {
                     warn!(%error, "could not record that an add-on part is missing");
                 }
-                return Err(format!(
-                    "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings, Add-ons.",
-                    component.name
-                ));
+                return Err(InstallFailure {
+                    reason: format!(
+                        "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings, Add-ons.",
+                        component.name
+                    ),
+                    part_lost: true,
+                });
             }
-            return Err(format!(
-                "{} could not be put in place ({e}).",
-                component.name
-            ));
+            return Err(format!("{} could not be put in place ({e}).", component.name).into());
         }
         let _ = std::fs::remove_dir_all(&old);
         record.components.insert(
@@ -1090,6 +1113,40 @@ mod tests {
     use super::*;
     use crate::addons::InstalledComponent;
     use crate::addons::manifest::ArchiveKind;
+
+    /// A quiet or stopped install is not shown when it fails, unless it lost a
+    /// part: the add-on then no longer works, and the person must hear why.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_install_that_loses_a_part_says_so_even_quiet_or_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let folders = crate::KnownFolders::under_home(dir.path().join("home"));
+        let config = crate::ManagerConfig::new(dir.path().join("data"), folders);
+        let manager = Manager::open(config).await.unwrap();
+        let end_with = |part_lost: bool, cancelled: bool| {
+            manager.lock().addon.op = Some(AddonOp {
+                cancel: CancellationToken::new(),
+                ended: CancellationToken::new(),
+                done: 0,
+                total: 0,
+                quiet: true,
+            });
+            let failure = InstallFailure {
+                reason: "ffmpeg could not be put in place.".into(),
+                part_lost,
+            };
+            manager.end_addon_op(Err(failure), cancelled);
+            manager.lock().addon.failure.take()
+        };
+        assert_eq!(end_with(false, false), None, "a quiet failure was shown");
+        assert_eq!(end_with(false, true), None, "a stopped install was shown");
+        for cancelled in [false, true] {
+            let shown = end_with(true, cancelled).expect("the lost part was not shown");
+            assert!(
+                shown.contains("ffmpeg could not be put in place."),
+                "{shown}"
+            );
+        }
+    }
 
     /// A new part that cannot be put in place, when the old one cannot be put
     /// back either, leaves the add-on without that part: the record must stop
@@ -1123,7 +1180,7 @@ mod tests {
         };
         let staged = vec![(component, (work.join("stage-ffmpeg"), Vec::new()))];
         let mut calls = 0;
-        let reason = swap_in(dir.path(), &work, record, staged, |from, to| {
+        let failure = swap_in(dir.path(), &work, record, staged, |from, to| {
             calls += 1;
             // Moving the old part aside works; putting the new one in place
             // and the old one back both fail.
@@ -1135,6 +1192,8 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(calls, 3);
+        assert!(failure.part_lost);
+        let reason = failure.reason;
         assert!(
             reason.contains("Install the media add-on again"),
             "{reason}"
