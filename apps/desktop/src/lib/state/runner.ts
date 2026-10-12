@@ -39,7 +39,8 @@ export class Runner {
 
   /**
    * Runs an action; on failure says why and gives `undefined`. A failure `recover` handles (it
-   * returns true) is the caller's to deal with and is not said.
+   * returns true) is the caller's to deal with and is not said; if `recover` throws, `run`
+   * rejects with that.
    */
   async run<T>(
     action: () => Promise<T>,

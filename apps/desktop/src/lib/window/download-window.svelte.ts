@@ -330,18 +330,16 @@ export class DownloadWindowState {
     this.busy = true;
     this.#answered = true;
     // The core may ask for the add-on instead; the window offers it and goes on afterwards.
+    const outcome = { addonAsked: false };
     const id = await this.#runner.run(
       () => this.#host.backend.chooseMedia(choice.id, selection),
-      (err) => {
-        if (!needsAddon || !isAddonRequired(err)) return false;
-        this.awaitingAddon = { selection };
-        return true;
-      },
+      (err) => (outcome.addonAsked = needsAddon && isAddonRequired(err)),
     );
     this.busy = false;
     if (id === undefined) {
       this.#answered = false;
-      return this.awaitingAddon !== null;
+      if (outcome.addonAsked) this.awaitingAddon = { selection };
+      return outcome.addonAsked;
     }
     await this.#started(id, selection.later);
     return true;

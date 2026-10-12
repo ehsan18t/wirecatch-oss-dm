@@ -4,6 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { mockBackend, windowState } from '$lib/testing/setup';
+import { BackendError } from '../backend';
 import type { MockBackend } from '../backend/mock';
 import { ANSWERED_ELSEWHERE, READING_ENDED, type Target } from './download-window.svelte';
 
@@ -215,6 +216,23 @@ describe('a video', () => {
     await vi.waitFor(() => expect(win.phase).toBe('progress'));
     expect(win.awaitingAddon).toBeNull();
     expect(win.row?.media?.quality).toBe('2160p');
+  });
+
+  it('waits for the add-on when the core asks for it before the add-on is listed', async () => {
+    const b = backend();
+    b.simulateMediaChoice();
+    const [choice] = await b.pendingMediaChoices();
+    vi.spyOn(b, 'listAddons').mockRejectedValue(new Error('Not listed yet.'));
+    vi.spyOn(b, 'chooseMedia').mockRejectedValue(
+      new BackendError('This needs the media add-on to join video and audio.', 'addon_required'),
+    );
+    const { win } = windowState(b, { question: choice?.id ?? -1 });
+    await win.init();
+    expect(win.addon).toBeNull();
+    const best = choice?.options.find((o) => o.needs_ffmpeg);
+    expect(await win.choose({ ...keepMedia, option_id: best?.id ?? '', later: false })).toBe(true);
+    expect(win.awaitingAddon).not.toBeNull();
+    expect(win.error).toBeNull();
   });
 
   it('gives the quality list back when the add-on is not wanted or its install stops', async () => {
