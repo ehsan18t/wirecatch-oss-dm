@@ -5,6 +5,7 @@ import { DuplicateWatch } from '../src/lib/hub/duplicates';
 import { hubTiming } from '../src/lib/hub/hub';
 import { planMenuClick } from '../src/lib/hub/menu';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
+import { UNREADABLE_ANSWER } from '../src/lib/native/client';
 
 type Kept = Extract<HandoverResult, { kind: 'kept' }>;
 
@@ -160,16 +161,15 @@ describe('mediaAnswer', () => {
       detail: null,
       uncertain: false,
     }).message;
-    expect(certain).toContain('does not understand');
-    expect(certain).toContain('nothing was added');
-    expect(certain).not.toContain('in time');
+    expect(certain).toBe(`Nothing was added. ${UNREADABLE_ANSWER}`);
     const uncertain = mediaAnswer({
       taken: false,
       reason: 'unreadable',
       detail: null,
       uncertain: true,
     }).message;
-    expect(uncertain).toContain('does not understand');
-    expect(uncertain).toContain('check its list');
+    expect(uncertain).toBe(
+      `${UNREADABLE_ANSWER} Open Wirecatch and check its list before adding it again.`,
+    );
   });
 });

@@ -103,8 +103,12 @@ const isFrame = oneOf(
 /** An answer the app marked as an error, whatever else it carries. */
 const isErrorAnswer = object({ status: literal('err') });
 
-/** Why a request failed when the app's answer to it does not match the protocol. */
-const UNREADABLE_ANSWER = 'Wirecatch gave an answer this extension does not understand.';
+/**
+ * Why a request failed when the app's answer to it does not match the protocol, shown to the
+ * person as it is. A retry gets the same answer, so the advice is to update, not to try again.
+ */
+export const UNREADABLE_ANSWER =
+  'Wirecatch answered in a way this version of the extension does not understand. Updating the extension may help.';
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
 export function backoffDelay(backoff: Backoff, attempt: number): number {
