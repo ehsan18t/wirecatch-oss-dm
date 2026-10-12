@@ -32,11 +32,11 @@ async fn start_proxy() -> std::io::Result<(u16, Arc<Mutex<Vec<String>>>)> {
                 log.lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .push(line);
-                let _ = socket
-                    .write_all(
-                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-                    )
-                    .await;
+                let answer = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+                if let Err(error) = socket.write_all(answer).await {
+                    // The client hung up first: its own request reports that, not the proxy.
+                    drop(error);
+                }
             });
         }
     });

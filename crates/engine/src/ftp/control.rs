@@ -55,7 +55,11 @@ impl Stream {
                 .into());
             }
         };
-        let _ = tcp.set_nodelay(true);
+        // Commands are short and each waits for its reply, so Nagle's delay
+        // would only slow them; without the option they still work.
+        if let Err(e) = tcp.set_nodelay(true) {
+            debug!(error = %e, "could not turn off Nagle's algorithm on an FTP connection");
+        }
         Ok(Stream::Plain(tcp))
     }
 

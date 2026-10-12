@@ -158,17 +158,22 @@ impl Body {
     /// For a body arriving over HTTP/3: gives up HTTP/3 for the rest of the
     /// download because of `why`, and returns true, so the caller carries on
     /// over TCP. False for any other body.
+    #[cfg(feature = "http3")]
     pub fn abandon_http3(&self, why: &dyn std::fmt::Display) -> bool {
         match self {
-            #[cfg(feature = "http3")]
             Body::Http3(body) => {
                 body.abandon(why);
                 true
             }
-            _ => {
-                let _ = why;
-                false
-            }
+            Body::Http { .. } | Body::Ftp(_) => false,
+        }
+    }
+
+    /// False: without the `http3` feature no body arrives over HTTP/3.
+    #[cfg(not(feature = "http3"))]
+    pub fn abandon_http3(&self, _why: &dyn std::fmt::Display) -> bool {
+        match self {
+            Body::Http { .. } | Body::Ftp(_) => false,
         }
     }
 

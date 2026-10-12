@@ -622,7 +622,7 @@ fn finish(
     if complete {
         saver.close();
         storage::finalize(&target.part_path, &target.final_path, file_len)?;
-        let _ = std::fs::remove_file(&target.state_path);
+        discard(&target.state_path);
         info!(path = %target.final_path.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {
             path: target.final_path,
@@ -782,8 +782,8 @@ fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
         .filter(|saved| saved.can_resume(probe.ranged, probe.total, &probe.validators))
         .filter(|_| part_len == probe.total);
     if resume.is_none() {
-        let _ = std::fs::remove_file(&part_path);
-        let _ = std::fs::remove_file(&state_path);
+        discard(&part_path);
+        discard(&state_path);
     }
     Ok(Target {
         final_path: path.to_path_buf(),
@@ -791,6 +791,19 @@ fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
         state_path,
         resume,
     })
+}
+
+/// Deletes a part or resume file that is of no more use, if there is one. A
+/// failure is only logged: a part file left behind is emptied when the
+/// download starts over, and a resume file is replaced or never matches again.
+fn discard(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            warn!(path = %path.display(), error = %e, "could not delete a file that is no longer needed");
+        }
+    }
 }
 
 /// Whether a resume file's URL is `url`. Resume files written before
@@ -822,8 +835,8 @@ fn plan_target(dir: &Path, name: &str, url: &str, probe: &Opened) -> Target {
         // Same download, but it cannot continue (file changed, or no range support):
         // start over under the same name.
         info!("previous partial download cannot be resumed; starting over");
-        let _ = std::fs::remove_file(&part_path);
-        let _ = std::fs::remove_file(&state_path);
+        discard(&part_path);
+        discard(&state_path);
         return Target {
             final_path: preferred,
             part_path,

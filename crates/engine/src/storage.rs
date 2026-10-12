@@ -58,10 +58,11 @@ pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
         if file.metadata()?.len() != len {
             file.set_len(len)?;
         }
+        // Fully written now, so the sparse flag can go. A file that keeps it
+        // reads the same, only less efficiently.
         #[cfg(windows)]
-        {
-            // Fully written now, so the sparse flag can go. Failure is harmless.
-            let _ = windows::set_sparse(&file, false);
+        if let Err(e) = windows::set_sparse(&file, false) {
+            tracing::debug!(error = %e, "could not clear the sparse flag of a finished file");
         }
     }
     std::fs::rename(part, final_path)
@@ -76,8 +77,11 @@ pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
 fn reserve(file: &File, len: u64) -> io::Result<()> {
     #[cfg(windows)]
     {
-        // Not every file system supports sparse files (FAT32, exFAT). Fall through.
-        let _ = windows::set_sparse(file, true);
+        // Not every file system supports sparse files (FAT32, exFAT); without
+        // the flag, space is reserved the slower way.
+        if let Err(e) = windows::set_sparse(file, true) {
+            tracing::debug!(error = %e, "the file system does not take sparse files");
+        }
         file.set_len(len)
     }
     #[cfg(target_os = "linux")]

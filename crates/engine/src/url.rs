@@ -20,8 +20,7 @@ use ::url::Url;
 #[must_use]
 pub fn without_credentials(url: &Url) -> Url {
     let mut clean = without_password(url);
-    // Fails only for URLs that cannot carry credentials, which then have none.
-    let _ = clean.set_username("");
+    removed(clean.set_username(""));
     clean
 }
 
@@ -31,9 +30,15 @@ pub fn without_credentials(url: &Url) -> Url {
 #[must_use]
 pub(crate) fn without_password(url: &Url) -> Url {
     let mut clean = url.clone();
-    // Fails only for URLs that cannot carry credentials, which then have none.
-    let _ = clean.set_password(None);
+    removed(clean.set_password(None));
     clean
+}
+
+/// Takes the outcome of removing a user name or password from a URL. It is
+/// refused only for a URL that cannot carry credentials, which has none, so
+/// either way none are left.
+fn removed(outcome: Result<(), ()>) {
+    let (Ok(()) | Err(())) = outcome;
 }
 
 #[cfg(test)]

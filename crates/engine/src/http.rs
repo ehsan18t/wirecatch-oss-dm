@@ -839,6 +839,16 @@ mod tests {
             true
         }
 
+        /// Writes `response` to `stream` and closes it.
+        async fn answer(stream: &mut (impl AsyncWriteExt + Unpin), response: &[u8]) {
+            let written = stream.write_all(response).await;
+            let closed = stream.shutdown().await;
+            if let Err(error) = written.and(closed) {
+                // The client hung up first: its own request reports that, not the server.
+                drop(error);
+            }
+        }
+
         /// Answers every request with `response` and closes the connection.
         async fn start_tls_server_answering(response: Vec<u8>) -> TlsServer {
             let cert = wirecatch_test_support::TestCertificate::new();
@@ -866,8 +876,7 @@ mod tests {
                             if !read_request(&mut tls).await {
                                 return;
                             }
-                            let _ = tls.write_all(&response).await;
-                            let _ = tls.shutdown().await;
+                            answer(&mut tls, &response).await;
                         });
                     }
                 });
@@ -921,8 +930,7 @@ mod tests {
                     tokio::spawn(async move {
                         if read_request(&mut tcp).await {
                             counter.fetch_add(1, Ordering::SeqCst);
-                            let _ = tcp.write_all(OK).await;
-                            let _ = tcp.shutdown().await;
+                            answer(&mut tcp, OK).await;
                         }
                     });
                 }

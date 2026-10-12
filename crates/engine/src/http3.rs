@@ -166,7 +166,12 @@ impl Origin {
             .await
             .map_err(|e| format!("HTTP/3 setup failed: {e}"))?;
         let driver = tokio::spawn(async move {
-            let _ = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
+            // A request on a broken connection fails with its own error; this
+            // says why the connection ended.
+            let closed = std::future::poll_fn(|cx| driver.poll_close(cx)).await;
+            if !closed.is_h3_no_error() {
+                debug!(error = %closed, "an HTTP/3 connection closed");
+            }
         });
         Ok(Connection {
             send,
