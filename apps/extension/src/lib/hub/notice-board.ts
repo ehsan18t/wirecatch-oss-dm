@@ -7,7 +7,7 @@ import {
   copyLeftInBrowser,
   keptInBrowser,
   mayDownloadTwice,
-  mayDownloadTwiceAfterRestart,
+  mayDownloadTwiceUncertain,
   stuckPaused,
 } from './notices';
 import type { Recovered } from './recovery';
@@ -26,7 +26,9 @@ export interface NoticeBoardDeps {
  */
 export class NoticeBoard {
   readonly #deps: NoticeBoardDeps;
-  readonly #duplicates = new DuplicateWatch((name) => this.warn(mayDownloadTwice(name)));
+  readonly #duplicates = new DuplicateWatch((name, certain) =>
+    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name)),
+  );
   #notice: Notice | null = null;
   /** Whether this run set or dismissed the notice; then the one stored by an earlier run is out of date. */
   #changed = false;
@@ -78,33 +80,33 @@ export class NoticeBoard {
       this.error(stuckPaused(name));
       return;
     }
-    // The app took it after all: the duplicate warning says so instead.
     const { handoverId } = result;
     if (result.uncertain && handoverId !== null) {
-      if (this.#duplicates.keptUncertain(handoverId, name)) return;
+      this.uncertain(handoverId, name);
+      return;
     }
     const message = keptInBrowser(result, name);
     if (message !== null) this.warn(message);
   }
 
-  /** The browser kept a copy of something the app may have; returns true when the app already confirmed it (and warns). */
-  keptUncertain(handoverId: string, name: string): boolean {
-    return this.#duplicates.keptUncertain(handoverId, name);
+  /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
+  uncertain(handoverId: string, name: string): void {
+    if (!this.#duplicates.keptUncertain(handoverId, name))
+      this.warn(mayDownloadTwiceUncertain(name));
   }
 
-  /** The app confirmed a handover after this side gave up waiting. */
-  confirmedLate(handoverId: string, name: string): void {
-    this.#duplicates.confirmedLate(handoverId, name);
+  confirmedLate(handoverId: string, name: string, certain: boolean): void {
+    this.#duplicates.confirmedLate(handoverId, name, certain);
   }
 
   /** Tells the person what became of a download a restarted background settled. */
-  recovered(result: Recovered, name: string, handoverId: string): void {
+  recovered(result: Recovered, name: string): void {
     if (result === 'copy_left') this.warn(copyLeftInBrowser(name));
     if (result === 'both') this.warn(mayDownloadTwice(name));
     if (result === 'stuck_paused') this.error(stuckPaused(name));
-    if (result === 'uncertain' && !this.#duplicates.keptUncertain(handoverId, name)) {
-      this.warn(mayDownloadTwiceAfterRestart(name));
-    }
+    // Not registered with the duplicate watch: the ports of the run that sent it are gone, so
+    // no late answer to it can come.
+    if (result === 'uncertain') this.warn(mayDownloadTwiceUncertain(name));
   }
 
   #set(notice: Notice | null): void {

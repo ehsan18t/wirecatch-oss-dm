@@ -35,9 +35,9 @@ export function stuckPaused(name: string): string {
   return `${name} is paused in the browser. Open the browser's downloads page and click Resume.`;
 }
 
-/** A download a restarted background resumed although the app could not say whether it has it. */
-export function mayDownloadTwiceAfterRestart(name: string): string {
-  return `${name} may be downloading twice: it was being sent to Wirecatch when the extension restarted, and Wirecatch could not say whether it has it, so the browser kept its copy. If Wirecatch has it too, cancel one of them.`;
+/** The browser has a copy and the app could not say whether it has one too. */
+export function mayDownloadTwiceUncertain(name: string): string {
+  return `${name} may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.`;
 }
 
 export function mayDownloadTwice(name: string): string {

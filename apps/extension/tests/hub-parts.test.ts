@@ -90,22 +90,32 @@ describe('DuplicateWatch', () => {
   it('warns once when the late confirmation comes after the browser kept it', () => {
     const w = watch();
     expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(false);
-    w.watch.confirmedLate('h1', 'a.zip');
-    w.watch.confirmedLate('h1', 'a.zip');
+    w.watch.confirmedLate('h1', 'a.zip', true);
+    w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.warned).toEqual(['a.zip']);
   });
 
   it('warns once when the late confirmation came first', () => {
     const w = watch();
-    w.watch.confirmedLate('h1', 'a.zip');
+    w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(true);
     expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(false);
     expect(w.warned).toEqual(['a.zip']);
   });
 
+  it('passes on whether the late answer was a sure confirmation', () => {
+    const certainty: boolean[] = [];
+    const duplicates = new DuplicateWatch((_name, certain) => certainty.push(certain));
+    duplicates.confirmedLate('h1', 'a.zip', false);
+    duplicates.keptUncertain('h1', 'a.zip');
+    duplicates.keptUncertain('h2', 'b.zip');
+    duplicates.confirmedLate('h2', 'b.zip', true);
+    expect(certainty).toEqual([false, true]);
+  });
+
   it('does not match different handovers', () => {
     const w = watch();
-    w.watch.confirmedLate('h1', 'a.zip');
+    w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.watch.keptUncertain('h2', 'b.zip')).toBe(false);
     expect(w.warned).toEqual([]);
   });

@@ -293,6 +293,29 @@ describe('NativeClient', () => {
     expect(late).toEqual([['pause_all', null]]);
   });
 
+  // A late error answer of unknown shape was passed on as a possible confirmation, and the hub
+  // then said Wirecatch took the download after all.
+  it('does not pass on a late error answer it cannot read', async () => {
+    client = makeClient(app);
+    const late: unknown[] = [];
+    client.onLateAnswer((_call, outcome) => late.push(outcome));
+    client.start();
+    await flush();
+    app.answers = false;
+    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await result;
+    const sent = app.requests.at(-1);
+    if (sent === undefined) throw new Error('nothing sent');
+    app.openPort?.deliver({
+      kind: 'response',
+      id: sent.id,
+      outcome: { status: 'err', value: { code: 'out_of_disk' } },
+    } as never);
+    await flush();
+    expect(late).toEqual([]);
+  });
+
   // An error answer that could not be read kept the port, so an app_not_running in a newer
   // shape left every later request failing on a port the bridge had given up on.
   it('drops the port after an error answer it cannot read, and connects again later', async () => {

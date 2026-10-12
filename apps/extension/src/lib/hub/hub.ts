@@ -241,8 +241,10 @@ export class Hub {
       source: 'context_menu',
     });
     if (result.taken) return 'handed_over';
-    if (result.uncertain) this.#notices.keptUncertain(handoverId, name);
-    return this.#browserFallback(url, menuNotTaken(name, result.detail));
+    if (!result.uncertain) return this.#browserFallback(url, menuNotTaken(name, result.detail));
+    const fallback = await this.#browserFallback(url, null);
+    if (fallback === 'browser') this.#notices.uncertain(handoverId, name);
+    return fallback;
   }
 
   /**
@@ -283,10 +285,10 @@ export class Hub {
     return mediaAnswer(result);
   }
 
-  async #browserFallback(url: string, message: string): Promise<'browser' | 'failed'> {
+  async #browserFallback(url: string, message: string | null): Promise<'browser' | 'failed'> {
     try {
       await this.#deps.downloads.start(url);
-      this.#notices.warn(message);
+      if (message !== null) this.#notices.warn(message);
       return 'browser';
     } catch {
       this.#notices.error(BROWSER_DOWNLOAD_FAILED);
@@ -359,7 +361,7 @@ export class Hub {
       // The app may need connecting, or starting, first: this is the handover the person started.
       withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
     });
-    this.#notices.recovered(result, name, entry.handoverId);
+    this.#notices.recovered(result, name);
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
@@ -429,7 +431,7 @@ export class Hub {
       if (reply.type !== 'download_added') return;
     }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
-    this.#notices.confirmedLate(call.params.handover_id, name);
+    this.#notices.confirmedLate(call.params.handover_id, name, outcome !== null);
   }
 
   /** The app's settings, or the cached copy when the app is not connected; null before either is known. */

@@ -422,7 +422,10 @@ describe('handover', () => {
       await vi.advanceTimersByTimeAsync(8_000);
       expect(await pending).toMatchObject({ kind: 'kept', uncertain: true });
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      // Unreadable, so it may or may not be a confirmation: never "took it after all".
+      expect(s.hub.snapshot().notice?.message).toBe(
+        'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
+      );
     });
 
     it('warns about a possible duplicate when the app confirms after the browser kept its copy', async () => {
@@ -436,8 +439,9 @@ describe('handover', () => {
       const pending = s.hub.onDownload(downloadItem());
       await vi.advanceTimersByTimeAsync(8_000);
       await pending;
+      // A failed withdraw leaves both copies possible, and says so at once.
       expect(s.hub.snapshot().notice?.message).toBe(
-        'big.zip stayed in the browser: Wirecatch did not answer in time.',
+        'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
       );
       await vi.advanceTimersByTimeAsync(1_000);
       expect(s.hub.snapshot().notice?.message).toBe(
@@ -1236,6 +1240,21 @@ describe('context menu', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await pending).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/file.iso']);
+  });
+
+  it('warns of two copies when the app cannot say whether it took the link', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = 'hang';
+        app.withdrawBehavior = 'hang';
+      },
+    });
+    const pending = s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await pending).toBe('browser');
+    expect(s.hub.snapshot().notice?.message).toBe(
+      'file.iso may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
+    );
   });
 
   it('lets the browser download programs, so its own checks run', async () => {

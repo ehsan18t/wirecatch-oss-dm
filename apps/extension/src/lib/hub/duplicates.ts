@@ -18,30 +18,35 @@ function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
 export class DuplicateWatch {
   /** Handovers kept in the browser although the app may have them, by id, with the file's name. */
   readonly #uncertain = new Map<string, string>();
-  /** Handovers the app confirmed only after this side stopped waiting. */
-  readonly #lateConfirmed = new Map<string, string>();
-  readonly #warn: (name: string) => void;
+  /** Handovers the app answered only after this side stopped waiting, and whether the answer was a sure confirmation. */
+  readonly #lateConfirmed = new Map<string, { name: string; certain: boolean }>();
+  readonly #warn: (name: string, certain: boolean) => void;
 
-  constructor(warn: (name: string) => void) {
+  constructor(warn: (name: string, certain: boolean) => void) {
     this.#warn = warn;
   }
 
   /** The browser kept a handover the app may have; returns true when the app had already confirmed it (and warns). */
   keptUncertain(handoverId: string, name: string): boolean {
-    if (this.#lateConfirmed.delete(handoverId)) {
-      this.#warn(name);
+    const late = this.#lateConfirmed.get(handoverId);
+    if (late !== undefined) {
+      this.#lateConfirmed.delete(handoverId);
+      this.#warn(name, late.certain);
       return true;
     }
     remember(this.#uncertain, handoverId, name);
     return false;
   }
 
-  /** The app confirmed a handover after this side gave up waiting; warns if the browser kept its copy too. */
-  confirmedLate(handoverId: string, name: string): void {
+  /**
+   * The app answered a handover after this side gave up waiting; warns if the browser kept its
+   * copy too. `certain` is false for an answer that could not be read, which may be a confirmation.
+   */
+  confirmedLate(handoverId: string, name: string, certain: boolean): void {
     if (this.#uncertain.delete(handoverId)) {
-      this.#warn(name);
+      this.#warn(name, certain);
     } else {
-      remember(this.#lateConfirmed, handoverId, name);
+      remember(this.#lateConfirmed, handoverId, { name, certain });
     }
   }
 }

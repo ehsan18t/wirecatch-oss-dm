@@ -412,14 +412,19 @@ export class NativeClient {
       this.#onResponse(raw.id, raw.outcome);
       return;
     }
-    this.#onResponse(raw.id, null);
+    const isError = isErrorAnswer(raw.outcome);
+    this.#onResponse(raw.id, null, isError);
     // An error that cannot be read may be one that ends the port (app_not_running in a newer
     // shape): connect again with a fresh hello rather than keep a port the bridge gave up on.
-    if (isErrorAnswer(raw.outcome)) this.#fail({ kind: 'disconnected', detail: UNREADABLE_ANSWER });
+    if (isError) this.#fail({ kind: 'disconnected', detail: UNREADABLE_ANSWER });
   }
 
-  /** Settles the request an answer belongs to; `outcome` is null when the answer could not be read. */
-  #onResponse(id: number, outcome: Outcome | null): void {
+  /**
+   * Settles the request an answer belongs to; `outcome` is null when the answer could not be
+   * read, and `unreadableError` says the app marked it as an error, which is never a late
+   * confirmation.
+   */
+  #onResponse(id: number, outcome: Outcome | null, unreadableError = false): void {
     const pending = this.#pending.get(id);
     if (pending !== undefined) {
       this.#pending.delete(id);
@@ -431,7 +436,7 @@ export class NativeClient {
       const late = this.#late.get(id);
       if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
       this.#late.delete(id);
-      for (const listener of this.#lateListeners) listener(late, outcome);
+      if (!unreadableError) for (const listener of this.#lateListeners) listener(late, outcome);
     }
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.
