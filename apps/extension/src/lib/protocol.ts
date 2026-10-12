@@ -72,27 +72,6 @@ export function applyPatch(
   };
 }
 
-const CONFIRMED_ACTIONS: ReadonlySet<string> = new Set<AddAction>([
-  'started',
-  'queued',
-  'awaiting_confirmation',
-]);
-
-/**
- * True when the app has accepted the download, so the browser copy may go.
- * Anything else (including a value a newer app might invent) keeps the browser copy.
- *
- * Only `started` means the app has already reached the server and data is flowing.
- * `queued` and `awaiting_confirmation` mean accepted but the link not yet tried, so
- * there is a remaining risk: a link that only works once, or one that needs the
- * browser's POST request, may fail later in the app after the browser copy is gone.
- * The app then shows the error with a retry. The extension's webRequest access only
- * observes responses (to spot media); it does not look at download requests.
- */
-export function isConfirmed(action: AddAction): boolean {
-  return CONFIRMED_ACTIONS.has(action);
-}
-
 /*
  * Guards for the protocol types this extension reads from outside: frames from the app,
  * and copies of them kept in browser storage. Built from `fields`, `member` and `variants`

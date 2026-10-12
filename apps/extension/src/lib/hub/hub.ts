@@ -12,7 +12,6 @@ import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
-import { isConfirmed } from '../protocol';
 import { refererFor } from '../referrer';
 import { AppCalls } from './app';
 import type { HubDeps, HubTiming, MenuClick, MenuResult, MenuTab } from './deps';
@@ -415,7 +414,7 @@ export class Hub {
     if (outcome !== null) {
       if (outcome.status !== 'ok') return;
       const reply = outcome.value;
-      if (reply.type !== 'download_added' || !isConfirmed(reply.data.action)) return;
+      if (reply.type !== 'download_added') return;
     }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
     this.#duplicates.confirmedLate(call.params.handover_id, name);

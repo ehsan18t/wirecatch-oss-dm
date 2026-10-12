@@ -7,7 +7,6 @@ import type {
 } from '@wirecatch/protocol';
 import type { CookieContext } from '../cookies';
 import { RequestError, type RequestErrorKind } from '../native/client';
-import { isConfirmed } from '../protocol';
 import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
 
@@ -91,14 +90,8 @@ export async function submit(download: NewDownload, deps: SubmitDeps): Promise<S
     if (outcome === 'already_started') return { taken: true, action: 'started', via: 'withdraw' };
     return { taken: false, reason: 'no_answer', detail: messageOf(error), uncertain: false };
   }
-  if (!isConfirmed(added.action)) {
-    return {
-      taken: false,
-      reason: 'refused',
-      detail: `Unexpected answer from Wirecatch: ${added.action}`,
-      uncertain: false,
-    };
-  }
+  // Every action the app answers with means it has the download; one this version does not
+  // know never gets here, because the client fails such an answer as unreadable.
   return { taken: true, action: added.action, via: 'answer' };
 }
 
@@ -170,7 +163,12 @@ export interface HandoverInput {
  * 2. Check the settings again (the app's live ones when it can be reached) and build the request.
  * 3. Send `add_download` with a fresh handover id; if no answer comes back, withdraw it (see `submit`).
  * 4. Only when the app has it (started, queued or awaiting confirmation): cancel and erase the browser copy.
- *    `queued` and `awaiting_confirmation` mean the app has not tried the link yet; see `isConfirmed`.
+ *    Only `started` means the app has reached the server and data is flowing. `queued` and
+ *    `awaiting_confirmation` mean accepted but the link not yet tried, so some risk remains: a
+ *    link that only works once, or one that needs the browser's POST request, may fail later in
+ *    the app after the browser copy is gone. The app then shows the error with a retry. The
+ *    extension's webRequest access only observes responses (to spot media); it does not look
+ *    at download requests.
  * 5. Otherwise resume the browser download.
  */
 export async function handOver(input: HandoverInput, deps: HandoverDeps): Promise<HandoverResult> {

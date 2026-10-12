@@ -12,7 +12,7 @@ import {
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { applyPatch, isConfirmed, patchOf } from '../src/lib/protocol';
+import { applyPatch, patchOf } from '../src/lib/protocol';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
 import { DEFAULT_SETTINGS } from './fakes';
@@ -109,13 +109,6 @@ describe('protocol helpers', () => {
     expect(originPattern('http://example.com')).toBe('http://example.com/*');
     expect(originPattern('blob:https://example.com/1')).toBeNull();
     expect(originPattern('nonsense')).toBeNull();
-  });
-
-  it('treats only known actions as a confirmed handover', () => {
-    expect(isConfirmed('started')).toBe(true);
-    expect(isConfirmed('queued')).toBe(true);
-    expect(isConfirmed('awaiting_confirmation')).toBe(true);
-    expect(isConfirmed('something_new' as 'started')).toBe(false);
   });
 });
 
