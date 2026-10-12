@@ -119,7 +119,7 @@ pub(crate) async fn run(
     };
     if let Some(why) = stopped {
         tree.kill();
-        let _ = child.kill().await;
+        kill(&mut child).await;
         return Err(why);
     }
     let status = if let Some(status) = status {
@@ -129,7 +129,7 @@ pub(crate) async fn run(
             status = child.wait() => status,
             () = cancel.cancelled() => {
                 tree.kill();
-                let _ = child.kill().await;
+                kill(&mut child).await;
                 return Err(RunError::Cancelled);
             }
         }
@@ -141,6 +141,13 @@ pub(crate) async fn run(
         stdout,
         stderr: tail,
     })
+}
+
+/// Kills `child` itself (its group is the [`Tree`]'s); a failure is logged.
+async fn kill(child: &mut tokio::process::Child) {
+    if let Err(e) = child.kill().await {
+        tracing::warn!(error = %e, "could not stop a program");
+    }
 }
 
 /// The command that runs `program` with `args` in `dir`, its outputs piped, no
@@ -190,7 +197,11 @@ fn read_outputs(
             match stdout {
                 Some(out) if collect_stdout => {
                     let mut bytes = Vec::new();
-                    let _ = out.take(MAX_STDOUT).read_to_end(&mut bytes).await;
+                    // What arrived before a failed read is kept; the failure is
+                    // logged, so a cut-off answer is not taken for a malformed one.
+                    if let Err(e) = out.take(MAX_STDOUT).read_to_end(&mut bytes).await {
+                        tracing::warn!(error = %e, "could not read a program's output");
+                    }
                     bytes
                 }
                 Some(out) => {
