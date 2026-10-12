@@ -74,7 +74,16 @@ function valueAt(product, path, template) {
 
 /** `template` with every `{{section.key}}` replaced by that value of `product`. */
 export function fillTemplate(template, product, name) {
-  return template.replace(/\{\{\s*([a-z_.]+)\s*\}\}/g, (_, path) => valueAt(product, path, name));
+  const filled = template.replace(/\{\{\s*([a-z_.]+)\s*\}\}/g, (_, path) =>
+    valueAt(product, path, name),
+  );
+  const leftover = /\{\{[^\n]*/.exec(filled);
+  if (leftover) {
+    throw new ManifestError(
+      `${name} has a placeholder that is not of the form {{section.key}}: ${leftover[0]}`,
+    );
+  }
+  return filled;
 }
 
 /** How each kind of file writes a comment line, and whether a first line (a `#!`) must stay first. */

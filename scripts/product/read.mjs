@@ -28,6 +28,8 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const FILE_NAME = /^(?!\.{1,2}$)[^\\/:*?"<>|\p{Cc}]+$/u;
 const PIPE_PREFIX = /^[A-Za-z0-9-]+-$/;
 const SOCKET = /^[a-z0-9-]+\.sock$/;
+/** Characters that would end or expand a quoted string in the generated shell and NSIS scripts or Rust and TypeScript sources; no identity value needs them. */
+const UNQUOTABLE = /["$`\\]/;
 /** Printable text on one line. */
 const TEXT = /^(?!\s*$)\P{Cc}+$/u;
 
@@ -91,7 +93,11 @@ function tableProblems(where, table, shape) {
   for (const [key, rule] of Object.entries(shape)) {
     const value = table[key];
     if (typeof value !== 'string') problems.push(`${where}.${key} must be a string.`);
-    else if (rule === 'url' ? !isHttpsUrl(value) : !rule.test(value)) {
+    else if (UNQUOTABLE.test(value)) {
+      problems.push(
+        `${where}.${key} holds a character that breaks the quoting of the generated scripts (" $ \` or \\).`,
+      );
+    } else if (rule === 'url' ? !isHttpsUrl(value) : !rule.test(value)) {
       problems.push(`${where}.${key} = ${JSON.stringify(value)} does not have the expected form.`);
     }
   }

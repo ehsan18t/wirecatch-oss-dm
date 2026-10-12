@@ -66,3 +66,10 @@ test('an indented Cargo setting is replaced, never added a second time', () => {
   assert.equal(text.match(/name =/g)?.length, 1);
   assert.match(text, /name = "new"/);
 });
+
+test('a malformed placeholder is an error, never left in the output', () => {
+  const product = { executables: { bridge: 'bridge' } };
+  for (const template of ['{{Executables.bridge}}', '{{ executables-bridge }}', 'x {{ y']) {
+    assert.throws(() => fillTemplate(template, product, 't'), ManifestError, template);
+  }
+});

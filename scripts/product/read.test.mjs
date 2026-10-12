@@ -79,3 +79,17 @@ test('the values still to decide are found as placeholders', () => {
   );
   assert.ok(!placeholders(readProduct(decided)).includes('publisher.legal_name'));
 });
+
+test('a value that would break the quoting of a shell or NSIS script is refused', () => {
+  for (const name of ['Wire"catch', 'Wire$catch', 'Wire`catch', 'Wire\\catch']) {
+    // A TOML literal string, so the value reaches the check as written.
+    rejects(changed('name = "Wirecatch"', `name = '${name}'`), /product\.name/);
+  }
+  rejects(
+    changed(
+      'security_email = "TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid"',
+      'security_email = "a$b@example.org"',
+    ),
+    /contacts\.security_email/,
+  );
+});
