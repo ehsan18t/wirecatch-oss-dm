@@ -1,0 +1,14 @@
+[package]
+name = "wirecatch-product"
+description = "Wirecatch's product identity (names, ids, executables, folders, addresses), generated from config/product.toml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Only the engine is published to crates.io, and it never carries product identity.
+publish = false
+
+[lints]
+workspace = true

@@ -7594,6 +7594,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wirecatch-product"
+version = "0.1.0"
+
+[[package]]
 name = "wirecatch-protocol"
 version = "0.1.0"
 dependencies = [

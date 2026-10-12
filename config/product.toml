@@ -1,0 +1,82 @@
+# Wirecatch's product identity: the one place it is written (docs/ENGINEERING.md section 1, D29).
+#
+# `pnpm product:generate` writes every file that carries these values: the `wirecatch-product` crate, the `@wirecatch/product` TypeScript package, the identity fields of the Cargo, package.json and Tauri manifests, the Linux and Windows package hooks and SECURITY.md (the list is OUTPUTS in scripts/product/outputs.mjs). Never edit those by hand: change this file and run the generator. The gate's `product` check fails when one is out of date.
+#
+# Placeholders: a value that is not decided yet contains `TODO-PRODUCT-` and keeps the shape of the value it stands for (a URL stays a URL, an email address an email address), so every build accepts it. The release check (`node scripts/gate.mjs release`, check `product-placeholders`) fails while any is left.
+#
+# Names that people's data lives under (data folders, the database file, the start-at-sign-in entry, the pipe and socket) are written out per channel instead of being built from the product name, so renaming the product never moves anyone's downloads by accident.
+
+[product]
+# The name people see: windows, tray, installer, extension.
+name = "Wirecatch"
+# The lowercase name used in file names.
+slug = "wirecatch"
+# The release version of the app and the extension (SemVer).
+version = "0.1.0"
+# SPDX license expression.
+license = "GPL-3.0-only"
+# Who wrote it, for Cargo `authors` and the copyright line.
+authors = "Wirecatch contributors"
+# One line for store listings and package managers.
+summary = "A fast download manager that just works"
+# A few sentences for installers and package managers.
+description = "Wirecatch downloads files from the web quickly and reliably, catches downloads from your browser, and keeps queues, schedules and speed limits simple."
+
+[publisher]
+# The legal name that signs and publishes the installers.
+legal_name = "TODO-PRODUCT-PUBLISHER-LEGAL-NAME"
+
+[links]
+repository = "https://github.com/ehsan18t/wirecatch-oss-dm"
+website = "https://TODO-PRODUCT-WEBSITE.invalid/"
+
+[contacts]
+support_email = "TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid"
+# Where vulnerabilities are reported privately (SECURITY.md).
+security_email = "TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid"
+
+[executables]
+# File names without the `.exe` Windows adds. The bridge and the app find each other by these names in one folder (D19).
+app = "wirecatch-app"
+bridge = "wirecatch-bridge"
+cli = "wirecatch"
+
+[files]
+# The download list, in the data folder.
+database = "wirecatch.db"
+
+[native_host]
+# The native messaging host name the bridge registers and the extension connects to: lowercase letters, digits, `_` and `.`.
+name = "app.wirecatch.bridge"
+description = "Wirecatch browser bridge"
+
+[extension]
+# The one Chromium extension id every bridge trusts. It follows from chromium_public_key, whose private key the maintainer keeps outside the repository (D22); the generator refuses a pair that does not match.
+chromium_id = "chdgnmpjoipbgfeldicipccjjghmagki"
+chromium_public_key = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtR5Ub/hMTwq2GZpy7c277pRnrpRRjEf+4yn6ojwohj61eU+YBFp1lQAh3TMMR3hJ5V2JSQe7avxce9BgJJBnr39ASQh7HSvxv6zPTXBfXINF0MpKeOcbTbOHjiDvZH0ch8UKcX3P5ut0TqqfWTUSyAVVI56jocY0bjHbpwYHZNJ2DLC5dG6gwJGL1KuuJnywcNnoks29bp9RyXKU8epD1GOxnIK/mW4tnahjszCQjOXB1gwblcAwM+X0eZgPM1No4oqGKyIXgzMZV1LfEhm2A8hffzcHjBQBG1BqfMi77mY8GXR4a/5Dfi+8hqOQlP/jrQ1u/nQylPM8p4V3En84NwIDAQAB"
+firefox_id = "extension@wirecatch.app"
+# The store listing's one line.
+description = "Sends your downloads to the Wirecatch download manager."
+
+[ipc]
+# Linux: the folder inside XDG_RUNTIME_DIR that holds the socket, and the prefix of the /tmp folder used without one (`<prefix><uid>`).
+runtime_folder = "wirecatch"
+fallback_folder_prefix = "wirecatch-"
+
+# Each channel is a separate app that can run next to the others without touching their downloads: release builds are `release`, debug builds `dev` (D13). A channel shows `name`, which is also its start-at-sign-in entry; the release channel shows the product name.
+[channels.release]
+identifier = "app.wirecatch.desktop"
+windows_data_folder = "Wirecatch"
+linux_data_folder = "wirecatch"
+# Windows: the pipe is `\\.\pipe\<pipe_prefix><user SID>`.
+pipe_prefix = "wirecatch-app-"
+# Linux: the socket's file name in the runtime folder.
+socket = "app.sock"
+
+[channels.dev]
+name = "Wirecatch Dev"
+identifier = "app.wirecatch.desktop.dev"
+windows_data_folder = "Wirecatch Dev"
+linux_data_folder = "wirecatch-dev"
+pipe_prefix = "wirecatch-app-dev-"
+socket = "app-dev.sock"

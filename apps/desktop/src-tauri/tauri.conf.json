@@ -2,7 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Wirecatch",
   "mainBinaryName": "wirecatch-app",
-  "version": "0.1.0",
   "identifier": "app.wirecatch.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev:web",
@@ -30,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "deb", "rpm", "appimage"],
-    "publisher": "Wirecatch contributors",
+    "publisher": "TODO-PRODUCT-PUBLISHER-LEGAL-NAME",
     "copyright": "Wirecatch contributors. Licensed under GPL-3.0-only.",
     "license": "GPL-3.0-only",
     "licenseFile": "../../../LICENSE",
