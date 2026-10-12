@@ -280,6 +280,10 @@ impl Fetcher {
     /// with the number of new bytes each time some arrive; bytes are never
     /// counted twice, even when a retry has to ask for the resource again.
     ///
+    /// Cancelling (by the token or by dropping this future) keeps what arrived
+    /// in the file; once the future has been polled, the file may already have
+    /// been created or truncated even if no byte arrived.
+    ///
     /// # Errors
     ///
     /// The same as [`Fetcher::get`] (without the size limit), plus
