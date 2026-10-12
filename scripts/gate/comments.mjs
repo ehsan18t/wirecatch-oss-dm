@@ -1,9 +1,9 @@
-// Reads the comments that switch a lint off or configure the linter in place, in TypeScript, JavaScript and Svelte: ESLint disable comments, ESLint inline configuration (`/* eslint rule: off */`, `/* global */`, `/* eslint-env */`) and svelte-ignore comments.
+// Reads the comments that switch a lint off or configure the linter in place, in TypeScript, JavaScript and Svelte: ESLint disable comments, ESLint's rule, globals and environment comments, and svelte-ignore comments. The gate's own modules are read too, so their patterns and messages never write such a comment whole.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, ROOT } from './process.mjs';
 
-/** Files that may hold such comments: everything ESLint and Svelte read, except the gate's own modules, whose patterns name them. */
+/** Files that may hold such comments: everything ESLint and Svelte read. */
 const COMMENT_SCOPE = [
   '*.ts',
   '*.mts',
@@ -14,11 +14,9 @@ const COMMENT_SCOPE = [
   '*.cjs',
   '*.jsx',
   '*.svelte',
-  ':!scripts/gate.mjs',
-  ':!scripts/gate/**',
 ];
 /** What a file must contain to be read at all. */
-const ANY_DIRECTIVE = 'eslint|svelte-ignore|/\\*\\s*globals?\\s';
+const ANY_DIRECTIVE = 'eslint|svelte-ignore|/\\*\\s*(globals?|exported)\\s';
 /** The start of a comment, in a script (`//`, `/*`) or in Svelte markup (`<!--`). */
 const OPEN = String.raw`(\/\/|\/\*|<!--)\s*`;
 /** The end of a comment's text: its closing marker, or the end of the line. */

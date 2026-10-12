@@ -32,8 +32,11 @@ function emDashes() {
 }
 
 /**
- * Comments that switch a warning off where no linter holds them to a reason: every svelte-ignore (Svelte does not lint its own comments), and ESLint comments in Svelte markup (`<!-- eslint-disable-next-line ... -->`), which eslint-plugin-eslint-comments does not read. ESLint comments in scripts are held to a reason by the shared configuration (`require-description`).
+ * Comments that switch a warning off where no linter holds them to a reason: every svelte-ignore (Svelte does not lint its own comments), and ESLint comments in Svelte markup (HTML comments), which eslint-plugin-eslint-comments does not read. ESLint comments in scripts are held to a reason by the shared configuration (`require-description`).
  */
+/** How an HTML comment opens, split so these examples are not comments themselves. */
+const MARKUP = '<' + '!--';
+
 function unreasonedComments() {
   const unreasoned = disableComments().filter(
     (c) => (c.kind === 'svelte-ignore' || c.markup) && !c.reason,
@@ -43,7 +46,7 @@ function unreasonedComments() {
       .map((c) => `${c.file}:${String(c.line)}: ${c.kind} ${c.lints.join(', ')}`)
       .join('\n');
     throw new GateError(
-      `A comment that switches a warning off says why it is wrong there, after \`--\` (\`<!-- svelte-ignore a11y_x -- the reason -->\`, \`<!-- eslint-disable-next-line rule -- the reason -->\`). Fix the cause where you can:\n${list}`,
+      `A comment that switches a warning off says why it is wrong there, after \`--\` (\`${MARKUP} svelte-ignore a11y_x -- the reason -->\`, \`${MARKUP} eslint-disable-next-line rule -- the reason -->\`). Fix the cause where you can:\n${list}`,
     );
   }
 }
