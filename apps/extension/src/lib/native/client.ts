@@ -212,11 +212,8 @@ export class NativeClient {
   start(): void {
     if (this.#started) return;
     this.#started = true;
-    const idle =
-      !this.#stopped &&
-      this.#port === null &&
-      this.#retryTimer === null &&
-      this.#status.state !== 'connected';
+    // A connection always has a port, so no port and no retry pending means nothing is under way.
+    const idle = !this.#stopped && this.#port === null && this.#retryTimer === null;
     if (idle) void this.#connect(false);
   }
 

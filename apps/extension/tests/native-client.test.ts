@@ -547,6 +547,31 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
+  it('leaves a retry a request scheduled to its timer when the popup starts the client', async () => {
+    app.hostMissing = 'Specified native messaging host not found.';
+    client = makeClient(app);
+    await client.request({ method: 'pause_all' }, 1_000).catch(() => undefined);
+    expect(app.ports).toHaveLength(1);
+    expect(client.status).toMatchObject({
+      state: 'unavailable',
+      problem: { kind: 'host_missing' },
+    });
+
+    client.start();
+    await flush();
+    expect(app.ports).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(app.ports).toHaveLength(2);
+  });
+
+  it('does not connect when started after it was stopped', async () => {
+    client = makeClient(app);
+    client.stop();
+    client.start();
+    await flush();
+    expect(app.ports).toHaveLength(0);
+  });
+
   it('copes with a browser that throws on connect', async () => {
     client = new NativeClient({
       transport: {
