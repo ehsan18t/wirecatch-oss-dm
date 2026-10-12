@@ -302,7 +302,9 @@ export async function resumeBrowserCopy(
     return 'resumed';
   } catch {
     const state = await downloads.state(id).catch(() => null);
-    return state !== null && state.state === 'in_progress' ? 'stuck_paused' : 'gone';
+    // Resuming a download that already runs fails in Firefox: the person resumed it.
+    if (state?.state === 'in_progress') return state.paused ? 'stuck_paused' : 'resumed';
+    return 'gone';
   }
 }
 

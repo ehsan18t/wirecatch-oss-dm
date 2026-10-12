@@ -710,6 +710,25 @@ describe('handover', () => {
     expect(s.app.calls('add_download')).toHaveLength(0);
   });
 
+  it('counts a copy the person resumed during the withdraw as resumed when resume fails', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = 'hang';
+        app.withdrawBehavior = 'withdrawn';
+      },
+    });
+    s.downloads.failing.add('resume');
+    s.app.onRequest = (call) => {
+      if (call.method === 'withdraw_download') {
+        s.downloads.browserState = { state: 'in_progress', paused: false };
+      }
+    };
+    const pending = s.hub.onDownload(downloadItem());
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toMatchObject({ kind: 'kept', browserCopy: 'resumed' });
+    expect(s.hub.snapshot().notice?.tone).not.toBe('error');
+  });
+
   it('says how to recover when the browser will not resume a download that is still waiting', async () => {
     s = await setup({
       configure: (app) => {
@@ -983,6 +1002,25 @@ describe('downloads left paused by a restarted background', () => {
         expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip may be downloading twice/);
       },
     );
+
+    it('raises no error for a copy the person resumed while the withdraw was waiting', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.failing.add('resume');
+      s = await setup({
+        inFlight,
+        downloads,
+        configure: (app) => {
+          app.onRequest = (call) => {
+            if (call.method === 'withdraw_download') {
+              downloads.browserState = { state: 'in_progress', paused: false };
+            }
+          };
+        },
+      });
+      expect(s.hub.snapshot().notice).toBeNull();
+    });
 
     it('says how to recover a download it cannot resume', async () => {
       const inFlight = new MemoryInFlight();
