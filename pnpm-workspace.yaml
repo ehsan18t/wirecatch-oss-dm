@@ -37,5 +37,5 @@ auditConfig:
     - GHSA-86w9-cpqp-85rv
 
 # Packages allowed to run install scripts.
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  esbuild: true
