@@ -1025,6 +1025,33 @@ describe('downloads left paused by a restarted background', () => {
       expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
     });
 
+    // A later warning replaced a "still paused" error, so that download stayed paused unseen.
+    it('does not let a warning hide an error about another download', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [
+        { id: 5, handoverId: 'h5' },
+        { id: 6, handoverId: 'h6' },
+      ];
+      const downloads = new FakeDownloads();
+      downloads.failingCalls.add('resume:5');
+      downloads.states.set(6, { state: 'in_progress', paused: false });
+      s = await setup({
+        inFlight,
+        downloads,
+        start: false,
+        configure: (app) => {
+          app.withdrawFor.set('h6', 'hang');
+        },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await s.started;
+      expect(s.hub.snapshot().notice).toMatchObject({
+        tone: 'error',
+        message:
+          "A download is paused in the browser. Open the browser's downloads page and click Resume.",
+      });
+    });
+
     it('keeps the entries not yet settled saved, so another restart still has them', async () => {
       const inFlight = new MemoryInFlight();
       inFlight.entries = [

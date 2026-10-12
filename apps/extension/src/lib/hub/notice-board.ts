@@ -52,7 +52,12 @@ export class NoticeBoard {
     this.notify('error', message);
   }
 
+  /**
+   * Shows a notice. There is room for one, so a warning never replaces an error: an error
+   * asks the person to act (a download left paused), and hiding it would leave that undone.
+   */
   notify(tone: Notice['tone'], message: string): void {
+    if (tone === 'warning' && this.#notice?.tone === 'error') return;
     this.#set({ tone, message, at: this.#deps.now() });
   }
 

@@ -130,6 +130,8 @@ export class FakeApp implements NativeTransport {
   /** `unreadable`: answered with an outcome this protocol version does not have. */
   withdrawBehavior: WithdrawOutcome | 'hang' | 'unreadable' | { error: ProtocolError } =
     'withdrawn';
+  /** How to answer the withdraw of one handover, over `withdrawBehavior`. */
+  readonly withdrawFor = new Map<string, FakeApp['withdrawBehavior']>();
   /** When set, `update_extension_settings` is refused with this error. */
   updateError: ProtocolError | null = null;
   /** Every request received, in order. */
@@ -200,7 +202,7 @@ export class FakeApp implements NativeTransport {
         reply({ status: 'ok', value: { type: 'done' } });
         return;
       case 'withdraw_download':
-        this.withdraw(reply);
+        this.withdraw(call.params.handover_id, reply);
         return;
       case 'add_download':
         this.add(port, { id, call }, reply);
@@ -246,8 +248,8 @@ export class FakeApp implements NativeTransport {
     this.broadcast({ type: 'extension_settings_changed', data: this.settings });
   }
 
-  private withdraw(reply: (outcome: Outcome) => void): void {
-    const behavior = this.withdrawBehavior;
+  private withdraw(handoverId: string, reply: (outcome: Outcome) => void): void {
+    const behavior = this.withdrawFor.get(handoverId) ?? this.withdrawBehavior;
     if (behavior === 'hang') return;
     if (typeof behavior === 'object') reply({ status: 'err', value: behavior.error });
     else if (behavior === 'unreadable') {
