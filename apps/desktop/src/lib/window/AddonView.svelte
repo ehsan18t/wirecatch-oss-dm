@@ -22,6 +22,8 @@
   const installed = $derived(isInstalled(addon));
   const failed = $derived(addon.state.type === 'failed');
   const fraction = $derived(installFraction(addon.state));
+  /** While the size is not known, the bar shows this much, so it reads as started, not empty. */
+  const UNKNOWN_PROGRESS = 0.05;
   let busy = $state(false);
 
   async function install() {
@@ -68,7 +70,7 @@
         aria-label="Installing {addon.name}"
         {...progressbarValue(fraction)}
       >
-        <span class="fill" style:transform="scaleX({fraction ?? 0.05})"></span>
+        <span class="fill" style:transform="scaleX({fraction ?? UNKNOWN_PROGRESS})"></span>
       </div>
       <p class="muted">
         {forQuality

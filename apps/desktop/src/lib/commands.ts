@@ -7,6 +7,21 @@ import { CATEGORIES, CATEGORY_LABEL } from './format';
 import { SETTINGS, SECTIONS } from './settings-schema';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
 
+// How the palette ranks a match. Each typed word scores against its best word in the text.
+/** The typed word is the whole word. */
+const SCORE_WHOLE_WORD = 12;
+/**
+ * The typed word starts the word. Up to one more for how much of the word is typed, so "pau"
+ * ranks "Pause" above "Pause all" but never above a whole word.
+ */
+const SCORE_PREFIX = 8;
+/** The typed word is a short form of the word ("pse" for "Pause"). */
+const SCORE_SHORT_FORM = 3;
+/** Added when the words typed appear together and in order in the text. */
+const SCORE_PHRASE = 5;
+/** A match in a command's keywords counts for this share of one in its title. */
+const KEYWORD_WEIGHT = 0.5;
+
 export type CommandGroup =
   'Selected downloads' | 'Downloads' | 'Show' | 'Queues' | 'Settings' | 'Help' | 'Sample data';
 
@@ -467,16 +482,16 @@ export function fuzzyScore(query: string, text: string): number {
   for (const q of typed) {
     let best = -1;
     for (const w of available) {
-      if (w === q) best = Math.max(best, 12);
-      else if (w.startsWith(q)) best = Math.max(best, 8 + q.length / w.length);
+      if (w === q) best = Math.max(best, SCORE_WHOLE_WORD);
+      else if (w.startsWith(q)) best = Math.max(best, SCORE_PREFIX + q.length / w.length);
       else if (q.length >= 2 && w.startsWith(q.charAt(0)) && isSubsequence(q, w))
-        best = Math.max(best, 3);
+        best = Math.max(best, SCORE_SHORT_FORM);
     }
     if (best < 0) return -1;
     score += best;
   }
   // The words typed together, in order, beat the same words spread out.
-  if (text.toLowerCase().includes(query.toLowerCase().trim())) score += 5;
+  if (text.toLowerCase().includes(query.toLowerCase().trim())) score += SCORE_PHRASE;
   return score;
 }
 
@@ -486,7 +501,9 @@ export function searchCommands(commands: readonly Command[], query: string): Com
   for (const c of commands) {
     const titleScore = fuzzyScore(query, c.title);
     // Keywords count for less than the title, but let "bandwidth" find the speed limit.
-    const kwScore = c.keywords ? fuzzyScore(query, `${c.title} ${c.keywords}`) * 0.5 : -1;
+    const kwScore = c.keywords
+      ? fuzzyScore(query, `${c.title} ${c.keywords}`) * KEYWORD_WEIGHT
+      : -1;
     const s = Math.max(titleScore, kwScore);
     if (s >= 0) scored.push({ c, s });
   }

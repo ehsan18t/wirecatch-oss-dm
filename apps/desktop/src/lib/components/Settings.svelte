@@ -23,6 +23,8 @@
   const MB = 1024 * 1024;
 
   let query = $state('');
+  /** How long a setting opened from elsewhere stays highlighted, so the eye finds it. */
+  const FLASH_MS = 1600;
   let flash = $state<SettingId | null>(null);
 
   const matches = $derived(searchSettings(query));
@@ -48,7 +50,7 @@
         preventScroll: true,
       });
       flash = target;
-      setTimeout(() => (flash = null), 1600);
+      setTimeout(() => (flash = null), FLASH_MS);
       app.settingsFocus = null;
     });
   });

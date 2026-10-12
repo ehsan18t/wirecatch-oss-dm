@@ -23,6 +23,7 @@ import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import type { Backend } from '../backend';
 import { extractUrls, formatTime, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
+import { MS_PER_SECOND } from '../time';
 import { DownloadStore } from './downloads.svelte';
 import { Hints } from './hints.svelte';
 import { countRows, visibleIds, type SortKey, type View } from './view';
@@ -49,6 +50,15 @@ export interface Toast {
 }
 
 const CONTEXT = Symbol('wirecatch-app');
+
+/**
+ * How often the clock behind schedule labels moves on. Labels show minutes, so twice a minute
+ * keeps them at most half a minute late.
+ */
+const CLOCK_REFRESH_MS = 30 * MS_PER_SECOND;
+
+/** Notes shown at once; a new one pushes out the oldest, so the stack stays short. */
+const TOASTS_MAX = 4;
 
 export function setApp(app: AppState): void {
   setContext(CONTEXT, app);
@@ -310,7 +320,7 @@ export class AppState {
     }
     if (generation !== this.#generation) return;
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    this.#clock = setInterval(() => (this.now = new Date(this.#clockSource())), 30_000);
+    this.#clock = setInterval(() => (this.now = new Date(this.#clockSource())), CLOCK_REFRESH_MS);
     // Neither is needed for the list, so neither holds it up.
     void this.loadAddons();
     void this.#takeLaunchLinks();
@@ -445,8 +455,7 @@ export class AppState {
 
   #toast(t: Omit<Toast, 'id'>): number {
     const id = this.#toastId++;
-    // Keep the stack short; the oldest note goes first.
-    this.toasts = [...this.toasts.slice(-3), { ...t, id }];
+    this.toasts = [...this.toasts, { ...t, id }].slice(-TOASTS_MAX);
     return id;
   }
 
