@@ -230,6 +230,22 @@ function msrv() {
   cargo(`+${version}`, 'check', '-p', ENGINE_CRATE, '--locked');
 }
 
+/** Folders the published engine must not ship: its tests and examples use the unpublished test-support crate, so they cannot build from the package. */
+const UNPACKAGED_ENGINE_FOLDERS = ['tests/', 'examples/'];
+
+/** Builds the engine as published, then checks the package ships the library only (`include` in its Cargo.toml). */
+function enginePackage() {
+  cargo('package', '-p', ENGINE_CRATE, '--locked', '--allow-dirty');
+  const files = capture('cargo', ['package', '-p', ENGINE_CRATE, '--list', '--locked', '--allow-dirty'])
+    .out.split(/\r?\n/)
+    .map((line) => line.trim().replaceAll('\\', '/'))
+    .filter(Boolean);
+  const shipped = files.filter((file) => UNPACKAGED_ENGINE_FOLDERS.some((folder) => file.startsWith(folder)));
+  if (shipped.length > 0) {
+    throw new GateError(`The ${ENGINE_CRATE} package must ship the library only, but it lists:\n${shipped.join('\n')}\nKeep \`include\` in crates/engine/Cargo.toml to the library's files.`);
+  }
+}
+
 const GENERATED_TYPES = 'packages/protocol/src';
 
 /** Every file under `dir`, with its contents, keyed by its path from the repository root. */
@@ -380,8 +396,8 @@ const CHECKS = {
   'test-desktop': testDesktop,
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () => run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], { env: { RUSTDOCFLAGS: '-D warnings' } }),
-  // Verifies the package builds as published; git cleanliness is not its concern, so it also runs before a change is committed.
-  'engine-package': () => cargo('package', '-p', ENGINE_CRATE, '--locked', '--allow-dirty'),
+  // Verifies the package builds as published and ships the library only; git cleanliness is not its concern, so it also runs before a change is committed.
+  'engine-package': enginePackage,
   msrv,
   protocol: protocolDrift,
   'js-check': () => pnpm('check'),
