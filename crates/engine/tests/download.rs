@@ -319,6 +319,61 @@ async fn rate_limiter_caps_combined_speed() {
     dir.remove().unwrap();
 }
 
+/// How long a pause may take to come back, far less than the limiter's wait.
+const PROMPT: Duration = Duration::from_secs(3);
+
+/// At 1 KiB/s the first chunk alone puts the limiter many seconds in debt. A pause must not wait for that, nor must a raised limit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
+    let server = TestServer::start(
+        test_data(MIB_USIZE),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("limited-pause").unwrap();
+    let limiter = Arc::new(wirecatch_engine::RateLimiter::new(Some(KIB)));
+    let mut req = request(&server, "slow.bin", &dir, 2);
+    req.options.rate_limiters = vec![limiter.clone()];
+
+    let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
+    let deadline = tokio::time::Instant::now() + PROMPT;
+    while progress.done() == 0 {
+        assert!(tokio::time::Instant::now() < deadline, "nothing arrived");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    cancel.cancel();
+    let paused = tokio::time::timeout(PROMPT, task).await;
+    let outcome = paused
+        .expect("the pause waited for the rate limiter")
+        .unwrap()
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+
+    // Resumed at the same tiny limit, then lifted: the download finishes at once.
+    let task = tokio::spawn(download(
+        req,
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+    ));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    limiter.set_limit(None);
+    let finished = tokio::time::timeout(PROMPT, task).await;
+    let outcome = finished
+        .expect("lifting the limit did not wake the download")
+        .unwrap()
+        .unwrap();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(std::fs::read(path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
 /// A caller may drop a download's future before it ends (a manager abandons a
 /// run that does not stop in time). Nothing of that download may keep writing
 /// afterwards: a resume file saved later could come back after the caller deleted

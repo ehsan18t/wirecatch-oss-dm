@@ -70,7 +70,7 @@ use url::{Host, Url};
 use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::http::{self, Clients, Failure, Guard, Session};
-use crate::limiter::RateLimiter;
+use crate::limiter::{Paced, RateLimiter, pace};
 use crate::numeric::clamp_to_len;
 use crate::units::KIB_USIZE;
 use crate::worker;
@@ -462,8 +462,8 @@ impl Fetcher {
             let n = data.len() as u64;
             position.written += n;
             on_bytes(n);
-            for limiter in &self.inner.rate_limiters {
-                limiter.consume(n).await;
+            if pace(&self.inner.rate_limiters, n, &self.inner.cancel).await == Paced::Cancelled {
+                return Err(Error::Cancelled.into());
             }
         }
 

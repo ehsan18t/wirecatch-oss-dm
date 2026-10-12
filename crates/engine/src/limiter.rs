@@ -1,12 +1,28 @@
 //! Speed limiting shared across connections and downloads.
 
+use std::pin::pin;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use tokio::sync::Notify;
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 use crate::numeric::approx_f64;
 use crate::units::KIB;
+
+/// Seconds of the limit a limiter that sat idle may release at once: a quarter
+/// second smooths chunk-sized jitter without letting a spike through.
+const BURST_SECONDS: f64 = 0.25;
+
+/// The least burst, in bytes, so that a low limit still lets one ordinary chunk
+/// through without a wait.
+const MIN_BURST: u64 = 16 * KIB;
+
+/// Stands in for a wait too long to represent (bytes far beyond any chunk at a
+/// limit of a few bytes a second): a year, which the caller never sits out
+/// whole, since a pause or a new limit ends it.
+const LONGEST_WAIT: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
 /// Caps the combined speed of every connection that shares it.
 ///
@@ -17,6 +33,9 @@ use crate::units::KIB;
 #[derive(Debug)]
 pub struct RateLimiter {
     bucket: Mutex<Bucket>,
+    /// Wakes every connection waiting on this limiter when the limit changes,
+    /// so it waits by the new limit rather than the old one.
+    changed: Notify,
 }
 
 #[derive(Debug)]
@@ -39,6 +58,7 @@ impl RateLimiter {
                 tokens: 0.0,
                 last: Instant::now(),
             }),
+            changed: Notify::new(),
         }
     }
 
@@ -50,10 +70,13 @@ impl RateLimiter {
     /// Changes the limit (bytes per second; `None` is unlimited). Every
     /// connection sharing this limiter follows the new limit within one chunk.
     pub fn set_limit(&self, limit: Option<u64>) {
-        let mut bucket = self.bucket();
-        bucket.limit = normalize(limit);
-        bucket.tokens = bucket.tokens.min(0.0);
-        bucket.last = Instant::now();
+        {
+            let mut bucket = self.bucket();
+            bucket.limit = normalize(limit);
+            bucket.tokens = bucket.tokens.min(0.0);
+            bucket.last = Instant::now();
+        }
+        self.changed.notify_waiters();
     }
 
     /// Locks the bucket. A lock poisoned by a panic in another holder is taken
@@ -63,28 +86,105 @@ impl RateLimiter {
         self.bucket.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Accounts for `bytes` just received, sleeping as long as needed to stay
+    /// Accounts for `bytes` just received, waiting as long as needed to stay
     /// under the limit. Not reading from the socket meanwhile lets TCP flow
     /// control slow the sender down.
-    pub(crate) async fn consume(&self, bytes: u64) {
-        let wait = {
-            let mut bucket = self.bucket();
-            let Some(rate) = bucket.limit else { return };
-            let rate = approx_f64(rate);
-            let now = Instant::now();
-            // A quarter second of burst smooths chunk-sized jitter without letting
-            // an idle limiter release a large spike.
-            let burst = (rate / 4.0).max(approx_f64(16 * KIB));
-            let refill = now.duration_since(bucket.last).as_secs_f64() * rate;
-            bucket.tokens = (bucket.tokens + refill).min(burst) - approx_f64(bytes);
-            bucket.last = now;
-            if bucket.tokens >= 0.0 {
-                return;
-            }
-            Duration::from_secs_f64(-bucket.tokens / rate)
+    ///
+    /// The wait ends early when `cancel` is cancelled, and is worked out again
+    /// whenever the limit changes: the bytes still owed are paid at the new
+    /// limit, or not at all once it is lifted.
+    pub(crate) async fn consume(&self, bytes: u64, cancel: &CancellationToken) -> Paced {
+        // Registered before the debt is read, so a change in between is not missed.
+        let mut changed = pin!(self.changed.notified());
+        let Some(mut debt) = self.take(bytes) else {
+            return Paced::Done;
         };
-        tokio::time::sleep(wait).await;
+        loop {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Paced::Cancelled,
+                () = tokio::time::sleep_until(debt.until) => return Paced::Done,
+                () = changed.as_mut() => {}
+            }
+            changed.set(self.changed.notified());
+            match self.limit() {
+                Some(rate) => debt = debt.at(approx_f64(rate)),
+                None => return Paced::Done,
+            }
+        }
     }
+
+    /// Takes `bytes` from the bucket; the wait that pays off the debt it leaves,
+    /// if any.
+    fn take(&self, bytes: u64) -> Option<Debt> {
+        let mut bucket = self.bucket();
+        let rate = approx_f64(bucket.limit?);
+        let now = Instant::now();
+        let burst = (rate * BURST_SECONDS).max(approx_f64(MIN_BURST));
+        let refill = now.duration_since(bucket.last).as_secs_f64() * rate;
+        bucket.tokens = (bucket.tokens + refill).min(burst) - approx_f64(bytes);
+        bucket.last = now;
+        if bucket.tokens >= 0.0 {
+            return None;
+        }
+        Some(Debt {
+            until: after(now, -bucket.tokens / rate),
+            rate,
+        })
+    }
+}
+
+/// Accounts for `bytes` just received with every limiter in `limiters`, one
+/// after the other; see [`RateLimiter::consume`].
+pub(crate) async fn pace(
+    limiters: &[std::sync::Arc<RateLimiter>],
+    bytes: u64,
+    cancel: &CancellationToken,
+) -> Paced {
+    for limiter in limiters {
+        if limiter.consume(bytes, cancel).await == Paced::Cancelled {
+            return Paced::Cancelled;
+        }
+    }
+    Paced::Done
+}
+
+/// How waiting for the speed limit ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Paced {
+    /// The bytes are paid for; carry on.
+    Done,
+    /// The download was cancelled while waiting.
+    Cancelled,
+}
+
+/// A wait for the limit: until when, at which rate in bytes per second.
+#[derive(Debug, Clone, Copy)]
+struct Debt {
+    until: Instant,
+    rate: f64,
+}
+
+impl Debt {
+    /// The same bytes still owed, paid at `rate` from now on.
+    fn at(self, rate: f64) -> Self {
+        let now = Instant::now();
+        let owed = self.until.saturating_duration_since(now).as_secs_f64() * self.rate;
+        Self {
+            until: after(now, owed / rate),
+            rate,
+        }
+    }
+}
+
+/// `secs` seconds after `now`, or [`LONGEST_WAIT`] after it for a wait that
+/// cannot be represented.
+fn after(now: Instant, secs: f64) -> Instant {
+    let wait = match Duration::try_from_secs_f64(secs) {
+        Ok(wait) => wait.min(LONGEST_WAIT),
+        Err(_) => LONGEST_WAIT,
+    };
+    now + wait
 }
 
 fn normalize(limit: Option<u64>) -> Option<u64> {
@@ -99,8 +199,9 @@ mod tests {
     async fn holds_throughput_to_the_limit() {
         let limiter = RateLimiter::new(Some(100_000));
         let start = Instant::now();
+        let cancel = CancellationToken::new();
         for _ in 0..100 {
-            limiter.consume(10_000).await;
+            assert_eq!(limiter.consume(10_000, &cancel).await, Paced::Done);
         }
         // 1 MB at 100 kB/s is 10 s, minus at most the burst allowance.
         let elapsed = start.elapsed().as_secs_f64();
@@ -110,13 +211,60 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn unlimited_never_waits_and_limit_can_change() {
         let limiter = RateLimiter::new(None);
+        let cancel = CancellationToken::new();
         let start = Instant::now();
-        limiter.consume(u64::MAX / 2).await;
+        limiter.consume(u64::MAX / 2, &cancel).await;
         assert_eq!(start.elapsed(), Duration::ZERO);
 
         limiter.set_limit(Some(1_000));
-        limiter.consume(2_000).await;
+        limiter.consume(2_000, &cancel).await;
         assert!(start.elapsed() >= Duration::from_millis(1_900));
         assert_eq!(limiter.limit(), Some(1_000));
+    }
+
+    /// A limiter `secs` seconds in debt at 1 kB/s, and the task paying it off.
+    fn in_debt(
+        secs: u64,
+    ) -> (
+        std::sync::Arc<RateLimiter>,
+        CancellationToken,
+        tokio::task::JoinHandle<Paced>,
+    ) {
+        let limiter = std::sync::Arc::new(RateLimiter::new(Some(1_000)));
+        let cancel = CancellationToken::new();
+        let paying = {
+            let (limiter, cancel) = (limiter.clone(), cancel.clone());
+            tokio::spawn(async move { limiter.consume(secs * 1_000, &cancel).await })
+        };
+        (limiter, cancel, paying)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_ends_the_wait_at_once() {
+        let (_limiter, cancel, paying) = in_debt(60);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let start = Instant::now();
+        cancel.cancel();
+        assert_eq!(paying.await.unwrap(), Paced::Cancelled);
+        assert_eq!(start.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn lifting_the_limit_ends_the_wait_and_raising_it_shortens_it() {
+        let (limiter, _cancel, paying) = in_debt(60);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let start = Instant::now();
+        limiter.set_limit(None);
+        assert_eq!(paying.await.unwrap(), Paced::Done);
+        assert_eq!(start.elapsed(), Duration::ZERO);
+
+        // 59 s left at 1 kB/s is 5.9 s at 10 kB/s.
+        let (limiter, _cancel, paying) = in_debt(60);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let start = Instant::now();
+        limiter.set_limit(Some(10_000));
+        assert_eq!(paying.await.unwrap(), Paced::Done);
+        let waited = start.elapsed().as_secs_f64();
+        assert!((5.8..=6.0).contains(&waited), "waited {waited} s");
     }
 }

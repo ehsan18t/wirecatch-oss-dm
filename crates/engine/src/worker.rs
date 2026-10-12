@@ -11,6 +11,7 @@ use tracing::{debug, info, warn};
 use crate::download::Shared;
 use crate::error::{Error, Result};
 use crate::http::Failure;
+use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
 use crate::segment::{Assignment, ByteRange, SharedTable, UNKNOWN_END};
 use crate::storage;
@@ -292,8 +293,8 @@ async fn stream(
                 break Err(e);
             }
             shared.progress.add(allowed);
-            for limiter in &shared.opts.rate_limiters {
-                limiter.consume(allowed).await;
+            if pace(&shared.opts.rate_limiters, allowed, &shared.cancel).await == Paced::Cancelled {
+                break Ok(Ended::Cancelled);
             }
         }
         if done {
