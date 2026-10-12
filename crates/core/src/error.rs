@@ -57,8 +57,8 @@ pub enum CoreError {
         "This settings file was made by a newer version of Wirecatch (format {found}, this version reads up to {supported}). Update Wirecatch, then import it again."
     )]
     ProfileTooNew {
-        /// Format version found in the file.
-        found: u32,
+        /// Format version found in the file, as written there.
+        found: u64,
         /// Newest format version this build reads.
         supported: u32,
     },

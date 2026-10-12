@@ -52,14 +52,13 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
         .get("format_version")
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| CoreError::InvalidProfile("it has no format version".into()))?;
-    let found: u32 = saturating(version);
-    if found > PROFILE_FORMAT_VERSION {
+    if version > u64::from(PROFILE_FORMAT_VERSION) {
         return Err(CoreError::ProfileTooNew {
-            found,
+            found: version,
             supported: PROFILE_FORMAT_VERSION,
         });
     }
-    if found == 0 {
+    if version == 0 {
         return Err(CoreError::InvalidProfile("its format version is 0".into()));
     }
     serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))
@@ -301,6 +300,10 @@ mod tests {
             }
         ));
         assert!(err.to_string().contains("Update Wirecatch"));
+        // A version past what 32 bits hold is reported as written.
+        let far = br#"{"format_version": 4294967296}"#;
+        let err = parse(far).unwrap_err();
+        assert!(err.to_string().contains("format 4294967296,"), "{err}");
     }
 
     #[test]
