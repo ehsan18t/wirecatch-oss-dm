@@ -8,7 +8,7 @@
 
 mod common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -19,6 +19,7 @@ use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
+use wirecatch_test_support::{TestResult, private_dir};
 
 /// The extension's Chromium origin, which every bridge allows (`config/extension-ids.json`).
 const CHROME_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
@@ -27,33 +28,21 @@ const CHROME_ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
 
-/// A private endpoint nobody else uses, and the folder that must outlive it on Linux.
-fn private_endpoint() -> (Endpoint, tempfile::TempDir) {
-    let dir = tempfile::tempdir().unwrap();
-    let unique = format!(
-        "{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let endpoint = if cfg!(windows) {
-        Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-desktop-test-{unique}"))
-    } else {
-        // tempfile makes the folder 0700, as the listener requires.
-        Endpoint::from_raw(dir.path().join("app.sock"))
-    };
-    (endpoint, dir)
-}
+/// How long the bridge may take to answer, and to exit once its stdin closes.
+const PATIENCE: Duration = Duration::from_secs(10);
 
 /// The bridge executable of this workspace, built with its test-only overrides (as the
 /// workspace's own test command builds it). It lands in the same target folder as this test.
-fn bridge_exe() -> PathBuf {
-    let test_exe = std::env::current_exe().unwrap();
+fn bridge_exe() -> TestResult<PathBuf> {
+    let test_exe = std::env::current_exe()?;
     // <target>/debug/deps/<test>.exe -> <target>/debug
-    let profile_dir = test_exe.parent().and_then(|p| p.parent()).unwrap();
-    let target_dir = profile_dir.parent().unwrap();
+    let profile_dir = test_exe
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("the test executable is not in a target folder")?;
+    let target_dir = profile_dir
+        .parent()
+        .ok_or("the profile folder has no parent")?;
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let status = std::process::Command::new(cargo)
@@ -68,21 +57,26 @@ fn bridge_exe() -> PathBuf {
         ])
         .arg(target_dir)
         .current_dir(&manifest)
-        .status()
-        .expect("could not run cargo to build the bridge");
-    assert!(status.success(), "building the bridge failed");
+        .status()?;
+    if !status.success() {
+        return Err("building the bridge failed".into());
+    }
     let exe = profile_dir.join(BRIDGE_FILE_NAME);
-    assert!(exe.is_file(), "no bridge at {}", exe.display());
-    exe
+    if !exe.is_file() {
+        return Err(format!("no bridge at {}", exe.display()).into());
+    }
+    Ok(exe)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() {
-    let exe = bridge_exe();
-    let (endpoint, _dir) = private_endpoint();
-    let listener = Listener::bind(&endpoint).expect("could not listen on a private endpoint");
-    let sandbox = Sandbox::new();
-    let manager = sandbox.open().await;
+async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult {
+    let exe = bridge_exe()?;
+    // A private endpoint nobody else uses, in a folder only this user can enter.
+    let dir = private_dir("desktop-bridge")?;
+    let endpoint = Endpoint::from_raw(dir.endpoint_name());
+    let listener = Listener::bind(&endpoint)?;
+    let sandbox = Sandbox::new()?;
+    let manager = sandbox.open().await?;
     let server = tokio::spawn(bridge::serve(listener, manager.clone()));
 
     let mut child = Command::new(&exe)
@@ -94,10 +88,9 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let mut stdout = child.stdout.take().unwrap();
+        .spawn()?;
+    let mut stdin = child.stdin.take().ok_or("the bridge has no stdin pipe")?;
+    let mut stdout = child.stdout.take().ok_or("the bridge has no stdout pipe")?;
 
     let hello = Message::Request {
         id: 1,
@@ -112,12 +105,10 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() {
             start_app: true,
         }),
     };
-    frame::write_async(&mut stdin, &hello).await.unwrap();
-    let reply: Option<Message> =
-        tokio::time::timeout(Duration::from_secs(10), frame::read_async(&mut stdout))
-            .await
-            .expect("no reply from the bridge")
-            .unwrap();
+    frame::write_async(&mut stdin, &hello).await?;
+    let reply: Option<Message> = tokio::time::timeout(PATIENCE, frame::read_async(&mut stdout))
+        .await
+        .map_err(|_| "no reply from the bridge")??;
     match reply {
         Some(Message::Response {
             id: 1,
@@ -131,11 +122,11 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() {
 
     // Closing stdin is the browser closing the port: the bridge exits.
     drop(stdin);
-    let status = tokio::time::timeout(Duration::from_secs(10), child.wait())
+    let status = tokio::time::timeout(PATIENCE, child.wait())
         .await
-        .expect("the bridge did not exit")
-        .unwrap();
+        .map_err(|_| "the bridge did not exit")??;
     assert!(status.success());
     server.abort();
     manager.shutdown().await;
+    Ok(())
 }

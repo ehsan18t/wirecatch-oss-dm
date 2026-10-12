@@ -31,6 +31,7 @@ impl TrayAction {
     pub const ALL: [TrayAction; 4] = [Self::Open, Self::PauseAll, Self::ResumeAll, Self::Quit];
 
     /// The menu item id.
+    #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             Self::Open => "open",
@@ -41,6 +42,7 @@ impl TrayAction {
     }
 
     /// The menu item text.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Open => "Open Wirecatch",
@@ -51,6 +53,7 @@ impl TrayAction {
     }
 
     /// The action of a menu item id.
+    #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|a| a.id() == id)
     }
@@ -66,6 +69,10 @@ pub trait Shell {
 
 /// Runs a tray action. `manager` is `None` while the manager is still opening (or could not
 /// open); pausing and resuming then explain that.
+///
+/// # Errors
+///
+/// Pause all or Resume all while the manager is still opening, or once it has shut down.
 pub fn perform(
     action: TrayAction,
     manager: Option<&Manager>,
@@ -107,6 +114,10 @@ pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
 }
 
 /// Puts the icon in the tray.
+///
+/// # Errors
+///
+/// The menu or the icon could not be made: some Linux desktops have no tray at all.
 pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let item = |a: TrayAction| MenuItem::with_id(app, a.id(), a.label(), true, None::<&str>);
     let open = item(TrayAction::Open)?;
@@ -143,6 +154,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 pub const MAX_TOOLTIP_CHARS: usize = 127;
 
 /// The tooltip when something keeps Wirecatch from working, cut to fit.
+#[must_use]
 pub fn problem_tooltip(reason: &str) -> String {
     let text = format!("Wirecatch could not start: {reason}");
     if text.chars().count() <= MAX_TOOLTIP_CHARS {

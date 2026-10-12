@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use wirecatch_engine::numeric::approx_f64;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent};
 
@@ -85,11 +86,13 @@ impl Activity {
     }
 
     /// Downloads moving bytes (or being joined) right now.
+    #[must_use]
     pub fn active(&self) -> usize {
         self.rows.values().filter(|r| is_active(r.status)).count()
     }
 
     /// Combined speed of every running download, in bytes per second.
+    #[must_use]
     pub fn speed(&self) -> u64 {
         self.rows
             .values()
@@ -99,15 +102,17 @@ impl Activity {
     }
 
     /// The tray tooltip for the current state.
+    #[must_use]
     pub fn tooltip(&self) -> String {
         tooltip(self.active(), self.speed())
     }
 }
 
 /// Bytes as a person reads them, matching the interface: `512 B`, `1.50 KB`, `12.4 MB`.
+#[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    let mut value = bytes as f64;
+    let mut value = approx_f64(bytes);
     let mut unit = 0;
     while value >= 1024.0 && unit < UNITS.len() - 1 {
         value /= 1024.0;
@@ -127,6 +132,7 @@ pub fn format_bytes(bytes: u64) -> String {
 }
 
 /// The tray tooltip: what runs and how fast.
+#[must_use]
 pub fn tooltip(active: usize, speed: u64) -> String {
     match active {
         0 => "Wirecatch: nothing downloading".to_owned(),
@@ -136,6 +142,7 @@ pub fn tooltip(active: usize, speed: u64) -> String {
 }
 
 /// Title and body of the notification for downloads that finished close together.
+#[must_use]
 pub fn notification_text(finished: &[Finished]) -> Option<(String, String)> {
     match finished {
         [] => None,
@@ -213,13 +220,13 @@ mod tests {
         ]));
         assert_eq!(done.iter().map(|f| f.id.0).collect::<Vec<_>>(), [1]);
         // The same row again is not news.
-        assert!(
+        assert_eq!(
             a.apply(&UiEvent::DownloadsChanged(vec![row(
                 1,
                 DownloadStatus::Completed,
                 0
-            )]))
-            .is_empty()
+            )])),
+            []
         );
         // A row seen for the first time already finished (a tiny file) is news.
         let done = a.apply(&UiEvent::DownloadsChanged(vec![row(

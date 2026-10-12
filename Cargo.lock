@@ -7511,9 +7511,6 @@ dependencies = [
 name = "wirecatch-desktop"
 version = "0.1.0"
 dependencies = [
- "axum",
- "bytes",
- "futures-util",
  "libc",
  "serde",
  "serde_json",
@@ -7534,8 +7531,10 @@ dependencies = [
  "windows-sys 0.61.2",
  "winreg 0.10.1",
  "wirecatch-core",
+ "wirecatch-engine",
  "wirecatch-ipc",
  "wirecatch-protocol",
+ "wirecatch-test-support",
 ]
 
 [[package]]

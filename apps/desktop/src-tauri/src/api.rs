@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use wirecatch_core::{AddonRequestItem, CoreError, Manager};
+use wirecatch_core::{AddonRequestItem, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
     DownloadSummary, ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue,
@@ -18,158 +18,279 @@ use crate::questions::Question;
 /// What a command answers: a value, or an error worded for a person.
 pub type CommandResult<T> = Result<T, String>;
 
-fn plain(err: CoreError) -> String {
-    err.to_string()
+/// The core's answer with its error as the plain-language text the interface shows.
+fn plain<T>(result: wirecatch_core::Result<T>) -> CommandResult<T> {
+    result.map_err(|err| err.to_string())
 }
 
 /// Every download, in queue order.
+#[must_use]
 pub fn list_downloads(m: &Manager) -> Vec<DownloadSummary> {
     m.list_downloads()
 }
 
 /// Adds a download from the app (paste, Add dialog, a link passed on the command line).
+///
+/// # Errors
+///
+/// The link is not http, https or FTP, the queue does not exist, the folder does not resolve,
+/// the file name cannot be used, or the manager has shut down ([`Manager::add_download`]).
 pub async fn add_download(m: &Manager, request: AddRequest) -> CommandResult<DownloadId> {
-    m.add_download(request).await.map_err(plain)
+    plain(m.add_download(request).await)
 }
 
 /// Pauses one download, keeping what it has downloaded.
+///
+/// # Errors
+///
+/// There is no download `id`, or the manager has shut down ([`Manager::pause`]).
 pub fn pause(m: &Manager, id: DownloadId) -> CommandResult<()> {
-    m.pause(id).map_err(plain)
+    plain(m.pause(id))
 }
 
 /// Lets a paused or failed download continue.
+///
+/// # Errors
+///
+/// The download has finished, there is no download `id`, or the manager has shut down
+/// ([`Manager::resume`]).
 pub fn resume(m: &Manager, id: DownloadId) -> CommandResult<()> {
-    m.resume(id).map_err(plain)
+    plain(m.resume(id))
 }
 
 /// Stops a download and discards its partial file. The row stays.
+///
+/// # Errors
+///
+/// The download has finished, there is no download `id`, or the manager has shut down
+/// ([`Manager::cancel`]).
 pub fn cancel(m: &Manager, id: DownloadId) -> CommandResult<()> {
-    m.cancel(id).map_err(plain)
+    plain(m.cancel(id))
 }
 
 /// Removes downloads from the list, and their files when `delete_file` is set.
+///
+/// # Errors
+///
+/// The manager has shut down ([`Manager::remove`]). Files that cannot be deleted are logged,
+/// not reported.
 pub async fn remove(m: &Manager, ids: &[DownloadId], delete_file: bool) -> CommandResult<()> {
-    m.remove(ids, delete_file).await.map_err(plain)
+    plain(m.remove(ids, delete_file).await)
 }
 
 /// Starts a failed or cancelled download again.
+///
+/// # Errors
+///
+/// The download has finished, there is no download `id`, or the manager has shut down
+/// ([`Manager::retry`]).
 pub fn retry(m: &Manager, id: DownloadId) -> CommandResult<()> {
-    m.retry(id).map_err(plain)
+    plain(m.retry(id))
 }
 
 /// Swaps in a fresh link for an expired one, keeping the downloaded bytes.
+///
+/// # Errors
+///
+/// The new link is not http, https or FTP, the download has finished, there is no download
+/// `id`, or the manager has shut down ([`Manager::refresh_link`]).
 pub fn refresh_link(m: &Manager, id: DownloadId, url: &str) -> CommandResult<()> {
-    m.refresh_link(id, url).map_err(plain)
+    plain(m.refresh_link(id, url))
 }
 
 /// Saves a download whose conversion failed as it was downloaded instead (D24).
+///
+/// # Errors
+///
+/// The download is not a failed conversion that offers this, there is no download `id`, or
+/// the manager has shut down ([`Manager::keep_original`]).
 pub fn keep_original(m: &Manager, id: DownloadId) -> CommandResult<()> {
-    m.keep_original(id).map_err(plain)
+    plain(m.keep_original(id))
 }
 
 /// Moves downloads to another queue.
+///
+/// # Errors
+///
+/// The queue or one of the downloads does not exist, in which case nothing moves, or the
+/// manager has shut down ([`Manager::move_to_queue`]).
 pub fn move_to_queue(m: &Manager, ids: &[DownloadId], queue: QueueId) -> CommandResult<()> {
-    m.move_to_queue(ids, queue).map_err(plain)
+    plain(m.move_to_queue(ids, queue))
 }
 
 /// Puts a queue's downloads in this order.
+///
+/// # Errors
+///
+/// The queue or a download does not exist, a download is in another queue or listed twice,
+/// or the manager has shut down; nothing changes then ([`Manager::reorder`]).
 pub fn reorder(m: &Manager, queue: QueueId, ids_in_order: &[DownloadId]) -> CommandResult<()> {
-    m.reorder(queue, ids_in_order).map_err(plain)
+    plain(m.reorder(queue, ids_in_order))
 }
 
 /// Pauses everything.
+///
+/// # Errors
+///
+/// The manager has shut down ([`Manager::pause_all`]).
 pub fn pause_all(m: &Manager) -> CommandResult<()> {
-    m.pause_all().map_err(plain)
+    plain(m.pause_all())
 }
 
 /// Resumes everything that was paused.
+///
+/// # Errors
+///
+/// The manager has shut down ([`Manager::resume_all`]).
 pub fn resume_all(m: &Manager) -> CommandResult<()> {
-    m.resume_all().map_err(plain)
+    plain(m.resume_all())
 }
 
 /// Every queue.
+#[must_use]
 pub fn list_queues(m: &Manager) -> Vec<Queue> {
     m.list_queues()
 }
 
 /// Makes a new queue.
+///
+/// # Errors
+///
+/// The name is empty, too long or taken, there are already as many queues as allowed, or the
+/// manager has shut down ([`Manager::create_queue`]).
 pub fn create_queue(m: &Manager, name: &str) -> CommandResult<Queue> {
-    m.create_queue(name).map_err(plain)
+    plain(m.create_queue(name))
 }
 
 /// Saves a queue's name, limits and schedule.
+///
+/// # Errors
+///
+/// A name or limit cannot be used, there is no such queue, or the manager has shut down
+/// ([`Manager::update_queue`]).
 pub fn update_queue(m: &Manager, queue: Queue) -> CommandResult<()> {
-    m.update_queue(queue).map_err(plain)
+    plain(m.update_queue(queue))
 }
 
 /// Deletes a queue; its downloads move to the default queue.
+///
+/// # Errors
+///
+/// It is the default queue, there is no queue `id`, or the manager has shut down
+/// ([`Manager::delete_queue`]).
 pub fn delete_queue(m: &Manager, id: QueueId) -> CommandResult<()> {
-    m.delete_queue(id).map_err(plain)
+    plain(m.delete_queue(id))
 }
 
 /// Pauses or resumes a whole queue.
+///
+/// # Errors
+///
+/// There is no queue `id`, or the manager has shut down ([`Manager::set_queue_paused`]).
 pub fn set_queue_paused(m: &Manager, id: QueueId, paused: bool) -> CommandResult<()> {
-    m.set_queue_paused(id, paused).map_err(plain)
+    plain(m.set_queue_paused(id, paused))
 }
 
 /// Runs a scheduled queue now, outside its hours.
+///
+/// # Errors
+///
+/// There is no queue `id`, or the manager has shut down ([`Manager::start_queue_now`]).
 pub fn start_queue_now(m: &Manager, id: QueueId) -> CommandResult<()> {
-    m.start_queue_now(id).map_err(plain)
+    plain(m.start_queue_now(id))
 }
 
 /// Every setting.
+#[must_use]
 pub fn get_settings(m: &Manager) -> AppSettings {
     m.get_settings()
 }
 
 /// Changes the settings a patch holds; the others keep their current values.
+///
+/// # Errors
+///
+/// A value is out of range, a queue does not exist, a folder does not resolve, or the manager
+/// has shut down; nothing changes then ([`Manager::change_settings`]).
 pub fn change_settings(m: &Manager, patch: AppSettingsPatch) -> CommandResult<()> {
-    m.change_settings(patch).map_err(plain)
+    plain(m.change_settings(patch))
 }
 
 /// Writes the settings profile to `path`.
+///
+/// # Errors
+///
+/// `path` cannot be written ([`Manager::export_settings`]).
 pub async fn export_settings(m: &Manager, path: &str) -> CommandResult<()> {
-    m.export_settings(Path::new(path)).await.map_err(plain)
+    plain(m.export_settings(Path::new(path)).await)
 }
 
 /// What importing the settings profile at `path` would change, without
 /// changing anything.
+///
+/// # Errors
+///
+/// The errors of [`import_settings`].
 pub async fn preview_import(m: &Manager, path: &str) -> CommandResult<ImportPreview> {
-    m.preview_import(Path::new(path)).await.map_err(plain)
+    plain(m.preview_import(Path::new(path)).await)
 }
 
 /// Reads a settings profile from `path` and applies it.
+///
+/// # Errors
+///
+/// `path` cannot be read, is not a settings profile or was made by a newer Wirecatch, its
+/// settings or queues are out of range, or the manager has shut down; nothing changes then
+/// ([`Manager::import_settings`]).
 pub async fn import_settings(m: &Manager, path: &str) -> CommandResult<()> {
-    m.import_settings(Path::new(path)).await.map_err(plain)
+    plain(m.import_settings(Path::new(path)).await)
 }
 
 /// Browser downloads waiting for the person to confirm them.
+#[must_use]
 pub fn pending_confirmations(m: &Manager) -> Vec<PendingCapture> {
     m.pending_confirmations()
 }
 
 /// Starts a captured download the person confirmed, or adds it paused for later; returns the
 /// new download's id.
+///
+/// # Errors
+///
+/// The question was already answered or withdrawn; the link, name, folder or queue in the
+/// answer cannot be used, in which case the question stays open; or the manager has shut down
+/// ([`Manager::confirm_capture`]).
 pub async fn confirm_capture(
     m: &Manager,
     id: u64,
     confirmation: CaptureConfirmation,
 ) -> CommandResult<DownloadId> {
-    m.confirm_capture(id, confirmation).await.map_err(plain)
+    plain(m.confirm_capture(id, confirmation).await)
 }
 
 /// Drops a captured download the person did not want.
+///
+/// # Errors
+///
+/// The question was already answered or withdrawn, or the manager has shut down
+/// ([`Manager::reject_capture`]).
 pub fn reject_capture(m: &Manager, id: u64) -> CommandResult<()> {
-    m.reject_capture(id).map_err(plain)
+    plain(m.reject_capture(id))
 }
 
 /// Moves a download, running or not, to another folder.
+///
+/// # Errors
+///
+/// `folder` does not resolve, cannot be created or written to, or the files cannot be moved
+/// there; the download is an unfinished video or already being moved; there is no download
+/// `id`; or the manager has shut down ([`Manager::set_download_folder`]).
 pub async fn set_download_folder(m: &Manager, id: DownloadId, folder: &str) -> CommandResult<()> {
-    m.set_download_folder(id, folder).await.map_err(plain)
+    plain(m.set_download_folder(id, folder).await)
 }
 
 fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
-    m.get_download(id).map_err(plain)
+    plain(m.get_download(id))
 }
 
 /// File types that open directly, without asking first: common video, audio, image, document
@@ -201,6 +322,7 @@ pub const SAFE_EXTENSIONS: &[&str] = &[
 /// `video.mp4.` as an mp4. On Linux they are part of the name: `video.mp4.` has no extension
 /// there, and the desktop may pick a program for it by its content instead (a `.desktop`
 /// launcher, say), so it must ask, and trimming would wrongly call it an mp4.
+#[must_use]
 pub fn file_type(name: &str) -> Option<String> {
     let name = if cfg!(windows) {
         name.trim_end_matches(['.', ' '])
@@ -214,6 +336,7 @@ pub fn file_type(name: &str) -> Option<String> {
 /// Whether opening `path` might run code, so the person must confirm first: any type not on
 /// [`SAFE_EXTENSIONS`], a file without an extension, and on Linux any file marked executable,
 /// whatever its name.
+#[must_use]
 pub fn is_program(path: &Path) -> bool {
     let name = path
         .file_name()
@@ -235,6 +358,10 @@ fn is_marked_executable(_path: &Path) -> bool {
 }
 
 /// Whether the download `id` is a program (see [`is_program`]), for the interface to ask first.
+///
+/// # Errors
+///
+/// There is no download `id`.
 pub fn download_is_program(m: &Manager, id: DownloadId) -> CommandResult<bool> {
     Ok(is_program(Path::new(&find(m, id)?.path)))
 }
@@ -253,6 +380,11 @@ fn site_of(url: &str) -> String {
 
 /// The finished file to open for `open_file`. A program is only opened when `allow_program` is
 /// set, after the person confirmed they trust where it came from.
+///
+/// # Errors
+///
+/// There is no download `id`, it has not finished, its file is no longer where it was saved,
+/// or it is a program and `allow_program` is not set. Each message says what to do instead.
 pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> CommandResult<PathBuf> {
     let row = find(m, id)?;
     if row.status != DownloadStatus::Completed {
@@ -285,6 +417,10 @@ pub enum Reveal {
 }
 
 /// The file to select, or the folder to open, for `open_folder`.
+///
+/// # Errors
+///
+/// There is no download `id`, or neither its file nor its folder exists yet.
 pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
     let row = find(m, id)?;
     let path = PathBuf::from(&row.path);
@@ -304,16 +440,24 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
 /// Downloads the chosen quality of a media choice. An option that needs the media add-on
 /// fails while it is not installed; the core then asks for it with `AddonRequired` and keeps
 /// the choice open.
+///
+/// # Errors
+///
+/// The choice was already made, dismissed or withdrawn, or is not ready yet; the selection
+/// asks for something the choice did not offer; the option needs the media add-on; the
+/// download's name, folder or queue cannot be used, in which case the choice stays open; or
+/// the manager has shut down ([`Manager::choose_media`]).
 pub async fn choose_media(
     m: &Manager,
     id: u64,
     selection: MediaSelection,
 ) -> CommandResult<DownloadId> {
-    m.choose_media(id, selection).await.map_err(plain)
+    plain(m.choose_media(id, selection).await)
 }
 
 /// The open question `id`, for its download window; `None` once it is answered, dismissed or
 /// withdrawn by the browser.
+#[must_use]
 pub fn question(m: &Manager, id: u64) -> Option<Question> {
     if let Some(capture) = m.pending_confirmations().into_iter().find(|c| c.id == id) {
         return Some(Question::Capture(capture));
@@ -331,69 +475,107 @@ pub fn question(m: &Manager, id: u64) -> Option<Question> {
 }
 
 /// One download, for its progress window.
+///
+/// # Errors
+///
+/// There is no download `id` ([`Manager::get_download`]).
 pub fn get_download(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
     find(m, id)
 }
 
 /// The newest download in the list that question `id` is about again, so its window can say
 /// so without blocking anything.
+#[must_use]
 pub fn earlier_download(m: &Manager, id: u64) -> Option<DownloadSummary> {
     m.earlier_download(id)
 }
 
 /// Drops a media choice the person did not want (or media still being read).
+///
+/// # Errors
+///
+/// There is no such choice, or the manager has shut down ([`Manager::dismiss_media_choice`]).
 pub fn dismiss_media_choice(m: &Manager, id: u64) -> CommandResult<()> {
-    m.dismiss_media_choice(id).map_err(plain)
+    plain(m.dismiss_media_choice(id))
 }
 
 /// Media choices still waiting for an answer, so a new or reloaded window shows them again.
+#[must_use]
 pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
     m.pending_media_choices()
 }
 
 /// Pages waiting for the media add-on, so a new or reloaded window offers the install again.
 /// [`dismiss_media_choice`] with an item's id drops that page.
+#[must_use]
 pub fn pending_addon_requests(m: &Manager) -> Vec<AddonRequestItem> {
     m.pending_addon_requests()
 }
 
 /// Every add-on and its state. Update checks run in the core: once a day while
 /// `auto_update_addons` is on.
+#[must_use]
 pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
     m.list_addons()
 }
 
 /// Installs an add-on in the background; progress and the result arrive as `AddonsChanged`.
+///
+/// # Errors
+///
+/// `id` names no add-on Wirecatch knows, or the manager has shut down
+/// ([`Manager::install_addon`]). A failed install is not an error here: it arrives as
+/// `AddonsChanged`.
 pub async fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
-    m.install_addon(id).await.map_err(plain)
+    plain(m.install_addon(id).await)
 }
 
 /// Brings an add-on up to date in the background, like [`install_addon`].
+///
+/// # Errors
+///
+/// The errors of [`install_addon`].
 pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
-    m.update_addon(id).await.map_err(plain)
+    plain(m.update_addon(id).await)
 }
 
 /// Looks for a newer media add-on now, as the person asked, and answers with the add-ons as
 /// they stand afterwards (up to date, an update offered, or one already installing quietly).
+///
+/// # Errors
+///
+/// The releases cannot be looked up, a newer release's checksum list is not signed by its
+/// developers, or the manager has shut down ([`Manager::check_addon_updates`]).
 pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
-    m.check_addon_updates().await.map_err(plain)?;
+    plain(m.check_addon_updates().await)?;
     Ok(m.list_addons())
 }
 
 /// Stops an install or update in progress. An update keeps the installed version working; a
 /// first install removes what it put down.
+///
+/// # Errors
+///
+/// `id` names no add-on Wirecatch knows, the install stopped but some of its files could not
+/// be deleted, or the manager has shut down ([`Manager::cancel_addon_operation`]).
 pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> {
-    m.cancel_addon_operation(id).await.map_err(plain)
+    plain(m.cancel_addon_operation(id).await)
 }
 
 /// Removes an add-on and its files, stopping an install in progress first.
+///
+/// # Errors
+///
+/// `id` names no add-on Wirecatch knows, its files could not all be deleted, a video is being
+/// read or downloaded with it, or the manager has shut down ([`Manager::remove_addon`]).
 pub async fn remove_addon(m: &Manager, id: &str) -> CommandResult<()> {
-    m.remove_addon(id).await.map_err(plain)
+    plain(m.remove_addon(id).await)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_core::CoreError;
 
     #[test]
     fn known_safe_types_open_directly_in_any_case() {
@@ -513,7 +695,8 @@ mod tests {
     #[test]
     fn the_add_on_required_error_keeps_its_wording() {
         assert!(
-            plain(CoreError::AddonRequired).starts_with("This needs the media add-on"),
+            plain::<()>(Err(CoreError::AddonRequired))
+                .is_err_and(|text| text.starts_with("This needs the media add-on")),
             "update isAddonRequired in src/lib/addons.ts too"
         );
     }

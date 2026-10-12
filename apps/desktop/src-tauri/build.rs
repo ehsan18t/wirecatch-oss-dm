@@ -1,3 +1,5 @@
+//! Build script: Tauri's code generation, and the Windows manifest the integration tests need.
+
 fn main() {
     tauri_build::build();
 

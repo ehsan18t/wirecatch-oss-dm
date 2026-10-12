@@ -26,15 +26,15 @@ use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{EVENT_NAME, RESYNC_EVENT, tray};
 use wirecatch_protocol::app::{Category, PendingCapture, UiEvent, UserError};
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_test_support::TestResult;
 
-fn app_with(core: Option<Core>) -> App<MockRuntime> {
+fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
     let mut context = mock_context(noop_assets());
     let main: WindowConfig = serde_json::from_value(serde_json::json!({
         "label": MAIN_WINDOW,
         "create": false,
         "title": "Wirecatch"
-    }))
-    .unwrap();
+    }))?;
     context.config_mut().app.windows = vec![main];
     let mut builder = mock_builder()
         .manage(Lifecycle::default())
@@ -43,7 +43,7 @@ fn app_with(core: Option<Core>) -> App<MockRuntime> {
     if let Some(core) = core {
         builder = builder.manage(core);
     }
-    builder.build(context).unwrap()
+    Ok(builder.build(context)?)
 }
 
 fn wait_until(what: &str, done: impl Fn() -> bool) {
@@ -55,14 +55,14 @@ fn wait_until(what: &str, done: impl Fn() -> bool) {
 }
 
 /// Quit from the tray menu on an app whose manager `open_first` decides is open or not yet.
-fn quit_from_the_tray(open_first: bool) {
-    let sandbox = Sandbox::new();
-    let app = app_with(Some(Core::new(sandbox.config())));
+fn quit_from_the_tray(open_first: bool) -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
     let handle = app.handle().clone();
     if open_first {
         tauri::async_runtime::block_on(async {
-            handle.state::<Core>().manager().await.map(|_| ()).unwrap()
-        });
+            handle.state::<Core>().manager().await.map(|_| ())
+        })?;
     }
     let exited = Arc::new(AtomicBool::new(false));
     let flag = exited.clone();
@@ -75,19 +75,24 @@ fn quit_from_the_tray(open_first: bool) {
     assert!(handle.state::<Lifecycle>().has_finished());
     // The manager stopped before the exit: it takes no more work.
     let core = handle.state::<Core>();
-    let manager = core.get().expect("the quit opened and stopped the manager");
-    let err = api::pause_all(manager).unwrap_err();
+    let manager = core
+        .get()
+        .ok_or("the quit did not open and stop the manager")?;
+    let Err(err) = api::pause_all(manager) else {
+        return Err("the stopped manager still took work".into());
+    };
     assert!(err.contains("shutting down"), "{err}");
+    Ok(())
 }
 
 #[test]
-fn quit_in_the_tray_menu_stops_the_manager_then_exits() {
-    quit_from_the_tray(true);
+fn quit_in_the_tray_menu_stops_the_manager_then_exits() -> TestResult {
+    quit_from_the_tray(true)
 }
 
 #[test]
-fn quit_before_the_download_list_opened_still_stops_it_cleanly() {
-    quit_from_the_tray(false);
+fn quit_before_the_download_list_opened_still_stops_it_cleanly() -> TestResult {
+    quit_from_the_tray(false)
 }
 
 fn capture() -> PendingCapture {
@@ -104,8 +109,8 @@ fn capture() -> PendingCapture {
 }
 
 #[test]
-fn a_question_opens_its_own_window_and_a_storage_failure_notifies() {
-    let app = app_with(None);
+fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResult {
+    let app = app_with(None)?;
     let handle = app.handle().clone();
     let (sender, receiver) = broadcast::channel(16);
     let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
@@ -160,11 +165,12 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() {
     );
     assert_eq!(handle.state::<DownloadWindows>().snapshot().len(), 1);
     task.abort();
+    Ok(())
 }
 
 #[test]
-fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() {
-    let app = app_with(None);
+fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() -> TestResult {
+    let app = app_with(None)?;
     let handle = app.handle().clone();
     let (sender, receiver) = broadcast::channel(16);
     let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
@@ -202,11 +208,12 @@ fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() {
         "the closed window's place is used again: {slots:?}"
     );
     task.abort();
+    Ok(())
 }
 
 #[test]
-fn with_a_window_events_reach_it_and_missed_events_ask_for_a_reload() {
-    let app = app_with(None);
+fn with_a_window_events_reach_it_and_missed_events_ask_for_a_reload() -> TestResult {
+    let app = app_with(None)?;
     let handle = app.handle().clone();
     wirecatch_desktop_lib::window::show_main_window(&handle);
     assert!(handle.get_webview_window(MAIN_WINDOW).is_some());
@@ -214,12 +221,12 @@ fn with_a_window_events_reach_it_and_missed_events_ask_for_a_reload() {
     let events = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let seen = events.clone();
     handle.listen_any(EVENT_NAME, move |e| {
-        seen.lock().unwrap().push(e.payload().to_owned())
+        seen.lock().unwrap().push(e.payload().to_owned());
     });
     let resyncs = Arc::new(AtomicBool::new(false));
     let resynced = resyncs.clone();
     handle.listen_any(RESYNC_EVENT, move |_| {
-        resynced.store(true, Ordering::SeqCst)
+        resynced.store(true, Ordering::SeqCst);
     });
 
     // A tiny channel, filled before the forwarder runs, so it falls behind.
@@ -234,6 +241,7 @@ fn with_a_window_events_reach_it_and_missed_events_ask_for_a_reload() {
     wait_until("the events after it", || events.lock().unwrap().len() == 2);
     assert!(events.lock().unwrap()[0].contains("downloads_removed"));
     task.abort();
+    Ok(())
 }
 
 struct FakeLauncher {
@@ -242,20 +250,23 @@ struct FakeLauncher {
 
 impl Launcher for FakeLauncher {
     fn enable(&self) -> Result<(), String> {
-        self.calls.lock().unwrap().push("enable");
+        self.calls.lock().map_err(|e| e.to_string())?.push("enable");
         Ok(())
     }
     fn disable(&self) -> Result<(), String> {
-        self.calls.lock().unwrap().push("disable");
+        self.calls
+            .lock()
+            .map_err(|e| e.to_string())?
+            .push("disable");
         Ok(())
     }
 }
 
 #[test]
-fn start_at_sign_in_follows_the_setting_and_choices_made_elsewhere() {
+fn start_at_sign_in_follows_the_setting_and_choices_made_elsewhere() -> TestResult {
     tauri::async_runtime::block_on(async {
-        let sandbox = Sandbox::new();
-        let manager = sandbox.open().await;
+        let sandbox = Sandbox::new()?;
+        let manager = sandbox.open().await?;
         let launcher = FakeLauncher {
             calls: std::sync::Mutex::new(Vec::new()),
         };
@@ -277,12 +288,13 @@ fn start_at_sign_in_follows_the_setting_and_choices_made_elsewhere() {
         apply_autostart(&launcher, &manager, EntryState::On, false, false).unwrap();
         assert_eq!(*launcher.calls.lock().unwrap(), ["enable", "disable"]);
         manager.shutdown().await;
-    });
+        Ok(())
+    })
 }
 
 #[test]
-fn downloads_finishing_together_share_one_notification() {
-    let app = app_with(None);
+fn downloads_finishing_together_share_one_notification() -> TestResult {
+    let app = app_with(None)?;
     let handle = app.handle().clone();
     let finished: Vec<Finished> = (1..=3)
         .map(|n| Finished {
@@ -305,4 +317,5 @@ fn downloads_finishing_together_share_one_notification() {
             "file-1.zip and 2 more".to_string()
         )]
     );
+    Ok(())
 }

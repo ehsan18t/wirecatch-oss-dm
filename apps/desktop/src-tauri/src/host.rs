@@ -33,6 +33,7 @@ pub struct Core {
 
 impl Core {
     /// A manager that will open with `config`.
+    #[must_use]
     pub fn new(config: ManagerConfig) -> Self {
         Self {
             config,
@@ -40,8 +41,13 @@ impl Core {
         }
     }
 
-    /// The manager, opening it if nobody has yet. The error is the plain-language reason it
-    /// could not open, ready to show to a person.
+    /// The manager, opening it if nobody has yet.
+    ///
+    /// # Errors
+    ///
+    /// The manager could not open (a database from a newer Wirecatch, say, or a data folder
+    /// that cannot be written). The text is the plain-language reason, ready to show to a
+    /// person, and every later call answers with it again.
     pub async fn manager(&self) -> Result<&Manager, String> {
         self.cell
             .get_or_init(|| async {
@@ -110,6 +116,7 @@ pub enum Migration {
 
 /// Whether the data folder must move from `old` to `new`: only when they are different folders,
 /// the old one exists and the new one does not, so it happens once and never overwrites anything.
+#[must_use]
 pub fn needs_move(old: &Path, new: &Path, old_exists: bool, new_exists: bool) -> bool {
     old != new && old_exists && !new_exists
 }
@@ -117,6 +124,7 @@ pub fn needs_move(old: &Path, new: &Path, old_exists: bool, new_exists: bool) ->
 /// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive,
 /// otherwise a copy and then deleting the old folder. Returns the folder to use and what happened.
 /// Blocks on the disk.
+#[must_use]
 pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
     if !needs_move(old, new, old.is_dir(), new.exists()) {
         return (new.to_path_buf(), Migration::Nothing);
@@ -137,6 +145,11 @@ pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
 
 /// Copies the folder `from` to `to` (which must not exist), then deletes `from`. A copy that fails
 /// halfway is removed again, leaving `from` as it was. Blocks on the disk.
+///
+/// # Errors
+///
+/// `to` exists already, or a folder or file cannot be read, made or copied. A failure to
+/// delete `from` afterwards is only logged: everything is in `to` by then.
 pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
     if let Err(e) = copy_dir(from, to) {
         let _ = std::fs::remove_dir_all(to);
@@ -177,6 +190,11 @@ fn data_dir_for(base: &Path, dev: bool) -> PathBuf {
 
 /// The browser endpoint this build serves: the per-user endpoint, or a sibling of it for debug
 /// builds.
+///
+/// # Errors
+///
+/// The current user cannot be read (Windows), or the endpoint's folder cannot be created or
+/// is not private to this user (Linux); see [`wirecatch_ipc::endpoint`].
 pub fn endpoint() -> Result<Endpoint, IpcError> {
     let real = wirecatch_ipc::endpoint()?;
     Ok(if DEV_BUILD { dev_endpoint(&real) } else { real })
@@ -184,6 +202,7 @@ pub fn endpoint() -> Result<Endpoint, IpcError> {
 
 /// The debug build's endpoint next to `real`: `\\.\pipe\wirecatch-app-dev-<SID>` on Windows,
 /// `app-dev.sock` in the same private folder on Linux.
+#[must_use]
 pub fn dev_endpoint(real: &Endpoint) -> Endpoint {
     let name = real.as_os_str().to_string_lossy();
     let dev = if let Some(rest) = name.strip_suffix("app.sock") {
@@ -196,6 +215,7 @@ pub fn dev_endpoint(real: &Endpoint) -> Endpoint {
 
 /// The user's standard folders, falling back to folders under `home` when the system does not
 /// say where they are.
+#[must_use]
 pub fn known_folders(home: &Path) -> KnownFolders {
     KnownFolders::detect().unwrap_or_else(|| KnownFolders::under_home(home))
 }

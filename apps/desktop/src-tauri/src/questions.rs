@@ -38,12 +38,14 @@ pub enum Attention {
 }
 
 /// What `event` needs from the desktop.
+#[must_use]
 pub fn attention(event: &UiEvent) -> Attention {
     match event {
         UiEvent::ConfirmationRequested(capture) => Attention::Ask(capture.id),
-        UiEvent::MediaAnalysing { id, .. } => Attention::Ask(*id),
+        UiEvent::MediaAnalysing { id, .. } | UiEvent::AddonRequired { id, .. } => {
+            Attention::Ask(*id)
+        }
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
-        UiEvent::AddonRequired { id, .. } => Attention::Ask(*id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::StorageFailed(error) => Attention::Notify {
@@ -70,6 +72,7 @@ pub enum Question {
 }
 
 /// Every open question's id, oldest first (ids only grow), each once.
+#[must_use]
 pub fn open_question_ids(
     captures: &[PendingCapture],
     choices: &[MediaChoice],

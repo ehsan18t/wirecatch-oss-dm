@@ -22,8 +22,11 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 /// Starts listening on this build's endpoint (see [`crate::host::endpoint`]). Must run inside
 /// the async runtime.
 ///
+/// # Errors
+///
 /// [`IpcError::AlreadyInUse`] means another Wirecatch already serves this user; this process
-/// must then not open a second manager on the same database.
+/// must then not open a second manager on the same database. Any other error means this
+/// user's endpoint cannot be found or listened on.
 pub fn bind() -> Result<Listener, IpcError> {
     Listener::bind(&crate::host::endpoint()?)
 }
@@ -72,6 +75,11 @@ pub async fn serve_unavailable(mut listener: Listener, reason: String) {
 
 /// Answers every request on `stream` with an "app unavailable" error carrying `reason`, until
 /// the client hangs up.
+///
+/// # Errors
+///
+/// Reading from `stream` failed or brought something that is not a frame, or writing the
+/// answer failed.
 pub async fn answer_unavailable<S>(mut stream: S, reason: &str) -> std::io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -105,6 +113,7 @@ where
 }
 
 /// Where the bridge is: next to the app executable.
+#[must_use]
 pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
 }
@@ -112,6 +121,11 @@ pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
 /// The bridge to register for the app at `app_exe`. Under an AppImage (`appimage` set) that is
 /// a private copy in `private_dir`; otherwise the bridge next to the app. A bridge in a
 /// temporary location is never registered.
+///
+/// # Errors
+///
+/// No bridge can be found next to the app, the bridge is in a temporary folder, or (under an
+/// AppImage) the private copy cannot be made; see [`crate::appimage::install_private_bridge`].
 pub fn bridge_to_register(
     app_exe: &Path,
     appimage: Option<&Path>,
@@ -139,6 +153,7 @@ pub fn bridge_to_register(
 /// Whether this build registers the bridge on start. Debug builds never do: they serve their
 /// own endpoint, which the registered bridge does not use, and registering them would point
 /// every browser at a source checkout instead of the installed app.
+#[must_use]
 pub fn registers_on_start() -> bool {
     !crate::host::DEV_BUILD
 }
@@ -170,6 +185,11 @@ pub fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 's
 }
 
 /// Runs the bridge with one subcommand (`install` or `uninstall`) and waits for it.
+///
+/// # Errors
+///
+/// The bridge is missing, cannot be started, or exits with a failure; the text carries what
+/// it wrote to its error output.
 pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
     if !bridge.is_file() {
         return Err(format!(

@@ -166,7 +166,7 @@ pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: St
         shown
             .0
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((title.clone(), body.clone()));
     }
     if app
@@ -184,8 +184,17 @@ pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: St
 /// What changes the start-at-sign-in entry: the system's own (the autostart plugin), or a stand-in.
 pub trait Launcher {
     /// Writes the entry, turned on.
+    ///
+    /// # Errors
+    ///
+    /// The system refused to write the entry (the registry or the autostart folder); the text
+    /// says why.
     fn enable(&self) -> Result<(), String>;
     /// Removes the entry.
+    ///
+    /// # Errors
+    ///
+    /// The system refused to remove the entry; the text says why.
     fn disable(&self) -> Result<(), String>;
 }
 
@@ -200,6 +209,11 @@ impl Launcher for tauri_plugin_autostart::AutoLaunchManager {
 
 /// Carries out one start-at-sign-in step: decides from the entry's `state` and does it, through
 /// `launcher` or, to follow a choice made outside Wirecatch, by turning the setting off.
+///
+/// # Errors
+///
+/// The `launcher` could not write or remove the entry, or the setting could not be saved (the
+/// manager has shut down).
 pub fn apply_autostart(
     launcher: &impl Launcher,
     manager: &Manager,

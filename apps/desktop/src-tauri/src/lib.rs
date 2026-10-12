@@ -110,6 +110,7 @@ pub mod updates;
 pub mod window;
 
 use tauri::Manager as _;
+use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
 use wirecatch_core::ManagerConfig;
 use wirecatch_ipc::IpcError;
 
@@ -130,6 +131,7 @@ pub const RELEASE_AUTOSTART_NAME: &str = "Wirecatch";
 pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
 
 /// The start-at-sign-in entry's name for this build.
+#[must_use]
 pub fn autostart_name() -> &'static str {
     if host::DEV_BUILD {
         host::DEV_NAME
@@ -169,9 +171,27 @@ pub fn run() {
     if host::DEV_BUILD {
         dev_identity(context.config_mut());
     }
-    let autostart_name = autostart_name();
 
-    let app = tauri::Builder::default()
+    let app = with_plugins(tauri::Builder::default())
+        .manage(LaunchLinks::default())
+        .manage(Lifecycle::default())
+        .manage(sleep::MainAsleep::default())
+        .manage(download_windows::DownloadWindows::default())
+        .setup(move |app| setup(app, &launch))
+        .invoke_handler(commands::handler())
+        .build(context);
+    match app {
+        Ok(app) => app.run(lifecycle::on_run_event),
+        Err(err) => {
+            tracing::error!("Wirecatch could not start: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// The plugins the app runs with.
+fn with_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
         // First, so a second launch hands over its command line and exits before anything else.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // A launch while quitting starts the app again once this one has exited, instead
@@ -189,77 +209,12 @@ pub fn run() {
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .args([BACKGROUND_FLAG])
-                .app_name(autostart_name)
+                .app_name(autostart_name())
                 .build(),
         )
-        .manage(LaunchLinks::default())
-        .manage(Lifecycle::default())
-        .manage(sleep::MainAsleep::default())
-        .manage(download_windows::DownloadWindows::default())
-        .setup(move |app| setup(app, launch))
-        .invoke_handler(tauri::generate_handler![
-            commands::list_downloads,
-            commands::add_download,
-            commands::pause,
-            commands::resume,
-            commands::cancel,
-            commands::remove,
-            commands::retry,
-            commands::refresh_link,
-            commands::keep_original,
-            commands::move_to_queue,
-            commands::reorder,
-            commands::pause_all,
-            commands::resume_all,
-            commands::list_queues,
-            commands::create_queue,
-            commands::update_queue,
-            commands::delete_queue,
-            commands::set_queue_paused,
-            commands::start_queue_now,
-            commands::get_settings,
-            commands::change_settings,
-            commands::export_settings,
-            commands::preview_import,
-            commands::import_settings,
-            commands::pending_confirmations,
-            commands::confirm_capture,
-            commands::reject_capture,
-            commands::open_file,
-            commands::is_program,
-            commands::open_folder,
-            commands::set_download_folder,
-            commands::take_launch_links,
-            commands::choose_media,
-            commands::dismiss_media_choice,
-            commands::pending_media_choices,
-            commands::pending_addon_requests,
-            commands::list_addons,
-            commands::install_addon,
-            commands::update_addon,
-            commands::remove_addon,
-            commands::cancel_addon_operation,
-            commands::check_addon_updates,
-            commands::get_question,
-            commands::get_download,
-            commands::earlier_download,
-            commands::show_question_windows,
-            commands::show_progress_window,
-            commands::close_download_window,
-            commands::fit_download_window,
-            commands::main_window_ready,
-        ])
-        .build(context);
-    match app {
-        Ok(app) => app.run(lifecycle::on_run_event),
-        Err(err) => {
-            tracing::error!("Wirecatch could not start: {err}");
-            std::process::exit(1);
-        }
-    }
 }
 
-fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error::Error>> {
+fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
 
     // Claim the browser endpoint before opening the database: if another Wirecatch already
@@ -272,7 +227,6 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
             );
             // Say so instead of vanishing. The message shows once the event loop runs; this
             // copy opens nothing else and exits when it is closed.
-            use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
             let closing = handle.clone();
             handle
                 .dialog()
@@ -311,7 +265,7 @@ fn setup(app: &mut tauri::App, launch: Launch) -> Result<(), Box<dyn std::error:
     let task = tauri::async_runtime::spawn(async move { start(starting, listener).await });
     app.state::<Lifecycle>().keep(task);
 
-    window::handle_launch(&handle, &launch);
+    window::handle_launch(&handle, launch);
 
     if bridge::registers_on_start() {
         let private_dir = data_dir.join("bin");
@@ -367,10 +321,10 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
 /// Gives a debug build its own identity, so it runs beside an installed Wirecatch: another
 /// identifier (the single-instance guard keys on it) and a title that says which one it is.
 pub fn dev_identity(config: &mut tauri::Config) {
-    config.identifier = host::DEV_IDENTIFIER.to_owned();
+    host::DEV_IDENTIFIER.clone_into(&mut config.identifier);
     config.product_name = Some(host::DEV_NAME.to_owned());
     for window in &mut config.app.windows {
-        window.title = host::DEV_NAME.to_owned();
+        host::DEV_NAME.clone_into(&mut window.title);
     }
 }
 

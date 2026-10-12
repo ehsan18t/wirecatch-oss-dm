@@ -64,13 +64,12 @@ describe('Tauri command names', () => {
   });
 
   it('are all registered on the Rust side', () => {
-    // Vitest runs from apps/desktop.
-    const lib = readFileSync(resolve(process.cwd(), 'src-tauri/src/lib.rs'), 'utf8');
-    const handler = /generate_handler!\[([\s\S]*?)\]/.exec(lib)?.[1] ?? '';
+    // Vitest runs from apps/desktop. `commands::handler` registers every command.
+    const commands = readFileSync(resolve(process.cwd(), 'src-tauri/src/commands.rs'), 'utf8');
+    const handler = /generate_handler!\[([\s\S]*?)\]/.exec(commands)?.[1] ?? '';
     const registered = handler
       .split(',')
-      // Registered as `commands::name`.
-      .map((s) => s.trim().replace(/^commands::/, ''))
+      .map((s) => s.trim())
       .filter(Boolean);
     expect(registered.sort()).toEqual([...FIXED].sort());
   });

@@ -6,8 +6,8 @@
 //! download stops so it can continue on the next start, the database is flushed, then the
 //! process exits. Closing a download window (D23) never quits, even when it is the last one.
 
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use tauri::async_runtime::JoinHandle;
@@ -46,7 +46,10 @@ impl Lifecycle {
     /// Runs `hook` instead of exiting the process at the end of a quit. For tests, whose mock
     /// runtime cannot exit.
     pub fn on_exit(&self, hook: impl FnOnce() + Send + 'static) {
-        *self.exit_hook.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(hook));
+        *self
+            .exit_hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
     }
 
     /// Whether a quit has finished stopping everything and asked the process to exit.
@@ -64,7 +67,7 @@ impl Lifecycle {
     pub fn keep(&self, task: JoinHandle<()>) {
         self.tasks
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .push(task);
     }
 
@@ -72,7 +75,7 @@ impl Lifecycle {
         for task in self
             .tasks
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .drain(..)
         {
             task.abort();
@@ -128,16 +131,15 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
                 life.finished.store(true, Ordering::SeqCst);
                 life.exit_hook
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(PoisonError::into_inner)
                     .take()
             });
-            match hook {
-                Some(hook) => hook(),
-                None => {
-                    // Everything has stopped, so a waiting update can replace the app now.
-                    crate::updates::install_pending(&app);
-                    app.exit(0);
-                }
+            if let Some(hook) = hook {
+                hook();
+            } else {
+                // Everything has stopped, so a waiting update can replace the app now.
+                crate::updates::install_pending(&app);
+                app.exit(0);
             }
         })
         .await;
@@ -158,7 +160,7 @@ impl Lifecycle {
         if !self.is_quitting() {
             return false;
         }
-        *self.relaunch.lock().unwrap_or_else(|e| e.into_inner()) = Some(args.to_vec());
+        *self.relaunch.lock().unwrap_or_else(PoisonError::into_inner) = Some(args.to_vec());
         true
     }
 
@@ -166,7 +168,7 @@ impl Lifecycle {
     pub fn take_relaunch(&self) -> Option<Vec<String>> {
         self.relaunch
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .take()
     }
 }
@@ -193,6 +195,7 @@ fn relaunch<R: Runtime>(app: &AppHandle<R>, args: &[String]) {
 /// Whether closing the last window should leave the app running: only with a tray icon to come
 /// back through, and when `close_to_tray` is on (`None`, while the manager is still opening,
 /// counts as on, the default).
+#[must_use]
 pub fn keeps_running(has_tray: bool, close_to_tray: Option<bool>) -> bool {
     has_tray && close_to_tray.unwrap_or(true)
 }
@@ -216,6 +219,7 @@ fn hides_on_close_now<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
 
 /// Whether closing the window `label` hides it instead (while the app keeps running in the
 /// tray): only the main window, which then opens again at once. A download window closes.
+#[must_use]
 pub fn hides_on_close(label: &str) -> bool {
     label == MAIN_WINDOW
 }
@@ -223,6 +227,7 @@ pub fn hides_on_close(label: &str) -> bool {
 /// What closing the window `label` does: only closing the main window can quit (with no tray,
 /// or with `close_to_tray` off). A download window is only a view of one download (D23), so
 /// closing it never quits, even when it was the last window.
+#[must_use]
 pub fn closing_quits(label: &str, has_tray: bool, close_to_tray: Option<bool>) -> bool {
     label == MAIN_WINDOW && !keeps_running(has_tray, close_to_tray)
 }

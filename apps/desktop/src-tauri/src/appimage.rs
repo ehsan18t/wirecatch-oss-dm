@@ -20,6 +20,7 @@ pub const LAUNCHER_FILE_NAME: &str = "wirecatch-app";
 
 /// Whether `path` lies in a temporary location, where a registered program could disappear and
 /// be replaced by someone else.
+#[must_use]
 pub fn is_temporary(path: &Path) -> bool {
     let text = path.to_string_lossy();
     if text.contains("/.mount_") {
@@ -42,6 +43,11 @@ fn shell_quote(text: &str) -> String {
 }
 
 /// The launcher script that starts the AppImage at `appimage` with the bridge's arguments.
+///
+/// # Errors
+///
+/// The path is not valid text, is not a plain absolute path, or is in a temporary folder that
+/// will be gone after a restart. Each message says what to do.
 pub fn launcher_script(appimage: &Path) -> Result<String, String> {
     let text = appimage.to_str().ok_or_else(|| {
         format!(
@@ -68,6 +74,12 @@ pub fn launcher_script(appimage: &Path) -> Result<String, String> {
 
 /// Copies the bundled bridge and writes the launcher into `bin_dir`, privately, and returns the
 /// copy to register.
+///
+/// # Errors
+///
+/// The AppImage's path cannot go in a launcher (see [`launcher_script`]); `bin_dir` is a link,
+/// not a plain folder, or belongs to another user; or a folder or file cannot be made, read or
+/// written. Each message says what to do.
 #[cfg(unix)]
 pub fn install_private_bridge(
     bundled_bridge: &Path,

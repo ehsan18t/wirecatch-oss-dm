@@ -228,9 +228,11 @@ pub async fn set_download_folder(
     api::set_download_folder(core.manager().await?, id, &folder).await
 }
 
+/// Async like every other command, so it runs off the main thread; Tauri then needs a
+/// `Result`, though taking the links never fails.
 #[tauri::command]
-pub fn take_launch_links(links: State<'_, LaunchLinks>) -> Vec<String> {
-    links.take()
+pub async fn take_launch_links(links: State<'_, LaunchLinks>) -> CommandResult<Vec<String>> {
+    Ok(links.take())
 }
 
 #[tauri::command]
@@ -349,4 +351,61 @@ pub async fn cancel_addon_operation(core: CoreState<'_>, id: String) -> CommandR
 #[tauri::command]
 pub async fn check_addon_updates(core: CoreState<'_>) -> CommandResult<Vec<AddonInfo>> {
     api::check_addon_updates(core.manager().await?).await
+}
+
+/// Every command above, for the app's invoke handler. The contract table in the crate
+/// documentation lists them with their parameters.
+pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        list_downloads,
+        add_download,
+        pause,
+        resume,
+        cancel,
+        remove,
+        retry,
+        refresh_link,
+        keep_original,
+        move_to_queue,
+        reorder,
+        pause_all,
+        resume_all,
+        list_queues,
+        create_queue,
+        update_queue,
+        delete_queue,
+        set_queue_paused,
+        start_queue_now,
+        get_settings,
+        change_settings,
+        export_settings,
+        preview_import,
+        import_settings,
+        pending_confirmations,
+        confirm_capture,
+        reject_capture,
+        open_file,
+        is_program,
+        open_folder,
+        set_download_folder,
+        take_launch_links,
+        choose_media,
+        dismiss_media_choice,
+        pending_media_choices,
+        pending_addon_requests,
+        list_addons,
+        install_addon,
+        update_addon,
+        remove_addon,
+        cancel_addon_operation,
+        check_addon_updates,
+        get_question,
+        get_download,
+        earlier_download,
+        show_question_windows,
+        show_progress_window,
+        close_download_window,
+        fit_download_window,
+        main_window_ready,
+    ]
 }

@@ -3,7 +3,12 @@
 
 mod common;
 
-use common::{Sandbox, TestServer, request, row, running, wait_for, wait_status};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use common::Sandbox;
+use wirecatch_core::Manager;
 use wirecatch_desktop_lib::api::{self, Reveal};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
@@ -11,150 +16,261 @@ use wirecatch_desktop_lib::questions::Question;
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus, MediaSelection, Theme,
+    AddRequest, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus, DownloadSummary,
+    MediaSelection, Queue, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_test_support::http::{Config, TestServer};
+use wirecatch_test_support::{TestResult, test_data};
 
 /// A file big and slow enough to still be running while the test pauses and moves it.
 const SLOW_LEN: usize = 4 * 1024 * 1024;
 const SLOW_BPS: u64 = 64 * 1024;
+/// A file that downloads at once.
+const FAST_LEN: usize = 300 * 1024;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn commands_drive_the_core_and_state_survives_a_restart() {
-    let sandbox = Sandbox::new();
-    let saved = sandbox.downloads();
-    let slow = TestServer::start(SLOW_LEN, Some(SLOW_BPS)).await;
-    let fast = TestServer::start(300 * 1024, None).await;
-    let m = sandbox.open().await;
+/// How long any wait may take before the test fails.
+const PATIENCE: Duration = Duration::from_secs(30);
+/// How often a wait looks at the download list again.
+const POLL: Duration = Duration::from_millis(20);
 
-    // Settings and a queue, changed through the same calls the Settings screen makes.
-    let mut settings = api::get_settings(&m);
-    settings.theme = Theme::Dark;
-    settings.max_concurrent_downloads = 7;
-    settings.notify_on_complete = false;
+/// Serves `len` bytes at every path, with ranges, at `bps` bytes per second for each
+/// connection (`None` is full speed).
+async fn serve(len: usize, bps: Option<u64>) -> TestServer {
+    let config = Config {
+        ranges: true,
+        etag: Some("\"v1\"".into()),
+        per_connection_bps: bps,
+        ..Config::default()
+    };
+    TestServer::start(test_data(len), config).await
+}
+
+/// The folder test downloads are saved to.
+fn saved_folder(sandbox: &Sandbox) -> TestResult<PathBuf> {
+    let dir = sandbox.dir.path().join("saved");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn request(server: &TestServer, path: &str, folder: &Path, start: bool) -> AddRequest {
+    AddRequest {
+        url: server.url(path).to_string(),
+        queue: None,
+        folder: Some(folder.to_string_lossy().into_owned()),
+        file_name: None,
+        start,
+    }
+}
+
+fn row(manager: &Manager, id: DownloadId) -> Option<DownloadSummary> {
+    api::list_downloads(manager)
+        .into_iter()
+        .find(|r| r.id == id)
+}
+
+/// Waits until the download's row satisfies `ok`, and returns it.
+async fn wait_for(
+    manager: &Manager,
+    id: DownloadId,
+    what: &str,
+    ok: impl Fn(&DownloadSummary) -> bool,
+) -> DownloadSummary {
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    loop {
+        if let Some(r) = row(manager, id)
+            && ok(&r)
+        {
+            return r;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "download {} never became {what}; last seen: {:?}",
+            id.0,
+            row(manager, id).map(|r| (r.status, r.done, r.error))
+        );
+        tokio::time::sleep(POLL).await;
+    }
+}
+
+async fn wait_status(manager: &Manager, id: DownloadId, status: DownloadStatus) -> DownloadSummary {
+    wait_for(manager, id, &format!("{status:?}"), |r| r.status == status).await
+}
+
+/// Running means bytes are moving, or about to.
+fn running(r: &DownloadSummary) -> bool {
+    matches!(
+        r.status,
+        DownloadStatus::Connecting | DownloadStatus::Downloading
+    )
+}
+
+/// Changes settings and makes a queue through the same calls the Settings screen makes, and
+/// returns the queue.
+fn change_settings_and_make_a_queue(manager: &Manager) -> TestResult<Queue> {
     api::change_settings(
-        &m,
+        manager,
         AppSettingsPatch {
             theme: Some(Theme::Dark),
             max_concurrent_downloads: Some(7),
             notify_on_complete: Some(false),
             ..AppSettingsPatch::default()
         },
-    )
-    .unwrap();
-    let mut night = api::create_queue(&m, "Night").unwrap();
+    )?;
+    let mut night = api::create_queue(manager, "Night")?;
     night.max_concurrent = 1;
-    api::update_queue(&m, night.clone()).unwrap();
+    api::update_queue(manager, night.clone())?;
+    Ok(night)
+}
 
-    // Add, pause, resume, cancel, retry.
-    let a = api::add_download(&m, request(slow.url("big.bin"), &saved, true))
-        .await
-        .unwrap();
-    wait_for(&m, a, "running", running).await;
-    api::pause(&m, a).unwrap();
-    wait_status(&m, a, DownloadStatus::Paused).await;
-    api::resume(&m, a).unwrap();
-    wait_for(&m, a, "running again", running).await;
-    api::cancel(&m, a).unwrap();
-    wait_status(&m, a, DownloadStatus::Cancelled).await;
-    api::retry(&m, a).unwrap();
-    wait_for(&m, a, "running after retry", running).await;
+/// Adds a running download and takes it through pause, resume, cancel and retry.
+async fn pause_resume_cancel_retry(
+    manager: &Manager,
+    request: AddRequest,
+) -> TestResult<DownloadId> {
+    let id = api::add_download(manager, request).await?;
+    wait_for(manager, id, "running", running).await;
+    api::pause(manager, id)?;
+    wait_status(manager, id, DownloadStatus::Paused).await;
+    api::resume(manager, id)?;
+    wait_for(manager, id, "running again", running).await;
+    api::cancel(manager, id)?;
+    wait_status(manager, id, DownloadStatus::Cancelled).await;
+    api::retry(manager, id)?;
+    wait_for(manager, id, "running after retry", running).await;
+    Ok(id)
+}
 
-    // Move between queues and reorder.
-    let b = api::add_download(&m, request(slow.url("b.bin"), &saved, false))
-        .await
-        .unwrap();
-    let c = api::add_download(&m, request(slow.url("c.bin"), &saved, false))
-        .await
-        .unwrap();
-    wait_status(&m, b, DownloadStatus::Paused).await;
-    api::move_to_queue(&m, &[b, c], night.id).unwrap();
-    assert_eq!(row(&m, b).unwrap().queue, night.id);
-    api::reorder(&m, night.id, &[c, b]).unwrap();
-    let in_night: Vec<_> = api::list_downloads(&m)
+/// The downloads of `queue`, in their order.
+fn in_queue(manager: &Manager, queue: &Queue) -> Vec<DownloadId> {
+    api::list_downloads(manager)
         .into_iter()
-        .filter(|r| r.queue == night.id)
+        .filter(|r| r.queue == queue.id)
         .map(|r| r.id)
-        .collect();
-    assert_eq!(in_night, [c, b]);
+        .collect()
+}
 
-    // A finished download opens, and its folder shows with the file selected.
-    let d = api::add_download(&m, request(fast.url("small.zip"), &saved, true))
-        .await
-        .unwrap();
-    let done = wait_status(&m, d, DownloadStatus::Completed).await;
-    let file = api::file_to_open(&m, d, false).unwrap();
-    assert!(!api::download_is_program(&m, d).unwrap());
-    assert_eq!(std::fs::read(&file).unwrap(), fast.data);
-    assert_eq!(file, std::path::PathBuf::from(&done.path));
-    assert_eq!(api::item_to_reveal(&m, d).unwrap(), Reveal::File(file));
-    let not_done = api::file_to_open(&m, b, false).unwrap_err();
+/// A finished download opens, its folder shows with the file selected, and an unfinished one
+/// does not open.
+async fn open_and_reveal(
+    manager: &Manager,
+    server: &TestServer,
+    saved: &Path,
+    unfinished: DownloadId,
+) -> TestResult<DownloadId> {
+    let id = api::add_download(manager, request(server, "small.zip", saved, true)).await?;
+    let done = wait_status(manager, id, DownloadStatus::Completed).await;
+    let file = api::file_to_open(manager, id, false)?;
+    assert!(!api::download_is_program(manager, id)?);
+    assert_eq!(std::fs::read(&file)?, server.data);
+    assert_eq!(file, PathBuf::from(&done.path));
+    assert_eq!(api::item_to_reveal(manager, id)?, Reveal::File(file));
+    let Err(not_done) = api::file_to_open(manager, unfinished, false) else {
+        return Err("an unfinished download opened".into());
+    };
     assert!(not_done.contains("not finished"), "{not_done}");
+    Ok(id)
+}
 
-    // A downloaded program only opens once the person said they trust its site.
-    let program = api::add_download(&m, request(fast.url("Setup.EXE"), &saved, true))
-        .await
-        .unwrap();
-    wait_status(&m, program, DownloadStatus::Completed).await;
-    assert!(api::download_is_program(&m, program).unwrap());
-    let refused = api::file_to_open(&m, program, false).unwrap_err();
+/// A downloaded program only opens once the person said they trust its site.
+async fn a_program_opens_only_when_trusted(
+    manager: &Manager,
+    server: &TestServer,
+    saved: &Path,
+) -> TestResult {
+    let program = api::add_download(manager, request(server, "Setup.EXE", saved, true)).await?;
+    wait_status(manager, program, DownloadStatus::Completed).await;
+    assert!(api::download_is_program(manager, program)?);
+    let Err(refused) = api::file_to_open(manager, program, false) else {
+        return Err("a program opened without the person's trust".into());
+    };
     assert!(
         refused.contains("can run code") && refused.contains("127.0.0.1"),
         "{refused}"
     );
-    assert!(api::file_to_open(&m, program, true).is_ok());
+    api::file_to_open(manager, program, true)?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let saved = saved_folder(&sandbox)?;
+    let slow = serve(SLOW_LEN, Some(SLOW_BPS)).await;
+    let fast = serve(FAST_LEN, None).await;
+    let manager = sandbox.open().await?;
+
+    let night = change_settings_and_make_a_queue(&manager)?;
+    let first =
+        pause_resume_cancel_retry(&manager, request(&slow, "big.bin", &saved, true)).await?;
+
+    // Move between queues and reorder.
+    let second = api::add_download(&manager, request(&slow, "b.bin", &saved, false)).await?;
+    let third = api::add_download(&manager, request(&slow, "c.bin", &saved, false)).await?;
+    wait_status(&manager, second, DownloadStatus::Paused).await;
+    api::move_to_queue(&manager, &[second, third], night.id)?;
+    assert_eq!(row(&manager, second).map(|r| r.queue), Some(night.id));
+    api::reorder(&manager, night.id, &[third, second])?;
+    assert_eq!(in_queue(&manager, &night), [third, second]);
+
+    let finished = open_and_reveal(&manager, &fast, &saved, second).await?;
+    a_program_opens_only_when_trusted(&manager, &fast, &saved).await?;
 
     // Errors reach the interface as the core's plain words.
-    let bad = api::add_download(&m, request("not a link".into(), &saved, true))
-        .await
-        .unwrap_err();
+    let mut bad = request(&fast, "x", &saved, true);
+    bad.url = "not a link".into();
+    let bad = api::add_download(&manager, bad).await.unwrap_err();
     assert!(bad.contains("is not a valid link"), "{bad}");
 
     // Remove, with the file.
-    api::remove(&m, &[a], true).await.unwrap();
-    assert!(row(&m, a).is_none());
+    api::remove(&manager, &[first], true).await?;
+    assert!(row(&manager, first).is_none());
 
     // The tray's Pause all and Resume all.
-    let shell = NoShell;
-    perform(TrayAction::PauseAll, Some(&m), &shell).unwrap();
+    perform(TrayAction::PauseAll, Some(&manager), &NoShell)?;
     assert!(
-        api::list_downloads(&m)
+        api::list_downloads(&manager)
             .iter()
             .all(|r| !running(r) && r.status != DownloadStatus::Queued)
     );
-    perform(TrayAction::ResumeAll, Some(&m), &shell).unwrap();
-    wait_for(&m, b, "resumed by Resume all", |r| {
+    perform(TrayAction::ResumeAll, Some(&manager), &NoShell)?;
+    wait_for(&manager, second, "resumed by Resume all", |r| {
         r.status != DownloadStatus::Paused
     })
     .await;
 
     // Restart: everything comes back.
-    m.shutdown().await;
-    drop(m);
-    let m = sandbox.open().await;
-    let settings = api::get_settings(&m);
+    manager.shutdown().await;
+    drop(manager);
+    let manager = sandbox.open().await?;
+    let settings = api::get_settings(&manager);
     assert_eq!(settings.theme, Theme::Dark);
     assert_eq!(settings.max_concurrent_downloads, 7);
     assert!(!settings.notify_on_complete);
-    let queues = api::list_queues(&m);
-    let night_again = queues.iter().find(|q| q.name == "Night").unwrap();
+    let queues = api::list_queues(&manager);
+    let night_again = queues
+        .iter()
+        .find(|q| q.name == "Night")
+        .ok_or("the queue is missing after restart")?;
     assert_eq!(night_again.max_concurrent, 1);
-    let ids: Vec<_> = api::list_downloads(&m).into_iter().map(|r| r.id).collect();
-    for id in [b, c, d] {
+    let ids: Vec<_> = api::list_downloads(&manager)
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    for id in [second, third, finished] {
         assert!(
             ids.contains(&id),
             "download {} is missing after restart",
             id.0
         );
     }
-    assert_eq!(row(&m, d).unwrap().status, DownloadStatus::Completed);
-    let in_night: Vec<_> = api::list_downloads(&m)
-        .into_iter()
-        .filter(|r| r.queue == night_again.id)
-        .map(|r| r.id)
-        .collect();
-    assert_eq!(in_night, [c, b]);
-    m.shutdown().await;
+    assert_eq!(
+        row(&manager, finished).map(|r| r.status),
+        Some(DownloadStatus::Completed)
+    );
+    assert_eq!(in_queue(&manager, night_again), [third, second]);
+    manager.shutdown().await;
+    Ok(())
 }
 
 struct NoShell;
@@ -165,56 +281,57 @@ impl Shell for NoShell {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn quit_right_after_start_opens_then_stops_the_manager() {
-    let sandbox = Sandbox::new();
-    let core = Core::new(sandbox.config());
+async fn quit_right_after_start_opens_then_stops_the_manager() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let core = Core::new(sandbox.config()?);
     assert!(core.get().is_none(), "not opened yet");
-    let exited = std::sync::atomic::AtomicBool::new(false);
+    let exited = AtomicBool::new(false);
     quit_core(Some(&core), || {
         let manager = core.get().expect("opened by the quit");
         let err = api::pause_all(manager).unwrap_err();
         assert!(err.contains("shutting down"), "{err}");
-        exited.store(true, std::sync::atomic::Ordering::SeqCst);
+        exited.store(true, Ordering::SeqCst);
     })
     .await;
-    assert!(exited.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(exited.load(Ordering::SeqCst));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn quit_stops_the_manager_before_exiting() {
-    let sandbox = Sandbox::new();
-    let slow = TestServer::start(SLOW_LEN, Some(SLOW_BPS)).await;
-    let m = sandbox.open().await;
-    let id = api::add_download(&m, request(slow.url("q.bin"), &sandbox.downloads(), true))
-        .await
-        .unwrap();
-    wait_for(&m, id, "running", running).await;
+async fn quit_stops_the_manager_before_exiting() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let slow = serve(SLOW_LEN, Some(SLOW_BPS)).await;
+    let manager = sandbox.open().await?;
+    let saved = saved_folder(&sandbox)?;
+    let id = api::add_download(&manager, request(&slow, "q.bin", &saved, true)).await?;
+    wait_for(&manager, id, "running", running).await;
 
-    let exited = std::sync::atomic::AtomicBool::new(false);
-    quit_sequence(Some(&m), || {
+    let exited = AtomicBool::new(false);
+    quit_sequence(Some(&manager), || {
         // By the time the process exits, the manager has stopped taking work.
-        let err = api::pause_all(&m).unwrap_err();
+        let err = api::pause_all(&manager).unwrap_err();
         assert!(err.contains("shutting down"), "{err}");
-        exited.store(true, std::sync::atomic::Ordering::SeqCst);
+        exited.store(true, Ordering::SeqCst);
     })
     .await;
-    assert!(exited.load(std::sync::atomic::Ordering::SeqCst));
-    drop(m);
+    assert!(exited.load(Ordering::SeqCst));
+    drop(manager);
 
     // The running download continues on the next start.
-    let m = sandbox.open().await;
-    wait_for(&m, id, "running after the restart", running).await;
-    m.shutdown().await;
+    let manager = sandbox.open().await?;
+    wait_for(&manager, id, "running after the restart", running).await;
+    manager.shutdown().await;
+    Ok(())
 }
 
 /// WP12: the media and add-on commands reach the real core, not a stand-in. Nothing here
 /// installs the add-on, so the test stays off the internet.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn media_and_addon_commands_reach_the_core() {
-    let sandbox = Sandbox::new();
-    let m = sandbox.open().await;
+async fn media_and_addon_commands_reach_the_core() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let manager = sandbox.open().await?;
 
-    let addons = api::list_addons(&m);
+    let addons = api::list_addons(&manager);
     assert_eq!(addons.len(), 1);
     assert_eq!(addons[0].id, "media");
     assert_eq!(addons[0].state, AddonState::NotInstalled);
@@ -223,65 +340,76 @@ async fn media_and_addon_commands_reach_the_core() {
         "the download size is known before installing"
     );
 
-    assert!(api::pending_media_choices(&m).is_empty());
-    assert!(api::pending_addon_requests(&m).is_empty());
+    assert_eq!(api::pending_media_choices(&manager), []);
+    assert_eq!(api::pending_addon_requests(&manager), []);
     let selection = MediaSelection {
         option_id: "best".into(),
         folder: None,
         file_name: None,
         queue: None,
         later: false,
-        output: Default::default(),
+        output: wirecatch_protocol::app::OutputFormat::default(),
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
         chapters: false,
     };
-    let gone = api::choose_media(&m, 99, selection).await.unwrap_err();
+    let gone = api::choose_media(&manager, 99, selection)
+        .await
+        .unwrap_err();
     assert!(gone.contains("already confirmed or dismissed"), "{gone}");
-    let gone = api::dismiss_media_choice(&m, 99).unwrap_err();
+    let gone = api::dismiss_media_choice(&manager, 99).unwrap_err();
     assert!(gone.contains("already confirmed or dismissed"), "{gone}");
 
-    let unknown = api::install_addon(&m, "flash").await.unwrap_err();
+    let unknown = api::install_addon(&manager, "flash").await.unwrap_err();
     assert!(unknown.contains("no add-on called"), "{unknown}");
-    let unknown = api::update_addon(&m, "flash").await.unwrap_err();
+    let unknown = api::update_addon(&manager, "flash").await.unwrap_err();
     assert!(unknown.contains("no add-on called"), "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
-    api::remove_addon(&m, "media").await.unwrap();
+    api::remove_addon(&manager, "media").await?;
     // Stopping with nothing in progress is fine; an unknown add-on is refused.
-    api::cancel_addon_operation(&m, "media").await.unwrap();
-    assert!(api::cancel_addon_operation(&m, "flash").await.is_err());
+    api::cancel_addon_operation(&manager, "media").await?;
+    assert!(
+        api::cancel_addon_operation(&manager, "flash")
+            .await
+            .is_err()
+    );
     // Nothing installed: the check has nothing to look at and says the add-on is not installed.
-    let checked = api::check_addon_updates(&m).await.unwrap();
+    let checked = api::check_addon_updates(&manager).await?;
     assert_eq!(checked[0].state, AddonState::NotInstalled);
-    assert_eq!(api::list_addons(&m)[0].state, AddonState::NotInstalled);
+    assert_eq!(
+        api::list_addons(&manager)[0].state,
+        AddonState::NotInstalled
+    );
 
     // Opening looks the download up in the core by id.
-    let missing = api::file_to_open(&m, DownloadId(4242), false).unwrap_err();
+    let missing = api::file_to_open(&manager, DownloadId(4242), false).unwrap_err();
     assert!(missing.contains("no longer exists"), "{missing}");
-    assert!(api::download_is_program(&m, DownloadId(4242)).is_err());
-    m.shutdown().await;
+    assert!(api::download_is_program(&manager, DownloadId(4242)).is_err());
+    manager.shutdown().await;
+    Ok(())
 }
 
 /// D23: a download window finds its question, says when the file is already in the list, and
 /// Download later adds it paused, answering with the new download's id.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_download_window_finds_its_question_and_its_download() {
-    let sandbox = Sandbox::new();
-    let fast = TestServer::start(64 * 1024, None).await;
-    let m = sandbox.open().await;
+async fn a_download_window_finds_its_question_and_its_download() -> TestResult {
+    const REPORT_LEN: u64 = 64 * 1024;
+    let sandbox = Sandbox::new()?;
+    let fast = serve(usize::try_from(REPORT_LEN)?, None).await;
+    let manager = sandbox.open().await?;
     assert!(
-        api::get_settings(&m).extension.ask_before_download,
+        api::get_settings(&manager).extension.ask_before_download,
         "a window shows first on a fresh install"
     );
     let capture = |handover: &str| NewDownload {
         handover_id: handover.into(),
-        url: fast.url("report.pdf"),
+        url: fast.url("report.pdf").to_string(),
         referrer: None,
         page_url: Some("https://example.com/page".into()),
         suggested_name: None,
         mime: None,
-        size_hint: Some(64 * 1024),
+        size_hint: Some(REPORT_LEN),
         cookies: None,
         user_agent: None,
         extra_headers: vec![],
@@ -289,30 +417,34 @@ async fn a_download_window_finds_its_question_and_its_download() {
         queue: None,
         media: None,
     };
-    m.add_capture(capture("first")).await.unwrap();
-    let asked = api::pending_confirmations(&m).remove(0);
-    let Some(Question::Capture(found)) = api::question(&m, asked.id) else {
+    manager.add_capture(capture("first")).await?;
+    let asked = api::pending_confirmations(&manager).remove(0);
+    let Some(Question::Capture(found)) = api::question(&manager, asked.id) else {
         panic!("the window cannot find its question")
     };
     assert_eq!(found, asked);
-    assert!(api::earlier_download(&m, asked.id).is_none());
-    assert!(api::question(&m, 4242).is_none());
+    assert!(api::earlier_download(&manager, asked.id).is_none());
+    assert!(api::question(&manager, 4242).is_none());
 
     let later = CaptureConfirmation {
         later: true,
         ..CaptureConfirmation::default()
     };
-    let id = api::confirm_capture(&m, asked.id, later).await.unwrap();
+    let id = api::confirm_capture(&manager, asked.id, later).await?;
     assert!(
-        api::question(&m, asked.id).is_none(),
+        api::question(&manager, asked.id).is_none(),
         "answered: never asked again"
     );
-    let row = api::get_download(&m, id).unwrap();
+    let row = api::get_download(&manager, id)?;
     assert_eq!(row.status, DownloadStatus::Paused);
 
-    m.add_capture(capture("second")).await.unwrap();
-    let again = api::pending_confirmations(&m).remove(0);
-    assert_eq!(api::earlier_download(&m, again.id).map(|r| r.id), Some(id));
-    assert!(api::get_download(&m, DownloadId(4242)).is_err());
-    m.shutdown().await;
+    manager.add_capture(capture("second")).await?;
+    let again = api::pending_confirmations(&manager).remove(0);
+    assert_eq!(
+        api::earlier_download(&manager, again.id).map(|r| r.id),
+        Some(id)
+    );
+    assert!(api::get_download(&manager, DownloadId(4242)).is_err());
+    manager.shutdown().await;
+    Ok(())
 }

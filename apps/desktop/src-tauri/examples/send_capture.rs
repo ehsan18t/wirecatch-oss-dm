@@ -8,6 +8,8 @@
 //! cargo run -p wirecatch-desktop --example send_capture -- file https://example.com/a.zip
 //! ```
 
+use std::io::Write as _;
+
 use wirecatch_desktop_lib::host;
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
@@ -60,10 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     id: answered,
                     outcome,
                 }) if answered == id => {
-                    println!("{outcome:?}");
+                    writeln!(std::io::stdout().lock(), "{outcome:?}")?;
                     break;
                 }
-                Some(_) => continue,
+                Some(_) => {}
                 None => return Err("Wirecatch Dev closed the connection".into()),
             }
         }

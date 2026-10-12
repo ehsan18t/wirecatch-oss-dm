@@ -23,13 +23,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** Features every workspace-wide cargo command needs. `test-overrides` exists for the bridge's end-to-end tests only and is never enabled in a build. */
 const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
 
-/**
- * Crates that do not yet opt into `[workspace.lints]`. A crate leaves the list in the change that makes it lint-clean (docs/AUDIT.md, W14), and the check fails if a listed crate has opted in or no longer exists. That the list never grows is a review rule: a new crate opts in from the start.
- */
-const LINT_PENDING = new Set([
-  'wirecatch-desktop',
-]);
-
 /** Cargo tools some checks run, with the versions CI installs (`--install-tools`). */
 const TOOLS = {
   'cargo-deny': '0.19.0',
@@ -173,28 +166,16 @@ function followsWorkspaceLints(manifest) {
   return table !== null && /^\s*workspace\s*=\s*true\s*(#.*)?$/m.test(table[1]);
 }
 
+/** Every crate opts into `[workspace.lints]`, so no crate can quietly follow a weaker policy. */
 function lintPolicy() {
   const problems = [];
-  const names = new Set();
   for (const pkg of cargoMetadata().packages) {
-    names.add(pkg.name);
-    const optedIn = followsWorkspaceLints(readFileSync(pkg.manifest_path, 'utf8'));
-    const pending = LINT_PENDING.has(pkg.name);
-    const where = relative(ROOT, pkg.manifest_path);
-    if (!optedIn && !pending) {
+    if (!followsWorkspaceLints(readFileSync(pkg.manifest_path, 'utf8'))) {
+      const where = relative(ROOT, pkg.manifest_path);
       problems.push(`${where}: add \`[lints] workspace = true\`; every crate follows the workspace lint policy.`);
     }
-    if (optedIn && pending) {
-      problems.push(`${where} follows the workspace lints now: remove ${pkg.name} from LINT_PENDING in scripts/gate.mjs.`);
-    }
-  }
-  for (const name of LINT_PENDING) {
-    if (!names.has(name)) problems.push(`${name} is in LINT_PENDING in scripts/gate.mjs but is not in the workspace; remove it.`);
   }
   if (problems.length > 0) throw new GateError(problems.join('\n'));
-  if (LINT_PENDING.size > 0) {
-    console.log(`Crates still to bring under the workspace lints (docs/AUDIT.md, W14): ${[...LINT_PENDING].join(', ')}`);
-  }
 }
 
 function clippy() {

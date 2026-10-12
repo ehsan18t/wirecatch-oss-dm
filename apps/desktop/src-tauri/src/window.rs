@@ -79,7 +79,9 @@ impl LaunchLinks {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -94,6 +96,7 @@ pub struct Launch {
 
 impl Launch {
     /// Reads a command line (program name first).
+    #[must_use]
     pub fn from_args(args: &[String]) -> Self {
         Self {
             background: wants_background(args),
@@ -103,6 +106,7 @@ impl Launch {
 
     /// Whether this launch should bring up the window. A link always does, even with
     /// `--background`, because the person asked to download something.
+    #[must_use]
     pub fn shows_window(&self) -> bool {
         !self.background || !self.links.is_empty()
     }
@@ -178,7 +182,7 @@ mod tests {
     use super::*;
 
     fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
+        list.iter().map(ToString::to_string).collect()
     }
 
     #[test]
@@ -208,7 +212,10 @@ mod tests {
                 "ftp://files.example.com/c.iso"
             ]
         );
-        assert!(links_from_args(["https://not-the-program-name.example"]).is_empty());
+        assert_eq!(
+            links_from_args(["https://not-the-program-name.example"]),
+            [] as [String; 0]
+        );
     }
 
     #[test]
@@ -261,6 +268,6 @@ mod tests {
         links.push(["https://a.example/1".to_string()]);
         links.push(["https://a.example/2".to_string()]);
         assert_eq!(links.take(), ["https://a.example/1", "https://a.example/2"]);
-        assert!(links.take().is_empty());
+        assert_eq!(links.take(), [] as [String; 0]);
     }
 }

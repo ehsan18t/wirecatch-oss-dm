@@ -24,11 +24,12 @@
 
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
 use wirecatch_core::Manager;
+use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS};
 
@@ -57,6 +58,7 @@ pub const SCREEN_MARGIN: f64 = 48.0;
 /// less than the smallest window and never taller than the screen it is on (`screen`, the
 /// height of its work area, when the system says). A height that is not a number gives the
 /// smallest window.
+#[must_use]
 pub fn fitted_height(wanted: f64, screen: Option<f64>) -> f64 {
     let floor = MIN_WINDOW_SIZE.1;
     let ceiling = screen
@@ -102,6 +104,7 @@ pub fn fit_to_content<R: Runtime>(window: &tauri::WebviewWindow<R>, height: f64)
 }
 
 /// Whether `label` is a download window's.
+#[must_use]
 pub fn is_download_window(label: &str) -> bool {
     label.starts_with(LABEL_PREFIX)
 }
@@ -117,6 +120,7 @@ pub enum Shows {
 
 impl Shows {
     /// The label of a window opened for this.
+    #[must_use]
     pub fn label(self) -> String {
         match self {
             Self::Question(id) => format!("{LABEL_PREFIX}q{id}"),
@@ -125,6 +129,7 @@ impl Shows {
     }
 
     /// The interface's page for this, relative to the app's address.
+    #[must_use]
     pub fn route(self) -> String {
         match self {
             Self::Question(id) => format!("window/download?question={id}"),
@@ -164,6 +169,7 @@ pub struct Registry {
 
 impl Registry {
     /// The open windows, in the order they opened.
+    #[must_use]
     pub fn windows(&self) -> &[OpenWindow] {
         &self.windows
     }
@@ -180,10 +186,12 @@ impl Registry {
             .count()
     }
 
+    /// The lowest slot no open window takes. One of the first `windows.len() + 1` slots is
+    /// always free, so the search ends there.
     fn free_slot(&self) -> usize {
-        (0..)
+        (0..=self.windows.len())
             .find(|slot| !self.windows.iter().any(|w| w.slot == *slot))
-            .unwrap_or(0)
+            .unwrap_or(self.windows.len())
     }
 
     fn window_showing(&self, shows: Shows) -> Option<&OpenWindow> {
@@ -322,20 +330,35 @@ pub struct Area {
 /// first windows spread around the middle of the screen, each [`CASCADE_STEP`] down and right
 /// of the one before; slots that would leave the screen start again at the top left of the
 /// cascade. A window larger than the screen goes to its top left corner.
+#[must_use]
 pub fn place(slot: usize, area: Area, size: (f64, f64)) -> (f64, f64) {
     let room_x = (area.width - size.0).max(0.0);
     let room_y = (area.height - size.1).max(0.0);
     // The first few windows centre on the screen together.
-    let lead = (MAX_QUESTION_WINDOWS - 1) as f64 * CASCADE_STEP / 2.0;
+    let lead = cascade_offset(MAX_QUESTION_WINDOWS - 1) / 2.0;
     let start_x = (room_x / 2.0 - lead).max(0.0);
     let start_y = (room_y / 2.0 - lead).max(0.0);
-    let steps = |start: f64, room: f64| ((room - start) / CASCADE_STEP).floor().max(0.0) as usize;
-    let fit = steps(start_x, room_x).min(steps(start_y, room_y)) + 1;
-    let n = (slot % fit) as f64;
-    (
-        area.x + start_x + n * CASCADE_STEP,
-        area.y + start_y + n * CASCADE_STEP,
-    )
+    let fit = whole_steps(room_x - start_x)
+        .min(whole_steps(room_y - start_y))
+        .saturating_add(1);
+    let offset = cascade_offset(slot % fit);
+    (area.x + start_x + offset, area.y + start_y + offset)
+}
+
+/// `steps` cascade steps, in logical pixels: whole numbers, so exact as an `f64`. A count no
+/// screen could hold gives no offset; [`place`] never asks for one.
+fn cascade_offset(steps: usize) -> f64 {
+    u32::try_from(steps)
+        .ok()
+        .and_then(|n| n.checked_mul(DOWNLOAD_WINDOW_CASCADE_STEP))
+        .map_or(0.0, f64::from)
+}
+
+/// How many whole cascade steps fit in `length` logical pixels: none when it is negative or
+/// not a number.
+fn whole_steps(length: f64) -> usize {
+    f64_to_u64((length / CASCADE_STEP).floor())
+        .map_or(0, |n| usize::try_from(n).unwrap_or(usize::MAX))
 }
 
 /// The download windows, kept by the app.
@@ -344,7 +367,7 @@ pub struct DownloadWindows(Mutex<Registry>);
 
 impl DownloadWindows {
     fn with<T>(&self, change: impl FnOnce(&mut Registry) -> T) -> T {
-        change(&mut self.0.lock().unwrap_or_else(|e| e.into_inner()))
+        change(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// What is open now, for tests.
@@ -377,6 +400,7 @@ pub fn question_closed<R: Runtime>(app: &AppHandle<R>, id: u64) {
 }
 
 /// Every question open in the core right now, oldest first.
+#[must_use]
 pub fn open_questions(manager: &Manager) -> Vec<u64> {
     open_question_ids(
         &manager.pending_confirmations(),
@@ -666,7 +690,7 @@ mod tests {
             r.ask(id);
         }
         r.closed(6);
-        assert!(r.gone("download-q1").is_empty());
+        assert_eq!(r.gone("download-q1"), []);
     }
 
     #[test]
@@ -674,10 +698,10 @@ mod tests {
         let mut r = Registry::default();
         opened(r.ask(1));
         opened(r.ask(2));
-        assert!(r.gone("download-q1").is_empty());
+        assert_eq!(r.gone("download-q1"), []);
         // At start or after missed events, a put-aside question does not pop up again, and
         // one still open is not opened twice.
-        assert!(r.restore(&[1, 2]).is_empty());
+        assert_eq!(r.restore(&[1, 2]), []);
         // The person asks for the waiting questions: the open one comes forward, the closed
         // one opens again.
         let steps = r.show_all(&[1, 2]);
@@ -689,7 +713,7 @@ mod tests {
                 .any(|s| matches!(s, Step::Open(w) if w.shows == Shows::Question(1)))
         );
         // The core moving a put-aside question on (its quality list is ready) opens it.
-        assert!(r.gone("download-q1").is_empty());
+        assert_eq!(r.gone("download-q1"), []);
         opened(r.ask(1));
     }
 
@@ -707,7 +731,7 @@ mod tests {
             .collect();
         assert_eq!(shown, [Shows::Question(2), Shows::Question(4)]);
         // Answered questions are not in the core's lists, so nothing opens for them.
-        assert!(r.restore(&[2, 3, 4]).is_empty());
+        assert_eq!(r.restore(&[2, 3, 4]), []);
     }
 
     #[test]
@@ -733,7 +757,7 @@ mod tests {
         );
         // A window that could not be made is forgotten without being put aside.
         r.failed("download-q2");
-        assert!(r.restore(&[2]).len() == 1);
+        assert_eq!(r.restore(&[2]).len(), 1);
     }
 
     const SCREEN: Area = Area {

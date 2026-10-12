@@ -5,7 +5,7 @@
 //! signature against the configured public key, and says so in a notification. The update
 //! installs when the person quits Wirecatch, so it never interrupts a download.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager as _, Runtime};
@@ -15,7 +15,7 @@ use tauri_plugin_updater::{Update, UpdaterExt as _};
 pub const FIRST_CHECK_AFTER: Duration = Duration::from_secs(60);
 
 /// How often the app checks again while it keeps running.
-pub const CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+pub const CHECK_EVERY: Duration = Duration::from_hours(24);
 
 /// A downloaded, verified update waiting to install when the app quits.
 #[derive(Default)]
@@ -23,7 +23,7 @@ pub struct PendingUpdate(Mutex<Option<(Update, Vec<u8>)>>);
 
 impl PendingUpdate {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<(Update, Vec<u8>)>> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The version waiting, if any.
@@ -35,6 +35,12 @@ impl PendingUpdate {
 /// Asks for a newer version and, if there is one, downloads it (the updater refuses it unless
 /// its signature matches the configured public key) and keeps it for [`install_pending`].
 /// Returns the new version.
+///
+/// # Errors
+///
+/// The updater is not set up, the update server cannot be reached or answers with something
+/// that is not an update manifest, or the update cannot be downloaded or does not match its
+/// signature.
 pub async fn check_and_download<R: Runtime>(app: &AppHandle<R>) -> Result<Option<String>, String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {

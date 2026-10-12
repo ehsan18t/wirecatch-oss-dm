@@ -33,6 +33,7 @@ pub enum Action {
 
 /// Decides what to do. `just_turned_on` is set when the person switched the setting on in
 /// Wirecatch a moment ago, rather than at start or after some other settings change.
+#[must_use]
 pub fn decide(wanted: bool, state: EntryState, just_turned_on: bool) -> Action {
     match (wanted, state) {
         (true, EntryState::TurnedOff) if !just_turned_on => Action::TurnSettingOff,
@@ -45,6 +46,7 @@ pub fn decide(wanted: bool, state: EntryState, just_turned_on: bool) -> Action {
 /// Whether a Windows `StartupApproved\Run` value says the entry is turned off. Task Manager
 /// writes an odd first byte (for example `03`) for a disabled entry and an even one (`02`) for
 /// an enabled one.
+#[must_use]
 pub fn approved_value_turned_off(bytes: &[u8]) -> bool {
     bytes.first().is_some_and(|b| b & 1 == 1)
 }
