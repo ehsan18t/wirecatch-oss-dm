@@ -14,15 +14,21 @@
 
   const question = $derived(win.question);
 
+  let root = $state<HTMLDivElement>();
+
+  // Escape closes the window. The sample page shows several windows in one page, so only keys
+  // from inside this one count; the window's own controls are what take them.
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (!(e.target instanceof Node) || !root?.contains(e.target)) return;
     e.preventDefault();
     win.close();
   }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="download-window" {onkeydown}>
+<svelte:window {onkeydown} />
+
+<div class="download-window" bind:this={root}>
   {#if win.phase === 'loading'}
     <p class="loading" role="status">Loading.</p>
   {:else if win.phase === 'gone'}

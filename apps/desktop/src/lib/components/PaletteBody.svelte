@@ -73,7 +73,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- The keys work wherever the focus is in the palette, so they are handled on the dialog. -->
 <dialog
   bind:this={el}
   class="palette"
@@ -85,6 +85,7 @@
   onclick={(e) => {
     if (e.target === el) close();
   }}
+  {onkeydown}
 >
   <div class="search">
     <Icon icon={Search} size="md" />
@@ -101,7 +102,6 @@
       spellcheck="false"
       autocomplete="off"
       oninput={() => (index = 0)}
-      {onkeydown}
     />
   </div>
   <div bind:this={list} id="palette-list" class="list" role="listbox" aria-label="Actions">
@@ -110,8 +110,10 @@
         <div class="group" aria-hidden="true">{group.name}</div>
         {#each group.items as c (c.id)}
           {@const i = flat.indexOf(c)}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div
+          <!-- The search field keeps the focus and moves through the options (aria-activedescendant);
+               each option is a button, so a click runs it and it is a control in its own right. -->
+          <button
+            type="button"
             id="cmd-{i}"
             role="option"
             tabindex="-1"
@@ -123,7 +125,7 @@
           >
             <span>{c.title}</span>
             {#if c.shortcut}<kbd>{c.shortcut}</kbd>{/if}
-          </div>
+          </button>
         {/each}
       </div>
     {:else}
@@ -192,9 +194,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    width: 100%;
     min-height: 34px;
     padding: 6px 10px;
+    border: 0;
     border-radius: var(--radius-m);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
   }
 
