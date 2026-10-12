@@ -15,6 +15,7 @@ use crate::http::Clients;
 use crate::progress::Progress;
 use crate::units::{MIB, MIB_USIZE};
 use reqwest::header::HeaderValue;
+use std::ffi::OsString;
 use wirecatch_test_support::http3::{self as servers, Counts};
 use wirecatch_test_support::{TestCertificate, private_dir};
 
@@ -123,6 +124,62 @@ async fn fetch_from(
     let bytes = std::fs::read(&path).unwrap();
     dir.remove().unwrap();
     (bytes, took)
+}
+
+/// A download over HTTP/3 from 127.0.0.1 while the environment `env` reads is
+/// in effect; how many requests went over HTTP/3.
+async fn h3_requests_with(env: fn(&str) -> Option<OsString>, test: &str) -> usize {
+    let data = test_data(8 * MIB_USIZE);
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
+    let alt_svc = format!(r#"h3=":{h3_port}""#);
+    let (tcp_port, _tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let dir = private_dir(&format!("h3-{test}")).unwrap();
+    let url = Url::parse(&format!("https://127.0.0.1:{tcp_port}/file.bin")).unwrap();
+    let mut request = DownloadRequest::new(url, dir.path());
+    request.options.connections = 4;
+    request.options.http3 = true;
+    let clients = Clients::with_roots(&request.options, cert.roots()).with_environment(env);
+    let outcome = download_with(
+        request,
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+        clients,
+    )
+    .await
+    .unwrap();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("expected Completed, got {outcome:?}");
+    };
+    assert!(
+        std::fs::read(&path).unwrap() == data,
+        "downloaded bytes differ"
+    );
+    dir.remove().unwrap();
+    requests(&h3)
+}
+
+/// The HTTP client reaches a host `NO_PROXY` names directly, so HTTP/3 may be
+/// used for it; a `NO_PROXY` naming other hosts leaves the proxy, and QUIC
+/// stays off.
+#[tokio::test]
+async fn no_proxy_decides_whether_http3_is_used_while_a_proxy_is_set() {
+    fn exempt(name: &str) -> Option<OsString> {
+        match name {
+            "HTTPS_PROXY" => Some(OsString::from("http://proxy.example:8080")),
+            "NO_PROXY" => Some(OsString::from("other.example, 127.0.0.0/8")),
+            _ => None,
+        }
+    }
+    fn proxied(name: &str) -> Option<OsString> {
+        match name {
+            "HTTPS_PROXY" => Some(OsString::from("http://proxy.example:8080")),
+            "NO_PROXY" => Some(OsString::from("other.example")),
+            _ => None,
+        }
+    }
+    assert!(h3_requests_with(exempt, "no-proxy-exempt").await > 0);
+    assert_eq!(h3_requests_with(proxied, "no-proxy-other").await, 0);
 }
 
 fn requests(counts: &Counts) -> usize {

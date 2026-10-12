@@ -294,9 +294,10 @@ pub(crate) struct Clients {
 enum Proxies {
     /// The process's environment, as for any download.
     System,
-    /// Nowhere: tests must not depend on the machine they run on.
+    /// A test's own environment: tests must not depend on the machine they
+    /// run on. The HTTP clients then use no proxy at all.
     #[cfg(test)]
-    Ignored,
+    Given(fn(&str) -> Option<std::ffi::OsString>),
 }
 
 /// The process-wide TLS configuration: the system's root certificates are read
@@ -334,18 +335,26 @@ impl Clients {
     #[cfg(test)]
     pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {
         Self {
-            proxies: Proxies::Ignored,
+            proxies: Proxies::Given(proxy::nothing),
             ..Self::with_config(opts, tls_config(roots).unwrap())
         }
     }
 
+    /// The same clients, deciding as if the environment were what `env`
+    /// reads (their HTTP clients still use no proxy).
+    #[cfg(all(test, feature = "http3"))]
+    pub fn with_environment(mut self, env: fn(&str) -> Option<std::ffi::OsString>) -> Self {
+        self.proxies = Proxies::Given(env);
+        self
+    }
+
     /// Reads the environment variables that set proxies, as these clients see
     /// them.
-    pub fn environment(&self) -> proxy::Env<'static> {
-        match self.proxies {
+    pub fn environment(&self) -> proxy::Env<'_> {
+        match &self.proxies {
             Proxies::System => &proxy::system,
             #[cfg(test)]
-            Proxies::Ignored => &proxy::nothing,
+            Proxies::Given(env) => env,
         }
     }
 
@@ -384,7 +393,7 @@ impl Clients {
         let builder = match self.proxies {
             Proxies::System => builder,
             #[cfg(test)]
-            Proxies::Ignored => builder.no_proxy(),
+            Proxies::Given(_) => builder.no_proxy(),
         };
         builder
             // A clone shares the session cache: it lives behind an `Arc` in the config.
