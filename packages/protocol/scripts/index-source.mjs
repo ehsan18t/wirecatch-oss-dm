@@ -12,7 +12,7 @@ export function indexSource(folder) {
     .map((f) => f.slice(0, -EXTENSION.length));
   if (!files.includes(CONSTANTS)) {
     throw new Error(
-      `${CONSTANTS}${EXTENSION} was not generated; it is written by \`cargo test -p wirecatch-protocol\`.`,
+      `${CONSTANTS}${EXTENSION} was not generated; run \`pnpm protocol:generate\`, whose protocol tests write it.`,
     );
   }
   const names = files.filter((n) => n !== CONSTANTS).sort();
