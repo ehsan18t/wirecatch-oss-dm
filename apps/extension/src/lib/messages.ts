@@ -56,6 +56,8 @@ export interface Notice {
   downloadId: number | null;
   /** Cleared once the browser reports the download running or finished. */
   untilResumed: boolean;
+  /** Asks the person to act (resume a download, or check for two copies): kept over others when the list is full. */
+  urgent: boolean;
   tone: 'warning' | 'error';
   message: string;
   at: number;
@@ -66,6 +68,7 @@ export const isNotice = fields<Notice>({
   id: isString,
   downloadId: nullable(isNumber),
   untilResumed: isBoolean,
+  urgent: isBoolean,
   tone: member<Notice['tone']>({ warning: true, error: true }),
   message: isString,
   at: isNumber,

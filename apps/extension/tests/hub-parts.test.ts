@@ -6,6 +6,7 @@ import { hubTiming } from '../src/lib/hub/hub';
 import { planMenuClick } from '../src/lib/hub/menu';
 import { MAX_NOTICES, NoticeBoard } from '../src/lib/hub/notice-board';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
+import type { Notice } from '../src/lib/messages';
 import { UNREADABLE_ANSWER } from '../src/lib/native/client';
 
 type Kept = Extract<HandoverResult, { kind: 'kept' }>;
@@ -195,7 +196,7 @@ describe('NoticeBoard', () => {
     expect(shown[0]).toBe(`Notice ${String(MAX_NOTICES + 2)}.`);
   });
 
-  it('drops general notices before one about a download, however old', () => {
+  it('drops other notices before one that needs something done, however old', () => {
     let now = 0;
     const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
     board.error('big.zip is paused.', { downloadId: 3, untilResumed: true });
@@ -203,6 +204,57 @@ describe('NoticeBoard', () => {
     expect(board.current).toHaveLength(MAX_NOTICES);
     expect(board.current.at(-1)?.message).toBe('big.zip is paused.');
     expect(board.current[0]?.message).toBe(`Notice ${String(MAX_NOTICES)}.`);
+  });
+
+  it('drops notices about a download that need nothing done before one that does', () => {
+    let now = 0;
+    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    board.error('big.zip is paused.', { downloadId: 3, untilResumed: true });
+    for (let i = 1; i <= MAX_NOTICES; i += 1) {
+      board.warn(`file${String(i)}.zip stayed in the browser.`, { downloadId: 10 + i });
+    }
+    expect(board.current).toHaveLength(MAX_NOTICES);
+    expect(board.current.at(-1)?.message).toBe('big.zip is paused.');
+  });
+
+  it('leaves out a stored notice whose download moved or which was dismissed during the read', async () => {
+    const stored: Notice[] = [
+      {
+        id: 'd7',
+        downloadId: 7,
+        untilResumed: true,
+        urgent: true,
+        tone: 'error',
+        message: 'a.zip is paused.',
+        at: 1,
+      },
+      {
+        id: 'd8',
+        downloadId: 8,
+        untilResumed: true,
+        urgent: true,
+        tone: 'error',
+        message: 'b.zip is paused.',
+        at: 2,
+      },
+    ];
+    let answer: (paused: boolean) => void = () => undefined;
+    const reading = new Promise<boolean>((resolve) => (answer = resolve));
+    let now = 10;
+    const board = new NoticeBoard({
+      now: () => (now += 1),
+      changed: () => undefined,
+      store: { load: () => Promise.resolve(stored), save: () => Promise.resolve() },
+      stillPaused: () => reading,
+    });
+    const loading = board.load();
+    await Promise.resolve();
+    await Promise.resolve();
+    board.downloadMoved(7);
+    board.dismiss('d8');
+    answer(true);
+    await loading;
+    expect(board.current).toEqual([]);
   });
 
   it('dismisses one notice and leaves the others', () => {

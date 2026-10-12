@@ -957,6 +957,8 @@ describe('downloads left paused by a restarted background', () => {
         id: 'n1-1',
         downloadId: null,
         untilResumed: false,
+
+        urgent: false,
         tone: 'error',
         message: 'An old notice.',
         at: 1,
@@ -979,6 +981,8 @@ describe('downloads left paused by a restarted background', () => {
       id: 'd4',
       downloadId: 4,
       untilResumed: true,
+
+      urgent: true,
       tone: 'error',
       message: 'big.zip is paused in the browser.',
       at: 1,
@@ -1024,6 +1028,8 @@ describe('downloads left paused by a restarted background', () => {
         id: 'n1-1',
         downloadId: null,
         untilResumed: false,
+
+        urgent: false,
         tone: 'error',
         message: 'An old notice.',
         at: 1,

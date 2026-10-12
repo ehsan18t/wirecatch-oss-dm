@@ -361,6 +361,8 @@ describe('notices kept in session storage', () => {
     id: 'd4',
     downloadId: 4,
     untilResumed: true,
+
+    urgent: true,
     tone: 'error',
     message: 'big.zip is paused in the browser.',
     at: 5,

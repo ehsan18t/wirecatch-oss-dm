@@ -31,8 +31,10 @@ export interface NoticeBoardDeps {
 /** What a new notice is about: one browser download (a newer notice about it replaces this one), or nothing in particular. */
 interface About {
   downloadId?: number | null;
-  /** Cleared once the browser reports the download running or finished. */
+  /** Cleared once the browser reports the download running or finished; also makes it urgent. */
   untilResumed?: boolean;
+  /** Asks the person to act: kept over the others when the list is full. */
+  urgent?: boolean;
 }
 
 /**
@@ -43,7 +45,10 @@ interface About {
 export class NoticeBoard {
   readonly #deps: NoticeBoardDeps;
   readonly #duplicates = new DuplicateWatch((name, certain, downloadId) =>
-    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name), { downloadId }),
+    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name), {
+      downloadId,
+      urgent: true,
+    }),
   );
   #notices: Notice[] = [];
   /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
@@ -63,25 +68,28 @@ export class NoticeBoard {
   /**
    * Adds the notices an earlier run stored to those of this run, except the ones dismissed,
    * replaced or resolved since. The browser is asked again about each download a notice asks to
-   * resume, since one resumed while no background ran was never reported.
+   * resume, since one resumed while no background ran was never reported. Every answer is in
+   * before anything is filtered, so a dismiss or a move reported while the browser was asked
+   * still counts.
    */
   async load(): Promise<void> {
     const stored = (await this.#deps.store?.load().catch(() => [])) ?? [];
-    const kept: Notice[] = [];
-    for (const old of stored) {
-      if (this.#dismissed.has(old.id)) continue;
-      if (this.#notices.some((now) => now.id === old.id || sameDownload(now, old))) continue;
-      if (old.untilResumed && !(await this.#stillPaused(old.downloadId))) continue;
-      kept.push(old);
-    }
+    const paused = await Promise.all(stored.map((old) => this.#stillPaused(old)));
+    const kept = stored.filter(
+      (old, i) =>
+        paused[i] === true &&
+        !this.#dismissed.has(old.id) &&
+        !(old.untilResumed && old.downloadId !== null && this.#moved.has(old.downloadId)) &&
+        !this.#notices.some((now) => now.id === old.id || sameDownload(now, old)),
+    );
     this.#notices = newestFirst([...this.#notices, ...kept]);
     if (kept.length !== stored.length) this.#deps.store?.save(this.#notices).catch(() => undefined);
   }
 
-  async #stillPaused(downloadId: number | null): Promise<boolean> {
-    if (downloadId === null) return true;
-    if (this.#moved.has(downloadId)) return false;
-    return (await this.#deps.stillPaused?.(downloadId).catch(() => true)) ?? true;
+  /** Whether a stored notice still stands as far as the browser can say: one not asking to resume always does. */
+  async #stillPaused(notice: Notice): Promise<boolean> {
+    if (!notice.untilResumed || notice.downloadId === null) return true;
+    return (await this.#deps.stillPaused?.(notice.downloadId).catch(() => true)) ?? true;
   }
 
   warn(message: string, about: About = {}): void {
@@ -101,6 +109,7 @@ export class NoticeBoard {
       id,
       downloadId,
       untilResumed: about.untilResumed ?? false,
+      urgent: (about.urgent ?? false) || (about.untilResumed ?? false),
       tone,
       message,
       at,
@@ -125,7 +134,9 @@ export class NoticeBoard {
     const about = { downloadId };
     if (result.kind === 'handed_over') {
       if (result.browserCopy === 'left_paused') this.warn(copyLeftInBrowser(name), about);
-      if (result.browserCopy === 'kept_running') this.warn(mayDownloadTwice(name), about);
+      if (result.browserCopy === 'kept_running') {
+        this.warn(mayDownloadTwice(name), { downloadId, urgent: true });
+      }
       return;
     }
     if (result.browserCopy === 'gone') return;
@@ -145,7 +156,7 @@ export class NoticeBoard {
   /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
   uncertain(handoverId: string, name: string, downloadId: number | null): void {
     if (!this.#duplicates.keptUncertain(handoverId, name, downloadId)) {
-      this.warn(mayDownloadTwiceUncertain(name), { downloadId });
+      this.warn(mayDownloadTwiceUncertain(name), { downloadId, urgent: true });
     }
   }
 
@@ -157,12 +168,14 @@ export class NoticeBoard {
   recovered(result: Recovered, name: string, downloadId: number): void {
     const about = { downloadId };
     if (result === 'copy_left') this.warn(copyLeftInBrowser(name), about);
-    if (result === 'both') this.warn(mayDownloadTwice(name), about);
+    if (result === 'both') this.warn(mayDownloadTwice(name), { downloadId, urgent: true });
     if (result === 'stuck_paused')
       this.error(stuckPaused(name), { downloadId, untilResumed: true });
     // Not registered with the duplicate watch: the ports of the run that sent it are gone, so
     // no late answer to it can come.
-    if (result === 'uncertain') this.warn(mayDownloadTwiceUncertain(name), about);
+    if (result === 'uncertain') {
+      this.warn(mayDownloadTwiceUncertain(name), { downloadId, urgent: true });
+    }
   }
 
   #set(notices: Notice[]): void {
@@ -178,14 +191,15 @@ function sameDownload(a: Notice, b: Notice): boolean {
 }
 
 /**
- * Newest first, at most `MAX_NOTICES`. Notices about a download stay until it is resolved, so the
- * oldest general ones go first, and one about a download only when nothing else is left to drop.
+ * Newest first, at most `MAX_NOTICES`. A notice asking the person to act stays until it is
+ * resolved, so the oldest of the others go first, and an urgent one only when nothing else is
+ * left to drop.
  */
 function newestFirst(notices: Notice[]): Notice[] {
   const sorted = [...notices].sort((a, b) => b.at - a.at);
   while (sorted.length > MAX_NOTICES) {
-    const general = sorted.map((n) => n.downloadId).lastIndexOf(null);
-    sorted.splice(general >= 0 ? general : sorted.length - 1, 1);
+    const other = sorted.map((n) => n.urgent).lastIndexOf(false);
+    sorted.splice(other >= 0 ? other : sorted.length - 1, 1);
   }
   return sorted;
 }
