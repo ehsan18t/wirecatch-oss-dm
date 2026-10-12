@@ -750,6 +750,12 @@ crate::exported::exported_consts! {
     /// [`SettingsProfile::format_version`] of the settings files this build writes, and the
     /// newest it reads.
     pub const PROFILE_FORMAT_VERSION: u32 = 1;
+    /// Most download windows asking a question at once (D23); later questions wait until one
+    /// of them closes.
+    pub const MAX_QUESTION_WINDOWS: usize = 5;
+    /// How far each download window sits down and right of the one before it, in logical
+    /// pixels.
+    pub const DOWNLOAD_WINDOW_CASCADE_STEP: u32 = 28;
 }
 
 /// Every user setting. The app is the only store (D5).

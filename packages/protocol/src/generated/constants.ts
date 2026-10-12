@@ -59,6 +59,18 @@ export const PER_MILLE_DONE = 1000;
 export const PROFILE_FORMAT_VERSION = 1;
 
 /**
+ * Most download windows asking a question at once (D23); later questions wait until one
+ * of them closes.
+ */
+export const MAX_QUESTION_WINDOWS = 5;
+
+/**
+ * How far each download window sits down and right of the one before it, in logical
+ * pixels.
+ */
+export const DOWNLOAD_WINDOW_CASCADE_STEP = 28;
+
+/**
  * The audio bit rates, in kbps, a person can pick when saving as each format;
  * formats without a choice are left out (`OutputFormat::kbps_choices`).
  */

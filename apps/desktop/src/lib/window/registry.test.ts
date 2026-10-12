@@ -1,7 +1,8 @@
 // The sample app's download windows follow the desktop's rules (D23, `download_windows.rs`).
 
 import { describe, expect, it } from 'vitest';
-import { MAX_QUESTION_WINDOWS, WindowRegistry } from './registry';
+import { MAX_QUESTION_WINDOWS } from '@wirecatch/protocol';
+import { WindowRegistry } from './registry';
 
 describe('WindowRegistry', () => {
   it('opens at most five question windows; the rest wait their turn', () => {

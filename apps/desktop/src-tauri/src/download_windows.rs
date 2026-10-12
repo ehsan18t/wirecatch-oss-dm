@@ -30,6 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
 use wirecatch_core::Manager;
 use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS};
 
 use crate::host::Core;
 use crate::questions::open_question_ids;
@@ -38,11 +39,10 @@ use crate::questions::open_question_ids;
 /// `capabilities/download-windows.json` matches it as `download-*`.
 pub const LABEL_PREFIX: &str = "download-";
 
-/// Most windows asking a question at once.
-pub const MAX_QUESTION_WINDOWS: usize = 5;
-
-/// How far each window sits down and right of the one before, in logical pixels.
-pub const CASCADE_STEP: f64 = 28.0;
+/// How far each window sits down and right of the one before, in logical pixels: the
+/// protocol's [`DOWNLOAD_WINDOW_CASCADE_STEP`], which the sample app's windows follow too, as a
+/// coordinate. Exact: the step is a small whole number.
+pub const CASCADE_STEP: f64 = DOWNLOAD_WINDOW_CASCADE_STEP as f64;
 
 /// A download window's size when it opens, in logical pixels.
 pub const WINDOW_SIZE: (f64, f64) = (460.0, 600.0);

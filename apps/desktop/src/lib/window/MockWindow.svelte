@@ -1,13 +1,13 @@
 <script lang="ts">
   // One sample download window, floating in the page at its place in the cascade.
   import X from '@lucide/svelte/icons/x';
-  import type { DownloadId } from '@wirecatch/protocol';
+  import { DOWNLOAD_WINDOW_CASCADE_STEP, type DownloadId } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
   import type { Backend } from '$lib/backend';
   import IconButton from '$lib/components/IconButton.svelte';
   import DownloadWindow from './DownloadWindow.svelte';
   import { DownloadWindowState } from './download-window.svelte';
-  import { CASCADE_STEP, type OpenWindow } from './registry';
+  import type { OpenWindow } from './registry';
 
   /** Where the first sample window sits, down and right of the page's top left corner. */
   const CASCADE_ORIGIN = 48;
@@ -29,7 +29,7 @@
   } = $props();
 
   const uid = $props.id();
-  const offset = $derived(CASCADE_ORIGIN + open.slot * CASCADE_STEP);
+  const offset = $derived(CASCADE_ORIGIN + open.slot * DOWNLOAD_WINDOW_CASCADE_STEP);
   // Made once for the window's life; what it shows comes from the registry only at the start.
   const win = (() => {
     const shows = open.shows;

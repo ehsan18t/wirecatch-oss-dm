@@ -1,16 +1,10 @@
 // The download windows of the sample backend (D23), shown inside the page because a browser tab
 // cannot open real windows that share the sample data. It keeps the same rules as the desktop
-// (`src-tauri/src/download_windows.rs`): at most five windows ask at once and the rest wait,
+// (`src-tauri/src/download_windows.rs`): at most MAX_QUESTION_WINDOWS ask at once and the rest wait,
 // each window takes the lowest free place in the cascade, and a question whose window the person
 // closed does not open again by itself.
 
-import type { DownloadId } from '@wirecatch/protocol';
-
-/** Most windows asking a question at once. */
-export const MAX_QUESTION_WINDOWS = 5;
-
-/** How far each window sits down and right of the one before, in pixels. */
-export const CASCADE_STEP = 28;
+import { MAX_QUESTION_WINDOWS, type DownloadId } from '@wirecatch/protocol';
 
 /** What a download window shows. */
 export type Shows = { kind: 'question'; id: number } | { kind: 'download'; id: DownloadId };
