@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use tokio::sync::OnceCell;
@@ -46,8 +46,9 @@ struct Known {
 
 fn known() -> std::sync::MutexGuard<'static, Known> {
     static KNOWN: LazyLock<Mutex<Known>> = LazyLock::new(Mutex::default);
-    // A poisoned lock only means a panic elsewhere; the data is still sound.
-    KNOWN.lock().unwrap_or_else(|e| e.into_inner())
+    // A lock poisoned by a panic in another holder is taken over as it is, for
+    // the reason `Manager::lock` gives: the data is plain and still sound.
+    KNOWN.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 async fn program_key(ffmpeg: &Path) -> ProgramKey {

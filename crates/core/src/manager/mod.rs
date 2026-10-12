@@ -27,7 +27,7 @@ mod ticker;
 
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use tokio::runtime::Handle;
@@ -412,9 +412,19 @@ impl Manager {
         weak.upgrade().map(|inner| Manager { inner })
     }
 
+    /// Locks the manager's state.
+    ///
+    /// A lock poisoned by a panic in another holder is taken over as it is.
+    /// Nothing done under this lock is meant to panic, so poisoning means a bug
+    /// that the panic itself has already reported. Wirecatch's release builds
+    /// abort on panic (`panic = "abort"`), so there a poisoned lock cannot be
+    /// seen at all; in debug and test builds the state is plain data, and
+    /// refusing the lock as well would only add a second, less telling panic.
     fn lock(&self) -> MutexGuard<'_, State> {
-        // A panic while holding the lock leaves plain data behind; keep going.
-        self.inner.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The state, unless the manager has shut down.

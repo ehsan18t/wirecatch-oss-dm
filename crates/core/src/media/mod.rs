@@ -11,7 +11,7 @@ pub(crate) mod ytdlp;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Progress;
@@ -233,8 +233,11 @@ impl MediaProgress {
         self.own_total.store(total.unwrap_or(0), Ordering::Relaxed);
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Part>> {
-        self.parts.lock().unwrap_or_else(|e| e.into_inner())
+    /// Locks the parts. A lock poisoned by a panic in another holder is taken
+    /// over as it is, for the reason `Manager::lock` gives; each part is
+    /// replaced whole, so it is never half written either.
+    fn lock(&self) -> MutexGuard<'_, Vec<Part>> {
+        self.parts.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn read(&self) -> Reading {

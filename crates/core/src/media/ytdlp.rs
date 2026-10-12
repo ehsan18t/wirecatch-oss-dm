@@ -441,7 +441,7 @@ async fn download_once(
     args.push(template.into_os_string());
     args.push("--".into());
     args.push(ctx.page.as_str().into());
-    let printed = std::sync::Mutex::new(None::<PathBuf>);
+    let mut printed = None::<PathBuf>;
     let (done, total) = (AtomicU64::new(0), AtomicU64::new(0));
     let result = process::run(
         &ctx.tools.ytdlp,
@@ -473,7 +473,7 @@ async fn download_once(
                     progress.set_own(now, total);
                 }
             } else if let Some(path) = printed_output(output, line, work) {
-                *printed.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
+                printed = Some(path);
             }
         },
     )
@@ -493,7 +493,6 @@ async fn download_once(
     if !ran.success {
         return Err(Attempt::Refused(failed(&ran)));
     }
-    let printed = printed.into_inner().unwrap_or_else(|e| e.into_inner());
     let work = work.to_path_buf();
     let found = tokio::task::spawn_blocking(move || {
         printed

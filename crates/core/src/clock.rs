@@ -2,7 +2,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use chrono::{Local, NaiveDateTime, TimeDelta, Utc};
@@ -71,9 +71,16 @@ impl ManualClock {
         }
     }
 
+    /// Locks the time shown. A lock poisoned by a panic in another holder is
+    /// taken over as it is: the time is replaced whole, so it is never half
+    /// written, and release builds abort on panic, so there it cannot happen.
+    fn now(&self) -> MutexGuard<'_, NaiveDateTime> {
+        self.now.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Sets the clock to `now` and wakes everything sleeping on it.
     pub fn set(&self, now: NaiveDateTime) {
-        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = now;
+        *self.now() = now;
         self.moved.send_replace(());
     }
 
@@ -85,7 +92,7 @@ impl ManualClock {
 
 impl Clock for ManualClock {
     fn local_now(&self) -> NaiveDateTime {
-        *self.now.lock().unwrap_or_else(|e| e.into_inner())
+        *self.now()
     }
 
     fn unix_millis(&self) -> i64 {

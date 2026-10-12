@@ -3,7 +3,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard, PoisonError};
 
 use wirecatch_engine::{CancellationToken, Error as EngineError, Outcome};
 
@@ -39,13 +39,20 @@ pub(super) fn run(
 impl Manager {
     /// The stand-in engine, if a test set one.
     pub(super) fn fake_engine(&self) -> Option<FakeEngine> {
-        self.inner.fake_engine.lock().ok()?.clone()
+        self.fake_engine_slot().clone()
     }
 
     /// Runs every later download with `engine` instead of the real engine.
     pub(super) fn use_fake_engine(&self, engine: FakeEngine) {
-        if let Ok(mut fake) = self.inner.fake_engine.lock() {
-            *fake = Some(engine);
-        }
+        *self.fake_engine_slot() = Some(engine);
+    }
+
+    /// Locks the stand-in engine's slot. A lock poisoned by a panic in another
+    /// holder is taken over as it is, for the reason [`Manager::lock`] gives.
+    fn fake_engine_slot(&self) -> MutexGuard<'_, Option<FakeEngine>> {
+        self.inner
+            .fake_engine
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
