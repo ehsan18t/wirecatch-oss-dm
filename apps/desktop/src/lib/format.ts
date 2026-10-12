@@ -13,7 +13,7 @@ import {
   type WaitReason,
   type Weekday,
 } from '@wirecatch/protocol';
-import { formatBytes, formatRate } from '@wirecatch/units';
+import { formatBytes } from '@wirecatch/units';
 import { ordinal } from './text';
 import {
   dayBefore,
@@ -225,12 +225,6 @@ export function scheduleAllows(schedule: Schedule | null, now: Date): boolean {
   return (dayOk(today) && minutes >= start) || (dayOk(yesterday) && minutes < stop);
 }
 
-/** Speed limit text for a queue or the whole app. */
-export function formatLimit(bytesPerSecond: number | null): string {
-  return bytesPerSecond === null ? 'No speed limit' : `Limit ${formatRate(bytesPerSecond)}`;
-}
-
-/** Host name of a URL, or the URL itself if it does not parse. */
 /**
  * A link as it may be shown or copied: a password in it becomes `***` (`https://ada:***@host/`),
  * and a user name without a password too, since some sites put a token there. The core already
@@ -251,6 +245,7 @@ export function linkForDisplay(url: string): string {
   return `${url.slice(0, start)}${masked}${rest.slice(at)}`;
 }
 
+/** Host name of a URL, or the URL itself if it does not parse. */
 export function hostOf(url: string): string {
   try {
     return new URL(url).host;
