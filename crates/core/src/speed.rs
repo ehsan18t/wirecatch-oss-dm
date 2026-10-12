@@ -2,6 +2,8 @@
 
 use std::time::Instant;
 
+use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
+
 /// How quickly the smoothed speed follows a change, in seconds. After this long a
 /// new speed has taken over about two thirds of the reading.
 const SMOOTHING_SECS: f64 = 3.0;
@@ -24,7 +26,7 @@ impl SpeedMeter {
             if secs <= 0.0 {
                 return self.speed();
             }
-            let instant = done.saturating_sub(before) as f64 / secs;
+            let instant = approx_f64(done.saturating_sub(before)) / secs;
             let weight = 1.0 - (-secs / SMOOTHING_SECS).exp();
             self.rate = Some(match self.rate {
                 Some(rate) => rate + weight * (instant - rate),
@@ -37,7 +39,7 @@ impl SpeedMeter {
 
     /// The current smoothed speed in bytes per second.
     pub fn speed(&self) -> u64 {
-        self.rate.map_or(0, |r| r.round() as u64)
+        self.rate.and_then(|r| f64_to_u64(r.round())).unwrap_or(0)
     }
 }
 

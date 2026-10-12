@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn the_oldest_handovers_are_forgotten_first() {
         let mut log = Handovers::default();
-        for n in 0..(MAX_REMEMBERED as i64 + 5) {
+        for n in 0..i64::try_from(MAX_REMEMBERED).unwrap() + 5 {
             log.insert(&n.to_string(), handover(n));
         }
         assert!(log.get("4").is_none());
@@ -161,7 +161,7 @@ mod tests {
                 ..handover(0)
             },
         );
-        for n in 1..(MAX_REMEMBERED as i64 + 5) {
+        for n in 1..i64::try_from(MAX_REMEMBERED).unwrap() + 5 {
             log.insert(&n.to_string(), handover(n));
         }
         assert!(log.get("first").is_some(), "forgotten while being decided");
@@ -183,7 +183,7 @@ mod tests {
                 ..handover(0)
             },
         );
-        for n in 1..(MAX_REMEMBERED as i64 + 5) {
+        for n in 1..i64::try_from(MAX_REMEMBERED).unwrap() + 5 {
             log.insert(&n.to_string(), handover(n));
         }
         assert!(log.get("asking").is_some());

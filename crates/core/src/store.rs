@@ -653,8 +653,16 @@ fn back_up_before_upgrade(conn: &Connection, path: &Path, version: u32) {
     }
 }
 
+/// The schema version every migration together leads to, as SQLite's
+/// `user_version` stores it. A list of 2^32 migrations does not compile, so the
+/// conversion below never falls back.
+fn schema_version() -> u32 {
+    const { assert!(MIGRATIONS.len() <= u32::MAX as usize) };
+    u32::try_from(MIGRATIONS.len()).unwrap_or(u32::MAX)
+}
+
 fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
-    let supported = MIGRATIONS.len() as u32;
+    let supported = schema_version();
     let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if found > supported {
         return Err(CoreError::DatabaseTooNew { found, supported });
@@ -663,10 +671,11 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     if found > 0 && found < supported {
         back_up_before_upgrade(conn, path, found);
     }
-    for (index, sql) in MIGRATIONS.iter().enumerate().skip(found as usize) {
+    // Migration n (from 1) leads to version n.
+    for (version, sql) in (1u32..).zip(MIGRATIONS).filter(|&(v, _)| v > found) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
-        tx.pragma_update(None, "user_version", index as u32 + 1)?;
+        tx.pragma_update(None, "user_version", version)?;
         tx.commit()?;
     }
     Ok(())
@@ -781,10 +790,10 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
                              paused, running_outside_schedule)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
-    for (position, q) in queues.iter().enumerate() {
+    for (position, q) in (0i64..).zip(queues) {
         stmt.execute(params![
             q.id.0,
-            position as i64,
+            position,
             q.name,
             q.max_concurrent,
             q.speed_limit.map(to_i64),
@@ -1610,7 +1619,7 @@ mod tests {
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, MIGRATIONS.len() as u32);
+        assert_eq!(version, schema_version());
     }
 
     /// A download as versions before 3 stored it, whose path was always final.
@@ -1643,7 +1652,7 @@ mod tests {
         for sql in &MIGRATIONS[..version] {
             conn.execute_batch(sql).unwrap();
         }
-        conn.pragma_update(None, "user_version", version as u32)
+        conn.pragma_update(None, "user_version", u32::try_from(version).unwrap())
             .unwrap();
         let mut settings = crate::settings::default_settings();
         settings.extension.ask_before_download = ask;
@@ -1710,7 +1719,7 @@ mod tests {
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, MIGRATIONS.len() as u32);
+        assert_eq!(version, schema_version());
     }
 
     #[tokio::test]

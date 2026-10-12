@@ -9,12 +9,14 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
 use tracing::{debug, warn};
+use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{FixAction, UserError};
 
@@ -184,8 +186,8 @@ impl Format {
     pub fn size(&self) -> Option<u64> {
         self.filesize.or_else(|| {
             self.filesize_approx
-                .filter(|s| s.is_finite() && *s > 0.0)
-                .map(|s| s as u64)
+                .filter(|s| *s > 0.0)
+                .and_then(f64_to_u64)
         })
     }
 
@@ -200,7 +202,8 @@ impl Format {
             value
                 .as_f64()
                 .filter(|f| f.is_finite() && f.fract() == 0.0 && *f >= 0.0)
-                .map(|f| f.min(u64::MAX as f64) as u64)
+                // Beyond `u64`: as large as can be, which the cut below brings down.
+                .map(|f| f64_to_u64(f).unwrap_or(u64::MAX))
         })?;
         (bytes >= MIN_REQUEST_LIMIT).then(|| bytes.min(MAX_REQUEST_LIMIT))
     }
@@ -453,17 +456,21 @@ async fn download_once(
                 .strip_prefix(PROGRESS_MARK)
                 .filter(|_| output == Output::Stdout)
             {
-                let mut numbers = report.split_whitespace().map(|n| n.parse::<f64>().ok());
+                // Byte counts as yt-dlp prints them; anything that is not a
+                // count is ignored rather than read as zero.
+                let mut numbers = report
+                    .split_whitespace()
+                    .map(|n| n.parse::<f64>().ok().and_then(f64_to_u64));
                 let (now, all, guess) = (
                     numbers.next().flatten(),
                     numbers.next().flatten(),
                     numbers.next().flatten(),
                 );
                 if let Some(now) = now {
-                    done.store(now as u64, Ordering::Relaxed);
-                    total.store(all.or(guess).map_or(0, |t| t as u64), Ordering::Relaxed);
+                    done.store(now, Ordering::Relaxed);
+                    total.store(all.or(guess).unwrap_or(0), Ordering::Relaxed);
                     let total = Some(total.load(Ordering::Relaxed)).filter(|t| *t > 0);
-                    progress.set_own(now as u64, total);
+                    progress.set_own(now, total);
                 }
             } else if let Some(path) = printed_output(output, line, work) {
                 *printed.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
@@ -659,9 +666,11 @@ pub(crate) fn netscape(page: &Url, header: &str) -> Option<String> {
         if !clean(name) || value.contains(['\t', '\r', '\n']) {
             continue;
         }
-        text.push_str(&format!(
-            "{host}\tFALSE\t/\t{secure}\t{expires}\t{name}\t{value}\n"
-        ));
+        // Writing to a `String` cannot fail.
+        let _ = writeln!(
+            text,
+            "{host}\tFALSE\t/\t{secure}\t{expires}\t{name}\t{value}"
+        );
         any = true;
     }
     any.then_some(text)
@@ -858,6 +867,24 @@ mod tests {
         let other: Format =
             serde_json::from_str(r#"{"format_id":"1","downloader_options":{"x":1}}"#).unwrap();
         assert_eq!(other.request_limit(), None);
+    }
+
+    /// An estimated size is used only when it is a byte count: one too large
+    /// for any file is unknown, not the largest number there is.
+    #[test]
+    fn an_estimated_size_that_is_not_a_count_is_unknown() {
+        let size = |approx: serde_json::Value| {
+            let format: Format = serde_json::from_value(serde_json::json!({
+                "format_id": "18",
+                "filesize_approx": approx,
+            }))
+            .unwrap();
+            format.size()
+        };
+        assert_eq!(size(serde_json::json!(1_048_576.7)), Some(1_048_576));
+        assert_eq!(size(serde_json::json!(1e30)), None);
+        assert_eq!(size(serde_json::json!(-5.0)), None);
+        assert_eq!(size(serde_json::json!(0.0)), None);
     }
 
     /// A page description as yt-dlp prints it for YouTube: every format has

@@ -395,7 +395,11 @@ mod tests {
     fn an_oversized_file_is_refused_before_it_is_read_whole() {
         let dir = tempfile::tempdir().unwrap();
         let big = dir.path().join("big.json");
-        std::fs::write(&big, vec![b' '; MAX_PROFILE_BYTES as usize + 1]).unwrap();
+        std::fs::write(
+            &big,
+            vec![b' '; usize::try_from(MAX_PROFILE_BYTES).unwrap() + 1],
+        )
+        .unwrap();
         let err = read_file(&big).unwrap_err();
         assert!(err.to_string().contains("larger than 1 MB"), "{err}");
         let small = dir.path().join("small.json");
@@ -410,7 +414,7 @@ mod tests {
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings: default_settings(),
-            queues: (0..=settings::MAX_QUEUES as i64)
+            queues: (0..=i64::try_from(settings::MAX_QUEUES).unwrap())
                 .map(|i| queue(i + 10, &format!("Q{i}")))
                 .collect(),
             addons: vec![],

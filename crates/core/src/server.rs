@@ -356,7 +356,7 @@ mod tests {
     use super::*;
 
     fn framed(body: &[u8]) -> Vec<u8> {
-        let mut out = (body.len() as u32).to_le_bytes().to_vec();
+        let mut out = frame::length_prefix(body.len()).unwrap().to_vec();
         out.extend_from_slice(body);
         out
     }
@@ -402,7 +402,8 @@ mod tests {
     #[tokio::test]
     async fn oversized_frames_are_skipped_and_reading_continues() {
         let len = MAX_FRAME_LEN + 10;
-        let mut bytes = (len as u32).to_le_bytes().to_vec();
+        // Over the limit, so `length_prefix` rightly refuses to write it.
+        let mut bytes = u32::try_from(len).unwrap().to_le_bytes().to_vec();
         bytes.extend(std::iter::repeat_n(b'x', len));
         bytes.extend(framed(b"{}"));
         let mut reader = bytes.as_slice();

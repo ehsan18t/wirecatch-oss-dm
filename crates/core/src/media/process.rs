@@ -284,13 +284,14 @@ mod job {
             // SAFETY: an all-zero limit structure is valid; only the flag is set.
             let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
             limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let size = u32::try_from(std::mem::size_of_val(&limits)).map_err(io::Error::other)?;
             // SAFETY: `limits` lives across the call and its size is passed.
             let set = unsafe {
                 SetInformationJobObject(
                     job.0,
                     JobObjectExtendedLimitInformation,
                     (&raw const limits).cast(),
-                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                    size,
                 )
             };
             if set == 0 {

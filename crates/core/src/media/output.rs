@@ -6,9 +6,11 @@
 
 use std::collections::HashSet;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_protocol::app::{
     MediaSubtitle, OutputFit, OutputFormat, PER_MILLE_DONE, StreamAction,
 };
@@ -523,6 +525,11 @@ pub(crate) fn kept_ext(video: Option<&Format>, audio: Option<&Format>) -> String
     }
 }
 
+/// The lowest video bit rate a re-encode is given, in kbps.
+const MIN_VIDEO_KBPS: u32 = 300;
+/// The highest video bit rate a re-encode is given, in kbps.
+const MAX_VIDEO_KBPS: u32 = 80_000;
+
 /// Video bit rate in kbps re-encoded to `target` from a video of `source` at
 /// `source_kbps` (and `height`): about the source's, more when the source codec is
 /// more efficient than the target, or a usual rate for the height when the site
@@ -553,7 +560,8 @@ pub(crate) fn video_kbps(
         };
         h264 / efficiency(target)
     });
-    kbps.clamp(300.0, 80_000.0).round() as u32
+    let whole = f64_to_u64(kbps.round()).map_or(0, |k| u32::try_from(k).unwrap_or(u32::MAX));
+    whole.clamp(MIN_VIDEO_KBPS, MAX_VIDEO_KBPS)
 }
 
 /// A format's video bit rate in kbps, when yt-dlp gave one.
@@ -569,8 +577,9 @@ pub(crate) fn audio_rate(format: &Format) -> Option<u32> {
     format
         .abr
         .or_else(|| (!format.has_video()).then_some(format.tbr).flatten())
-        .filter(|r| r.is_finite() && *r > 0.0 && *r < 100_000.0)
-        .map(|r| r.round() as u32)
+        .filter(|r| *r > 0.0 && *r < 100_000.0)
+        .and_then(|r| f64_to_u64(r.round()))
+        .and_then(|r| u32::try_from(r).ok())
 }
 
 fn rate(format: &Format) -> f64 {
@@ -1061,14 +1070,15 @@ pub(crate) fn ffmetadata(
     let mut text = String::from(";FFMETADATA1\n");
     for (key, value) in [("title", title), ("artist", artist)] {
         if let Some(value) = value.map(escape).filter(|v| !v.is_empty()) {
-            text.push_str(&format!("{key}={value}\n"));
+            // Writing to a `String` cannot fail.
+            let _ = writeln!(text, "{key}={value}");
         }
     }
     let mut last_end = 0u64;
     for chapter in chapters.iter().take(MAX_CHAPTERS) {
         let ms = |s: Option<f64>| {
-            s.filter(|s| s.is_finite() && *s >= 0.0 && *s < 1e9)
-                .map(|s| (s * 1000.0).round() as u64)
+            s.filter(|s| (0.0..1e9).contains(s))
+                .and_then(|s| f64_to_u64((s * 1000.0).round()))
         };
         let (Some(start), Some(end)) = (ms(chapter.start_time), ms(chapter.end_time)) else {
             continue;
@@ -1078,16 +1088,14 @@ pub(crate) fn ffmetadata(
             continue;
         }
         last_end = end;
-        text.push_str(&format!(
-            "[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}\n"
-        ));
+        let _ = writeln!(text, "[CHAPTER]\nTIMEBASE=1/1000\nSTART={start}\nEND={end}");
         if let Some(title) = chapter
             .title
             .as_deref()
             .map(escape)
             .filter(|t| !t.is_empty())
         {
-            text.push_str(&format!("title={title}\n"));
+            let _ = writeln!(text, "title={title}");
         }
     }
     text

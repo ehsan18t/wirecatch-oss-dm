@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
+
 use wirecatch_protocol::app::{
     FixAction, MediaChoice, MediaOption, MediaSelection, OutputFit, OutputFormat, StreamAction,
     UserError,
@@ -315,7 +317,10 @@ fn best(formats: Vec<&Format>) -> Option<&Format> {
 fn estimate(seconds: Option<f64>, bandwidths: [Option<u64>; 2]) -> Option<u64> {
     let seconds = seconds.filter(|s| s.is_finite() && *s > 0.0)?;
     let bits: u64 = bandwidths.iter().flatten().sum();
-    (bits > 0).then(|| (bits as f64 * seconds / 8.0) as u64)
+    if bits == 0 {
+        return None;
+    }
+    f64_to_u64(approx_f64(bits) * seconds / 8.0)
 }
 
 /// The options of a page read by yt-dlp.
@@ -488,7 +493,7 @@ pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
 pub(crate) fn duration_ms(info: &Info) -> Option<u64> {
     info.duration
         .filter(|d| d.is_finite() && *d > 0.0 && *d < 1e8)
-        .map(|d| (d * 1000.0).round() as u64)
+        .and_then(|d| f64_to_u64((d * 1000.0).round()))
 }
 
 fn live() -> UserError {
@@ -513,6 +518,16 @@ mod tests {
 
     fn info(json: &str) -> Info {
         serde_json::from_str(json).unwrap()
+    }
+
+    /// A stream's size is estimated from its length and bandwidth, and an
+    /// estimate no file could reach is no estimate at all.
+    #[test]
+    fn a_size_is_estimated_only_when_it_is_a_count() {
+        assert_eq!(estimate(Some(10.0), [Some(8_000), Some(800)]), Some(11_000));
+        assert_eq!(estimate(Some(10.0), [None, None]), None);
+        assert_eq!(estimate(None, [Some(8_000), None]), None);
+        assert_eq!(estimate(Some(1e300), [Some(8_000), None]), None);
     }
 
     #[test]

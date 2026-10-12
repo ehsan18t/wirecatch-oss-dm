@@ -1402,7 +1402,13 @@ mod tests {
     async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
         // MPEG-TS packets: 188 bytes each, starting with the sync byte.
         let segment: Vec<u8> = (0..188 * 40)
-            .map(|i| if i % 188 == 0 { 0x47 } else { (i % 251) as u8 })
+            .map(|i| {
+                if i % 188 == 0 {
+                    0x47
+                } else {
+                    u8::try_from(i % 251).unwrap()
+                }
+            })
             .collect();
         let server = wirecatch_test_support::files::FileServer::start().await;
         server.put(
