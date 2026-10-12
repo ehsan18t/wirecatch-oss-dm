@@ -61,6 +61,11 @@ fn write_at(file: &File, buf: &[u8], offset: u64) -> io::Result<usize> {
 }
 
 /// Moves the finished part file to its final name and tidies file flags.
+///
+/// The data is flushed to the disk before the rename, so a file under its final
+/// name is complete even after a power cut. The rename itself may be lost to
+/// one; the part file and its resume file are then still there, and the next
+/// run finishes them again.
 pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
     {
         let file = open_for_write(part)?;
@@ -68,6 +73,7 @@ pub fn finalize(part: &Path, final_path: &Path, len: u64) -> io::Result<()> {
         if file.metadata()?.len() != len {
             file.set_len(len)?;
         }
+        file.sync_data()?;
         // Fully written now, so the sparse flag can go. A file that keeps it
         // reads the same, only less efficiently.
         #[cfg(windows)]

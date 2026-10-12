@@ -1,5 +1,6 @@
 //! The resume file, saved while a download runs and once more as it ends.
 
+use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -16,9 +17,15 @@ use crate::storage;
 ///
 /// A checkpoint already running on the blocking pool is not stopped by
 /// aborting its task, and two saves at once would race on the same temporary
-/// file, so saves hold `closed`. Once the download has ended, `closed` is set
-/// and a late checkpoint writes nothing (it could otherwise put back a resume
-/// file next to a finished download).
+/// file, so saves hold `saving`. Once the download has ended, it is marked
+/// closed and a late checkpoint writes nothing (it could otherwise put back a
+/// resume file next to a finished download).
+///
+/// The resume file only ever lists as done what is on the disk itself: each
+/// save first flushes the part file to the disk, then writes the ranges that
+/// were done before that flush. So a power cut or a crash of the system, not
+/// only of the process, never leaves a resume file that counts bytes the disk
+/// never received (which would read back as zeros).
 ///
 /// Every method blocks, on file I/O or on a save in progress, so it is only
 /// called on the blocking pool.
@@ -28,8 +35,8 @@ pub(crate) struct ResumeSaver {
     url: String,
     path: PathBuf,
     validators: Validators,
-    /// Set once the download has ended.
-    closed: Mutex<bool>,
+    /// What saves share.
+    saving: Mutex<Saving>,
     /// Set if the download's future is dropped before it ends: a save already
     /// queued on the blocking pool then writes nothing either.
     abandoned: AtomicBool,
@@ -44,24 +51,34 @@ impl ResumeSaver {
             url,
             path,
             validators,
-            closed: Mutex::new(false),
+            saving: Mutex::new(Saving {
+                closed: false,
+                part: None,
+            }),
             abandoned: AtomicBool::new(false),
         }
     }
 
-    /// Locks `closed`. A lock poisoned by a panic in another holder is taken
-    /// over as it is, for the reason [`SharedTable::lock`] gives.
-    fn closed(&self) -> MutexGuard<'_, bool> {
-        self.closed.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Locks `saving`. A lock poisoned by a panic in another holder is taken
+    /// over as it is, for the reason
+    /// [`SharedTable::lock`](crate::segment::SharedTable::lock) gives.
+    fn saving(&self) -> MutexGuard<'_, Saving> {
+        self.saving.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Saves the ranges still to download, unless the download has ended.
     pub fn save(&self) -> Result<()> {
-        let closed = self.closed();
-        if *closed || self.abandoned.load(Ordering::SeqCst) {
+        let mut saving = self.saving();
+        if saving.closed || self.abandoned.load(Ordering::SeqCst) {
             return Ok(());
         }
+        // Read before the flush: every range done by now was written before it.
         let remaining = self.shared.table.lock().remaining();
+        let part = match &mut saving.part {
+            Some(part) => part,
+            empty => empty.insert(storage::open_for_write(&self.shared.part_path)?),
+        };
+        part.sync_data()?;
         let shared = &self.shared;
         ResumeState::new(
             &self.url,
@@ -75,8 +92,18 @@ impl ResumeSaver {
 
     /// Waits for a save still writing, then stops any later one.
     pub fn close(&self) {
-        *self.closed() = true;
+        let mut saving = self.saving();
+        saving.closed = true;
+        saving.part = None;
     }
+}
+
+/// The state saves share, behind one lock.
+struct Saving {
+    /// Set once the download has ended.
+    closed: bool,
+    /// The part file, to flush to the disk, once a save has opened it.
+    part: Option<File>,
 }
 
 /// The task that saves the resume file at every checkpoint while a download runs.

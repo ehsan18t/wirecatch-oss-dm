@@ -1,5 +1,7 @@
 //! The resume file kept next to a part file.
 
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -56,12 +58,19 @@ impl ResumeState {
         Ok(state)
     }
 
-    /// Writes to a temporary file first so a crash never leaves a torn state file.
+    /// Writes to a temporary file first and flushes it to the disk before it
+    /// replaces the old one, so neither a crash nor a power cut leaves a torn
+    /// or empty resume file: at worst the previous one stays, which lists more
+    /// to fetch, never less.
     pub fn save(&self, path: &Path) -> Result<()> {
         let mut tmp = path.as_os_str().to_owned();
         tmp.push(".tmp");
         let json = serde_json::to_vec(self).map_err(|e| Error::State(e.to_string()))?;
-        std::fs::write(&tmp, json)?;
+        {
+            let mut file = File::create(&tmp)?;
+            file.write_all(&json)?;
+            file.sync_data()?;
+        }
         std::fs::rename(&tmp, path)?;
         Ok(())
     }
