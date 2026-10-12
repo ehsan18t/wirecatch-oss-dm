@@ -1,5 +1,7 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
 
   let {
     items,
@@ -41,7 +43,7 @@
             aria-label="Remove {item}"
             onclick={() => onchange(items.filter((x) => x !== item))}
           >
-            <X size={12} aria-hidden="true" />
+            <Icon icon={X} size="xs" />
           </button>
         </li>
       {/each}
@@ -61,7 +63,7 @@
         }
       }}
     />
-    <button type="button" class="btn small" onclick={add} disabled={!draft.trim()}>Add</button>
+    <Button small onclick={add} disabled={!draft.trim()}>Add</Button>
   </div>
 </div>
 

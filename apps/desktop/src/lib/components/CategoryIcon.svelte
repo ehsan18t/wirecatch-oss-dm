@@ -7,8 +7,10 @@
   import Image from '@lucide/svelte/icons/image';
   import Music from '@lucide/svelte/icons/music';
   import type { Category } from '@wirecatch/protocol';
+  import Icon from './Icon.svelte';
+  import type { IconSize } from './scale';
 
-  let { category, size = 16 }: { category: Category; size?: number } = $props();
+  let { category, size = 'md' }: { category: Category; size?: IconSize } = $props();
 
   const icons = {
     video: Film,
@@ -19,8 +21,6 @@
     image: Image,
     other: File,
   };
-
-  const Icon = $derived(icons[category]);
 </script>
 
-<Icon {size} strokeWidth={1.75} aria-hidden="true" />
+<Icon icon={icons[category]} {size} thin />

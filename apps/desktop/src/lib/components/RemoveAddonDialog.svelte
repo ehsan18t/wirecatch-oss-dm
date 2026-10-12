@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { id }: { id: string } = $props();
@@ -23,8 +24,8 @@
   </p>
 
   {#snippet footer()}
-    <button class="btn" data-autofocus onclick={() => app.closeDialog()}>Keep</button>
-    <button class="btn danger" onclick={remove}>Remove</button>
+    <Button data-autofocus onclick={() => app.closeDialog()}>Keep</Button>
+    <Button variant="danger" onclick={remove}>Remove</Button>
   {/snippet}
 </Dialog>
 

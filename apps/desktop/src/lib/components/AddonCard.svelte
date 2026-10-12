@@ -10,6 +10,7 @@
   import { progressbarValue } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { track } from '$lib/state/reactivity';
+  import Button from './Button.svelte';
 
   let { addon, describedby }: { addon: AddonInfo; describedby?: string } = $props();
   const app = getApp();
@@ -83,9 +84,9 @@
     <!-- One button for install, update, try again and stop, so the keyboard focus stays on it
          as the state changes. -->
     {#if action !== null || installing}
-      <button
-        class="btn small"
-        class:primary={!installing}
+      <Button
+        small
+        variant={installing ? 'default' : 'primary'}
         aria-describedby={describedby}
         aria-disabled={busy}
         aria-label={installing
@@ -94,19 +95,17 @@
         onclick={main}
       >
         {installing ? 'Stop' : action ? ACTION_LABEL[action] : ''}
-      </button>
+      </Button>
     {/if}
     {#if isInstalled(addon)}
-      <button
-        class="btn small"
-        aria-disabled={busy}
-        onclick={() => run(() => app.checkAddonUpdates())}>Check for updates</button
+      <Button small aria-disabled={busy} onclick={() => run(() => app.checkAddonUpdates())}
+        >Check for updates</Button
       >
-      <button
-        class="btn small"
+      <Button
+        small
         aria-disabled={busy}
         aria-label="Remove the {addon.name.toLowerCase()}"
-        onclick={() => run(() => app.removeAddon(addon.id))}>Remove</button
+        onclick={() => run(() => app.removeAddon(addon.id))}>Remove</Button
       >
     {/if}
   </div>

@@ -2,6 +2,7 @@
   import type { QueueId } from '@wirecatch/protocol';
   import { extractUrls, fileNameFromUrl } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { urls: initial, queue: initialQueue }: { urls: string[]; queue?: QueueId } = $props();
@@ -113,11 +114,9 @@
         </p>
       </div>
       <div class="folder-actions">
-        <button type="button" class="btn small" onclick={chooseFolder}>Change</button>
+        <Button small onclick={chooseFolder}>Change</Button>
         {#if folder}
-          <button type="button" class="btn ghost small" onclick={() => (folder = null)}
-            >Use default</button
-          >
+          <Button variant="ghost" small onclick={() => (folder = null)}>Use default</Button>
         {/if}
       </div>
     </div>
@@ -133,18 +132,16 @@
   </form>
 
   {#snippet footer()}
-    <button type="button" class="btn" disabled={busy} onclick={() => submit(false)}
-      >Add paused</button
-    >
-    <button
+    <Button disabled={busy} onclick={() => submit(false)}>Add paused</Button>
+    <Button
+      variant="primary"
       type="submit"
       form="add-form"
-      class="btn primary"
       disabled={busy}
       data-autofocus={fromPaste ? '' : undefined}
     >
       {urls.length > 1 ? `Download ${urls.length}` : 'Download'}
-    </button>
+    </Button>
   {/snippet}
 </Dialog>
 

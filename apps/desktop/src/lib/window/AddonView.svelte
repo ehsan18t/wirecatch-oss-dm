@@ -4,6 +4,7 @@
   // download goes on by itself once the add-on is installed.
   import type { AddonInfo } from '@wirecatch/protocol';
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
+  import Button from '$lib/components/Button.svelte';
   import { hostOf, progressbarValue } from '$lib/format';
   import { track } from '$lib/state/reactivity';
   import { formatBytes } from '@wirecatch/units';
@@ -91,23 +92,15 @@
   {#snippet footer()}
     {#if installing || installed}
       {#if installing}
-        <button type="button" class="btn" onclick={() => win.stopAddonInstall()}
-          >Stop installing</button
-        >
+        <Button onclick={() => win.stopAddonInstall()}>Stop installing</Button>
       {/if}
-      <button type="button" class="btn primary" data-autofocus onclick={() => win.close()}
-        >Hide</button
-      >
+      <Button variant="primary" data-autofocus onclick={() => win.close()}>Hide</Button>
     {:else if !installed}
-      <button type="button" class="btn" onclick={() => win.declineAddon()}
-        >{forQuality ? 'Pick another quality' : 'Cancel'}</button
+      <Button onclick={() => win.declineAddon()}
+        >{forQuality ? 'Pick another quality' : 'Cancel'}</Button
       >
-      <button
-        type="button"
-        class="btn primary"
-        data-autofocus
-        aria-disabled={busy}
-        onclick={install}>{failed ? 'Try again' : 'Install'}</button
+      <Button variant="primary" data-autofocus aria-disabled={busy} onclick={install}
+        >{failed ? 'Try again' : 'Install'}</Button
       >
     {/if}
   {/snippet}

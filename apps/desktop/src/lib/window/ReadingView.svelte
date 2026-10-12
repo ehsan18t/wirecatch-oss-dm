@@ -1,6 +1,7 @@
 <script lang="ts">
   // A video being read for its qualities, which can take a few seconds. The quality list
   // replaces this in the same window.
+  import Button from '$lib/components/Button.svelte';
   import { hostOf } from '$lib/format';
   import type { DownloadWindowState } from './download-window.svelte';
   import WindowFrame from './WindowFrame.svelte';
@@ -19,8 +20,8 @@
   {#if win.error}<p class="error" role="alert">{win.error}</p>{/if}
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={() => win.discard()}>Cancel</button>
-    <button type="button" class="btn" data-autofocus onclick={() => win.close()}>Hide</button>
+    <Button onclick={() => win.discard()}>Cancel</Button>
+    <Button data-autofocus onclick={() => win.close()}>Hide</Button>
   {/snippet}
 </WindowFrame>
 

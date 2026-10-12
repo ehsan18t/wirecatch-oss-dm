@@ -1,6 +1,8 @@
 <script lang="ts">
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
 
   const app = getApp();
   let busy = $state(false);
@@ -14,7 +16,7 @@
 
 {#if app.storageProblem}
   <div class="banner" role="alert">
-    <TriangleAlert size={16} aria-hidden="true" />
+    <Icon icon={TriangleAlert} size="md" />
     <div class="text">
       <p class="title">Wirecatch could not save its download list</p>
       <p>
@@ -22,8 +24,8 @@
       </p>
     </div>
     <div class="actions">
-      <button class="btn small" disabled={busy} onclick={retry}>Try again</button>
-      <button class="btn ghost small" onclick={() => app.dismissStorageProblem()}>Dismiss</button>
+      <Button small disabled={busy} onclick={retry}>Try again</Button>
+      <Button variant="ghost" small onclick={() => app.dismissStorageProblem()}>Dismiss</Button>
     </div>
   </div>
 {/if}

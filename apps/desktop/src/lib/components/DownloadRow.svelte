@@ -12,6 +12,7 @@
   } from '$lib/format';
   import { formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
 
   let {
@@ -53,15 +54,15 @@
         {#if row.error.fix}
           {@const fix = row.error.fix}
           <!-- Reached by mouse here; by keyboard, Enter on the row runs the same fix. -->
-          <button
-            type="button"
-            class="btn small fix"
-            tabindex="-1"
+          <Button
+            small
+            class="fix"
+            tabindex={-1}
             title={FIX_LABEL[fix]}
             onclick={() => app.fix(row.id, fix)}
           >
             {FIX_SHORT[fix]}
-          </button>
+          </Button>
         {/if}
       </span>
     {:else}
@@ -193,7 +194,7 @@
     white-space: nowrap;
   }
 
-  .fix {
+  .error :global(.fix) {
     flex: none;
     height: 24px;
     color: var(--ink);

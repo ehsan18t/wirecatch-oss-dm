@@ -41,6 +41,13 @@
   --radius-l: 11px;
   --row-h: 44px;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Icons come in four sizes (see Icon.svelte); file type pictures use the thinner stroke. */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
+  --icon-stroke-thin: 1.75;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -234,6 +241,30 @@ textarea {
 .icon-btn:hover {
   background: var(--surface-3);
   color: var(--ink);
+}
+
+.icon-xs {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.icon-sm {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.icon-md {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
+
+.icon-lg {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.icon-thin {
+  stroke-width: var(--icon-stroke-thin);
 }
 
 .field {

@@ -3,6 +3,9 @@
   import X from '@lucide/svelte/icons/x';
   import { folderOf, progressFraction } from '$lib/format';
   import { getApp, type Toast } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
+  import IconButton from './IconButton.svelte';
 
   let { toast }: { toast: Toast } = $props();
   const app = getApp();
@@ -38,11 +41,11 @@
       <p class="title">Downloading <strong>{row.file_name}</strong></p>
       <p class="sub">to {folderOf(row.path)}</p>
       <div class="actions">
-        <button class="btn small" onclick={() => app.chooseFolderFor(row.id)}>Change</button>
-        <button class="btn small" onclick={() => app.openFolder(row.id)}>Open folder</button>
-        <button class="btn ghost small" onclick={() => app.setAskBeforeDownload(!ask)}>
+        <Button small onclick={() => app.chooseFolderFor(row.id)}>Change</Button>
+        <Button small onclick={() => app.openFolder(row.id)}>Open folder</Button>
+        <Button variant="ghost" small onclick={() => app.setAskBeforeDownload(!ask)}>
           {ask ? 'Start without asking' : 'Show a window first next time'}
-        </button>
+        </Button>
       </div>
     </div>
     <span class="wire" aria-hidden="true">
@@ -53,13 +56,11 @@
     </span>
   {:else}
     <div class="body line">
-      {#if toast.kind === 'error'}<CircleAlert size={16} aria-hidden="true" />{/if}
+      {#if toast.kind === 'error'}<Icon icon={CircleAlert} size="md" />{/if}
       <p>{toast.message}</p>
     </div>
   {/if}
-  <button class="icon-btn close" aria-label="Dismiss" onclick={() => app.dismissToast(toast.id)}>
-    <X size={14} aria-hidden="true" />
-  </button>
+  <IconButton class="close" icon={X} label="Dismiss" onclick={() => app.dismissToast(toast.id)} />
 </div>
 
 <style>
@@ -121,7 +122,7 @@
     margin-top: 10px;
   }
 
-  .close {
+  .toast > :global(.close) {
     flex: none;
     margin-top: -4px;
   }

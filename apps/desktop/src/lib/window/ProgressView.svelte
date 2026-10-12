@@ -4,6 +4,7 @@
   // Once finished: Open and Show in folder, and the window closes by itself after a few seconds
   // unless the pointer is over it or it has the keyboard focus.
   import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
+  import Button from '$lib/components/Button.svelte';
   import ErrorFix from '$lib/components/ErrorFix.svelte';
   import CategoryIcon from '$lib/components/CategoryIcon.svelte';
   import {
@@ -118,7 +119,7 @@
   <WindowFrame title={row.file_name}>
     <div class="content">
       <div class="status-line">
-        <span class="icon"><CategoryIcon category={row.category} size={18} /></span>
+        <span class="icon"><CategoryIcon category={row.category} size="lg" /></span>
         <p class="status {row.status}" role="status">{statusShort(row)}</p>
       </div>
       {#if detail}<p class="detail">{detail}</p>{/if}
@@ -186,11 +187,9 @@
             the list.
           </p>
           <div class="ask-actions">
-            <button type="button" class="btn" {@attach focusNow} onclick={() => (asking = null)}
-              >Keep downloading</button
-            >
-            <button type="button" class="btn danger" onclick={() => win.cancelDownload()}
-              >Cancel and delete the partial file</button
+            <Button {@attach focusNow} onclick={() => (asking = null)}>Keep downloading</Button>
+            <Button variant="danger" onclick={() => win.cancelDownload()}
+              >Cancel and delete the partial file</Button
             >
           </div>
         </div>
@@ -202,16 +201,13 @@
             )}.
           </p>
           <div class="ask-actions">
-            <button type="button" class="btn" {@attach focusNow} onclick={() => (asking = null)}
-              >Do not open</button
-            >
-            <button
-              type="button"
-              class="btn danger"
+            <Button {@attach focusNow} onclick={() => (asking = null)}>Do not open</Button>
+            <Button
+              variant="danger"
               onclick={async () => {
                 asking = null;
                 await win.openFile(true);
-              }}>Open it</button
+              }}>Open it</Button
             >
           </div>
         </div>
@@ -241,8 +237,8 @@
           </label>
           {#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
           <div class="ask-actions">
-            <button type="button" class="btn" onclick={() => (asking = null)}>Cancel</button>
-            <button type="submit" class="btn primary">Use this link</button>
+            <Button onclick={() => (asking = null)}>Cancel</Button>
+            <Button variant="primary" type="submit">Use this link</Button>
           </div>
         </form>
       {/if}
@@ -254,24 +250,19 @@
 
     {#snippet footer()}
       {#if finished}
-        <button type="button" class="btn" onclick={() => win.close()}>Close</button>
-        <button type="button" class="btn" onclick={() => win.openFolder()}>Show in folder</button>
-        <button type="button" class="btn primary" onclick={open}>Open</button>
+        <Button onclick={() => win.close()}>Close</Button>
+        <Button onclick={() => win.openFolder()}>Show in folder</Button>
+        <Button variant="primary" onclick={open}>Open</Button>
       {:else}
-        <button type="button" class="btn" onclick={() => win.close()}>Hide</button>
-        <button
-          type="button"
-          class="btn"
-          disabled={asking === 'cancel'}
-          onclick={() => (asking = 'cancel')}>Cancel</button
-        >
+        <Button onclick={() => win.close()}>Hide</Button>
+        <Button disabled={asking === 'cancel'} onclick={() => (asking = 'cancel')}>Cancel</Button>
         {#if running}
-          <button type="button" class="btn primary" onclick={() => win.pause()}>Pause</button>
+          <Button variant="primary" onclick={() => win.pause()}>Pause</Button>
         {:else if row.status === 'failed' && !row.error}
-          <button type="button" class="btn primary" onclick={() => win.retry()}>Try again</button>
+          <Button variant="primary" onclick={() => win.retry()}>Try again</Button>
         {:else if row.status !== 'failed'}
-          <button type="button" class="btn primary" onclick={() => win.resume()}
-            >{row.status === 'cancelled' ? 'Start over' : 'Resume'}</button
+          <Button variant="primary" onclick={() => win.resume()}
+            >{row.status === 'cancelled' ? 'Start over' : 'Resume'}</Button
           >
         {/if}
       {/if}

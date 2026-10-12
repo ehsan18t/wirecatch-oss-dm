@@ -15,7 +15,10 @@
   import { formatRate, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import { sameView, STATUS_GROUP_LABEL, STATUS_GROUPS, type View } from '$lib/state/view';
+  import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
+  import Icon from './Icon.svelte';
+  import IconButton from './IconButton.svelte';
 
   const app = getApp();
 
@@ -91,11 +94,12 @@
   {#if app.waitingCount > 0}
     <!-- Each waiting download has its own window (D23); this brings them all back. -->
     <button
+      type="button"
       class="pending"
       title="Show the windows of the downloads that wait for your answer"
       onclick={() => app.showQuestionWindows()}
     >
-      <Bell size={14} aria-hidden="true" />
+      <Icon icon={Bell} size="sm" />
       <span class="waiting-label">Waiting for you</span>
       <span
         class="count num"
@@ -105,8 +109,8 @@
     </button>
   {/if}
 
-  <button class="palette" onclick={() => (app.paletteOpen = true)}>
-    <Command size={14} aria-hidden="true" />
+  <button type="button" class="palette" onclick={() => (app.paletteOpen = true)}>
+    <Icon icon={Command} size="sm" />
     <span>Find any action</span>
     <kbd>Ctrl K</kbd>
   </button>
@@ -117,6 +121,7 @@
       <ul>
         <li>
           <button
+            type="button"
             class="item"
             aria-current={current({ kind: 'all' }) ? 'page' : undefined}
             onclick={() => app.show({ kind: 'all' })}
@@ -130,6 +135,7 @@
           {#if group !== 'cancelled' || n > 0 || current({ kind: 'status', group })}
             <li>
               <button
+                type="button"
                 class="item"
                 class:alert={group === 'failed' && n > 0}
                 aria-current={current({ kind: 'status', group }) ? 'page' : undefined}
@@ -148,9 +154,14 @@
     <section aria-labelledby="h-queues">
       <div class="section-head">
         <h2 id="h-queues">Queues</h2>
-        <button class="btn ghost small" onclick={() => app.openDialog({ kind: 'queue', id: null })}>
-          <Plus size={14} aria-hidden="true" /> New queue
-        </button>
+        <Button
+          variant="ghost"
+          small
+          icon={Plus}
+          onclick={() => app.openDialog({ kind: 'queue', id: null })}
+        >
+          New queue
+        </Button>
       </div>
       <ul class="queues">
         {#each app.queues as q (q.id)}
@@ -166,6 +177,7 @@
             ondrop={(e) => ondrop(e, q)}
           >
             <button
+              type="button"
               class="queue-main"
               aria-current={current({ kind: 'queue', id: q.id }) ? 'page' : undefined}
               onclick={() => app.show({ kind: 'queue', id: q.id })}
@@ -179,43 +191,38 @@
                 {/if}
               </span>
               <span class="qstate num">
-                {#if q.paused}<Pause size={11} aria-hidden="true" />{/if}
+                {#if q.paused}<Icon icon={Pause} size="xs" />{/if}
                 {status}{status === 'Idle' ? `, up to ${q.max_concurrent} at once` : ''}
               </span>
               <span class="qmeta">
                 <span
-                  ><Clock size={12} aria-hidden="true" />
+                  ><Icon icon={Clock} size="xs" />
                   {q.schedule ? formatSchedule(q.schedule) : 'Any time'}</span
                 >
                 <span
-                  ><Gauge size={12} aria-hidden="true" />
+                  ><Icon icon={Gauge} size="xs" />
                   {q.speed_limit === null ? 'No limit' : formatRate(q.speed_limit)}</span
                 >
               </span>
             </button>
-            <button
-              class="icon-btn edit"
-              aria-label="Edit {q.name}: name, schedule and limits"
+            <IconButton
+              class="edit"
+              icon={Pencil}
+              label="Edit {q.name}: name, schedule and limits"
               title="Edit name, schedule and limits"
               onclick={() => app.openDialog({ kind: 'queue', id: q.id })}
-            >
-              <Pencil size={14} aria-hidden="true" />
-            </button>
-            <button
-              class="icon-btn toggle"
-              aria-label={q.paused ? `Resume the ${q.name} queue` : `Pause the ${q.name} queue`}
+            />
+            <IconButton
+              class="toggle"
+              icon={q.paused ? Play : Pause}
+              label={q.paused ? `Resume the ${q.name} queue` : `Pause the ${q.name} queue`}
               title={q.paused ? 'Resume this queue' : 'Pause this queue'}
               onclick={() => app.setQueuePaused(q.id, !q.paused)}
-            >
-              {#if q.paused}<Play size={14} aria-hidden="true" />{:else}<Pause
-                  size={14}
-                  aria-hidden="true"
-                />{/if}
-            </button>
+            />
             {#if app.isOutsideSchedule(q) && !q.paused}
-              <button class="btn small start-now" onclick={() => app.startQueueNow(q.id)}>
-                <Play size={12} aria-hidden="true" /> Start now
-              </button>
+              <Button small class="start-now" icon={Play} onclick={() => app.startQueueNow(q.id)}>
+                Start now
+              </Button>
             {/if}
           </li>
         {/each}
@@ -229,12 +236,13 @@
           {@const n = app.counts.category[category]}
           <li>
             <button
+              type="button"
               class="item"
               class:empty={n === 0}
               aria-current={current({ kind: 'category', category }) ? 'page' : undefined}
               onclick={() => app.show({ kind: 'category', category })}
             >
-              <CategoryIcon {category} size={14} />
+              <CategoryIcon {category} size="sm" />
               <span class="label">{CATEGORY_LABEL[category]}</span>
               {#if n > 0}<span class="count num">{n}</span>{/if}
             </button>
@@ -246,16 +254,17 @@
 
   <footer class="foot">
     <button
+      type="button"
       class="item"
       aria-current={app.screen === 'settings' ? 'page' : undefined}
       onclick={() => app.openSettings()}
     >
-      <SettingsIcon size={15} aria-hidden="true" />
+      <Icon icon={SettingsIcon} size="md" />
       <span class="label">Settings</span>
       <kbd>Ctrl ,</kbd>
     </button>
-    <button class="item" onclick={() => app.openDialog({ kind: 'shortcuts' })}>
-      <Keyboard size={15} aria-hidden="true" />
+    <button type="button" class="item" onclick={() => app.openDialog({ kind: 'shortcuts' })}>
+      <Icon icon={Keyboard} size="md" />
       <span class="label">Keyboard shortcuts</span>
       <kbd>F1</kbd>
     </button>
@@ -521,18 +530,18 @@
     gap: 4px;
   }
 
-  .edit,
-  .toggle {
+  .queue > :global(.edit),
+  .queue > :global(.toggle) {
     position: absolute;
     right: 4px;
     color: var(--ink-2);
   }
 
-  .edit {
+  .queue > :global(.edit) {
     top: 5px;
   }
 
-  .toggle {
+  .queue > :global(.toggle) {
     top: 33px;
   }
 
@@ -545,7 +554,7 @@
     vertical-align: -1px;
   }
 
-  .start-now {
+  .queue > :global(.start-now) {
     margin: 0 0 6px 10px;
   }
 

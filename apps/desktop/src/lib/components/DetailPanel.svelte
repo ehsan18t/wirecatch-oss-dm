@@ -25,8 +25,10 @@
   } from '$lib/format';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
   import ErrorFix from './ErrorFix.svelte';
+  import IconButton from './IconButton.svelte';
 
   /** `docked` takes a column; `overlay` floats over the list in narrower windows. */
   let { mode = 'docked' }: { mode?: 'docked' | 'overlay' } = $props();
@@ -71,19 +73,19 @@
 
 <aside class="detail {mode}" aria-label="Selected download">
   {#if mode === 'overlay'}
-    <button
-      class="icon-btn close"
-      aria-label="Close details and clear the selection"
+    <IconButton
+      class="close"
+      icon={X}
+      size="md"
+      label="Close details and clear the selection"
       title="Close"
       onclick={() => app.clearSelection()}
-    >
-      <X size={16} aria-hidden="true" />
-    </button>
+    />
   {/if}
   {#if one}
     {@const fraction = processingFraction(one) ?? progressFraction(one.done, one.total)}
     <header>
-      <span class="cat"><CategoryIcon category={one.category} size={18} /></span>
+      <span class="cat"><CategoryIcon category={one.category} size="lg" /></span>
       <h2>{one.file_name}</h2>
       <p class="status {one.status}">
         {one.status === 'processing' ? statusShort(one) : STATUS_LABEL[one.status]}
@@ -140,35 +142,27 @@
 
     <div class="actions">
       {#if isRunning(one)}
-        <button class="btn" onclick={() => app.pause([one.id])}
-          ><Pause size={14} aria-hidden="true" /> Pause</button
-        >
+        <Button icon={Pause} onclick={() => app.pause([one.id])}>Pause</Button>
       {:else if one.status === 'paused'}
-        <button class="btn primary" onclick={() => app.resume([one.id])}
-          ><Play size={14} aria-hidden="true" /> Resume</button
-        >
+        <Button variant="primary" icon={Play} onclick={() => app.resume([one.id])}>Resume</Button>
       {:else if one.status === 'cancelled'}
-        <button class="btn primary" onclick={() => app.retry([one.id])}
-          ><RotateCw size={14} aria-hidden="true" /> Start over</button
+        <Button variant="primary" icon={RotateCw} onclick={() => app.retry([one.id])}>
+          Start over</Button
         >
       {:else if one.status === 'failed' && !one.error}
         <!-- With an error, the error box above already offers Try again. -->
-        <button class="btn" onclick={() => app.retry([one.id])}
-          ><RotateCw size={14} aria-hidden="true" /> Try again</button
-        >
+        <Button icon={RotateCw} onclick={() => app.retry([one.id])}>Try again</Button>
       {/if}
       {#if one.status === 'completed'}
-        <button class="btn primary" onclick={() => app.openFile(one.id)}>Open</button>
+        <Button variant="primary" onclick={() => app.openFile(one.id)}>Open</Button>
       {/if}
-      <button class="btn" onclick={() => app.openFolder(one.id)}
-        ><FolderOpen size={14} aria-hidden="true" /> Show in folder</button
+      <Button icon={FolderOpen} onclick={() => app.openFolder(one.id)}>Show in folder</Button>
+      <Button icon={AppWindow} onclick={() => app.showProgressWindow(one.id)}>
+        Show progress window</Button
       >
-      <button class="btn" onclick={() => app.showProgressWindow(one.id)}
-        ><AppWindow size={14} aria-hidden="true" /> Show progress window</button
-      >
-      <button class="btn" onclick={() => app.openDialog({ kind: 'remove', ids: [one.id] })}>
-        <Trash size={14} aria-hidden="true" /> Remove
-      </button>
+      <Button icon={Trash} onclick={() => app.openDialog({ kind: 'remove', ids: [one.id] })}>
+        Remove
+      </Button>
     </div>
 
     <dl>
@@ -197,7 +191,7 @@
         <dd class="path">
           <span>{folderOf(one.path)}</span>
           {#if one.status !== 'completed'}
-            <button class="btn small" onclick={() => app.chooseFolderFor(one.id)}>Change</button>
+            <Button small onclick={() => app.chooseFolderFor(one.id)}>Change</Button>
           {/if}
         </dd>
       </div>
@@ -205,24 +199,20 @@
         <dt>Link</dt>
         <dd class="path">
           <span class="url">{linkForDisplay(one.url)}</span>
-          <button
-            class="icon-btn"
-            aria-label="Copy link"
+          <IconButton
+            icon={Copy}
+            label="Copy link"
             title="Copy link"
             onclick={() => copyLink(linkForDisplay(one.url))}
-          >
-            <Copy size={14} aria-hidden="true" />
-          </button>
+          />
         </dd>
       </div>
       {#if !['completed', 'failed', 'cancelled', 'processing'].includes(one.status)}
         <div>
           <dt>Link expired?</dt>
           <dd>
-            <button
-              class="btn small"
-              onclick={() => app.openDialog({ kind: 'refresh', id: one.id })}
-              >Give it a fresh link</button
+            <Button small onclick={() => app.openDialog({ kind: 'refresh', id: one.id })}
+              >Give it a fresh link</Button
             >
           </dd>
         </div>
@@ -239,12 +229,14 @@
       {/if}
     </dl>
     {#if one.status !== 'completed' && one.status !== 'cancelled'}
-      <button
-        class="btn ghost small cancel"
+      <Button
+        variant="ghost"
+        small
+        class="cancel"
         onclick={() => app.openDialog({ kind: 'cancel', ids: [one.id] })}
       >
         Cancel and discard the partial file
-      </button>
+      </Button>
     {/if}
   {:else if rows.length > 1}
     <header>
@@ -253,23 +245,17 @@
     </header>
     <div class="actions">
       {#if anyRunning}
-        <button class="btn" onclick={() => app.pause()}
-          ><Pause size={14} aria-hidden="true" /> Pause</button
-        >
+        <Button icon={Pause} onclick={() => app.pause()}>Pause</Button>
       {/if}
       {#if anyStopped}
-        <button class="btn" onclick={() => app.resume()}
-          ><Play size={14} aria-hidden="true" /> Resume</button
-        >
+        <Button icon={Play} onclick={() => app.resume()}>Resume</Button>
       {/if}
       {#if anyFailed}
-        <button class="btn" onclick={() => app.retry()}
-          ><RotateCw size={14} aria-hidden="true" /> Try again</button
-        >
+        <Button icon={RotateCw} onclick={() => app.retry()}>Try again</Button>
       {/if}
-      <button class="btn" onclick={() => app.openDialog({ kind: 'remove', ids: app.selectedIds })}>
-        <Trash size={14} aria-hidden="true" /> Remove
-      </button>
+      <Button icon={Trash} onclick={() => app.openDialog({ kind: 'remove', ids: app.selectedIds })}>
+        Remove
+      </Button>
     </div>
     <dl>
       <div>
@@ -305,7 +291,7 @@
     box-shadow: var(--shadow);
   }
 
-  .close {
+  .detail > :global(.close) {
     position: absolute;
     top: 10px;
     right: 10px;
@@ -476,7 +462,7 @@
     color: var(--ink-2);
   }
 
-  .cancel {
+  .detail > :global(.cancel) {
     align-self: flex-start;
     margin-left: -9px;
     color: var(--ink-2);

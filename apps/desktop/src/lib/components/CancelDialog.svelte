@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DownloadId } from '@wirecatch/protocol';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { ids }: { ids: DownloadId[] } = $props();
@@ -26,8 +27,8 @@
   </p>
 
   {#snippet footer()}
-    <button class="btn" data-autofocus onclick={() => app.closeDialog()}>Keep downloading</button>
-    <button class="btn danger" onclick={cancel}>Cancel and delete the partial file</button>
+    <Button data-autofocus onclick={() => app.closeDialog()}>Keep downloading</Button>
+    <Button variant="danger" onclick={cancel}>Cancel and delete the partial file</Button>
   {/snippet}
 </Dialog>
 

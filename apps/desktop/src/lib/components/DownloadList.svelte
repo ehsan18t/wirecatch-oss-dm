@@ -5,6 +5,7 @@
   import { getApp } from '$lib/state/app.svelte';
   import { HINT_TEXT, type HintId } from '$lib/state/hints.svelte';
   import { track } from '$lib/state/reactivity';
+  import Button from './Button.svelte';
   import ContextMenu from './ContextMenu.svelte';
   import DownloadRow from './DownloadRow.svelte';
   import EmptyState from './EmptyState.svelte';
@@ -201,7 +202,7 @@
   {#if hint}
     <div class="hint" role="note">
       <p>{HINT_TEXT[hint]}</p>
-      <button class="btn small" onclick={() => app.hints.dismiss(hint)}>Got it</button>
+      <Button small onclick={() => app.hints.dismiss(hint)}>Got it</Button>
     </div>
   {/if}
 

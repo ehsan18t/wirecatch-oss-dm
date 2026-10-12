@@ -4,6 +4,7 @@
   import { hostOf } from '$lib/format';
   import { isolate } from '$lib/text';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { id }: { id: DownloadId } = $props();
@@ -34,8 +35,8 @@
   </p>
 
   {#snippet footer()}
-    <button class="btn" onclick={() => app.openProgram(id)}>Open</button>
-    <button class="btn primary" data-autofocus onclick={showInFolder}>Show in folder</button>
+    <Button onclick={() => app.openProgram(id)}>Open</Button>
+    <Button variant="primary" data-autofocus onclick={showInFolder}>Show in folder</Button>
   {/snippet}
 </Dialog>
 

@@ -3,6 +3,7 @@
   import { CATEGORY_LABEL } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { STATUS_GROUP_LABEL } from '$lib/state/view';
+  import Button from './Button.svelte';
 
   const app = getApp();
 
@@ -27,22 +28,24 @@
         your browser show up here too once the Wirecatch extension is installed.
       </p>
       <div class="actions">
-        <button class="btn primary" onclick={() => app.openDialog({ kind: 'add', urls: [] })}>
-          <Plus size={15} aria-hidden="true" /> Add download
-        </button>
-        <button class="btn" onclick={() => (app.paletteOpen = true)}
-          >See everything Wirecatch can do</button
+        <Button
+          variant="primary"
+          icon={Plus}
+          onclick={() => app.openDialog({ kind: 'add', urls: [] })}
         >
+          Add download
+        </Button>
+        <Button onclick={() => (app.paletteOpen = true)}>See everything Wirecatch can do</Button>
       </div>
     </div>
   {:else if searching}
     <h2>Nothing matches "{app.search.trim()}"</h2>
     <p>The search looks at file names and links in this view.</p>
     <div class="actions">
-      <button class="btn" onclick={() => (app.search = '')}>Clear search</button>
+      <Button onclick={() => (app.search = '')}>Clear search</Button>
       {#if app.view.kind !== 'all'}
-        <button class="btn ghost" onclick={() => app.show({ kind: 'all' })}
-          >Search all downloads</button
+        <Button variant="ghost" onclick={() => app.show({ kind: 'all' })}
+          >Search all downloads</Button
         >
       {/if}
     </div>
@@ -53,12 +56,13 @@
       {otherQueue} or any other list.
     </p>
     <div class="actions">
-      <button
-        class="btn primary"
+      <Button
+        variant="primary"
+        icon={Plus}
         onclick={() => app.openDialog({ kind: 'add', urls: [], queue: queue.id })}
       >
-        <Plus size={15} aria-hidden="true" /> Add to {queue.name}
-      </button>
+        Add to {queue.name}
+      </Button>
     </div>
   {:else}
     {@const v = app.view}
@@ -75,7 +79,7 @@
     </h2>
     <p>Downloads appear here as soon as they match this view.</p>
     <div class="actions">
-      <button class="btn" onclick={() => app.show({ kind: 'all' })}>Show all downloads</button>
+      <Button onclick={() => app.show({ kind: 'all' })}>Show all downloads</Button>
     </div>
   {/if}
 </div>

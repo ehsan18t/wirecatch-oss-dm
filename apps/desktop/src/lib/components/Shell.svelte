@@ -3,6 +3,7 @@
   import { focusSearch } from '$lib/commands';
   import { isDownloadDrag } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import DetailPanel from './DetailPanel.svelte';
   import Dialogs from './Dialogs.svelte';
@@ -136,7 +137,7 @@
         <div class="load-error" role="alert">
           <p class="title">Wirecatch cannot reach its download engine.</p>
           <p>{app.loadError}</p>
-          <button class="btn primary" onclick={() => app.init()}>Try again</button>
+          <Button variant="primary" onclick={() => app.init()}>Try again</Button>
         </div>
       {:else}
         <div class="body">

@@ -1,6 +1,7 @@
 <script lang="ts">
   // One download's window (D23): its question, then its progress. Escape closes the window,
   // which never answers the question: it stays open in the core and the main window counts it.
+  import Button from '$lib/components/Button.svelte';
   import type { DownloadWindowState } from './download-window.svelte';
   import AddonView from './AddonView.svelte';
   import FileQuestion from './FileQuestion.svelte';
@@ -28,9 +29,7 @@
     <WindowFrame title="Nothing to do here">
       <p class="gone" role="status">{win.goneReason}</p>
       {#snippet footer()}
-        <button type="button" class="btn primary" data-autofocus onclick={() => win.close()}
-          >Close</button
-        >
+        <Button variant="primary" data-autofocus onclick={() => win.close()}>Close</Button>
       {/snippet}
     </WindowFrame>
   {:else if win.phase === 'progress' && win.row}

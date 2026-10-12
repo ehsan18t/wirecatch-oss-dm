@@ -2,6 +2,7 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import { extractUrls, hostOf } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   let { id }: { id: DownloadId } = $props();
@@ -57,8 +58,8 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </form>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={() => app.closeDialog()}>Cancel</button>
-    <button type="submit" form="refresh-form" class="btn primary">Use this link</button>
+    <Button onclick={() => app.closeDialog()}>Cancel</Button>
+    <Button variant="primary" type="submit" form="refresh-form">Use this link</Button>
   {/snippet}
 </Dialog>
 

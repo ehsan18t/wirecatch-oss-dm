@@ -8,6 +8,8 @@
   import { CATEGORY_LABEL } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import { SORT_LABEL, STATUS_GROUP_LABEL, type SortKey } from '$lib/state/view';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
 
   const app = getApp();
 
@@ -47,71 +49,81 @@
     </div>
 
     <div class="tools">
-      <button
-        class="btn"
+      <Button
+        icon={Pause}
         onclick={() => app.pauseAll()}
         disabled={!canPauseAll}
         title={canPauseAll ? 'Pause every download' : 'Nothing is running or waiting'}
-      >
-        <Pause size={14} aria-hidden="true" /><span class="label">Pause all</span>
-      </button>
-      <button
-        class="btn"
+        ><span class="label">Pause all</span>
+      </Button>
+      <Button
+        icon={Play}
         onclick={() => app.resumeAll()}
         disabled={!canResumeAll}
         title={canResumeAll ? 'Resume every paused download' : 'Nothing is paused'}
-      >
-        <Play size={14} aria-hidden="true" /><span class="label">Resume all</span>
-      </button>
+        ><span class="label">Resume all</span>
+      </Button>
       {#if app.wide}
-        <button
-          class="btn"
+        <Button
+          icon={PanelRight}
           aria-pressed={app.detailsOpen}
           title={app.detailsOpen ? 'Hide the details panel' : 'Show the details panel'}
           onclick={() => (app.detailsOpen = !app.detailsOpen)}
-        >
-          <PanelRight size={14} aria-hidden="true" /><span class="label">Details</span>
-        </button>
+          ><span class="label">Details</span>
+        </Button>
       {/if}
-      <button
-        class="btn primary"
+      <Button
+        variant="primary"
+        icon={Plus}
         aria-keyshortcuts="Control+N"
         onclick={() => app.openDialog({ kind: 'add', urls: [] })}
       >
-        <Plus size={15} aria-hidden="true" /> Add download
-      </button>
+        Add download
+      </Button>
     </div>
   </div>
 
   <div class="row">
     {#if queue}
       <div class="queue-actions" role="group" aria-label="This queue">
-        <button
-          class="btn ghost small"
+        <Button
+          variant="ghost"
+          small
+          icon={Pencil}
           onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}
         >
-          <Pencil size={13} aria-hidden="true" /> Edit queue
-        </button>
+          Edit queue
+        </Button>
         {#if queue.paused}
-          <button class="btn ghost small" onclick={() => app.setQueuePaused(queue.id, false)}>
-            <Play size={13} aria-hidden="true" /> Resume queue
-          </button>
+          <Button
+            variant="ghost"
+            small
+            icon={Play}
+            onclick={() => app.setQueuePaused(queue.id, false)}
+          >
+            Resume queue
+          </Button>
         {:else}
-          <button class="btn ghost small" onclick={() => app.setQueuePaused(queue.id, true)}>
-            <Pause size={13} aria-hidden="true" /> Pause queue
-          </button>
+          <Button
+            variant="ghost"
+            small
+            icon={Pause}
+            onclick={() => app.setQueuePaused(queue.id, true)}
+          >
+            Pause queue
+          </Button>
         {/if}
         {#if app.isOutsideSchedule(queue)}
-          <button class="btn ghost small" onclick={() => app.startQueueNow(queue.id)}>
-            <Play size={13} aria-hidden="true" /> Start now
-          </button>
+          <Button variant="ghost" small icon={Play} onclick={() => app.startQueueNow(queue.id)}>
+            Start now
+          </Button>
         {/if}
       </div>
     {/if}
 
     <div class="filters">
       <div class="search">
-        <Search size={14} aria-hidden="true" />
+        <Icon icon={Search} size="sm" />
         <input
           id="list-search"
           class="field"
@@ -250,7 +262,7 @@
       white-space: nowrap;
     }
 
-    .btn:has(.label) {
+    .tools :global(.btn):has(.label) {
       padding: 0 8px;
     }
   }

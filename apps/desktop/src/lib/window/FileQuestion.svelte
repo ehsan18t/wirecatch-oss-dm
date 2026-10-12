@@ -2,6 +2,7 @@
   // A browser file waiting for an answer: its name (editable), size, folder, queue and site,
   // then Download now, Download later or Cancel. Enter is Download now.
   import type { PendingCapture, QueueId } from '@wirecatch/protocol';
+  import Button from '$lib/components/Button.svelte';
   import CategoryIcon from '$lib/components/CategoryIcon.svelte';
   import { earlierNote, hostOf, linkForDisplay } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
@@ -42,7 +43,7 @@
     }}
   >
     <div class="file">
-      <span class="icon"><CategoryIcon category={capture.category} size={20} /></span>
+      <span class="icon"><CategoryIcon category={capture.category} size="lg" /></span>
       <p class="facts">
         <span class="num"
           >{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span
@@ -65,12 +66,11 @@
         <span class="label">Save to</span>
         <p class="folder" id="{uid}-folder">{folder}</p>
       </div>
-      <button
-        type="button"
-        class="btn small"
+      <Button
+        small
         aria-label="Change the folder"
         aria-describedby="{uid}-folder"
-        onclick={changeFolder}>Change</button
+        onclick={changeFolder}>Change</Button
       >
     </div>
 
@@ -91,12 +91,10 @@
   </form>
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={() => win.discard()}>Cancel</button>
-    <button type="button" class="btn" disabled={win.busy} onclick={() => answer(true)}
-      >Download later</button
-    >
-    <button type="submit" form="{uid}-form" class="btn primary" data-autofocus disabled={win.busy}
-      >Download now</button
+    <Button onclick={() => win.discard()}>Cancel</Button>
+    <Button disabled={win.busy} onclick={() => answer(true)}>Download later</Button>
+    <Button variant="primary" type="submit" form="{uid}-form" data-autofocus disabled={win.busy}
+      >Download now</Button
     >
   {/snippet}
 </WindowFrame>

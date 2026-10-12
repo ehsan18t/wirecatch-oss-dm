@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { buildCommands, searchCommands, type Command, type CommandGroup } from '$lib/commands';
   import { getApp } from '$lib/state/app.svelte';
+  import Icon from './Icon.svelte';
 
   const app = getApp();
 
@@ -94,7 +95,7 @@
   }}
 >
   <div class="search">
-    <Search size={16} aria-hidden="true" />
+    <Icon icon={Search} size="md" />
     <input
       bind:this={input}
       bind:value={query}

@@ -4,6 +4,7 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
   import type { Backend } from '$lib/backend';
+  import IconButton from '$lib/components/IconButton.svelte';
   import DownloadWindow from './DownloadWindow.svelte';
   import { DownloadWindowState } from './download-window.svelte';
   import { CASCADE_STEP, type OpenWindow } from './registry';
@@ -56,9 +57,7 @@
 >
   <div class="bar">
     <span id="{uid}-bar">Wirecatch download window {open.slot + 1}</span>
-    <button class="icon-btn" aria-label="Close this window" onclick={() => win.close()}>
-      <X size={14} aria-hidden="true" />
-    </button>
+    <IconButton icon={X} label="Close this window" onclick={() => win.close()} />
   </div>
   <div class="content">
     <DownloadWindow {win} />

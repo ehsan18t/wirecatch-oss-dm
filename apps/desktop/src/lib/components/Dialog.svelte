@@ -2,6 +2,7 @@
   import X from '@lucide/svelte/icons/x';
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
+  import IconButton from './IconButton.svelte';
 
   let {
     title,
@@ -95,9 +96,7 @@
   <div class="panel">
     <header>
       <h2 id="{uid}-title">{title}</h2>
-      <button class="icon-btn" aria-label="Close" onclick={onclose}
-        ><X size={16} aria-hidden="true" /></button
-      >
+      <IconButton icon={X} size="md" label="Close" onclick={onclose} />
     </header>
     {#if description}
       <p id="{uid}-desc" class="description">{description}</p>

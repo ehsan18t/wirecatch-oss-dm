@@ -4,6 +4,8 @@
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
   import { FIX_LABEL } from '$lib/format';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
 
   let {
     row,
@@ -19,16 +21,16 @@
 {#if row.error}
   <div class="error" role="alert">
     <p class="message">
-      <CircleAlert size={16} aria-hidden="true" />
+      <Icon icon={CircleAlert} size="md" />
       <span>{row.error.message}</span>
     </p>
     <div class="actions">
       {#if row.error.fix}
         {@const fix = row.error.fix}
-        <button class="btn primary" onclick={() => onfix(fix)}>{FIX_LABEL[fix]}</button>
+        <Button variant="primary" onclick={() => onfix(fix)}>{FIX_LABEL[fix]}</Button>
       {/if}
       {#if row.error.fix !== 'retry'}
-        <button class="btn" onclick={() => onretry()}>Try again</button>
+        <Button onclick={() => onretry()}>Try again</Button>
       {/if}
     </div>
   </div>

@@ -25,6 +25,8 @@
   import { getApp } from '$lib/state/app.svelte';
   import { MEDIA_ADDON } from '$lib/addons';
   import AddonCard from './AddonCard.svelte';
+  import Button from './Button.svelte';
+  import Icon from './Icon.svelte';
   import ListEditor from './ListEditor.svelte';
   import Toggle from './Toggle.svelte';
 
@@ -105,15 +107,21 @@
 
 <div class="settings">
   <header>
-    <button class="btn ghost small back" onclick={() => (app.screen = 'downloads')}>
-      <ArrowLeft size={14} aria-hidden="true" /> Back to downloads
-    </button>
+    <Button
+      variant="ghost"
+      small
+      class="back"
+      icon={ArrowLeft}
+      onclick={() => (app.screen = 'downloads')}
+    >
+      Back to downloads
+    </Button>
     <h1>Settings</h1>
     <p class="lede">
       Changes save as you make them. Browser settings are shared with the extension.
     </p>
     <div class="search">
-      <Search size={14} aria-hidden="true" />
+      <Icon icon={Search} size="sm" />
       <input
         id="settings-search"
         class="field"
@@ -143,7 +151,7 @@
       {:else}
         <div class="none">
           <p>No setting matches "{query}".</p>
-          <button class="btn" onclick={() => (query = '')}>Clear search</button>
+          <Button onclick={() => (query = '')}>Clear search</Button>
         </div>
       {/each}
     {/if}
@@ -220,7 +228,7 @@
           {:else if app.addonsError}
             <p class="addon-note">
               {app.addonsError}
-              <button class="btn small" onclick={() => app.loadAddons()}>Check again</button>
+              <Button small onclick={() => app.loadAddons()}>Check again</Button>
             </p>
           {:else}
             <p class="addon-note">Checking.</p>
@@ -234,9 +242,7 @@
           />
         {:else if def.id === 'default_folder'}
           <span class="path">{displayPath(s.default_folder)}</span>
-          <button class="btn small" aria-describedby={help} onclick={pickDefaultFolder}
-            >Change</button
-          >
+          <Button small aria-describedby={help} onclick={pickDefaultFolder}>Change</Button>
         {:else if def.id === 'categories'}
           <table class="rules">
             <caption class="visually-hidden">Folders by file type</caption>
@@ -277,10 +283,10 @@
                   </td>
                   <td class="folder-cell">
                     <span class="path">{rule ? displayPath(rule.folder) : 'Download folder'}</span>
-                    <button
-                      class="btn small"
+                    <Button
+                      small
                       aria-label="Change folder for {CATEGORY_LABEL[category].toLowerCase()}"
-                      onclick={() => pickCategoryFolder(category)}>Change</button
+                      onclick={() => pickCategoryFolder(category)}>Change</Button
                     >
                   </td>
                 </tr>
@@ -490,16 +496,12 @@
             <span class="unit">MB/s</span>
           {/if}
         {:else if def.id === 'export'}
-          <button
-            class="btn"
-            aria-describedby={help}
-            onclick={() => app.openDialog({ kind: 'export' })}>Export settings</button
+          <Button aria-describedby={help} onclick={() => app.openDialog({ kind: 'export' })}
+            >Export settings</Button
           >
         {:else if def.id === 'import'}
-          <button
-            class="btn"
-            aria-describedby={help}
-            onclick={() => app.openDialog({ kind: 'import' })}>Import settings</button
+          <Button aria-describedby={help} onclick={() => app.openDialog({ kind: 'import' })}
+            >Import settings</Button
           >
         {:else if def.id === 'connections_per_download'}
           <input
@@ -548,7 +550,7 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .back {
+  header > :global(.back) {
     margin-left: -9px;
     color: var(--ink-2);
   }

@@ -12,6 +12,7 @@
     type QueueId,
   } from '@wirecatch/protocol';
   import { isInstalled } from '$lib/addons';
+  import Button from '$lib/components/Button.svelte';
   import { earlierNote, hostOf } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
   import {
@@ -262,12 +263,11 @@
         <span class="label">Save to</span>
         <p class="folder" id="{uid}-folder">{folder}</p>
       </div>
-      <button
-        type="button"
-        class="btn small"
+      <Button
+        small
         aria-label="Change the folder"
         aria-describedby="{uid}-folder"
-        onclick={changeFolder}>Change</button
+        onclick={changeFolder}>Change</Button
       >
     </div>
 
@@ -290,17 +290,15 @@
   </form>
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={() => win.discard()}>Cancel</button>
-    <button type="button" class="btn" disabled={win.busy || !picked} onclick={() => answer(true)}
-      >Download later</button
-    >
-    <button
+    <Button onclick={() => win.discard()}>Cancel</Button>
+    <Button disabled={win.busy || !picked} onclick={() => answer(true)}>Download later</Button>
+    <Button
+      variant="primary"
       type="submit"
       form="{uid}-form"
-      class="btn primary"
       data-autofocus
       disabled={win.busy || !picked}
-      >{needsInstall ? 'Install add-on and download' : 'Download now'}</button
+      >{needsInstall ? 'Install add-on and download' : 'Download now'}</Button
     >
   {/snippet}
 </WindowFrame>

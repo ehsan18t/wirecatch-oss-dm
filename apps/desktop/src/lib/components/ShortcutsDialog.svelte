@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SHORTCUTS } from '$lib/commands';
   import { getApp } from '$lib/state/app.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
   const app = getApp();
@@ -26,7 +27,7 @@
     </tbody>
   </table>
   {#snippet footer()}
-    <button class="btn primary" data-autofocus onclick={() => app.closeDialog()}>Done</button>
+    <Button variant="primary" data-autofocus onclick={() => app.closeDialog()}>Done</Button>
   {/snippet}
 </Dialog>
 

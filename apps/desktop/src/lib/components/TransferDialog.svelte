@@ -3,7 +3,9 @@
   import X from '@lucide/svelte/icons/x';
   import { getApp } from '$lib/state/app.svelte';
   import AddonCard from './AddonCard.svelte';
+  import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
+  import Icon from './Icon.svelte';
 
   let { mode }: { mode: 'export' | 'import' } = $props();
   const app = getApp();
@@ -85,7 +87,7 @@
 >
   {#if done}
     <p class="done" role="status">
-      <Check size={16} aria-hidden="true" />
+      <Icon icon={Check} size="md" />
       <span>
         {mode === 'export' ? 'Settings saved to' : 'Settings loaded from'}
         <strong>{done}</strong>
@@ -157,7 +159,7 @@
         <h3>{mode === 'export' ? 'Saved in the file' : 'Replaced from the file'}</h3>
         <ul>
           {#each included as item (item)}
-            <li><Check size={14} aria-hidden="true" /> {item}</li>
+            <li><Icon icon={Check} size="sm" /> {item}</li>
           {/each}
         </ul>
       </div>
@@ -165,7 +167,7 @@
         <h3>Not included</h3>
         <ul>
           {#each excluded as item (item)}
-            <li class="no"><X size={14} aria-hidden="true" /> {item}</li>
+            <li class="no"><Icon icon={X} size="sm" /> {item}</li>
           {/each}
         </ul>
       </div>
@@ -174,19 +176,19 @@
 
   {#snippet footer()}
     {#if done}
-      <button class="btn primary" bind:this={doneButton} onclick={() => app.closeDialog()}
-        >Done</button
+      <Button variant="primary" bind:element={doneButton} onclick={() => app.closeDialog()}
+        >Done</Button
       >
     {:else if preview}
-      <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
-      <button class="btn primary" bind:this={importButton} disabled={busy} onclick={run}
-        >Import</button
+      <Button onclick={() => app.closeDialog()}>Cancel</Button>
+      <Button variant="primary" bind:element={importButton} disabled={busy} onclick={run}
+        >Import</Button
       >
     {:else}
-      <button class="btn" onclick={() => app.closeDialog()}>Cancel</button>
-      <button class="btn primary" data-autofocus disabled={busy} onclick={run}>
+      <Button onclick={() => app.closeDialog()}>Cancel</Button>
+      <Button variant="primary" data-autofocus disabled={busy} onclick={run}>
         {mode === 'export' ? 'Choose where to save' : 'Choose a settings file'}
-      </button>
+      </Button>
     {/if}
   {/snippet}
 </Dialog>
