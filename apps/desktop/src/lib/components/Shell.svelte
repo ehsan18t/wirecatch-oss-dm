@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { onMount } from 'svelte';
   import { runKey } from '$lib/commands';
   import { isDownloadDrag } from '$lib/dnd';
@@ -105,7 +106,7 @@
       <StorageBanner />
       {#if app.loadError}
         <div class="load-error" role="alert">
-          <p class="title">Wirecatch cannot reach its download engine.</p>
+          <p class="title">{PRODUCT_NAME} cannot reach its download engine.</p>
           <p>{app.loadError}</p>
           <Button variant="primary" onclick={() => app.init()}>Try again</Button>
         </div>

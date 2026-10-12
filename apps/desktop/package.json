@@ -27,6 +27,7 @@
     "@lucide/svelte": "1.55.0",
     "@tauri-apps/api": "2.12.3",
     "@tauri-apps/plugin-dialog": "2.8.2",
+    "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
     "@wirecatch/units": "workspace:*"
   },

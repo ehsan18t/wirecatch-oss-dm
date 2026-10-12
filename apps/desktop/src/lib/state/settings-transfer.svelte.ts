@@ -1,11 +1,12 @@
 // Moving settings to and from a file: export, and an import the person sees before it applies.
 
+import { PRODUCT_SLUG } from '@wirecatch/product';
 import type { AppSettings, ImportPreview, ImportSummary, Queue } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import type { Runner } from './runner';
 
 /** The name a settings export suggests. */
-const EXPORT_FILE_NAME = 'wirecatch-settings.json';
+const EXPORT_FILE_NAME = `${PRODUCT_SLUG}-settings.json`;
 
 /** Where an import puts what it read back. */
 export interface SettingsTransferHost {

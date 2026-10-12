@@ -1,5 +1,6 @@
 <script lang="ts">
   import Plus from '@lucide/svelte/icons/plus';
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { CATEGORY_LABEL } from '$lib/format';
   import { shortcutParts } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
@@ -31,8 +32,8 @@
           >{/each} here
       </h2>
       <p>
-        Wirecatch downloads it right away, using several connections at once. Downloads you start in
-        your browser show up here too once the Wirecatch extension is installed.
+        {PRODUCT_NAME} downloads it right away, using several connections at once. Downloads you start
+        in your browser show up here too once the {PRODUCT_NAME} extension is installed.
       </p>
       <div class="actions">
         <Button
@@ -42,7 +43,9 @@
         >
           Add download
         </Button>
-        <Button onclick={() => (app.paletteOpen = true)}>See everything Wirecatch can do</Button>
+        <Button onclick={() => (app.paletteOpen = true)}
+          >See everything {PRODUCT_NAME} can do</Button
+        >
       </div>
     </div>
   {:else if searching}

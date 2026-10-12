@@ -1,6 +1,7 @@
 // Talks to the Rust side through Tauri commands and the single `wirecatch://event` stream.
 // Argument keys are camelCase here; Tauri maps them to the snake_case Rust parameter names.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -32,6 +33,9 @@ import {
   type ShellSignal,
   type Unsubscribe,
 } from './types';
+
+/** What the file dialogs offer for settings exports. */
+const SETTINGS_FILES = { name: `${PRODUCT_NAME} settings`, extensions: ['json'] };
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 /** Tauri's `listen`; tests pass their own. */
@@ -273,14 +277,14 @@ export class TauriBackend implements DownloadWindowBackend {
   async pickSaveFile(suggestedName: string) {
     return save({
       defaultPath: suggestedName,
-      filters: [{ name: 'Wirecatch settings', extensions: ['json'] }],
+      filters: [SETTINGS_FILES],
     });
   }
   async pickOpenFile() {
     const picked = await open({
       multiple: false,
       directory: false,
-      filters: [{ name: 'Wirecatch settings', extensions: ['json'] }],
+      filters: [SETTINGS_FILES],
     });
     return typeof picked === 'string' ? picked : null;
   }
