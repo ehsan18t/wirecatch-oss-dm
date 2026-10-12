@@ -14,7 +14,7 @@ wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
 wirecatch-core = { path = "crates/core", version = "0.1.0" }
 wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
 wirecatch-streams = { path = "crates/streams", version = "0.1.0" }
-ts-rs = { version = "11", features = ["serde-compat"] }
+ts-rs = { version = "12", features = ["serde-compat"] }
 anyhow = "1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }

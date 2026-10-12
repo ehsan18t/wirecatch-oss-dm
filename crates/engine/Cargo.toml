@@ -18,7 +18,9 @@ include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE"]
 [dependencies]
 bytes.workspace = true
 futures-util.workspace = true
-base64 = "0.22.1"
+# Only the portable engine: the default SIMD engines are unsafe code with nothing
+# to gain on a header's worth of text.
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 httpdate = "1.0.3"
 percent-encoding.workspace = true
 # Only the HTTP client: TLS comes preconfigured from the rustls dependency below,

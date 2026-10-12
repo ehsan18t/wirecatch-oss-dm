@@ -11,7 +11,7 @@ publish = false
 # Everything here serves the test servers, so it comes with the `servers`
 # feature: a crate that needs only the plain helpers builds no HTTP or TLS stack.
 axum = { workspace = true, optional = true }
-base64 = { version = "0.22.1", optional = true }
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"], optional = true }
 bytes = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 # The same major version and crypto provider (ring) as the engine, so a test's
