@@ -23,7 +23,7 @@ const OPEN = String.raw`(\/\/|\/\*|<!--)\s*`;
 const CLOSE = String.raw`(.*?)(?:\*\/|-->|$)`;
 /** An ESLint disable comment in any of its forms, with the rules and reason that follow it. */
 const ESLINT_DISABLE = new RegExp(
-  `${OPEN}eslint-disable(?:-next-line|-line)?(?=\\s|\\*\\/|-->|$)${CLOSE}`,
+  `${OPEN}eslint-disable(-next-line|-line)?(?=\\s|\\*\\/|-->|$)${CLOSE}`,
   'gm',
 );
 /** ESLint configuration written in a comment: rule settings, globals and environments. ESLint reads these from block comments only. */
@@ -56,13 +56,13 @@ function configuredRules(text) {
 
 function eslintDisables(text, site) {
   return [...text.matchAll(ESLINT_DISABLE)].map((match) => {
-    const lints = listedNames(match[2]);
+    const lints = listedNames(match[3]);
     return {
       ...site(match),
-      kind: 'eslint-disable',
+      kind: `eslint-disable${match[2] ?? ''}`,
       markup: match[1] === '<!--',
       lints: lints.length > 0 ? lints : ['(every rule)'],
-      reason: REASON_SEPARATOR.test(match[2]),
+      reason: REASON_SEPARATOR.test(match[3]),
     };
   });
 }
