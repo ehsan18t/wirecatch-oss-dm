@@ -1,52 +1,4 @@
-//! Single requests that follow the same rules as a download.
-//!
-//! [`download`](crate::download) handles one large file. Some callers instead
-//! need many small requests that belong together: the playlist of a video
-//! stream, its decryption keys and its segments. A [`Fetcher`] makes those
-//! requests with everything a download already does:
-//!
-//! - Credentials in [`DownloadOptions::headers`] (and a `user:password@` in the
-//!   URL it was created with) are sent only to the origin (scheme, host and
-//!   port) of that URL. Requests to any other origin, such as a CDN that serves
-//!   the segments, carry only headers that hold no credentials, exactly as a
-//!   download that redirects to another origin does.
-//! - A redirect from `https` to `http` is refused unless
-//!   [`DownloadOptions::allow_insecure_redirects`] is set.
-//! - Network errors, timeouts and busy answers (`408`, `425`, `429`, `500`,
-//!   `502`, `503`, `504`) are retried with growing pauses, up to
-//!   [`DownloadOptions::max_retries`] attempts in a row without progress. A
-//!   `Retry-After` on a `429` or `503` is honored. An interrupted transfer
-//!   continues from the byte it reached instead of starting over.
-//! - A server that stops sending for [`DownloadOptions::stall_timeout`] counts
-//!   as a failed attempt, and cancelling the token stops every request at once.
-//! - Every byte counts against [`DownloadOptions::rate_limiters`].
-//! - When the URL it was created with is on the internet, requests to the
-//!   local network (loopback, private, link-local, shared CGNAT and other
-//!   non-public addresses, whether written as an IP, also inside an IPv6
-//!   address, or reached through a name or a redirect) are
-//!   refused with [`Error::PrivateNetwork`]: a playlist from a website must
-//!   not make Wirecatch reach the router or other devices at home. See
-//!   [`PrivateNetwork`].
-//!
-//! ```no_run
-//! # async fn example() -> wirecatch_engine::Result<()> {
-//! use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
-//! use wirecatch_engine::units::MIB;
-//!
-//! let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
-//! let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
-//!
-//! // A small resource, read into memory, refused if larger than 1 MiB.
-//! let text = fetcher.get(fetcher.url(), None, MIB).await?;
-//!
-//! // A large one, streamed to disk; here only its first 1000 bytes.
-//! let segment = text.url.join("segment1.ts").unwrap();
-//! fetcher
-//!     .save(&segment, Some(0..1000), "segment1.ts".as_ref(), |bytes| println!("+{bytes}"))
-//!     .await?;
-//! # Ok(())
-//! # }
-//! ```
+//! The [`Fetcher`]: single requests that follow the same rules as a download.
 
 use std::fmt;
 use std::ops::Range;
@@ -76,8 +28,55 @@ use crate::units::KIB_USIZE;
 /// Size of the write buffer used by [`Fetcher::save`].
 const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 
-/// Makes requests that share one set of credentials, limits and rules; see the
-/// [module documentation](self).
+/// Makes requests that share one set of credentials, limits and rules.
+///
+/// [`download`](crate::download) handles one large file. Some callers instead
+/// need many small requests that belong together: the playlist of a video
+/// stream, its decryption keys and its segments. A [`Fetcher`] makes those
+/// requests with everything a download already does:
+///
+/// - Credentials in [`DownloadOptions::headers`] (and a `user:password@` in the
+///   URL it was created with) are sent only to the origin (scheme, host and
+///   port) of that URL. Requests to any other origin, such as a CDN that serves
+///   the segments, carry only headers that hold no credentials, exactly as a
+///   download that redirects to another origin does.
+/// - A redirect from `https` to `http` is refused unless
+///   [`DownloadOptions::allow_insecure_redirects`] is set.
+/// - Network errors, timeouts and busy answers (`408`, `425`, `429`, `500`,
+///   `502`, `503`, `504`) are retried with growing pauses, up to
+///   [`DownloadOptions::max_retries`] attempts in a row without progress. A
+///   `Retry-After` on a `429` or `503` is honored. An interrupted transfer
+///   continues from the byte it reached instead of starting over.
+/// - A server that stops sending for [`DownloadOptions::stall_timeout`] counts
+///   as a failed attempt, and cancelling the token stops every request at once.
+/// - Every byte counts against [`DownloadOptions::rate_limiters`].
+/// - When the URL it was created with is on the internet, requests to the
+///   local network (loopback, private, link-local, shared CGNAT and other
+///   non-public addresses, whether written as an IP, also inside an IPv6
+///   address, or reached through a name or a redirect) are
+///   refused with [`Error::PrivateNetwork`]: a playlist from a website must
+///   not make Wirecatch reach the router or other devices at home. See
+///   [`PrivateNetwork`].
+///
+/// ```no_run
+/// # async fn example() -> wirecatch_engine::Result<()> {
+/// use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
+/// use wirecatch_engine::units::MIB;
+///
+/// let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
+/// let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
+///
+/// // A small resource, read into memory, refused if larger than 1 MiB.
+/// let text = fetcher.get(fetcher.url(), None, MIB).await?;
+///
+/// // A large one, streamed to disk; here only its first 1000 bytes.
+/// let segment = text.url.join("segment1.ts").unwrap();
+/// fetcher
+///     .save(&segment, Some(0..1000), "segment1.ts".as_ref(), |bytes| println!("+{bytes}"))
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// It is cheap to clone, and clones share everything, so one `Fetcher` can be
 /// used from many tasks at once. It opens up to

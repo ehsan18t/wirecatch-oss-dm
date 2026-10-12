@@ -211,7 +211,7 @@
 mod checkpoint;
 mod download;
 mod error;
-pub mod fetch;
+mod fetch;
 mod ftp;
 mod http;
 #[cfg(feature = "http3")]
@@ -241,10 +241,10 @@ pub use download::{
 };
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
+/// HTTP header names and values, for [`DownloadOptions::headers`].
+pub use ::http::header;
 pub use limiter::RateLimiter;
 pub use net_guard::PrivateNetwork;
 pub use progress::Progress;
-/// HTTP header names and values, for [`DownloadOptions::headers`].
-pub use reqwest::header;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

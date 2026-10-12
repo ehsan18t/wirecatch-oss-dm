@@ -43,7 +43,7 @@ url.workspace = true
 # HTTP/3, only with the `http3` feature.
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
-http = { version = "1.1.0", optional = true }
+http = "1.1.0"
 quinn = { version = "0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
 
 [features]
@@ -52,7 +52,7 @@ default = []
 # keep the default build lean (it adds 18 crates, quinn and h3 among them).
 # It also turns on the HTTP/3 test servers for the engine's own tests; that
 # part is dropped from the published manifest with the test-support dependency.
-http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn", "wirecatch-test-support/http3"]
+http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn", "wirecatch-test-support/http3"]
 
 # docs.rs documents the http3 API too; the gate builds the docs the same way (engine-docs).
 [package.metadata.docs.rs]

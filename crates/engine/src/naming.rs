@@ -17,7 +17,7 @@ const MAX_EXTENSION_BYTES: usize = 32;
 /// Extracts the file name from a `Content-Disposition` header value.
 /// `filename*` (RFC 6266 / 5987) wins over plain `filename`.
 #[must_use]
-pub fn from_content_disposition(value: &str) -> Option<String> {
+pub(crate) fn from_content_disposition(value: &str) -> Option<String> {
     let mut plain = None;
     for part in split_params(value) {
         let Some((key, val)) = part.split_once('=') else {
