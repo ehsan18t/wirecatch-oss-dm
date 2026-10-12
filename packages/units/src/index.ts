@@ -14,12 +14,18 @@ const WHOLE_FROM = 100;
 /** From this many of a unit on, a size shows one decimal (`12.4 MB`); below it, two (`4.70 GB`). */
 const ONE_DECIMAL_FROM = 10;
 const TWO_DECIMALS = 2;
-/** Limits and size fields show tenths at most. */
-const TENTHS = 10;
+/** Each decimal place is a factor of ten. */
+const DECIMAL_BASE = 10;
 
-/** `value` rounded to tenths. */
+/** `value` rounded to `places` decimals. */
+function roundTo(value: number, places: number): number {
+  const factor = DECIMAL_BASE ** places;
+  return Math.round(value * factor) / factor;
+}
+
+/** `value` rounded to tenths: limits and size fields show tenths at most. */
 function toTenths(value: number): number {
-  return Math.round(value * TENTHS) / TENTHS;
+  return roundTo(value, 1);
 }
 
 /** `bytes` in the largest unit that keeps it at 1 or more, with that unit's index in `SHOWN_UNITS`. */
@@ -38,12 +44,30 @@ function decimals(value: number): number {
   return value >= ONE_DECIMAL_FROM ? 1 : TWO_DECIMALS;
 }
 
+/** Decimals for `value` in `unit`: bytes are whole, other units keep three significant digits. */
+function placesFor(value: number, unit: number): number {
+  return unit === 0 ? 0 : decimals(value);
+}
+
 /** A size for people to read, such as `512 B`, `4.70 GB` or `820 MB`: three significant digits at most. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-  const { value, unit } = scaled(bytes);
-  if (unit === 0) return `${Math.round(value)} B`;
-  return `${value.toFixed(decimals(value))} ${SHOWN_UNITS[unit]}`;
+  let { value, unit } = scaled(bytes);
+  let places = placesFor(value, unit);
+  let shown = roundTo(value, places);
+  // Rounding can reach the next step (99.998 KB shows as 100), which needs fewer decimals.
+  if (placesFor(shown, unit) < places) {
+    places = placesFor(shown, unit);
+    shown = roundTo(value, places);
+  }
+  // Or reach a whole next unit (1023.9 KB shows as 1024), which carries into it.
+  if (shown >= KB && unit < SHOWN_UNITS.length - 1) {
+    value /= KB;
+    unit += 1;
+    places = placesFor(value, unit);
+    shown = roundTo(value, places);
+  }
+  return `${shown.toFixed(places)} ${SHOWN_UNITS[unit]}`;
 }
 
 /** A speed, such as `12.4 MB/s`; no speed is an empty string. */
@@ -72,16 +96,13 @@ export function unitBytes(unit: SizeUnit): number {
   return SIZE_UNITS.find((u) => u.unit === unit)?.bytes ?? MB;
 }
 
-/** Rounds to hundredths, for a size that is not a whole number of any unit. */
-const HUNDREDTHS = 100;
-
 /** `bytes` as a number and unit to show in a size field: the largest unit that makes it whole, else kilobytes to two decimals. Nothing shows as `0 MB`. */
 export function splitSize(bytes: number): { value: number; unit: SizeUnit } {
   if (bytes <= 0) return { value: 0, unit: 'MB' };
   for (const u of [...SIZE_UNITS].reverse()) {
     if (bytes % u.bytes === 0) return { value: bytes / u.bytes, unit: u.unit };
   }
-  return { value: Math.round((bytes / KB) * HUNDREDTHS) / HUNDREDTHS, unit: 'KB' };
+  return { value: roundTo(bytes / KB, TWO_DECIMALS), unit: 'KB' };
 }
 
 /** `bytes` in `unit` to one decimal, as a field in that unit shows it. */
