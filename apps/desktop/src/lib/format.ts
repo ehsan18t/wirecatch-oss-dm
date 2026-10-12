@@ -13,19 +13,36 @@ import type {
   Weekday,
 } from '@wirecatch/protocol';
 import { formatBytes, formatRate } from '@wirecatch/units';
+import {
+  dayBefore,
+  DAYS_PER_WEEK,
+  HOURS_PER_DAY,
+  isTimeOfDay,
+  MINUTES_PER_HOUR,
+  minutesOfDay,
+  SECONDS_PER_MINUTE,
+  timeOfDay,
+  WEEKDAYS,
+  weekdayOf,
+  WEEKEND,
+  WORKDAYS,
+} from './time';
+
+/** Up to two days, time left is said in hours and minutes; beyond that, in days. */
+const ETA_IN_HOURS_BELOW = 2 * HOURS_PER_DAY;
 
 /** Seconds left as a compact duration: `45 s`, `3 min`, `1 h 20 min`, `2 days`. */
 export function formatEta(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '';
-  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) {
-    const rest = minutes % 60;
+  if (seconds < SECONDS_PER_MINUTE) return `${Math.max(1, Math.round(seconds))} s`;
+  const minutes = Math.round(seconds / SECONDS_PER_MINUTE);
+  if (minutes < MINUTES_PER_HOUR) return `${minutes} min`;
+  const hours = Math.floor(minutes / MINUTES_PER_HOUR);
+  if (hours < ETA_IN_HOURS_BELOW) {
+    const rest = minutes % MINUTES_PER_HOUR;
     return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
   }
-  return `${Math.round(hours / 24)} days`;
+  return `${Math.round(hours / HOURS_PER_DAY)} days`;
 }
 
 /** Progress as a fraction between 0 and 1, or `null` when the total size is not known. */
@@ -131,8 +148,6 @@ export const CATEGORIES: readonly Category[] = [
   'other',
 ];
 
-export const WEEKDAYS: readonly Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-
 export const WEEKDAY_SHORT: Record<Weekday, string> = {
   mon: 'Mon',
   tue: 'Tue',
@@ -150,27 +165,25 @@ export function formatTime(t: TimeOfDay): string {
 
 /** The clock time of a Unix time in milliseconds, `07:05` style, in local time. */
 export function clockTime(ms: number): string {
-  const d = new Date(ms);
-  return formatTime({ hour: d.getHours(), minute: d.getMinutes() });
+  return formatTime(timeOfDay(new Date(ms)));
 }
 
 /** Parses `HH:MM`. Returns `null` for anything that is not a valid time. */
 export function parseTime(text: string): TimeOfDay | null {
   const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(text);
   if (!m) return null;
-  const hour = Number(m[1]);
-  const minute = Number(m[2]);
-  if (hour > 23 || minute > 59) return null;
-  return { hour, minute };
+  const t = { hour: Number(m[1]), minute: Number(m[2]) };
+  return isTimeOfDay(t) ? t : null;
 }
 
 /** Day list as words: `Every day`, `Weekdays`, `Weekends`, or `Mon, Wed, Fri`. */
 export function formatDays(days: readonly Weekday[]): string {
   const set = new Set(days);
-  if (set.size === 0 || set.size === 7) return 'Every day';
-  const weekdays: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri'];
-  if (set.size === 5 && weekdays.every((d) => set.has(d))) return 'Weekdays';
-  if (set.size === 2 && set.has('sat') && set.has('sun')) return 'Weekends';
+  if (set.size === 0 || set.size === DAYS_PER_WEEK) return 'Every day';
+  const exactly = (group: readonly Weekday[]) =>
+    set.size === group.length && group.every((d) => set.has(d));
+  if (exactly(WORKDAYS)) return 'Weekdays';
+  if (exactly(WEEKEND)) return 'Weekends';
   return WEEKDAYS.filter((d) => set.has(d))
     .map((d) => WEEKDAY_SHORT[d])
     .join(', ');
@@ -189,15 +202,15 @@ export function formatSchedule(schedule: Schedule | null): string {
 /** Whether a schedule allows running at `now` (local time). No schedule means always. */
 export function scheduleAllows(schedule: Schedule | null, now: Date): boolean {
   if (!schedule) return true;
-  const today = WEEKDAYS[(now.getDay() + 6) % 7] as Weekday;
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const start = schedule.start.hour * 60 + schedule.start.minute;
+  const today = weekdayOf(now);
+  const minutes = minutesOfDay(timeOfDay(now));
+  const start = minutesOfDay(schedule.start);
   const dayOk = (d: Weekday) => schedule.days.length === 0 || schedule.days.includes(d);
   if (!schedule.stop) return dayOk(today) && minutes >= start;
-  const stop = schedule.stop.hour * 60 + schedule.stop.minute;
+  const stop = minutesOfDay(schedule.stop);
   if (start <= stop) return dayOk(today) && minutes >= start && minutes < stop;
   // The window crosses midnight: the part after midnight belongs to the previous day.
-  const yesterday = WEEKDAYS[(now.getDay() + 5) % 7] as Weekday;
+  const yesterday = weekdayOf(dayBefore(now));
   return (dayOk(today) && minutes >= start) || (dayOk(yesterday) && minutes < stop);
 }
 
@@ -238,15 +251,13 @@ export function hostOf(url: string): string {
 /** A date for the detail panel, for example `Today, 14:05` or `3 Oct 2026, 09:12`. */
 export function formatDate(ms: number, now: Date = new Date()): string {
   const d = new Date(ms);
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const time = formatTime(timeOfDay(d));
   const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
   if (sameDay(d, now)) return `Today, ${time}`;
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return `Yesterday, ${time}`;
+  if (sameDay(d, dayBefore(now))) return `Yesterday, ${time}`;
   const month = d.toLocaleString('en-GB', { month: 'short' });
   return `${d.getDate()} ${month} ${d.getFullYear()}, ${time}`;
 }

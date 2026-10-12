@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Queue, QueueId, Weekday } from '@wirecatch/protocol';
-  import { formatDays, formatTime, parseTime, WEEKDAY_SHORT, WEEKDAYS } from '$lib/format';
+  import { formatDays, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
+  import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
   import { getApp } from '$lib/state/app.svelte';
   import Dialog from './Dialog.svelte';
 
@@ -35,7 +36,8 @@
   }
 
   const daysHelp = $derived.by(() => {
-    if (days.length === 0 || days.length === 7) return 'No days picked, so it runs every day.';
+    if (days.length === 0 || days.length === DAYS_PER_WEEK)
+      return 'No days picked, so it runs every day.';
     const words = formatDays(days);
     return `Runs only on ${words === 'Weekdays' || words === 'Weekends' ? words.toLowerCase() : words}.`;
   });
@@ -63,7 +65,7 @@
       schedule = {
         start: s,
         stop: e,
-        days: days.length === 7 ? [] : WEEKDAYS.filter((d) => days.includes(d)),
+        days: days.length === DAYS_PER_WEEK ? [] : WEEKDAYS.filter((d) => days.includes(d)),
       };
     }
     return { ...base, name: name.trim(), max_concurrent: max, speed_limit, schedule };
