@@ -74,11 +74,7 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             "The file changed on the server while it was downloading. Try again to download the new version.",
             FixAction::Retry,
         ),
-        EngineError::Io(e) => disk(e, folder),
-        EngineError::State(_) => fix(
-            "The saved progress of this download is damaged. Try again to start it over.",
-            FixAction::Retry,
-        ),
+        EngineError::Io { source, .. } => disk(source, folder),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
             FixAction::Retry,
@@ -304,7 +300,8 @@ fn http_status(status: u16, previously_worked: bool) -> UserError {
     }
 }
 
-fn disk(error: &io::Error, folder: &Path) -> UserError {
+/// Describes a file operation that failed while saving into `folder`.
+pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
         error.kind(),
@@ -440,18 +437,27 @@ mod tests {
         );
     }
 
+    /// A disk error as the engine reports it.
+    fn io(source: io::Error) -> EngineError {
+        EngineError::Io {
+            action: wirecatch_engine::IoAction::Write,
+            path: "/downloads/f.bin.wcpart".into(),
+            source,
+        }
+    }
+
     #[test]
     fn full_disk_asks_for_space() {
-        let kind = EngineError::Io(io::ErrorKind::StorageFull.into());
+        let kind = io(io::ErrorKind::StorageFull.into());
         assert_eq!(action(&kind, true), Some(FixAction::FreeDiskSpace));
-        let raw = EngineError::Io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
+        let raw = io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
         assert_eq!(action(&raw, true), Some(FixAction::FreeDiskSpace));
     }
 
     #[test]
     fn forbidden_folder_asks_for_another() {
         let e = describe(
-            &EngineError::Io(io::ErrorKind::PermissionDenied.into()),
+            &io(io::ErrorKind::PermissionDenied.into()),
             Path::new("/locked"),
             false,
         );
@@ -512,9 +518,8 @@ mod tests {
                 expected: 1,
                 got: None,
             },
-            EngineError::State("x".into()),
             EngineError::Cancelled,
-            EngineError::Io(io::ErrorKind::Other.into()),
+            io(io::ErrorKind::Other.into()),
             EngineError::TooManyRedirects { url: "u".into() },
             EngineError::RedirectWithoutLocation {
                 status: 302,

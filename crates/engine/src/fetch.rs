@@ -50,7 +50,7 @@
 
 use std::fmt;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -64,7 +64,7 @@ use tracing::warn;
 use url::Url;
 
 use crate::download::DownloadOptions;
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::{self, Clients, Failure, RequestRange, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
@@ -258,7 +258,7 @@ impl Fetcher {
         let answer = self.transfer(&url, range, &mut sink, &mut |_| {}).await?;
         let body = match sink {
             Sink::Memory { buf, .. } => buf.freeze(),
-            Sink::File(_) => Bytes::new(),
+            Sink::File { .. } => Bytes::new(),
         };
         Ok(Fetched {
             body,
@@ -288,8 +288,13 @@ impl Fetcher {
         mut on_bytes: impl FnMut(u64) + Send,
     ) -> Result<u64> {
         let url = clean_url(url)?;
-        let file = tokio::fs::File::create(path).await?;
-        let mut sink = Sink::File(BufWriter::with_capacity(SAVE_BUFFER, file));
+        let file = tokio::fs::File::create(path)
+            .await
+            .context(IoAction::CreateFile, path)?;
+        let mut sink = Sink::File {
+            file: BufWriter::with_capacity(SAVE_BUFFER, file),
+            path: path.to_path_buf(),
+        };
         if range.as_ref().is_some_and(|r| r.end <= r.start) {
             return Ok(0);
         }
@@ -475,7 +480,11 @@ enum Sink {
         limit: u64,
         url: String,
     },
-    File(BufWriter<tokio::fs::File>),
+    File {
+        file: BufWriter<tokio::fs::File>,
+        /// Where it is, for errors.
+        path: PathBuf,
+    },
 }
 
 impl Sink {
@@ -510,13 +519,13 @@ impl Sink {
                 buf.extend_from_slice(data);
                 Ok(())
             }
-            Sink::File(file) => Ok(file.write_all(data).await?),
+            Sink::File { file, path } => file.write_all(data).await.context(IoAction::Write, path),
         }
     }
 
     async fn finish(&mut self) -> Result<()> {
-        if let Sink::File(file) = self {
-            file.flush().await?;
+        if let Sink::File { file, path } = self {
+            file.flush().await.context(IoAction::Write, path)?;
         }
         Ok(())
     }

@@ -1,17 +1,31 @@
 //! The resume file kept next to a part file.
 
 use std::fs::File;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::error::{Error, Result};
+use crate::error::{IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::ByteRange;
 
 const VERSION: u32 = 1;
+
+/// Why a resume file could not be used. The download then starts over.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum LoadError {
+    /// The file could not be read; [`io::ErrorKind::NotFound`] when there is none.
+    #[error("it cannot be read")]
+    Read(#[source] io::Error),
+    /// The file is not a resume file, or is damaged.
+    #[error("it is damaged")]
+    Parse(#[source] serde_json::Error),
+    /// The file was written by a version of the engine that keeps another format.
+    #[error("it has format {0}, which this version does not read")]
+    Version(u32),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResumeState {
@@ -46,14 +60,12 @@ impl ResumeState {
         }
     }
 
-    pub fn load(path: &Path) -> Result<Self> {
-        let raw = std::fs::read(path)?;
-        let state: Self = serde_json::from_slice(&raw).map_err(|e| Error::State(e.to_string()))?;
+    /// Reads the resume file at `path`.
+    pub fn load(path: &Path) -> Result<Self, LoadError> {
+        let raw = std::fs::read(path).map_err(LoadError::Read)?;
+        let state: Self = serde_json::from_slice(&raw).map_err(LoadError::Parse)?;
         if state.version != VERSION {
-            return Err(Error::State(format!(
-                "unsupported version {}",
-                state.version
-            )));
+            return Err(LoadError::Version(state.version));
         }
         Ok(state)
     }
@@ -65,14 +77,16 @@ impl ResumeState {
     pub fn save(&self, path: &Path) -> Result<()> {
         let mut tmp = path.as_os_str().to_owned();
         tmp.push(".tmp");
-        let json = serde_json::to_vec(self).map_err(|e| Error::State(e.to_string()))?;
-        {
-            let mut file = File::create(&tmp)?;
-            file.write_all(&json)?;
-            file.sync_data()?;
-        }
-        std::fs::rename(&tmp, path)?;
-        Ok(())
+        let write = || -> io::Result<()> {
+            let json = serde_json::to_vec(self).map_err(io::Error::other)?;
+            {
+                let mut file = File::create(&tmp)?;
+                file.write_all(&json)?;
+                file.sync_data()?;
+            }
+            std::fs::rename(&tmp, path)
+        };
+        write().context(IoAction::SaveResume, path)
     }
 
     /// Whether this state can continue a download the server now describes as

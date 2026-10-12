@@ -239,7 +239,7 @@ pub use download::{
     DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathResolver,
     RemoteFile, download,
 };
-pub use error::{Error, NetworkError, Result};
+pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;
 pub use net_guard::PrivateNetwork;

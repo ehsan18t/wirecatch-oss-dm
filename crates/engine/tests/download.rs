@@ -255,6 +255,33 @@ async fn a_resume_file_with_nothing_left_finishes_the_whole_file() {
     dir.remove().unwrap();
 }
 
+/// A disk error says what the engine was doing and with which file, so the
+/// person can tell a full disk from a folder they cannot write to.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_disk_error_names_the_file_and_what_failed() {
+    let server = TestServer::start(
+        test_data(64 * KIB_USIZE),
+        Config {
+            ranges: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("disk-error").unwrap();
+    // A file where the folder should be: the folder cannot be created.
+    let blocked = dir.join("not-a-folder");
+    std::fs::write(&blocked, b"x").unwrap();
+    let error = run(request(&server, "f.bin", &blocked.join("inside"), 1))
+        .await
+        .unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains("create the folder") && text.contains("inside"),
+        "{text}"
+    );
+    dir.remove().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn starts_over_when_the_remote_file_changed() {
     let server = TestServer::start(

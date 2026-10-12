@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tracing::warn;
 
 use crate::download::Shared;
-use crate::error::Result;
+use crate::error::{IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::state::ResumeState;
 use crate::storage;
@@ -76,9 +76,13 @@ impl ResumeSaver {
         let remaining = self.shared.table.lock().remaining();
         let part = match &mut saving.part {
             Some(part) => part,
-            empty => empty.insert(storage::open_for_write(&self.shared.part_path)?),
+            empty => {
+                let path = &self.shared.part_path;
+                empty.insert(storage::open_for_write(path).context(IoAction::OpenFile, path)?)
+            }
         };
-        part.sync_data()?;
+        part.sync_data()
+            .context(IoAction::Flush, &self.shared.part_path)?;
         let shared = &self.shared;
         ResumeState::new(
             &self.url,

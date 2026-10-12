@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::checkpoint::{Checkpoints, ResumeSaver};
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Clients;
 use crate::limiter::RateLimiter;
 use crate::net_guard::{PrivateGuard, PrivateNetwork, private_guard};
@@ -543,7 +543,7 @@ async fn spawn_workers(
     let part = shared.part_path.clone();
     let files = storage::blocking(move || {
         (0..worker_count)
-            .map(|_| storage::open_for_write(&part).map_err(Error::from))
+            .map(|_| storage::open_for_write(&part).context(IoAction::OpenFile, &part))
             .collect::<Result<Vec<_>>>()
     })
     .await?;
@@ -597,7 +597,8 @@ fn finish(
 
     if complete {
         saver.close();
-        storage::finalize(&target.part, &target.file, file_len)?;
+        storage::finalize(&target.part, &target.file, file_len)
+            .context(IoAction::Finish, &target.file)?;
         target::discard(&target.state);
         info!(path = %target.file.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {

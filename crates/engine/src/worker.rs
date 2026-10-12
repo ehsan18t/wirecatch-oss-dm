@@ -47,7 +47,11 @@ pub(crate) async fn run(
     mut connection: Connection,
     mut first: Option<(Assignment, Body)>,
 ) -> Result<()> {
-    let mut writer = Writer::new(Arc::new(file), shared.opts.buffer_size);
+    let mut writer = Writer::new(
+        Arc::new(file),
+        shared.part_path.clone(),
+        shared.opts.buffer_size,
+    );
 
     loop {
         let (assignment, response) = match first.take() {

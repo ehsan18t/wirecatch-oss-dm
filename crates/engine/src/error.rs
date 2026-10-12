@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::io;
+use std::path::{Path, PathBuf};
 
 use reqwest::StatusCode;
 
@@ -71,20 +72,25 @@ pub enum Error {
     #[error("no data received for {0} seconds")]
     Stalled(u64),
 
-    /// Reading or writing the file or its resume file failed, for example a
-    /// full disk or a folder without write permission.
-    #[error("disk error: {0}")]
-    Io(#[from] io::Error),
+    /// Reading or writing a file failed, for example on a full disk, in a
+    /// folder without write permission, or while another program holds the
+    /// file. It says what was being done and with which file.
+    #[error("could not {action} ({}): {source}", path.display())]
+    Io {
+        /// What was being done.
+        action: IoAction,
+        /// The file or folder it was done with.
+        path: PathBuf,
+        /// What the operating system reported.
+        #[source]
+        source: io::Error,
+    },
 
     /// The download was cancelled before the server answered its first request,
     /// so there is nothing to resume yet. Cancelling once the server has
     /// answered returns [`Outcome::Paused`](crate::Outcome::Paused) instead.
     #[error("cancelled before the download started")]
     Cancelled,
-
-    /// The resume file exists but could not be read.
-    #[error("resume state is unreadable: {0}")]
-    State(String),
 
     /// The link kept redirecting, past the limit browsers also use, usually
     /// because it redirects in a loop.
@@ -258,6 +264,60 @@ impl Error {
     /// For a background task that panicked or was aborted.
     pub(crate) fn task(error: &tokio::task::JoinError) -> Self {
         Error::Internal(format!("a background task failed: {error}"))
+    }
+}
+
+/// What the engine was doing with a file when [`Error::Io`] happened.
+///
+/// New actions may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IoAction {
+    /// Creating the folder the file goes in.
+    CreateFolder,
+    /// Creating a file: the part file of a download, or the file a
+    /// [`Fetcher`](crate::Fetcher) saves to.
+    CreateFile,
+    /// Opening the part file to write downloaded data to it.
+    OpenFile,
+    /// Writing downloaded data.
+    Write,
+    /// Making sure written data is on the disk itself, not only in memory.
+    Flush,
+    /// Saving the resume file next to the part file.
+    SaveResume,
+    /// Giving the finished file its final name.
+    Finish,
+}
+
+impl fmt::Display for IoAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            IoAction::CreateFolder => "create the folder",
+            IoAction::CreateFile => "create the file",
+            IoAction::OpenFile => "open the file",
+            IoAction::Write => "write to the file",
+            IoAction::Flush => "flush the file to the disk",
+            IoAction::SaveResume => "save the resume file",
+            IoAction::Finish => "move the finished file into place",
+        })
+    }
+}
+
+/// Turns a failed file operation into [`Error::Io`], saying what was being
+/// done and with which file.
+pub(crate) trait IoContext<T> {
+    /// The error, if any, as [`Error::Io`] for `action` on `path`.
+    fn context(self, action: IoAction, path: &Path) -> Result<T>;
+}
+
+impl<T> IoContext<T> for io::Result<T> {
+    fn context(self, action: IoAction, path: &Path) -> Result<T> {
+        self.map_err(|source| Error::Io {
+            action,
+            path: path.to_path_buf(),
+            source,
+        })
     }
 }
 

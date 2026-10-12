@@ -1,11 +1,12 @@
 //! Writing a connection's data into the part file.
 
 use std::fs::File;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::task::JoinHandle;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::segment::{ByteRange, SharedTable};
 use crate::storage;
 
@@ -28,6 +29,8 @@ type WriteJob = JoinHandle<std::io::Result<Written>>;
 /// A failed write poisons the writer for the rest of the segment: the bytes already buffered after the failure are dropped, never written, because writing them would leave a hole below them that the resume state could count as done.
 pub(crate) struct Writer {
     file: Arc<File>,
+    /// Where `file` is, for errors.
+    path: PathBuf,
     capacity: usize,
     buf: Vec<u8>,
     spare: Option<Vec<u8>>,
@@ -44,9 +47,11 @@ pub(crate) struct Writer {
 }
 
 impl Writer {
-    pub fn new(file: Arc<File>, capacity: usize) -> Self {
+    /// Writes into `file`, the part file at `path`, `capacity` bytes at a time.
+    pub fn new(file: Arc<File>, path: PathBuf, capacity: usize) -> Self {
         Self {
             file,
+            path,
             capacity,
             buf: Vec::with_capacity(capacity),
             spare: None,
@@ -121,7 +126,7 @@ impl Writer {
         match handle
             .await
             .map_err(|e| Error::task(&e))
-            .and_then(|r| r.map_err(Error::from))
+            .and_then(|r| r.context(IoAction::Write, &self.path))
         {
             Ok(written) => {
                 self.unwritten -= written.range.end - written.range.start;
@@ -166,7 +171,7 @@ mod tests {
         table.lock().acquire(0).unwrap();
         table.lock().claim(0, 8);
 
-        let mut writer = Writer::new(Arc::clone(&file), CAPACITY);
+        let mut writer = Writer::new(Arc::clone(&file), path.clone(), CAPACITY);
         writer.start(0, 0);
         // The first buffer, [0, 4), went out and its write fails.
         writer.offset = 4;

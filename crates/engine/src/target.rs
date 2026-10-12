@@ -12,10 +12,10 @@ use tracing::{info, warn};
 use url::Url;
 
 use crate::download::{DownloadRequest, RemoteFile};
-use crate::error::{Error, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::SegmentTable;
-use crate::state::ResumeState;
+use crate::state::{LoadError, ResumeState};
 use crate::transport::Opened;
 use crate::url::without_password;
 use crate::{naming, storage};
@@ -101,12 +101,12 @@ impl Destination {
         let (target, resume) = match self {
             Self::Exact(path) => {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                    std::fs::create_dir_all(parent)?;
+                    std::fs::create_dir_all(parent).context(IoAction::CreateFolder, parent)?;
                 }
                 plan_exact(path, file)
             }
             Self::InFolder { dir, name } => {
-                std::fs::create_dir_all(&dir)?;
+                std::fs::create_dir_all(&dir).context(IoAction::CreateFolder, &dir)?;
                 plan_in_folder(&dir, &name, saved_url, file)
             }
         };
@@ -125,7 +125,8 @@ impl Destination {
                 resumed_from: kept,
             });
         }
-        storage::create_part(&target.part, file.total)?;
+        storage::create_part(&target.part, file.total)
+            .context(IoAction::CreateFile, &target.part)?;
         let table = SegmentTable::new(file.total, min_split);
         Ok(Prepared {
             target,
@@ -209,7 +210,7 @@ fn continues(saved: &ResumeState, target: &Target, file: &Described) -> bool {
 fn saved_state(path: &Path) -> Option<ResumeState> {
     match ResumeState::load(path) {
         Ok(state) => Some(state),
-        Err(Error::Io(e)) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(LoadError::Read(e)) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => {
             warn!(path = %path.display(), error = %e, "the resume file cannot be read; starting over");
             None
