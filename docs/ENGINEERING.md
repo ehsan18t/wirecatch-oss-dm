@@ -70,7 +70,7 @@ Enforced by: gate (`unwrap_used`, `expect_used`, `todo`, `unimplemented`, pedant
 
 Write `#[expect(clippy::lint_name, reason = "why this case is correct")]` on the smallest item that needs it. Never `allow`, and never a crate-wide exception without a reason that covers the whole crate. The reason must convince a reviewer; "needed" is not a reason.
 
-Enforced by: gate (`allow_attributes`, `allow_attributes_without_reason`).
+Enforced by: gate (`allow_attributes`, `allow_attributes_without_reason`, and `cfg-allow`, which fails any `allow` inside `cfg_attr`: clippy cannot see an attribute that is switched off on the system it runs on, so such an `allow` passes on one system and fails on another).
 
 ### Unsafe
 

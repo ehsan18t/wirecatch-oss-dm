@@ -277,6 +277,104 @@ function textRules() {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Lint exceptions
+
+/** Splits `text` at the commas outside brackets and string literals. */
+function splitTopLevel(text) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') i = stringEnd(text, i);
+    else if ('([{'.includes(char)) depth += 1;
+    else if (')]}'.includes(char)) depth -= 1;
+    else if (char === ',' && depth === 0) {
+      parts.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/** The index of the quote that closes the Rust string opening at `open`. */
+function stringEnd(text, open) {
+  for (let i = open + 1; i < text.length; i += 1) {
+    if (text[i] === '\\') i += 1;
+    else if (text[i] === '"') return i;
+  }
+  return text.length;
+}
+
+/** The index just past the bracket that closes the one at `open`, skipping string literals. */
+function closingBracket(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') i = stringEnd(text, i);
+    else if ('([{'.includes(char)) depth += 1;
+    else if (')]}'.includes(char)) {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return text.length;
+}
+
+/** `name(args)` split into its name and its top-level arguments, or null for anything else. */
+function attributeCall(text) {
+  const match = /^([\w:]+)\s*\(/.exec(text);
+  if (!match) return null;
+  const open = match[0].length - 1;
+  return { name: match[1], args: splitTopLevel(text.slice(open + 1, closingBracket(text, open) - 1)) };
+}
+
+/** The lints an `allow(...)` or `expect(...)` names, without its `reason`. */
+function lintNames(args) {
+  return args.filter((arg) => !/^reason\s*=/.test(arg)).sort();
+}
+
+/**
+ * Every lint attribute in the Rust sources: each `#[allow]` and `#[expect]`, and each one a `#[cfg_attr]` switches on, with the file and line it is on and the lints it names. Lines that are comments are skipped, so docs may show the syntax.
+ */
+function rustLintAttributes() {
+  const files = capture('git', ['grep', '-l', '--untracked', '-I', '-E', '(allow|expect|cfg_attr)[[:space:]]*\\(', '--', '*.rs'], { allowed: [0, 1] })
+    .out.split('\n')
+    .filter(Boolean);
+  const found = [];
+  for (const file of files) {
+    const text = readFileSync(join(ROOT, file), 'utf8');
+    for (const start of text.matchAll(/#!?\[/g)) {
+      const lineStart = text.lastIndexOf('\n', start.index) + 1;
+      if (text.slice(lineStart, start.index).includes('//')) continue;
+      const open = start.index + start[0].length - 1;
+      const call = attributeCall(text.slice(open + 1, closingBracket(text, open) - 1).trim());
+      if (call === null) continue;
+      const line = text.slice(0, start.index).split('\n').length;
+      const nested = call.name === 'cfg_attr' ? call.args.slice(1).map(attributeCall).filter(Boolean) : [call];
+      for (const attribute of nested) {
+        if (attribute.name === 'allow' || attribute.name === 'expect') {
+          found.push({ file, line, kind: attribute.name, conditional: call.name === 'cfg_attr', lints: lintNames(attribute.args) });
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * `#[allow]` is already an error through clippy's `allow_attributes`, but clippy only sees the attributes that are switched on for the system it runs on: `#[cfg_attr(not(windows), allow(...))]` passes on Windows and fails on Linux. This finds them on every system.
+ */
+function conditionalAllows() {
+  const hits = rustLintAttributes().filter((a) => a.conditional && a.kind === 'allow');
+  if (hits.length > 0) {
+    const list = hits.map((a) => `${a.file}:${String(a.line)}: allow(${a.lints.join(', ')})`).join('\n');
+    throw new GateError(`\`allow\` inside \`cfg_attr\` is not used: clippy cannot check it on the systems where it is switched off. Fix the cause (for code unused on one system, put it behind the same \`cfg\` as its users), or write \`#[expect(..., reason = "...")]\` and list it as an exception:\n${list}`);
+  }
+}
+
 /** What a commit message says, without git's comment lines or the diff `git commit -v` appends. */
 function messageText(raw) {
   const normalized = raw.replace(/\r\n?/g, '\n');
@@ -378,6 +476,7 @@ function tauriPairs() {
 const CHECKS = {
   fmt: () => cargo('fmt', '--all', '--check'),
   'lint-policy': lintPolicy,
+  'cfg-allow': conditionalAllows,
   clippy,
   'clippy-http3': () => cargo('clippy', '-p', ENGINE_CRATE, '-p', 'wirecatch-cli', '--all-targets', '--locked', '--features', 'wirecatch-engine/http3,wirecatch-cli/http3', '--', '-D', 'warnings'),
   test,
@@ -411,7 +510,7 @@ const CHECKS = {
 
 const GROUPS = {
   // The http3 checks run here, on every system CI tests, because QUIC sockets behave differently on Windows.
-  rust: ['fmt', 'lint-policy', 'clippy', 'test', 'test-desktop', 'clippy-http3', 'test-http3', 'engine-docs'],
+  rust: ['fmt', 'lint-policy', 'cfg-allow', 'clippy', 'test', 'test-desktop', 'clippy-http3', 'test-http3', 'engine-docs'],
   release: ['engine-package', 'msrv'],
   js: ['protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'tauri-pairs', 'commits'],
