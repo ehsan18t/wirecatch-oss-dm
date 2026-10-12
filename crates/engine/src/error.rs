@@ -133,9 +133,9 @@ pub enum Error {
     },
 
     /// [`DownloadRequest::resolve_path`](crate::DownloadRequest::resolve_path)
-    /// refused the file; the text is its reason. Nothing was written.
+    /// refused the file, for the reason it gives. Nothing was written.
     #[error("the download was not saved: {0}")]
-    TargetRejected(String),
+    TargetRejected(crate::PathRejected),
 
     /// A [`Fetcher`](crate::Fetcher) answer was larger than the size limit the
     /// caller set for it, so it was not read to the end.

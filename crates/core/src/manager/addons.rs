@@ -662,7 +662,9 @@ impl Manager {
             // anything is written; a larger file is never downloaded.
             let target = release.clone();
             request.resolve_path = Some(Arc::new(move |remote: &RemoteFile| {
-                fits(remote.total, cap).map(|()| target.clone())
+                fits(remote.total, cap)
+                    .map(|()| target.clone())
+                    .map_err(wirecatch_engine::PathRejected::new)
             }));
             request.options = self.addon_download_options();
             match wirecatch_engine::download(request, progress, cancel).await {

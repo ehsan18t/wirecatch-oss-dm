@@ -227,7 +227,39 @@ pub struct RemoteFile {
 /// [`DownloadRequest::resolve_path`]. Return `Err` with a reason to refuse the
 /// file. It runs on the download's task, so it must return quickly and must not
 /// block.
-pub type PathResolver = Arc<dyn Fn(&RemoteFile) -> Result<PathBuf, String> + Send + Sync>;
+pub type PathResolver = Arc<dyn Fn(&RemoteFile) -> Result<PathBuf, PathRejected> + Send + Sync>;
+
+/// Why a [`PathResolver`] refused a file. Its message is the caller's own,
+/// written for whoever reads [`Error::TargetRejected`]; the engine only
+/// carries it.
+///
+/// ```
+/// use wirecatch_engine::PathRejected;
+///
+/// let refused = PathRejected::new("The server sent a web page instead of the file.");
+/// assert_eq!(refused.message(), "The server sent a web page instead of the file.");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+#[non_exhaustive]
+pub struct PathRejected {
+    message: String,
+}
+
+impl PathRejected {
+    /// A refusal for the reason `message`.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    /// The reason given.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
 
 /// What to download and where to put it.
 ///

@@ -51,7 +51,7 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         // Only the manager's own resolver refuses a file, and the reason that
         // reaches a person is that the server sent something other than the file
         // the browser saw: a fresh link from the page is the way out.
-        EngineError::TargetRejected(reason) => fix(reason.clone(), FixAction::RefreshLink),
+        EngineError::TargetRejected(reason) => fix(reason.message(), FixAction::RefreshLink),
         EngineError::Internal(detail) => fix(
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
@@ -543,9 +543,9 @@ mod tests {
         // The app refused what the server sent (another file than the browser
         // saw, or a sign-in page): a fresh link from the page is the way out.
         let rejected = describe(
-            &EngineError::TargetRejected(
-                "The server sent a web page instead of the file. Refresh the link.".into(),
-            ),
+            &EngineError::TargetRejected(wirecatch_engine::PathRejected::new(
+                "The server sent a web page instead of the file. Refresh the link.",
+            )),
             Path::new("/d"),
             false,
         );

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, RemoteFile,
-    download,
+    CancellationToken, DownloadRequest, Error, Outcome, PathRejected, PrivateNetwork, Progress,
+    RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
@@ -813,10 +813,10 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
     let dir = private_dir("resolver-refuses").unwrap();
     let mut req = request(&server, "files/setup.exe", &dir, 4);
     req.resolve_path = Some(Arc::new(|remote: &RemoteFile| {
-        Err(format!(
+        Err(PathRejected::new(format!(
             "{} is not an allowed file type",
             remote.suggested_name
-        ))
+        )))
     }));
     let progress = Arc::new(Progress::default());
 
@@ -824,7 +824,7 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
 
     match result {
         Err(Error::TargetRejected(reason)) => {
-            assert_eq!(reason, "setup.exe is not an allowed file type");
+            assert_eq!(reason.message(), "setup.exe is not an allowed file type");
         }
         other => panic!("expected TargetRejected, got {other:?}"),
     }

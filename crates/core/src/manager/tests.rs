@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::{Error as EngineError, Url};
+use wirecatch_engine::{Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
@@ -209,7 +209,8 @@ fn answers_on_cue(gate: Arc<Notify>, name: &'static str) -> impl Fn(FakeRun) -> 
         Box::pin(async move {
             gate.notified().await;
             let settle = run.settle.expect("the path is not settled yet");
-            let path = settle(&answer(name)).map_err(EngineError::TargetRejected)?;
+            let path = settle(&answer(name))
+                .map_err(|reason| EngineError::TargetRejected(PathRejected::new(reason)))?;
             let [part, _] = naming::partial_files(&path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(part, b"part").unwrap();

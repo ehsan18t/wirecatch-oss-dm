@@ -238,8 +238,8 @@ mod writer;
 pub use ::http::header;
 pub use ::url::Url;
 pub use download::{
-    DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathResolver,
-    RemoteFile, download,
+    DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathRejected,
+    PathResolver, RemoteFile, download,
 };
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
