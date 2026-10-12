@@ -10,7 +10,7 @@ const ESLINT_CONFIG_PACKAGE = '@wirecatch/eslint-config';
 const LINT_SCRIPT = 'eslint . --max-warnings 0 && prettier --check .';
 /** The root package's lint script: every package's, then the repository's own scripts, which the root eslint.config.js covers. */
 const ROOT_LINT_SCRIPT =
-  'pnpm -r --if-present lint && eslint scripts --max-warnings 0 && prettier --check scripts';
+  'pnpm -r --if-present lint && eslint scripts eslint.config.js --max-warnings 0 && prettier --check scripts eslint.config.js';
 /** The root package's sources: what its lint script lints, and its configuration. */
 const ROOT_SOURCES = /^(scripts\/|eslint\.config\.js$)/;
 /**

@@ -12,7 +12,7 @@
     "prepare": "node scripts/install-hooks.mjs",
     "protocol:generate": "pnpm --filter @wirecatch/protocol generate",
     "check": "pnpm -r --if-present check",
-    "lint": "pnpm -r --if-present lint && eslint scripts --max-warnings 0 && prettier --check scripts",
+    "lint": "pnpm -r --if-present lint && eslint scripts eslint.config.js --max-warnings 0 && prettier --check scripts eslint.config.js",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build"
   },
