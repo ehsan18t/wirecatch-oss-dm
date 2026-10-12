@@ -43,7 +43,8 @@
   };
 
   let query = $state('');
-  let flash = $state<SettingId | null>(null);
+  /** The setting highlighted, as a new object for each jump, so opening it again starts over. */
+  let flash = $state<{ id: SettingId } | null>(null);
 
   const matches = $derived(searchSettings(query));
 
@@ -62,10 +63,16 @@
       el?.querySelector<HTMLElement>('button, input, select, textarea')?.focus({
         preventScroll: true,
       });
-      flash = target;
-      setTimeout(() => (flash = null), FLASH_MS);
+      flash = { id: target };
       app.settingsFocus = null;
     });
+  });
+
+  // The highlight fades after a while; a newer jump or leaving the screen stops the old timer.
+  $effect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => (flash = null), FLASH_MS);
+    return () => clearTimeout(timer);
   });
 </script>
 
@@ -113,7 +120,7 @@
           <section aria-labelledby="sec-{section.id}">
             <h2 id="sec-{section.id}">{section.title}</h2>
             <p class="blurb">{section.blurb}</p>
-            <View {items} settings={app.settings} {flash} />
+            <View {items} settings={app.settings} flash={flash?.id ?? null} />
           </section>
         {/if}
       {/each}

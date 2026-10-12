@@ -4,11 +4,18 @@
 import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { settingAnchor } from '$lib/settings-schema';
 import { renderApp, settle } from '$lib/testing/setup';
 
 /** More downloads at once than the desktop used to allow (32), and fewer than the core's limit. */
 const MANY_AT_ONCE = 50;
+/** A little over half the time a setting opened from elsewhere stays highlighted (1.6 s). */
+const FLASH_HALF = 900;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 async function openSettings() {
   const r = await renderApp();
@@ -62,5 +69,36 @@ describe('the settings screen', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
     await settle();
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
+  });
+});
+
+describe('a setting opened from elsewhere', () => {
+  const highlighted = () =>
+    document.getElementById(settingAnchor('default_folder'))?.classList.contains('flash');
+
+  it('stays highlighted for its full time when opened again', async () => {
+    const { app } = await renderApp();
+    vi.useFakeTimers();
+    app.openSettings('default_folder');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(highlighted()).toBe(true);
+    await vi.advanceTimersByTimeAsync(FLASH_HALF);
+    app.openSettings('default_folder');
+    await vi.advanceTimersByTimeAsync(FLASH_HALF);
+    // The first jump's time is up, but the second one's is not.
+    expect(highlighted()).toBe(true);
+    await vi.advanceTimersByTimeAsync(FLASH_HALF);
+    expect(highlighted()).toBe(false);
+  });
+
+  it('leaves no timer behind when the screen closes', async () => {
+    const { app } = await renderApp();
+    vi.useFakeTimers();
+    app.openSettings('default_folder');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    app.screen = 'downloads';
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
