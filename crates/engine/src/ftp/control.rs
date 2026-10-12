@@ -1,6 +1,7 @@
 //! The FTP control connection: sockets that may switch to TLS, sending
 //! commands and reading replies, and parsing the replies the engine relies on.
 
+use super::reply;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -178,17 +179,17 @@ pub(crate) struct Reply {
 impl Reply {
     /// 1xx: the command started and another reply follows.
     pub fn is_preliminary(&self) -> bool {
-        (100..200).contains(&self.code)
+        reply::is_preliminary(self.code)
     }
 
     /// 2xx: the command succeeded.
     pub fn is_success(&self) -> bool {
-        (200..300).contains(&self.code)
+        reply::is_success(self.code)
     }
 
     /// 5xx: the command will never succeed as sent.
     pub fn is_permanent_failure(&self) -> bool {
-        (500..600).contains(&self.code)
+        reply::is_permanent_failure(self.code)
     }
 
     /// The text cut to a length fit for an error message.
@@ -344,7 +345,7 @@ fn split_reply_line(line: &str) -> io::Result<(u16, char, &str)> {
     let code: u16 = line[..3]
         .parse()
         .map_err(|_| invalid("a reply that is not FTP"))?;
-    if !(100..600).contains(&code) {
+    if !reply::is_reply_code(code) {
         return Err(invalid("a reply that is not FTP"));
     }
     match bytes.get(3) {
