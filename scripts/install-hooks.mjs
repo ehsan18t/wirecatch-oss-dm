@@ -18,7 +18,9 @@ function main() {
   const current = git('config', '--get', 'core.hooksPath').stdout.trim();
   if (current === HOOKS) return;
   if (current) {
-    console.log(`git already uses hooks from ${current}; leaving it. To check commit messages, call \`node scripts/gate.mjs commit-msg "$1"\` from your commit-msg hook.`);
+    console.log(
+      `git already uses hooks from ${current}; leaving it. To check commit messages, call \`node scripts/gate.mjs commit-msg "$1"\` from your commit-msg hook.`,
+    );
     return;
   }
   if (git('config', 'core.hooksPath', HOOKS).status === 0) {

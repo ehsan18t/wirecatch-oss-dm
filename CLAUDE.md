@@ -30,7 +30,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `packages/eslint-config` | The one ESLint configuration, and the `wirecatch/*` rules. |
 | `packages/units` | Byte units, and how sizes and speeds are shown and typed, for both apps. |
 | `config/` | Product identity shared by every package: today the extension ids; all of it after [AUDIT](docs/AUDIT.md) W2. |
-| `scripts/gate.mjs` | Every quality check. |
+| `scripts/gate.mjs` | Every quality check: the runner, with the checks in `scripts/gate/`. |
 
 ## Gates
 
@@ -50,7 +50,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 ## How to work here
 
 - Fix the cause, not the symptom. When the same problem shows up in several places, fix it once at its source (docs/ENGINEERING.md, sections 1 and 3).
-- Leave every file you touch better. No lint suppressions: fix the cause. The only exceptions are a single `#[expect(..., reason = "...")]` or a disable comment with a `--` reason, where the rule is wrong for that code, each listed in docs/AUDIT.md W14 and in `LINT_EXCEPTIONS` in `scripts/gate.mjs` (the `exceptions` check fails on any other).
+- Leave every file you touch better. No lint suppressions: fix the cause. The only exceptions are a single `#[expect(..., reason = "...")]` or a disable comment with a `--` reason, where the rule is wrong for that code, each listed in docs/AUDIT.md W14 and in `LINT_EXCEPTIONS` in `scripts/gate/exceptions.mjs` (the `exceptions` check fails on any other).
 - A bug fix starts with a failing test that proves the bug.
 - When a rule or gate is too weak to catch a problem you found, say so and propose the check, rather than only fixing the one instance.
 - In a work package, edit only the folders it owns (`docs/PLAN.md`). Propose changes to shared files in your report.

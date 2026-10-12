@@ -96,7 +96,7 @@ EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16
 
 The W0 baseline found 1,477 clippy warnings and 787 ESLint errors. Each package is brought to zero while its workstream is open, and the gates then hold it there.
 
-Done on 2026-10-12: every crate follows the workspace lints, both apps' suppression files are deleted, and `std::thread::sleep` is banned in `clippy.toml`. 2,204 violations were fixed by cause, not silenced. The exceptions left are these eight, each a single attribute or comment with its reason in place. `LINT_EXCEPTIONS` in `scripts/gate.mjs` lists the same eight by file and lint, and the `exceptions` check fails on any other `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore`, and on any of these that is gone:
+Done on 2026-10-12: every crate follows the workspace lints, both apps' suppression files are deleted, and `std::thread::sleep` is banned in `clippy.toml`. 2,204 violations were fixed by cause, not silenced. The exceptions left are these eight, each a single attribute or comment with its reason in place. `LINT_EXCEPTIONS` in `scripts/gate/exceptions.mjs` lists the same eight by file and lint, and the `exceptions` check fails on any other `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore`, and on any of these that is gone:
 
 - E1: `apps/desktop/src/lib/backend/mock/rng.ts`, `wirecatch/no-magic-numbers` (one block, switched back on after it): the constants of the published mulberry32 generator, which define the algorithm.
 - E2: `crates/protocol/src/wire.rs`, `clippy::large_enum_variant` on `Message`: messages are decoded, handled and dropped one at a time.
@@ -122,7 +122,7 @@ Planned as the next round, not enabled yet: `clippy::let_underscore_must_use`, s
 
 Parts of W0 findings carried into later workstreams:
 
-- XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is not yet: `gate.mjs` is past the 400-line file limit and needs splitting into modules first (W6).
+- XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is linted and format-checked by the root `lint` script with the same configuration, now that the gate is split into modules in `scripts/gate/` that fit the size limits. Done.
 - XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).

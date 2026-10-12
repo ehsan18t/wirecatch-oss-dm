@@ -98,7 +98,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # cargo-deny and cargo-machete, at the versions in scripts/gate.mjs, built from their own lockfiles.
+      # cargo-deny and cargo-machete, at the versions in scripts/gate/rust.mjs, built from their own lockfiles.
       - name: Install gate tools
         run: node scripts/gate.mjs --install-tools
 
