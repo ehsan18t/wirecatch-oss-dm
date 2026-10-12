@@ -14,7 +14,7 @@
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -681,35 +681,6 @@ const GROUPS = {
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */
 const DEFAULT = ['repo', 'rust', 'release', 'js', 'supply-chain'];
 
-const GIB = 1024 ** 3;
-/** Free space the cargo build folder needs before a check that builds: a full gate into an empty build folder took 12 GiB (October 2026), and a build that runs out of space fails with errors that do not say so. */
-const MIN_FREE_BUILD_BYTES = 15 * GIB;
-/** Free space the repository's own disk needs when the build folder is on another one: installs, the JavaScript builds and generated files. */
-const MIN_FREE_REPOSITORY_BYTES = 2 * GIB;
-/** Checks that build the workspace or a large part of it, and so need MIN_FREE_BUILD_BYTES. The protocol check builds one small crate and is left out. */
-const BUILDING_CHECKS = new Set(['clippy', 'clippy-linux', 'clippy-http3', 'test', 'test-http3', 'test-desktop', 'engine-docs', 'engine-package', 'msrv']);
-
-/** Free bytes on the disk that holds `path`, or its nearest folder that exists. */
-function freeBytes(path) {
-  let folder = resolve(path);
-  while (!existsSync(folder) && dirname(folder) !== folder) folder = dirname(folder);
-  const stats = statfsSync(folder);
-  return stats.bavail * stats.bsize;
-}
-
-/** Fails before the first build when a disk it writes to is nearly full, instead of in the middle of a build with errors that hide the cause. */
-function requireFreeSpace() {
-  const needs = [
-    { what: 'the cargo build folder', path: process.env.CARGO_TARGET_DIR ?? join(ROOT, 'target'), min: MIN_FREE_BUILD_BYTES },
-    { what: 'the repository', path: ROOT, min: MIN_FREE_REPOSITORY_BYTES },
-  ];
-  const gib = (bytes) => `${(bytes / GIB).toFixed(1)} GiB`;
-  const short = needs.map((need) => ({ ...need, free: freeBytes(need.path) })).filter((need) => need.free < need.min);
-  if (short.length === 0) return;
-  const lines = short.map((need) => `${need.what} (${need.path}) has ${gib(need.free)} free; the gate needs ${gib(need.min)}.`);
-  throw new GateError(`Not enough free disk space to build:\n${lines.join('\n')}\nFree some with \`cargo clean\` (deletes the build folder, so the next build starts from scratch) and \`pnpm store prune\`, delete the build folders of checkouts you no longer use, or set CARGO_TARGET_DIR to a folder on a disk with room.`);
-}
-
 function expand(names) {
   return names.flatMap((name) => {
     if (GROUPS[name]) return expand(GROUPS[name]);
@@ -741,7 +712,6 @@ function main(rawArgs) {
     return;
   }
   const checks = [...new Set(expand(names.length > 0 ? names : DEFAULT))];
-  if (checks.some((name) => BUILDING_CHECKS.has(name))) requireFreeSpace();
   for (const name of checks) {
     console.log(`\n=== ${name}`);
     CHECKS[name]();
