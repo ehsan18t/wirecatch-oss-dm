@@ -3,6 +3,7 @@ import type { MediaView } from '../media/center';
 import type { BackgroundMessage, Channel, PopupCommand, PopupRequest, Snapshot } from '../messages';
 import { applyPatch, patchOf, type SettingsChange } from '../protocol';
 import { literal, object } from '../validate';
+import { Requests } from './requests';
 
 export interface Feedback {
   tone: 'success' | 'error';
@@ -16,6 +17,12 @@ export interface MediaStatus {
 }
 
 type Result = { ok: true; message?: string } | { ok: false; message: string };
+
+/** What a request gets when the background script went away before it answered. */
+const RESTARTED: Result = {
+  ok: false,
+  message: 'The extension restarted. Close and reopen this window.',
+};
 
 /**
  * Checks the kind of a message from the background script, which is this extension's
@@ -54,10 +61,7 @@ export class PopupModel {
   );
 
   readonly #channel: Channel<PopupRequest, unknown>;
-  // Callbacks for requests on their way, not displayed state, so a plain Map is right.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  readonly #waiting = new Map<number, (result: Result) => void>();
-  #nextId = 1;
+  readonly #requests = new Requests<Result>();
 
   constructor(channel: Channel<PopupRequest, unknown>) {
     this.#channel = channel;
@@ -65,16 +69,14 @@ export class PopupModel {
       if (isBackgroundMessage(raw)) this.#receive(raw);
     });
     channel.onDisconnect.addListener(() => {
-      for (const done of this.#waiting.values())
-        done({ ok: false, message: 'The extension restarted. Close and reopen this window.' });
-      this.#waiting.clear();
+      this.#requests.settleAll(RESTARTED);
     });
   }
 
   /** Sends a settings change to the app. Resolves with true once the app accepted it. */
   async update(changes: SettingsChange): Promise<boolean> {
     const patch = patchOf(changes);
-    const id = this.#nextId;
+    const id = this.#requests.nextId;
     this.#pending = [...this.#pending, { id, patch }];
     const result = await this.#send({ type: 'update_settings', patch });
     this.#pending = this.#pending.filter((p) => p.id !== id);
@@ -137,16 +139,13 @@ export class PopupModel {
   }
 
   #send(command: PopupCommand): Promise<Result> {
-    const id = this.#nextId++;
-    return new Promise((resolve) => {
-      this.#waiting.set(id, resolve);
-      try {
-        this.#channel.postMessage({ id, command });
-      } catch {
-        this.#waiting.delete(id);
-        resolve({ ok: false, message: 'The extension restarted. Close and reopen this window.' });
-      }
-    });
+    const { id, result } = this.#requests.start();
+    try {
+      this.#channel.postMessage({ id, command });
+    } catch {
+      this.#requests.settle(id, RESTARTED);
+    }
+    return result;
   }
 
   #receive(message: BackgroundMessage): void {
@@ -158,10 +157,8 @@ export class PopupModel {
       this.media = message.view;
       return;
     }
-    const done = this.#waiting.get(message.id);
-    if (done === undefined) return;
-    this.#waiting.delete(message.id);
-    done(
+    this.#requests.settle(
+      message.id,
       message.ok
         ? message.message === undefined
           ? { ok: true }
