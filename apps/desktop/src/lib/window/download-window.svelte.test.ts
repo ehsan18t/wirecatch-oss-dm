@@ -343,3 +343,15 @@ describe('closing a window', () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 });
+
+describe('the window title', () => {
+  it('names the running app, as the main window does', async () => {
+    const b = backend();
+    b.simulateSlowReading();
+    vi.spyOn(b, 'appName').mockResolvedValue('Wirecatch Dev');
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    expect(win.name).toBe('Wirecatch Dev');
+  });
+});

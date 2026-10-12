@@ -3,6 +3,7 @@
 // Download now, that download's progress. It loads only its own question or download, and of
 // each event keeps only what concerns it, so a window costs nothing per download in the list.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type {
   AddonInfo,
   AppSettings,
@@ -84,6 +85,8 @@ export class DownloadWindowState {
   );
 
   phase = $state<Phase>('loading');
+  /** The running app's name, for the window title: the backend's, the product name until it answers. */
+  name = $state(PRODUCT_NAME);
   question = $state<Question | null>(null);
   row = $state<DownloadSummary | null>(null);
   queues = $state<Queue[]>([]);
@@ -148,6 +151,7 @@ export class DownloadWindowState {
       ]);
       this.queues = queues;
       this.settings = settings;
+      this.name = await this.#host.backend().appName();
       if ('download' in this.#target) {
         this.row = await this.#host.backend().getDownload(this.#target.download);
         this.phase = 'progress';

@@ -2,6 +2,7 @@
 // Argument keys are camelCase here; Tauri maps them to the snake_case Rust parameter names.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
+import { getName } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -273,6 +274,9 @@ export class TauriBackend implements DownloadWindowBackend {
   async pickFolder(current?: string) {
     const picked = await open({ directory: true, multiple: false, defaultPath: current });
     return typeof picked === 'string' ? picked : null;
+  }
+  appName() {
+    return getName();
   }
   async pickSaveFile(suggestedName: string) {
     return save({

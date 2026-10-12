@@ -11,6 +11,14 @@ async function make() {
 }
 
 describe('AppState', () => {
+  it('names itself as the running app does, so a debug build says so', async () => {
+    const backend = mockBackend();
+    vi.spyOn(backend, 'appName').mockResolvedValue('Wirecatch Dev');
+    const app = appState(backend);
+    await app.init();
+    expect(app.name).toBe('Wirecatch Dev');
+  });
+
   it('loads everything and applies events', async () => {
     const { app, backend } = await make();
     expect(app.ready).toBe(true);

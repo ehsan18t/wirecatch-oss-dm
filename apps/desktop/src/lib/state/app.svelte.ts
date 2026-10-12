@@ -4,6 +4,7 @@
 // questions, the add-ons, settings files); this one owns the list, the screens and dialogs, the
 // settings and the core's events.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type { AppSettings, DownloadId, UiEvent } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
@@ -114,6 +115,8 @@ export class AppState {
   storageProblem = $state<string | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
+  /** The running app's name, for titles and labels: the backend's, the product name until it answers. */
+  name = $state(PRODUCT_NAME);
 
   /** Bumped by every init and dispose, so a superseded init cleans up after itself. */
   #generation = 0;
@@ -190,6 +193,7 @@ export class AppState {
     try {
       const backend = await this.#connection.load();
       this.sampleData = backend.kind === 'mock';
+      this.name = await backend.appName();
       this.clock.follow(backend.sampleData?.now);
       return await this.#connection.listen(current, onEvent, (signal) => {
         // Events were missed: load everything again rather than show a stale list.

@@ -1,6 +1,5 @@
 <script lang="ts">
   // The top of the sidebar: the name, and how fast everything is moving right now.
-  import { PRODUCT_NAME } from '@wirecatch/product';
   import { formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
 
@@ -31,7 +30,7 @@
         stroke-linejoin="round"
       />
     </svg>
-    {PRODUCT_NAME}
+    {app.name}
   </p>
   <p
     class="speed num"

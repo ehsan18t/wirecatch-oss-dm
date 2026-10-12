@@ -1,6 +1,5 @@
 <script lang="ts">
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import { PRODUCT_NAME } from '@wirecatch/product';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
@@ -19,9 +18,9 @@
   <div class="banner" role="alert">
     <Icon icon={TriangleAlert} size="md" />
     <div class="text">
-      <p class="title">{PRODUCT_NAME} could not save its download list</p>
+      <p class="title">{app.name} could not save its download list</p>
       <p>
-        {app.storageProblem} Recent changes may be lost when {PRODUCT_NAME} closes.
+        {app.storageProblem} Recent changes may be lost when {app.name} closes.
       </p>
     </div>
     <div class="actions">

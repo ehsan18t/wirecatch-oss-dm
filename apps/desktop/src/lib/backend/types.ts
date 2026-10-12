@@ -74,6 +74,8 @@ export interface Backend {
   readonly kind: 'tauri' | 'mock';
   /** Present only on the mock backend. */
   readonly sampleData?: SampleData;
+  /** The name the running app shows: its channel's, so a debug build is "Wirecatch Dev". */
+  appName(): Promise<string>;
 
   listDownloads(): Promise<DownloadSummary[]>;
   addDownload(request: AddRequest): Promise<DownloadId>;
