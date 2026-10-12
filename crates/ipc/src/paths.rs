@@ -7,7 +7,7 @@
 #[cfg(any(unix, test))]
 use std::ffi::OsStr;
 #[cfg(any(unix, test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Prefix of the per-user pipe name on Windows.
 #[cfg(any(windows, test))]
@@ -21,9 +21,15 @@ pub(crate) const RUNTIME_SUBDIR: &str = "wirecatch";
 #[cfg(any(unix, test))]
 pub(crate) const SOCKET_NAME: &str = "app.sock";
 
-/// File name of the lock that marks the live listener.
-#[cfg(unix)]
-pub(crate) const LOCK_NAME: &str = "app.lock";
+/// The lock that marks the live listener of the socket at `socket`: the socket's
+/// path with `.lock` after it. Each socket has a lock of its own, so release and
+/// debug builds can listen on sibling sockets in one folder.
+#[cfg(any(unix, test))]
+pub(crate) fn lock_path(socket: &Path) -> PathBuf {
+    let mut path = socket.as_os_str().to_owned();
+    path.push(".lock");
+    PathBuf::from(path)
+}
 
 /// The Windows pipe name for a user, given the user's SID in string form.
 #[cfg(any(windows, test))]
@@ -111,6 +117,18 @@ mod tests {
         assert_eq!(
             pipe_name("S-1-5-21-1-2-3-1001"),
             r"\\.\pipe\wirecatch-app-S-1-5-21-1-2-3-1001"
+        );
+    }
+
+    #[test]
+    fn each_socket_has_its_own_lock_next_to_it() {
+        assert_eq!(
+            lock_path(Path::new("/run/user/1000/wirecatch/app.sock")),
+            Path::new("/run/user/1000/wirecatch/app.sock.lock")
+        );
+        assert_ne!(
+            lock_path(Path::new("/d/app.sock")),
+            lock_path(Path::new("/d/app-dev.sock"))
         );
     }
 

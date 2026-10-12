@@ -101,7 +101,7 @@ impl SocketListener {
         let path = Path::new(endpoint.as_os_str());
         let dir = parent_of(path)?;
         verify_private_dir(dir, uid)?;
-        let lock = acquire_lock(&dir.join(paths::LOCK_NAME), endpoint)?;
+        let lock = acquire_lock(&paths::lock_path(path), endpoint)?;
         remove_stale_socket(path, endpoint)?;
 
         let listener = UnixListener::bind(path).map_err(|e| {
@@ -409,6 +409,19 @@ mod tests {
             SocketListener::bind(&endpoint),
             Err(IpcError::AlreadyInUse { .. })
         ));
+    }
+
+    /// Release and debug builds listen on sibling sockets in one folder (D13), so each
+    /// socket's listener holds a lock of its own.
+    #[tokio::test]
+    async fn listeners_on_sibling_sockets_in_one_folder_both_bind() {
+        let dir = new_dir();
+        let release = Endpoint::from_raw(dir.path().join("app.sock"));
+        let dev = Endpoint::from_raw(dir.path().join("app-dev.sock"));
+        let _release = SocketListener::bind(&release).unwrap();
+        let _dev = SocketListener::bind(&dev).unwrap();
+        connect(&release, current_uid()).await.unwrap();
+        connect(&dev, current_uid()).await.unwrap();
     }
 
     #[tokio::test]
