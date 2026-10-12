@@ -26,7 +26,7 @@ import {
   EVENT_NAME,
   SIGNAL_EVENTS,
   type AddonRequestItem,
-  type Backend,
+  type DownloadWindowBackend,
   type Question,
   type ShellSignal,
   type Unsubscribe,
@@ -45,7 +45,7 @@ export function toBackendError(err: unknown): BackendError {
   return new BackendError('Something went wrong talking to the download engine. Try again.');
 }
 
-export class TauriBackend implements Backend {
+export class TauriBackend implements DownloadWindowBackend {
   readonly kind = 'tauri';
   readonly #invoke: Invoke;
 
@@ -162,14 +162,12 @@ export class TauriBackend implements Backend {
   showProgressWindow(id: DownloadId) {
     return this.#exec(COMMANDS.showProgressWindow, { id });
   }
-  /** Closes the download window this page runs in (only a download window can). */
   closeDownloadWindow() {
     return this.#exec(COMMANDS.closeDownloadWindow);
   }
   mainWindowReady() {
     return this.#exec(COMMANDS.mainWindowReady);
   }
-  /** Makes the download window this page runs in as tall as its content (logical pixels). */
   fitDownloadWindow(height: number) {
     return this.#exec(COMMANDS.fitDownloadWindow, { height });
   }

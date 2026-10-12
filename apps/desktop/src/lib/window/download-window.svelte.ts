@@ -15,7 +15,7 @@ import type {
   UiEvent,
 } from '@wirecatch/protocol';
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
-import type { Backend, Question } from '../backend/types';
+import type { Backend, Question } from '../backend';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
 
 /** What the window is showing. */

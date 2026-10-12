@@ -3,8 +3,7 @@
   // `window/download?download=<id>`. It loads only its own question or download, never the
   // whole list, because every window is a webview of its own.
   import { onMount } from 'svelte';
-  import { inTauri } from '$lib/backend';
-  import { TauriBackend } from '$lib/backend/tauri';
+  import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
   import DownloadWindow from '$lib/window/DownloadWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
@@ -24,7 +23,7 @@
 
   let win = $state<DownloadWindowState | null>(null);
   let problem = $state<string | null>(null);
-  let backend: TauriBackend | null = null;
+  let backend: DownloadWindowBackend | null = null;
 
   // The window is only as tall as the view it shows; a failure leaves it as it is.
   setFitWindow((height) => void backend?.fitDownloadWindow(height).catch(() => undefined));
@@ -40,7 +39,7 @@
       problem = 'This window does not say which download it is for. Close it and try again.';
       return;
     }
-    const shell = new TauriBackend();
+    const shell = createDownloadWindowBackend();
     backend = shell;
     const state = new DownloadWindowState(shell, wanted, {
       close: () => void shell.closeDownloadWindow().catch(() => window.close()),

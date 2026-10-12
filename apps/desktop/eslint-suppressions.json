@@ -243,9 +243,6 @@
     "max-lines": {
       "count": 1
     },
-    "no-restricted-imports": {
-      "count": 1
-    },
     "wirecatch/no-magic-numbers": {
       "count": 2
     }
@@ -271,19 +268,11 @@
     }
   },
   "src/lib/window/MockWindow.svelte": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "svelte/button-has-type": {
       "count": 1
     },
     "wirecatch/no-magic-numbers": {
       "count": 3
-    }
-  },
-  "src/lib/window/MockWindows.svelte": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/lib/window/ProgressView.svelte": {
@@ -297,14 +286,6 @@
     },
     "complexity": {
       "count": 2
-    },
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/window/download/+page.svelte": {
-    "no-restricted-imports": {
-      "count": 1
     }
   }
 }

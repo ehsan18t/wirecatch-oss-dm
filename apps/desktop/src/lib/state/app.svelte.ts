@@ -20,7 +20,7 @@ import { getContext, setContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { MEDIA_ADDON } from '../addons';
 import { changeSettings, SettingsWriter } from './settings-changes.svelte';
-import type { Backend } from '../backend/types';
+import type { Backend } from '../backend';
 import { extractUrls, formatTime, scheduleAllows } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadStore } from './downloads.svelte';

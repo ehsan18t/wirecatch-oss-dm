@@ -1,8 +1,8 @@
 import type { MockOptions } from './mock';
 import { TauriBackend } from './tauri';
-import type { Backend } from './types';
+import type { Backend, DownloadWindowBackend } from './types';
 
-export type { Backend, ShellSignal } from './types';
+export type { Backend, DownloadWindowBackend, Question, ShellSignal } from './types';
 export { BackendError } from './types';
 
 /** True inside the Tauri webview. */
@@ -52,5 +52,13 @@ export async function createBackend(): Promise<Backend> {
     const { MockBackend } = await import('./mock');
     return new MockBackend(mockOptionsFromUrl(window.location.search));
   }
+  return new TauriBackend();
+}
+
+/**
+ * The backend of a download window opened by the desktop shell. Always the app's own: the sample
+ * app shows its download windows inside the main page instead.
+ */
+export function createDownloadWindowBackend(): DownloadWindowBackend {
   return new TauriBackend();
 }

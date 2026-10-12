@@ -170,6 +170,14 @@ export interface Backend {
   pickOpenFile(): Promise<string | null>;
 }
 
+/** The backend as a download window's own webview sees it: it can also size and close itself. */
+export interface DownloadWindowBackend extends Backend {
+  /** Closes the download window this page runs in. */
+  closeDownloadWindow(): Promise<void>;
+  /** Makes the download window this page runs in as tall as its content (logical pixels). */
+  fitDownloadWindow(height: number): Promise<void>;
+}
+
 /**
  * Tauri command names, exactly as the core registers them. The Rust side in `src-tauri`
  * registers the same names; a test checks both lists agree.

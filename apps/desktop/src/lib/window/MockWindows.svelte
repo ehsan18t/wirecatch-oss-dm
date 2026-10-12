@@ -3,7 +3,7 @@
   // the sample data, so each one floats inside the page, in the same cascade and with the same
   // rules as the desktop's. Loaded only with the sample backend.
   import type { DownloadId } from '@wirecatch/protocol';
-  import type { Backend } from '$lib/backend/types';
+  import type { Backend } from '$lib/backend';
   import type { OpenWindow, WindowRegistry } from './registry';
   import MockWindow from './MockWindow.svelte';
 

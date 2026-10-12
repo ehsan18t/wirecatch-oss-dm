@@ -3,7 +3,7 @@
   import X from '@lucide/svelte/icons/x';
   import type { DownloadId } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
-  import type { Backend } from '$lib/backend/types';
+  import type { Backend } from '$lib/backend';
   import DownloadWindow from './DownloadWindow.svelte';
   import { DownloadWindowState } from './download-window.svelte';
   import { CASCADE_STEP, type OpenWindow } from './registry';
