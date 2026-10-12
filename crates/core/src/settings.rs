@@ -6,8 +6,9 @@ use std::path::PathBuf;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD,
-    MediaDefaults, OutputDefaults, OutputFormat, PortablePath, Queue, Theme,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, OutputFormat, PortablePath, Queue,
+    Theme,
 };
 use wirecatch_protocol::extension::ExtensionSettings;
 
@@ -116,7 +117,7 @@ pub(crate) fn default_queue() -> Queue {
     Queue {
         id: DEFAULT_QUEUE_ID,
         name: "Main".into(),
-        max_concurrent: 3,
+        max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
         speed_limit: None,
         schedule: None,
         is_default: true,

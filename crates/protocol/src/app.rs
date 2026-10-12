@@ -744,6 +744,8 @@ crate::exported::exported_consts! {
     pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
     /// [`Queue::max_concurrent`] of a newly created queue.
     pub const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
+    /// [`Queue::max_concurrent`] of the default queue on a fresh install.
+    pub const DEFAULT_QUEUE_MAX_CONCURRENT: u32 = 3;
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;

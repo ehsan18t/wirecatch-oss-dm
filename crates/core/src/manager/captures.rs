@@ -517,7 +517,6 @@ fn direct_category(capture: &NewDownload) -> Option<Category> {
     })
 }
 
-/// The headers that make a captured download work outside the browser.
 /// A capture waiting for an answer as the UI shows it: no password in its
 /// links. The manager keeps the real ones.
 fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
@@ -528,6 +527,8 @@ fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
     }
 }
 
+/// What makes a captured download work outside the browser: the browser's
+/// user agent, and its referrer, cookies and other headers the extension sent.
 pub(super) fn origin_of(capture: &NewDownload) -> Origin {
     Origin {
         user_agent: capture.user_agent.clone(),

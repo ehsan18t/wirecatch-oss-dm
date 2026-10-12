@@ -47,6 +47,11 @@ export const DEFAULT_MAX_CONCURRENT_DOWNLOADS = 5;
 export const NEW_QUEUE_MAX_CONCURRENT = 2;
 
 /**
+ * [`Queue::max_concurrent`] of the default queue on a fresh install.
+ */
+export const DEFAULT_QUEUE_MAX_CONCURRENT = 3;
+
+/**
  * [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
  * a percent.
  */
