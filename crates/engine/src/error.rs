@@ -153,7 +153,7 @@ pub enum Error {
     /// on the local network (loopback, private, link-local or unspecified),
     /// because a resource from the internet pointed there; see
     /// [`PrivateNetwork`](crate::PrivateNetwork).
-    #[error("{url} points to a device on your own network, which Wirecatch blocks for safety")]
+    #[error("{url} points to a device on your own network, which is blocked for safety")]
     PrivateNetwork {
         /// The address that was refused.
         url: String,
@@ -215,8 +215,8 @@ pub enum Error {
     },
 
     /// Something inside the engine failed that should not, such as a task that
-    /// panicked. This is a bug in Wirecatch; please report it with the text.
-    #[error("internal error: {0}. This is a bug in Wirecatch; please report it")]
+    /// panicked. This is a bug in this crate; please report it with the text.
+    #[error("internal error: {0}. This is a bug in wirecatch-engine; please report it")]
     Internal(String),
 }
 

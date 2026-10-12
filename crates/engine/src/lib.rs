@@ -234,6 +234,8 @@ pub mod url;
 mod worker;
 mod writer;
 
+/// HTTP header names and values, for [`DownloadOptions::headers`].
+pub use ::http::header;
 pub use ::url::Url;
 pub use download::{
     DownloadOptions, DownloadRequest, MAX_BUFFER_SIZE, MAX_CONNECTIONS, Outcome, PathResolver,
@@ -241,8 +243,6 @@ pub use download::{
 };
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
-/// HTTP header names and values, for [`DownloadOptions::headers`].
-pub use ::http::header;
 pub use limiter::RateLimiter;
 pub use net_guard::PrivateNetwork;
 pub use progress::Progress;

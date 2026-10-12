@@ -372,9 +372,9 @@ async fn the_local_network_is_blocked_when_asked() {
             "{target}: {error}"
         );
         assert!(
-            error.to_string().ends_with(
-                "points to a device on your own network, which Wirecatch blocks for safety"
-            ),
+            error
+                .to_string()
+                .ends_with("points to a device on your own network, which is blocked for safety"),
             "{error}"
         );
         assert!(

@@ -63,7 +63,7 @@ const LOOKUP_PORT: u16 = 0;
 ///
 /// When a proxy is set in the environment (`HTTP_PROXY`, `HTTPS_PROXY` or
 /// `ALL_PROXY`, in upper or lower case), requests go through it, and the
-/// proxy, not Wirecatch, looks up each name and connects. The guard then
+/// proxy, not this computer, looks up each name and connects. The guard then
 /// still refuses, before every request and redirect hop, a target written as a
 /// local address and a target whose name resolves only to local addresses on
 /// this computer. It cannot see how the proxy resolves a name, so a name that
@@ -333,7 +333,7 @@ impl Resolve for FilteringResolver {
                 .collect();
             if addrs.is_empty() {
                 return Err(format!(
-                    "{host} points to a device on your own network, which Wirecatch blocks for safety"
+                    "{host} points to a device on your own network, which is blocked for safety"
                 )
                 .into());
             }
@@ -468,7 +468,7 @@ mod tests {
             Ok(addrs) => panic!("resolved to {:?}", addrs.collect::<Vec<_>>()),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("blocks for safety"), "{error}");
+        assert!(error.to_string().contains("blocked for safety"), "{error}");
         // The fetcher's own host keeps the local addresses it had at creation.
         let start = host_addresses(
             &Url::parse("http://localhost/").unwrap(),
@@ -562,7 +562,7 @@ mod tests {
             Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("blocks for safety"), "{error}");
+        assert!(error.to_string().contains("blocked for safety"), "{error}");
     }
 
     #[tokio::test]

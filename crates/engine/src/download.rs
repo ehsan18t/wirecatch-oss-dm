@@ -64,7 +64,8 @@ pub struct DownloadOptions {
     /// How long opening a connection may take, TLS handshake included
     /// (default 15 s).
     pub connect_timeout: Duration,
-    /// The `User-Agent` sent with every request (default `Wirecatch/<version>`).
+    /// The `User-Agent` sent with every request (default `wirecatch-engine/<version>`, the
+    /// version of this crate; an application sets its own).
     /// A `User-Agent` in [`headers`](Self::headers) takes precedence.
     pub user_agent: String,
     /// Extra request headers, such as the cookies, referer and user agent a
@@ -157,7 +158,7 @@ impl Default for DownloadOptions {
             max_retries: 6,
             stall_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(15),
-            user_agent: concat!("Wirecatch/", env!("CARGO_PKG_VERSION")).to_string(),
+            user_agent: concat!("wirecatch-engine/", env!("CARGO_PKG_VERSION")).to_string(),
             headers: HeaderMap::new(),
             checkpoint_interval: Duration::from_secs(1),
             rate_limiters: Vec::new(),

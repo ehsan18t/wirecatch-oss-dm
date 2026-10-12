@@ -55,7 +55,7 @@ const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 ///   non-public addresses, whether written as an IP, also inside an IPv6
 ///   address, or reached through a name or a redirect) are
 ///   refused with [`Error::PrivateNetwork`]: a playlist from a website must
-///   not make Wirecatch reach the router or other devices at home. See
+///   not make the program reach the router or other devices at home. See
 ///   [`PrivateNetwork`].
 ///
 /// ```no_run

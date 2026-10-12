@@ -269,7 +269,7 @@ pub(crate) async fn open(
             })
         }
         other => Err(Error::InvalidUrl(format!(
-            "{} uses \"{other}\", which Wirecatch cannot download from. Links must start with http, https, ftp, ftps or ftpes",
+            "{} uses \"{other}\", which cannot be downloaded. Links must start with http, https, ftp, ftps or ftpes",
             crate::url::without_password(url)
         ))),
     }
