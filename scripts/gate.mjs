@@ -77,7 +77,7 @@ const COMMANDS = {
   'commit-msg': commitMessageFile,
 };
 
-function main(rawArgs) {
+async function main(rawArgs) {
   const names = [];
   for (const arg of rawArgs) {
     if (arg === '--no-desktop') options.desktop = false;
@@ -96,13 +96,14 @@ function main(rawArgs) {
   const checks = [...new Set(expand(names.length > 0 ? names : DEFAULT))];
   for (const name of checks) {
     console.log(`\n=== ${name}`);
-    CHECKS[name]();
+    // Checks that need a module only some systems install (the ESLint API) are async and load it when they run.
+    await CHECKS[name]();
   }
   console.log(`\nGate passed: ${checks.join(', ')}`);
 }
 
 try {
-  main(process.argv.slice(2));
+  await main(process.argv.slice(2));
 } catch (error) {
   if (error instanceof GateError) {
     console.error(`\nGate failed.\n${error.message}`);

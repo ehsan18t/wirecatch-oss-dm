@@ -31,6 +31,8 @@ const MAX_PARAMS = 4;
 
 const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/**/testing/**'];
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
+/** What an `untyped` pattern must end with: a JavaScript extension, so it can never match TypeScript or Svelte. */
+const UNTYPED_PATTERN = /\.[mc]?js$/;
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
 
 /**
@@ -117,7 +119,7 @@ const BASELINE_RULES = {
  * @param {string[]} [options.ignores] Folders the linter skips, such as build output.
  * @param {object} [options.svelteConfig] The package's `svelte.config.js`, when it has one.
  * @param {import('eslint').Linter.Config[]} [options.layers] Import rules that keep each layer of the package from reaching into the wrong one.
- * @param {string[]} [options.untyped] More files linted without type information, like the scripts and configuration files every package has: JavaScript that has no types to check.
+ * @param {string[]} [options.untyped] More JavaScript files linted without type information, like the scripts and configuration files every package has. Each pattern must end in `.js`, `.mjs` or `.cjs`: TypeScript and Svelte are always type-checked.
  * @returns {import('eslint').Linter.Config[]}
  */
 export function wirecatch({
@@ -128,6 +130,12 @@ export function wirecatch({
   layers = [],
   untyped = [],
 }) {
+  const typed = untyped.filter((pattern) => !UNTYPED_PATTERN.test(pattern));
+  if (typed.length > 0) {
+    throw new Error(
+      `wirecatch({ untyped }) takes JavaScript patterns only (ending in .js, .mjs or .cjs); TypeScript and Svelte are always type-checked: ${typed.join(', ')}`,
+    );
+  }
   const untypedFiles = [...UNTYPED_FILES, ...untyped];
   return ts.config(
     { ignores: ['node_modules/', ...ignores] },
