@@ -28,16 +28,7 @@
     }
   },
   "src/lib/media/button.ts": {
-    "complexity": {
-      "count": 3
-    },
     "max-lines": {
-      "count": 1
-    },
-    "max-params": {
-      "count": 1
-    },
-    "no-param-reassign": {
       "count": 1
     }
   },

@@ -4,8 +4,17 @@
  * page styles cannot reach inside, and its styles cannot leak out. Everything it
  * needs to know about the tab comes from the background script through `deps`.
  */
-import { nonEmpty } from '../text';
-import { MAX_TITLE_LENGTH, isWebSrc, type DownloadAnswer, type ElementInfo } from './messages';
+import { BUTTON_HEIGHT, SHADOW_CSS, TYPICAL_BUTTON_WIDTH, icon } from './button-style';
+import type { DownloadAnswer, ElementInfo } from './messages';
+import {
+  containsDeep,
+  elementInfo,
+  findMedia,
+  isCandidate,
+  isDecorative,
+  mediaTitle,
+} from './page-media';
+import { INSET, placeButton, type Position } from './placement';
 
 export interface ButtonDeps {
   /** Whether anything downloadable is known for this element (asked before showing). */
@@ -19,27 +28,6 @@ export interface ButtonDeps {
   isTrusted?(event: Event): boolean;
 }
 
-export interface Box {
-  top: number;
-  left: number;
-  right: number;
-  bottom: number;
-  width: number;
-  height: number;
-}
-
-/** Smaller videos are previews or ads: no button. */
-export const MIN_VIDEO = { width: 160, height: 90 };
-/** Distance from the video's top corner. */
-const INSET = 8;
-/** Height kept clear above a video's native controls. */
-const CONTROLS_SPACE = 48;
-/** Space between an audio player and the button above or below it. */
-const AUDIO_GAP = 4;
-/** The button's height, set by `.b` in `SHADOW_CSS`. */
-const BUTTON_HEIGHT = 32;
-/** About the button's width with its label, used to place it before it can be measured. */
-const TYPICAL_BUTTON_WIDTH = 112;
 /** A focused container stands for the media inside it when it is at most this much larger. */
 const PLAYER_AREA_RATIO = 1.5;
 /** Added to the wait for the button to fade, so the timer fires just after that moment, not before. */
@@ -49,168 +37,8 @@ export const ACTIVE_MS = 3000;
 /** A "nothing to download" answer is asked again after this long (media may show up once playback starts). */
 const RECHECK_MS = 3000;
 
-/**
- * Where the button goes, in viewport pixels, or null when it should not show:
- * the element is too small, out of view, or there is no room left above a video's
- * own controls. Over a video it sits in the top right corner, away from the native
- * controls at the bottom. An audio player is all controls, so the button sits just
- * above it (or below, when there is no room above).
- */
-export function placeButton(
-  target: Box,
-  kind: { audio: boolean; controls: boolean },
-  viewport: { width: number; height: number },
-  size: { width: number; height: number },
-): { top: number; left: number } | null {
-  if (target.width <= 0 || target.height <= 0) return null;
-  if (!kind.audio && (target.width < MIN_VIDEO.width || target.height < MIN_VIDEO.height))
-    return null;
-  if (
-    target.bottom <= 0 ||
-    target.right <= 0 ||
-    target.top >= viewport.height ||
-    target.left >= viewport.width
-  ) {
-    return null;
-  }
-  let top: number;
-  let left: number;
-  if (kind.audio) {
-    top = target.top - size.height - AUDIO_GAP;
-    if (top < 0) top = target.bottom + AUDIO_GAP;
-    left = target.right - size.width;
-  } else {
-    top = Math.max(target.top, 0) + INSET;
-    const room =
-      Math.min(target.bottom, viewport.height) - (kind.controls ? CONTROLS_SPACE : INSET);
-    if (top + size.height > room) return null;
-    left = Math.min(target.right, viewport.width) - size.width - INSET;
-  }
-  left = Math.max(0, Math.min(left, viewport.width - size.width));
-  return { top: Math.round(top), left: Math.round(left) };
-}
-
-/** A muted, looping video without controls is decoration (a moving background): no button, playing or hovered. */
-export function isDecorative(el: HTMLMediaElement): boolean {
-  // `defaultMuted` is the `muted` attribute, which only sets `muted` when the page's HTML is parsed.
-  return el.tagName === 'VIDEO' && (el.muted || el.defaultMuted) && el.loop && !el.controls;
-}
-
-/** Video always qualifies; audio only when it shows its own player (`controls`). */
-export function isCandidate(el: HTMLMediaElement): boolean {
-  return el.tagName === 'VIDEO' || (el.tagName === 'AUDIO' && el.controls);
-}
-
-export function elementInfo(el: HTMLMediaElement): ElementInfo {
-  // The browser reports a missing address as an empty string.
-  const src = nonEmpty(el.currentSrc) ?? nonEmpty(el.src) ?? el.querySelector('source')?.src ?? '';
-  // `blob:`, `data:` and `mediasource:` addresses mean nothing outside the page: not sent.
-  return { src: isWebSrc(src) ? src : null, audio: el.tagName === 'AUDIO' };
-}
-
-/** Most elements looked at when searching a page, its open shadow roots included, for media. */
-const SEARCH_BUDGET = 20_000;
-
-/**
- * The video and audio elements under `root`, including inside open shadow roots
- * (closed ones cannot be seen). Stops after `SEARCH_BUDGET` elements on huge pages.
- */
-export function findMedia(root: ParentNode): HTMLMediaElement[] {
-  const found: HTMLMediaElement[] = [];
-  const roots: ParentNode[] = [root];
-  let seen = 0;
-  for (let next = roots.shift(); next !== undefined && seen < SEARCH_BUDGET; next = roots.shift()) {
-    for (const el of next.querySelectorAll('*')) {
-      seen += 1;
-      if (el instanceof HTMLMediaElement) found.push(el);
-      if (el.shadowRoot !== null) roots.push(el.shadowRoot);
-      if (seen >= SEARCH_BUDGET) break;
-    }
-  }
-  return found;
-}
-
-/** Like `container.contains(el)`, but also through shadow roots. */
-function containsDeep(container: Node, el: Node): boolean {
-  for (let node: Node | null = el; node !== null;) {
-    if (container.contains(node)) return true;
-    const root = node.getRootNode();
-    node = root instanceof ShadowRoot ? root.host : null;
-  }
-  return false;
-}
-
-/** The element's own label, or the page title. */
-export function mediaTitle(el: HTMLMediaElement, doc: Document): string | null {
-  const own = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? '';
-  const title = own.trim() || doc.title.trim();
-  return title === '' ? null : title.slice(0, MAX_TITLE_LENGTH);
-}
-
-/**
- * The host's own styles. Important rules in a shadow root's `:host` beat the page's
- * important rules (the inner context wins), so a page rule such as
- * `* { display: none !important }` cannot hide or move the button. The position is
- * set inline, since `:host` would also win over the inline style; hiding the
- * button detaches the host instead of styling it.
- */
-const HOST_RULES = [
-  'position:fixed',
-  'z-index:2147483647',
-  'display:block',
-  'visibility:visible',
-  'opacity:1',
-  // The host's box never takes the pointer; only the visible button does (see `.b`),
-  // so the faded-out button cannot swallow clicks meant for the player's controls.
-  'pointer-events:none',
-  'margin:0',
-  'padding:0',
-  'border:0',
-  'transform:none',
-  'filter:none',
-  'clip-path:none',
-  'width:auto',
-  'height:auto',
-  'max-width:none',
-  'max-height:none',
-  'right:auto',
-  'bottom:auto',
-  'contain:none',
-  'zoom:1',
-]
-  .map((rule) => `${rule}!important`)
-  .join(';');
-
-export const SHADOW_CSS = `
-:host{${HOST_RULES}}
-.w{all:initial;position:relative;display:block;pointer-events:none}
-.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:${String(BUTTON_HEIGHT)}px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s;pointer-events:auto}
-.b:hover{background:#1d4ed8}
-.b:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 5px #1d4ed8}
-.b[aria-busy=true]{cursor:progress}
-.b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.w.idle .b:not(:focus-visible){opacity:0;pointer-events:none}
-.s{all:initial;position:absolute;top:38px;right:0;width:max-content;max-width:260px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;border-radius:6px}
-.s:not(:empty){padding:6px 10px;background:rgba(17,19,24,.94);box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.s.err:not(:empty){background:#991b1b}
-.w.msg .b{visibility:hidden}
-@media (prefers-reduced-motion:reduce){.b{transition:none}}
-@media (forced-colors:active){.b,.s:not(:empty){border:1px solid CanvasText;forced-color-adjust:auto}}
-`;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-/** A download arrow, built without `innerHTML` so pages that enforce Trusted Types do not refuse it. */
-function icon(doc: Document): SVGElement {
-  const svg = doc.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  const path = doc.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', 'M12 4v11m-5-5 5 5 5-5M5 20h14');
-  svg.append(path);
-  return svg;
-}
+/** Page-wide listeners capture: media events such as `play` do not bubble, and a page may stop others from bubbling. */
+const CAPTURE = { capture: true };
 
 /** Events that would otherwise reach the page (a player toggling pause on a click, a shortcut on a key). */
 const CONTAINED = [
@@ -230,6 +58,14 @@ export type Shown = 'none' | 'shown' | 'idle' | 'message';
 
 /** How long a message stays, long enough for screen readers to announce it. */
 export const MESSAGE_MS = { ok: 4000, error: 8000 };
+
+/**
+ * A media element shown full screen by itself cannot have anything drawn over it;
+ * a player container shown full screen can, if the button moves inside it.
+ */
+function hiddenByFullscreen(target: HTMLMediaElement, fullscreen: Element | null): boolean {
+  return fullscreen !== null && (fullscreen === target || !containsDeep(fullscreen, target));
+}
 
 export class MediaButton {
   /** The element the page sees: a bare custom element whose content is in a closed shadow root. */
@@ -317,20 +153,23 @@ export class MediaButton {
         this.#lastActive = this.#now();
       }
     }
-    this.#listen(doc, 'play', (e) => this.#onPlay(e), true);
-    this.#listen(doc, 'pause', (e) => this.#onStop(e), true);
-    this.#listen(doc, 'ended', (e) => this.#onStop(e), true);
-    this.#listen(doc, 'loadedmetadata', (e) => this.#track(e.target), true);
-    this.#listen(doc, 'pointerover', (e) => this.#discover(e), true);
-    this.#listen(doc, 'pointermove', (e) => this.#onPointer(e as PointerEvent), true);
+    this.#listen(doc, 'play', (e) => this.#onPlay(e), CAPTURE);
+    this.#listen(doc, 'pause', (e) => this.#onStop(e), CAPTURE);
+    this.#listen(doc, 'ended', (e) => this.#onStop(e), CAPTURE);
+    this.#listen(doc, 'loadedmetadata', (e) => this.#track(e.target), CAPTURE);
+    this.#listen(doc, 'pointerover', (e) => this.#discover(e), CAPTURE);
+    this.#listen(doc, 'pointermove', (e) => this.#onPointer(e as PointerEvent), CAPTURE);
     this.#listen(doc, 'pointerout', (e) => {
       if ((e as PointerEvent).relatedTarget === null) this.#onPointerGone();
     });
     // `composedPath()[0]` is the element itself, also inside a page's open shadow root.
-    this.#listen(doc, 'focusin', (e) => this.#onFocus(e.composedPath()[0] ?? e.target), true);
+    this.#listen(doc, 'focusin', (e) => this.#onFocus(e.composedPath()[0] ?? e.target), CAPTURE);
     // Not passive: it may cancel Tab to move focus to the button.
-    this.#listen(doc, 'keydown', (e) => this.#onKey(e as KeyboardEvent), true, false);
-    this.#listen(doc, 'scroll', () => this.#schedule(), true);
+    this.#listen(doc, 'keydown', (e) => this.#onKey(e as KeyboardEvent), {
+      capture: true,
+      passive: false,
+    });
+    this.#listen(doc, 'scroll', () => this.#schedule(), CAPTURE);
     this.#listen(doc, 'fullscreenchange', () => this.#update());
     const view = doc.defaultView;
     if (view !== null) this.#listen(view, 'resize', () => this.#schedule());
@@ -397,12 +236,12 @@ export class MediaButton {
     this.host.remove();
   }
 
+  /** Adds a listener that `#unwatch` removes again; passive and in the bubbling phase unless `options` says otherwise. */
   #listen(
     target: EventTarget,
     type: string,
     listener: (event: Event) => void,
-    capture = false,
-    passive = true,
+    { capture = false, passive = true }: { capture?: boolean; passive?: boolean } = {},
   ): void {
     const options = { capture, passive };
     target.addEventListener(type, listener, options);
@@ -589,19 +428,25 @@ export class MediaButton {
   }
 
   #update(): void {
-    const focused = this.#isFocused();
     // Keep the element the person is acting on while the button has focus or is busy.
-    if (!focused && !this.#busy) this.#target = this.#hovered ?? this.#playing;
+    const holding = this.#isFocused() || this.#busy;
+    if (!holding) this.#target = this.#hovered ?? this.#playing;
     const target = this.#target;
-    let state: Shown = 'none';
-    if (this.#enabled && target !== null && target.isConnected && this.#allowed(target)) {
-      const active = this.#now() - this.#lastActive < ACTIVE_MS;
-      state = target === this.#hovered || focused || this.#busy || active ? 'shown' : 'idle';
-      if (state === 'shown' && !focused && !this.#busy && target !== this.#hovered) {
-        this.#wakeAt(this.#lastActive + ACTIVE_MS);
-      }
-    }
-    this.#render(state, target);
+    const wanted = target !== null && this.#enabled && target.isConnected && this.#allowed(target);
+    this.#render(wanted ? this.#visibility(target, holding) : 'none', target);
+  }
+
+  /**
+   * Shown while the pointer is on the element or the person is acting on the button,
+   * and for `ACTIVE_MS` after the last activity; faded out (`idle`) after that.
+   */
+  #visibility(target: HTMLMediaElement, holding: boolean): Shown {
+    const hovered = target === this.#hovered;
+    const active = this.#now() - this.#lastActive < ACTIVE_MS;
+    if (!hovered && !holding && !active) return 'idle';
+    // Only recent activity keeps it shown: fade it out once that is over.
+    if (!hovered && !holding) this.#wakeAt(this.#lastActive + ACTIVE_MS);
+    return 'shown';
   }
 
   #isFocused(): boolean {
@@ -619,42 +464,45 @@ export class MediaButton {
     );
   }
 
-  #render(state: Shown, target: HTMLMediaElement | null): void {
+  #render(wanted: Shown, target: HTMLMediaElement | null): void {
     const fullscreen = this.#doc.fullscreenElement;
-    // A media element shown full screen by itself cannot have anything drawn over it;
-    // a player container shown full screen can, if the button moves inside it.
-    if (
-      target !== null &&
-      fullscreen !== null &&
-      (fullscreen === target || !containsDeep(fullscreen, target))
-    ) {
-      state = 'none';
-    }
-    const place = (el: HTMLMediaElement): { top: number; left: number } | null => {
-      const view = this.#doc.defaultView;
-      return placeButton(
-        el.getBoundingClientRect(),
-        { audio: el.tagName === 'AUDIO', controls: el.controls },
-        { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
-        // Measured once the button is in the page; a typical size until then.
-        {
-          width: this.button.offsetWidth || TYPICAL_BUTTON_WIDTH,
-          height: this.button.offsetHeight || BUTTON_HEIGHT,
-        },
-      );
-    };
-    let position = state === 'none' || target === null ? null : place(target);
+    const state = target !== null && hiddenByFullscreen(target, fullscreen) ? 'none' : wanted;
+    const position = state === 'none' || target === null ? null : this.#place(target);
     if (position === null || target === null) {
-      if (this.status.textContent !== '' && this.host.isConnected) {
-        // Keep the message (a live region) in place until it has been read; it expires on its own.
-        this.#wrap.classList.add('msg');
-        this.#state = 'message';
-        return;
-      }
-      this.host.remove();
-      this.#state = 'none';
+      this.#hide();
       return;
     }
+    this.#show(target, position, fullscreen);
+    this.#wrap.classList.toggle('idle', state === 'idle');
+    this.#state = state;
+  }
+
+  #place(el: HTMLMediaElement): Position | null {
+    const view = this.#doc.defaultView;
+    return placeButton(
+      el.getBoundingClientRect(),
+      { audio: el.tagName === 'AUDIO', controls: el.controls },
+      { width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 },
+      // Measured once the button is in the page; a typical size until then.
+      {
+        width: this.button.offsetWidth || TYPICAL_BUTTON_WIDTH,
+        height: this.button.offsetHeight || BUTTON_HEIGHT,
+      },
+    );
+  }
+
+  #hide(): void {
+    if (this.status.textContent !== '' && this.host.isConnected) {
+      // Keep the message (a live region) in place until it has been read; it expires on its own.
+      this.#wrap.classList.add('msg');
+      this.#state = 'message';
+      return;
+    }
+    this.host.remove();
+    this.#state = 'none';
+  }
+
+  #show(target: HTMLMediaElement, position: Position, fullscreen: Element | null): void {
     this.#wrap.classList.remove('msg');
     // Outside the body, where page frameworks do not manage the children, unless a
     // player container is full screen: only its contents are drawn then.
@@ -664,14 +512,11 @@ export class MediaButton {
     if (!attached) {
       parent.append(this.host);
       // Placed again with the button's real size, now that it can be measured.
-      position = place(target) ?? position;
-      this.#position(position);
+      this.#position(this.#place(target) ?? position);
     }
-    this.#wrap.classList.toggle('idle', state === 'idle');
-    this.#state = state;
   }
 
-  #position(position: { top: number; left: number }): void {
+  #position(position: Position): void {
     const style = `position:fixed!important;top:${position.top}px!important;left:${position.left}px!important`;
     // Scrolling and pointer moves call this every frame: only touch the page's DOM on a change.
     if (style === this.#style) return;

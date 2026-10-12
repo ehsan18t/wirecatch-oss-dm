@@ -4,16 +4,10 @@
  * `getBoundingClientRect`, since jsdom does none.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ACTIVE_MS,
-  MESSAGE_MS,
-  MediaButton,
-  SHADOW_CSS,
-  findMedia,
-  placeButton,
-  type Box,
-  type ButtonDeps,
-} from '../src/lib/media/button';
+import { ACTIVE_MS, MESSAGE_MS, MediaButton, type ButtonDeps } from '../src/lib/media/button';
+import { SHADOW_CSS } from '../src/lib/media/button-style';
+import { findMedia } from '../src/lib/media/page-media';
+import { placeButton, type Box } from '../src/lib/media/placement';
 import type { DownloadAnswer, ElementInfo } from '../src/lib/media/messages';
 import { flush } from './fakes';
 
