@@ -353,11 +353,7 @@ pub fn dev_identity(config: &mut tauri::Config) {
 /// download. Instead the reason is shown in a notification and in the tray tooltip, the window
 /// shows it on its first command, and the extension gets it as a clear error on every request.
 fn unavailable(app: &tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>, reason: String) {
-    background::show_notification(
-        app,
-        "Wirecatch could not open its download list".to_owned(),
-        reason.clone(),
-    );
+    background::show_notification(app, unavailable_title(), reason.clone());
     tray::set_tooltip(app, &tray::problem_tooltip(&reason));
     if let Some(listener) = listener {
         app.state::<Lifecycle>()
@@ -365,6 +361,11 @@ fn unavailable(app: &tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>
                 listener, reason,
             )));
     }
+}
+
+/// The notification title when the manager could not open, naming the running app.
+fn unavailable_title() -> String {
+    format!("{} could not open its download list", host::CHANNEL.name())
 }
 
 /// The updater stays off until `plugins.updater` is configured with endpoints and a public key
@@ -394,6 +395,14 @@ mod tests {
         assert!(guarded.contains("Pop $0"), "the nsExec result is popped");
         let run_value = format!(r#"CurrentVersion\Run" "{}""#, Channel::Release.name());
         assert!(guarded.contains(&run_value), "removes the Run value");
+    }
+
+    #[test]
+    fn the_unavailable_notice_names_the_running_app() {
+        assert_eq!(
+            unavailable_title(),
+            format!("{} could not open its download list", host::CHANNEL.name())
+        );
     }
 
     #[test]

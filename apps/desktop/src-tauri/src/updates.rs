@@ -57,6 +57,15 @@ pub async fn check_and_download<R: Runtime>(app: &AppHandle<R>) -> Result<Option
     Ok(Some(version))
 }
 
+/// The title and body of the notification that an update is downloaded, naming the running app.
+fn update_ready_notice(version: &str) -> (String, String) {
+    let name = crate::host::CHANNEL.name();
+    (
+        format!("{name} {version} is ready"),
+        format!("It installs the next time you quit {name}."),
+    )
+}
+
 /// Checks now and then for as long as the app runs; see the module documentation.
 pub async fn keep_checking<R: Runtime>(app: AppHandle<R>) {
     tokio::time::sleep(FIRST_CHECK_AFTER).await;
@@ -64,11 +73,10 @@ pub async fn keep_checking<R: Runtime>(app: AppHandle<R>) {
         let waiting = app.try_state::<PendingUpdate>().and_then(|p| p.version());
         if waiting.is_none() {
             match check_and_download(&app).await {
-                Ok(Some(version)) => crate::background::show_notification(
-                    &app,
-                    format!("Wirecatch {version} is ready"),
-                    "It installs the next time you quit Wirecatch.".to_owned(),
-                ),
+                Ok(Some(version)) => {
+                    let (title, body) = update_ready_notice(&version);
+                    crate::background::show_notification(&app, title, body);
+                }
                 Ok(None) => {}
                 Err(e) => tracing::warn!("could not check for updates: {e}"),
             }
@@ -88,5 +96,22 @@ pub fn install_pending<R: Runtime>(app: &AppHandle<R>) {
     };
     if let Err(e) = update.install(bytes) {
         tracing::warn!("could not install Wirecatch {}: {e}", update.version);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_update_notice_names_the_running_app() {
+        let name = crate::host::CHANNEL.name();
+        assert_eq!(
+            update_ready_notice("1.2.3"),
+            (
+                format!("{name} 1.2.3 is ready"),
+                format!("It installs the next time you quit {name}.")
+            )
+        );
     }
 }
