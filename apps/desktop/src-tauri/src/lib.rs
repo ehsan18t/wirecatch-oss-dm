@@ -6,7 +6,8 @@
 //! The interface (`apps/desktop/src/lib/backend/tauri.ts`) calls exactly these commands with
 //! these parameter names (the webview sends the camelCase form, for example `deleteFile` for
 //! `delete_file`; Tauri maps it). A test on the TypeScript side checks that both lists agree.
-//! Every command fails with a plain-language `String`, the core's own error text.
+//! Every command fails with a `ProtocolError`: a code the interface acts on (never the wording)
+//! and a plain-language message, the core's own error text or the shell's.
 //!
 //! | Command | Parameters | Returns |
 //! |---|---|---|
@@ -290,7 +291,7 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
     let manager = match core.manager().await.cloned() {
         Ok(manager) => manager,
         Err(reason) => {
-            unavailable(&app, listener, reason);
+            unavailable(&app, listener, reason.message);
             return;
         }
     };

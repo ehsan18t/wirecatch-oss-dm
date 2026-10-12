@@ -12,6 +12,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  ErrorCode,
   ImportPreview,
   MediaChoice,
   MediaSelection,
@@ -36,13 +37,35 @@ type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>
 /** Tauri's `listen`; tests pass their own. */
 type Listen = typeof listen;
 
-/** Turns whatever the Rust side rejected with into a `BackendError` with readable text. */
+/** Every error code, so a code read from the Rust side can be checked; a code left out fails the type check. */
+const ERROR_CODES: Readonly<Record<ErrorCode, true>> = {
+  unsupported_version: true,
+  invalid_request: true,
+  invalid_url: true,
+  not_found: true,
+  app_unavailable: true,
+  app_not_running: true,
+  internal: true,
+  not_started: true,
+  addon_required: true,
+};
+
+function isErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === 'string' && Object.hasOwn(ERROR_CODES, value);
+}
+
+/**
+ * Turns whatever the Rust side rejected with into a `BackendError` with readable text. A command
+ * rejects with the protocol's `{ code, message }`; the code comes along when it is one this build
+ * knows.
+ */
 export function toBackendError(err: unknown): BackendError {
   if (err instanceof BackendError) return err;
   if (typeof err === 'string') return new BackendError(err);
   if (err instanceof Error) return new BackendError(err.message);
   if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
-    return new BackendError(err.message);
+    const code = 'code' in err && isErrorCode(err.code) ? err.code : null;
+    return new BackendError(err.message, code);
   }
   return new BackendError('Something went wrong talking to the download engine. Try again.');
 }

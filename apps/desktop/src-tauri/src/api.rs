@@ -1,8 +1,8 @@
 //! What each Tauri command does, as plain functions on the [`Manager`].
 //!
 //! The `#[tauri::command]` wrappers in `commands.rs` only find the manager and call these, so
-//! tests drive exactly the code the interface runs, without a webview. Every error is the
-//! core's plain-language text, ready to show as is.
+//! tests drive exactly the code the interface runs, without a webview. Every error is a
+//! [`ProtocolError`]: a code the interface acts on and plain-language text, ready to show as is.
 
 use std::path::{Path, PathBuf};
 
@@ -11,16 +11,35 @@ use wirecatch_protocol::app::{
     AddRequest, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
     DownloadSummary, ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue,
 };
+use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::questions::Question;
 
-/// What a command answers: a value, or an error worded for a person.
-pub type CommandResult<T> = Result<T, String>;
+/// What a command answers: a value, or an error with a code for the interface to act on and a
+/// message worded for a person. It is the protocol's error, so the interface reads one shape
+/// whether the core or the shell refused.
+pub type CommandResult<T> = Result<T, ProtocolError>;
 
-/// The core's answer with its error as the plain-language text the interface shows.
+/// The core's answer, its error carrying the core's code and plain-language text.
 fn plain<T>(result: wirecatch_core::Result<T>) -> CommandResult<T> {
-    result.map_err(|err| err.to_string())
+    result.map_err(|err| err.to_protocol())
+}
+
+/// A request the shell itself turns down, worded for a person.
+pub fn refused(message: impl Into<String>) -> ProtocolError {
+    ProtocolError {
+        code: ErrorCode::InvalidRequest,
+        message: message.into(),
+    }
+}
+
+/// Something the shell itself could not do, worded for a person.
+pub fn failed(message: impl Into<String>) -> ProtocolError {
+    ProtocolError {
+        code: ErrorCode::Internal,
+        message: message.into(),
+    }
 }
 
 /// Every download, in queue order.
@@ -388,21 +407,23 @@ fn site_of(url: &str) -> String {
 pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> CommandResult<PathBuf> {
     let row = find(m, id)?;
     if row.status != DownloadStatus::Completed {
-        return Err("The file is not finished yet. It opens once the download completes.".into());
+        return Err(refused(
+            "The file is not finished yet. It opens once the download completes.",
+        ));
     }
     let path = PathBuf::from(&row.path);
     if !path.is_file() {
-        return Err(format!(
+        return Err(refused(format!(
             "{} is no longer at {}. It may have been moved or deleted. Download it again with Retry, or look for it in another folder.",
             row.file_name, row.path
-        ));
+        )));
     }
     if is_program(&path) && !allow_program {
-        return Err(format!(
+        return Err(refused(format!(
             "{} is a type of file that can run code. Only open it if you trust {}. Use Show in folder to open it yourself.",
             row.file_name,
             site_of(&row.url)
-        ));
+        )));
     }
     Ok(path)
 }
@@ -429,11 +450,11 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
     }
     match path.parent() {
         Some(folder) if folder.is_dir() => Ok(Reveal::Folder(folder.to_path_buf())),
-        Some(folder) => Err(format!(
+        Some(folder) => Err(refused(format!(
             "The folder {} does not exist yet. Wirecatch creates it when the download starts.",
             folder.display()
-        )),
-        None => Err(format!("{} has no folder to show.", row.path)),
+        ))),
+        None => Err(refused(format!("{} has no folder to show.", row.path))),
     }
 }
 
@@ -690,14 +711,13 @@ mod tests {
         }
     }
 
-    /// The interface tells this error from others by its start (`isAddonRequired` in
-    /// `src/lib/addons.ts`).
+    /// The interface tells this error from others by its code (`isAddonRequired` in
+    /// `src/lib/addons.ts`), never by its wording.
     #[test]
-    fn the_add_on_required_error_keeps_its_wording() {
+    fn the_add_on_required_error_keeps_its_code() {
         assert!(
             plain::<()>(Err(CoreError::AddonRequired))
-                .is_err_and(|text| text.starts_with("This needs the media add-on")),
-            "update isAddonRequired in src/lib/addons.ts too"
+                .is_err_and(|e| e.code == ErrorCode::AddonRequired)
         );
     }
 

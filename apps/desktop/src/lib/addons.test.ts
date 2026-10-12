@@ -1,12 +1,25 @@
 import { describe, expect, it } from 'vitest';
+import { BackendError } from './backend';
 import { mediaAddon } from './backend/mock';
 import {
   addonAction,
   addonAnnouncement,
   addonStatus,
   installFraction,
+  isAddonRequired,
   isInstalled,
 } from './addons';
+
+describe('a missing add-on', () => {
+  it('is told by its code, whatever the wording', () => {
+    expect(isAddonRequired(new BackendError('Reworded later.', 'addon_required'))).toBe(true);
+    expect(
+      isAddonRequired(new BackendError('This needs the media add-on.', 'invalid_request')),
+    ).toBe(false);
+    expect(isAddonRequired(new BackendError('This needs the media add-on.'))).toBe(false);
+    expect(isAddonRequired('This needs the media add-on.')).toBe(false);
+  });
+});
 
 describe('add-on wording', () => {
   it('says where the add-on stands in plain words', () => {

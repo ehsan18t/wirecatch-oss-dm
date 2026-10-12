@@ -185,10 +185,10 @@ pub async fn open_file(
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| {
-            format!(
+            api::failed(format!(
                 "Could not open {} ({e}). Try opening it from its folder.",
                 path.display()
-            )
+            ))
         })
 }
 
@@ -202,19 +202,19 @@ pub async fn open_folder(app: AppHandle, core: CoreState<'_>, id: DownloadId) ->
     let opener = app.opener();
     match api::item_to_reveal(core.manager().await?, id)? {
         Reveal::File(path) => opener.reveal_item_in_dir(&path).map_err(|e| {
-            format!(
+            api::failed(format!(
                 "Could not show {} in its folder ({e}). Open the folder yourself: {}",
                 path.display(),
                 path.parent().unwrap_or(&path).display()
-            )
+            ))
         }),
         Reveal::Folder(folder) => opener
             .open_path(folder.to_string_lossy(), None::<&str>)
             .map_err(|e| {
-                format!(
+                api::failed(format!(
                     "Could not open the folder {} ({e}). Open it yourself.",
                     folder.display()
-                )
+                ))
             }),
     }
 }
@@ -286,11 +286,13 @@ pub async fn show_progress_window(
 #[tauri::command]
 pub async fn close_download_window(window: WebviewWindow) -> CommandResult<()> {
     if !download_windows::is_download_window(window.label()) {
-        return Err("Only a download window closes this way.".into());
+        return Err(api::refused("Only a download window closes this way."));
     }
-    window
-        .close()
-        .map_err(|e| format!("Could not close the window ({e}). Close it with its X button."))
+    window.close().map_err(|e| {
+        api::failed(format!(
+            "Could not close the window ({e}). Close it with its X button."
+        ))
+    })
 }
 
 #[tauri::command]
@@ -302,7 +304,9 @@ pub async fn main_window_ready(window: WebviewWindow) -> CommandResult<()> {
 #[tauri::command]
 pub async fn fit_download_window(window: WebviewWindow, height: f64) -> CommandResult<()> {
     if !download_windows::is_download_window(window.label()) {
-        return Err("Only a download window fits itself to its content.".into());
+        return Err(api::refused(
+            "Only a download window fits itself to its content.",
+        ));
     }
     download_windows::fit_to_content(&window, height);
     Ok(())

@@ -126,6 +126,7 @@ function connectionProblem(error: ProtocolError): Problem | null {
     case 'not_found':
     case 'internal':
     case 'not_started':
+    case 'addon_required':
       return null;
   }
 }

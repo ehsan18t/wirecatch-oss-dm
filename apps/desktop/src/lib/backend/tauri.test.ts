@@ -173,6 +173,10 @@ describe('TauriBackend', () => {
     await expect(b.listDownloads()).rejects.toBeInstanceOf(BackendError);
     await expect(b.listDownloads()).rejects.toThrow(/not connected/);
     expect(toBackendError({ message: 'x' }).message).toBe('x');
+    expect(toBackendError({ message: 'x' }).code).toBeNull();
+    const coded = toBackendError({ code: 'addon_required', message: 'This needs the add-on.' });
+    expect([coded.code, coded.message]).toEqual(['addon_required', 'This needs the add-on.']);
+    expect(toBackendError({ code: 'from_the_future', message: 'x' }).code).toBeNull();
     expect(toBackendError(42).message).toMatch(/Try again/);
   });
 });

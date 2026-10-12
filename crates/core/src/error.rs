@@ -30,7 +30,7 @@ pub enum CoreError {
     InvalidUrl(String),
 
     /// The choice needs the media add-on, which is not installed. The UI was
-    /// told with `AddonRequired`.
+    /// told with `UiEvent::AddonRequired`; clients see `ErrorCode::AddonRequired`.
     #[error(
         "This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again."
     )]
@@ -158,8 +158,8 @@ impl CoreError {
             | CoreError::DefaultQueue
             | CoreError::Path(_)
             | CoreError::ProfileTooNew { .. }
-            | CoreError::InvalidProfile(_)
-            | CoreError::AddonRequired => ErrorCode::InvalidRequest,
+            | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
+            CoreError::AddonRequired => ErrorCode::AddonRequired,
             CoreError::DatabaseTooNew { .. }
             | CoreError::Database(_)
             | CoreError::File { .. }
@@ -184,6 +184,16 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Wirecatch could not take over this download. The server did not answer within 8 seconds. The browser keeps it."
+        );
+    }
+
+    /// A client tells "this needs the media add-on" from other refusals by its
+    /// code, never by its wording.
+    #[test]
+    fn a_missing_add_on_has_its_own_code() {
+        assert_eq!(
+            CoreError::AddonRequired.to_protocol().code,
+            ErrorCode::AddonRequired
         );
     }
 

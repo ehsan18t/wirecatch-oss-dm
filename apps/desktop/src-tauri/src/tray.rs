@@ -82,8 +82,8 @@ pub fn perform(
         || manager.ok_or_else(|| "Wirecatch is still starting. Try again in a moment.".to_owned());
     match action {
         TrayAction::Open => shell.open_window(),
-        TrayAction::PauseAll => api::pause_all(ready()?)?,
-        TrayAction::ResumeAll => api::resume_all(ready()?)?,
+        TrayAction::PauseAll => api::pause_all(ready()?).map_err(|e| e.message)?,
+        TrayAction::ResumeAll => api::resume_all(ready()?).map_err(|e| e.message)?,
         TrayAction::Quit => shell.quit(),
     }
     Ok(())

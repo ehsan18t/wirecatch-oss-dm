@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use tokio::sync::OnceCell;
 use wirecatch_core::{KnownFolders, Manager, ManagerConfig};
 use wirecatch_ipc::{Endpoint, IpcError};
+use wirecatch_protocol::wire::ProtocolError;
 
 /// Overrides the data folder, for tests and for trying things on a throwaway download list.
 /// Debug builds already keep their own folder, identity and endpoint (see [`DEV_BUILD`]).
@@ -28,7 +29,7 @@ pub const DEV_NAME: &str = "Wirecatch Dev";
 /// The download manager this process hosts, opened on first use.
 pub struct Core {
     config: ManagerConfig,
-    cell: OnceCell<Result<Manager, String>>,
+    cell: OnceCell<Result<Manager, ProtocolError>>,
 }
 
 impl Core {
@@ -46,14 +47,14 @@ impl Core {
     /// # Errors
     ///
     /// The manager could not open (a database from a newer Wirecatch, say, or a data folder
-    /// that cannot be written). The text is the plain-language reason, ready to show to a
-    /// person, and every later call answers with it again.
-    pub async fn manager(&self) -> Result<&Manager, String> {
+    /// that cannot be written). The error carries the core's code and plain-language reason,
+    /// ready to show to a person, and every later call answers with it again.
+    pub async fn manager(&self) -> Result<&Manager, ProtocolError> {
         self.cell
             .get_or_init(|| async {
                 Manager::open(self.config.clone()).await.map_err(|e| {
                     tracing::error!("could not open the download manager: {e}");
-                    e.to_string()
+                    e.to_protocol()
                 })
             })
             .await

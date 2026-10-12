@@ -202,6 +202,15 @@ pub struct ProtocolError {
     pub message: String,
 }
 
+/// Shows the message, which is written for a person.
+impl std::fmt::Display for ProtocolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ProtocolError {}
+
 /// The kinds of failure a client can tell apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -226,6 +235,10 @@ pub enum ErrorCode {
     /// in time, or sent something other than what the browser saw). The browser
     /// keeps its own download.
     NotStarted,
+    /// The choice needs the media add-on, which is not installed. The app has
+    /// already offered it ([`UiEvent::AddonRequired`](crate::app::UiEvent::AddonRequired)); the client keeps the
+    /// choice open and goes on once the add-on is in.
+    AddonRequired,
 }
 
 #[cfg(test)]

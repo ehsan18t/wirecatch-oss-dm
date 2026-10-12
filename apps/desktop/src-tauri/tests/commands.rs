@@ -168,7 +168,7 @@ async fn open_and_reveal(
     let Err(not_done) = api::file_to_open(manager, unfinished, false) else {
         return Err("an unfinished download opened".into());
     };
-    assert!(not_done.contains("not finished"), "{not_done}");
+    assert!(not_done.message.contains("not finished"), "{not_done}");
     Ok(id)
 }
 
@@ -185,7 +185,7 @@ async fn a_program_opens_only_when_trusted(
         return Err("a program opened without the person's trust".into());
     };
     assert!(
-        refused.contains("can run code") && refused.contains("127.0.0.1"),
+        refused.message.contains("can run code") && refused.message.contains("127.0.0.1"),
         "{refused}"
     );
     api::file_to_open(manager, program, true)?;
@@ -220,7 +220,7 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
     let mut bad = request(&fast, "x", &saved, true);
     bad.url = "not a link".into();
     let bad = api::add_download(&manager, bad).await.unwrap_err();
-    assert!(bad.contains("is not a valid link"), "{bad}");
+    assert!(bad.message.contains("is not a valid link"), "{bad}");
 
     // Remove, with the file.
     api::remove(&manager, &[first], true).await?;
@@ -289,7 +289,7 @@ async fn quit_right_after_start_opens_then_stops_the_manager() -> TestResult {
     quit_core(Some(&core), || {
         let manager = core.get().expect("opened by the quit");
         let err = api::pause_all(manager).unwrap_err();
-        assert!(err.contains("shutting down"), "{err}");
+        assert!(err.message.contains("shutting down"), "{err}");
         exited.store(true, Ordering::SeqCst);
     })
     .await;
@@ -310,7 +310,7 @@ async fn quit_stops_the_manager_before_exiting() -> TestResult {
     quit_sequence(Some(&manager), || {
         // By the time the process exits, the manager has stopped taking work.
         let err = api::pause_all(&manager).unwrap_err();
-        assert!(err.contains("shutting down"), "{err}");
+        assert!(err.message.contains("shutting down"), "{err}");
         exited.store(true, Ordering::SeqCst);
     })
     .await;
@@ -357,14 +357,20 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
     let gone = api::choose_media(&manager, 99, selection)
         .await
         .unwrap_err();
-    assert!(gone.contains("already confirmed or dismissed"), "{gone}");
+    assert!(
+        gone.message.contains("already confirmed or dismissed"),
+        "{gone}"
+    );
     let gone = api::dismiss_media_choice(&manager, 99).unwrap_err();
-    assert!(gone.contains("already confirmed or dismissed"), "{gone}");
+    assert!(
+        gone.message.contains("already confirmed or dismissed"),
+        "{gone}"
+    );
 
     let unknown = api::install_addon(&manager, "flash").await.unwrap_err();
-    assert!(unknown.contains("no add-on called"), "{unknown}");
+    assert!(unknown.message.contains("no add-on called"), "{unknown}");
     let unknown = api::update_addon(&manager, "flash").await.unwrap_err();
-    assert!(unknown.contains("no add-on called"), "{unknown}");
+    assert!(unknown.message.contains("no add-on called"), "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
     api::remove_addon(&manager, "media").await?;
     // Stopping with nothing in progress is fine; an unknown add-on is refused.
@@ -384,7 +390,7 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
 
     // Opening looks the download up in the core by id.
     let missing = api::file_to_open(&manager, DownloadId(4242), false).unwrap_err();
-    assert!(missing.contains("no longer exists"), "{missing}");
+    assert!(missing.message.contains("no longer exists"), "{missing}");
     assert!(api::download_is_program(&manager, DownloadId(4242)).is_err());
     manager.shutdown().await;
     Ok(())

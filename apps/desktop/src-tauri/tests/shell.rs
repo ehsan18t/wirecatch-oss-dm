@@ -102,7 +102,7 @@ fn quit_from_the_tray(open_first: bool) -> TestResult {
     let Err(err) = api::pause_all(manager) else {
         return Err("the stopped manager still took work".into());
     };
-    assert!(err.contains("shutting down"), "{err}");
+    assert!(err.message.contains("shutting down"), "{err}");
     Ok(())
 }
 

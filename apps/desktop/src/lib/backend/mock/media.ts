@@ -119,7 +119,7 @@ function requireAddon(state: MockState, choice: MediaChoice): void {
   const url = choice.page_url ?? choice.title;
   const addon = structuredClone(state.addon('media'));
   state.emit({ type: 'addon_required', data: { addon, url, id: choice.id } });
-  throw new BackendError(ADDON_REQUIRED);
+  throw new BackendError(ADDON_REQUIRED, 'addon_required');
 }
 
 /** What ffmpeg does once the download is in, besides joining video and audio. */

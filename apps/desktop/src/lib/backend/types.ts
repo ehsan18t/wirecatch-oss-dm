@@ -9,6 +9,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  ErrorCode,
   ImportPreview,
   MediaChoice,
   MediaSelection,
@@ -244,7 +245,16 @@ export const SIGNAL_EVENTS: Record<ShellSignal, string> = {
   links: 'wirecatch://links',
 };
 
-/** An error from the backend, with a message written for a person. */
+/**
+ * An error from the backend, with a message written for a person and, when the core or the shell
+ * gave one, a code to act on. Decide from `code`, never from the wording.
+ */
 export class BackendError extends Error {
   override name = 'BackendError';
+  readonly code: ErrorCode | null;
+
+  constructor(message: string, code: ErrorCode | null = null) {
+    super(message);
+    this.code = code;
+  }
 }

@@ -309,7 +309,7 @@ export class DownloadWindowState {
     } catch (err) {
       this.#answered = false;
       this.busy = false;
-      if (needsAddon && isAddonRequired(errorMessage(err))) {
+      if (needsAddon && isAddonRequired(err)) {
         // The core asked for the add-on instead; the window offers it and goes on afterwards.
         this.awaitingAddon = { selection };
         return true;

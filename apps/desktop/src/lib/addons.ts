@@ -2,6 +2,7 @@
 
 import type { AddonInfo, AddonState } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
+import { BackendError } from './backend';
 import { PERCENT_MAX, percentOf, roundDownTo } from './format';
 
 /** A screen reader hears an install at every quarter of it, in percent, not at every percent. */
@@ -12,10 +13,10 @@ export const MEDIA_ADDON = 'media';
 
 /**
  * Whether an error is the core's "this needs the media add-on" (`CoreError::AddonRequired`),
- * which comes with an `addon_required` prompt, rather than any other failure.
+ * which comes with an `addon_required` prompt, rather than any other failure. Told by its code.
  */
-export function isAddonRequired(message: string): boolean {
-  return message.startsWith('This needs the media add-on');
+export function isAddonRequired(err: unknown): boolean {
+  return err instanceof BackendError && err.code === 'addon_required';
 }
 
 /** How far an install has got, from 0 to 1, or `null` when the size is not known. */
