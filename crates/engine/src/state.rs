@@ -1,7 +1,7 @@
 //! The resume file kept next to a part file.
 
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -13,12 +13,21 @@ use crate::segment::ByteRange;
 
 const VERSION: u32 = 1;
 
+/// The largest resume file read: 16 MiB. A resume file lists the ranges still
+/// to fetch, at most a few per connection (some hundred bytes); anything near
+/// this size was not written by the engine, and reading it whole could take a
+/// lot of memory.
+const MAX_STATE_BYTES: u64 = 16 * crate::units::MIB;
+
 /// Why a resume file could not be used. The download then starts over.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum LoadError {
     /// The file could not be read; [`io::ErrorKind::NotFound`] when there is none.
     #[error("it cannot be read")]
     Read(#[source] io::Error),
+    /// The file is larger than any resume file the engine writes.
+    #[error("it is larger than {MAX_STATE_BYTES} bytes")]
+    TooLarge,
     /// The file is not a resume file, or is damaged.
     #[error("it is damaged")]
     Parse(#[source] serde_json::Error),
@@ -62,7 +71,14 @@ impl ResumeState {
 
     /// Reads the resume file at `path`.
     pub fn load(path: &Path) -> Result<Self, LoadError> {
-        let raw = std::fs::read(path).map_err(LoadError::Read)?;
+        let file = File::open(path).map_err(LoadError::Read)?;
+        let mut raw = Vec::new();
+        file.take(MAX_STATE_BYTES + 1)
+            .read_to_end(&mut raw)
+            .map_err(LoadError::Read)?;
+        if raw.len() as u64 > MAX_STATE_BYTES {
+            return Err(LoadError::TooLarge);
+        }
         let state: Self = serde_json::from_slice(&raw).map_err(LoadError::Parse)?;
         if state.version != VERSION {
             return Err(LoadError::Version(state.version));
@@ -247,5 +263,18 @@ mod tests {
             "{}",
             logged()
         );
+    }
+
+    #[test]
+    fn an_oversized_resume_file_is_not_read() {
+        let dir = wirecatch_test_support::private_dir("state-size").unwrap();
+        let path = dir.path().join("f.bin.wcstate");
+        // Sparse: no 16 MiB is written.
+        File::create(&path)
+            .unwrap()
+            .set_len(MAX_STATE_BYTES + 1)
+            .unwrap();
+        assert!(matches!(ResumeState::load(&path), Err(LoadError::TooLarge)));
+        dir.remove().unwrap();
     }
 }
