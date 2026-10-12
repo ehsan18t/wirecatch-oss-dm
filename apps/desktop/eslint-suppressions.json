@@ -1,15 +1,4 @@
 {
-  "src/lib/commands.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "src/lib/components/DetailPanel.svelte": {
     "max-lines": {
       "count": 1
