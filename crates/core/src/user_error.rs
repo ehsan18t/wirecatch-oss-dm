@@ -58,8 +58,8 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         ),
         EngineError::Stalled { after } => fix(
             format!(
-                "The server stopped sending data for {} seconds. Try again; the part already downloaded is kept.",
-                after.as_secs().max(1)
+                "The server stopped sending data for {}. Try again; the part already downloaded is kept.",
+                how_long(*after)
             ),
             FixAction::Retry,
         ),
@@ -75,7 +75,11 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             "The file changed on the server while it was downloading. Try again to download the new version.",
             FixAction::Retry,
         ),
-        EngineError::Io { source, .. } => disk(source, folder),
+        EngineError::Io {
+            action,
+            path,
+            source,
+        } => disk_failure(source, folder, &format!("{action} {}", path.display())),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
             FixAction::Retry,
@@ -301,8 +305,27 @@ fn http_status(status: u16, previously_worked: bool) -> UserError {
     }
 }
 
+/// A span of time in words: `less than a second`, `1 second`, `30 seconds`.
+fn how_long(span: std::time::Duration) -> String {
+    match span.as_secs() {
+        0 => "less than a second".to_owned(),
+        1 => "1 second".to_owned(),
+        seconds => format!("{seconds} seconds"),
+    }
+}
+
 /// Describes a file operation that failed while saving into `folder`.
 pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
+    disk_failure(
+        error,
+        folder,
+        &format!("write the file to {}", folder.display()),
+    )
+}
+
+/// Describes a file operation that failed while saving into `folder`; `what`
+/// says what could not be done, as in `create the folder /x`.
+fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
         error.kind(),
@@ -332,9 +355,7 @@ pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
             FixAction::ChooseFolder,
         ),
         _ => fix(
-            format!(
-                "Could not write the file to {folder} ({error}). Check the drive, then try again."
-            ),
+            format!("Could not {what} ({error}). Check the drive, then try again."),
             FixAction::Retry,
         ),
     }
@@ -457,6 +478,32 @@ mod tests {
         assert_eq!(action(&kind, true), Some(FixAction::FreeDiskSpace));
         let raw = io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
         assert_eq!(action(&raw, true), Some(FixAction::FreeDiskSpace));
+    }
+
+    #[test]
+    fn a_stall_says_how_long_in_words() {
+        let said = |after| describe(&EngineError::Stalled { after }, Path::new("/d"), true).message;
+        let short = said(std::time::Duration::from_millis(500));
+        assert!(short.contains("for less than a second"), "{short}");
+        let one = said(std::time::Duration::from_secs(1));
+        assert!(
+            one.contains("for 1 second.") || one.contains("for 1 second "),
+            "{one}"
+        );
+        let many = said(std::time::Duration::from_secs(30));
+        assert!(many.contains("for 30 seconds"), "{many}");
+    }
+
+    #[test]
+    fn a_disk_error_says_what_failed_with_which_file() {
+        let error = EngineError::Io {
+            action: wirecatch_engine::IoAction::Flush,
+            path: "/downloads/f.bin.wcpart".into(),
+            source: io::ErrorKind::Other.into(),
+        };
+        let message = describe(&error, Path::new("/downloads"), true).message;
+        assert!(message.contains("flush the file to the disk"), "{message}");
+        assert!(message.contains("/downloads/f.bin.wcpart"), "{message}");
     }
 
     #[test]
