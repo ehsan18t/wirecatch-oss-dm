@@ -1,4 +1,5 @@
 // The shared ESLint configuration. Each package calls `wirecatch()` with what is specific to it (its globals, ignored folders and layer rules) and gets the same strict baseline as every other package. Change the baseline here, never in a package.
+import comments from '@eslint-community/eslint-plugin-eslint-comments';
 import js from '@eslint/js';
 import prettier from 'eslint-config-prettier';
 import svelte from 'eslint-plugin-svelte';
@@ -57,7 +58,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
         globals: runtimeGlobals,
         parserOptions: { projectService: true, tsconfigRootDir, extraFileExtensions: ['.svelte'] },
       },
-      plugins: { wirecatch: plugin },
+      plugins: { wirecatch: plugin, '@eslint-community/eslint-comments': comments },
       linterOptions: { reportUnusedDisableDirectives: 'error' },
       rules: {
         // Correctness. TypeScript already reports undefined names, and `no-undef` does not understand type-only globals.
@@ -88,6 +89,10 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
             ignoreTypeIndexes: true,
           },
         ],
+        // A disable comment names its rules, says why after `--`, and switches them back on: an exception is one reasoned decision about a few lines, never a file or every rule.
+        '@eslint-community/eslint-comments/require-description': ['error', { ignore: ['eslint-enable'] }],
+        '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
+        '@eslint-community/eslint-comments/disable-enable-pair': 'error',
         // Size limits.
         complexity: ['error', MAX_COMPLEXITY],
         'max-depth': ['error', MAX_DEPTH],

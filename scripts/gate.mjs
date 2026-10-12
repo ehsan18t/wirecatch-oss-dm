@@ -310,10 +310,48 @@ function grepRepository(pattern, pathspecs) {
   return out.split('\n').filter(Boolean);
 }
 
+/** Files that may hold disable comments: everything ESLint and Svelte read, except this script, whose patterns name them. */
+const COMMENT_SCOPE = ['*.ts', '*.js', '*.mjs', '*.cjs', '*.svelte', ':!scripts/gate.mjs'];
+/** An ESLint disable comment in any of its forms, with the rules and reason that follow it. */
+const ESLINT_DISABLE = /(?:\/\/|\/\*|<!--)\s*eslint-disable(?:-next-line|-line)?(?=\s|\*\/|-->|$)(.*?)(?:\*\/|-->|$)/gm;
+/** A svelte-ignore comment, in markup or in a script, with the codes and reason that follow it. */
+const SVELTE_IGNORE = /(?:<!--|\/\/|\/\*)\s*svelte-ignore\s(.*?)(?:-->|\*\/|$)/gm;
+/** Svelte reads the codes, separated by commas, from the start of a svelte-ignore comment and treats what follows as prose. */
+const SVELTE_IGNORE_CODES = /^\s*[\w$-]+(?:\s*,\s*[\w$-]+)*/;
+/** Where a comment's reason starts: ESLint's `--` separator, which svelte-ignore comments use too. */
+const REASON_SEPARATOR = /(?:^|\s)--+\s+\S/;
+
+/** Every ESLint disable comment and svelte-ignore comment: the file and line it is on, what it switches off, and whether it gives a reason. */
+function disableComments() {
+  const files = new Set(grepRepository('eslint-disable|svelte-ignore', COMMENT_SCOPE).map((hit) => hit.slice(0, hit.indexOf(':'))));
+  const found = [];
+  for (const file of files) {
+    const text = readFileSync(join(ROOT, file), 'utf8');
+    const lineOf = (index) => text.slice(0, index).split('\n').length;
+    for (const match of text.matchAll(ESLINT_DISABLE)) {
+      const [rules] = match[1].split(/\s--+\s/);
+      const lints = rules.split(',').map((rule) => rule.trim()).filter(Boolean);
+      found.push({ file, line: lineOf(match.index), kind: 'eslint-disable', lints: lints.length > 0 ? lints.sort() : ['(every rule)'], reason: REASON_SEPARATOR.test(match[1]) });
+    }
+    for (const match of text.matchAll(SVELTE_IGNORE)) {
+      const codes = SVELTE_IGNORE_CODES.exec(match[1])?.[0] ?? '';
+      const lints = codes.split(',').map((code) => code.trim()).filter(Boolean);
+      found.push({ file, line: lineOf(match.index), kind: 'svelte-ignore', lints: lints.sort(), reason: REASON_SEPARATOR.test(match[1].slice(codes.length).trim()) });
+    }
+  }
+  return found;
+}
+
 function textRules() {
   const hits = [...grepRepository(EM_DASH_LITERAL, TEXT_SCOPE), ...grepRepository(EM_DASH_ESCAPED, ESCAPE_SCOPE)];
   if (hits.length > 0) {
     throw new GateError(`Em dashes are not used in this repository; use a comma, colon, parentheses or a new sentence:\n${hits.join('\n')}`);
+  }
+  // ESLint's own comments are held to a reason by the shared config (eslint-comments/require-description); Svelte's are not linted, so they are checked here.
+  const unreasoned = disableComments().filter((c) => c.kind === 'svelte-ignore' && !c.reason);
+  if (unreasoned.length > 0) {
+    const list = unreasoned.map((c) => `${c.file}:${String(c.line)}: svelte-ignore ${c.lints.join(', ')}`).join('\n');
+    throw new GateError(`A svelte-ignore comment says why the warning is wrong there, after \`--\` (\`<!-- svelte-ignore a11y_x -- the reason -->\`). Fix the cause where you can:\n${list}`);
   }
 }
 

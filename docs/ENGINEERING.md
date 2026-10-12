@@ -110,7 +110,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - Every `{#each}` has a key. Lists that can be long are virtualized. A progress tick updates the rows that changed, not the whole list.
 - Functions stay under 80 lines and a complexity of 12, files under 400 lines. Gate.
 
-There are no suppression files, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place: on that one line, with a `--` reason, never file-wide.
+There are no suppression files, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place: it names the rule, gives its reason after `--`, and covers only those lines (`eslint-disable-next-line`, or an `eslint-disable` switched back on by `eslint-enable`), never a whole file. A `svelte-ignore` gives its reason the same way (`<!-- svelte-ignore a11y_x -- the reason -->`). Gate (`require-description`, `no-unlimited-disable` and `disable-enable-pair` from `eslint-plugin-eslint-comments` in the shared config, and the `text` check for `svelte-ignore`).
 
 ## 6. Logging
 
