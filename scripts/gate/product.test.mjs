@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { generate } from '../product/generate.mjs';
 import { outputs } from '../product/outputs.mjs';
-import { crateMetadataProblems, remainingPlaceholders, staleOutputs } from './product.mjs';
+import {
+  crateMetadataProblems,
+  handCopiedPlaceholders,
+  remainingPlaceholders,
+  staleOutputs,
+  placeholderHits,
+} from './product.mjs';
 import { ROOT } from './process.mjs';
 
 /** What the generator reads besides its outputs: the identity, the templates, and the formatting settings. */
@@ -24,6 +30,23 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const edit = (path, change) =>
   writeFileSync(join(root, path), change(readFileSync(join(root, path), 'utf8')));
+
+test('a placeholder copied by hand outside the generated files is found', () => {
+  assert.deepEqual(
+    handCopiedPlaceholders(['src/a.rs:3:TODO-PRODUCT-WEBSITE', 'SECURITY.md:8:x'], ['SECURITY.md']),
+    ['src/a.rs:3:TODO-PRODUCT-WEBSITE'],
+  );
+});
+
+test('the repository holds placeholders only where config/product.toml puts them', () => {
+  assert.deepEqual(
+    handCopiedPlaceholders(
+      placeholderHits(),
+      outputs(ROOT).map((o) => o.path),
+    ),
+    [],
+  );
+});
 
 test('the generated files in the repository are current', async () => {
   assert.deepEqual(await staleOutputs(ROOT), []);

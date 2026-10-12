@@ -2,7 +2,7 @@
 #
 # `pnpm product:generate` writes every file that carries these values: the `wirecatch-product` crate, the `@wirecatch/product` TypeScript package, the identity fields of the Cargo, package.json and Tauri manifests, the Linux and Windows package hooks and SECURITY.md (the list is OUTPUTS in scripts/product/outputs.mjs). Never edit those by hand: change this file and run the generator. The gate's `product` check fails when one is out of date.
 #
-# Placeholders: a value that is not decided yet contains `TODO-PRODUCT-` and keeps the shape of the value it stands for (a URL stays a URL, an email address an email address), so every build accepts it. The release check (`node scripts/gate.mjs release`, check `product-placeholders`) fails while any is left.
+# Placeholders: a value that is not decided yet contains `TODO-PRODUCT-` and keeps the shape of the value it stands for (a URL stays a URL, an email address an email address), so every build accepts it. The release check (`node scripts/gate.mjs publish`, check `product-placeholders`) fails while any is left, and every release script runs it first.
 #
 # Names that people's data lives under (data folders, the database file, the start-at-sign-in entry, the pipe and socket) are written out per channel instead of being built from the product name, so renaming the product never moves anyone's downloads by accident.
 

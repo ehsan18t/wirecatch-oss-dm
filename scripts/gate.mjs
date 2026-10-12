@@ -53,8 +53,8 @@ const GROUPS = {
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
-  // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29).
-  publish: ['product-placeholders'],
+  // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every release script runs this group before it builds anything.
+  publish: ['product', 'product-placeholders'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */

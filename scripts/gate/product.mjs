@@ -2,9 +2,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ManifestError } from '../product/manifests.mjs';
-import { CARGO_LOCK, expectedOutputs, staleLock } from '../product/outputs.mjs';
+import { CARGO_LOCK, expectedOutputs, outputs, staleLock } from '../product/outputs.mjs';
 import { PLACEHOLDER_MARK, placeholders, ProductError } from '../product/read.mjs';
-import { GateError, ROOT } from './process.mjs';
+import { GateError, grepRepository, ROOT } from './process.mjs';
 
 /** The expected outputs, with the generator's own errors turned into the gate's. */
 async function expected(root) {
@@ -96,11 +96,31 @@ async function productCurrent() {
   }
 }
 
+/** A placeholder value: the mark and the first letter of its name, so the code and docs that name the mark itself do not count. */
+const PLACEHOLDER_VALUE = `${PLACEHOLDER_MARK}[A-Z]`;
+/** Where a placeholder may be written by hand: the identity itself, and the tests that use one as an example. */
+const PLACEHOLDER_HOMES = [':!config/product.toml', ':!scripts/**/*.test.mjs'];
+
+/** Every line of the repository's tracked and untracked files holding a placeholder value, as `path:line:text`. */
+export function placeholderHits() {
+  return grepRepository(PLACEHOLDER_VALUE, ['.', ...PLACEHOLDER_HOMES]);
+}
+
+/** The `hits` outside the generated files: a placeholder copied by hand, which regenerating would not replace. */
+export function handCopiedPlaceholders(hits, generated) {
+  const paths = new Set(generated);
+  return hits.filter((hit) => !paths.has(hit.slice(0, hit.indexOf(':'))));
+}
+
 async function noPlaceholders() {
   const { values, lines } = await remainingPlaceholders(ROOT);
-  if (values.length > 0 || lines.length > 0) {
+  const copied = handCopiedPlaceholders(
+    placeholderHits(),
+    outputs(ROOT).map((output) => output.path),
+  );
+  if (values.length > 0 || lines.length > 0 || copied.length > 0) {
     throw new GateError(
-      `A release needs the real product identity, but these values in config/product.toml are still placeholders (${PLACEHOLDER_MARK}...): ${values.join(', ')}. Fill them in and run \`pnpm product:generate\`. Generated lines that carry them:\n${lines.join('\n')}`,
+      `A release needs the real product identity, but these values in config/product.toml are still placeholders (${PLACEHOLDER_MARK}...): ${values.join(', ')}. Fill them in and run \`pnpm product:generate\`. Generated lines that carry them:\n${lines.join('\n')}\nPlaceholders written by hand elsewhere, which only config/product.toml may hold:\n${copied.join('\n')}`,
     );
   }
 }
