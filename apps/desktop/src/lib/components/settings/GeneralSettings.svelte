@@ -2,6 +2,7 @@
   // General: the theme, and how Wirecatch starts, closes and tells about finished files.
   import type { Theme } from '@wirecatch/protocol';
   import { tick, type Snippet } from 'svelte';
+  import { findElement } from '$lib/dom';
   import type { SettingIn } from '$lib/settings-schema';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
@@ -24,7 +25,7 @@
     if (!next) return;
     save((d) => void (d.theme = next.value));
     const group = e.currentTarget.parentElement;
-    void tick().then(() => group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
+    void tick().then(() => findElement(group, '[aria-checked="true"]')?.focus());
   }
 
   const controls: Record<SettingIn<'general'>, Snippet<[Row]>> = {

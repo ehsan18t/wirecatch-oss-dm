@@ -6,6 +6,7 @@
   import { addonAnnouncement, addonStatus, installFraction, isInstalled } from '$lib/addons';
   import Button from '$lib/components/Button.svelte';
   import ProgressWire from '$lib/components/ProgressWire.svelte';
+  import { findElement } from '$lib/dom';
   import { hostOf } from '$lib/format';
   import { track } from '$lib/state/reactivity';
   import { formatBytes } from '@wirecatch/units';
@@ -41,7 +42,7 @@
     const frame = body?.closest('[role="group"]');
     const active = document.activeElement;
     if (frame && (!active || active === document.body)) {
-      frame.querySelector<HTMLElement>('.foot [data-autofocus]')?.focus();
+      findElement(frame, '.foot [data-autofocus]')?.focus();
     }
   });
 </script>

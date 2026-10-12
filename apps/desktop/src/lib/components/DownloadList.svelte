@@ -2,6 +2,7 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
+  import { dataIdAt } from '$lib/dom';
   import { listCommand, type ListKey } from '$lib/keymap';
   import { ROW_HEIGHT } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
@@ -69,8 +70,7 @@
   });
 
   function idFrom(e: Event): DownloadId | null {
-    const el = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-id]') : null;
-    return el ? Number(el.dataset.id) : null;
+    return dataIdAt(e.target);
   }
 
   function onclick(e: MouseEvent) {

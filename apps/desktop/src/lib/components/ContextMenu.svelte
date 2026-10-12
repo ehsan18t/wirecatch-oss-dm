@@ -2,6 +2,7 @@
   // Right-click menu for the selected downloads. It only mirrors actions that are also visible
   // in the detail panel and the command palette (D3: nothing lives only in a context menu).
   import { onMount } from 'svelte';
+  import { findAll } from '$lib/dom';
   import { getApp } from '$lib/state/app.svelte';
   import { isUnderWay } from '$lib/state/view';
 
@@ -66,7 +67,7 @@
   const top = $derived(Math.max(EDGE, Math.min(y, window.innerHeight - size.height - EDGE)));
 
   function buttons(): HTMLButtonElement[] {
-    return el ? [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')] : [];
+    return findAll(el, '[role="menuitem"]', HTMLButtonElement);
   }
 
   onMount(() => {

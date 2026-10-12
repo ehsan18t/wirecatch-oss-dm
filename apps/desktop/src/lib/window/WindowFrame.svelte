@@ -5,6 +5,7 @@
   // needs, so the window is only as tall as what it shows (see `fit.ts`).
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
+  import { findElement } from '$lib/dom';
   import { fitReporter, getFitWindow, neededHeight } from './fit';
 
   let {
@@ -52,9 +53,7 @@
   });
 
   onMount(() => {
-    const target =
-      el?.querySelector<HTMLElement>('[data-autofocus]') ??
-      el?.querySelector<HTMLElement>('input, select, button');
+    const target = findElement(el, '[data-autofocus]') ?? findElement(el, 'input, select, button');
     target?.focus();
   });
 </script>

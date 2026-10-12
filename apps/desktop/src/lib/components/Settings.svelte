@@ -4,6 +4,7 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Search from '@lucide/svelte/icons/search';
   import { tick, type Component } from 'svelte';
+  import { findElement } from '$lib/dom';
   import {
     SECTIONS,
     searchSettings,
@@ -60,7 +61,7 @@
     void tick().then(() => {
       const el = document.getElementById(settingAnchor(target));
       el?.scrollIntoView({ block: 'center' });
-      el?.querySelector<HTMLElement>('button, input, select, textarea')?.focus({
+      findElement(el, 'button, input, select, textarea')?.focus({
         preventScroll: true,
       });
       flash = { id: target };

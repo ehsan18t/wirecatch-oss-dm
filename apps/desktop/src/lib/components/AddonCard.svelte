@@ -7,6 +7,7 @@
     installFraction,
     isInstalled,
   } from '$lib/addons';
+  import { findElement } from '$lib/dom';
   import { getApp } from '$lib/state/app.svelte';
   import { track } from '$lib/state/reactivity';
   import Button from './Button.svelte';
@@ -43,7 +44,7 @@
     track(addon.state.type);
     const active = document.activeElement;
     if (hadFocus && card && (!active || active === document.body)) {
-      card.querySelector<HTMLElement>('button')?.focus();
+      findElement(card, 'button')?.focus();
     }
   });
 

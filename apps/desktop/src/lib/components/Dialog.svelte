@@ -2,6 +2,7 @@
   import X from '@lucide/svelte/icons/x';
   import type { Snippet } from 'svelte';
   import { onMount } from 'svelte';
+  import { findAll, findElement } from '$lib/dom';
   import IconButton from './IconButton.svelte';
   import type { DialogSize } from './scale';
 
@@ -32,8 +33,7 @@
       else el.setAttribute('open', '');
       // Focus the first field, or the main button, rather than the close button.
       const target =
-        el.querySelector<HTMLElement>('[data-autofocus]') ??
-        el.querySelector<HTMLElement>('input, select, textarea');
+        findElement(el, '[data-autofocus]') ?? findElement(el, 'input, select, textarea');
       target?.focus();
     }
     return () => {
@@ -63,11 +63,11 @@
   // the page (in a webview, to nowhere). Wrap around instead, both ways.
   function keepFocusInside(e: KeyboardEvent) {
     if (!el) return;
-    const focusable = [
-      ...el.querySelectorAll<HTMLElement>(
-        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
-      ),
-    ].filter((f) => !f.hasAttribute('disabled') && !f.closest('[hidden], [inert]'));
+    const focusable = findAll(
+      el,
+      'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
+      HTMLElement,
+    ).filter((f) => !f.hasAttribute('disabled') && !f.closest('[hidden], [inert]'));
     const first = focusable[0];
     const last = focusable.at(-1);
     if (!first || !last) return;
