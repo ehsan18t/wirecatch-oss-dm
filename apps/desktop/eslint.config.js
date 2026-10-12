@@ -95,6 +95,41 @@ export default wirecatch({
       },
     },
     {
+      // Nor do components and windows hold the backend through state (`app.backend`), a prop or a helper; wirecatch/no-value-of-type says what it can follow and what is left to review.
+      files: ['src/lib/components/**', 'src/lib/window/**/*.svelte'],
+      ignores: ['src/**/*.test.ts'],
+      rules: {
+        'wirecatch/no-value-of-type': [
+          'error',
+          {
+            types: ['Backend', 'DownloadWindowBackend', 'MockBackend', 'TauriBackend'],
+            message:
+              'Components get what they need from state; add a method to the state class that calls the backend.',
+          },
+        ],
+      },
+    },
+    {
+      // Window components show their window's state; only types of the backend may be imported, for the sample windows that pass it on.
+      files: ['src/lib/window/**/*.svelte'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              NO_TAURI_IMPORT,
+              {
+                group: ['$lib/backend', '$lib/backend/*', '**/backend', '**/backend/*'],
+                allowTypeImports: true,
+                message:
+                  'Window components get what they need from their state, not from the backend.',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
       // Components show state and report what the person did; the state classes call the backend, and the routes wire the two together.
       files: ['src/lib/components/**'],
       rules: {
