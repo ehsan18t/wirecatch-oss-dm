@@ -2,6 +2,7 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
+  import { listCommand, type ListKey } from '$lib/keymap';
   import { ROW_HEIGHT } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
   import { HINT_TEXT, type HintId } from '$lib/state/hints.svelte';
@@ -108,62 +109,44 @@
     menu = { x: nameBox.left, y: rowBox.bottom };
   }
 
+  /** Rows one Page Up or Page Down moves: a screenful, keeping one row in view. */
+  const page = $derived(Math.max(1, Math.floor(viewHeight / ROW_HEIGHT) - 1));
+
+  /** Enter: open a finished file, or run the fix a download that needs attention offers. */
+  function openOrFix() {
+    const only = app.selectedRows.length === 1 ? app.selectedRows[0] : undefined;
+    if (only?.status === 'completed') void app.openFile(only.id);
+    else if (only?.status === 'failed' && only.error?.fix) void app.fix(only.id, only.error.fix);
+  }
+
+  const ACTIONS: Record<ListKey, (e: KeyboardEvent) => void> = {
+    up: () => app.moveActive(-1, false),
+    down: () => app.moveActive(1, false),
+    'extend-up': () => app.moveActive(-1, true),
+    'extend-down': () => app.moveActive(1, true),
+    'page-up': (e) => app.moveActive(-page, e.shiftKey),
+    'page-down': (e) => app.moveActive(page, e.shiftKey),
+    first: (e) => app.moveActive(-ids.length, e.shiftKey),
+    last: (e) => app.moveActive(ids.length, e.shiftKey),
+    'select-all': () => app.selectAll(),
+    'pause-resume': () => {
+      if (app.selection.size === 0 && app.active !== null) app.selectOnly(app.active);
+      void app.togglePause();
+    },
+    open: openOrFix,
+    remove: () => {
+      if (app.selection.size > 0) app.openDialog({ kind: 'remove', ids: app.selectedIds });
+    },
+    'nudge-up': () => void app.nudge(-1),
+    'nudge-down': () => void app.nudge(1),
+    menu: openMenuAtActive,
+  };
+
   function onkeydown(e: KeyboardEvent) {
-    const ctrl = e.ctrlKey || e.metaKey;
-    const page = Math.max(1, Math.floor(viewHeight / ROW_HEIGHT) - 1);
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-      e.preventDefault();
-      void app.nudge(e.key === 'ArrowUp' ? -1 : 1);
-      return;
-    }
-    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
-      e.preventDefault();
-      openMenuAtActive();
-      return;
-    }
-    switch (e.key) {
-      case 'ArrowDown':
-        app.moveActive(1, e.shiftKey);
-        break;
-      case 'ArrowUp':
-        app.moveActive(-1, e.shiftKey);
-        break;
-      case 'PageDown':
-        app.moveActive(page, e.shiftKey);
-        break;
-      case 'PageUp':
-        app.moveActive(-page, e.shiftKey);
-        break;
-      case 'Home':
-        app.moveActive(-ids.length, e.shiftKey);
-        break;
-      case 'End':
-        app.moveActive(ids.length, e.shiftKey);
-        break;
-      case ' ':
-        if (app.selection.size === 0 && app.active !== null) app.selectOnly(app.active);
-        void app.togglePause();
-        break;
-      case 'Enter': {
-        const only = app.selectedRows.length === 1 ? app.selectedRows[0] : undefined;
-        if (only?.status === 'completed') void app.openFile(only.id);
-        // On a download that needs attention, Enter runs the fix its row offers.
-        else if (only?.status === 'failed' && only.error?.fix)
-          void app.fix(only.id, only.error.fix);
-        break;
-      }
-      case 'Delete':
-        if (app.selection.size > 0) app.openDialog({ kind: 'remove', ids: app.selectedIds });
-        break;
-      case 'a':
-      case 'A':
-        if (!ctrl) return;
-        app.selectAll();
-        break;
-      default:
-        return;
-    }
+    const command = listCommand(e);
+    if (command === null) return;
     e.preventDefault();
+    ACTIONS[command](e);
   }
 
   function ondragstart(e: DragEvent) {

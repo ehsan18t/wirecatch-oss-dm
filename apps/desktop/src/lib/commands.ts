@@ -4,6 +4,7 @@
 import type { AppState } from './state/app.svelte';
 import { addonAction, isInstalled } from './addons';
 import { CATEGORIES, CATEGORY_LABEL } from './format';
+import { shortcutLabel } from './keymap';
 import { SETTINGS, SECTIONS } from './settings-schema';
 import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
 
@@ -33,23 +34,6 @@ export interface Command {
   shortcut?: string;
   run: () => unknown;
 }
-
-export const SHORTCUTS: readonly { keys: string; what: string }[] = [
-  { keys: 'Ctrl+K', what: 'Find any action or setting' },
-  { keys: 'Ctrl+V', what: 'Download the link you copied' },
-  { keys: 'Ctrl+N', what: 'Add a download' },
-  { keys: 'Ctrl+F', what: 'Search the list' },
-  { keys: 'Ctrl+,', what: 'Open settings' },
-  { keys: 'Up, Down', what: 'Move through the list' },
-  { keys: 'Shift+Up, Shift+Down', what: 'Select several downloads' },
-  { keys: 'Ctrl+A', what: 'Select every download in the list' },
-  { keys: 'Space', what: 'Pause or resume the selected downloads' },
-  { keys: 'Enter', what: 'Open the selected file when it is finished' },
-  { keys: 'Delete', what: 'Remove the selected downloads' },
-  { keys: 'Alt+Up, Alt+Down', what: 'Move the selection up or down in its queue' },
-  { keys: 'Escape', what: 'Close a dialog or clear the selection' },
-  { keys: 'F1', what: 'Show these shortcuts' },
-];
 
 export function buildCommands(app: AppState): Command[] {
   const out: Command[] = [];
@@ -94,7 +78,7 @@ export function buildCommands(app: AppState): Command[] {
         group: g,
         title: `Remove ${n} from the list`,
         keywords: 'delete clear',
-        shortcut: 'Delete',
+        shortcut: shortcutLabel('remove'),
         run: () => app.openDialog({ kind: 'remove', ids }),
       },
     );
@@ -115,7 +99,7 @@ export function buildCommands(app: AppState): Command[] {
           group: g,
           title: `Open ${n}`,
           keywords: 'launch run file',
-          shortcut: 'Enter',
+          shortcut: shortcutLabel('open'),
           run: () => app.openFile(first.id),
         });
       }
@@ -155,7 +139,7 @@ export function buildCommands(app: AppState): Command[] {
         id: 'sel.up',
         group: g,
         title: 'Move the selection up in its queue',
-        shortcut: 'Alt+Up',
+        shortcut: shortcutLabel('nudge-up'),
         keywords: 'reorder priority',
         run: () => app.nudge(-1),
       },
@@ -163,7 +147,7 @@ export function buildCommands(app: AppState): Command[] {
         id: 'sel.down',
         group: g,
         title: 'Move the selection down in its queue',
-        shortcut: 'Alt+Down',
+        shortcut: shortcutLabel('nudge-down'),
         keywords: 'reorder priority',
         run: () => app.nudge(1),
       },
@@ -171,7 +155,7 @@ export function buildCommands(app: AppState): Command[] {
         id: 'sel.clear',
         group: g,
         title: 'Clear the selection',
-        shortcut: 'Escape',
+        shortcut: shortcutLabel('escape'),
         run: () => app.clearSelection(),
       },
     );
@@ -183,7 +167,7 @@ export function buildCommands(app: AppState): Command[] {
       group: 'Downloads',
       title: 'Add a download',
       keywords: 'new link url paste',
-      shortcut: 'Ctrl+N',
+      shortcut: shortcutLabel('add'),
       run: () => app.openDialog({ kind: 'add', urls: [] }),
     },
     {
@@ -211,14 +195,14 @@ export function buildCommands(app: AppState): Command[] {
       id: 'dl.selectall',
       group: 'Downloads',
       title: 'Select every download in the list',
-      shortcut: 'Ctrl+A',
+      shortcut: shortcutLabel('select-all'),
       run: () => app.selectAll(),
     },
     {
       id: 'dl.search',
       group: 'Downloads',
       title: 'Search the list',
-      shortcut: 'Ctrl+F',
+      shortcut: shortcutLabel('search'),
       keywords: 'find filter',
       run: () => focusSearch(),
     },
@@ -312,7 +296,7 @@ export function buildCommands(app: AppState): Command[] {
     id: 'settings.open',
     group: 'Settings',
     title: 'Open settings',
-    shortcut: 'Ctrl+,',
+    shortcut: shortcutLabel('settings'),
     keywords: 'preferences options',
     run: () => app.openSettings(),
   });
@@ -385,7 +369,7 @@ export function buildCommands(app: AppState): Command[] {
     id: 'help.shortcuts',
     group: 'Help',
     title: 'Show keyboard shortcuts',
-    shortcut: 'F1',
+    shortcut: shortcutLabel('help'),
     keywords: 'keys hotkeys help',
     run: () => app.openDialog({ kind: 'shortcuts' }),
   });

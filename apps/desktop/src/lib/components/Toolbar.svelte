@@ -6,6 +6,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Search from '@lucide/svelte/icons/search';
   import { CATEGORY_LABEL } from '$lib/format';
+  import { ariaShortcut } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
   import { SORT_LABEL, STATUS_GROUP_LABEL, type SortKey } from '$lib/state/view';
   import Button from './Button.svelte';
@@ -75,7 +76,7 @@
       <Button
         variant="primary"
         icon={Plus}
-        aria-keyshortcuts="Control+N"
+        aria-keyshortcuts={ariaShortcut('add')}
         onclick={() => app.openDialog({ kind: 'add', urls: [] })}
       >
         Add download
@@ -130,7 +131,7 @@
           type="search"
           placeholder="Search names and links"
           aria-label="Search downloads"
-          aria-keyshortcuts="Control+F"
+          aria-keyshortcuts={ariaShortcut('search')}
           bind:value={app.search}
           onkeydown={(e) => {
             if (e.key === 'Escape' && app.search) {

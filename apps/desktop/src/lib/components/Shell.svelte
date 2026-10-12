@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { focusSearch } from '$lib/commands';
   import { isDownloadDrag } from '$lib/dnd';
+  import { isEditable, windowCommand, type WindowKey } from '$lib/keymap';
   import { DOCK_WIDTH } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
@@ -40,16 +41,6 @@
     return app.selection.size > 0 ? 'overlay' : null;
   });
 
-  function isEditable(el: EventTarget | null): boolean {
-    if (!(el instanceof HTMLElement)) return false;
-    if (el.isContentEditable) return true;
-    if (el instanceof HTMLTextAreaElement) return true;
-    if (el instanceof HTMLInputElement) {
-      return !['checkbox', 'radio', 'button', 'submit', 'range'].includes(el.type);
-    }
-    return el instanceof HTMLSelectElement;
-  }
-
   // A visible dialog takes the keyboard. Questions have their own windows (D23).
   const blocked = $derived(app.dialog !== null);
 
@@ -58,32 +49,31 @@
     return e.target instanceof Element && e.target.closest('[data-download-window]') !== null;
   }
 
-  function onkeydown(e: KeyboardEvent) {
-    if (inDownloadWindow(e)) return;
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
+  const ACTIONS: Record<Exclude<WindowKey, 'paste'>, () => void> = {
+    palette: () => {
       if (!blocked) app.paletteOpen = !app.paletteOpen;
-      return;
-    }
-    if (app.paletteOpen || blocked) return;
-    if (ctrl && e.key.toLowerCase() === 'n') {
-      e.preventDefault();
-      app.openDialog({ kind: 'add', urls: [] });
-    } else if (ctrl && e.key === ',') {
-      e.preventDefault();
-      app.openSettings();
-    } else if (ctrl && e.key.toLowerCase() === 'f') {
-      e.preventDefault();
+    },
+    add: () => app.openDialog({ kind: 'add', urls: [] }),
+    settings: () => app.openSettings(),
+    search: () => {
       if (app.screen === 'settings') document.getElementById('settings-search')?.focus();
       else focusSearch();
-    } else if (e.key === 'F1') {
-      e.preventDefault();
-      app.openDialog({ kind: 'shortcuts' });
-    } else if (e.key === 'Escape' && !isEditable(e.target)) {
+    },
+    help: () => app.openDialog({ kind: 'shortcuts' }),
+    escape: () => {
       if (app.screen === 'settings') app.screen = 'downloads';
       else app.clearSelection();
-    }
+    },
+  };
+
+  function onkeydown(e: KeyboardEvent) {
+    if (inDownloadWindow(e)) return;
+    const command = windowCommand(e);
+    if (command === null) return;
+    // The palette's own key also closes it; every other key waits while it or a dialog is open.
+    if (command !== 'palette' && (app.paletteOpen || blocked)) return;
+    e.preventDefault();
+    ACTIONS[command]();
   }
 
   function onpaste(e: ClipboardEvent) {
