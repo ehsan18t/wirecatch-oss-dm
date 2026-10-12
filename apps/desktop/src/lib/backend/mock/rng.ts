@@ -4,8 +4,7 @@
 export type Random = () => number;
 
 /**
- * The mulberry32 generator for `seed`. Its constants are the published algorithm's own: they have
- * no meaning a name could carry, and changing one changes every sample download.
+ * The mulberry32 generator for `seed`. Its constants are the published algorithm's own: they have no meaning a name could carry, and changing one changes every sample download.
  */
 export function mulberry32(seed: number): Random {
   /* eslint-disable wirecatch/no-magic-numbers -- the constants of the published mulberry32 generator (docs/AUDIT.md W14 E1) */
