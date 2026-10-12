@@ -483,6 +483,76 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
     dir.remove().unwrap();
 }
 
+/// File system work a download queued on the blocking pool runs even after
+/// its future is dropped. Such work must change no file then: the owner may
+/// already have deleted or reused them. Here the pool is held busy while the
+/// download waits to prepare its target, and the download is dropped before
+/// the pool frees up; the old part and resume files it would have replaced
+/// must stay exactly as they were.
+#[test]
+fn a_dropped_download_leaves_its_files_alone() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let server = TestServer::start(
+            test_data(64 * KIB_USIZE),
+            Config {
+                ranges: true,
+                ..Default::default()
+            },
+        )
+        .await;
+        let dir = private_dir("dropped-early").unwrap();
+        // Loads the system certificates now, which needs the blocking pool.
+        run(request(&server, "warm.bin", &dir, 1)).await.unwrap();
+
+        let target = dir.join("f.bin");
+        let (part, state) = (dir.join("f.bin.wcpart"), dir.join("f.bin.wcstate"));
+        std::fs::write(&part, b"old part").unwrap();
+        std::fs::write(&state, b"not a resume file").unwrap();
+
+        // The pool's only thread waits until it is let go.
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let holding = tokio::task::spawn_blocking(move || held.recv());
+
+        let (choosing, chose) = tokio::sync::oneshot::channel();
+        let choosing = Mutex::new(Some(choosing));
+        let mut req = request(&server, "f.bin", &dir, 1);
+        let chosen = target.clone();
+        req.resolve_path = Some(Arc::new(move |_: &RemoteFile| {
+            if let Some(tell) = choosing.lock().unwrap().take() {
+                tell.send(()).unwrap();
+            }
+            Ok(chosen.clone())
+        }));
+        let task = tokio::spawn(run(req));
+        // On this one thread the download runs until it waits for the pool,
+        // with its preparation queued, before this resumes.
+        chose.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+
+        release.send(()).unwrap();
+        holding.await.unwrap().unwrap();
+        // The queue is first in, first out: this runs after the preparation.
+        tokio::task::spawn_blocking(|| ()).await.unwrap();
+
+        assert!(
+            std::fs::read(&part).unwrap() == b"old part",
+            "the part file was replaced"
+        );
+        assert!(
+            std::fs::read(&state).unwrap() == b"not a resume file",
+            "the resume file was replaced"
+        );
+        assert!(!target.exists());
+        dir.remove().unwrap();
+    });
+}
+
 /// A caller may drop a download's future before it ends (a manager abandons a
 /// run that does not stop in time). Nothing of that download may keep writing
 /// afterwards: a resume file saved later could come back after the caller deleted

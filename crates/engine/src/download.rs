@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
 
-use crate::checkpoint::{Checkpoints, ResumeSaver};
+use crate::checkpoint::{Abandoned, Abandonment, Checkpoints, ResumeSaver};
 use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Clients;
 use crate::limiter::RateLimiter;
@@ -421,6 +421,9 @@ pub(crate) async fn download_guarded(
     mut clients: Clients,
     guard: Option<PrivateGuard>,
 ) -> Result<Outcome> {
+    // Dropped with this future, which then marks queued file work abandoned.
+    let abandonment = Abandonment::new();
+    let abandoned = abandonment.flag();
     let mut opts = request.options.clone();
     let session_guard = guard.map(|g| {
         clients.set_resolver(g.resolver);
@@ -445,20 +448,24 @@ pub(crate) async fn download_guarded(
         ..
     } = opened;
 
+    let described = Described {
+        ranged,
+        total,
+        validators: validators.clone(),
+    };
     let Prepared {
         target,
         table,
         resumed,
         resumed_from,
-    } = {
-        let described = Described {
-            ranged,
-            total,
-            validators: validators.clone(),
-        };
-        let (saved_url, min_split) = (saved_url.clone(), opts.min_split);
-        storage::blocking(move || destination.prepare(&saved_url, &described, min_split)).await?
-    };
+    } = prepare(
+        destination,
+        &saved_url,
+        described,
+        opts.min_split,
+        &abandoned,
+    )
+    .await?;
     progress.start(&target.file, &target.name(), total, resumed_from);
 
     let shared = Arc::new(Shared {
@@ -481,6 +488,7 @@ pub(crate) async fn download_guarded(
         saved_url,
         target.state.clone(),
         validators,
+        abandoned.clone(),
     ));
     {
         let saver = saver.clone();
@@ -491,8 +499,29 @@ pub(crate) async fn download_guarded(
     let workers = spawn_workers(&shared, &clients, connection, first).await?;
     let checkpoints = Checkpoints::spawn(saver.clone());
     let first_error = join_workers(workers).await;
-    checkpoints.stop();
-    storage::blocking(move || finish(&shared, &saver, target, resumed_from, first_error)).await
+    drop(checkpoints);
+    storage::blocking(move || {
+        abandoned.check()?;
+        finish(&shared, &saver, target, resumed_from, first_error)
+    })
+    .await
+}
+
+/// Makes `destination` ready on the blocking pool, unless the download is
+/// abandoned first.
+async fn prepare(
+    destination: Destination,
+    saved_url: &str,
+    described: Described,
+    min_split: u64,
+    abandoned: &Abandoned,
+) -> Result<Prepared> {
+    let (saved_url, abandoned) = (saved_url.to_string(), abandoned.clone());
+    storage::blocking(move || {
+        abandoned.check()?;
+        destination.prepare(&saved_url, &described, min_split)
+    })
+    .await
 }
 
 /// The work the first connection starts with. The first response already

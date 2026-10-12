@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tracing::warn;
 
 use crate::download::Shared;
-use crate::error::{IoAction, IoContext, Result};
+use crate::error::{Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::state::ResumeState;
 use crate::storage;
@@ -39,13 +39,19 @@ pub(crate) struct ResumeSaver {
     saving: Mutex<Saving>,
     /// Set if the download's future is dropped before it ends: a save already
     /// queued on the blocking pool then writes nothing either.
-    abandoned: AtomicBool,
+    abandoned: Abandoned,
 }
 
 impl ResumeSaver {
     /// A saver for the download `shared`, recording `url` and `validators` in
     /// the resume file at `path`.
-    pub fn new(shared: Arc<Shared>, url: String, path: PathBuf, validators: Validators) -> Self {
+    pub fn new(
+        shared: Arc<Shared>,
+        url: String,
+        path: PathBuf,
+        validators: Validators,
+        abandoned: Abandoned,
+    ) -> Self {
         Self {
             shared,
             url,
@@ -55,7 +61,7 @@ impl ResumeSaver {
                 closed: false,
                 part: None,
             }),
-            abandoned: AtomicBool::new(false),
+            abandoned,
         }
     }
 
@@ -69,7 +75,7 @@ impl ResumeSaver {
     /// Saves the ranges still to download, unless the download has ended.
     pub fn save(&self) -> Result<()> {
         let mut saving = self.saving();
-        if saving.closed || self.abandoned.load(Ordering::SeqCst) {
+        if saving.closed || self.abandoned.is_set() {
             return Ok(());
         }
         // Read before the flush: every range done by now was written before it.
@@ -110,18 +116,56 @@ struct Saving {
     part: Option<File>,
 }
 
-/// The task that saves the resume file at every checkpoint while a download runs.
+/// Marks a download abandoned once its future is dropped: made first thing in
+/// a download and dropped with it.
 ///
-/// It must never outlive the download: if the download's future is dropped before
-/// it ends (its task aborted), dropping this stops the task and marks the download
-/// abandoned, so a save already queued writes nothing. Otherwise it would keep
-/// rewriting the resume file, bringing it back after its owner deleted it or
-/// overwriting a newer run's with stale ranges.
+/// File system work the download already queued on the blocking pool still
+/// runs then, and must change no file: its owner may already have deleted them
+/// or started a new run. Each such piece of work checks [`Abandoned`] first.
+pub(crate) struct Abandonment(Arc<AtomicBool>);
+
+impl Abandonment {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    /// What queued work checks.
+    pub fn flag(&self) -> Abandoned {
+        Abandoned(self.0.clone())
+    }
+}
+
+impl Drop for Abandonment {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Whether the download's future was dropped; see [`Abandonment`].
+#[derive(Clone)]
+pub(crate) struct Abandoned(Arc<AtomicBool>);
+
+impl Abandoned {
+    pub fn is_set(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    /// [`Error::Cancelled`] once the download was dropped, for work that must
+    /// then not start; no one receives it.
+    pub fn check(&self) -> Result<()> {
+        if self.is_set() {
+            Err(Error::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// The task that saves the resume file at every checkpoint while a download
+/// runs. Dropping this stops it; a save it already queued writes nothing once
+/// the download is [`Abandoned`].
 pub(crate) struct Checkpoints {
     task: tokio::task::JoinHandle<()>,
-    saver: Arc<ResumeSaver>,
-    /// Set by [`stop`](Self::stop): the download ended normally.
-    ended: bool,
 }
 
 impl Checkpoints {
@@ -130,7 +174,6 @@ impl Checkpoints {
     pub fn spawn(saver: Arc<ResumeSaver>) -> Self {
         let every = saver.shared.opts.checkpoint_interval;
         let cancel = saver.shared.request.cancel.clone();
-        let saving = saver.clone();
         let task = tokio::spawn(async move {
             let mut tick = tokio::time::interval(every);
             tick.tick().await;
@@ -141,31 +184,18 @@ impl Checkpoints {
                     // the way out.
                     () = cancel.cancelled() => return,
                 }
-                let save = saving.clone();
+                let save = saver.clone();
                 if let Err(e) = storage::blocking(move || save.save()).await {
                     warn!(error = %e, "could not save resume state; the next checkpoint tries again");
                 }
             }
         });
-        Self {
-            task,
-            saver,
-            ended: false,
-        }
-    }
-
-    /// Stops the checkpoints of a download that ended normally; it saves its
-    /// final state itself.
-    pub fn stop(mut self) {
-        self.ended = true;
+        Self { task }
     }
 }
 
 impl Drop for Checkpoints {
     fn drop(&mut self) {
         self.task.abort();
-        if !self.ended {
-            self.saver.abandoned.store(true, Ordering::SeqCst);
-        }
     }
 }
