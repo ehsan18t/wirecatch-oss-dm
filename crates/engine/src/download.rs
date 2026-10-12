@@ -61,7 +61,6 @@ pub type PathResolver = Arc<dyn Fn(&RemoteFile) -> Result<PathBuf, PathRejected>
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
-#[non_exhaustive]
 pub struct PathRejected {
     message: String,
 }
