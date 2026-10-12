@@ -440,31 +440,16 @@ mod tests {
     use crate::{KnownFolders, ManagerConfig};
     use wirecatch_protocol::app::AddRequest;
 
-    /// A file served at `/file.bin` on a local server; returns its address.
-    /// Only the Windows Mark-of-the-Web test needs it.
-    #[cfg(windows)]
-    async fn serve_file(body: Vec<u8>) -> String {
-        let app = axum::Router::new().route(
-            "/file.bin",
-            axum::routing::get(move || {
-                let body = body.clone();
-                async move { body }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        format!("http://{addr}/file.bin")
-    }
-
     /// A download so small it finishes before the ticker could mark its part
     /// file is still marked before the run reports it finished.
     #[cfg(windows)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_download_is_marked_before_it_is_reported_finished() {
-        let url = serve_file(b"tiny".to_vec()).await;
+        let server = wirecatch_test_support::files::FileServer::start().await;
+        server.put("file.bin", b"tiny".as_slice());
+        let url = server.url("file.bin");
         let dir = tempfile::tempdir().unwrap();
-        let mut request = DownloadRequest::new(Url::parse(&url).unwrap(), dir.path());
+        let mut request = DownloadRequest::new(url.clone(), dir.path());
         request.exact_path = Some(dir.path().join("tiny.bin"));
         let mark = Mark {
             url: format!("{url}?token=secret"),

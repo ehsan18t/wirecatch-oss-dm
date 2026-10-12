@@ -7,16 +7,19 @@ use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
 
-use crate::common::{Harness, SilentServer, TestServer, exists, partial_files, wait_until};
+use crate::common::{
+    Harness, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
+    wait_until,
+};
 
 const KIB: u64 = 1024;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_expired_link_is_refreshed_without_losing_bytes() {
+async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     let len = 512 * KIB;
-    let server = TestServer::throttled(len as usize, 128 * KIB).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("old/file.bin")).await;
+    let server = throttled_server(len, 128 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("old/file.bin")).await?;
     h.wait_for(row.id, "a good part downloaded", |r| r.done >= 128 * KIB)
         .await;
     h.manager.pause(row.id).unwrap();
@@ -24,7 +27,7 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() {
     assert!(paused.done >= 128 * KIB);
 
     // The link expires while the download is paused.
-    server.configure(|c| c.refuse.push(("/old/file.bin".into(), 410)));
+    server.configure(|c| c.refuse_paths.push(("/old/file.bin".into(), 410)));
     h.manager.resume(row.id).unwrap();
     let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
     let error = failed.error.expect("a failed download explains why");
@@ -34,11 +37,11 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() {
 
     let sent_before = server.bytes_sent();
     h.manager
-        .refresh_link(row.id, &server.url("new/file.bin"))
+        .refresh_link(row.id, server.url("new/file.bin").as_str())
         .unwrap();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(done.path, row.path, "the file moved");
-    assert_eq!(done.url, server.url("new/file.bin"));
+    assert_eq!(done.url, server.url("new/file.bin").as_str());
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
     let sent_after_refresh = server.bytes_sent() - sent_before;
     // Only the missing part came again (plus at most a little of the first answer).
@@ -47,13 +50,14 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() {
         "sent {sent_after_refresh} bytes after refreshing; {} were already here",
         paused.done
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn cancel_discards_progress_and_retry_starts_over() {
-    let server = TestServer::throttled(512 * KIB as usize, 128 * KIB).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("file.bin")).await;
+async fn cancel_discards_progress_and_retry_starts_over() -> TestResult {
+    let server = throttled_server(512 * KIB, 128 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("file.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
     h.manager.cancel(row.id).unwrap();
@@ -77,11 +81,12 @@ async fn cancel_discards_progress_and_retry_starts_over() {
         h.manager.cancel(row.id),
         Err(CoreError::WrongState(_))
     ));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_ui_hears_when_saving_keeps_failing() {
-    let h = Harness::new().await;
+async fn the_ui_hears_when_saving_keeps_failing() -> TestResult {
+    let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
     let db = h
         .root
@@ -92,7 +97,7 @@ async fn the_ui_hears_when_saving_keeps_failing() {
     other.execute("DROP TABLE downloads", []).unwrap();
 
     h.add_with("https://example.com/a.bin", |r| r.start = false)
-        .await;
+        .await?;
     let error = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if let Ok(UiEvent::StorageFailed(error)) = events.recv().await {
@@ -108,15 +113,16 @@ async fn the_ui_hears_when_saving_keeps_failing() {
         "{}",
         error.message
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resume_and_retry_pressed_while_stopping_are_not_lost() {
-    let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
-    let h = Harness::new().await;
-    let resumed = h.add(&server.url("resumed.bin")).await.id;
-    let all = h.add(&server.url("all.bin")).await.id;
-    let retried = h.add(&server.url("retried.bin")).await.id;
+async fn resume_and_retry_pressed_while_stopping_are_not_lost() -> TestResult {
+    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let h = Harness::new().await?;
+    let resumed = h.add(&server.url("resumed.bin")).await?.id;
+    let all = h.add(&server.url("all.bin")).await?.id;
+    let retried = h.add(&server.url("retried.bin")).await?.id;
     for id in [resumed, all, retried] {
         h.wait_for(id, "progress", |r| r.done > 0).await;
     }
@@ -134,15 +140,16 @@ async fn resume_and_retry_pressed_while_stopping_are_not_lost() {
         let done = h.wait_status(id, DownloadStatus::Completed).await;
         assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
     }
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_server_that_never_answers_cannot_hang_the_app() {
+async fn a_server_that_never_answers_cannot_hang_the_app() -> TestResult {
     let silent = SilentServer::start().await;
-    let h = Harness::with_stop_timeout(Duration::from_millis(300)).await;
-    let paused = h.add(&silent.url("pause.bin")).await;
-    let removed = h.add(&silent.url("remove.bin")).await;
-    let left = h.add(&silent.url("left.bin")).await;
+    let h = Harness::with_stop_timeout(Duration::from_millis(300)).await?;
+    let paused = h.add(&silent.url("pause.bin")).await?;
+    let removed = h.add(&silent.url("remove.bin")).await?;
+    let left = h.add(&silent.url("left.bin")).await?;
     for row in [&paused, &removed, &left] {
         assert_eq!(row.status, DownloadStatus::Connecting);
     }
@@ -159,14 +166,15 @@ async fn a_server_that_never_answers_cannot_hang_the_app() {
         .expect("shutdown waited forever");
     // Interrupted by shutdown, so it continues on the next start.
     assert_eq!(h.row(left.id).status, DownloadStatus::Connecting);
+    Ok(())
 }
 
 /// The desktop UI calls these as Tauri commands and relies on exactly these return
 /// types: the new id from `add_download`, the new queue from `create_queue`, and
 /// nothing from the rest. Errors reach it as their plain-language text.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn commands_return_what_the_ui_expects() {
-    let h = Harness::new().await;
+async fn commands_return_what_the_ui_expects() -> TestResult {
+    let h = Harness::new().await?;
     let m = &h.manager;
     let request = wirecatch_protocol::app::AddRequest {
         url: "https://example.com/a.bin".into(),
@@ -199,16 +207,17 @@ async fn commands_return_what_the_ui_expects() {
         error,
         "That download no longer exists. It may have been removed."
     );
+    Ok(())
 }
 
 /// Tauri runs synchronous commands on its main thread, outside any Tokio runtime.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn sync_methods_work_from_a_thread_outside_the_runtime() {
-    let server = TestServer::fast(4 * KIB as usize).await;
-    let h = Harness::new().await;
+async fn sync_methods_work_from_a_thread_outside_the_runtime() -> TestResult {
+    let server = fast_server(4 * KIB).await?;
+    let h = Harness::new().await?;
     let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
-    let started = h.add_with(&server.url("a.bin"), paused).await;
-    let cancelled = h.add_with(&server.url("b.bin"), paused).await;
+    let started = h.add_with(&server.url("a.bin"), paused).await?;
+    let cancelled = h.add_with(&server.url("b.bin"), paused).await?;
     let manager = h.manager.clone();
     std::thread::spawn(move || {
         manager.pause_all().unwrap();
@@ -224,14 +233,15 @@ async fn sync_methods_work_from_a_thread_outside_the_runtime() {
     .expect("a manager method needed a Tokio runtime on the calling thread");
     h.wait_status(started.id, DownloadStatus::Completed).await;
     h.wait_status(cancelled.id, DownloadStatus::Cancelled).await;
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn removing_an_unfinished_download_never_deletes_someone_elses_file() {
-    let h = Harness::new().await;
+async fn removing_an_unfinished_download_never_deletes_someone_elses_file() -> TestResult {
+    let h = Harness::new().await?;
     let row = h
         .add_with("https://example.com/report.pdf", |r| r.start = false)
-        .await;
+        .await?;
     // The user saved a file of the same name there meanwhile.
     let path = std::path::Path::new(&row.path);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -242,30 +252,32 @@ async fn removing_an_unfinished_download_never_deletes_someone_elses_file() {
     h.manager.remove(&[row.id], true).await.unwrap();
     assert!(exists(path), "an unrelated file was deleted");
     assert!(!exists(&part));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_waiting_download_can_be_cancelled_and_removed() {
-    let h = Harness::new().await;
+async fn a_waiting_download_can_be_cancelled_and_removed() -> TestResult {
+    let h = Harness::new().await?;
     let row = h
         .add_with("https://example.com/later.bin", |r| r.start = false)
-        .await;
+        .await?;
     h.manager.cancel(row.id).unwrap();
     assert_eq!(h.row(row.id).status, DownloadStatus::Cancelled);
     h.manager.remove(&[row.id], false).await.unwrap();
     assert!(h.manager.list_downloads().is_empty());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remove_stops_and_cleans_up() {
-    let slow = TestServer::throttled(512 * KIB as usize, 64 * KIB).await;
-    let fast = TestServer::fast(8 * KIB as usize).await;
-    let h = Harness::new().await;
+async fn remove_stops_and_cleans_up() -> TestResult {
+    let slow = throttled_server(512 * KIB, 64 * KIB).await?;
+    let fast = fast_server(8 * KIB).await?;
+    let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
 
-    let finished = h.add(&fast.url("keep.bin")).await;
+    let finished = h.add(&fast.url("keep.bin")).await?;
     let finished = h.wait_status(finished.id, DownloadStatus::Completed).await;
-    let running = h.add(&slow.url("drop.bin")).await;
+    let running = h.add(&slow.url("drop.bin")).await?;
     h.wait_for(running.id, "progress", |r| r.done > 0).await;
 
     h.manager
@@ -284,16 +296,17 @@ async fn remove_stops_and_cleans_up() {
         }
     }
     assert_eq!(removed, vec![running.id, finished.id]);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn names_are_unique_and_folders_follow_categories() {
-    let h = Harness::new().await;
+async fn names_are_unique_and_folders_follow_categories() -> TestResult {
+    let h = Harness::new().await?;
     let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
     let first = h
         .add_with("https://example.com/a/clip.MP4?x=1", paused)
-        .await;
-    let second = h.add_with("https://example.com/b/clip.MP4", paused).await;
+        .await?;
+    let second = h.add_with("https://example.com/b/clip.MP4", paused).await?;
     let videos = h.folders.downloads.join("Video");
     assert_eq!(std::path::Path::new(&first.path), videos.join("clip.MP4"));
     assert_eq!(
@@ -307,7 +320,7 @@ async fn names_are_unique_and_folders_follow_categories() {
             r.start = false;
             r.file_name = Some("disk.iso".into());
         })
-        .await;
+        .await?;
     assert_eq!(
         std::path::Path::new(&renamed.path),
         h.folders.downloads.join("Compressed").join("disk.iso")
@@ -325,29 +338,31 @@ async fn names_are_unique_and_folders_follow_categories() {
         .await
         .unwrap_err();
     assert!(matches!(err, CoreError::InvalidUrl(_)));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_folder_that_cannot_be_created_asks_for_another() {
-    let server = TestServer::fast(1024).await;
-    let h = Harness::new().await;
+async fn a_folder_that_cannot_be_created_asks_for_another() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
     let blocker = h.root.path().join("not-a-folder");
     std::fs::write(&blocker, b"x").unwrap();
     let folder = blocker.join("sub").to_string_lossy().into_owned();
     let row = h
         .add_with(&server.url("f.bin"), |r| r.folder = Some(folder))
-        .await;
+        .await?;
     let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
     assert_eq!(failed.error.unwrap().fix, Some(FixAction::ChooseFolder));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn downloads_move_between_queues_and_keep_their_order() {
-    let h = Harness::new().await;
+async fn downloads_move_between_queues_and_keep_their_order() -> TestResult {
+    let h = Harness::new().await?;
     let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
-    let a = h.add_with("https://example.com/a.bin", paused).await.id;
-    let b = h.add_with("https://example.com/b.bin", paused).await.id;
-    let c = h.add_with("https://example.com/c.bin", paused).await.id;
+    let a = h.add_with("https://example.com/a.bin", paused).await?.id;
+    let b = h.add_with("https://example.com/b.bin", paused).await?.id;
+    let c = h.add_with("https://example.com/c.bin", paused).await?.id;
     let order = || {
         h.manager
             .list_downloads()
@@ -377,14 +392,15 @@ async fn downloads_move_between_queues_and_keep_their_order() {
     h.manager.delete_queue(later).unwrap();
     assert_eq!(order(), vec![(c, main), (b, main), (a, main)]);
     assert_eq!(h.manager.list_queues().len(), 1);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_running_download_moves_folder_and_continues() {
+async fn a_running_download_moves_folder_and_continues() -> TestResult {
     let len = 512 * KIB;
-    let server = TestServer::throttled(len as usize, 128 * KIB).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("big.bin")).await;
+    let server = throttled_server(len, 128 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("big.bin")).await?;
     h.wait_for(row.id, "a good part downloaded", |r| r.done >= 64 * KIB)
         .await;
 
@@ -416,13 +432,14 @@ async fn a_running_download_moves_folder_and_continues() {
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
     assert_eq!(done.total, Some(len));
     assert!(!exists(&row.path) && partial_files(&row.path).iter().all(|p| !exists(p)));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_finished_file_moves_and_keeps_clear_of_existing_names() {
-    let server = TestServer::fast(4 * KIB as usize).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("report.pdf")).await;
+async fn a_finished_file_moves_and_keeps_clear_of_existing_names() -> TestResult {
+    let server = fast_server(4 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("report.pdf")).await?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
     let elsewhere = h.root.path().join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
@@ -440,18 +457,19 @@ async fn a_finished_file_moves_and_keeps_clear_of_existing_names() {
         std::fs::read(elsewhere.join("report.pdf")).unwrap(),
         b"someone else's"
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn choosing_a_new_folder_fixes_a_folder_error() {
-    let server = TestServer::fast(1024).await;
-    let h = Harness::new().await;
+async fn choosing_a_new_folder_fixes_a_folder_error() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
     let blocker = h.root.path().join("not-a-folder");
     std::fs::write(&blocker, b"x").unwrap();
     let folder = blocker.join("sub").to_string_lossy().into_owned();
     let row = h
         .add_with(&server.url("f.bin"), |r| r.folder = Some(folder))
-        .await;
+        .await?;
     let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
     assert_eq!(failed.error.unwrap().fix, Some(FixAction::ChooseFolder));
 
@@ -478,11 +496,12 @@ async fn choosing_a_new_folder_fixes_a_folder_error() {
         std::path::Path::new(&done.path),
         h.folders.downloads.join("Fixed").join("f.bin")
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_list_is_grouped_by_queue_in_line_order() {
-    let h = Harness::new().await;
+async fn the_list_is_grouped_by_queue_in_line_order() -> TestResult {
+    let h = Harness::new().await?;
     let later = h.manager.create_queue("Later").unwrap().id;
     let main = DEFAULT_QUEUE_ID;
     let mut add = Vec::new();
@@ -493,7 +512,7 @@ async fn the_list_is_grouped_by_queue_in_line_order() {
                 r.start = false;
                 r.queue = Some(queue);
             })
-            .await;
+            .await?;
         add.push(row.id);
     }
     let [a1, b1, a2, b2] = add[..] else {
@@ -506,14 +525,15 @@ async fn the_list_is_grouped_by_queue_in_line_order() {
     assert_eq!(ids(), vec![a2, a1, b2, b1]);
     let queues: Vec<_> = h.manager.list_queues().iter().map(|q| q.id).collect();
     assert_eq!(queues, vec![main, later]);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pause_all_and_resume_all() {
-    let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
-    let h = Harness::new().await;
-    let a = h.add(&server.url("a.bin")).await.id;
-    let b = h.add(&server.url("b.bin")).await.id;
+async fn pause_all_and_resume_all() -> TestResult {
+    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let h = Harness::new().await?;
+    let a = h.add(&server.url("a.bin")).await?.id;
+    let b = h.add(&server.url("b.bin")).await?.id;
     h.wait_for(a, "running", |r| r.done > 0).await;
 
     h.manager.pause_all().unwrap();
@@ -524,32 +544,35 @@ async fn pause_all_and_resume_all() {
     h.manager.resume_all().unwrap();
     h.wait_status(a, DownloadStatus::Completed).await;
     h.wait_status(b, DownloadStatus::Completed).await;
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn one_download_can_be_read_by_its_id() {
-    let server = TestServer::fast(1024).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("one.bin")).await;
+async fn one_download_can_be_read_by_its_id() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("one.bin")).await?;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(h.manager.get_download(row.id).unwrap(), done);
     assert!(matches!(
         h.manager.get_download(DownloadId(999)),
         Err(CoreError::DownloadNotFound(_))
     ));
+    Ok(())
 }
 
 /// Files downloaded with Wirecatch carry the Mark of the Web, as a browser's do,
 /// so SmartScreen and Office Protected View still look at them.
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_finished_download_is_marked_as_from_the_internet() {
-    let server = TestServer::fast(1024).await;
-    let h = Harness::new().await;
+async fn a_finished_download_is_marked_as_from_the_internet() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
     let url = server
         .url("setup.exe")
+        .as_str()
         .replace("http://", "http://user:pw@");
-    let row = h.add(&url).await;
+    let row = h.add(&url).await?;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     let stream = format!("{}:Zone.Identifier", done.path);
     let text = wait_until("the mark is written", || {
@@ -561,17 +584,18 @@ async fn a_finished_download_is_marked_as_from_the_internet() {
         text,
         format!("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl={host}\r\n")
     );
+    Ok(())
 }
 
 /// The part file is marked while the download runs, so the finished file has
 /// the mark from the moment it is renamed into place.
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_download_is_marked_before_it_is_finished() {
+async fn a_download_is_marked_before_it_is_finished() -> TestResult {
     let len = 256 * KIB;
-    let server = TestServer::throttled(len as usize, 64 * KIB).await;
-    let h = Harness::new().await;
-    let row = h.add(&server.url("setup.exe?token=abc")).await;
+    let server = throttled_server(len, 64 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("setup.exe?token=abc")).await?;
     let running = h
         .wait_for(row.id, "downloading", |r| r.done >= 16 * KIB)
         .await;
@@ -583,4 +607,5 @@ async fn a_download_is_marked_before_it_is_finished() {
     .await;
     assert!(text.contains("HostUrl="), "{text}");
     assert!(!text.contains("token"), "{text}");
+    Ok(())
 }

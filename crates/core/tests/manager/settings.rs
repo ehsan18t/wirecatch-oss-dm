@@ -5,11 +5,11 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 
-use crate::common::Harness;
+use crate::common::{Harness, TestResult};
 
 #[tokio::test]
-async fn two_windows_changing_different_settings_keep_both() {
-    let h = Harness::new().await;
+async fn two_windows_changing_different_settings_keep_both() -> TestResult {
+    let h = Harness::new().await?;
     let before = h.manager.get_settings();
 
     // Both windows start from the same copy; each changes one setting.
@@ -43,13 +43,14 @@ async fn two_windows_changing_different_settings_keep_both() {
         after.extension.capture_enabled, before.extension.capture_enabled,
         "the rest of the group is untouched"
     );
+    Ok(())
 }
 
 // A setting that can be empty (no speed limit, the format's usual audio quality) must be able to
 // go from empty to a value and back, which "leave unchanged" alone cannot say.
 #[tokio::test]
-async fn a_setting_that_can_be_empty_is_set_and_cleared() {
-    let h = Harness::new().await;
+async fn a_setting_that_can_be_empty_is_set_and_cleared() -> TestResult {
+    let h = Harness::new().await?;
     let limit = |limit: Option<u64>| AppSettingsPatch {
         global_speed_limit: Update::Set(limit),
         ..AppSettingsPatch::default()
@@ -85,11 +86,12 @@ async fn a_setting_that_can_be_empty_is_set_and_cleared() {
     let cleared = h.manager.get_settings();
     assert_eq!(cleared.global_speed_limit, None);
     assert_eq!(cleared.media.audio.audio_kbps, None);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_refused_patch_changes_nothing() {
-    let h = Harness::new().await;
+async fn a_refused_patch_changes_nothing() -> TestResult {
+    let h = Harness::new().await?;
     let before = h.manager.get_settings();
 
     let refused = h.manager.change_settings(AppSettingsPatch {
@@ -100,4 +102,5 @@ async fn a_refused_patch_changes_nothing() {
 
     assert!(refused.is_err(), "{refused:?}");
     assert_eq!(h.manager.get_settings(), before);
+    Ok(())
 }

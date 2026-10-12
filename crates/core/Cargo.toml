@@ -44,11 +44,9 @@ windows-sys = { workspace = true, features = [
 anyhow.workspace = true
 # Writing .tar.xz archives for the add-on tests.
 lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz", "encoder"] }
-axum.workspace = true
-bytes.workspace = true
-futures-util.workspace = true
 # Making throwaway signing keys for the signature tests (the version pgp uses).
 rand = "0.8.6"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 tracing-subscriber.workspace = true
+wirecatch-test-support = { path = "../test-support" }

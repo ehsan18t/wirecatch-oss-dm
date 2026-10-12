@@ -2,7 +2,8 @@
 //! of a manifest, a playlist or a page with several parts downloads from.
 //!
 //! Each file is served with byte ranges and an optional `Content-Type`. A
-//! file can be made to fail a set number of times or to answer slowly, and
+//! file can be made to fail a set number of times, to answer slowly or to be
+//! sent at a limited speed, and
 //! every request is logged with its headers, so a test can check what was
 //! asked for, how often and how many requests ran at once.
 //!
@@ -37,7 +38,7 @@ use axum::routing::get;
 use bytes::Bytes;
 use url::Url;
 
-use crate::http::{Seen, index, parse_range};
+use crate::http::{Seen, index, parse_range, throttled};
 
 /// One file and how it is served.
 #[derive(Clone, Default)]
@@ -49,6 +50,8 @@ struct File {
     fail_status: u16,
     /// How long every request waits before it is answered.
     delay: Duration,
+    /// Bytes per second the body is sent at, if limited.
+    bps: Option<u64>,
 }
 
 #[derive(Default)]
@@ -137,15 +140,25 @@ impl FileServer {
         self.change(path, |file| file.delay = delay);
     }
 
+    /// The file at `path` is sent at `bps` bytes per second from the next
+    /// request on, or at full speed again with `None`.
+    ///
+    /// # Panics
+    ///
+    /// If no file was put at `path`.
+    pub fn throttle(&self, path: &str, bps: Option<u64>) {
+        self.change(path, |file| file.bps = bps);
+    }
+
     /// Every request so far, in the order they arrived.
     #[must_use]
     pub fn seen(&self) -> Vec<Seen> {
         self.inner.log.lock().unwrap().clone()
     }
 
-    /// How many requests asked for `path`.
+    /// Every request for `path` so far, in the order they arrived.
     #[must_use]
-    pub fn requests(&self, path: &str) -> usize {
+    pub fn seen_at(&self, path: &str) -> Vec<Seen> {
         let path = key(path);
         self.inner
             .log
@@ -153,7 +166,14 @@ impl FileServer {
             .unwrap()
             .iter()
             .filter(|seen| seen.path == path)
-            .count()
+            .cloned()
+            .collect()
+    }
+
+    /// How many requests asked for `path`.
+    #[must_use]
+    pub fn requests(&self, path: &str) -> usize {
+        self.seen_at(path).len()
     }
 
     /// The most requests that were being answered at the same time.
@@ -280,9 +300,12 @@ fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<R
         }
         None => (StatusCode::OK, file.body.clone()),
     };
-    let response = builder
+    let builder = builder
         .status(status)
-        .header(header::CONTENT_LENGTH, body.len())
-        .body(Body::from(body));
+        .header(header::CONTENT_LENGTH, body.len());
+    let response = match file.bps {
+        Some(bps) => builder.body(Body::from_stream(throttled(body, bps))),
+        None => builder.body(Body::from(body)),
+    };
     (status, response)
 }

@@ -3,16 +3,17 @@
 
 use wirecatch_protocol::app::{AddonState, UiEvent};
 
+use crate::common::TestResult;
 use crate::media_support::{
     FileServer, Releases, addon_dir, exe, harness, install, next_event, path_exists, publish,
     sha256, sign, tar_xz, wait_addon, ytdlp_asset,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn install_downloads_checks_and_unpacks_only_the_expected_files() {
+async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestResult {
     let server = FileServer::start().await;
-    let sources = publish(&server, &Releases::fake(), "r1");
-    let h = harness(sources).await;
+    let sources = publish(&server, &Releases::fake()?, "r1")?;
+    let h = harness(sources).await?;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
     let mut ui = h.manager.subscribe();
     h.manager.install_addon("media").await.unwrap();
@@ -81,27 +82,28 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() {
     assert!(work.is_empty(), "left in .work: {work:?}");
 
     // Installing again does nothing: no request, no change.
-    let before = server.requests("r1/yt-dlp").len();
+    let before = server.requests("r1/yt-dlp");
     h.manager.install_addon("media").await.unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(server.requests("r1/yt-dlp").len(), before);
+    assert_eq!(server.requests("r1/yt-dlp"), before);
 
     // It survives a restart.
     let mut h = h;
-    h.restart().await;
+    h.restart().await?;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 
     assert!(h.manager.install_addon("something-else").await.is_err());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_release_that_does_not_match_its_checksum_is_never_unpacked() {
+async fn a_release_that_does_not_match_its_checksum_is_never_unpacked() -> TestResult {
     let server = FileServer::start().await;
-    let mut sources = publish(&server, &Releases::fake(), "bad");
+    let mut sources = publish(&server, &Releases::fake()?, "bad")?;
     sources.ffmpeg.sha256 = sha256(b"something else");
-    let h = harness(sources).await;
-    let info = install(&h).await;
+    let h = harness(sources).await?;
+    let info = install(&h).await?;
     let AddonState::Failed { message } = info.state else {
         panic!("installed anyway: {info:?}");
     };
@@ -124,28 +126,30 @@ async fn a_release_that_does_not_match_its_checksum_is_never_unpacked() {
         .filter(|n| n.starts_with("ffmpeg"))
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_link_where_a_program_should_be_is_refused() {
+async fn a_link_where_a_program_should_be_is_refused() -> TestResult {
     let server = FileServer::start().await;
-    let mut releases = Releases::fake();
-    releases.deno = tar_xz(&[(&format!("deno/{}", exe("deno")), None)]);
-    let sources = publish(&server, &releases, "link");
-    let h = harness(sources).await;
-    let info = install(&h).await;
+    let mut releases = Releases::fake()?;
+    releases.deno = tar_xz(&[(&format!("deno/{}", exe("deno")), None)])?;
+    let sources = publish(&server, &releases, "link")?;
+    let h = harness(sources).await?;
+    let info = install(&h).await?;
     let AddonState::Failed { message } = info.state else {
         panic!("installed anyway: {info:?}");
     };
     assert!(message.contains("not a plain file"), "{message}");
     assert!(!addon_dir(&h).join("deno").exists());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remove_deletes_the_add_on() {
+async fn remove_deletes_the_add_on() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "rm")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "rm")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let mut ui = h.manager.subscribe();
     h.manager.remove_addon("media").await.unwrap();
     let info = next_event(&mut ui, "AddonsChanged", |e| match e {
@@ -157,12 +161,13 @@ async fn remove_deletes_the_add_on() {
     assert!(!addon_dir(&h).exists());
     // Removing what is not there is fine.
     h.manager.remove_addon("media").await.unwrap();
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stopping_a_first_install_leaves_nothing_behind() {
+async fn stopping_a_first_install_leaves_nothing_behind() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "cx")).await;
+    let h = harness(publish(&server, &Releases::fake()?, "cx")?).await?;
     // Slow enough to still be running when it is stopped.
     server.throttle("cx/yt-dlp", Some(32 * 1024));
     let mut ui = h.manager.subscribe();
@@ -177,12 +182,13 @@ async fn stopping_a_first_install_leaves_nothing_behind() {
     // Nothing in progress: stopping again is fine.
     h.manager.cancel_addon_operation("media").await.unwrap();
     assert!(h.manager.cancel_addon_operation("flash").await.is_err());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stopping_an_update_keeps_the_installed_version_working() {
-    let (server, h, new_ytdlp) = updatable("cu").await;
-    let before = installed_ytdlp(&h);
+async fn stopping_an_update_keeps_the_installed_version_working() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("cu").await?;
+    let before = installed_ytdlp(&h)?;
     serve_release(
         &server,
         "2026.09.30",
@@ -191,7 +197,7 @@ async fn stopping_an_update_keeps_the_installed_version_working() {
         &sha256(&new_ytdlp),
         None,
         OLD,
-    );
+    )?;
     server.throttle(
         &format!("rel/2026.09.30/{}", ytdlp_asset()),
         Some(16 * 1024),
@@ -215,7 +221,7 @@ async fn stopping_an_update_keeps_the_installed_version_working() {
         info.state
     );
     assert!(info.installed_version.unwrap().contains("2026.08.19"));
-    assert_eq!(installed_ytdlp(&h), before, "the old yt-dlp is untouched");
+    assert_eq!(installed_ytdlp(&h)?, before, "the old yt-dlp is untouched");
     assert!(
         !path_exists(addon_dir(&h).join(".work")),
         "staging discarded"
@@ -226,12 +232,28 @@ async fn stopping_an_update_keeps_the_installed_version_working() {
         .output()
         .unwrap();
     assert!(deno.status.success());
+    Ok(())
+}
+
+/// One yt-dlp release as a test serves it.
+struct Release<'a> {
+    tag: &'a str,
+    program: &'a [u8],
+    /// The size the release description announces.
+    listed_size: u64,
+    /// The hash the checksum list gives the program.
+    listed_hash: &'a str,
+    /// Where the description says the program is; by default its own
+    /// release folder, `rel/<tag>/<asset>`.
+    program_url: Option<String>,
+    published: &'a str,
+    sig: Sig,
 }
 
 /// Publishes yt-dlp release `tag` the way GitHub describes it: the program at
 /// `rel/<tag>/<asset>` (or at `program_url`), announced as `listed_size`
-/// bytes, a checksum list giving it `listed_hash`, and the description at
-/// `api/latest`, published at `published`.
+/// bytes, a checksum list giving it `listed_hash` signed by the trusted key,
+/// and the description at `api/releases`, published at `published`.
 fn serve_release(
     server: &FileServer,
     tag: &str,
@@ -240,17 +262,19 @@ fn serve_release(
     listed_hash: &str,
     program_url: Option<String>,
     published: &str,
-) {
-    serve_signed(
+) -> TestResult {
+    serve(
         server,
-        tag,
-        program,
-        listed_size,
-        listed_hash,
-        program_url,
-        published,
-        Sig::Good,
-    );
+        &Release {
+            tag,
+            program,
+            listed_size,
+            listed_hash,
+            program_url,
+            published,
+            sig: Sig::Good,
+        },
+    )
 }
 
 /// How the checksum list of a served release is signed.
@@ -268,126 +292,110 @@ enum Sig {
     Garbage,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn serve_signed(
-    server: &FileServer,
-    tag: &str,
-    program: &[u8],
-    listed_size: u64,
-    listed_hash: &str,
-    program_url: Option<String>,
-    published: &str,
-    sig: Sig,
-) {
-    let release = put_release(
-        server,
-        tag,
-        program,
-        listed_size,
-        listed_hash,
-        program_url,
-        published,
-        sig,
-    );
+/// Publishes `release` as the only one in yt-dlp's list of releases.
+fn serve(server: &FileServer, release: &Release<'_>) -> TestResult {
+    let release = put_release(server, release)?;
     server.put("api/releases", serde_json::json!([release]).to_string());
+    Ok(())
 }
 
 /// Serves several releases `(tag, program, published)`, each signed and
 /// listed correctly, as yt-dlp's list of releases in the order given.
-fn serve_releases(server: &FileServer, releases: &[(&str, &[u8], &str)]) {
-    let list: Vec<serde_json::Value> = releases
+fn serve_releases(server: &FileServer, releases: &[(&str, &[u8], &str)]) -> TestResult {
+    let list = releases
         .iter()
-        .map(|(tag, program, published)| {
+        .map(|&(tag, program, published)| {
             put_release(
                 server,
-                tag,
-                program,
-                program.len() as u64,
-                &sha256(program),
-                None,
-                published,
-                Sig::Good,
+                &Release {
+                    tag,
+                    program,
+                    listed_size: program.len() as u64,
+                    listed_hash: &sha256(program),
+                    program_url: None,
+                    published,
+                    sig: Sig::Good,
+                },
             )
         })
-        .collect();
+        .collect::<TestResult<Vec<_>>>()?;
     server.put("api/releases", serde_json::Value::from(list).to_string());
+    Ok(())
 }
 
 /// Puts one release's files on the server and returns its description.
-#[allow(clippy::too_many_arguments)]
-fn put_release(
-    server: &FileServer,
-    tag: &str,
-    program: &[u8],
-    listed_size: u64,
-    listed_hash: &str,
-    program_url: Option<String>,
-    published: &str,
-    sig: Sig,
-) -> serde_json::Value {
+fn put_release(server: &FileServer, release: &Release<'_>) -> TestResult<serde_json::Value> {
+    let Release {
+        tag, listed_hash, ..
+    } = release;
     let asset = ytdlp_asset();
-    server.put(&format!("rel/{tag}/{asset}"), program.to_vec());
+    server.put(&format!("rel/{tag}/{asset}"), release.program.to_vec());
     let list = format!(
         "0000000000000000000000000000000000000000000000000000000000000000  yt-dlp_other\n{listed_hash}  {asset}\n"
     );
-    let signature = match sig {
-        Sig::Good => Some(sign(list.as_bytes(), true)),
-        Sig::OtherData => Some(sign(b"another list", true)),
-        Sig::WrongKey => Some(sign(list.as_bytes(), false)),
+    let signature = match release.sig {
+        Sig::Good => Some(sign(list.as_bytes(), true)?),
+        Sig::OtherData => Some(sign(b"another list", true)?),
+        Sig::WrongKey => Some(sign(list.as_bytes(), false)?),
         Sig::Missing => None,
         Sig::Garbage => Some(b"not a signature".to_vec()),
     };
     server.put(&format!("rel/{tag}/SHA2-256SUMS"), list);
-    let program_url = program_url.unwrap_or_else(|| server.url(&format!("rel/{tag}/{asset}")));
+    let program_url = release
+        .program_url
+        .clone()
+        .unwrap_or_else(|| server.url(&format!("rel/{tag}/{asset}")).to_string());
     let mut assets = vec![
-        serde_json::json!({"name": asset, "browser_download_url": program_url, "size": listed_size}),
-        serde_json::json!({"name": "SHA2-256SUMS", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS")), "size": 100}),
+        serde_json::json!({"name": asset, "browser_download_url": program_url, "size": release.listed_size}),
+        serde_json::json!({"name": "SHA2-256SUMS", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS")).as_str(), "size": 100}),
     ];
     if let Some(signature) = signature {
         server.put(&format!("rel/{tag}/SHA2-256SUMS.sig"), signature);
-        assets.push(serde_json::json!({"name": "SHA2-256SUMS.sig", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS.sig")), "size": 100}));
+        assets.push(serde_json::json!({"name": "SHA2-256SUMS.sig", "browser_download_url": server.url(&format!("rel/{tag}/SHA2-256SUMS.sig")).as_str(), "size": 100}));
     }
-    serde_json::json!({
+    Ok(serde_json::json!({
         "tag_name": tag,
-        "published_at": published,
+        "published_at": release.published,
         "draft": false,
         "prerelease": false,
         "assets": assets,
-    })
+    }))
 }
 
 /// Published well before the harness's clock (Monday 12 October 2026).
 const OLD: &str = "2026-10-01T00:00:00Z";
 
-async fn updatable(prefix: &str) -> (FileServer, crate::common::Harness, Vec<u8>) {
+async fn updatable(prefix: &str) -> TestResult<(FileServer, crate::common::Harness, Vec<u8>)> {
     let server = FileServer::start().await;
-    let mut sources = publish(&server, &Releases::fake(), prefix);
-    sources.ytdlp_releases = Some(server.url("api/releases"));
-    sources.ytdlp_release_downloads = server.url("rel/");
-    let h = harness(sources).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    let new_ytdlp = [crate::media_support::fake_tool(), b"v2".to_vec()].concat();
-    (server, h, new_ytdlp)
+    let mut sources = publish(&server, &Releases::fake()?, prefix)?;
+    sources.ytdlp_releases = Some(server.url("api/releases").to_string());
+    sources.ytdlp_release_downloads = server.url("rel/").to_string();
+    let h = harness(sources).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let new_ytdlp = [crate::media_support::fake_tool()?, b"v2".to_vec()].concat();
+    Ok((server, h, new_ytdlp))
 }
 
 /// Checks for updates and waits until any quiet update has ended.
-async fn check(h: &crate::common::Harness) -> wirecatch_protocol::app::AddonInfo {
-    h.manager.check_addon_updates().await.unwrap();
-    crate::common::wait_until("the update check ends", || {
+async fn check(h: &crate::common::Harness) -> TestResult<wirecatch_protocol::app::AddonInfo> {
+    h.manager.check_addon_updates().await?;
+    Ok(crate::common::wait_until("the update check ends", || {
         let info = h.manager.list_addons().remove(0);
         (!matches!(info.state, AddonState::Installing { .. })).then_some(info)
     })
-    .await
+    .await)
 }
 
-fn installed_ytdlp(h: &crate::common::Harness) -> Vec<u8> {
-    std::fs::read(addon_dir(h).join("yt-dlp").join(exe("yt-dlp"))).unwrap()
+fn installed_ytdlp(h: &crate::common::Harness) -> TestResult<Vec<u8>> {
+    Ok(std::fs::read(
+        addon_dir(h).join("yt-dlp").join(exe("yt-dlp")),
+    )?)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_check_that_cannot_reach_the_releases_says_so() {
+async fn a_check_that_cannot_reach_the_releases_says_so() -> TestResult {
     // Nothing is served at the release address.
-    let (_server, h, _) = updatable("nr").await;
+    let (_server, h, _) = updatable("nr").await?;
     let error = h.manager.check_addon_updates().await.unwrap_err();
     assert!(
         error
@@ -397,12 +405,13 @@ async fn a_check_that_cannot_reach_the_releases_says_so() {
     );
     // The add-on itself is fine.
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() {
-    let (server, h, new_ytdlp) = updatable("up").await;
-    let ffmpeg_requests = server.requests("up/ffmpeg.zip").len();
+async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("up").await?;
+    let ffmpeg_requests = server.requests("up/ffmpeg.zip");
     let size = new_ytdlp.len() as u64;
 
     // A checksum list that does not match: refused, the old yt-dlp stays.
@@ -414,11 +423,11 @@ async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() {
         &sha256(b"other"),
         None,
         OLD,
-    );
-    let info = check(&h).await;
+    )?;
+    let info = check(&h).await?;
     assert!(info.installed_version.unwrap().contains("2026.08.19"));
     assert_eq!(info.state, AddonState::UpdateAvailable);
-    assert_ne!(installed_ytdlp(&h), new_ytdlp);
+    assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
 
     // The right checksum: installed without asking.
     serve_release(
@@ -429,39 +438,42 @@ async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() {
         &sha256(&new_ytdlp),
         None,
         OLD,
-    );
-    let info = check(&h).await;
+    )?;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     let version = info.installed_version.unwrap();
     assert!(
         version.contains("2026.09.30") && version.contains("ffmpeg 9.0.2"),
         "{version}"
     );
-    assert_eq!(installed_ytdlp(&h), new_ytdlp);
+    assert_eq!(installed_ytdlp(&h)?, new_ytdlp);
     // ffmpeg and Deno were not downloaded again.
-    assert_eq!(server.requests("up/ffmpeg.zip").len(), ffmpeg_requests);
+    assert_eq!(server.requests("up/ffmpeg.zip"), ffmpeg_requests);
+    Ok(())
 }
 
 /// D21.1: a newer yt-dlp is installed only when its checksum list carries a
 /// valid signature by the pinned key; otherwise nothing is downloaded and a
 /// person who asked hears why.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_update_whose_checksum_list_is_not_signed_by_yt_dlp_is_refused() {
-    let (server, h, new_ytdlp) = updatable("sig").await;
+async fn an_update_whose_checksum_list_is_not_signed_by_yt_dlp_is_refused() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("sig").await?;
     let size = new_ytdlp.len() as u64;
     let hash = sha256(&new_ytdlp);
     let program = format!("rel/2026.09.30/{}", ytdlp_asset());
     for sig in [Sig::Missing, Sig::Garbage, Sig::WrongKey, Sig::OtherData] {
-        serve_signed(
+        serve(
             &server,
-            "2026.09.30",
-            &new_ytdlp,
-            size,
-            &hash,
-            None,
-            OLD,
-            sig,
-        );
+            &Release {
+                tag: "2026.09.30",
+                program: &new_ytdlp,
+                listed_size: size,
+                listed_hash: &hash,
+                program_url: None,
+                published: OLD,
+                sig,
+            },
+        )?;
         let error = h.manager.check_addon_updates().await.unwrap_err();
         assert!(
             error.to_string().starts_with(
@@ -476,28 +488,26 @@ async fn an_update_whose_checksum_list_is_not_signed_by_yt_dlp_is_refused() {
         h.manager.update_addon("media").await.unwrap();
         assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     }
-    assert!(
-        server.requests(&program).is_empty(),
-        "the program was fetched"
-    );
-    assert_ne!(installed_ytdlp(&h), new_ytdlp);
+    assert_eq!(server.requests(&program), 0, "the program was fetched");
+    assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
 
     // Signed by the pinned key: installed.
-    serve_release(&server, "2026.09.30", &new_ytdlp, size, &hash, None, OLD);
-    let info = check(&h).await;
+    serve_release(&server, "2026.09.30", &new_ytdlp, size, &hash, None, OLD)?;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
-    assert_eq!(installed_ytdlp(&h), new_ytdlp);
+    assert_eq!(installed_ytdlp(&h)?, new_ytdlp);
+    Ok(())
 }
 
 /// The release description may not send the download anywhere but yt-dlp's
 /// own release folder, and a tag that is not a plain version is ignored.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_update_only_comes_from_yt_dlps_release_folder() {
-    let (server, h, new_ytdlp) = updatable("pinned").await;
+async fn an_update_only_comes_from_yt_dlps_release_folder() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("pinned").await?;
     let size = new_ytdlp.len() as u64;
     let hash = sha256(&new_ytdlp);
     server.put("elsewhere/yt-dlp", new_ytdlp.clone());
-    let elsewhere = Some(server.url("elsewhere/yt-dlp"));
+    let elsewhere = Some(server.url("elsewhere/yt-dlp").to_string());
     serve_release(
         &server,
         "2026.09.30",
@@ -506,42 +516,42 @@ async fn an_update_only_comes_from_yt_dlps_release_folder() {
         &hash,
         elsewhere,
         OLD,
-    );
-    let info = check(&h).await;
+    )?;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     assert!(info.latest_version.unwrap().contains("2026.08.19"));
-    assert!(server.requests("elsewhere/yt-dlp").is_empty());
+    assert_eq!(server.requests("elsewhere/yt-dlp"), 0);
 
     for tag in ["nightly", "2026.09.30-x", "2026.09.30/../2026.09.30"] {
-        serve_release(&server, tag, &new_ytdlp, size, &hash, None, OLD);
-        let info = check(&h).await;
+        serve_release(&server, tag, &new_ytdlp, size, &hash, None, OLD)?;
+        let info = check(&h).await?;
         assert_eq!(info.state, AddonState::Installed, "{tag}");
     }
-    assert_ne!(installed_ytdlp(&h), new_ytdlp);
+    assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
+    Ok(())
 }
 
 /// A file larger than announced, or of unknown or unreasonable size, is never
 /// downloaded or hashed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_update_is_capped_at_its_announced_size() {
-    let (server, h, new_ytdlp) = updatable("cap").await;
+async fn an_update_is_capped_at_its_announced_size() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("cap").await?;
     let hash = sha256(&new_ytdlp);
     for listed in [0, 300 * 1024 * 1024] {
-        serve_release(&server, "2026.09.30", &new_ytdlp, listed, &hash, None, OLD);
-        let info = check(&h).await;
+        serve_release(&server, "2026.09.30", &new_ytdlp, listed, &hash, None, OLD)?;
+        let info = check(&h).await?;
         assert_eq!(info.state, AddonState::Installed, "size {listed}");
     }
-    assert!(
-        server
-            .requests(&format!("rel/2026.09.30/{}", ytdlp_asset()))
-            .is_empty()
+    assert_eq!(
+        server.requests(&format!("rel/2026.09.30/{}", ytdlp_asset())),
+        0
     );
 
     // Announced far smaller than it is: offered, but the download stops.
-    serve_release(&server, "2026.09.30", &new_ytdlp, 1000, &hash, None, OLD);
-    let info = check(&h).await;
+    serve_release(&server, "2026.09.30", &new_ytdlp, 1000, &hash, None, OLD)?;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::UpdateAvailable);
-    assert_ne!(installed_ytdlp(&h), new_ytdlp);
+    assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
     let work = addon_dir(&h).join(".work");
     let big: Vec<_> = std::fs::read_dir(&work)
         .map(|d| {
@@ -552,13 +562,14 @@ async fn an_update_is_capped_at_its_announced_size() {
         })
         .unwrap_or_default();
     assert!(big.is_empty(), "{big:?}");
+    Ok(())
 }
 
 /// D21.1: a release is installed only once it is two days old, whether by a
 /// quiet update, the Update button, a repair or a reinstall.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_fresh_release_waits_two_days_on_every_install_path() {
-    let (server, h, new_ytdlp) = updatable("fresh").await;
+async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("fresh").await?;
     let size = new_ytdlp.len() as u64;
     let hash = sha256(&new_ytdlp);
     // The harness's clock: Monday 12 October 2026, 12:00 local time.
@@ -570,12 +581,12 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() {
         &hash,
         None,
         "2026-10-12T00:00:00Z",
-    );
+    )?;
     let program = format!("rel/2026.10.12/{}", ytdlp_asset());
     let waiting = "A newer version came out today; Wirecatch installs it once it is two days old.";
     // Not installed quietly, and not offered: the add-on stays as it is and
     // says why.
-    let info = check(&h).await;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     assert_eq!(info.note.as_deref(), Some(waiting));
     assert!(info.latest_version.unwrap().contains("2026.08.19"));
@@ -593,14 +604,11 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() {
         "the repair installed the new release"
     );
     assert!(ytdlp.is_file());
-    assert!(
-        server.requests(&program).is_empty(),
-        "the program was fetched"
-    );
+    assert_eq!(server.requests(&program), 0, "the program was fetched");
 
     // A day later it is still waiting.
     h.clock.advance(chrono::TimeDelta::hours(24));
-    let info = check(&h).await;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     assert_eq!(
         info.note.as_deref(),
@@ -611,17 +619,18 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() {
     let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_eq!(info.note, None);
-    let info = check(&h).await;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
-    assert_eq!(installed_ytdlp(&h), new_ytdlp);
+    assert_eq!(installed_ytdlp(&h)?, new_ytdlp);
+    Ok(())
 }
 
 /// While the newest release is younger than two days, the newest one that is
 /// old enough is installed instead, found in the list of releases.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() {
-    let (server, h, older) = updatable("list").await;
-    let newest = [crate::media_support::fake_tool(), b"v3".to_vec()].concat();
+async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() -> TestResult {
+    let (server, h, older) = updatable("list").await?;
+    let newest = [crate::media_support::fake_tool()?, b"v3".to_vec()].concat();
     // Listed oldest first, to show the order the list comes in does not matter.
     serve_releases(
         &server,
@@ -630,41 +639,41 @@ async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() {
             ("2026.09.30", &older, OLD),
             ("2026.10.12", &newest, "2026-10-12T00:00:00Z"),
         ],
-    );
-    let info = check(&h).await;
+    )?;
+    let info = check(&h).await?;
     assert_eq!(info.state, AddonState::Installed);
     assert!(
         info.installed_version.unwrap().contains("2026.09.30"),
         "the newest release old enough was not installed"
     );
-    assert_eq!(installed_ytdlp(&h), older);
+    assert_eq!(installed_ytdlp(&h)?, older);
     assert_eq!(
         info.note.as_deref(),
         Some("A newer version came out today; Wirecatch installs it once it is two days old.")
     );
-    assert!(
-        server
-            .requests(&format!("rel/2026.10.12/{}", ytdlp_asset()))
-            .is_empty()
+    assert_eq!(
+        server.requests(&format!("rel/2026.10.12/{}", ytdlp_asset())),
+        0
     );
     // Once that one is two days old, it follows.
     h.clock.advance(chrono::TimeDelta::hours(48));
-    let info = check(&h).await;
+    let info = check(&h).await?;
     assert!(info.installed_version.unwrap().contains("2026.10.12"));
     assert_eq!(info.note, None);
-    assert_eq!(installed_ytdlp(&h), newest);
+    assert_eq!(installed_ytdlp(&h)?, newest);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
+async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() -> TestResult {
     let server = FileServer::start().await;
-    let releases = Releases::fake();
-    let sources = publish(&server, &releases, "pin");
-    let mut h = harness(sources.clone()).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let releases = Releases::fake()?;
+    let sources = publish(&server, &releases, "pin")?;
+    let mut h = harness(sources.clone()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let others = (
-        server.requests("pin/yt-dlp").len(),
-        server.requests("pin/deno.tar.xz").len(),
+        server.requests("pin/yt-dlp"),
+        server.requests("pin/deno.tar.xz"),
     );
 
     // The app is updated with a new ffmpeg pin.
@@ -675,17 +684,17 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
             Some(b"new ffmpeg".as_slice()),
         ),
         ("ff/bin/avcodec-63.dll", Some(b"new library".as_slice())),
-    ]);
+    ])?;
     server.put("pin2/ffmpeg.zip", new_zip.clone());
     newer.ffmpeg.version = "n9.1".into();
-    newer.ffmpeg.url = server.url("pin2/ffmpeg.zip");
+    newer.ffmpeg.url = server.url("pin2/ffmpeg.zip").to_string();
     newer.ffmpeg.sha256 = sha256(&new_zip);
     newer.ffmpeg.size = new_zip.len() as u64;
     let newer = std::sync::Arc::new(newer);
     *h.tweak_mut() = Some(std::sync::Arc::new(
         move |c: wirecatch_core::ManagerConfig| c.with_addon_sources((*newer).clone()),
     ));
-    h.restart().await;
+    h.restart().await?;
     let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_eq!(info.size, Some(new_zip.len() as u64));
@@ -702,29 +711,30 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() {
     );
     assert_eq!(
         (
-            server.requests("pin/yt-dlp").len(),
-            server.requests("pin/deno.tar.xz").len()
+            server.requests("pin/yt-dlp"),
+            server.requests("pin/deno.tar.xz")
         ),
         others
     );
+    Ok(())
 }
 
 /// D6: a settings profile lists the installed add-ons. Importing it on another
 /// machine offers them (the UI asks) and downloads nothing by itself.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn importing_settings_offers_the_add_on_without_downloading_it() {
+async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestResult {
     let server = FileServer::start().await;
-    let sources = publish(&server, &Releases::fake(), "prof");
-    let first = harness(sources.clone()).await;
-    assert_eq!(install(&first).await.state, AddonState::Installed);
+    let sources = publish(&server, &Releases::fake()?, "prof")?;
+    let first = harness(sources.clone()).await?;
+    assert_eq!(install(&first).await?.state, AddonState::Installed);
     let file = first.root.path().join("profile.json");
     first.manager.export_settings(&file).await.unwrap();
     let profile: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert_eq!(profile["addons"], serde_json::json!(["media"]));
-    let requests = server.requests("prof/yt-dlp").len();
+    let requests = server.requests("prof/yt-dlp");
 
-    let second = harness(sources).await;
+    let second = harness(sources).await?;
     let mut ui = second.manager.subscribe();
     second.manager.import_settings(&file).await.unwrap();
     let summary = next_event(&mut ui, "the import summary", |e| match e {
@@ -739,7 +749,7 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() {
         AddonState::NotInstalled
     );
     assert_eq!(
-        server.requests("prof/yt-dlp").len(),
+        server.requests("prof/yt-dlp"),
         requests,
         "it was downloaded"
     );
@@ -753,15 +763,16 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() {
     })
     .await;
     assert!(summary.addons_to_offer.is_empty());
+    Ok(())
 }
 
 /// An antivirus may take a program away; installing again must look at the
 /// disk rather than trust what was found at startup.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_program_taken_away_is_reinstalled() {
+async fn a_program_taken_away_is_reinstalled() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "gone")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "gone")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
     std::fs::remove_file(&ytdlp).unwrap();
     let mut ui = h.manager.subscribe();
@@ -769,19 +780,20 @@ async fn a_program_taken_away_is_reinstalled() {
     let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
     assert_eq!(info.id, "media");
     assert!(ytdlp.is_file(), "yt-dlp was not put back");
+    Ok(())
 }
 
 /// When a program cannot be started, the add-on is looked at again, so the UI
 /// offers the repair instead of showing it as installed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_program_that_cannot_start_shows_the_add_on_as_damaged() {
+async fn a_program_that_cannot_start_shows_the_add_on_as_damaged() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "nostart")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "nostart")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     std::fs::remove_file(addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"))).unwrap();
     h.manager
         .add_capture(crate::media_support::media_capture(
-            &server.url("watch/1"),
+            server.url("watch/1"),
             wirecatch_protocol::extension::MediaKind::Page,
             None,
         ))
@@ -795,28 +807,30 @@ async fn a_program_that_cannot_start_shows_the_add_on_as_damaged() {
     })
     .await;
     assert!(message.contains("damaged"), "{message}");
+    Ok(())
 }
 
 /// A removal that fails half way leaves the add-on shown as it is on disk.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_failed_removal_leaves_a_consistent_state() {
+async fn a_failed_removal_leaves_a_consistent_state() -> TestResult {
     let server = FileServer::start().await;
-    let mut h = harness(publish(&server, &Releases::fake(), "stuck")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let mut h = harness(publish(&server, &Releases::fake()?, "stuck")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let dir = addon_dir(&h);
     // Part of it is already gone, and another part cannot be deleted.
     std::fs::remove_file(dir.join("yt-dlp").join(exe("yt-dlp"))).unwrap();
-    let lock = Lock::hold(&dir.join("deno"), &exe("deno"));
+    let lock = Lock::hold(&dir.join("deno"), &exe("deno"))?;
     let removed = h.manager.remove_addon("media").await;
     assert!(removed.is_err(), "the removal should have failed");
     let shown = h.manager.list_addons().remove(0).state;
     drop(lock);
-    h.restart().await;
+    h.restart().await?;
     assert_eq!(shown, h.manager.list_addons().remove(0).state);
     assert!(
         matches!(shown, AddonState::Failed { .. } | AddonState::NotInstalled),
         "{shown:?}"
     );
+    Ok(())
 }
 
 /// Keeps a file from being deleted until dropped.
@@ -828,7 +842,7 @@ struct Lock {
 }
 
 impl Lock {
-    fn hold(dir: &std::path::Path, name: &str) -> Self {
+    fn hold(dir: &std::path::Path, name: &str) -> TestResult<Self> {
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
@@ -836,18 +850,17 @@ impl Lock {
                 .read(true)
                 // Others may read it (a checksum check), not delete or move it.
                 .share_mode(1)
-                .open(dir.join(name))
-                .unwrap();
-            Lock { _file: file }
+                .open(dir.join(name))?;
+            Ok(Lock { _file: file })
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = name;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-            Lock {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555))?;
+            Ok(Lock {
                 dir: dir.to_path_buf(),
-            }
+            })
         }
     }
 }
@@ -862,21 +875,21 @@ impl Drop for Lock {
 
 /// Removing the add-on while a video is downloaded with it is refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_add_on_is_not_removed_while_in_use() {
+async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "busy")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "busy")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     server.put("fmt/v.mp4", crate::common::test_data(400 * 1024));
     server.throttle("fmt/v.mp4", Some(50 * 1024));
     let info = serde_json::json!({"title": "Busy", "formats": [
         {"format_id": "1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
-         "protocol": "https", "url": server.url("fmt/v.mp4")}
+         "protocol": "https", "url": server.url("fmt/v.mp4").as_str()}
     ]});
-    crate::media_support::tell_tool(&h, "info.json", &info.to_string());
+    crate::media_support::tell_tool(&h, "info.json", &info.to_string())?;
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(crate::media_support::media_capture(
-            &server.url("watch/9"),
+            server.url("watch/9"),
             wirecatch_protocol::extension::MediaKind::Page,
             None,
         ))
@@ -914,23 +927,24 @@ async fn the_add_on_is_not_removed_while_in_use() {
     );
     assert!(addon_dir(&h).join("installed.json").is_file());
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
+    Ok(())
 }
 
 /// An update whose second part cannot be swapped in leaves a record that says
 /// exactly what is on disk, and the next install finishes the job.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_half_finished_update_is_recorded_and_repaired() {
+async fn a_half_finished_update_is_recorded_and_repaired() -> TestResult {
     let server = FileServer::start().await;
-    let sources = publish(&server, &Releases::fake(), "half");
-    let mut h = harness(sources.clone()).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let sources = publish(&server, &Releases::fake()?, "half")?;
+    let mut h = harness(sources.clone()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
 
     // The app now pins a newer yt-dlp and a newer ffmpeg.
     let mut newer = sources;
-    let new_ytdlp = [crate::media_support::fake_tool(), b"v2".to_vec()].concat();
+    let new_ytdlp = [crate::media_support::fake_tool()?, b"v2".to_vec()].concat();
     server.put("half2/yt-dlp", new_ytdlp.clone());
     newer.ytdlp.version = "2026.09.01".into();
-    newer.ytdlp.url = server.url("half2/yt-dlp");
+    newer.ytdlp.url = server.url("half2/yt-dlp").to_string();
     newer.ytdlp.sha256 = sha256(&new_ytdlp);
     newer.ytdlp.size = new_ytdlp.len() as u64;
     let new_zip = crate::media_support::zip(&[
@@ -939,21 +953,21 @@ async fn a_half_finished_update_is_recorded_and_repaired() {
             Some(b"new ffmpeg".as_slice()),
         ),
         ("ff/bin/avcodec-63.dll", Some(b"new library".as_slice())),
-    ]);
+    ])?;
     server.put("half2/ffmpeg.zip", new_zip.clone());
     newer.ffmpeg.version = "n9.1".into();
-    newer.ffmpeg.url = server.url("half2/ffmpeg.zip");
+    newer.ffmpeg.url = server.url("half2/ffmpeg.zip").to_string();
     newer.ffmpeg.sha256 = sha256(&new_zip);
     newer.ffmpeg.size = new_zip.len() as u64;
     let newer = std::sync::Arc::new(newer);
     *h.tweak_mut() = Some(std::sync::Arc::new(
         move |c: wirecatch_core::ManagerConfig| c.with_addon_sources((*newer).clone()),
     ));
-    h.restart().await;
+    h.restart().await?;
 
     // ffmpeg's folder cannot be moved away, so only yt-dlp is swapped in.
     let dir = addon_dir(&h);
-    let lock = Lock::hold(&dir.join("ffmpeg"), &format!("bin/{}", exe("ffmpeg")));
+    let lock = Lock::hold(&dir.join("ffmpeg"), &format!("bin/{}", exe("ffmpeg")))?;
     let mut ui = h.manager.subscribe();
     h.manager.update_addon("media").await.unwrap();
     wait_addon(&mut ui, "the update failed", |a| {
@@ -984,16 +998,17 @@ async fn a_half_finished_update_is_recorded_and_repaired() {
         std::fs::read(dir.join("ffmpeg").join("bin").join(exe("ffmpeg"))).unwrap(),
         b"new ffmpeg"
     );
+    Ok(())
 }
 
 /// Each file's checksum is recorded at install. A file changed in place (same
 /// size) is not looked for on every start, but a repair finds and replaces it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_repair_finds_a_file_changed_in_place() {
+async fn a_repair_finds_a_file_changed_in_place() -> TestResult {
     let server = FileServer::start().await;
-    let releases = Releases::fake();
-    let mut h = harness(publish(&server, &releases, "tamper")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let releases = Releases::fake()?;
+    let mut h = harness(publish(&server, &releases, "tamper")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let dir = addon_dir(&h);
     let record: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.join("installed.json")).unwrap()).unwrap();
@@ -1005,7 +1020,7 @@ async fn a_repair_finds_a_file_changed_in_place() {
     let last = bytes.len() - 1;
     bytes[last] ^= 0xff;
     std::fs::write(&ytdlp, &bytes).unwrap();
-    h.restart().await;
+    h.restart().await?;
     // Not checked on every start: sizes only.
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 
@@ -1013,4 +1028,5 @@ async fn a_repair_finds_a_file_changed_in_place() {
     h.manager.install_addon("media").await.unwrap();
     wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
     assert_eq!(std::fs::read(&ytdlp).unwrap(), releases.ytdlp);
+    Ok(())
 }

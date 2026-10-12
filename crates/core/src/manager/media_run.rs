@@ -1404,29 +1404,18 @@ mod tests {
         let segment: Vec<u8> = (0..188 * 40)
             .map(|i| if i % 188 == 0 { 0x47 } else { (i % 251) as u8 })
             .collect();
-        let app = axum::Router::new()
-            .route(
-                "/index.m3u8",
-                axum::routing::get(|| async {
-                    "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n"
-                }),
-            )
-            .route(
-                "/seg0.ts",
-                axum::routing::get(move || {
-                    let segment = segment.clone();
-                    async move { segment }
-                }),
-            );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let server = wirecatch_test_support::files::FileServer::start().await;
+        server.put(
+            "index.m3u8",
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n",
+        );
+        server.put("seg0.ts", segment);
 
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("clip.mp4");
         let job = Job {
             output: output.clone(),
-            url: Url::parse(&format!("http://{addr}/index.m3u8")).unwrap(),
+            url: server.url("index.m3u8"),
             origin: Origin::default(),
             tools: None,
             options: DownloadOptions::default(),

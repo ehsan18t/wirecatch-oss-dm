@@ -8,6 +8,8 @@
 //! - [`files::FileServer`]: an HTTP server for a set of files by path, each of
 //!   which can fail a set number of times or answer slowly.
 //! - [`ftp::FtpServer`]: a scripted FTP and FTPS server.
+//! - [`silent::SilentServer`]: a server that accepts connections and never
+//!   answers.
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
 //! - [`test_data`], [`seeded_data`] and [`ts_segment`]: deterministic bytes to
@@ -29,6 +31,7 @@ pub mod ftp;
 pub mod http;
 #[cfg(feature = "http3")]
 pub mod http3;
+pub mod silent;
 mod tls;
 
 pub use tls::TestCertificate;

@@ -7482,11 +7482,8 @@ name = "wirecatch-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
- "bytes",
  "chrono",
  "dirs 7.0.0",
- "futures-util",
  "libc",
  "lzma-rust2",
  "pgp",
@@ -7505,6 +7502,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-protocol",
  "wirecatch-streams",
+ "wirecatch-test-support",
  "zip 8.6.0",
 ]
 

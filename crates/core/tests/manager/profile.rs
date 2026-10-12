@@ -4,15 +4,15 @@
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{Category, PortablePath, Queue, Schedule, TimeOfDay, UiEvent};
 
-use crate::common::{Harness, tune};
+use crate::common::{Harness, TestResult, tune};
 
 fn absolute(path: std::path::PathBuf) -> PortablePath {
     PortablePath(path.to_string_lossy().into_owned())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn settings_and_queues_move_to_another_machine() {
-    let here = Harness::new().await;
+async fn settings_and_queues_move_to_another_machine() -> TestResult {
+    let here = Harness::new().await?;
     let night = here.manager.create_queue("Night").unwrap();
     let night = Queue {
         max_concurrent: 4,
@@ -41,7 +41,7 @@ async fn settings_and_queues_move_to_another_machine() {
         s.global_speed_limit = Some(2_000_000);
         s.extension.ask_before_download = true;
         s.extension.default_queue = night.id;
-    });
+    })?;
 
     let file = here.root.path().join("profile.json");
     here.manager.export_settings(&file).await.unwrap();
@@ -55,7 +55,7 @@ async fn settings_and_queues_move_to_another_machine() {
     );
 
     // A different user on a different machine.
-    let there = Harness::new().await;
+    let there = Harness::new().await?;
     assert_ne!(there.folders.home, here.folders.home);
     let mut events = there.manager.subscribe();
     there.manager.import_settings(&file).await.unwrap();
@@ -83,14 +83,14 @@ async fn settings_and_queues_move_to_another_machine() {
     // New downloads land in this machine's folders.
     let movie = there
         .add_with("https://example.com/movie.mp4", |r| r.start = false)
-        .await;
+        .await?;
     assert_eq!(
         std::path::Path::new(&movie.path),
         there.folders.videos.join("Clips").join("movie.mp4")
     );
     let other = there
         .add_with("https://example.com/notes.bin", |r| r.start = false)
-        .await;
+        .await?;
     assert_eq!(
         std::path::Path::new(&other.path),
         there.folders.downloads.join("Stuff").join("notes.bin")
@@ -117,11 +117,12 @@ async fn settings_and_queues_move_to_another_machine() {
         std::path::Path::new(&default.resolved),
         there.folders.downloads.join("Stuff")
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_profile_from_a_newer_version_is_refused() {
-    let h = Harness::new().await;
+async fn a_profile_from_a_newer_version_is_refused() -> TestResult {
+    let h = Harness::new().await?;
     let file = h.root.path().join("future.json");
     std::fs::write(&file, r#"{"format_version": 99, "settings": "who knows"}"#).unwrap();
     let before = h.manager.get_settings();
@@ -131,18 +132,19 @@ async fn a_profile_from_a_newer_version_is_refused() {
     assert_eq!(h.manager.get_settings(), before);
     assert_eq!(h.manager.list_queues().len(), 1);
     assert_eq!(h.manager.list_queues()[0].id, DEFAULT_QUEUE_ID);
+    Ok(())
 }
 
 /// The import is previewed before anything changes: folders as they would
 /// resolve here (a startup folder refused and replaced, a folder outside the
 /// person's own flagged), queues added and updated, add-ons to offer.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_import_is_previewed_without_changing_anything() {
-    let here = Harness::new().await;
+async fn an_import_is_previewed_without_changing_anything() -> TestResult {
+    let here = Harness::new().await?;
     here.manager.create_queue("Night").unwrap();
     let file = here.root.path().join("profile.json");
     here.manager.export_settings(&file).await.unwrap();
-    let there = Harness::new().await;
+    let there = Harness::new().await?;
     let outside = there.root.path().join("elsewhere");
     let startup = if cfg!(windows) {
         "{Home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
@@ -196,4 +198,5 @@ async fn an_import_is_previewed_without_changing_anything() {
         PortablePath(outside.to_string_lossy().into_owned())
     );
     assert_eq!(there.manager.list_queues().len(), 2);
+    Ok(())
 }

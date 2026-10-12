@@ -8,39 +8,44 @@ use std::time::{Duration, Instant};
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Queue, UiEvent};
 
-use crate::common::{Harness, TestServer, is_running, tune};
+use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, tune};
 
 const KIB: u64 = 1024;
 
-fn set_queue(h: &Harness, id: wirecatch_protocol::QueueId, change: impl FnOnce(&mut Queue)) {
+fn set_queue(
+    h: &Harness,
+    id: wirecatch_protocol::QueueId,
+    change: impl FnOnce(&mut Queue),
+) -> TestResult {
     let mut queue = h
         .manager
         .list_queues()
         .into_iter()
         .find(|q| q.id == id)
-        .unwrap();
+        .ok_or("no such queue")?;
     change(&mut queue);
-    h.manager.update_queue(queue).unwrap();
+    h.manager.update_queue(queue)?;
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn queue_and_global_concurrency_limits_hold() {
-    let server = TestServer::throttled(64 * KIB as usize, 128 * KIB).await;
-    let h = Harness::new().await;
-    tune(&h.manager, |s| s.max_concurrent_downloads = 3);
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = 1);
+async fn queue_and_global_concurrency_limits_hold() -> TestResult {
+    let server = throttled_server(64 * KIB, 128 * KIB).await?;
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.max_concurrent_downloads = 3)?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = 1)?;
     let second = h.manager.create_queue("Second").unwrap();
-    set_queue(&h, second.id, |q| q.max_concurrent = 3);
+    set_queue(&h, second.id, |q| q.max_concurrent = 3)?;
     let limits = HashMap::from([(DEFAULT_QUEUE_ID, 1), (second.id, 3)]);
 
     let mut events = h.manager.subscribe();
     let mut ids = Vec::new();
     for i in 0..4 {
-        ids.push(h.add(&server.url(&format!("a{i}.bin"))).await.id);
+        ids.push(h.add(&server.url(&format!("a{i}.bin"))).await?.id);
         let queue = Some(second.id);
         ids.push(
             h.add_with(&server.url(&format!("b{i}.bin")), |r| r.queue = queue)
-                .await
+                .await?
                 .id,
         );
     }
@@ -70,34 +75,36 @@ async fn queue_and_global_concurrency_limits_hold() {
     assert_eq!(peak, 3, "the global limit was never reached");
     assert!(server.stats.max_concurrent.load(Ordering::SeqCst) <= 3);
     assert_eq!(server.stats.requests.load(Ordering::SeqCst), ids.len());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn lowering_a_limit_sends_extra_downloads_back_in_line() {
-    let server = TestServer::throttled(256 * KIB as usize, 64 * KIB).await;
-    let h = Harness::new().await;
-    let a = h.add(&server.url("a.bin")).await;
-    let b = h.add(&server.url("b.bin")).await;
+async fn lowering_a_limit_sends_extra_downloads_back_in_line() -> TestResult {
+    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let h = Harness::new().await?;
+    let a = h.add(&server.url("a.bin")).await?;
+    let b = h.add(&server.url("b.bin")).await?;
     h.wait_for(b.id, "both running", |r| {
         is_running(r) && is_running(&h.row(a.id))
     })
     .await;
 
-    tune(&h.manager, |s| s.max_concurrent_downloads = 1);
+    tune(&h.manager, |s| s.max_concurrent_downloads = 1)?;
     h.wait_status(b.id, DownloadStatus::Queued).await;
     assert!(is_running(&h.row(a.id)));
+    Ok(())
 }
 
 /// Times one 128 KiB download under the given queue and global limits.
-async fn time_download(queue_limit: u64, global_limit: u64) -> Duration {
-    let server = TestServer::fast(128 * KIB as usize).await;
-    let h = Harness::new().await;
-    tune(&h.manager, |s| s.global_speed_limit = Some(global_limit));
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(queue_limit));
+async fn time_download(queue_limit: u64, global_limit: u64) -> TestResult<Duration> {
+    let server = fast_server(128 * KIB).await?;
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.global_speed_limit = Some(global_limit))?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(queue_limit))?;
     let start = Instant::now();
-    let row = h.add(&server.url("f.bin")).await;
+    let row = h.add(&server.url("f.bin")).await?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
-    start.elapsed()
+    Ok(start.elapsed())
 }
 
 // 128 KiB at 64 KiB/s takes 2 s, less the limiter's 16 KiB burst allowance.
@@ -106,48 +113,51 @@ const SLOWEST_FAIR: Duration = Duration::from_millis(1600);
 const FASTEST_UNFAIR: Duration = Duration::from_millis(3500);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_download_obeys_a_stricter_queue_limit() {
-    let took = time_download(64 * KIB, 128 * KIB).await;
+async fn a_download_obeys_a_stricter_queue_limit() -> TestResult {
+    let took = time_download(64 * KIB, 128 * KIB).await?;
     assert!(
         (SLOWEST_FAIR..FASTEST_UNFAIR).contains(&took),
         "took {took:?}"
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_download_obeys_a_stricter_global_limit() {
-    let took = time_download(128 * KIB, 64 * KIB).await;
+async fn a_download_obeys_a_stricter_global_limit() -> TestResult {
+    let took = time_download(128 * KIB, 64 * KIB).await?;
     assert!(
         (SLOWEST_FAIR..FASTEST_UNFAIR).contains(&took),
         "took {took:?}"
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn limit_changes_apply_to_running_downloads() {
-    let server = TestServer::fast(512 * KIB as usize).await;
-    let h = Harness::new().await;
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(16 * KIB));
+async fn limit_changes_apply_to_running_downloads() -> TestResult {
+    let server = fast_server(512 * KIB).await?;
+    let h = Harness::new().await?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(16 * KIB))?;
     let start = Instant::now();
-    let row = h.add(&server.url("f.bin")).await;
+    let row = h.add(&server.url("f.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
     // At 16 KiB/s this would take half a minute; lifting the limit finishes it now.
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = None);
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = None)?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
     assert!(
         start.elapsed() < Duration::from_secs(10),
         "{:?}",
         start.elapsed()
     );
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn progress_events_are_batched() {
-    let server = TestServer::throttled(256 * KIB as usize, 128 * KIB).await;
-    let h = Harness::new().await;
+async fn progress_events_are_batched() -> TestResult {
+    let server = throttled_server(256 * KIB, 128 * KIB).await?;
+    let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
-    let row = h.add(&server.url("f.bin")).await;
+    let row = h.add(&server.url("f.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
     let window = Duration::from_secs(1);
@@ -172,4 +182,5 @@ async fn progress_events_are_batched() {
         .expect("no speed reading while downloading");
     // Smoothed speed sits near the server's 128 KiB/s.
     assert!((64 * KIB..256 * KIB).contains(&speed), "speed {speed}");
+    Ok(())
 }

@@ -1,8 +1,9 @@
 //! A small HTTP server for tests: serves a byte buffer with optional range
 //! support, per-connection throttling, injected disconnects, custom headers,
 //! redirects, busy answers with `Retry-After`, a connection limit and a limit on
-//! how much one request may ask for. Every request is logged with its headers
-//! and the connection it came on, so tests can check what was sent.
+//! how much one request may ask for, paths answered with an error status and a
+//! delay before every answer. Every request is logged with its headers and the
+//! connection it came on, so tests can check what was sent.
 
 use std::net::SocketAddr;
 use std::ops::Range;
@@ -65,6 +66,13 @@ pub struct Config {
     pub max_range: Option<u64>,
     /// Range answers give no size (`Content-Range: bytes 0-99/*`).
     pub unknown_total: bool,
+    /// Requests for these paths (each with its leading `/`) are answered with
+    /// the status and no body instead of the file, the way a server answers a
+    /// link that expired or that needs a sign-in.
+    pub refuse_paths: Vec<(String, u16)>,
+    /// How long a request for the file waits before it is answered, like a
+    /// server that is slow to start.
+    pub answer_delay: Option<Duration>,
 }
 
 /// Answers a range of requests with a busy status instead of the file.
@@ -161,6 +169,19 @@ impl Stats {
     pub fn seen(&self) -> Vec<Seen> {
         self.log.lock().unwrap().clone()
     }
+
+    /// The value of header `name` in every request that sent it as text, in
+    /// the order the requests arrived: the cookies or credentials a client
+    /// sent, for example.
+    #[must_use]
+    pub fn header_values(&self, name: &str) -> Vec<String> {
+        self.log
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|seen| seen.header(name).map(str::to_string))
+            .collect()
+    }
 }
 
 struct Inner {
@@ -221,6 +242,12 @@ impl TestServer {
     pub fn configure(&self, change: impl FnOnce(&mut Config)) {
         change(&mut self.inner.config.lock().unwrap());
     }
+
+    /// Body bytes sent so far, over every connection.
+    #[must_use]
+    pub fn bytes_sent(&self) -> u64 {
+        self.stats.bytes_sent.load(Ordering::SeqCst)
+    }
 }
 
 /// One request being answered.
@@ -229,6 +256,8 @@ struct Request<'a> {
     config: Config,
     /// Its sequence number; 0 is the first.
     index: usize,
+    /// When it arrived, by the monotonic and by the wall clock.
+    arrived: (Instant, SystemTime),
     peer: SocketAddr,
     path: String,
     headers: HeaderMap,
@@ -236,9 +265,10 @@ struct Request<'a> {
 
 impl Request<'_> {
     fn log(&self, status: StatusCode) {
+        let (at, wall) = self.arrived;
         self.inner.stats.log.lock().unwrap().push(Seen {
-            at: Instant::now(),
-            wall: SystemTime::now(),
+            at,
+            wall,
             path: self.path.clone(),
             headers: self.headers.clone(),
             status: status.as_u16(),
@@ -260,6 +290,7 @@ async fn serve(
     let request = Request {
         config: inner.config.lock().unwrap().clone(),
         index: inner.stats.requests.fetch_add(1, Ordering::SeqCst),
+        arrived: (Instant::now(), SystemTime::now()),
         inner: &inner,
         peer,
         path: uri.path().to_string(),
@@ -272,9 +303,19 @@ async fn serve(
 }
 
 /// The answer for a request the configuration turns away before the file:
-/// too large, redirected, hanging or busy.
+/// refused by path, too large, redirected, hanging or busy. A request that is
+/// not turned away waits out `answer_delay` here.
 async fn turn_away(request: &Request<'_>) -> Option<Response> {
     let config = &request.config;
+    if let Some(&(_, status)) = config
+        .refuse_paths
+        .iter()
+        .find(|(path, _)| *path == request.path)
+    {
+        let status = StatusCode::from_u16(status).unwrap();
+        request.log(status);
+        return Some(empty(Response::builder().status(status)));
+    }
     if let Some(max) = config.max_range
         && asks_too_much(&request.headers, max)
     {
@@ -306,6 +347,9 @@ async fn turn_away(request: &Request<'_>) -> Option<Response> {
             builder = builder.header(header::RETRY_AFTER, retry_after);
         }
         return Some(empty(builder));
+    }
+    if let Some(delay) = config.answer_delay {
+        tokio::time::sleep(delay).await;
     }
     None
 }
@@ -417,9 +461,9 @@ fn body(
     let abort_after = config
         .drop_first
         .and_then(|(n, after)| (request.index < n).then_some(after));
-    let chunk = config.per_connection_bps.map_or(UNTHROTTLED_CHUNK, |bps| {
-        usize::try_from((bps / THROTTLE_STEPS_PER_SECOND).max(MIN_THROTTLED_CHUNK)).unwrap()
-    });
+    let chunk = config
+        .per_connection_bps
+        .map_or(UNTHROTTLED_CHUNK, throttled_chunk);
     let pause = config
         .per_connection_bps
         .map(|bps| time_to_send(chunk as u64, bps));
@@ -450,6 +494,29 @@ fn body(
                 .fetch_add(bytes.len() as u64, Ordering::SeqCst);
             Some((Ok(bytes), (next, sent + (next - pos), live)))
         }
+    })
+}
+
+/// How much of the body a connection throttled to `bps` bytes per second
+/// sends at once.
+pub(crate) fn throttled_chunk(bps: u64) -> usize {
+    usize::try_from((bps / THROTTLE_STEPS_PER_SECOND).max(MIN_THROTTLED_CHUNK)).unwrap()
+}
+
+/// `bytes`, sent at `bps` bytes per second in pieces of [`throttled_chunk`].
+pub(crate) fn throttled(
+    bytes: Bytes,
+    bps: u64,
+) -> impl futures_util::Stream<Item = std::io::Result<Bytes>> + use<> {
+    let chunk = throttled_chunk(bps);
+    let pause = time_to_send(chunk as u64, bps);
+    futures_util::stream::unfold(bytes, move |mut rest| async move {
+        if rest.is_empty() {
+            return None;
+        }
+        tokio::time::sleep(pause).await;
+        let piece = rest.split_to(chunk.min(rest.len()));
+        Some((Ok(piece), rest))
     })
 }
 

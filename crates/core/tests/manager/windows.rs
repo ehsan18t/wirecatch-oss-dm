@@ -8,7 +8,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{CaptureSource, MediaKind, NewDownload, WithdrawOutcome};
 
-use crate::common::{TestServer, tune};
+use crate::common::{TestResult, fast_server, tune};
 use crate::media_support::{
     FileServer, Releases, harness, install, media_capture, next_event, publish, tell_tool,
 };
@@ -55,7 +55,7 @@ fn video_info(server: &FileServer) -> String {
         "title": "One video",
         "formats": [
             {"format_id": "18", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
-             "tbr": 500, "protocol": "https", "url": server.url("fmt/small.mp4")},
+             "tbr": 500, "protocol": "https", "url": server.url("fmt/small.mp4").as_str()},
         ]
     })
     .to_string()
@@ -70,13 +70,13 @@ async fn next_choice(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> Medi
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() {
-    let server = TestServer::fast(1024).await;
-    let h = crate::common::Harness::new().await;
-    tune(&h.manager, |s| s.extension.ask_before_download = true);
+async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = crate::common::Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
 
     h.manager
-        .add_capture(file_capture(server.url("a.pdf"), "one"))
+        .add_capture(file_capture(server.url("a.pdf").to_string(), "one"))
         .await
         .unwrap();
     let first = h.manager.pending_confirmations().remove(0);
@@ -96,7 +96,7 @@ async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() {
 
     // The same link again: the question knows it is in the list already.
     h.manager
-        .add_capture(file_capture(server.url("a.pdf#again"), "two"))
+        .add_capture(file_capture(server.url("a.pdf#again").to_string(), "two"))
         .await
         .unwrap();
     let again = h.manager.pending_confirmations().remove(0);
@@ -110,18 +110,19 @@ async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() {
     h.wait_status(started, DownloadStatus::Completed).await;
     // A question that is no longer open has nothing to compare.
     assert!(h.manager.earlier_download(again.id).is_none());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn two_links_to_one_video_are_asked_about_once() {
+async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &video_info(&server));
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &video_info(&server))?;
     let mut ui = h.manager.subscribe();
 
-    let first_link = server.url("watch?v=abc123");
-    let second_link = server.url("watch?v=abc123&t=30s");
+    let first_link = server.url("watch?v=abc123").to_string();
+    let second_link = server.url("watch?v=abc123&t=30s").to_string();
     h.manager
         .add_capture(media_capture(&first_link, MediaKind::Page, None))
         .await
@@ -161,7 +162,7 @@ async fn two_links_to_one_video_are_asked_about_once() {
 
     // Captured once more after the answer: a new question, which knows the video is in the
     // list already, though this link was never downloaded.
-    let third_link = server.url("watch?v=abc123&pp=xyz");
+    let third_link = server.url("watch?v=abc123&pp=xyz").to_string();
     h.manager
         .add_capture(media_capture(&third_link, MediaKind::Page, None))
         .await
@@ -169,17 +170,18 @@ async fn two_links_to_one_video_are_asked_about_once() {
     let again = next_choice(&mut ui).await;
     assert_ne!(again.id, choice.id);
     assert_eq!(h.manager.earlier_download(again.id).map(|r| r.id), Some(id));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_being_read_is_listed_until_its_choice_comes() {
+async fn a_page_being_read_is_listed_until_its_choice_comes() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &video_info(&server));
-    tell_tool(&h, "delay-ms", "1500");
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &video_info(&server))?;
+    tell_tool(&h, "delay-ms", "1500")?;
     let mut ui = h.manager.subscribe();
-    let link = server.url("watch?v=abc123");
+    let link = server.url("watch?v=abc123").to_string();
     h.manager
         .add_capture(media_capture(&link, MediaKind::Page, None))
         .await
@@ -195,4 +197,5 @@ async fn a_page_being_read_is_listed_until_its_choice_comes() {
     let choice = next_choice(&mut ui).await;
     assert_eq!(choice.id, reading.0);
     assert!(h.manager.media_being_read().is_empty());
+    Ok(())
 }

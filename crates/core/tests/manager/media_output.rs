@@ -12,7 +12,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::MediaKind;
 
-use crate::common::{Harness, test_data};
+use crate::common::{Harness, TestResult, test_data};
 use crate::media_support::{
     FileServer, Releases, harness, install, media_capture, next_event, publish, real_ffmpeg,
     tell_tool, ytdlp_calls,
@@ -57,7 +57,7 @@ fn page_info(server: &FileServer) -> String {
         "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHallo\n",
     );
     server.put("thumb.jpg", b"\xFF\xD8\xFF\xE0 a picture".to_vec());
-    let url = |path: &str| server.url(path);
+    let url = |path: &str| server.url(path).to_string();
     serde_json::json!({
         "title": "Cats: the movie",
         "uploader": "Cat Channel",
@@ -104,45 +104,43 @@ fn selection(option: &str, output: OutputFormat) -> MediaSelection {
     }
 }
 
-async fn ready(server: &FileServer) -> Harness {
-    let h = harness(publish(server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &page_info(server));
-    h
+async fn ready(server: &FileServer) -> TestResult<Harness> {
+    let h = harness(publish(server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(server))?;
+    Ok(h)
 }
 
-async fn choice_for(h: &Harness, server: &FileServer, n: u32) -> MediaChoice {
+async fn choice_for(h: &Harness, server: &FileServer, n: u32) -> TestResult<MediaChoice> {
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
-            &server.url(&format!("watch/{n}")),
+            server.url(&format!("watch/{n}")),
             MediaKind::Page,
             None,
         ))
-        .await
-        .unwrap();
-    next_event(&mut ui, "a media choice", |e| match e {
+        .await?;
+    Ok(next_event(&mut ui, "a media choice", |e| match e {
         UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
         _ => None,
     })
-    .await
+    .await)
 }
 
 /// Requests made for each format file, in [`FORMATS`] order.
 fn format_requests(server: &FileServer) -> Vec<usize> {
     FORMATS
         .iter()
-        .map(|(_, path)| server.requests(path).len())
+        .map(|(_, path)| server.requests(path))
         .collect()
 }
 
 /// The lines the fake ffmpeg wrote into a file: its arguments.
-fn ffmpeg_args(path: &str) -> Vec<String> {
-    std::fs::read_to_string(path)
-        .unwrap()
+fn ffmpeg_args(path: &str) -> TestResult<Vec<String>> {
+    Ok(std::fs::read_to_string(path)?
         .lines()
         .map(str::to_string)
-        .collect()
+        .collect())
 }
 
 fn has_pair(args: &[String], a: &str, b: &str) -> bool {
@@ -150,10 +148,10 @@ fn has_pair(args: &[String], a: &str, b: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_offers_formats_subtitles_and_chapters() {
+async fn a_page_offers_formats_subtitles_and_chapters() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    let choice = choice_for(&h, &server, 1).await;
+    let h = ready(&server).await?;
+    let choice = choice_for(&h, &server, 1).await?;
     let subtitles: Vec<(&str, &str, bool)> = choice
         .subtitles
         .iter()
@@ -209,17 +207,18 @@ async fn a_page_offers_formats_subtitles_and_chapters() {
     odd.subtitles = vec!["sub:fr".into()];
     assert!(h.manager.choose_media(choice.id, odd).await.is_err());
     assert_eq!(h.manager.pending_media_choices().len(), 1);
+    Ok(())
 }
 
 /// MP4 from a VP9-only quality: the matching AAC is downloaded (not the
 /// Opus), the video is re-encoded, subtitles and chapters go in, the row shows
 /// "Converting" with its progress, and the choices are remembered.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() {
+async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    tell_tool(&h, "ffmpeg-delay-ms", "1500");
-    let choice = choice_for(&h, &server, 2).await;
+    let h = ready(&server).await?;
+    tell_tool(&h, "ffmpeg-delay-ms", "1500")?;
+    let choice = choice_for(&h, &server, 2).await?;
     let uhd = choice.options[0].id.clone();
     let mut pick = selection(&uhd, OutputFormat::Mp4);
     pick.subtitles = vec!["sub:en".into(), "auto:de-orig".into()];
@@ -237,7 +236,7 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() {
     assert!(done.file_name.ends_with(".mp4"), "{}", done.file_name);
     assert_eq!(done.processing, None);
     assert_eq!(done.category, Category::Video);
-    let args = ffmpeg_args(&done.path);
+    let args = ffmpeg_args(&done.path)?;
     // VP9 video and AAC audio went in; the Opus was never downloaded.
     assert_eq!(
         format_requests(&server)[0],
@@ -262,10 +261,11 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() {
     ));
     assert!(has_pair(&args, "-f", "ffmetadata"), "{args:?}");
     assert!(has_pair(&args, "-f", "mp4"), "{args:?}");
-    assert!(!server.requests("subs/en.vtt").is_empty());
-    assert!(!server.requests("subs/de.vtt").is_empty());
-    assert!(
-        server.requests("thumb.jpg").is_empty(),
+    assert!(server.requests("subs/en.vtt") > 0);
+    assert!(server.requests("subs/de.vtt") > 0);
+    assert_eq!(
+        server.requests("thumb.jpg"),
+        0,
         "a video gets no cover picture"
     );
     assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
@@ -279,15 +279,16 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() {
         h.manager.get_settings().media.audio.format,
         OutputFormat::Original
     );
+    Ok(())
 }
 
 /// Audio only as MP3 at 320 kbps: the best audio (Opus) is re-encoded, with
 /// title, artist and the video's picture; subtitles go next to it as `.srt`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() {
+async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    let choice = choice_for(&h, &server, 3).await;
+    let h = ready(&server).await?;
+    let choice = choice_for(&h, &server, 3).await?;
     let audio = choice.options.iter().find(|o| o.audio_only).unwrap();
     let mut pick = selection(&audio.id, OutputFormat::Mp3);
     pick.audio_kbps = Some(320);
@@ -296,17 +297,17 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() {
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(done.file_name.ends_with(".mp3"), "{}", done.file_name);
     assert_eq!(done.category, Category::Audio);
-    let args = ffmpeg_args(&done.path);
+    let args = ffmpeg_args(&done.path)?;
     assert!(has_pair(&args, "-c:a", "libmp3lame"), "{args:?}");
     assert!(has_pair(&args, "-b:a", "320k"), "{args:?}");
     assert!(has_pair(&args, "-f", "jpeg_pipe"), "{args:?}");
     assert!(has_pair(&args, "-disposition:v:0", "attached_pic"));
     assert!(has_pair(&args, "-f", "mp3"), "{args:?}");
-    assert!(server.requests("fmt/a251.webm").len() == 1);
-    assert!(server.requests("fmt/a140.m4a").is_empty());
+    assert_eq!(server.requests("fmt/a251.webm"), 1);
+    assert_eq!(server.requests("fmt/a140.m4a"), 0);
     // The subtitles, as SubRip next to the MP3.
     let srt = Path::new(&done.path).with_extension("en.srt");
-    let made = ffmpeg_args(&srt.to_string_lossy());
+    let made = ffmpeg_args(&srt.to_string_lossy())?;
     assert!(has_pair(&made, "-f", "srt"), "{made:?}");
     assert!(has_pair(&made, "-f", "webvtt"), "{made:?}");
 
@@ -318,16 +319,17 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() {
         !audio.auto_subtitles,
         "auto-generated ones were offered and left"
     );
+    Ok(())
 }
 
 /// A conversion that fails keeps the download: Try again converts again
 /// without reading the page or downloading anything, and works.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_failed_conversion_keeps_the_download_and_try_again_only_converts() {
+async fn a_failed_conversion_keeps_the_download_and_try_again_only_converts() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    tell_tool(&h, "ffmpeg-fail.txt", "Error: the encoder broke");
-    let choice = choice_for(&h, &server, 4).await;
+    let h = ready(&server).await?;
+    tell_tool(&h, "ffmpeg-fail.txt", "Error: the encoder broke")?;
+    let choice = choice_for(&h, &server, 4).await?;
     let uhd = choice.options[0].id.clone();
     let id = h
         .manager
@@ -345,28 +347,29 @@ async fn a_failed_conversion_keeps_the_download_and_try_again_only_converts() {
         error.message
     );
     assert!(!error.message.contains('\u{2014}'));
-    let (calls, requests) = (ytdlp_calls(&h).len(), format_requests(&server));
+    let (calls, requests) = (ytdlp_calls(&h)?.len(), format_requests(&server));
 
-    std::fs::remove_file(crate::media_support::tool_dir(&h).join("ffmpeg-fail.txt")).unwrap();
+    std::fs::remove_file(crate::media_support::tool_dir(&h)?.join("ffmpeg-fail.txt")).unwrap();
     h.manager.retry(id).unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(done.file_name.ends_with(".mp4"));
-    assert_eq!(ytdlp_calls(&h).len(), calls, "the page was read again");
+    assert_eq!(ytdlp_calls(&h)?.len(), calls, "the page was read again");
     assert_eq!(
         format_requests(&server),
         requests,
         "something was downloaded again"
     );
+    Ok(())
 }
 
 /// "Keep the original" after a failed conversion saves the downloaded
 /// streams as they came (VP9 with AAC: MKV), without converting.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn keep_the_original_saves_the_download_as_it_came() {
+async fn keep_the_original_saves_the_download_as_it_came() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    tell_tool(&h, "ffmpeg-fail.txt", "Error: the encoder broke");
-    let choice = choice_for(&h, &server, 5).await;
+    let h = ready(&server).await?;
+    tell_tool(&h, "ffmpeg-fail.txt", "Error: the encoder broke")?;
+    let choice = choice_for(&h, &server, 5).await?;
     let uhd = choice.options[0].id.clone();
     let mut pick = selection(&uhd, OutputFormat::Mp4);
     pick.subtitles = vec!["sub:en".into()];
@@ -381,7 +384,7 @@ async fn keep_the_original_saves_the_download_as_it_came() {
     h.manager.keep_original(id).unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(done.file_name.ends_with(".mkv"), "{}", done.file_name);
-    let args = ffmpeg_args(&done.path);
+    let args = ffmpeg_args(&done.path)?;
     assert!(has_pair(&args, "-c", "copy"), "{args:?}");
     assert!(!args.iter().any(|a| a == "-progress"), "it was converted");
     assert_eq!(format_requests(&server), requests);
@@ -389,16 +392,17 @@ async fn keep_the_original_saves_the_download_as_it_came() {
         h.manager.keep_original(id).is_err(),
         "nothing waits any more"
     );
+    Ok(())
 }
 
 /// Pausing during the conversion stops ffmpeg; resuming converts again from
 /// the downloaded parts.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_paused_conversion_starts_again_without_downloading() {
+async fn a_paused_conversion_starts_again_without_downloading() -> TestResult {
     let server = FileServer::start().await;
-    let h = ready(&server).await;
-    tell_tool(&h, "ffmpeg-delay-ms", "30000");
-    let choice = choice_for(&h, &server, 6).await;
+    let h = ready(&server).await?;
+    tell_tool(&h, "ffmpeg-delay-ms", "30000")?;
+    let choice = choice_for(&h, &server, 6).await?;
     let uhd = choice.options[0].id.clone();
     let id = h
         .manager
@@ -410,30 +414,31 @@ async fn a_paused_conversion_starts_again_without_downloading() {
             .is_some_and(|p| p.step == ProcessingStep::Converting)
     })
     .await;
-    let (calls, requests) = (ytdlp_calls(&h).len(), format_requests(&server));
+    let (calls, requests) = (ytdlp_calls(&h)?.len(), format_requests(&server));
     h.manager.pause(id).unwrap();
     let paused = h.wait_status(id, DownloadStatus::Paused).await;
     assert_eq!(paused.processing, None);
-    std::fs::remove_file(crate::media_support::tool_dir(&h).join("ffmpeg-delay-ms")).unwrap();
+    std::fs::remove_file(crate::media_support::tool_dir(&h)?.join("ffmpeg-delay-ms")).unwrap();
     h.manager.resume(id).unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(Path::new(&done.path).is_file());
-    assert_eq!(ytdlp_calls(&h).len(), calls, "the page was read again");
+    assert_eq!(ytdlp_calls(&h)?.len(), calls, "the page was read again");
     assert_eq!(
         format_requests(&server),
         requests,
         "something was downloaded again"
     );
+    Ok(())
 }
 
 /// A real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) turns a VP9 and Opus page
 /// video into an MP4 with H.264 and AAC, with the subtitles and chapters, using
 /// whichever encoder works on this computer.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn real_ffmpeg_saves_a_page_video_as_mp4() {
+async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
     let Some(ffmpeg) = real_ffmpeg() else {
         eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
-        return;
+        return Ok(());
     };
     let scratch = tempfile::tempdir().unwrap();
     let make = |args: &[&str], out: &str| {
@@ -478,9 +483,9 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() {
         "a.webm",
     );
     let server = FileServer::start().await;
-    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap());
-    let h = harness(publish(&server, &releases, "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap())?;
+    let h = harness(publish(&server, &releases, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     server.put("fmt/v.webm", video);
     server.put("fmt/a.webm", audio);
     server.put(
@@ -491,15 +496,15 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() {
         "title": "Real", "duration": 2.0,
         "formats": [
             {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 64,
-             "protocol": "https", "url": server.url("fmt/a.webm")},
+             "protocol": "https", "url": server.url("fmt/a.webm").as_str()},
             {"format_id": "313", "ext": "webm", "vcodec": "vp9", "acodec": "none", "height": 120, "tbr": 200,
-             "protocol": "https", "url": server.url("fmt/v.webm")},
+             "protocol": "https", "url": server.url("fmt/v.webm").as_str()},
         ],
-        "subtitles": {"en": [{"ext": "vtt", "url": server.url("subs/en.vtt"), "name": "English"}]},
+        "subtitles": {"en": [{"ext": "vtt", "url": server.url("subs/en.vtt").as_str(), "name": "English"}]},
         "chapters": [{"start_time": 0, "end_time": 1, "title": "One"}, {"start_time": 1, "end_time": 2, "title": "Two"}],
     });
-    tell_tool(&h, "info.json", &info.to_string());
-    let choice = choice_for(&h, &server, 7).await;
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let choice = choice_for(&h, &server, 7).await?;
     let mut pick = selection(&choice.options[0].id, OutputFormat::Mp4);
     pick.subtitles = vec!["sub:en".into()];
     pick.chapters = true;
@@ -516,4 +521,5 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() {
     assert!(text.contains("Audio: aac"), "{text}");
     assert!(text.contains("Subtitle: mov_text"), "{text}");
     assert!(text.contains("Chapter #0:1"), "{text}");
+    Ok(())
 }

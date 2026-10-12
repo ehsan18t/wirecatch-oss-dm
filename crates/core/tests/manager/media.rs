@@ -12,7 +12,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind};
 
-use crate::common::{Harness, test_data, wait_until};
+use crate::common::{Harness, TestResult, test_data, wait_until};
 use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
     publish, real_ffmpeg, tell_tool, ytdlp_calls,
@@ -90,13 +90,13 @@ fn hls(server: &FileServer, live: bool, separate_audio: bool) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_hls_capture_becomes_a_choice_and_then_a_file() {
+async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
     let server = FileServer::start().await;
     let best = hls(&server, false, false);
-    let h = Harness::new().await;
+    let h = Harness::new().await?;
     let mut ui = h.manager.subscribe();
     let capture = media_capture(
-        &server.url("hls/master.m3u8"),
+        server.url("hls/master.m3u8"),
         MediaKind::Hls,
         Some("Holiday clip"),
     );
@@ -151,17 +151,18 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() {
     assert_eq!(std::fs::read(&done.path).unwrap(), best);
     assert_eq!(done.done, best.len() as u64);
     // The browser's cookies went to the playlist's own server.
-    let seen = server.requests("hls/master.m3u8");
+    let seen = server.seen_at("hls/master.m3u8");
     assert!(seen.iter().any(|s| s.headers.get("cookie").is_some()));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn joining_separate_audio_needs_the_add_on() {
+async fn joining_separate_audio_needs_the_add_on() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, true);
-    let h = Harness::new().await;
+    let h = Harness::new().await?;
     let mut ui = h.manager.subscribe();
-    let capture = media_capture(&server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
     h.manager.add_capture(capture).await.unwrap();
     let choice = choice_requested(&mut ui).await;
     let video = &choice.options[0];
@@ -200,14 +201,15 @@ async fn joining_separate_audio_needs_the_add_on() {
         h.manager.dismiss_media_choice(choice.id),
         Err(CoreError::ConfirmationNotFound(_))
     ));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_live_stream_says_so_in_the_list() {
+async fn a_live_stream_says_so_in_the_list() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, true, false);
-    let h = Harness::new().await;
-    let capture = media_capture(&server.url("hls/master.m3u8"), MediaKind::Hls, Some("Live"));
+    let h = Harness::new().await?;
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, Some("Live"));
     h.manager.add_capture(capture).await.unwrap();
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
     let row = h.wait_status(row.id, DownloadStatus::Failed).await;
@@ -226,6 +228,7 @@ async fn a_live_stream_says_so_in_the_list() {
         .set_download_folder(row.id, &elsewhere.to_string_lossy())
         .await;
     assert!(matches!(moved, Err(CoreError::WrongState(_))), "{moved:?}");
+    Ok(())
 }
 
 /// The fake yt-dlp's description of a page: 1080p video and audio as separate
@@ -239,33 +242,33 @@ fn page_info(server: &FileServer, video: &[u8], audio: &[u8]) -> String {
         "title": "Cats: the movie",
         "formats": [
             {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128,
-             "protocol": "https", "url": server.url("fmt/audio.m4a"), "filesize": audio.len(), "http_headers": headers},
+             "protocol": "https", "url": server.url("fmt/audio.m4a").as_str(), "filesize": audio.len(), "http_headers": headers},
             {"format_id": "137", "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "height": 1080, "tbr": 4000,
-             "protocol": "https", "url": server.url("fmt/video.mp4"), "filesize": video.len(), "http_headers": headers},
+             "protocol": "https", "url": server.url("fmt/video.mp4").as_str(), "filesize": video.len(), "http_headers": headers},
             {"format_id": "18", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360, "tbr": 500,
-             "protocol": "https", "url": server.url("fmt/small.mp4")},
+             "protocol": "https", "url": server.url("fmt/small.mp4").as_str()},
         ]
     })
     .to_string()
 }
 
 /// Whether each yt-dlp call so far had the browser's cookies.
-fn cookie_use(h: &Harness) -> Vec<bool> {
-    ytdlp_calls(h)
+fn cookie_use(h: &Harness) -> TestResult<Vec<bool>> {
+    ytdlp_calls(h)?
         .iter()
-        .map(|call| args(call).contains(&"--cookies".to_string()))
+        .map(|call| Ok(args(call)?.contains(&"--cookies".to_string())))
         .collect()
 }
 
 /// YouTube is read without the browser's sign-in first: with a signed-in
 /// browser's cookies yt-dlp gets video addresses YouTube often refuses.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn youtube_is_read_without_the_browser_sign_in_first() {
+async fn youtube_is_read_without_the_browser_sign_in_first() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(1024), mp4_data(1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
@@ -276,23 +279,24 @@ async fn youtube_is_read_without_the_browser_sign_in_first() {
         .await
         .unwrap();
     choice_requested(&mut ui).await;
-    assert_eq!(cookie_use(&h), [false]);
+    assert_eq!(cookie_use(&h)?, [false]);
+    Ok(())
 }
 
 /// A video that needs the sign-in (age-restricted, members-only, private) is
 /// read again with the browser's cookies when reading it without them fails.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn youtube_uses_the_browser_sign_in_when_the_video_needs_it() {
+async fn youtube_uses_the_browser_sign_in_when_the_video_needs_it() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(1024), mp4_data(1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     tell_tool(
         &h,
         "fail-without-cookies.txt",
         "[youtube] Y_nLA7iE2Uk: Sign in to confirm your age",
-    );
+    )?;
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
@@ -303,20 +307,21 @@ async fn youtube_uses_the_browser_sign_in_when_the_video_needs_it() {
         .await
         .unwrap();
     choice_requested(&mut ui).await;
-    assert_eq!(cookie_use(&h), [false, true]);
+    assert_eq!(cookie_use(&h)?, [false, true]);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
+async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(300 * 1024), mp4_data(100 * 1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     // Long enough for the "Processing" status to be seen.
-    tell_tool(&h, "ffmpeg-delay-ms", "800");
+    tell_tool(&h, "ffmpeg-delay-ms", "800")?;
     let mut ui = h.manager.subscribe();
-    let page = server.url("watch/1");
+    let page = server.url("watch/1").to_string();
     h.manager
         .add_capture(media_capture(&page, MediaKind::Page, Some("ignored title")))
         .await
@@ -331,10 +336,10 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     assert_eq!(best.size, Some((video.len() + audio.len()) as u64));
 
     // yt-dlp ran with an argument vector Wirecatch controls.
-    let calls = ytdlp_calls(&h);
+    let calls = ytdlp_calls(&h)?;
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
-    let argv = args(call);
+    let argv = args(call)?;
     for expected in [
         "--ignore-config",
         "--no-playlist",
@@ -403,13 +408,14 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() {
     );
     assert!(!Path::new(&format!("{}.wcmedia", done.path)).exists());
     // The format's own headers were sent with the format, never the page's cookies.
-    for seen in server.requests("fmt/video.mp4") {
+    for seen in server.seen_at("fmt/video.mp4") {
         assert_eq!(seen.headers.get("x-format").unwrap(), "yes");
         assert_eq!(seen.headers.get("user-agent").unwrap(), "yt-dlp-agent");
         assert!(seen.headers.get("cookie").is_none());
     }
     // The page was read again when the download started (addresses expire).
-    assert_eq!(ytdlp_calls(&h).len(), 2);
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    Ok(())
 }
 
 /// Statuses a row went through, from the events received so far.
@@ -436,22 +442,18 @@ async fn start_page_video(
     h: &Harness,
     server: &FileServer,
     n: u32,
-) -> wirecatch_protocol::DownloadId {
+) -> TestResult<wirecatch_protocol::DownloadId> {
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
-            &server.url(&format!("watch/{n}")),
+            server.url(&format!("watch/{n}")),
             MediaKind::Page,
             None,
         ))
-        .await
-        .unwrap();
+        .await?;
     let choice = choice_requested(&mut ui).await;
-    h.manager
-        .choose_media(choice.id, select("137+140"))
-        .await
-        .unwrap();
-    h.manager.list_downloads()[0].id
+    h.manager.choose_media(choice.id, select("137+140")).await?;
+    Ok(h.manager.list_downloads()[0].id)
 }
 
 const QUICK: [Duration; 3] = [
@@ -465,54 +467,55 @@ const QUICK: [Duration; 3] = [
 /// the row ever saying it failed and without downloading the finished audio
 /// again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_refused_format_address_is_read_again_and_the_download_goes_on() {
+async fn a_refused_format_address_is_read_again_and_the_download_goes_on() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), QUICK.to_vec()).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
-    server.refuse("fmt/video.mp4", 403, 1);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.fail("fmt/video.mp4", 1, 403);
     let mut ui = h.manager.subscribe();
 
-    let id = start_page_video(&h, &server, 20).await;
+    let id = start_page_video(&h, &server, 20).await?;
     let done = h.wait_status(id, DownloadStatus::Completed).await;
 
     assert!(Path::new(&done.path).is_file());
     // Read for the choice, at the start, and once more after the refusal.
-    assert_eq!(ytdlp_calls(&h).len(), 3);
+    assert_eq!(ytdlp_calls(&h)?.len(), 3);
     let statuses: Vec<u16> = server
-        .requests("fmt/video.mp4")
+        .seen_at("fmt/video.mp4")
         .iter()
         .map(|s| s.status)
         .collect();
     assert_eq!(statuses.first(), Some(&403));
     assert!(statuses[1..].iter().all(|s| *s == 206), "{statuses:?}");
     // The audio finished in the first attempt and was kept.
-    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+    assert_eq!(server.requests("fmt/audio.m4a"), 1);
     for (status, error) in statuses_seen(&mut ui, id) {
         assert_ne!(status, DownloadStatus::Failed, "{error:?}");
         assert_eq!(error, None);
     }
+    Ok(())
 }
 
 /// When every try with fresh addresses is refused too, the row fails with a
 /// message that says what happened, without blaming an expired address.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_format_address_refused_every_time_ends_with_a_plain_error() {
+async fn a_format_address_refused_every_time_ends_with_a_plain_error() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), QUICK.to_vec()).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
-    server.refuse("fmt/video.mp4", 403, 1000);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.fail("fmt/video.mp4", 1000, 403);
 
-    let id = start_page_video(&h, &server, 21).await;
+    let id = start_page_video(&h, &server, 21).await?;
     let failed = h.wait_status(id, DownloadStatus::Failed).await;
 
     // The choice, the first attempt and three more, each with a fresh read.
-    assert_eq!(ytdlp_calls(&h).len(), 1 + 1 + QUICK.len());
-    assert_eq!(server.requests("fmt/video.mp4").len(), 1 + QUICK.len());
-    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+    assert_eq!(ytdlp_calls(&h)?.len(), 1 + 1 + QUICK.len());
+    assert_eq!(server.requests("fmt/video.mp4"), 1 + QUICK.len());
+    assert_eq!(server.requests("fmt/audio.m4a"), 1);
     let error = failed.error.unwrap();
     assert_eq!(error.fix, Some(FixAction::Retry));
     assert!(error.message.contains("answered 403"), "{}", error.message);
@@ -524,23 +527,24 @@ async fn a_format_address_refused_every_time_ends_with_a_plain_error() {
     assert!(!error.message.contains("expire"), "{}", error.message);
     assert!(!error.message.contains('\u{2014}'), "{}", error.message);
     assert!(error.message.ends_with('.'), "{}", error.message);
+    Ok(())
 }
 
 /// Pausing while the download waits to read the page again stops the wait at
 /// once; resuming later goes on with the finished parts kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pausing_while_waiting_to_read_the_page_again_stops_it() {
+async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     let server = FileServer::start().await;
     let long = vec![Duration::from_secs(120)];
-    let h = harness_refreshing(publish(&server, &Releases::fake(), "r"), long).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, long).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
-    server.refuse("fmt/video.mp4", 403, 1000);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.fail("fmt/video.mp4", 1000, 403);
 
-    let id = start_page_video(&h, &server, 22).await;
+    let id = start_page_video(&h, &server, 22).await?;
     wait_until("the refusal", || {
-        (!server.requests("fmt/video.mp4").is_empty()).then_some(())
+        (server.requests("fmt/video.mp4") > 0).then_some(())
     })
     .await;
     // Waiting: the row says it is connecting, not that it failed.
@@ -548,7 +552,7 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() {
     let waiting = h.manager.list_downloads().remove(0);
     assert_eq!(waiting.status, DownloadStatus::Connecting);
     assert_eq!(waiting.error, None);
-    assert_eq!(ytdlp_calls(&h).len(), 2);
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
     // It also says when the next try is: two minutes after the refusal, by the
     // manager's clock (a manual one here, so exactly two minutes from now).
     let now = wirecatch_core::Clock::unix_millis(h.clock.as_ref());
@@ -563,26 +567,27 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() {
     assert_eq!(h.manager.list_downloads().remove(0).waiting, None);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
-        ytdlp_calls(&h).len(),
+        ytdlp_calls(&h)?.len(),
         2,
         "the page was read again after the pause"
     );
 
     // Once the server takes the address again, resuming finishes the video
     // without fetching the finished audio again.
-    server.refuse("fmt/video.mp4", 403, 0);
+    server.fail("fmt/video.mp4", 0, 403);
     h.manager.resume(id).unwrap();
     h.wait_status(id, DownloadStatus::Completed).await;
-    assert_eq!(server.requests("fmt/audio.m4a").len(), 1);
+    assert_eq!(server.requests("fmt/audio.m4a"), 1);
+    Ok(())
 }
 
 /// yt-dlp's `http_chunk_size` for a format: no request for that format asks
 /// for more.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_formats_chunk_size_limits_every_request_for_it() {
+async fn a_formats_chunk_size_limits_every_request_for_it() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
     let mut info: serde_json::Value =
         serde_json::from_str(&page_info(&server, &video, &audio)).unwrap();
@@ -590,31 +595,32 @@ async fn a_formats_chunk_size_limits_every_request_for_it() {
     for format in info["formats"].as_array_mut().unwrap() {
         format["downloader_options"] = serde_json::json!({"http_chunk_size": chunk});
     }
-    tell_tool(&h, "info.json", &info.to_string());
+    tell_tool(&h, "info.json", &info.to_string())?;
 
-    let id = start_page_video(&h, &server, 23).await;
+    let id = start_page_video(&h, &server, 23).await?;
     h.wait_status(id, DownloadStatus::Completed).await;
 
-    let requests = server.requests("fmt/video.mp4");
+    let requests = server.seen_at("fmt/video.mp4");
     assert!(requests.len() >= 5, "{} requests", requests.len());
     for seen in requests {
         let (start, end) = seen.range().expect("a request without a range");
         let end = end.expect("a request for a range with no end");
         assert!(end - start <= chunk, "asked for {} bytes", end - start);
     }
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn page_media_is_read_again_after_a_restart_and_continues() {
+async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult {
     let server = FileServer::start().await;
-    let mut h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let mut h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(600 * 1024), mp4_data(20 * 1024));
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     server.throttle("fmt/video.mp4", Some(150 * 1024));
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(&server.url("watch/2"), MediaKind::Page, None))
+        .add_capture(media_capture(server.url("watch/2"), MediaKind::Page, None))
         .await
         .unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -625,29 +631,30 @@ async fn page_media_is_read_again_after_a_restart_and_continues() {
     let id = h.manager.list_downloads()[0].id;
     h.wait_for(id, "part of the video", |r| r.done >= 150 * 1024)
         .await;
-    h.restart().await;
+    h.restart().await?;
     server.throttle("fmt/video.mp4", None);
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(Path::new(&done.path).is_file());
     // Read at the choice, at the first start and again after the restart.
-    assert!(ytdlp_calls(&h).len() >= 3, "{}", ytdlp_calls(&h).len());
+    assert!(ytdlp_calls(&h)?.len() >= 3, "{}", ytdlp_calls(&h)?.len());
     // The video continued where it stopped instead of starting over.
-    let resumed = server.requests("fmt/video.mp4").iter().any(|s| {
+    let resumed = server.seen_at("fmt/video.mp4").iter().any(|s| {
         s.headers
             .get("range")
             .and_then(|r| r.to_str().ok())
             .is_some_and(|r| r != "bytes=0-")
     });
     assert!(resumed, "the video was downloaded again from the start");
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
+async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"))?;
     let mut ui = h.manager.subscribe();
-    let page = server.url("watch/3");
+    let page = server.url("watch/3").to_string();
     let reply = h
         .manager
         .add_capture(media_capture(&page, MediaKind::Page, None))
@@ -673,26 +680,27 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() {
         Some("https://videos.example/watch")
     );
     assert_eq!(h.manager.pending_media_choices(), vec![choice]);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() {
+async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let info = serde_json::json!({
         "title": "Dash only",
         "formats": [
             {"format_id": "dash-v", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "height": 720,
-             "protocol": "http_dash_segments", "url": server.url("x.mpd")},
+             "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
             {"format_id": "dash-a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a",
-             "protocol": "http_dash_segments", "url": server.url("x.mpd")},
+             "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
         ]
     });
-    tell_tool(&h, "info.json", &info.to_string());
+    tell_tool(&h, "info.json", &info.to_string())?;
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(&server.url("watch/4"), MediaKind::Page, None))
+        .add_capture(media_capture(server.url("watch/4"), MediaKind::Page, None))
         .await
         .unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -707,22 +715,23 @@ async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() {
         std::fs::read_to_string(&done.path).unwrap(),
         "downloaded by fake yt-dlp: dash-v+dash-a"
     );
-    let download_call = ytdlp_calls(&h).pop().unwrap();
-    let argv = args(&download_call);
+    let download_call = ytdlp_calls(&h)?.pop().unwrap();
+    let argv = args(&download_call)?;
     assert!(argv.windows(2).any(|w| w == ["-f", "dash-v+dash-a"]));
     assert!(argv.contains(&"--progress-template".to_string()));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() {
+async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "fail.txt", "[site] 42: Video unavailable.");
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "fail.txt", "[site] 42: Video unavailable.")?;
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
-            &server.url("watch/5"),
+            server.url("watch/5"),
             MediaKind::Page,
             Some("Gone"),
         ))
@@ -749,15 +758,16 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() {
     );
     assert!(!error.message.contains("ERROR"));
     assert_eq!(error.fix, Some(FixAction::Retry));
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_withdrawn_media_capture_closes_its_question() {
+async fn a_withdrawn_media_capture_closes_its_question() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
-    let h = Harness::new().await;
+    let h = Harness::new().await?;
     let mut ui = h.manager.subscribe();
-    let capture = media_capture(&server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
     h.manager.add_capture(capture.clone()).await.unwrap();
     let choice = choice_requested(&mut ui).await;
     h.manager
@@ -771,28 +781,30 @@ async fn a_withdrawn_media_capture_closes_its_question() {
     .await;
     assert_eq!(closed, choice.id);
     assert!(h.manager.pending_media_choices().is_empty());
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_direct_media_file_downloads_like_any_file() {
+async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     let server = FileServer::start().await;
     server.put("clips/talk.mp4", test_data(10 * 1024));
-    let h = Harness::new().await;
-    let mut capture = media_capture(&server.url("clips/talk.mp4"), MediaKind::Direct, None);
+    let h = Harness::new().await?;
+    let mut capture = media_capture(server.url("clips/talk.mp4"), MediaKind::Direct, None);
     capture.mime = Some("video/mp4".into());
     let added = h.manager.add_capture(capture).await.unwrap();
     let id = added.id.unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(done.category, Category::Video);
     assert_eq!(done.media.unwrap().source, MediaKind::Direct);
+    Ok(())
 }
 
 /// The real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) joins real video and audio.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn real_ffmpeg_joins_real_video_and_audio() {
+async fn real_ffmpeg_joins_real_video_and_audio() -> TestResult {
     let Some(ffmpeg) = real_ffmpeg() else {
         eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
-        return;
+        return Ok(());
     };
     let scratch = tempfile::tempdir().unwrap();
     let make = |args: &[&str], out: &str| {
@@ -823,13 +835,13 @@ async fn real_ffmpeg_joins_real_video_and_audio() {
         "a.m4a",
     );
     let server = FileServer::start().await;
-    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap());
-    let h = harness(publish(&server, &releases, "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &page_info(&server, &video, &audio));
+    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap())?;
+    let h = harness(publish(&server, &releases, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(&server.url("watch/6"), MediaKind::Page, None))
+        .add_capture(media_capture(server.url("watch/6"), MediaKind::Page, None))
         .await
         .unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -847,31 +859,32 @@ async fn real_ffmpeg_joins_real_video_and_audio() {
     let text = String::from_utf8_lossy(&probe.stderr);
     assert!(text.contains("Video: mpeg4"), "{text}");
     assert!(text.contains("Audio: aac"), "{text}");
+    Ok(())
 }
 
 /// A site names the extension of what it serves; a program extension must
 /// never reach the disk (yt-dlp's CVE-2024-38519).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_cannot_save_a_program() {
+async fn a_page_cannot_save_a_program() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     server.put("fmt/payload.exe", b"MZ not a video".to_vec());
     let info = serde_json::json!({
         "title": "Invoice",
         "formats": [
             {"format_id": "1", "ext": "exe", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
-             "protocol": "https", "url": server.url("fmt/payload.exe")},
+             "protocol": "https", "url": server.url("fmt/payload.exe").as_str()},
             {"format_id": "2", "ext": "bat", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
-             "protocol": "http_dash_segments", "url": server.url("x.mpd")},
+             "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
         ]
     });
-    tell_tool(&h, "info.json", &info.to_string());
+    tell_tool(&h, "info.json", &info.to_string())?;
     // When yt-dlp downloads by itself, it names the file after the site too.
-    tell_tool(&h, "download-ext", "exe");
+    tell_tool(&h, "download-ext", "exe")?;
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(&server.url("watch/7"), MediaKind::Page, None))
+        .add_capture(media_capture(server.url("watch/7"), MediaKind::Page, None))
         .await
         .unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -890,7 +903,7 @@ async fn a_page_cannot_save_a_program() {
     for (n, option) in ["1", "2"].into_iter().enumerate() {
         if n == 1 {
             h.manager
-                .add_capture(media_capture(&server.url("watch/8"), MediaKind::Page, None))
+                .add_capture(media_capture(server.url("watch/8"), MediaKind::Page, None))
                 .await
                 .unwrap();
         }
@@ -928,16 +941,17 @@ async fn a_page_cannot_save_a_program() {
             .collect();
         assert!(programs.is_empty(), "{programs:?}");
     }
+    Ok(())
 }
 
 /// A page on the internet whose format points into the local network is
 /// refused, and the local server is never contacted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() {
+async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"));
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"))?;
     let mut ui = h.manager.subscribe();
     // The fake yt-dlp never fetches the page; its address only says where the
     // page is: on the internet.
@@ -962,22 +976,23 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() {
         "{}",
         error.message
     );
-    assert!(server.requests("fmt/video.mp4").is_empty());
-    assert!(server.requests("fmt/audio.m4a").is_empty());
+    assert_eq!(server.requests("fmt/video.mp4"), 0);
+    assert_eq!(server.requests("fmt/audio.m4a"), 0);
+    Ok(())
 }
 
 /// Stopping yt-dlp stops everything it started too.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stopping_yt_dlp_stops_what_it_started() {
+async fn stopping_yt_dlp_stops_what_it_started() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    assert_eq!(install(&h).await.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
-    tell_tool(&h, "spawn-child", "1");
-    tell_tool(&h, "delay-ms", "30000");
-    let capture = media_capture(&server.url("watch/10"), MediaKind::Page, None);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"))?;
+    tell_tool(&h, "spawn-child", "1")?;
+    tell_tool(&h, "delay-ms", "30000")?;
+    let capture = media_capture(server.url("watch/10"), MediaKind::Page, None);
     h.manager.add_capture(capture.clone()).await.unwrap();
-    let heartbeat = crate::media_support::tool_dir(&h).join("heartbeat");
+    let heartbeat = crate::media_support::tool_dir(&h)?.join("heartbeat");
     let beat = || {
         std::fs::read_to_string(&heartbeat)
             .ok()
@@ -999,22 +1014,23 @@ async fn stopping_yt_dlp_stops_what_it_started() {
     );
 
     // yt-dlp ran in Wirecatch's own folder, without plugins.
-    let call = ytdlp_calls(&h).remove(0);
-    assert!(args(&call).contains(&"--no-plugin-dirs".to_string()));
+    let call = ytdlp_calls(&h)?.remove(0);
+    assert!(args(&call)?.contains(&"--no-plugin-dirs".to_string()));
     let cwd = call["cwd"].as_str().unwrap().to_string();
     assert!(
         Path::new(&cwd).starts_with(h.root.path().join("data")),
         "{cwd}"
     );
+    Ok(())
 }
 
 /// Pages waiting for the add-on can be listed again (a reloaded window offers
 /// the install again) and dismissed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() {
+async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    let page = server.url("watch/11");
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    let page = server.url("watch/11").to_string();
     h.manager
         .add_capture(media_capture(&page, MediaKind::Page, None))
         .await
@@ -1027,25 +1043,29 @@ async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() {
     );
     h.manager.dismiss_media_choice(waiting[0].id).unwrap();
     assert!(h.manager.pending_addon_requests().is_empty());
+    Ok(())
 }
 
 /// When the install the person started fails, the waiting pages say so in the
 /// list instead of waiting for good.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_failed_install_turns_waiting_pages_into_failed_downloads() {
+async fn a_failed_install_turns_waiting_pages_into_failed_downloads() -> TestResult {
     let server = FileServer::start().await;
-    let mut sources = publish(&server, &Releases::fake(), "bad");
+    let mut sources = publish(&server, &Releases::fake()?, "bad")?;
     sources.deno.sha256 = crate::media_support::sha256(b"not it");
-    let h = harness(sources).await;
+    let h = harness(sources).await?;
     h.manager
         .add_capture(media_capture(
-            &server.url("watch/12"),
+            server.url("watch/12"),
             MediaKind::Page,
             Some("Waiting"),
         ))
         .await
         .unwrap();
-    assert!(matches!(install(&h).await.state, AddonState::Failed { .. }));
+    assert!(matches!(
+        install(&h).await?.state,
+        AddonState::Failed { .. }
+    ));
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
     let row = h.wait_status(row.id, DownloadStatus::Failed).await;
     let error = row.error.unwrap();
@@ -1056,26 +1076,23 @@ async fn a_failed_install_turns_waiting_pages_into_failed_downloads() {
     );
     assert_eq!(error.fix, Some(FixAction::Retry));
     assert!(h.manager.pending_addon_requests().is_empty());
+    Ok(())
 }
 
 /// A page that waited half an hour is not turned into a question once the
 /// add-on arrives: it becomes a failed download instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_stale_wait_never_pops_a_question_later() {
+async fn a_stale_wait_never_pops_a_question_later() -> TestResult {
     let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake(), "r")).await;
-    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"));
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    tell_tool(&h, "info.json", &page_info(&server, b"v", b"a"))?;
     h.manager
-        .add_capture(media_capture(
-            &server.url("watch/13"),
-            MediaKind::Page,
-            None,
-        ))
+        .add_capture(media_capture(server.url("watch/13"), MediaKind::Page, None))
         .await
         .unwrap();
     h.clock.advance(chrono::TimeDelta::minutes(31));
     let mut ui = h.manager.subscribe();
-    assert_eq!(install(&h).await.state, AddonState::Installed);
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
     let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
     let row = h.wait_status(row.id, DownloadStatus::Failed).await;
     assert!(row.error.unwrap().message.contains("waited"));
@@ -1087,19 +1104,21 @@ async fn a_stale_wait_never_pops_a_question_later() {
             "a stale question was asked"
         );
     }
-    assert!(ytdlp_calls(&h).is_empty(), "the stale page was read");
+    assert!(ytdlp_calls(&h)?.is_empty(), "the stale page was read");
+    Ok(())
 }
 
 /// A password in a video's link is never shown while the video is read or
 /// offered; the stream is still read from the real link.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_password_in_a_video_link_is_never_shown() {
+async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
-    let h = Harness::new().await;
+    let h = Harness::new().await?;
     let mut ui = h.manager.subscribe();
     let url = server
         .url("hls/master.m3u8")
+        .as_str()
         .replacen("http://", "http://ada:s3cret@", 1);
     let mut capture = media_capture(&url, MediaKind::Hls, Some("Clip"));
     capture.page_url = Some("https://ada:pagepass@example.com/watch".into());
@@ -1122,4 +1141,5 @@ async fn a_password_in_a_video_link_is_never_shown() {
             "{text}"
         );
     }
+    Ok(())
 }
