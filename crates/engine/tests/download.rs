@@ -162,6 +162,57 @@ async fn resumes_after_pause_without_downloading_again() {
     dir.remove().unwrap();
 }
 
+/// A resume file is data from outside the process: a hand edit, a torn write
+/// or a bug can leave ranges that overlap, run past the end or are out of
+/// order. Such a file is set aside and the download starts over, instead of
+/// asking for bytes past the end or counting more bytes kept than the file has.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_tampered_resume_file_starts_the_download_over() {
+    let len = 2 * MIB;
+    let server = TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let range = |start: u64, end: u64| serde_json::json!({ "start": start, "end": end });
+    for (case, remaining) in [
+        ("past the end", vec![range(0, len + MIB)]),
+        ("overlapping", vec![range(0, len), range(KIB, len)]),
+        ("out of order", vec![range(MIB, len), range(0, KIB)]),
+        ("empty", vec![range(KIB, KIB)]),
+    ] {
+        let dir = private_dir("tampered").unwrap();
+        let paused = pause_midway(request(&server, "t.bin", &dir, 2), 64 * KIB)
+            .await
+            .unwrap();
+        assert!(
+            matches!(paused, Outcome::Paused { .. }),
+            "{case}: {paused:?}"
+        );
+        let state_path = dir.join("t.bin.wcstate");
+        let mut state: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        state["remaining"] = serde_json::Value::Array(remaining);
+        std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+
+        let outcome = run(request(&server, "t.bin", &dir, 2)).await;
+        let Ok(Outcome::Completed {
+            path, resumed_from, ..
+        }) = outcome
+        else {
+            panic!("{case}: not completed: {outcome:?}")
+        };
+        assert_eq!(resumed_from, 0, "{case}");
+        assert_eq!(std::fs::read(path).unwrap(), server.data, "{case}");
+        dir.remove().unwrap();
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn starts_over_when_the_remote_file_changed() {
     let server = TestServer::start(

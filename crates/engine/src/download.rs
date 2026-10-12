@@ -537,7 +537,8 @@ fn starting_table(
 ) -> Result<(SegmentTable, u64)> {
     if let Some(saved) = &target.resume {
         let table = SegmentTable::from_remaining(&saved.remaining, min_split);
-        let kept = total.unwrap_or(0) - table.remaining_bytes();
+        // `can_resume` checked that the ranges fit inside `total`.
+        let kept = total.unwrap_or(0).saturating_sub(table.remaining_bytes());
         info!(kept, "resuming");
         return Ok((table, kept));
     }

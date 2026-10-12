@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::error::{Error, Result};
 use crate::http::Validators;
@@ -67,8 +68,32 @@ impl ResumeState {
 
     /// Whether this state can continue a download the server now describes as
     /// `ranged`, `total` and `current`. Any change in size or validators means
-    /// the file on the server changed and the old bytes are useless.
+    /// the file on the server changed and the old bytes are useless; ranges
+    /// that cannot belong to the file mean the resume file is damaged.
     pub fn can_resume(&self, ranged: bool, total: Option<u64>, current: &Validators) -> bool {
+        let same_file = self.same_file(ranged, total, current);
+        if same_file && !total.is_some_and(|total| self.ranges_fit(total)) {
+            warn!("the resume file lists ranges that cannot belong to the file; starting over");
+            return false;
+        }
+        same_file
+    }
+
+    /// Whether the saved ranges can belong to a file of `total` bytes: each one
+    /// non-empty and inside the file, in order, none overlapping the next. The
+    /// engine writes no other kind, so any other came from outside it (a hand
+    /// edit, a torn write) and is not to be trusted.
+    fn ranges_fit(&self, total: u64) -> bool {
+        let mut floor = 0;
+        self.remaining.iter().all(|range| {
+            let fits = floor <= range.start && range.start < range.end && range.end <= total;
+            floor = range.end;
+            fits
+        })
+    }
+
+    /// Whether the server describes the same file this state was saved for.
+    fn same_file(&self, ranged: bool, total: Option<u64>, current: &Validators) -> bool {
         let same = |saved: &Option<String>, now: &Option<String>| match (saved, now) {
             (Some(a), Some(b)) => a == b,
             (None, None) => true,
@@ -116,5 +141,33 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
         dir.remove().unwrap();
+    }
+
+    #[test]
+    fn ranges_that_cannot_belong_to_the_file_are_not_resumed() {
+        let v = validators(None);
+        let state = |ranges: &[(u64, u64)]| {
+            let remaining = ranges
+                .iter()
+                .map(|&(start, end)| ByteRange { start, end })
+                .collect();
+            ResumeState::new("https://x/f", Some(100), true, &v, remaining)
+        };
+        for fits in [&[][..], &[(0, 100)], &[(0, 10), (10, 20), (90, 100)]] {
+            assert!(state(fits).can_resume(true, Some(100), &v), "{fits:?}");
+        }
+        for damaged in [
+            &[(0, 101)][..],
+            &[(5, 5)],
+            &[(9, 5)],
+            &[(0, 50), (40, 60)],
+            &[(50, 60), (0, 10)],
+            &[(u64::MAX - 1, u64::MAX)],
+        ] {
+            assert!(
+                !state(damaged).can_resume(true, Some(100), &v),
+                "{damaged:?}"
+            );
+        }
     }
 }
