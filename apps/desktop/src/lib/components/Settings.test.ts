@@ -61,4 +61,15 @@ describe('the settings screen', () => {
     await change(field, '0');
     expect(app.settings?.global_speed_limit).toBe(2.5 * MB);
   });
+
+  it('says when no setting matches the search, and clears it', async () => {
+    await openSettings();
+    const search = screen.getByRole('searchbox', { name: 'Search settings' });
+    await fireEvent.input(search, { target: { value: 'zzzz' } });
+    await settle();
+    expect(screen.getByText('No setting matches "zzzz".')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    await settle();
+    expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
+  });
 });

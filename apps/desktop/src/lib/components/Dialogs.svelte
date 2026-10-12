@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { getApp } from '$lib/state/app.svelte';
+  // The open dialog. Each kind of dialog has its view in one table, which must name every kind,
+  // so a new kind cannot open the wrong dialog or none.
+  import type { Snippet } from 'svelte';
+  import { getApp, type Dialog } from '$lib/state/app.svelte';
   import AddDialog from './AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
   import OpenProgramDialog from './OpenProgramDialog.svelte';
@@ -11,29 +14,68 @@
   import TransferDialog from './TransferDialog.svelte';
 
   const app = getApp();
+
+  type Kind = Dialog['kind'];
+  type DialogOf<K extends Kind> = Extract<Dialog, { kind: K }>;
+
+  const VIEWS: { [K in Kind]: Snippet<[DialogOf<K>]> } = {
+    add: addView,
+    remove: removeView,
+    cancel: cancelView,
+    queue: queueView,
+    refresh: refreshView,
+    export: transferView,
+    import: transferView,
+    shortcuts: shortcutsView,
+    'open-program': openProgramView,
+    'remove-addon': removeAddonView,
+  };
+
+  /** The view for a dialog of kind `K`. */
+  function viewOf<K extends Kind>(d: DialogOf<K> & { kind: K }): Snippet<[DialogOf<K>]> {
+    return VIEWS[d.kind];
+  }
 </script>
 
 {#if app.dialog}
   {@const d = app.dialog}
   {#key d}
-    {#if d.kind === 'add'}
-      <AddDialog urls={d.urls} queue={d.queue} />
-    {:else if d.kind === 'remove'}
-      <RemoveDialog ids={d.ids} />
-    {:else if d.kind === 'cancel'}
-      <CancelDialog ids={d.ids} />
-    {:else if d.kind === 'queue'}
-      <QueueDialog id={d.id} />
-    {:else if d.kind === 'refresh'}
-      <RefreshDialog id={d.id} />
-    {:else if d.kind === 'export' || d.kind === 'import'}
-      <TransferDialog mode={d.kind} />
-    {:else if d.kind === 'shortcuts'}
-      <ShortcutsDialog />
-    {:else if d.kind === 'open-program'}
-      <OpenProgramDialog id={d.id} />
-    {:else}
-      <RemoveAddonDialog id={d.id} />
-    {/if}
+    {@render viewOf(d)(d)}
   {/key}
 {/if}
+
+{#snippet addView(d: DialogOf<'add'>)}
+  <AddDialog urls={d.urls} queue={d.queue} />
+{/snippet}
+
+{#snippet removeView(d: DialogOf<'remove'>)}
+  <RemoveDialog ids={d.ids} />
+{/snippet}
+
+{#snippet cancelView(d: DialogOf<'cancel'>)}
+  <CancelDialog ids={d.ids} />
+{/snippet}
+
+{#snippet queueView(d: DialogOf<'queue'>)}
+  <QueueDialog id={d.id} />
+{/snippet}
+
+{#snippet refreshView(d: DialogOf<'refresh'>)}
+  <RefreshDialog id={d.id} />
+{/snippet}
+
+{#snippet transferView(d: DialogOf<'export' | 'import'>)}
+  <TransferDialog mode={d.kind} />
+{/snippet}
+
+{#snippet shortcutsView(_: DialogOf<'shortcuts'>)}
+  <ShortcutsDialog />
+{/snippet}
+
+{#snippet openProgramView(d: DialogOf<'open-program'>)}
+  <OpenProgramDialog id={d.id} />
+{/snippet}
+
+{#snippet removeAddonView(d: DialogOf<'remove-addon'>)}
+  <RemoveAddonDialog id={d.id} />
+{/snippet}

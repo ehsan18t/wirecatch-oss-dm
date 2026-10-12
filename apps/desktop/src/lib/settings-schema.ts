@@ -36,40 +36,9 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
   },
 ];
 
-export type SettingId =
-  | 'theme'
-  | 'start_with_system'
-  | 'close_to_tray'
-  | 'notify_on_complete'
-  | 'media_addon'
-  | 'auto_update_addons'
-  | 'default_folder'
-  | 'categories'
-  | 'capture_enabled'
-  | 'ask_before_download'
-  | 'show_progress_windows'
-  | 'show_media_button'
-  | 'ignored_sites'
-  | 'capture_extensions'
-  | 'min_capture_size'
-  | 'default_queue'
-  | 'media'
-  | 'media_subtitles'
-  | 'media_auto_subtitles'
-  | 'media_subtitle_files'
-  | 'media_chapters'
-  | 'media_audio'
-  | 'media_audio_subtitles'
-  | 'media_audio_auto_subtitles'
-  | 'media_audio_chapters'
-  | 'global_speed_limit'
-  | 'export'
-  | 'import'
-  | 'connections_per_download'
-  | 'max_concurrent_downloads';
-
-export interface SettingDef {
-  id: SettingId;
+/** What every setting says about itself. */
+interface SettingText {
+  id: string;
   section: SectionId;
   label: string;
   help: string;
@@ -77,7 +46,7 @@ export interface SettingDef {
   keywords: string;
 }
 
-export const SETTINGS: readonly SettingDef[] = [
+const DEFS = [
   {
     id: 'theme',
     section: 'general',
@@ -288,7 +257,19 @@ export const SETTINGS: readonly SettingDef[] = [
     help: 'Across all queues together. Each queue also has its own limit.',
     keywords: 'concurrent simultaneous parallel limit',
   },
-];
+] as const satisfies readonly SettingText[];
+
+/** Every setting, by the id the screen, the palette and the core's field names share. */
+export type SettingId = (typeof DEFS)[number]['id'];
+
+/** The settings of one section, so each section's screen must show every one of them. */
+export type SettingIn<S extends SectionId> = Extract<(typeof DEFS)[number], { section: S }>['id'];
+
+export interface SettingDef extends SettingText {
+  id: SettingId;
+}
+
+export const SETTINGS: readonly SettingDef[] = DEFS;
 
 /** Settings whose label, explanation or keywords contain every word typed. */
 export function searchSettings(query: string): SettingDef[] {

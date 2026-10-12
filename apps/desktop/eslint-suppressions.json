@@ -7,14 +7,6 @@
       "count": 2
     }
   },
-  "src/lib/components/Settings.svelte": {
-    "@typescript-eslint/no-confusing-void-expression": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/lib/components/Sidebar.svelte": {
     "max-lines": {
       "count": 1
