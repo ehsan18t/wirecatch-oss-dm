@@ -1747,9 +1747,11 @@ mod tests {
                     "/home/u/cfg/google-chrome/NativeMessagingHosts/app.wirecatch.bridge.json"
                 )
             );
-            assert_eq!(
-                plan.files[6].path,
-                Path::new("/home/u/.mozilla/native-messaging-hosts/app.wirecatch.bridge.json")
+            let firefox =
+                Path::new("/home/u/.mozilla/native-messaging-hosts/app.wirecatch.bridge.json");
+            assert!(
+                plan.files.iter().any(|file| file.path == firefox),
+                "Firefox ignores XDG_CONFIG_HOME"
             );
         } else {
             assert!(plan.is_err(), "a Unix path is not absolute on Windows");
