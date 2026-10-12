@@ -7547,6 +7547,7 @@ dependencies = [
  "tokio",
  "wirecatch-core",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]

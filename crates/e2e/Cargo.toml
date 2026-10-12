@@ -20,6 +20,7 @@ test = false
 [dependencies]
 wirecatch-core.workspace = true
 wirecatch-ipc.workspace = true
+wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-test-support = { path = "../test-support", features = ["servers"] }
 anyhow.workspace = true

@@ -23,31 +23,6 @@ pub const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 /// started instead of the app.
 pub const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
 
-/// The extension identities the bridge was built with, read from the same file.
-const EXTENSION_IDS: &str = include_str!("../../../config/extension-ids.json");
-
-/// The origin Chrome passes for the extension (the one Chromium id every build
-/// trusts), for example `chrome-extension://<id>/`.
-#[must_use]
-pub fn chrome_origin() -> String {
-    format!("chrome-extension://{}/", extension_id("chromium_id"))
-}
-
-/// The add-on id Firefox passes for the extension.
-#[must_use]
-pub fn firefox_id() -> String {
-    extension_id("firefox_id")
-}
-
-fn extension_id(key: &str) -> String {
-    let ids: serde_json::Value =
-        serde_json::from_str(EXTENSION_IDS).expect("config/extension-ids.json is valid JSON");
-    ids[key]
-        .as_str()
-        .unwrap_or_else(|| panic!("config/extension-ids.json has no {key}"))
-        .to_string()
-}
-
 /// The path of a bridge built with `test-overrides`, building it on first use.
 #[must_use]
 pub fn bridge_exe() -> &'static Path {
