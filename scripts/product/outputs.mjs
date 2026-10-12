@@ -179,4 +179,39 @@ export async function expectedOutputs(root) {
   return { product, expected };
 }
 
+export const CARGO_LOCK = 'Cargo.lock';
+
+/** The workspace crates (lock entries with no `source`) that Cargo.lock records at another version than `version`, as `name version`. */
+export function lockMismatches(lockText, version) {
+  return lockText
+    .split('[[package]]')
+    .slice(1)
+    .filter((entry) => !/^source\s*=/m.test(entry))
+    .flatMap((entry) => {
+      const name = /^name\s*=\s*"([^"]+)"/m.exec(entry)?.[1];
+      const recorded = /^version\s*=\s*"([^"]+)"/m.exec(entry)?.[1];
+      return recorded === version ? [] : [`${name ?? '?'} ${recorded ?? '?'}`];
+    });
+}
+
+/** The workspace crates Cargo.lock under `root` records at another version than the product's. */
+export function staleLock(root, product) {
+  return lockMismatches(current(root, CARGO_LOCK), product.product.version);
+}
+
+/** Brings Cargo.lock's workspace crates to the product version, offline and touching nothing else, so `--locked` builds keep working after a version change. */
+export function refreshLock(root, product) {
+  if (staleLock(root, product).length === 0) return false;
+  const args = ['update', '--workspace', '--offline'];
+  const result = spawnSync('cargo', args, { cwd: root, stdio: 'inherit' });
+  if (result.error) throw new ManifestError(`Could not start cargo: ${result.error.message}`);
+  const left = staleLock(root, product);
+  if (result.status !== 0 || left.length > 0) {
+    throw new ManifestError(
+      `\`cargo ${args.join(' ')}\` did not bring Cargo.lock to ${product.product.version}: ${left.join(', ')}`,
+    );
+  }
+  return true;
+}
+
 export { GENERATED_NOTE };

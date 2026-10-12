@@ -9,7 +9,7 @@ import { remainingPlaceholders, staleOutputs } from './product.mjs';
 import { ROOT } from './process.mjs';
 
 /** What the generator reads besides its outputs: the identity, the templates, and the formatting settings. */
-const INPUTS = ['config', 'rustfmt.toml', '.prettierrc.json', 'pnpm-workspace.yaml'];
+const INPUTS = ['config', 'rustfmt.toml', '.prettierrc.json', 'pnpm-workspace.yaml', 'Cargo.lock'];
 
 let root;
 
@@ -38,6 +38,17 @@ test('a generated file edited by hand, or missing, is reported until generated a
   ]);
   await generate(root);
   assert.deepEqual(await staleOutputs(root), []);
+});
+
+test('a Cargo.lock that still records another version of a workspace crate is stale', async () => {
+  edit('Cargo.lock', (text) =>
+    text.replace(
+      'name = "wirecatch-ipc"\nversion = "0.1.0"',
+      'name = "wirecatch-ipc"\nversion = "0.0.9"',
+    ),
+  );
+  assert.deepEqual(await staleOutputs(root), ['Cargo.lock']);
+  edit('Cargo.lock', (text) => text.replace('version = "0.0.9"', 'version = "0.1.0"'));
 });
 
 test('a change to product.toml makes every file that carries the value stale', async () => {

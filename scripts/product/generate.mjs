@@ -2,13 +2,13 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expectedOutputs } from './outputs.mjs';
+import { CARGO_LOCK, expectedOutputs, refreshLock } from './outputs.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** Writes each expected file whose contents differ, and returns the paths it wrote. */
 export async function generate(root) {
-  const { expected } = await expectedOutputs(root);
+  const { product, expected } = await expectedOutputs(root);
   const written = [];
   for (const { path, text } of expected) {
     const file = join(root, path);
@@ -17,6 +17,7 @@ export async function generate(root) {
     writeFileSync(file, text);
     written.push(path);
   }
+  if (refreshLock(root, product)) written.push(CARGO_LOCK);
   return written;
 }
 

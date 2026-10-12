@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ManifestError } from '../product/manifests.mjs';
-import { expectedOutputs } from '../product/outputs.mjs';
+import { CARGO_LOCK, expectedOutputs, staleLock } from '../product/outputs.mjs';
 import { PLACEHOLDER_MARK, placeholders, ProductError } from '../product/read.mjs';
 import { GateError, ROOT } from './process.mjs';
 
@@ -20,13 +20,23 @@ async function expected(root) {
 
 /** The generated files under `root` that are missing or differ from what config/product.toml gives. */
 export async function staleOutputs(root) {
-  const { expected: files } = await expected(root);
-  return files
+  const { product, expected: files } = await expected(root);
+  const stale = files
     .filter(({ path, text }) => {
       const file = join(root, path);
       return !existsSync(file) || readFileSync(file, 'utf8') !== text;
     })
     .map(({ path }) => path);
+  // Cargo writes the lock file; it is stale when it records a workspace crate at another version than the product's.
+  const lockStale = (() => {
+    try {
+      return staleLock(root, product).length > 0;
+    } catch (error) {
+      if (error instanceof ManifestError) return true;
+      throw error;
+    }
+  })();
+  return lockStale ? [...stale, CARGO_LOCK] : stale;
 }
 
 /** The values of config/product.toml, and the lines of generated files, that are still placeholders. */
