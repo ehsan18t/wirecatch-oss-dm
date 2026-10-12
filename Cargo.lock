@@ -7543,14 +7543,12 @@ name = "wirecatch-e2e"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
- "bytes",
  "serde_json",
- "tempfile",
  "tokio",
  "wirecatch-core",
  "wirecatch-ipc",
  "wirecatch-protocol",
+ "wirecatch-test-support",
 ]
 
 [[package]]

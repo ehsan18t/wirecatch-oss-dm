@@ -1,17 +1,20 @@
 //! The app side: a private folder and endpoint per test, and a real manager
 //! serving the protocol on that endpoint the way the desktop app does.
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::sync::{broadcast::error::RecvError, watch};
 use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::Instant;
 use wirecatch_core::{KnownFolders, Manager, ManagerConfig, serve_connection};
 use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::extension::NewDownload;
+use wirecatch_test_support::{PrivateDir, private_dir};
 
 use crate::PATIENCE;
 
@@ -23,73 +26,72 @@ pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(4);
 /// How long the test app lets a download take to stop.
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// A temporary folder for one test: the app's data folder, a home folder whose
+/// How long deleting the sandbox keeps trying while Windows still has a file in
+/// it open, and how long it waits between tries.
+const DELETE_PATIENCE: Duration = Duration::from_secs(2);
+const DELETE_RETRY: Duration = Duration::from_millis(20);
+
+/// A private folder for one test: the app's data folder, a home folder whose
 /// `Downloads` receives the files, and a private endpoint nobody else uses.
 ///
-/// Clones share the folder, which is deleted when the last clone is dropped.
+/// Clones share the folder. [`run`] deletes it once the test is over.
 #[derive(Clone)]
 pub struct Sandbox {
-    root: Arc<Root>,
+    root: Arc<PrivateDir>,
     /// Where the test app listens and the bridge connects.
     pub endpoint: Endpoint,
 }
 
-/// The sandbox folder, deleted on drop.
-struct Root(PathBuf);
-
-impl Drop for Root {
-    fn drop(&mut self) {
-        // The manager's database thread closes the file a moment after the last
-        // manager handle is gone, and Windows does not delete open files, so
-        // retry briefly instead of leaving the folder behind.
-        for _ in 0..100 {
-            match std::fs::remove_dir_all(&self.0) {
-                Ok(()) => return,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-                Err(_) => std::thread::sleep(Duration::from_millis(20)),
-            }
-        }
-        eprintln!("could not delete {}", self.0.display());
-    }
-}
-
 impl Sandbox {
     /// A new sandbox with a fresh endpoint.
+    #[must_use]
     pub fn new() -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let root = tempfile::Builder::new()
-            .prefix("wirecatch-e2e-")
-            .tempdir()
-            .expect("could not make a temporary folder")
-            .keep();
-        let tag = format!(
-            "{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        let endpoint = private_endpoint(&root, &tag);
+        let root = private_dir("e2e").expect("could not make the sandbox folder");
         Self {
-            root: Arc::new(Root(root)),
-            endpoint,
+            endpoint: Endpoint::from_raw(root.endpoint_name()),
+            root: Arc::new(root),
         }
     }
 
     /// The sandbox folder.
+    #[must_use]
     pub fn path(&self) -> &Path {
-        &self.root.0
+        self.root.path()
     }
 
     /// The app's data folder (database).
+    #[must_use]
     pub fn data_dir(&self) -> PathBuf {
         self.path().join("data")
     }
 
     /// The user's standard folders, all under the sandbox.
+    #[must_use]
     pub fn folders(&self) -> KnownFolders {
         KnownFolders::under_home(self.path().join("home"))
     }
 
+    /// Deletes the sandbox folder. The manager's database thread closes its file
+    /// a moment after the last manager handle is gone, and Windows does not
+    /// delete open files, so this tries again for a while instead of leaving the
+    /// folder behind.
+    async fn delete(&self) {
+        let deadline = Instant::now() + DELETE_PATIENCE;
+        loop {
+            match std::fs::remove_dir_all(self.path()) {
+                Ok(()) => return,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+                Err(e) if Instant::now() >= deadline => {
+                    eprintln!("could not delete {}: {e}", self.path().display());
+                    return;
+                }
+                Err(_) => tokio::time::sleep(DELETE_RETRY).await,
+            }
+        }
+    }
+
     /// Every partial download file (`.wcpart`) under the home folder.
+    #[must_use]
     pub fn part_files(&self) -> Vec<PathBuf> {
         let mut found = Vec::new();
         let mut dirs = vec![self.path().join("home")];
@@ -116,11 +118,13 @@ impl Default for Sandbox {
     }
 }
 
-/// Runs one end-to-end test on a runtime of its own, with a new sandbox.
+/// Runs one end-to-end test on a runtime of its own, with a new sandbox, and
+/// deletes the sandbox afterwards, whether the test passed or not.
 ///
-/// The sandbox is deleted only after the runtime has stopped: until then the
-/// manager's tasks may still hold its database open, and Windows does not delete
-/// open files.
+/// The sandbox is deleted only after the test's runtime has stopped: until then
+/// the manager's tasks may still hold its database open, and Windows does not
+/// delete open files. The deletion runs on a small runtime of its own, so it can
+/// wait between tries without blocking a thread.
 pub fn run<F, Fut>(test: F)
 where
     F: FnOnce(Sandbox) -> Fut,
@@ -132,28 +136,18 @@ where
         .enable_all()
         .build()
         .expect("could not start a runtime");
-    runtime.block_on(test(sandbox.clone()));
+    let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        runtime.block_on(test(sandbox.clone()));
+    }));
     drop(runtime);
-    drop(sandbox);
-}
-
-#[cfg(windows)]
-fn private_endpoint(_root: &Path, tag: &str) -> Endpoint {
-    Endpoint::from_raw(format!(r"\\.\pipe\wirecatch-e2e-{tag}"))
-}
-
-#[cfg(unix)]
-fn private_endpoint(root: &Path, _tag: &str) -> Endpoint {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    // The listener refuses a folder anyone else can enter.
-    let dir = root.join("ipc");
-    std::fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&dir)
-        .expect("could not make the endpoint folder");
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-        .expect("could not make the endpoint folder private");
-    Endpoint::from_raw(dir.join("app.sock"))
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("could not start a runtime")
+        .block_on(sandbox.delete());
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 /// The app: a manager serving every connection on an endpoint, each in its own
@@ -175,6 +169,11 @@ impl App {
     }
 
     /// Opens a manager on `data_dir` and serves it on `endpoint`.
+    ///
+    /// # Errors
+    ///
+    /// The manager cannot open its data folder or save the test's settings, or
+    /// `endpoint` cannot be listened on (another app already serves it, say).
     pub async fn start_at(
         endpoint: &Endpoint,
         data_dir: &Path,
@@ -209,11 +208,13 @@ impl App {
     }
 
     /// How many connections the app has accepted.
+    #[must_use]
     pub fn accepted(&self) -> usize {
         self.accepted.load(Ordering::SeqCst)
     }
 
     /// Counts connections that have ended.
+    #[must_use]
     pub fn ended(&self) -> watch::Receiver<usize> {
         self.ended.clone()
     }
@@ -223,8 +224,13 @@ impl App {
     pub async fn quit(self) {
         self.acceptor.abort();
         // Wait for the task to be dropped, which closes the listener and every
-        // connection it was serving.
-        let _ = self.acceptor.await;
+        // connection it was serving. Cancelled is the expected end; a panic in the
+        // accept loop is the test's failure.
+        if let Err(ended) = self.acceptor.await
+            && ended.is_panic()
+        {
+            std::panic::resume_unwind(ended.into_panic());
+        }
         self.manager.shutdown().await;
     }
 }
@@ -252,6 +258,7 @@ async fn accept_loop(
 
 /// A capture as the extension sends it for `url`, with a cookie and the given
 /// handover id.
+#[must_use]
 pub fn capture(url: &str, handover_id: &str) -> NewDownload {
     NewDownload {
         handover_id: handover_id.to_string(),

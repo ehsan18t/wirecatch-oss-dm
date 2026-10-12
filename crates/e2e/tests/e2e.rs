@@ -12,13 +12,14 @@ use wirecatch_e2e::app::{App, Sandbox, capture, run, wait_for_row};
 use wirecatch_e2e::extension::{
     Caller, FakeExtension, Launch, added, hello_call, withdraw_call, withdrawn,
 };
-use wirecatch_e2e::server::{TestServer, test_data};
+use wirecatch_e2e::server::{serve, serve_held};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, ExtensionSettingsPatch, WithdrawOutcome,
 };
 use wirecatch_protocol::wire::{Call, ErrorCode, Event, Outcome};
+use wirecatch_test_support::test_data;
 
 const FILE_LEN: usize = 256 * 1024;
 const COOKIE: &str = "session=e2e-cookie";
@@ -45,13 +46,13 @@ fn no_rows_for(app: &App, url: &str) -> bool {
 fn a_capture_starts_after_the_server_answers_and_completes() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
-        let url = server.url("complete.bin");
+        let server = serve_held(test_data(FILE_LEN)).await;
+        let url = server.url("complete.bin").to_string();
 
         let request = ext
             .send(Call::AddDownload(capture(&url, "handover-complete")))
             .await;
-        let first = server.wait_for_request("/complete.bin").await;
+        server.wait_for_request("/complete.bin", PATIENCE).await;
         assert!(
             ext.outcome_within(request, QUIET).await.is_none(),
             "the app replied before the server answered"
@@ -66,16 +67,15 @@ fn a_capture_starts_after_the_server_answers_and_completes() {
         })
         .await;
         let file = std::fs::read(&row.path).expect("the downloaded file exists");
-        assert!(file == server.data(), "the file differs from the server's");
+        assert!(server.data == file, "the file differs from the server's");
         assert!(
             sandbox.part_files().is_empty(),
             "{:?}",
             sandbox.part_files()
         );
 
-        assert_eq!(first.header("cookie"), Some(COOKIE));
-        let seen = server.requests_for("/complete.bin");
-        assert!(seen.iter().all(|s| s.header("cookie") == Some(COOKIE)));
+        let seen = server.seen_at("/complete.bin");
+        assert!(!seen.is_empty() && seen.iter().all(|s| s.header("cookie") == Some(COOKIE)));
 
         assert!(ext.close().await.success());
         app.quit().await;
@@ -89,13 +89,13 @@ fn a_capture_starts_after_the_server_answers_and_completes() {
 fn withdrawing_from_a_new_connection_before_the_server_answers_leaves_nothing() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
-        let url = server.url("withdraw.bin");
+        let server = serve_held(test_data(FILE_LEN)).await;
+        let url = server.url("withdraw.bin").to_string();
 
         let request = ext
             .send(Call::AddDownload(capture(&url, "handover-withdraw")))
             .await;
-        server.wait_for_request("/withdraw.bin").await;
+        server.wait_for_request("/withdraw.bin", PATIENCE).await;
 
         let mut reconnected = FakeExtension::chrome(&sandbox.endpoint);
         reconnected.hello().await;
@@ -130,13 +130,13 @@ fn withdrawing_from_a_new_connection_before_the_server_answers_leaves_nothing() 
 fn withdrawing_on_the_same_connection_before_the_server_answers_leaves_nothing() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
-        let url = server.url("withdraw.bin");
+        let server = serve_held(test_data(FILE_LEN)).await;
+        let url = server.url("withdraw.bin").to_string();
 
         let request = ext
             .send(Call::AddDownload(capture(&url, "handover-withdraw")))
             .await;
-        server.wait_for_request("/withdraw.bin").await;
+        server.wait_for_request("/withdraw.bin", PATIENCE).await;
 
         assert_eq!(
             ext.withdraw_download("handover-withdraw").await,
@@ -168,8 +168,8 @@ fn withdrawing_on_the_same_connection_before_the_server_answers_leaves_nothing()
 fn withdrawing_after_started_is_already_started() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::start(test_data(FILE_LEN)).await;
-        let url = server.url("started.bin");
+        let server = serve(test_data(FILE_LEN)).await;
+        let url = server.url("started.bin").to_string();
 
         let reply = ext
             .add_download(capture(&url, "handover-started"))
@@ -198,8 +198,8 @@ fn withdrawing_after_started_is_already_started() {
 fn a_repeated_handover_id_adds_one_download() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
-        let url = server.url("twice.bin");
+        let server = serve_held(test_data(FILE_LEN)).await;
+        let url = server.url("twice.bin").to_string();
 
         let first = ext
             .send(Call::AddDownload(capture(&url, "handover-twice")))
@@ -207,7 +207,7 @@ fn a_repeated_handover_id_adds_one_download() {
         let second = ext
             .send(Call::AddDownload(capture(&url, "handover-twice")))
             .await;
-        server.wait_for_request("/twice.bin").await;
+        server.wait_for_request("/twice.bin", PATIENCE).await;
         server.release();
         let first = added(ext.outcome(first).await).expect("the capture was accepted");
         let second = added(ext.outcome(second).await).expect("the repeat was answered");
@@ -305,11 +305,11 @@ fn popup_controls_reach_the_app() {
             assert_eq!((summary.id, &summary.name), (queue.id, &queue.name));
         }
 
-        let server = TestServer::held(test_data(FILE_LEN)).await;
+        let server = serve_held(test_data(FILE_LEN)).await;
         let id = app
             .manager
             .add_download(AddRequest {
-                url: server.url("popup.bin"),
+                url: server.url("popup.bin").to_string(),
                 queue: None,
                 folder: None,
                 file_name: None,
@@ -317,7 +317,7 @@ fn popup_controls_reach_the_app() {
             })
             .await
             .expect("the download was added");
-        server.wait_for_request("/popup.bin").await;
+        server.wait_for_request("/popup.bin", PATIENCE).await;
         ext.pause_all().await;
         wait_for_row(&app.manager, "the download to pause", |r| {
             r.id == id && r.status == DownloadStatus::Paused
@@ -341,15 +341,15 @@ fn popup_controls_reach_the_app() {
 fn a_capture_waiting_on_a_silent_server_does_not_delay_other_calls() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
+        let server = serve_held(test_data(FILE_LEN)).await;
 
         let capture_request = ext
             .send(Call::AddDownload(capture(
-                &server.url("silent.bin"),
+                server.url("silent.bin").as_str(),
                 "handover-silent",
             )))
             .await;
-        server.wait_for_request("/silent.bin").await;
+        server.wait_for_request("/silent.bin", PATIENCE).await;
         let asked = Instant::now();
         let list = ext.send(Call::ListQueues).await;
         let answer = ext.outcome_within(list, Duration::from_secs(1)).await;
@@ -374,15 +374,15 @@ fn a_capture_waiting_on_a_silent_server_does_not_delay_other_calls() {
 fn the_app_quitting_mid_session_closes_the_bridge() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::held(test_data(FILE_LEN)).await;
+        let server = serve_held(test_data(FILE_LEN)).await;
 
         let request = ext
             .send(Call::AddDownload(capture(
-                &server.url("quit.bin"),
+                server.url("quit.bin").as_str(),
                 "handover-quit",
             )))
             .await;
-        server.wait_for_request("/quit.bin").await;
+        server.wait_for_request("/quit.bin", PATIENCE).await;
         app.quit().await;
 
         let mut answers = ext.wait_stdout_closed().await;
@@ -409,7 +409,7 @@ fn the_bridge_starts_the_app_when_it_is_not_running() {
             "--root".into(),
             sandbox.path().into(),
         ]);
-        let mut ext = FakeExtension::start(&sandbox.endpoint, Caller::Chrome, launch);
+        let mut ext = FakeExtension::start(&sandbox.endpoint, &Caller::Chrome, launch);
 
         let asked = Instant::now();
         let hello = ext.hello().await;
@@ -440,7 +440,7 @@ fn an_unknown_caller_is_refused_and_nothing_reaches_the_app() {
             Caller::ChromeOrigin("https://example.com/".into()),
         ];
         for caller in strangers {
-            let mut ext = FakeExtension::start(&sandbox.endpoint, caller.clone(), Launch::Nothing);
+            let mut ext = FakeExtension::start(&sandbox.endpoint, &caller, Launch::Nothing);
             // The bridge may already have exited, so the write may fail.
             let _ = ext.try_send(hello_call()).await;
             let _ = ext.try_send(withdraw_call("handover-stranger")).await;
@@ -466,7 +466,7 @@ fn an_unknown_caller_is_refused_and_nothing_reaches_the_app() {
 fn ask_before_download_waits_for_the_user() {
     run(|sandbox| async move {
         let (app, mut ext) = connected(&sandbox).await;
-        let server = TestServer::start(test_data(FILE_LEN)).await;
+        let server = serve(test_data(FILE_LEN)).await;
         ext.update_extension_settings(ExtensionSettingsPatch {
             ask_before_download: Some(true),
             ..ExtensionSettingsPatch::default()
@@ -479,11 +479,11 @@ fn ask_before_download_waits_for_the_user() {
         };
 
         // Confirmed: downloaded with the browser's cookie.
-        let url = server.url("confirm.bin");
+        let url = server.url("confirm.bin").to_string();
         let reply = ext.add_download(capture(&url, "handover-confirm")).await;
         assert_eq!(reply, Ok(waiting.clone()));
         assert!(
-            server.requests().is_empty(),
+            server.arrived("/confirm.bin") == 0,
             "the link was tried before confirming"
         );
         let pending = app.manager.pending_confirmations();
@@ -498,12 +498,12 @@ fn ask_before_download_waits_for_the_user() {
         })
         .await;
         let file = std::fs::read(&row.path).expect("the downloaded file exists");
-        assert!(file == server.data(), "the file differs from the server's");
-        let seen = server.requests_for("/confirm.bin");
+        assert!(server.data == file, "the file differs from the server's");
+        let seen = server.seen_at("/confirm.bin");
         assert!(!seen.is_empty() && seen.iter().all(|s| s.header("cookie") == Some(COOKIE)));
 
         // Rejected: nothing downloaded, nothing kept.
-        let url = server.url("reject.bin");
+        let url = server.url("reject.bin").to_string();
         let reply = ext.add_download(capture(&url, "handover-reject")).await;
         assert_eq!(reply, Ok(waiting));
         let pending = app.manager.pending_confirmations();
@@ -514,13 +514,13 @@ fn ask_before_download_waits_for_the_user() {
         app.manager
             .reject_capture(rejected.id)
             .expect("the capture was rejected");
-        assert!(app.manager.pending_confirmations().is_empty());
+        assert_eq!(app.manager.pending_confirmations(), []);
         assert!(
             no_rows_for(&app, &url),
             "{:#?}",
             app.manager.list_downloads()
         );
-        assert!(server.requests_for("/reject.bin").is_empty());
+        assert_eq!(server.arrived("/reject.bin"), 0);
         assert!(
             sandbox.part_files().is_empty(),
             "{:?}",

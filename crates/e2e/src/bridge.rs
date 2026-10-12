@@ -28,11 +28,13 @@ const EXTENSION_IDS: &str = include_str!("../../../config/extension-ids.json");
 
 /// The origin Chrome passes for the extension (the one Chromium id every build
 /// trusts), for example `chrome-extension://<id>/`.
+#[must_use]
 pub fn chrome_origin() -> String {
     format!("chrome-extension://{}/", extension_id("chromium_id"))
 }
 
 /// The add-on id Firefox passes for the extension.
+#[must_use]
 pub fn firefox_id() -> String {
     extension_id("firefox_id")
 }
@@ -47,6 +49,7 @@ fn extension_id(key: &str) -> String {
 }
 
 /// The path of a bridge built with `test-overrides`, building it on first use.
+#[must_use]
 pub fn bridge_exe() -> &'static Path {
     static BRIDGE: OnceLock<PathBuf> = OnceLock::new();
     BRIDGE.get_or_init(|| match std::env::var_os(BRIDGE_VAR) {

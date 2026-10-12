@@ -44,12 +44,20 @@ fn main() -> ExitCode {
         let folders = KnownFolders::under_home(root.join("home"));
         let app = App::start_at(&endpoint, &root.join("data"), folders).await?;
         let mut ended = app.ended();
-        let _ = tokio::time::timeout(LIFETIME, ended.wait_for(|n| *n >= 1)).await;
+        if tokio::time::timeout(LIFETIME, ended.wait_for(|n| *n >= 1))
+            .await
+            .is_err()
+        {
+            eprintln!("wirecatch-e2e-app: no client came and went within {LIFETIME:?}; quitting");
+        }
         app.quit().await;
         anyhow::Ok(())
     });
     drop(runtime);
-    let _ = std::fs::write(root.join(EXITED_MARKER), b"");
+    if let Err(e) = std::fs::write(root.join(EXITED_MARKER), b"") {
+        // The test then waits for the marker in vain and fails, saying so.
+        eprintln!("wirecatch-e2e-app: could not write {EXITED_MARKER}: {e}");
+    }
     match served {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -68,7 +76,7 @@ fn parse_args() -> anyhow::Result<(Endpoint, PathBuf)> {
             Some("--endpoint") => endpoint = args.next().map(Endpoint::from_raw),
             Some("--root") => root = args.next().map(PathBuf::from),
             Some("--background") => {}
-            _ => anyhow::bail!("unknown argument {arg:?}"),
+            _ => anyhow::bail!("unknown argument {}", arg.display()),
         }
     }
     let missing = |what: &str| anyhow::anyhow!("{what} is required");

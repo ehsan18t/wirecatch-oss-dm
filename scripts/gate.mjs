@@ -28,7 +28,6 @@ const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
  */
 const LINT_PENDING = new Set([
   'wirecatch-desktop',
-  'wirecatch-e2e',
 ]);
 
 /** Cargo tools some checks run, with the versions CI installs (`--install-tools`). */

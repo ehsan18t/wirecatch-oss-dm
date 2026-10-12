@@ -18,6 +18,7 @@ use axum::http::{HeaderMap, StatusCode, Uri, header, response};
 use axum::response::Response;
 use axum::routing::get;
 use bytes::Bytes;
+use tokio::sync::watch;
 use url::Url;
 
 /// How much of the body goes out at once when the speed is not limited.
@@ -188,6 +189,10 @@ struct Inner {
     data: Bytes,
     config: Mutex<Config>,
     stats: Arc<Stats>,
+    /// `true` while answers may go out; see [`TestServer::hold`].
+    open: watch::Sender<bool>,
+    /// The path of every request so far, answered or not, in the order they arrived.
+    arrived: watch::Sender<Vec<String>>,
 }
 
 /// A running server; it stops with the test's runtime.
@@ -210,6 +215,8 @@ impl TestServer {
             data: data.clone(),
             config: Mutex::new(config),
             stats: stats.clone(),
+            open: watch::Sender::new(true),
+            arrived: watch::Sender::new(Vec::new()),
         });
         let app = Router::new()
             .route("/{*path}", get(serve))
@@ -247,6 +254,61 @@ impl TestServer {
     #[must_use]
     pub fn bytes_sent(&self) -> u64 {
         self.stats.bytes_sent.load(Ordering::SeqCst)
+    }
+
+    /// Holds every answer from now on: requests are taken, and counted by
+    /// [`arrived`](Self::arrived), but none is answered until
+    /// [`release`](Self::release). For a test that acts while a client waits
+    /// for the server.
+    pub fn hold(&self) {
+        self.inner.open.send_replace(false);
+    }
+
+    /// Lets held answers, and every later one, go out.
+    pub fn release(&self) {
+        self.inner.open.send_replace(true);
+    }
+
+    /// How many requests for `path` (with its leading `/`) have arrived so far,
+    /// answered, held or still being answered.
+    #[must_use]
+    pub fn arrived(&self, path: &str) -> usize {
+        self.inner
+            .arrived
+            .borrow()
+            .iter()
+            .filter(|p| *p == path)
+            .count()
+    }
+
+    /// Waits until a request for `path` (with its leading `/`) has arrived,
+    /// held or not.
+    ///
+    /// # Panics
+    ///
+    /// When none arrives within `patience`.
+    pub async fn wait_for_request(&self, path: &str, patience: Duration) {
+        let mut arrived = self.inner.arrived.subscribe();
+        let seen = tokio::time::timeout(
+            patience,
+            arrived.wait_for(|paths| paths.iter().any(|p| p == path)),
+        )
+        .await;
+        assert!(
+            matches!(seen, Ok(Ok(_))),
+            "the server saw no request for {path} within {patience:?}"
+        );
+    }
+
+    /// The requests for `path` (with its leading `/`) answered so far, oldest
+    /// first.
+    #[must_use]
+    pub fn seen_at(&self, path: &str) -> Vec<Seen> {
+        self.stats
+            .seen()
+            .into_iter()
+            .filter(|seen| seen.path == path)
+            .collect()
     }
 }
 
@@ -296,6 +358,11 @@ async fn serve(
         path: uri.path().to_string(),
         headers,
     };
+    inner
+        .arrived
+        .send_modify(|paths| paths.push(request.path.clone()));
+    // `inner` owns the sender, so the wait ends only with a release.
+    inner.open.subscribe().wait_for(|open| *open).await.unwrap();
     match turn_away(&request).await {
         Some(response) => response,
         None => serve_file(&request),

@@ -77,18 +77,21 @@ pub struct FakeExtension {
 
 impl FakeExtension {
     /// Starts the bridge as Chrome does for our extension, pointed at `endpoint`.
+    #[must_use]
     pub fn chrome(endpoint: &Endpoint) -> Self {
-        Self::start(endpoint, Caller::Chrome, Launch::Nothing)
+        Self::start(endpoint, &Caller::Chrome, Launch::Nothing)
     }
 
     /// Starts the bridge as Firefox does for our add-on, pointed at `endpoint`.
+    #[must_use]
     pub fn firefox(endpoint: &Endpoint) -> Self {
-        Self::start(endpoint, Caller::Firefox, Launch::Nothing)
+        Self::start(endpoint, &Caller::Firefox, Launch::Nothing)
     }
 
     /// Starts the bridge for `caller`, connecting to `endpoint` and running
     /// `launch` if nothing listens there.
-    pub fn start(endpoint: &Endpoint, caller: Caller, launch: Launch) -> Self {
+    #[must_use]
+    pub fn start(endpoint: &Endpoint, caller: &Caller, launch: Launch) -> Self {
         let launch = match launch {
             Launch::Nothing => vec![
                 std::env::temp_dir()
@@ -168,12 +171,17 @@ impl FakeExtension {
     }
 
     /// What the bridge has logged so far.
+    #[must_use]
     pub fn stderr(&self) -> String {
         self.stderr.lock().expect("stderr log lock").clone()
     }
 
-    /// Sends a request and returns its id, or the error if the bridge's stdin is
-    /// closed.
+    /// Sends a request and returns its id.
+    ///
+    /// # Errors
+    ///
+    /// The bridge's stdin is closed (the bridge exited, or [`close`](Self::close)
+    /// closed it), or writing to it failed.
     pub async fn try_send(&mut self, call: Call) -> io::Result<u64> {
         let id = self.next_id;
         self.next_id += 1;
@@ -271,6 +279,10 @@ impl FakeExtension {
     }
 
     /// `add_download`.
+    ///
+    /// # Errors
+    ///
+    /// The app's refusal, as [`added`] passes it on.
     pub async fn add_download(
         &mut self,
         capture: NewDownload,
@@ -280,6 +292,10 @@ impl FakeExtension {
     }
 
     /// `withdraw_download`.
+    ///
+    /// # Errors
+    ///
+    /// The app's refusal, as [`withdrawn`] passes it on.
     pub async fn withdraw_download(
         &mut self,
         handover_id: &str,
@@ -335,9 +351,8 @@ impl FakeExtension {
                     return found;
                 }
             }
-            if !self.pump(deadline).await {
-                panic!("no {what} event arrived\n{}", self.stderr());
-            }
+            let pumped = self.pump(deadline).await;
+            assert!(pumped, "no {what} event arrived\n{}", self.stderr());
         }
     }
 
@@ -371,6 +386,7 @@ impl FakeExtension {
 }
 
 /// The `hello` call the extension sends.
+#[must_use]
 pub fn hello_call() -> Call {
     Call::Hello(Hello {
         client: ClientKind::Extension,
@@ -385,6 +401,7 @@ pub fn hello_call() -> Call {
 }
 
 /// A `withdraw_download` call.
+#[must_use]
 pub fn withdraw_call(handover_id: &str) -> Call {
     Call::WithdrawDownload(WithdrawRequest {
         handover_id: handover_id.to_string(),
@@ -392,6 +409,10 @@ pub fn withdraw_call(handover_id: &str) -> Call {
 }
 
 /// The answer to `add_download`, typed.
+///
+/// # Errors
+///
+/// The app refused the download; the error says why.
 pub fn added(outcome: Outcome) -> Result<AddedDownload, ProtocolError> {
     match outcome {
         Outcome::Ok(Reply::DownloadAdded(added)) => Ok(added),
@@ -401,6 +422,10 @@ pub fn added(outcome: Outcome) -> Result<AddedDownload, ProtocolError> {
 }
 
 /// The answer to `withdraw_download`, typed.
+///
+/// # Errors
+///
+/// The app refused the withdrawal; the error says why.
 pub fn withdrawn(outcome: Outcome) -> Result<WithdrawOutcome, ProtocolError> {
     match outcome {
         Outcome::Ok(Reply::Withdrawn(outcome)) => Ok(outcome),

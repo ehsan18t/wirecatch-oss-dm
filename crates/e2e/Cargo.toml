@@ -18,9 +18,10 @@ test = false
 wirecatch-core.workspace = true
 wirecatch-ipc.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
+wirecatch-test-support = { path = "../test-support", features = ["servers"] }
 anyhow.workspace = true
-axum.workspace = true
-bytes.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "process"] }
+
+[lints]
+workspace = true

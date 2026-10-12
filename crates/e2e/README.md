@@ -27,6 +27,6 @@ cargo test -p wirecatch-e2e -- --include-ignored
 - `src/bridge.rs`: finds or builds the bridge.
 - `src/app.rs`: a temporary folder and private endpoint per test, the app (manager plus listener, every connection in its own task), and `run`, which gives each test its own runtime and deletes its folder afterwards.
 - `src/extension.rs`: the fake extension (`hello`, `add_download`, `withdraw_download`, `get_extension_settings`, `update_extension_settings`, `list_queues`, `pause_all`, `resume_all`, events).
-- `src/server.rs`: the HTTP server; a held server takes requests and answers none until released.
+- `src/server.rs`: the HTTP server, the shared one from `crates/test-support` set up for these tests; a held server takes requests and answers none until released.
 - `src/bin/wirecatch-e2e-app.rs`: stands in for `wirecatch-app --background` when the bridge has to start the app.
 - `tests/e2e.rs`: the scenarios.
