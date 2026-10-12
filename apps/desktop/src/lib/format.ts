@@ -419,7 +419,8 @@ function whenSaid(ms: number, now: Date): string {
  * One line for a download window whose download is already in the list (D23), for example
  * "You downloaded this today at 18:38." or "This is already downloading."
  */
-export function earlierNote(row: DownloadSummary, now: Date = new Date()): string {
+export function earlierNote(row: DownloadSummary, nowMs: number = Date.now()): string {
+  const now = new Date(nowMs);
   switch (row.status) {
     case 'completed':
       return `You downloaded this ${whenSaid(row.completed_at ?? row.added_at, now)}.`;

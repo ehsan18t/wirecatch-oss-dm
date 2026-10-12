@@ -134,7 +134,7 @@ describe('links', () => {
 });
 
 describe('a download already in the list (D23)', () => {
-  const now = new Date(2026, 9, 10, 20, 0);
+  const now = new Date(2026, 9, 10, 20, 0).getTime();
   const row = (change: Partial<DownloadSummary>): DownloadSummary => ({
     id: 1,
     url: 'https://example.com/a.zip',

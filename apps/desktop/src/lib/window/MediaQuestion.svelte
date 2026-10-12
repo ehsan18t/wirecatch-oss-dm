@@ -114,7 +114,7 @@
     }}
   >
     {#if win.earlier}
-      <p class="earlier" role="note">{earlierNote(win.earlier, win.now)}</p>
+      <p class="earlier" role="note">{earlierNote(win.earlier, win.openedAt)}</p>
     {/if}
 
     <fieldset class="options">

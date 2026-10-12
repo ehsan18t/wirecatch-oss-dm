@@ -82,9 +82,8 @@ export class DownloadWindowState {
   busy = $state(false);
   /** A quality picked that needs the media add-on: it downloads once the add-on is in. */
   awaitingAddon = $state<{ selection: MediaSelection } | null>(null);
-  // Replaced whole, never mutated, so a plain Date is enough.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  now = $state(new Date());
+  /** When the window opened, in ms; its note on an earlier download says "today" against this. */
+  readonly openedAt = Date.now();
 
   #answered = false;
   #unsubscribe: (() => void) | null = null;
