@@ -404,11 +404,17 @@ export class Hub {
     }
   }
 
-  /** The app confirmed a handover after this side gave up waiting: warn if the browser kept its copy too. */
-  #onLateAnswer(call: Call, outcome: Outcome): void {
-    if (call.method !== 'add_download' || outcome.status !== 'ok') return;
-    const reply = outcome.value;
-    if (reply.type !== 'download_added' || !isConfirmed(reply.data.action)) return;
+  /**
+   * The app answered a handover after this side gave up waiting: warn if the browser kept its
+   * copy too. An answer that cannot be read may be a confirmation, so it counts as one.
+   */
+  #onLateAnswer(call: Call, outcome: Outcome | null): void {
+    if (call.method !== 'add_download') return;
+    if (outcome !== null) {
+      if (outcome.status !== 'ok') return;
+      const reply = outcome.value;
+      if (reply.type !== 'download_added' || !isConfirmed(reply.data.action)) return;
+    }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
     this.#duplicates.confirmedLate(call.params.handover_id, name);
   }

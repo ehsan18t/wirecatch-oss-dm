@@ -189,7 +189,7 @@ describe('NativeClient', () => {
       outcome: { status: 'ok', value: { type: 'extension_settings', data: { min: 'x' } } },
     } as never);
     await flush();
-    expect(await settings).toMatchObject({ kind: 'app', protocolError: null });
+    expect(await settings).toMatchObject({ kind: 'unreadable', protocolError: null });
     expect(client.status.state).toBe('connected');
   });
 
@@ -245,8 +245,8 @@ describe('NativeClient', () => {
 
   it('passes an answer that arrives after the timeout to late-answer listeners', async () => {
     client = makeClient(app);
-    const late: [string, string][] = [];
-    client.onLateAnswer((call, outcome) => late.push([call.method, outcome.status]));
+    const late: [string, string | null][] = [];
+    client.onLateAnswer((call, outcome) => late.push([call.method, outcome?.status ?? null]));
     client.start();
     await flush();
     app.answers = false;
@@ -270,6 +270,53 @@ describe('NativeClient', () => {
     });
     await flush();
     expect(late).toHaveLength(1);
+  });
+
+  it('passes a late answer it cannot read to late-answer listeners as unknown', async () => {
+    client = makeClient(app);
+    const late: [string, string | null][] = [];
+    client.onLateAnswer((call, outcome) => late.push([call.method, outcome?.status ?? null]));
+    client.start();
+    await flush();
+    app.answers = false;
+    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await result;
+    const sent = app.requests.at(-1);
+    if (sent === undefined) throw new Error('nothing sent');
+    app.openPort?.deliver({
+      kind: 'response',
+      id: sent.id,
+      outcome: { status: 'ok', value: { type: 'paused_everything' } },
+    } as never);
+    await flush();
+    expect(late).toEqual([['pause_all', null]]);
+  });
+
+  // An error answer that could not be read kept the port, so an app_not_running in a newer
+  // shape left every later request failing on a port the bridge had given up on.
+  it('drops the port after an error answer it cannot read, and connects again later', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    app.answers = false;
+    const pending = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    await flush();
+    const sent = app.requests.at(-1);
+    const port = app.openPort;
+    if (sent === undefined || port === undefined) throw new Error('nothing sent');
+    port.deliver({
+      kind: 'response',
+      id: sent.id,
+      outcome: { status: 'err', value: { code: 'app_went_away' } },
+    } as never);
+    await flush();
+    expect(await pending).toMatchObject({ kind: 'unreadable' });
+    expect(port.closedByExtension).toBe(true);
+    expect(client.status.state).toBe('unavailable');
+    app.answers = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(client.status.state).toBe('connected');
   });
 
   it('never uses request id 0 and ignores answers carrying it', async () => {

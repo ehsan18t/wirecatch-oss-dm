@@ -126,7 +126,9 @@ export class FakeApp implements NativeTransport {
   addBehavior: AddBehavior = 'started';
   /** When set, `add_download` is answered (as `addBehavior` says) only after this many milliseconds. */
   addLateMs: number | null = null;
-  withdrawBehavior: WithdrawOutcome | 'hang' | { error: ProtocolError } = 'withdrawn';
+  /** `unreadable`: answered with an outcome this protocol version does not have. */
+  withdrawBehavior: WithdrawOutcome | 'hang' | 'unreadable' | { error: ProtocolError } =
+    'withdrawn';
   /** When set, `update_extension_settings` is refused with this error. */
   updateError: ProtocolError | null = null;
   /** Every request received, in order. */
@@ -247,7 +249,9 @@ export class FakeApp implements NativeTransport {
     const behavior = this.withdrawBehavior;
     if (behavior === 'hang') return;
     if (typeof behavior === 'object') reply({ status: 'err', value: behavior.error });
-    else reply({ status: 'ok', value: { type: 'withdrawn', data: behavior } });
+    else if (behavior === 'unreadable') {
+      reply({ status: 'ok', value: { type: 'withdrawn', data: 'vanished' as WithdrawOutcome } });
+    } else reply({ status: 'ok', value: { type: 'withdrawn', data: behavior } });
   }
 
   /** Answers `add_download` as `addBehavior` and `addLateMs` say. */

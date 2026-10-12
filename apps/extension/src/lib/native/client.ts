@@ -51,6 +51,11 @@ export type RequestErrorKind =
   | 'disconnected'
   /** The app answered with an error. */
   | 'app'
+  /**
+   * The app answered in a shape this extension cannot read (a newer app, or a broken one).
+   * Whether it did what was asked is unknown, so callers treat it like no answer.
+   */
+  | 'unreadable'
   /** The request is larger than the bridge accepts; it was not sent. */
   | 'too_large';
 
@@ -94,6 +99,9 @@ const isFrame = oneOf(
   }),
   object({ kind: literal('event'), event: isUnknown }),
 );
+
+/** An answer the app marked as an error, whatever else it carries. */
+const isErrorAnswer = object({ status: literal('err') });
 
 /** Why a request failed when the app's answer to it does not match the protocol. */
 const UNREADABLE_ANSWER = 'Wirecatch gave an answer this extension does not understand.';
@@ -172,7 +180,7 @@ export class NativeClient {
   #attempt = 0;
   /** Requests that timed out on the current port, so an answer arriving later is passed on. */
   readonly #late = new Map<number, Call>();
-  readonly #lateListeners = new Set<(call: Call, outcome: Outcome) => void>();
+  readonly #lateListeners = new Set<(call: Call, outcome: Outcome | null) => void>();
   #started = false;
   #stopped = false;
   /** Whether the open attempt may start the app. */
@@ -241,8 +249,8 @@ export class NativeClient {
     return () => this.#eventListeners.delete(listener);
   }
 
-  /** Called when the app answers a request after it already timed out here. */
-  onLateAnswer(listener: (call: Call, outcome: Outcome) => void): () => void {
+  /** Called when the app answers a request after it already timed out here; `outcome` is null when the answer could not be read. */
+  onLateAnswer(listener: (call: Call, outcome: Outcome | null) => void): () => void {
     this.#lateListeners.add(listener);
     return () => this.#lateListeners.delete(listener);
   }
@@ -397,7 +405,14 @@ export class NativeClient {
       for (const listener of this.#eventListeners) listener(raw.event);
       return;
     }
-    this.#onResponse(raw.id, isOutcome(raw.outcome) ? raw.outcome : null);
+    if (isOutcome(raw.outcome)) {
+      this.#onResponse(raw.id, raw.outcome);
+      return;
+    }
+    this.#onResponse(raw.id, null);
+    // An error that cannot be read may be one that ends the port (app_not_running in a newer
+    // shape): connect again with a fresh hello rather than keep a port the bridge gave up on.
+    if (isErrorAnswer(raw.outcome)) this.#fail({ kind: 'disconnected', detail: UNREADABLE_ANSWER });
   }
 
   /** Settles the request an answer belongs to; `outcome` is null when the answer could not be read. */
@@ -406,14 +421,14 @@ export class NativeClient {
     if (pending !== undefined) {
       this.#pending.delete(id);
       clearTimeout(pending.timer);
-      if (outcome === null) pending.reject(new RequestError('app', UNREADABLE_ANSWER));
+      if (outcome === null) pending.reject(new RequestError('unreadable', UNREADABLE_ANSWER));
       else if (outcome.status === 'ok') pending.resolve(outcome.value);
       else pending.reject(new RequestError('app', outcome.value.message, outcome.value));
     } else {
       const late = this.#late.get(id);
       if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
       this.#late.delete(id);
-      if (outcome !== null) for (const listener of this.#lateListeners) listener(late, outcome);
+      for (const listener of this.#lateListeners) listener(late, outcome);
     }
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.

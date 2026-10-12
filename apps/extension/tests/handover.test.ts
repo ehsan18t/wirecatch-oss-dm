@@ -251,7 +251,9 @@ describe('handover', () => {
     );
   });
 
-  it('resumes the browser download on an answer it does not understand', async () => {
+  // An answer the guard rejected counted as the app refusing, though a newer app most likely
+  // took the download: the browser kept its copy, nothing was withdrawn and nobody was warned.
+  it('withdraws after an answer it does not understand, and keeps the browser copy if withdrawn', async () => {
     s = await setup({
       configure: (app) => {
         app.addBehavior = 'unexpected_action';
@@ -259,7 +261,20 @@ describe('handover', () => {
     });
     const result = await s.hub.onDownload(downloadItem());
     expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
-    expect(result).toMatchObject({ kind: 'kept', reason: 'app_refused' });
+    expect(s.app.calls('withdraw_download')).toHaveLength(1);
+    expect(result).toMatchObject({ kind: 'kept', reason: 'no_answer', uncertain: false });
+  });
+
+  it('counts a download as handed over when the withdraw after an unreadable answer says the app has it', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = 'unexpected_action';
+        app.withdrawBehavior = 'already_started';
+      },
+    });
+    const result = await s.hub.onDownload(downloadItem());
+    expect(result).toMatchObject({ kind: 'handed_over', action: 'started' });
+    expect(s.downloads.log).toEqual(['pause:1', 'cancel:1', 'erase:1']);
   });
 
   it('fails one oversized request on its own and keeps the connection', async () => {
@@ -368,6 +383,40 @@ describe('handover', () => {
         detail: 'Database locked.',
       });
       expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
+    });
+
+    it('counts a withdraw answer it does not understand as uncertain', async () => {
+      s = await setup({
+        configure: (app) => {
+          app.addBehavior = 'hang';
+          app.withdrawBehavior = 'unreadable';
+        },
+      });
+      const pending = s.hub.onDownload(downloadItem());
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toMatchObject({
+        kind: 'kept',
+        reason: 'no_answer',
+        browserCopy: 'resumed',
+        uncertain: true,
+      });
+    });
+
+    // A late answer that could not be read was dropped, so a late confirmation from a newer app
+    // raised no warning although the browser kept its copy.
+    it('warns about a possible duplicate when a late answer cannot be read', async () => {
+      s = await setup({
+        configure: (app) => {
+          app.addBehavior = 'unexpected_action';
+          app.addLateMs = 9_000;
+          app.withdrawBehavior = 'hang';
+        },
+      });
+      const pending = s.hub.onDownload(downloadItem());
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await pending).toMatchObject({ kind: 'kept', uncertain: true });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
     });
 
     it('warns about a possible duplicate when the app confirms after the browser kept its copy', async () => {

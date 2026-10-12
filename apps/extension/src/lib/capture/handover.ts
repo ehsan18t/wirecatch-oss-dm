@@ -6,7 +6,7 @@ import type {
   WithdrawOutcome,
 } from '@wirecatch/protocol';
 import type { CookieContext } from '../cookies';
-import { RequestError } from '../native/client';
+import { RequestError, type RequestErrorKind } from '../native/client';
 import { isConfirmed } from '../protocol';
 import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
@@ -38,7 +38,7 @@ export interface JudgingSettings {
 
 /** Sends `add_download` and, when the answer is lost, `withdraw_download`. */
 export interface SubmitDeps {
-  /** Rejects with a `RequestError` on an app error, a lost connection or a timeout. */
+  /** Rejects with a `RequestError` on an app error, a lost connection, a timeout or an answer that cannot be read. */
   addDownload(download: NewDownload): Promise<AddedDownload>;
   /** Asks the app to forget a handover (short time limit). Rejects if that fails or times out. */
   withdraw(handoverId: string): Promise<WithdrawOutcome>;
@@ -54,6 +54,13 @@ export type SubmitResult =
       uncertain: boolean;
     };
 
+/** Request failures after which the app may have the download, so `submit` withdraws it. */
+const LOST_KINDS: ReadonlySet<RequestErrorKind> = new Set([
+  'timeout',
+  'disconnected',
+  'unreadable',
+]);
+
 /**
  * Offers a download to the app. When no answer comes back (timeout or lost
  * connection), asks the app to withdraw it, so the result is known either way:
@@ -66,8 +73,8 @@ export async function submit(download: NewDownload, deps: SubmitDeps): Promise<S
   try {
     added = await deps.addDownload(download);
   } catch (error) {
-    const lost =
-      error instanceof RequestError && (error.kind === 'timeout' || error.kind === 'disconnected');
+    // No answer, or one that cannot be read: the app may have it either way, so ask it to withdraw.
+    const lost = error instanceof RequestError && LOST_KINDS.has(error.kind);
     if (!lost)
       return { taken: false, reason: 'refused', detail: messageOf(error), uncertain: false };
     let outcome: WithdrawOutcome;
@@ -116,9 +123,9 @@ export type KeptReason =
   | 'app_unreachable'
   /** The settings say to leave it in the browser. */
   | SkipReason
-  /** The app answered with an error or an answer this version does not know. */
+  /** The app answered with an error. */
   | 'app_refused'
-  /** No answer came back, and the app then withdrew it (or could not be asked). */
+  /** No answer came back, or one that could not be read, and the app then withdrew it (or could not be asked). */
   | 'no_answer';
 
 /** What happened to the browser's copy of a kept download. */
