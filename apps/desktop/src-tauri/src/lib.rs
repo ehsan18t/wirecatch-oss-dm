@@ -152,7 +152,10 @@ fn init_logging() {
         .with_writer(std::io::stderr)
         .try_init()
     {
-        tracing::warn!("kept the logger that was already set up: {e}");
+        // Reaches only a logger set up before this one, if there is any.
+        tracing::warn!(
+            "Wirecatch's logger was not installed, so its lines do not reach stderr: {e}"
+        );
     }
 }
 
@@ -272,15 +275,28 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
     window::handle_launch(&handle, launch);
 
     if bridge::registers_on_start() {
+        #[cfg(unix)]
         let private_dir = data_dir.join("bin");
         bridge::register_in_background(move || {
             let app_exe = std::env::current_exe()
                 .map_err(|e| tracing::warn!("could not find the app's own file: {e}"))
                 .ok()?;
-            let appimage = std::env::var_os(appimage::APPIMAGE_VAR).map(std::path::PathBuf::from);
-            bridge::bridge_to_register(&app_exe, appimage.as_deref(), &private_dir)
-                .map_err(|e| tracing::warn!("{e}"))
-                .ok()
+            // Under an AppImage the bundled bridge sits in a mount that goes away when the app
+            // exits, so a private copy is registered instead.
+            #[cfg(unix)]
+            let chosen = match std::env::var_os(appimage::APPIMAGE_VAR) {
+                Some(appimage) => bridge::bundled_bridge(&app_exe).and_then(|bundled| {
+                    appimage::install_private_bridge(
+                        &bundled,
+                        std::path::Path::new(&appimage),
+                        &private_dir,
+                    )
+                }),
+                None => bridge::bridge_to_register(&app_exe),
+            };
+            #[cfg(not(unix))]
+            let chosen = bridge::bridge_to_register(&app_exe);
+            chosen.map_err(|e| tracing::warn!("{e}")).ok()
         });
     } else {
         tracing::info!("debug build: not registering the browser bridge");

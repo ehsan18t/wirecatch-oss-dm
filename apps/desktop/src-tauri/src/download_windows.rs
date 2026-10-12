@@ -568,7 +568,7 @@ fn drop_always_on_top<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     {
         let this = window.clone();
         warn_if_failed(
-            "reach the window thread",
+            "put a download window behind the browser",
             window.run_on_main_thread(move || behind_foreground(&this)),
         );
     }

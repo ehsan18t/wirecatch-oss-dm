@@ -118,31 +118,25 @@ pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
 }
 
-/// The bridge to register for the app at `app_exe`. Under an AppImage (`appimage` set) that is
-/// a private copy in `private_dir`; otherwise the bridge next to the app. A bridge in a
-/// temporary location is never registered.
+/// The bridge bundled with the app at `app_exe`.
 ///
 /// # Errors
 ///
-/// No bridge can be found next to the app, the bridge is in a temporary folder, or (under an
-/// AppImage) the private copy cannot be made; see [`crate::appimage::install_private_bridge`].
-pub fn bridge_to_register(
-    app_exe: &Path,
-    appimage: Option<&Path>,
-    private_dir: &Path,
-) -> Result<PathBuf, String> {
-    let bundled = bridge_path(app_exe)
-        .ok_or_else(|| "Could not find the browser bridge next to the app.".to_owned())?;
-    if let Some(appimage) = appimage {
-        #[cfg(unix)]
-        return crate::appimage::install_private_bridge(&bundled, appimage, private_dir);
-        #[cfg(not(unix))]
-        tracing::debug!(
-            appimage = %appimage.display(),
-            private_dir = %private_dir.display(),
-            "ignoring an AppImage outside Linux"
-        );
-    }
+/// `app_exe` has no folder to look in.
+pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, String> {
+    bridge_path(app_exe)
+        .ok_or_else(|| "Could not find the browser bridge next to the app.".to_owned())
+}
+
+/// The bridge to register for the app installed at `app_exe`: the one next to it, never one in
+/// a temporary location. An AppImage registers a private copy instead; see
+/// [`crate::appimage::install_private_bridge`].
+///
+/// # Errors
+///
+/// No bridge can be found next to the app, or the bridge is in a temporary folder.
+pub fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, String> {
+    let bundled = bundled_bridge(app_exe)?;
     if crate::appimage::is_temporary(&bundled) {
         return Err(format!(
             "The browser bridge is in a temporary folder ({}), so it is not registered. Install Wirecatch, or run it from a permanent folder.",
@@ -243,14 +237,13 @@ mod tests {
 
     #[test]
     fn a_bridge_in_a_temporary_folder_is_never_registered() {
-        let private = Path::new("/home/ana/.local/share/wirecatch/bin");
         let in_temp = std::env::temp_dir().join("x").join("wirecatch-app");
-        assert!(bridge_to_register(&in_temp, None, private).is_err());
+        assert!(bridge_to_register(&in_temp).is_err());
         let mount = Path::new("/tmp/.mount_Wirecatch/usr/bin/wirecatch-app");
-        assert!(bridge_to_register(mount, None, private).is_err());
+        assert!(bridge_to_register(mount).is_err());
         let installed = Path::new("/opt/wirecatch/wirecatch-app");
         assert_eq!(
-            bridge_to_register(installed, None, private).unwrap(),
+            bridge_to_register(installed).unwrap(),
             Path::new("/opt/wirecatch").join(BRIDGE_FILE_NAME)
         );
     }
@@ -263,9 +256,11 @@ mod tests {
         std::fs::create_dir_all(&mount).unwrap();
         std::fs::write(mount.join(BRIDGE_FILE_NAME), b"bridge").unwrap();
         let private = dir.path().join("data").join("bin");
-        let chosen = bridge_to_register(
-            &mount.join("wirecatch-app"),
-            Some(Path::new("/opt/Wirecatch.AppImage")),
+        let app_exe = mount.join("wirecatch-app");
+        assert!(bridge_to_register(&app_exe).is_err());
+        let chosen = crate::appimage::install_private_bridge(
+            &bundled_bridge(&app_exe).unwrap(),
+            Path::new("/opt/Wirecatch.AppImage"),
             &private,
         )
         .unwrap();

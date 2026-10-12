@@ -163,19 +163,23 @@ pub fn reveal_main<R: Runtime>(window: &tauri::WebviewWindow<R>) {
 
 /// Brings `window` to the front: restored if minimized, shown and focused.
 pub fn bring_forward<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    warn_if_failed("restore a minimized window", window.unminimize());
+    warn_if_failed(
+        format_args!("restore the minimized window {}", window.label()),
+        window.unminimize(),
+    );
     show_focused(window);
 }
 
 /// Shows `window` and gives it the focus.
 pub fn show_focused<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    warn_if_failed("show a window", window.show());
-    warn_if_failed("focus a window", window.set_focus());
+    let label = window.label();
+    warn_if_failed(format_args!("show the window {label}"), window.show());
+    warn_if_failed(format_args!("focus the window {label}"), window.set_focus());
 }
 
 /// Logs a window or event call that failed. Nothing can be retried: the window is closing or
 /// the system refused, and the person can still act on the window themselves.
-pub fn warn_if_failed(action: &str, result: tauri::Result<()>) {
+pub fn warn_if_failed(action: impl std::fmt::Display, result: tauri::Result<()>) {
     if let Err(e) = result {
         tracing::warn!("could not {action}: {e}");
     }
