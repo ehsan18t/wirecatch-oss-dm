@@ -8,6 +8,7 @@ import type {
 import type { CookieContext } from '../cookies';
 import { RequestError } from '../native/client';
 import { isConfirmed } from '../protocol';
+import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
 
 /** What the browser reports about one download (`downloads.search({ id })`). */
@@ -196,12 +197,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
 
   const judging = await deps.liveSettings();
   if (judging === null) return keep(null, 'app_unreachable', null);
-  // The browser may have flagged the file since it was first seen; its latest verdict counts.
-  const latest = await deps.downloads.state(downloadId).catch(() => null);
-  const judged =
-    latest?.danger === undefined || latest.danger === ''
-      ? candidate
-      : { ...candidate, danger: latest.danger };
+  const judged = await withLatestVerdict(candidate, deps.downloads, downloadId);
   const decision = shouldCapture(judged, judging.settings);
   if (!decision.capture) return keep(null, decision.reason, null);
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
@@ -236,20 +232,34 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     );
   }
 
-  let browserCopyRemoved = true;
-  try {
-    await deps.downloads.cancel(downloadId);
-  } catch {
-    browserCopyRemoved = false;
-  }
-  if (browserCopyRemoved) {
-    try {
-      await deps.downloads.erase(downloadId);
-    } catch {
-      // Cancelled but still listed: harmless, the person can clear it from the list.
-    }
-  }
+  const browserCopyRemoved = await removeBrowserCopy(deps.downloads, downloadId);
   return { kind: 'handed_over', handoverId, action: result.action, browserCopyRemoved };
+}
+
+/** The browser may have flagged the file since it was first seen; its latest verdict counts. */
+async function withLatestVerdict(
+  candidate: CaptureCandidate,
+  downloads: DownloadControl,
+  id: number,
+): Promise<CaptureCandidate> {
+  const latest = await downloads.state(id).catch(() => null);
+  const danger = nonEmpty(latest?.danger);
+  return danger === null ? candidate : { ...candidate, danger };
+}
+
+/** Cancels the browser's copy and takes it off the browser's list; false when it could not be cancelled. */
+async function removeBrowserCopy(downloads: DownloadControl, id: number): Promise<boolean> {
+  try {
+    await downloads.cancel(id);
+  } catch {
+    return false;
+  }
+  try {
+    await downloads.erase(id);
+  } catch {
+    // Cancelled but still listed: harmless, the person can clear it from the list.
+  }
+  return true;
 }
 
 /** Resumes a paused browser download; if that fails, finds out whether it is still waiting or already gone. */

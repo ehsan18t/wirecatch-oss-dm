@@ -14,16 +14,6 @@
       "count": 1
     }
   },
-  "src/lib/capture/handover.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/lib/native/client.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "tests/fakes.ts": {
     "complexity": {
       "count": 1

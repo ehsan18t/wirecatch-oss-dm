@@ -290,14 +290,18 @@ export class NativeClient {
     if (this.#status.state === 'unavailable') {
       this.#setStatus({ ...this.#status, retryAt: null });
     }
+    if (this.#openPort(generation)) await this.#greet(startApp, generation);
+  }
 
+  /** Opens the port and listens to it for this connection only; false when the browser refuses. */
+  #openPort(generation: number): boolean {
     let port: NativePort;
     try {
       port = this.#options.transport.connect();
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.#fail({ kind: classifyDisconnect(detail), detail });
-      return;
+      return false;
     }
     this.#port = port;
     port.onMessage.addListener((raw) => {
@@ -308,7 +312,11 @@ export class NativeClient {
       const reason = this.#options.transport.disconnectReason(port);
       this.#fail({ kind: classifyDisconnect(reason), detail: reason });
     });
+    return true;
+  }
 
+  /** Says hello; the connection is up only once the app answers in a protocol version this extension speaks. */
+  async #greet(startApp: boolean, generation: number): Promise<void> {
     let reply: Reply;
     try {
       const hello: Hello = { ...(await this.#options.hello()), start_app: startApp };
