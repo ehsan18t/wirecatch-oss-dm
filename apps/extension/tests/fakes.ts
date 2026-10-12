@@ -332,6 +332,9 @@ export class FakeDownloads implements BrowserDownloads {
       return Promise.reject(new Error(`${op} failed`));
     }
     if (op === 'cancel' && typeof arg === 'number') this.#cancelled(arg);
+    if ((op === 'pause' || op === 'resume') && typeof arg === 'number') {
+      this.#setPaused(arg, op === 'pause');
+    }
     this.afterCall?.(call);
     return Promise.resolve();
   }
@@ -341,6 +344,16 @@ export class FakeDownloads implements BrowserDownloads {
     const state = this.states.has(id) ? this.states.get(id) : this.browserState;
     if (state?.state === 'in_progress')
       this.states.set(id, { state: 'interrupted', paused: false });
+  }
+
+  /** As the browser does: pausing or resuming changes only a download in progress. */
+  #setPaused(id: number, paused: boolean): void {
+    if (this.states.has(id)) {
+      const state = this.states.get(id);
+      if (state?.state === 'in_progress') this.states.set(id, { ...state, paused });
+    } else if (this.browserState?.state === 'in_progress') {
+      this.browserState = { ...this.browserState, paused };
+    }
   }
 
   pause(id: number): Promise<void> {

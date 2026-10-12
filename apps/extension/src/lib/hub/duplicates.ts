@@ -13,8 +13,6 @@ function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
 interface KeptCopy {
   name: string;
   downloadId: number | null;
-  /** The browser would not resume it, so it is (or may be) paused rather than downloading. */
-  paused: boolean;
 }
 
 /** Tells the person a late answer matched a kept copy; `certain` is false for one that could not be read. */

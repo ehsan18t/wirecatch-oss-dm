@@ -1,6 +1,6 @@
 /** The hub's pure parts, tested on their own: timing defaults, menu planning, duplicate matching and its sentences. */
 import { describe, expect, it } from 'vitest';
-import type { HandoverResult } from '../src/lib/capture/handover';
+import type { DownloadState, HandoverResult } from '../src/lib/capture/handover';
 import { DuplicateWatch } from '../src/lib/hub/duplicates';
 import { hubTiming } from '../src/lib/hub/hub';
 import { planMenuClick } from '../src/lib/hub/menu';
@@ -91,9 +91,7 @@ describe('DuplicateWatch', () => {
 
   it('warns once when the late confirmation comes after the browser kept it', () => {
     const w = watch();
-    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
-      false,
-    );
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null })).toBe(false);
     w.watch.confirmedLate('h1', 'a.zip', true);
     w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.warned).toEqual(['a.zip']);
@@ -102,12 +100,8 @@ describe('DuplicateWatch', () => {
   it('warns once when the late confirmation came first', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
-      true,
-    );
-    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false })).toBe(
-      false,
-    );
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null })).toBe(true);
+    expect(w.watch.keptUncertain('h1', { name: 'a.zip', downloadId: null })).toBe(false);
     expect(w.warned).toEqual(['a.zip']);
   });
 
@@ -115,8 +109,8 @@ describe('DuplicateWatch', () => {
     const certainty: boolean[] = [];
     const duplicates = new DuplicateWatch((_copy, certain) => certainty.push(certain));
     duplicates.confirmedLate('h1', 'a.zip', false);
-    duplicates.keptUncertain('h1', { name: 'a.zip', downloadId: null, paused: false });
-    duplicates.keptUncertain('h2', { name: 'b.zip', downloadId: null, paused: false });
+    duplicates.keptUncertain('h1', { name: 'a.zip', downloadId: null });
+    duplicates.keptUncertain('h2', { name: 'b.zip', downloadId: null });
     duplicates.confirmedLate('h2', 'b.zip', true);
     expect(certainty).toEqual([false, true]);
   });
@@ -124,9 +118,7 @@ describe('DuplicateWatch', () => {
   it('does not match different handovers', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h2', { name: 'b.zip', downloadId: null, paused: false })).toBe(
-      false,
-    );
+    expect(w.watch.keptUncertain('h2', { name: 'b.zip', downloadId: null })).toBe(false);
     expect(w.warned).toEqual([]);
   });
 });
@@ -246,21 +238,21 @@ describe('NoticeBoard', () => {
         at: 2,
       },
     ];
-    let answer: (paused: boolean) => void = () => undefined;
-    const reading = new Promise<boolean>((resolve) => (answer = resolve));
+    let answer: (state: DownloadState) => void = () => undefined;
+    const reading = new Promise<DownloadState>((resolve) => (answer = resolve));
     let now = 10;
     const board = new NoticeBoard({
       now: () => (now += 1),
       changed: () => undefined,
       store: { load: () => Promise.resolve(stored), save: () => Promise.resolve() },
-      stillPaused: () => reading,
+      readCopy: () => reading,
     });
     const loading = board.load();
     await Promise.resolve();
     await Promise.resolve();
     board.downloadMoved(7);
     board.dismiss('d8');
-    answer(true);
+    answer({ state: 'in_progress', paused: true });
     await loading;
     expect(board.current).toEqual([]);
   });

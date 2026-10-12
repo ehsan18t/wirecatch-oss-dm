@@ -458,6 +458,7 @@ describe('handover', () => {
       async function stuckWithLateAnswer(
         addBehavior: 'started' | 'unexpected_action',
         addLateMs: number,
+        meanwhile: () => void = () => undefined,
       ): Promise<void> {
         s = await setup({
           configure: (app) => {
@@ -471,8 +472,46 @@ describe('handover', () => {
         const pending = s.hub.onDownload(downloadItem());
         await vi.advanceTimersByTimeAsync(8_000);
         expect(await pending).toMatchObject({ browserCopy: 'stuck_paused', uncertain: true });
+        meanwhile();
         await vi.advanceTimersByTimeAsync(1_000);
       }
+
+      /** The person resumes the copy, as the notice asks, before the late answer comes. */
+      const resumedByThePerson = (): void => {
+        s.downloads.states.set(1, { state: 'in_progress', paused: false });
+      };
+
+      it('warns of two copies when a sure answer comes after the person resumed the copy', async () => {
+        await stuckWithLateAnswer('started', 9_000, resumedByThePerson);
+        expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
+        expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
+      });
+
+      it('warns of two possible copies when an unreadable answer comes after the person resumed the copy', async () => {
+        await stuckWithLateAnswer('unexpected_action', 9_000, resumedByThePerson);
+        expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
+        expect(latestNotice(s.hub)?.message).toContain(
+          'Wirecatch may have taken it, and the browser is downloading it too',
+        );
+      });
+
+      it('warns of two copies when a sure answer comes for a copy whose state cannot be read', async () => {
+        s = await setup({
+          configure: (app) => {
+            app.addBehavior = 'started';
+            app.addLateMs = 9_000;
+            app.withdrawBehavior = 'hang';
+          },
+        });
+        s.downloads.failing.add('resume');
+        s.downloads.failing.add('state');
+        const pending = s.hub.onDownload(downloadItem());
+        await vi.advanceTimersByTimeAsync(8_000);
+        expect(await pending).toMatchObject({ browserCopy: 'maybe_paused', uncertain: true });
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
+        expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
+      });
 
       it.each([
         ['after the browser kept it', 9_000],
@@ -813,6 +852,15 @@ describe('handover', () => {
     await s.hub.onDownload(downloadItem({ id: 4 }));
     await s.hub.onDownload(downloadItem({ id: 4 }));
     expect(s.hub.snapshot().notices).toHaveLength(1);
+  });
+
+  it('warns of two copies when a copy that cannot be read will not cancel', async () => {
+    s = await setup();
+    s.downloads.failing.add('state');
+    s.downloads.failing.add('cancel');
+    const result = await s.hub.onDownload(downloadItem());
+    expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
+    expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
   });
 
   it('warns of two copies when the browser cannot say how a cancelled copy stands', async () => {

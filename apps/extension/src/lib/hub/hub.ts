@@ -93,10 +93,7 @@ export class Hub {
       now: this.#now,
       store: deps.notice,
       changed: () => this.#publish(),
-      stillPaused: async (id) => {
-        const state = await readBrowserCopy(deps.downloads, id);
-        return state === 'unreadable' || (state?.state === 'in_progress' && state.paused);
-      },
+      readCopy: (id) => readBrowserCopy(deps.downloads, id),
     });
     this.#popups = new Popups({ media: deps.media, run: (command) => this.#runCommand(command) });
     this.#ready = new Promise((resolve) => {

@@ -1,5 +1,5 @@
 /** The notices the popup and the badge show, and which outcomes are worth one. */
-import type { HandoverResult } from '../capture/handover';
+import type { DownloadState, HandoverResult } from '../capture/handover';
 import type { Notice } from '../messages';
 import type { NoticeStore } from './deps';
 import { DuplicateWatch } from './duplicates';
@@ -24,8 +24,8 @@ export interface NoticeBoardDeps {
   store?: NoticeStore;
   /** Called after every change, to publish the notices. */
   changed(): void;
-  /** Whether the browser still lists the download as paused (or cannot say). */
-  stillPaused?(downloadId: number): Promise<boolean>;
+  /** How the browser lists the download now: null when it no longer does, `unreadable` when it would not say. */
+  readCopy?: (downloadId: number) => Promise<DownloadState | null | 'unreadable'>;
 }
 
 /** What a new notice is about: one browser download (a newer notice about it replaces this one), or nothing in particular. */
@@ -44,16 +44,8 @@ interface About {
  */
 export class NoticeBoard {
   readonly #deps: NoticeBoardDeps;
-  readonly #duplicates = new DuplicateWatch(({ name, downloadId, paused }, certain) => {
-    if (!paused) {
-      const message = certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name);
-      this.warn(message, { downloadId, urgent: true });
-    } else if (certain) {
-      // The app has it: the paused copy only needs removing, not resuming.
-      this.warn(copyLeftInBrowser(name), { downloadId });
-    }
-    // A paused copy and an unreadable answer: the notice to resume it already says to check
-    // Wirecatch's list first, so it stays.
+  readonly #duplicates = new DuplicateWatch(({ name, downloadId }, certain) => {
+    void this.#lateMatch(name, downloadId, certain);
   });
   #notices: Notice[] = [];
   /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
@@ -79,7 +71,7 @@ export class NoticeBoard {
    */
   async load(): Promise<void> {
     const stored = (await this.#deps.store?.load().catch(() => [])) ?? [];
-    const paused = await Promise.all(stored.map((old) => this.#stillPaused(old)));
+    const paused = await Promise.all(stored.map((old) => this.#stillStands(old)));
     const kept = stored.filter(
       (old, i) =>
         paused[i] === true &&
@@ -92,9 +84,34 @@ export class NoticeBoard {
   }
 
   /** Whether a stored notice still stands as far as the browser can say: one not asking to resume always does. */
-  async #stillPaused(notice: Notice): Promise<boolean> {
+  async #stillStands(notice: Notice): Promise<boolean> {
     if (!notice.untilResumed || notice.downloadId === null) return true;
-    return (await this.#deps.stillPaused?.(notice.downloadId).catch(() => true)) ?? true;
+    const state = await this.#readCopy(notice.downloadId);
+    return state === 'unreadable' || isPaused(state);
+  }
+
+  async #readCopy(downloadId: number | null): Promise<DownloadState | null | 'unreadable'> {
+    const read = this.#deps.readCopy;
+    if (downloadId === null || read === undefined) return 'unreadable';
+    return read(downloadId).catch(() => 'unreadable' as const);
+  }
+
+  /**
+   * The app answered late a handover whose browser copy was kept. What that copy is now decides
+   * what to say, since the person may have resumed or paused it since: one the browser lists as
+   * paused only needs removing when the app surely has it, and otherwise keeps its notice; one
+   * no longer listed or interrupted leaves a single copy; any other, including one the browser
+   * will not describe, may be downloading in both places.
+   */
+  async #lateMatch(name: string, downloadId: number | null, certain: boolean): Promise<void> {
+    const state = await this.#readCopy(downloadId);
+    if (isPaused(state)) {
+      if (certain) this.warn(copyLeftInBrowser(name), { downloadId });
+      return;
+    }
+    if (state === null || (state !== 'unreadable' && state.state === 'interrupted')) return;
+    const message = certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name);
+    this.warn(message, { downloadId, urgent: true });
   }
 
   warn(message: string, about: About = {}): void {
@@ -160,8 +177,8 @@ export class NoticeBoard {
 
   /**
    * The browser would not resume its copy. With the handover id of one the app may have taken,
-   * it is also registered as a paused copy, so a sure late confirmation, before or after, replaces
-   * the notice to resume it with one saying the copy is left over.
+   * it is also registered with the duplicate watch, so a late answer, before or after, is told
+   * from the copy's state when it arrives (see `#lateMatch`).
    */
   #notResumed(
     name: string,
@@ -172,13 +189,12 @@ export class NoticeBoard {
     const appMayHave = uncertainHandover !== null;
     const certain = copy === 'stuck_paused';
     this.error(stuckPaused(name, { certain, appMayHave }), { downloadId, untilResumed: true });
-    if (appMayHave)
-      this.#duplicates.keptUncertain(uncertainHandover, { name, downloadId, paused: true });
+    if (appMayHave) this.#duplicates.keptUncertain(uncertainHandover, { name, downloadId });
   }
 
   /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
   uncertain(handoverId: string, name: string, downloadId: number | null): void {
-    if (!this.#duplicates.keptUncertain(handoverId, { name, downloadId, paused: false })) {
+    if (!this.#duplicates.keptUncertain(handoverId, { name, downloadId })) {
       this.warn(mayDownloadTwiceUncertain(name), { downloadId, urgent: true });
     }
   }
@@ -209,6 +225,10 @@ export class NoticeBoard {
     this.#deps.store?.save(this.#notices).catch(() => undefined);
     this.#deps.changed();
   }
+}
+
+function isPaused(state: DownloadState | null | 'unreadable'): boolean {
+  return state !== null && state !== 'unreadable' && state.state === 'in_progress' && state.paused;
 }
 
 function sameDownload(a: Notice, b: Notice): boolean {

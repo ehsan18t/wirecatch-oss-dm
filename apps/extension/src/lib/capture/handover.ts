@@ -263,12 +263,12 @@ async function withLatestVerdict(
 export type CopyRemoval =
   /** Cancelled and taken off the browser's list, or already gone. */
   | 'removed'
-  /** Could not be cancelled: it stays paused in the browser's list. */
+  /** Read as paused, but could not be cancelled: it stays paused in the browser's list. */
   | 'left_paused'
   /**
    * The person resumed it, or it finished, while the app was answering, so it was left alone;
-   * or it could not be read after the cancel, so it may have finished first. Either way it may
-   * be in both places.
+   * or it could not be read and the cancel failed, so it may be running; or it could not be read
+   * after the cancel, so it may have finished first. Either way it may be in both places.
    */
   | 'kept_running';
 
@@ -294,12 +294,14 @@ export async function removeBrowserCopy(
   downloads: DownloadControl,
   id: number,
 ): Promise<CopyRemoval> {
-  const settled = beforeCancel(await readBrowserCopy(downloads, id));
+  const before = await readBrowserCopy(downloads, id);
+  const settled = beforeCancel(before);
   if (settled !== null) return settled;
   try {
     await downloads.cancel(id);
   } catch {
-    return 'left_paused';
+    // Only a copy read as paused is known to wait; one that would not say may be running.
+    return before === 'unreadable' ? 'kept_running' : 'left_paused';
   }
   const after = afterCancel(await readBrowserCopy(downloads, id));
   if (after !== 'erase') return after;
