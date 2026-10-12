@@ -18,15 +18,20 @@ use std::thread;
 
 use tokio::sync::mpsc;
 
-/// Writes one line to stderr, never stdout. A failure to write the log is
-/// ignored (the browser may have closed stderr) instead of panicking.
+/// Writes one line to stderr, never stdout; see [`log_line`].
 macro_rules! log {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let _ = writeln!(std::io::stderr(), "wirecatch-bridge: {}", format_args!($($arg)*));
-    }};
+    ($($arg:tt)*) => {
+        $crate::log_line(format_args!($($arg)*))
+    };
 }
 pub(crate) use log;
+
+/// Writes one log line to stderr. A failure is ignored rather than a panic: the browser may
+/// have closed stderr, and then there is nowhere left to report it.
+fn log_line(line: std::fmt::Arguments<'_>) {
+    let written = writeln!(io::stderr(), "wirecatch-bridge: {line}");
+    drop(written);
+}
 
 mod app;
 mod caller;
@@ -70,7 +75,10 @@ fn main() -> ExitCode {
         (Some("install"), 1..=2, Some(scope)) => install::run(install::Command::Install, scope),
         (Some("uninstall"), 1..=2, Some(scope)) => install::run(install::Command::Uninstall, scope),
         (Some("--help" | "-h" | "help"), 1, _) => {
-            let _ = io::stdout().write_all(USAGE.as_bytes());
+            if let Err(e) = io::stdout().write_all(USAGE.as_bytes()) {
+                log!("could not print the usage: {e}");
+                return ExitCode::FAILURE;
+            }
             ExitCode::SUCCESS
         }
         _ => native_messaging_host(&args),
@@ -155,7 +163,11 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     // to the stdout thread, which then finishes what is queued and stops. The
     // stdin thread may still be blocked reading; returning from main ends it.
     drop(runtime);
-    let _ = writer.join();
+    if writer.join().is_err() {
+        log!(
+            "the thread writing to the browser stopped with a panic; the last messages may be lost"
+        );
+    }
     ExitCode::SUCCESS
 }
 

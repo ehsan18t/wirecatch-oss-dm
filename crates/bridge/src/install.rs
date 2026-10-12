@@ -609,8 +609,13 @@ pub(crate) mod files {
         temp_name.push(".tmp");
         let temp = dir.join(temp_name);
         let result = fs::write(&temp, contents).and_then(|()| fs::rename(&temp, path));
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
+        if result.is_err()
+            && let Err(e) = fs::remove_file(&temp)
+        {
+            crate::log!(
+                "could not remove the temporary file {}: {e}",
+                temp.display()
+            );
         }
         result
     }

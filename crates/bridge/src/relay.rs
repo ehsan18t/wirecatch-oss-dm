@@ -229,7 +229,11 @@ async fn finish_reading(mut from_app: JoinHandle<()>) {
         .is_err()
     {
         from_app.abort();
-        let _ = from_app.await;
+        if let Err(e) = from_app.await
+            && e.is_panic()
+        {
+            log!("the reader of Wirecatch's messages stopped with a panic: {e}");
+        }
     }
 }
 
@@ -390,7 +394,7 @@ mod tests {
         let (bridge_side, mut app) = tokio::io::duplex(4096);
         let (release, wait) = tokio::sync::oneshot::channel::<()>();
         let h = harness_with(move || async move {
-            let _ = wait.await;
+            wait.await.expect("the test releases the connection");
             Ok(bridge_side)
         });
         for id in 1..=3 {

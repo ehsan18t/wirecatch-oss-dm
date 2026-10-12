@@ -251,9 +251,13 @@ async fn callers_that_are_not_allowed_are_refused() -> TestResult {
     ];
     for args in refused {
         let mut bridge = start(bridge(args, &test))?;
-        // The bridge may already be gone, so a failed write is fine.
         if let Some(stdin) = bridge.stdin.as_mut() {
-            let _ = stdin.write_all(&hello(1)?).await;
+            match stdin.write_all(&hello(1)?).await {
+                Ok(()) => {}
+                // The bridge may already be gone.
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+                Err(e) => return Err(e.into()),
+            }
         }
         let status = timeout(PATIENCE, bridge.child.wait())
             .await
@@ -325,7 +329,9 @@ fn fake_app_process() {
         }
         // Like the real app, keep running after the bridge leaves, until the test
         // has checked that (by connecting once more), then exit.
-        let _ = timeout(PATIENCE, listener.accept()).await;
+        let checked = timeout(PATIENCE, listener.accept()).await;
+        // Whether the test connected in time or not, this helper's job is over.
+        drop(checked);
     });
 }
 
@@ -624,5 +630,22 @@ async fn a_broken_launch_override_still_answers() -> TestResult {
         9,
     )?;
     bridge.close_and_wait().await?;
+    Ok(())
+}
+
+#[test]
+fn help_fails_when_the_usage_cannot_be_printed() -> TestResult {
+    let (reader, writer) = std::io::pipe()?;
+    drop(reader);
+    let output = std::process::Command::new(BRIDGE)
+        .arg("--help")
+        .stdout(writer)
+        .stderr(Stdio::piped())
+        .output()?;
+    assert!(
+        !output.status.success(),
+        "a usage nobody could read must not report success"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("could not print the usage"));
     Ok(())
 }
