@@ -1,5 +1,6 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
 import {
+  fields,
   isNumber,
   isString,
   isUnknown,
@@ -7,6 +8,7 @@ import {
   member,
   nullable,
   object,
+  type Variant,
   variants,
 } from '../validate';
 
@@ -50,11 +52,16 @@ const isProblemKind = member<ProblemKind>({
 
 /** Checks a connection status the popup receives from the background. */
 export const isConnectionStatus = variants<ConnectionStatus, 'state'>({
-  connecting: object({ state: literal('connecting') }),
-  connected: object({ state: literal('connected'), appVersion: isString }),
-  unavailable: object({
+  connecting: fields<Variant<ConnectionStatus, 'connecting', 'state'>>({
+    state: literal('connecting'),
+  }),
+  connected: fields<Variant<ConnectionStatus, 'connected', 'state'>>({
+    state: literal('connected'),
+    appVersion: isString,
+  }),
+  unavailable: fields<Variant<ConnectionStatus, 'unavailable', 'state'>>({
     state: literal('unavailable'),
-    problem: object({ kind: isProblemKind, detail: nullable(isString) }),
+    problem: fields<Problem>({ kind: isProblemKind, detail: nullable(isString) }),
     retryAt: nullable(isNumber),
   }),
 });

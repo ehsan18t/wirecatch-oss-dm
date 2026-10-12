@@ -4,6 +4,7 @@
  */
 import { KB } from '@wirecatch/units';
 import {
+  fields,
   isBoolean,
   isString,
   literal,
@@ -11,7 +12,6 @@ import {
   object,
   optional,
   refine,
-  type Guard,
 } from '../validate';
 
 export const MEDIA_CHECK = 'wirecatch:media-check';
@@ -125,7 +125,7 @@ export function asContentRequest(raw: unknown): ContentRequest | null {
 }
 
 /** The background's answer to `MEDIA_CHECK`. */
-export const isCheckAnswer: Guard<CheckAnswer> = object({ show: isBoolean });
+export const isCheckAnswer = fields<CheckAnswer>({ show: isBoolean });
 
 /** The background's answer to `MEDIA_DOWNLOAD`. */
-export const isDownloadAnswer: Guard<DownloadAnswer> = object({ ok: isBoolean, message: isString });
+export const isDownloadAnswer = fields<DownloadAnswer>({ ok: isBoolean, message: isString });

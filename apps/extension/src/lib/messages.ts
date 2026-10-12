@@ -8,18 +8,17 @@ import { isConnectionStatus, type ConnectionStatus } from './native/status';
 import { isExtensionSettings, isMediaKind, isQueueSummary } from './protocol';
 import {
   arrayOf,
+  fields,
   isBoolean,
   isNumber,
   isString,
   literal,
   member,
   nullable,
-  object,
-  oneOf,
   optional,
   refine,
+  type Variant,
   variants,
-  type Guard,
 } from './validate';
 
 /** Name of the `runtime.connect` port the popup opens to the background script. */
@@ -57,8 +56,8 @@ export interface Notice {
 }
 
 /** Checks a notice read back from storage. */
-export const isNotice: Guard<Notice> = object({
-  tone: literal('warning', 'error'),
+export const isNotice = fields<Notice>({
+  tone: member<Notice['tone']>({ warning: true, error: true }),
   message: isString,
   at: isNumber,
 });
@@ -94,14 +93,16 @@ export interface PopupRequest {
   command: PopupCommand;
 }
 
-export type BackgroundMessage =
-  | { type: 'snapshot'; snapshot: Snapshot }
-  | { type: 'media'; view: MediaView }
+/** The answer to one `PopupRequest`. */
+export type ResultMessage =
   /** `message`, when present, is a sentence to show for the success (for example "Sent to Wirecatch."). */
   | { type: 'result'; id: number; ok: true; message?: string }
   | { type: 'result'; id: number; ok: false; message: string };
 
-const isSnapshot: Guard<Snapshot> = object({
+export type BackgroundMessage =
+  { type: 'snapshot'; snapshot: Snapshot } | { type: 'media'; view: MediaView } | ResultMessage;
+
+const isSnapshot = fields<Snapshot>({
   status: isConnectionStatus,
   settings: nullable(isExtensionSettings),
   settingsFromCache: isBoolean,
@@ -110,7 +111,7 @@ const isSnapshot: Guard<Snapshot> = object({
   notice: nullable(isNotice),
 });
 
-const isMediaEntry: Guard<MediaEntry> = object({
+const isMediaEntry = fields<MediaEntry>({
   key: isString,
   kind: isMediaKind,
   title: isString,
@@ -118,7 +119,7 @@ const isMediaEntry: Guard<MediaEntry> = object({
   size: nullable(isNumber),
 });
 
-const isMediaView: Guard<MediaView> = object({
+const isMediaView = fields<MediaView>({
   tabId: isNumber,
   page: member<MediaView['page']>({ web: true, private: true, other: true }),
   entries: arrayOf(isMediaEntry),
@@ -129,17 +130,25 @@ const isMediaView: Guard<MediaView> = object({
  * through a port is still checked before it is shown, like every value from outside.
  */
 export const isBackgroundMessage = variants<BackgroundMessage>({
-  snapshot: object({ type: literal('snapshot'), snapshot: isSnapshot }),
-  media: object({ type: literal('media'), view: isMediaView }),
-  result: oneOf(
-    object({
+  snapshot: fields<Variant<BackgroundMessage, 'snapshot'>>({
+    type: literal('snapshot'),
+    snapshot: isSnapshot,
+  }),
+  media: fields<Variant<BackgroundMessage, 'media'>>({ type: literal('media'), view: isMediaView }),
+  result: variants<ResultMessage, 'ok'>({
+    true: fields<Extract<ResultMessage, { ok: true }>>({
       type: literal('result'),
       id: isNumber,
       ok: literal(true),
       message: optional(isString),
     }),
-    object({ type: literal('result'), id: isNumber, ok: literal(false), message: isString }),
-  ),
+    false: fields<Extract<ResultMessage, { ok: false }>>({
+      type: literal('result'),
+      id: isNumber,
+      ok: literal(false),
+      message: isString,
+    }),
+  }),
 });
 
 /** The part of `runtime.Port` both sides use; `Out` is what this side sends, `In` what it receives. */
@@ -150,30 +159,42 @@ export interface Channel<Out, In> {
 }
 
 const isTabId = refine(isNumber, (id) => Number.isInteger(id) && id >= 0);
-const isStringList = optional(nullable(arrayOf(isString)));
+/** A list field of a patch: a new list, null for no change, or left out. */
+const isListChange = optional(nullable(arrayOf(isString)));
 
-const isPatch: Guard<ExtensionSettingsPatch> = object({
+const isPatch = fields<ExtensionSettingsPatch>({
   capture_enabled: optional(nullable(isBoolean)),
   ask_before_download: optional(nullable(isBoolean)),
   show_media_button: optional(nullable(isBoolean)),
-  ignored_sites: isStringList,
-  add_ignored_sites: isStringList,
-  remove_ignored_sites: isStringList,
-  capture_extensions: isStringList,
+  ignored_sites: isListChange,
+  add_ignored_sites: isListChange,
+  remove_ignored_sites: isListChange,
+  capture_extensions: isListChange,
   min_capture_size: optional(nullable(isNumber)),
   default_queue: optional(nullable(isNumber)),
 });
 
-const isCommand: Guard<PopupCommand> = oneOf(
-  object({ type: literal('update_settings'), patch: isPatch }),
-  object({
-    type: literal('pause_all', 'resume_all', 'reconnect', 'open_app', 'dismiss_notice'),
-  }),
-  object({ type: literal('watch_media'), tabId: isTabId }),
-  object({ type: literal('download_media'), tabId: isTabId, key: isString }),
-);
+type Command<T extends PopupCommand['type']> = Variant<PopupCommand, T>;
 
-const isPopupRequest: Guard<PopupRequest> = object({ id: isNumber, command: isCommand });
+const isCommand = variants<PopupCommand>({
+  update_settings: fields<Command<'update_settings'>>({
+    type: literal('update_settings'),
+    patch: isPatch,
+  }),
+  pause_all: fields<Command<'pause_all'>>({ type: literal('pause_all') }),
+  resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),
+  reconnect: fields<Command<'reconnect'>>({ type: literal('reconnect') }),
+  open_app: fields<Command<'open_app'>>({ type: literal('open_app') }),
+  dismiss_notice: fields<Command<'dismiss_notice'>>({ type: literal('dismiss_notice') }),
+  watch_media: fields<Command<'watch_media'>>({ type: literal('watch_media'), tabId: isTabId }),
+  download_media: fields<Command<'download_media'>>({
+    type: literal('download_media'),
+    tabId: isTabId,
+    key: isString,
+  }),
+});
+
+const isPopupRequest = fields<PopupRequest>({ id: isNumber, command: isCommand });
 
 /** Checks a message from the popup; null for anything else. */
 export function asPopupRequest(raw: unknown): PopupRequest | null {

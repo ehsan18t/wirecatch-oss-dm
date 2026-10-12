@@ -2,17 +2,18 @@ import { MB } from '@wirecatch/units';
 import type { DetectedKind, Detection } from './detect';
 import {
   arrayOf,
+  fields,
   isBoolean,
   isNumber,
   isString,
   isUnknown,
   literal,
+  member,
   nullable,
   object,
   optional,
   refine,
   tuple,
-  type Guard,
 } from '../validate';
 import { MAX_MEDIA_URL_LENGTH } from './messages';
 
@@ -85,8 +86,8 @@ type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & {
   lastActive?: number;
 };
 
-const isSavedItem: Guard<SavedItem> = object({
-  kind: literal('hls', 'dash', 'direct'),
+const isSavedItem = fields<SavedItem>({
+  kind: member<SavedItem['kind']>({ hls: true, dash: true, direct: true }),
   url: refine(isString, (url) => url.length <= MAX_MEDIA_URL_LENGTH),
   key: refine(isString, (key) => key.length <= MAX_MEDIA_URL_LENGTH + KEY_PREFIX_ROOM),
   seenAt: isNumber,

@@ -1,9 +1,11 @@
 import type {
   AddAction,
+  AddedDownload,
   ErrorCode,
   Event,
   ExtensionSettings,
   ExtensionSettingsPatch,
+  HelloReply,
   MediaKind,
   Outcome,
   ProtocolError,
@@ -13,16 +15,15 @@ import type {
 } from '@wirecatch/protocol';
 import {
   arrayOf,
+  fields,
   isBoolean,
   isNumber,
   isString,
   literal,
   member,
   nullable,
-  object,
-  oneOf,
+  type Variant,
   variants,
-  type Guard,
 } from './validate';
 
 /** The fields a popup change can carry: whole settings fields plus the list edits. */
@@ -94,14 +95,15 @@ export function isConfirmed(action: AddAction): boolean {
 
 /*
  * Guards for the protocol types this extension reads from outside: frames from the app,
- * and copies of them kept in browser storage. Each is typed by the generated type, so
- * the compiler rejects a guard that misses a field or a union member. Until W3 generates
- * validators from `crates/protocol`, these are the one place they are written.
+ * and copies of them kept in browser storage. Built from `fields`, `member` and `variants`
+ * on the generated types, so the compiler rejects one that misses or narrows a field, a
+ * union member or a variant. Until W3 generates validators from `crates/protocol`, these
+ * are the one place they are written.
  */
 
 const isStringList = arrayOf(isString);
 
-export const isExtensionSettings: Guard<ExtensionSettings> = object({
+export const isExtensionSettings = fields<ExtensionSettings>({
   capture_enabled: isBoolean,
   ask_before_download: isBoolean,
   show_media_button: isBoolean,
@@ -111,7 +113,7 @@ export const isExtensionSettings: Guard<ExtensionSettings> = object({
   default_queue: isNumber,
 });
 
-export const isQueueSummary: Guard<QueueSummary> = object({
+export const isQueueSummary = fields<QueueSummary>({
   id: isNumber,
   name: isString,
   is_default: isBoolean,
@@ -138,33 +140,48 @@ const isErrorCode = member<ErrorCode>({
   not_started: true,
 });
 
-const isProtocolError: Guard<ProtocolError> = object({ code: isErrorCode, message: isString });
+const isProtocolError = fields<ProtocolError>({ code: isErrorCode, message: isString });
 
 const isReply = variants<Reply>({
-  hello: object({
+  hello: fields<Variant<Reply, 'hello'>>({
     type: literal('hello'),
-    data: object({ app_version: isString, protocol_version: isNumber }),
+    data: fields<HelloReply>({ app_version: isString, protocol_version: isNumber }),
   }),
-  download_added: object({
+  download_added: fields<Variant<Reply, 'download_added'>>({
     type: literal('download_added'),
-    data: object({ id: nullable(isNumber), action: isAddAction }),
+    data: fields<AddedDownload>({ id: nullable(isNumber), action: isAddAction }),
   }),
-  withdrawn: object({ type: literal('withdrawn'), data: isWithdrawOutcome }),
-  extension_settings: object({ type: literal('extension_settings'), data: isExtensionSettings }),
-  queues: object({ type: literal('queues'), data: arrayOf(isQueueSummary) }),
-  done: object({ type: literal('done') }),
+  withdrawn: fields<Variant<Reply, 'withdrawn'>>({
+    type: literal('withdrawn'),
+    data: isWithdrawOutcome,
+  }),
+  extension_settings: fields<Variant<Reply, 'extension_settings'>>({
+    type: literal('extension_settings'),
+    data: isExtensionSettings,
+  }),
+  queues: fields<Variant<Reply, 'queues'>>({
+    type: literal('queues'),
+    data: arrayOf(isQueueSummary),
+  }),
+  done: fields<Variant<Reply, 'done'>>({ type: literal('done') }),
 });
 
 /** The app's answer to a request: a reply this extension knows, or an error it knows. */
-export const isOutcome: Guard<Outcome> = oneOf(
-  object({ status: literal('ok'), value: isReply }),
-  object({ status: literal('err'), value: isProtocolError }),
-);
+export const isOutcome = variants<Outcome, 'status'>({
+  ok: fields<Variant<Outcome, 'ok', 'status'>>({ status: literal('ok'), value: isReply }),
+  err: fields<Variant<Outcome, 'err', 'status'>>({
+    status: literal('err'),
+    value: isProtocolError,
+  }),
+});
 
 export const isEvent = variants<Event>({
-  extension_settings_changed: object({
+  extension_settings_changed: fields<Variant<Event, 'extension_settings_changed'>>({
     type: literal('extension_settings_changed'),
     data: isExtensionSettings,
   }),
-  queues_changed: object({ type: literal('queues_changed'), data: arrayOf(isQueueSummary) }),
+  queues_changed: fields<Variant<Event, 'queues_changed'>>({
+    type: literal('queues_changed'),
+    data: arrayOf(isQueueSummary),
+  }),
 });
