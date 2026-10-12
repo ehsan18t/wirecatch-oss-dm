@@ -1,8 +1,14 @@
 import type { ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/protocol';
 import type { MediaView } from '../media/center';
-import type { BackgroundMessage, Channel, PopupCommand, PopupRequest, Snapshot } from '../messages';
+import {
+  isBackgroundMessage,
+  type BackgroundMessage,
+  type Channel,
+  type PopupCommand,
+  type PopupRequest,
+  type Snapshot,
+} from '../messages';
 import { applyPatch, patchOf, type SettingsChange } from '../protocol';
-import { literal, object } from '../validate';
 import { Requests } from './requests';
 
 export interface Feedback {
@@ -23,16 +29,6 @@ const RESTARTED: Result = {
   ok: false,
   message: 'The extension restarted. Close and reopen this window.',
 };
-
-/**
- * Checks the kind of a message from the background script, which is this extension's
- * own code; its fields are trusted, as the popup and the background ship together.
- */
-const hasBackgroundType = object({ type: literal('snapshot', 'result', 'media') });
-
-function isBackgroundMessage(raw: unknown): raw is BackgroundMessage {
-  return hasBackgroundType(raw);
-}
 
 /**
  * The popup's view of the background state. Setting changes show at once (an

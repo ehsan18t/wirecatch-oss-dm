@@ -10,7 +10,8 @@ import {
   type ProtocolError,
   type Reply,
 } from '@wirecatch/protocol';
-import { isNumber, isRecord, isString, literal, object, oneOf } from '../validate';
+import { isEvent, isOutcome } from '../protocol';
+import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
 
 /** Largest message the bridge accepts (D14): the frame limit of every local connection, as `crates/protocol` sets it. */
@@ -83,23 +84,21 @@ const DEFAULT_BACKOFF: Backoff = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
 const HELLO_TIMEOUT_MS = 10_000;
 
 /**
- * The outer shape of a frame from the bridge: an answer to a request, or an event.
- * What is inside is the app's, which speaks the same generated protocol; full
- * validators for every reply and event are W3's generated ones.
+ * The outer shape of a frame from the bridge: an answer to a request, or an event. Only
+ * the envelope is checked here; what it carries is checked by `isOutcome` and `isEvent`,
+ * so an answer that cannot be read still settles the request it belongs to.
  */
-const hasMessageShape = oneOf(
+const isFrame = oneOf(
   object({
     kind: literal('response'),
     id: isNumber,
-    outcome: object({ status: literal('ok', 'err'), value: isRecord }),
+    outcome: isUnknown,
   }),
-  object({ kind: literal('event'), event: object({ type: isString }) }),
+  object({ kind: literal('event'), event: isUnknown }),
 );
 
-/** Checks the outer shape of a frame from the bridge; anything else is ignored. */
-function isMessage(raw: unknown): raw is Message {
-  return hasMessageShape(raw);
-}
+/** Why a request failed when the app's answer to it does not match the protocol. */
+const UNREADABLE_ANSWER = 'Wirecatch gave an answer this extension does not understand.';
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
 export function backoffDelay(backoff: Backoff, attempt: number): number {
@@ -391,29 +390,35 @@ export class NativeClient {
     });
   }
 
-  #onMessage(message: unknown): void {
-    if (!isMessage(message)) return;
-    if (message.kind === 'event') {
-      for (const listener of this.#eventListeners) listener(message.event);
+  #onMessage(raw: unknown): void {
+    if (!isFrame(raw)) return;
+    if (raw.kind === 'event') {
+      // Malformed, or an event this version does not know: nothing here acts on it.
+      if (!isEvent(raw.event)) return;
+      for (const listener of this.#eventListeners) listener(raw.event);
       return;
     }
-    if (message.kind !== 'response') return;
-    const { outcome } = message;
-    const pending = this.#pending.get(message.id);
+    this.#onResponse(raw.id, isOutcome(raw.outcome) ? raw.outcome : null);
+  }
+
+  /** Settles the request an answer belongs to; `outcome` is null when the answer could not be read. */
+  #onResponse(id: number, outcome: Outcome | null): void {
+    const pending = this.#pending.get(id);
     if (pending !== undefined) {
-      this.#pending.delete(message.id);
+      this.#pending.delete(id);
       clearTimeout(pending.timer);
-      if (outcome.status === 'ok') pending.resolve(outcome.value);
+      if (outcome === null) pending.reject(new RequestError('app', UNREADABLE_ANSWER));
+      else if (outcome.status === 'ok') pending.resolve(outcome.value);
       else pending.reject(new RequestError('app', outcome.value.message, outcome.value));
     } else {
-      const late = this.#late.get(message.id);
+      const late = this.#late.get(id);
       if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
-      this.#late.delete(message.id);
-      for (const listener of this.#lateListeners) listener(late, outcome);
+      this.#late.delete(id);
+      if (outcome !== null) for (const listener of this.#lateListeners) listener(late, outcome);
     }
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.
-    const problem = outcome.status === 'err' ? connectionProblem(outcome.value) : null;
+    const problem = outcome?.status === 'err' ? connectionProblem(outcome.value) : null;
     if (problem !== null) this.#fail(problem);
   }
 

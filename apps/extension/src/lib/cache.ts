@@ -1,15 +1,6 @@
-import type { ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
 import type { CachedSettings, SettingsCache } from './hub/deps';
-import {
-  arrayOf,
-  isBoolean,
-  isNumber,
-  isString,
-  isUnknown,
-  itemsOf,
-  object,
-  type Guard,
-} from './validate';
+import { isExtensionSettings, isQueueSummary } from './protocol';
+import { isNumber, isUnknown, itemsOf, object } from './validate';
 
 /** Key of the display cache in `storage.local`. */
 export const CACHE_KEY = 'wirecatch.cache.v1';
@@ -20,27 +11,9 @@ export interface StorageArea {
   set(items: Record<string, unknown>): Promise<void>;
 }
 
-const isStringList = arrayOf(isString);
-
-const isSettings: Guard<ExtensionSettings> = object({
-  capture_enabled: isBoolean,
-  ask_before_download: isBoolean,
-  show_media_button: isBoolean,
-  ignored_sites: isStringList,
-  capture_extensions: isStringList,
-  min_capture_size: isNumber,
-  default_queue: isNumber,
-});
-
-const isQueue: Guard<QueueSummary> = object({
-  id: isNumber,
-  name: isString,
-  is_default: isBoolean,
-});
-
 /** `queues` and `appClosed` are read leniently: caches written before they existed lack them. */
 const isEntry = object({
-  settings: isSettings,
+  settings: isExtensionSettings,
   savedAt: isNumber,
   queues: isUnknown,
   appClosed: isUnknown,
@@ -52,7 +25,7 @@ export function asCachedSettings(value: unknown): CachedSettings | null {
   // Missing in caches written before it existed: then the app counts as running, which connects once to find out.
   return {
     settings: value.settings,
-    queues: itemsOf(value.queues, isQueue),
+    queues: itemsOf(value.queues, isQueueSummary),
     savedAt: value.savedAt,
     appClosed: value.appClosed === true,
   };

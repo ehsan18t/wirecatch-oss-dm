@@ -1,4 +1,29 @@
-import type { AddAction, ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/protocol';
+import type {
+  AddAction,
+  ErrorCode,
+  Event,
+  ExtensionSettings,
+  ExtensionSettingsPatch,
+  MediaKind,
+  Outcome,
+  ProtocolError,
+  QueueSummary,
+  Reply,
+  WithdrawOutcome,
+} from '@wirecatch/protocol';
+import {
+  arrayOf,
+  isBoolean,
+  isNumber,
+  isString,
+  literal,
+  member,
+  nullable,
+  object,
+  oneOf,
+  variants,
+  type Guard,
+} from './validate';
 
 /** The fields a popup change can carry: whole settings fields plus the list edits. */
 export type SettingsChange = Partial<ExtensionSettings> & {
@@ -66,3 +91,80 @@ const CONFIRMED_ACTIONS: ReadonlySet<string> = new Set<AddAction>([
 export function isConfirmed(action: AddAction): boolean {
   return CONFIRMED_ACTIONS.has(action);
 }
+
+/*
+ * Guards for the protocol types this extension reads from outside: frames from the app,
+ * and copies of them kept in browser storage. Each is typed by the generated type, so
+ * the compiler rejects a guard that misses a field or a union member. Until W3 generates
+ * validators from `crates/protocol`, these are the one place they are written.
+ */
+
+const isStringList = arrayOf(isString);
+
+export const isExtensionSettings: Guard<ExtensionSettings> = object({
+  capture_enabled: isBoolean,
+  ask_before_download: isBoolean,
+  show_media_button: isBoolean,
+  ignored_sites: isStringList,
+  capture_extensions: isStringList,
+  min_capture_size: isNumber,
+  default_queue: isNumber,
+});
+
+export const isQueueSummary: Guard<QueueSummary> = object({
+  id: isNumber,
+  name: isString,
+  is_default: isBoolean,
+});
+
+export const isMediaKind = member<MediaKind>({ hls: true, dash: true, direct: true, page: true });
+
+const isAddAction = member<AddAction>({ started: true, queued: true, awaiting_confirmation: true });
+
+const isWithdrawOutcome = member<WithdrawOutcome>({
+  withdrawn: true,
+  not_found: true,
+  already_started: true,
+});
+
+const isErrorCode = member<ErrorCode>({
+  unsupported_version: true,
+  invalid_request: true,
+  invalid_url: true,
+  not_found: true,
+  app_unavailable: true,
+  app_not_running: true,
+  internal: true,
+  not_started: true,
+});
+
+const isProtocolError: Guard<ProtocolError> = object({ code: isErrorCode, message: isString });
+
+const isReply = variants<Reply>({
+  hello: object({
+    type: literal('hello'),
+    data: object({ app_version: isString, protocol_version: isNumber }),
+  }),
+  download_added: object({
+    type: literal('download_added'),
+    data: object({ id: nullable(isNumber), action: isAddAction }),
+  }),
+  withdrawn: object({ type: literal('withdrawn'), data: isWithdrawOutcome }),
+  extension_settings: object({ type: literal('extension_settings'), data: isExtensionSettings }),
+  queues: object({ type: literal('queues'), data: arrayOf(isQueueSummary) }),
+  done: object({ type: literal('done') }),
+});
+
+/** The app's answer to a request: a reply this extension knows, or an error it knows. */
+export const isOutcome: Guard<Outcome> = oneOf(
+  object({ status: literal('ok'), value: isReply }),
+  object({ status: literal('err'), value: isProtocolError }),
+);
+
+export const isEvent = variants<Event>({
+  extension_settings_changed: object({
+    type: literal('extension_settings_changed'),
+    data: isExtensionSettings,
+  }),
+  queues_changed: object({ type: literal('queues_changed'), data: arrayOf(isQueueSummary) }),
+});

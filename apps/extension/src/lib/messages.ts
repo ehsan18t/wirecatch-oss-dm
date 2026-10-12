@@ -3,19 +3,22 @@
  * everything that reaches the app uses `@wirecatch/protocol`).
  */
 import type { ExtensionSettings, ExtensionSettingsPatch, QueueSummary } from '@wirecatch/protocol';
-import type { MediaView } from './media/center';
-import type { ConnectionStatus } from './native/status';
+import type { MediaEntry, MediaView } from './media/center';
+import { isConnectionStatus, type ConnectionStatus } from './native/status';
+import { isExtensionSettings, isMediaKind, isQueueSummary } from './protocol';
 import {
   arrayOf,
   isBoolean,
   isNumber,
   isString,
   literal,
+  member,
   nullable,
   object,
   oneOf,
   optional,
   refine,
+  variants,
   type Guard,
 } from './validate';
 
@@ -97,6 +100,47 @@ export type BackgroundMessage =
   /** `message`, when present, is a sentence to show for the success (for example "Sent to Wirecatch."). */
   | { type: 'result'; id: number; ok: true; message?: string }
   | { type: 'result'; id: number; ok: false; message: string };
+
+const isSnapshot: Guard<Snapshot> = object({
+  status: isConnectionStatus,
+  settings: nullable(isExtensionSettings),
+  settingsFromCache: isBoolean,
+  cachedAt: nullable(isNumber),
+  queues: arrayOf(isQueueSummary),
+  notice: nullable(isNotice),
+});
+
+const isMediaEntry: Guard<MediaEntry> = object({
+  key: isString,
+  kind: isMediaKind,
+  title: isString,
+  detail: isString,
+  size: nullable(isNumber),
+});
+
+const isMediaView: Guard<MediaView> = object({
+  tabId: isNumber,
+  page: member<MediaView['page']>({ web: true, private: true, other: true }),
+  entries: arrayOf(isMediaEntry),
+});
+
+/**
+ * Checks a message from the background script. It ships with the popup, but what comes
+ * through a port is still checked before it is shown, like every value from outside.
+ */
+export const isBackgroundMessage = variants<BackgroundMessage>({
+  snapshot: object({ type: literal('snapshot'), snapshot: isSnapshot }),
+  media: object({ type: literal('media'), view: isMediaView }),
+  result: oneOf(
+    object({
+      type: literal('result'),
+      id: isNumber,
+      ok: literal(true),
+      message: optional(isString),
+    }),
+    object({ type: literal('result'), id: isNumber, ok: literal(false), message: isString }),
+  ),
+});
 
 /** The part of `runtime.Port` both sides use; `Out` is what this side sends, `In` what it receives. */
 export interface Channel<Out, In> {

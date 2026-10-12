@@ -8,12 +8,14 @@ import {
   isUnknown,
   itemsOf,
   literal,
+  member,
   nullable,
   object,
   oneOf,
   optional,
   refine,
   tuple,
+  variants,
 } from '../src/lib/validate';
 
 describe('validate', () => {
@@ -77,6 +79,25 @@ describe('validate', () => {
     expect(message({ type: 'a', n: 1 })).toBe(true);
     expect(message({ type: 'b', s: 's' })).toBe(true);
     expect(message({ type: 'a', s: 's' })).toBe(false);
+  });
+
+  it('accepts only the listed members of a string union', () => {
+    const isSize = member<'s' | 'm'>({ s: true, m: true });
+    expect(isSize('s')).toBe(true);
+    expect(isSize('l')).toBe(false);
+    expect(isSize('toString')).toBe(false);
+  });
+
+  it('tells a union apart by its tag, with each member checked whole', () => {
+    type Shape = { kind: 'dot' } | { kind: 'line'; length: number };
+    const isShape = variants<Shape, 'kind'>({
+      dot: object({ kind: literal('dot') }),
+      line: object({ kind: literal('line'), length: isNumber }),
+    });
+    expect(isShape({ kind: 'dot' })).toBe(true);
+    expect(isShape({ kind: 'line', length: 2 })).toBe(true);
+    expect(isShape({ kind: 'line' })).toBe(false);
+    expect(isShape({ kind: 'circle' })).toBe(false);
   });
 
   it('keeps the items that pass and drops the rest', () => {

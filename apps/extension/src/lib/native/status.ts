@@ -1,5 +1,14 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
-import { isString, isUnknown, object } from '../validate';
+import {
+  isNumber,
+  isString,
+  isUnknown,
+  literal,
+  member,
+  nullable,
+  object,
+  variants,
+} from '../validate';
 
 export type ProblemKind =
   /** The browser could not find or start the native helper (the bridge): not installed or not registered. */
@@ -29,6 +38,26 @@ export type ConnectionStatus =
   | { state: 'connecting' }
   | { state: 'connected'; appVersion: string }
   | { state: 'unavailable'; problem: Problem; retryAt: number | null };
+
+const isProblemKind = member<ProblemKind>({
+  host_missing: true,
+  host_untrusted: true,
+  app_unavailable: true,
+  app_closed: true,
+  version_mismatch: true,
+  disconnected: true,
+});
+
+/** Checks a connection status the popup receives from the background. */
+export const isConnectionStatus = variants<ConnectionStatus, 'state'>({
+  connecting: object({ state: literal('connecting') }),
+  connected: object({ state: literal('connected'), appVersion: isString }),
+  unavailable: object({
+    state: literal('unavailable'),
+    problem: object({ kind: isProblemKind, detail: nullable(isString) }),
+    retryAt: nullable(isNumber),
+  }),
+});
 
 /**
  * Sorts the browser's disconnect message into a problem the person can act on.

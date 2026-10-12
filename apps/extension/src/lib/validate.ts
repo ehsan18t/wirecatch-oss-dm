@@ -83,6 +83,33 @@ export function oneOf<const G extends readonly Guard<unknown>[]>(
   return (value): value is Guarded<G[number]> => guards.some((guard) => guard(value));
 }
 
+/**
+ * One member of the string union `T`. The members are given as the keys of a record
+ * typed `Record<T, true>`, so the compiler rejects a list that misses a member or names
+ * one that does not exist: the guard cannot fall behind the type.
+ */
+export function member<T extends string>(members: Record<T, true>): Guard<T> {
+  const known = new Set<string>(Object.keys(members));
+  return (value): value is T => typeof value === 'string' && known.has(value);
+}
+
+/** One guard per member of the union `U`, keyed by the member's tag (the `K` field). */
+type VariantGuards<U extends Record<K, string>, K extends string> = {
+  [T in U[K]]: Guard<Extract<U, Record<K, T>>>;
+};
+
+/**
+ * A union told apart by its tag field (`type` unless `K` says otherwise), with one guard
+ * per member. The record must name every member, so the guard cannot fall behind the
+ * type; each member's guard checks the tag itself.
+ */
+export function variants<U extends Record<K, string>, K extends string = 'type'>(
+  guards: VariantGuards<U, K>,
+): Guard<U> {
+  const list: Guard<unknown>[] = Object.values<Guard<unknown>>(guards);
+  return (value): value is U => list.some((guard) => guard(value));
+}
+
 /** The items of `value` that pass `guard`; none when it is not an array. Drops what it cannot read. */
 export function itemsOf<T>(value: unknown, guard: Guard<T>): T[] {
   return Array.isArray(value) ? value.filter(guard) : [];

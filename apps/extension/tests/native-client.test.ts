@@ -160,6 +160,43 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
+  // Only the outer shape of a frame was checked, so an event with settings of the wrong types
+  // was passed on and adopted as the app's settings.
+  it('drops an event whose content does not match the protocol', async () => {
+    client = makeClient(app);
+    const events: Event[] = [];
+    client.onEvent((e) => events.push(e));
+    client.start();
+    await flush();
+    app.openPort?.deliver({
+      kind: 'event',
+      event: { type: 'extension_settings_changed', data: { capture_enabled: 'yes' } },
+    } as never);
+    await flush();
+    expect(events).toEqual([]);
+  });
+
+  it('fails a request at once when its answer does not match the protocol', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    app.answers = false;
+    const settings = client
+      .request({ method: 'get_extension_settings' }, 1_000)
+      .catch((e: unknown) => e);
+    await flush();
+    const request = app.requests.at(-1);
+    if (request === undefined) throw new Error('request missing');
+    app.openPort?.deliver({
+      kind: 'response',
+      id: request.id,
+      outcome: { status: 'ok', value: { type: 'extension_settings', data: { min: 'x' } } },
+    } as never);
+    await flush();
+    expect(await settings).toMatchObject({ kind: 'app', protocolError: null });
+    expect(client.status.state).toBe('connected');
+  });
+
   it('times a request out without dropping the connection', async () => {
     client = makeClient(app);
     client.start();
