@@ -551,6 +551,23 @@ describe('handover', () => {
       );
     });
 
+    it('warns of two possible copies when an unreadable answer came first and the person paused the copy', async () => {
+      s = await setup({
+        configure: (app) => {
+          app.addBehavior = 'unexpected_action';
+          app.addLateMs = 6_000;
+          app.withdrawBehavior = 'hang';
+        },
+      });
+      s.downloads.afterCall = (call) => {
+        if (call === 'resume:1') s.downloads.states.set(1, { state: 'in_progress', paused: true });
+      };
+      const pending = s.hub.onDownload(downloadItem());
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(await pending).toMatchObject({ browserCopy: 'resumed', uncertain: true });
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
+    });
+
     it('warns at once when the late confirmation came while the withdraw was still waiting', async () => {
       s = await setup({
         configure: (app) => {

@@ -257,6 +257,25 @@ describe('NoticeBoard', () => {
     expect(board.current).toEqual([]);
   });
 
+  it('reads the copy again when it moves while a late answer is being judged', async () => {
+    const reads: ((state: DownloadState) => void)[] = [];
+    let now = 0;
+    const board = new NoticeBoard({
+      now: () => (now += 1),
+      changed: () => undefined,
+      readCopy: () => new Promise<DownloadState>((resolve) => reads.push(resolve)),
+    });
+    board.uncertain('h1', 'a.zip', 3);
+    board.confirmedLate('h1', 'a.zip', true);
+    await Promise.resolve();
+    board.downloadMoved(3);
+    reads[0]?.({ state: 'in_progress', paused: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    reads[1]?.({ state: 'in_progress', paused: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(board.current[0]?.message).toContain('Wirecatch took it after all');
+  });
+
   it('dismisses one notice and leaves the others', () => {
     let now = 0;
     const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });

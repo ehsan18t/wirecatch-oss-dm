@@ -50,8 +50,11 @@ export class NoticeBoard {
   #notices: Notice[] = [];
   /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
   readonly #dismissed = new Set<string>();
-  /** Downloads reported running or finished in this run, whose stored notices asking to resume them are done. */
-  readonly #moved = new Set<number>();
+  /**
+   * How many times each download was reported running, finished, interrupted or erased in this
+   * run: stored notices asking to resume one are done, and a state read before a move is stale.
+   */
+  readonly #moved = new Map<number, number>();
   #nextId = 1;
 
   constructor(deps: NoticeBoardDeps) {
@@ -99,15 +102,26 @@ export class NoticeBoard {
   /**
    * The app answered late a handover whose browser copy was kept. What that copy is now decides
    * what to say, since the person may have resumed or paused it since: one the browser lists as
-   * paused only needs removing when the app surely has it, and otherwise keeps its notice; one
-   * no longer listed or interrupted leaves a single copy; any other, including one the browser
-   * will not describe, may be downloading in both places.
+   * paused only needs removing when the app surely has it, and otherwise keeps its notice to
+   * resume it (or, without one, is warned about as possibly in both places); one no longer
+   * listed or interrupted leaves a single copy; any other, including one the browser will not
+   * describe, may be downloading in both places. A state read across a reported move is read
+   * again, so what is said matches the copy as it is.
    */
   async #lateMatch(name: string, downloadId: number | null, certain: boolean): Promise<void> {
-    const state = await this.#readCopy(downloadId);
+    let state: DownloadState | null | 'unreadable';
+    let moves: number | undefined;
+    do {
+      moves = downloadId === null ? undefined : this.#moved.get(downloadId);
+      state = await this.#readCopy(downloadId);
+    } while (downloadId !== null && this.#moved.get(downloadId) !== moves);
     if (isPaused(state)) {
-      if (certain) this.warn(copyLeftInBrowser(name), { downloadId });
-      return;
+      if (certain) {
+        this.warn(copyLeftInBrowser(name), { downloadId });
+        return;
+      }
+      // Its notice to resume it already says to check Wirecatch's list first.
+      if (this.#notices.some((n) => n.downloadId === downloadId && n.untilResumed)) return;
     }
     if (state === null || (state !== 'unreadable' && state.state === 'interrupted')) return;
     const message = certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name);
@@ -146,7 +160,7 @@ export class NoticeBoard {
 
   /** The browser reports a download running or finished: a notice asking to resume it is done. */
   downloadMoved(downloadId: number): void {
-    this.#moved.add(downloadId);
+    this.#moved.set(downloadId, (this.#moved.get(downloadId) ?? 0) + 1);
     const left = this.#notices.filter((n) => !(n.downloadId === downloadId && n.untilResumed));
     if (left.length !== this.#notices.length) this.#set(left);
   }
