@@ -33,4 +33,4 @@ Notes:
 
 ## Security
 
-Anything that handles cookies, credentials, file paths from outside, or downloaded executables gets extra care and tests for the hostile case. Report vulnerabilities privately to the maintainers rather than in a public issue.
+Anything that handles cookies, credentials, file paths from outside, or downloaded executables gets extra care and tests for the hostile case. Report vulnerabilities privately, as `SECURITY.md` says, never in a public issue.

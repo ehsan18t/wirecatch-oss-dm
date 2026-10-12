@@ -23,13 +23,15 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/bridge` | Native messaging host between the extension and the app. |
 | `crates/cli` | The `wirecatch` command-line downloader. |
 | `crates/e2e` | End-to-end tests across extension, bridge and app. |
+| `crates/product` | Product identity constants, generated from `config/product.toml`. Never edit `src` by hand. |
 | `crates/test-support` | Unpublished test servers and helpers every crate's tests share (D26). |
 | `apps/desktop` | Tauri app; its Rust side is `apps/desktop/src-tauri`. |
 | `apps/extension` | WXT browser extension for Chromium and Firefox. |
 | `packages/protocol` | Generated TypeScript types. Never edit `src/generated` by hand. |
 | `packages/eslint-config` | The one ESLint configuration, and the `wirecatch/*` rules. |
+| `packages/product` | Product identity for TypeScript, generated from `config/product.toml`. Never edit `src` by hand. |
 | `packages/units` | Byte units, and how sizes and speeds are shown and typed, for both apps. |
-| `config/` | Product identity shared by every package: today the extension ids; all of it after [AUDIT](docs/AUDIT.md) W2. |
+| `config/` | Product identity (`product.toml`) and the templates of the package hooks and `SECURITY.md`; everything else that carries identity is generated from them (D29). |
 | `scripts/gate.mjs` | Every quality check: the runner, with the checks in `scripts/gate/`. |
 
 ## Gates
@@ -43,6 +45,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 - Install once with `pnpm install`; it also turns on the commit-msg hook.
 - Build the desktop interface (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app itself; the gate compiles the desktop crate against a placeholder page when it is missing.
 - Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files; the gate fails otherwise.
+- Changing `config/product.toml` or `config/templates/` means running `pnpm product:generate` and committing the generated files; the gate fails otherwise. Before a release, `node scripts/gate.mjs publish` must pass: no identity value may still be a `TODO-PRODUCT-` placeholder.
 - `wirecatch-bridge/test-overrides` is for tests only and is never enabled in a build.
 - Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.
 
