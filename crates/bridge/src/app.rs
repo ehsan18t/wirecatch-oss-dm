@@ -20,12 +20,8 @@ const FIRST_RETRY: Duration = Duration::from_millis(20);
 const MAX_RETRY: Duration = Duration::from_millis(250);
 
 /// File name of the desktop app executable, which is installed in the same
-/// folder as the bridge.
-pub(crate) const APP_FILE_NAME: &str = if cfg!(windows) {
-    "wirecatch-app.exe"
-} else {
-    "wirecatch-app"
-};
+/// folder as the bridge (D19).
+pub(crate) use wirecatch_product::APP_FILE_NAME;
 
 /// Argument that starts the app without opening its window.
 pub(crate) const BACKGROUND_ARG: &str = "--background";
