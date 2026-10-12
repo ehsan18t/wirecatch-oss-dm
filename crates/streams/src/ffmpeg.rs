@@ -548,8 +548,8 @@ mod tests {
 
     #[test]
     fn formats_are_recognized_from_their_first_bytes() {
-        let dir = std::env::temp_dir().join(format!("wirecatch-detect-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = wirecatch_test_support::private_dir("detect").unwrap();
+        let dir = dir.path();
         // An ID3 tag of 20 bytes (size 10 plus the header), then a frame.
         let id3 = |frame: &[u8]| {
             let mut bytes = b"ID3\x04\x00\x00\x00\x00\x00\x0a".to_vec();
@@ -591,7 +591,6 @@ mod tests {
             std::fs::write(&path, &bytes).unwrap();
             assert_eq!(InputFormat::detect(&path).unwrap(), expected, "{bytes:?}");
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

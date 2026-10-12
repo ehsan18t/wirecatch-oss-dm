@@ -554,7 +554,8 @@ mod tests {
     #[tokio::test]
     async fn a_failed_write_is_never_covered_by_the_next_one() {
         const CAPACITY: usize = 4;
-        let path = std::env::temp_dir().join(format!("wc-writer-{}", std::process::id()));
+        let dir = wirecatch_test_support::private_dir("writer").unwrap();
+        let path = dir.path().join("f.bin.wcpart");
         let file = Arc::new(File::create(&path).unwrap());
         let table = SharedTable::new(SegmentTable::new(Some(16), 1));
         table.lock().acquire(0).unwrap();
@@ -590,8 +591,6 @@ mod tests {
             0,
             "nothing lands above the hole"
         );
-        drop(file);
-        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

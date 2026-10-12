@@ -11,6 +11,7 @@ use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, test_tls};
+use wirecatch_test_support::private_dir;
 
 fn url(s: &str) -> Url {
     Url::parse(s).unwrap()
@@ -105,18 +106,14 @@ fn data(len: usize) -> Vec<u8> {
         .collect()
 }
 
+/// Downloads `file.bin` from `server` into `dir` over `scheme`, trusting `roots`.
 async fn secure_download(
     server: &FtpServer,
     scheme: &str,
     roots: rustls::RootCertStore,
+    dir: &std::path::Path,
 ) -> Result<Outcome, Error> {
-    let dir = std::env::temp_dir().join(format!(
-        "wirecatch-ftps-{scheme}-{}-{}",
-        std::process::id(),
-        server.port
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    let mut request = DownloadRequest::new(server.url(scheme, "alice:pw@", "file.bin"), &dir);
+    let mut request = DownloadRequest::new(server.url(scheme, "alice:pw@", "file.bin"), dir);
     request.options.connections = 4;
     request.options.max_retries = 0;
     let clients = Clients::with_roots(&request.options, roots);
@@ -146,7 +143,6 @@ fn check_completed(outcome: Outcome, file: &[u8]) {
         std::fs::read(&path).unwrap() == file,
         "downloaded bytes differ"
     );
-    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
 #[tokio::test]
@@ -157,8 +153,11 @@ async fn explicit_tls_download_is_byte_identical() {
     config.tls = Some(tls);
     let server = FtpServer::start(config).await;
 
+    let dir = private_dir("ftps").unwrap();
     check_completed(
-        secure_download(&server, "ftpes", roots).await.unwrap(),
+        secure_download(&server, "ftpes", roots, dir.path())
+            .await
+            .unwrap(),
         &file,
     );
 
@@ -193,8 +192,11 @@ async fn implicit_tls_download_is_byte_identical() {
     let server = FtpServer::start(config).await;
 
     // `ftps://` on a port other than 21 is implicit TLS.
+    let dir = private_dir("ftps").unwrap();
     check_completed(
-        secure_download(&server, "ftps", roots).await.unwrap(),
+        secure_download(&server, "ftps", roots, dir.path())
+            .await
+            .unwrap(),
         &file,
     );
 
@@ -228,7 +230,8 @@ async fn an_untrusted_certificate_is_refused() {
     let server = FtpServer::start(config).await;
 
     // Nothing trusted: the server's self-signed certificate must not pass.
-    let error = secure_download(&server, "ftpes", rustls::RootCertStore::empty())
+    let dir = private_dir("ftps").unwrap();
+    let error = secure_download(&server, "ftpes", rustls::RootCertStore::empty(), dir.path())
         .await
         .unwrap_err();
 
@@ -251,7 +254,10 @@ async fn a_reply_sent_ahead_of_encryption_is_refused() {
     config.quirks.push(Quirk::InjectAfterAuth);
     let server = FtpServer::start(config).await;
 
-    let error = secure_download(&server, "ftpes", roots).await.unwrap_err();
+    let dir = private_dir("ftps").unwrap();
+    let error = secure_download(&server, "ftpes", roots, dir.path())
+        .await
+        .unwrap_err();
 
     assert!(matches!(error, Error::Network(_)), "{error:?}");
     assert!(
@@ -272,7 +278,10 @@ async fn a_server_refusing_to_encrypt_data_is_not_used() {
     config.quirks.push(Quirk::RefuseProtP);
     let server = FtpServer::start(config).await;
 
-    let error = secure_download(&server, "ftpes", roots).await.unwrap_err();
+    let dir = private_dir("ftps").unwrap();
+    let error = secure_download(&server, "ftpes", roots, dir.path())
+        .await
+        .unwrap_err();
 
     assert!(
         matches!(error, Error::FtpTlsUnavailable { .. }),

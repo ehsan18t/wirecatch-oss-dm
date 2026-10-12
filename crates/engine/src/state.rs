@@ -97,7 +97,8 @@ mod tests {
 
     #[test]
     fn round_trip_and_resume_rules() {
-        let path = std::env::temp_dir().join(format!("wc-state-{}.wcstate", std::process::id()));
+        let dir = wirecatch_test_support::private_dir("state").unwrap();
+        let path = dir.path().join("f.bin.wcstate");
         let v = validators(Some("\"abc\""));
         let remaining = vec![ByteRange {
             start: 10,
@@ -114,6 +115,5 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(101), &v));
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
-        std::fs::remove_file(&path).unwrap();
     }
 }

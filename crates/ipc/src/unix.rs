@@ -281,51 +281,35 @@ pub(crate) fn verify_owner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use wirecatch_test_support::{PrivateDir, private_dir};
 
-    /// A private (0700) folder under the system temp folder, removed on drop.
-    struct PrivateDir(PathBuf);
-
-    impl PrivateDir {
-        fn new() -> Self {
-            static NEXT: AtomicU32 = AtomicU32::new(0);
-            let n = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path =
-                std::env::temp_dir().join(format!("wirecatch-ipc-test-{}-{n}", std::process::id()));
-            DirBuilder::new().mode(0o700).create(&path).unwrap();
-            fs::set_permissions(&path, Permissions::from_mode(0o700)).unwrap();
-            Self(path)
-        }
-
-        fn endpoint(&self) -> Endpoint {
-            Endpoint::from_raw(self.0.join(paths::SOCKET_NAME))
-        }
+    /// A private (0700) folder for one test, removed on drop.
+    fn new_dir() -> PrivateDir {
+        private_dir("ipc").unwrap()
     }
 
-    impl Drop for PrivateDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
+    /// The app's endpoint inside `dir`.
+    fn endpoint_in(dir: &PrivateDir) -> Endpoint {
+        Endpoint::from_raw(dir.path().join(paths::SOCKET_NAME))
     }
 
     #[tokio::test]
     async fn socket_is_0600_inside_a_0700_folder() {
-        let dir = PrivateDir::new();
-        let endpoint = dir.endpoint();
+        let dir = new_dir();
+        let endpoint = endpoint_in(&dir);
         let _listener = SocketListener::bind(&endpoint).unwrap();
         let socket = fs::symlink_metadata(endpoint.as_os_str()).unwrap();
         assert!(socket.file_type().is_socket());
         assert_eq!(socket.mode() & 0o777, 0o600);
         assert_eq!(socket.uid(), current_uid());
-        let folder = fs::symlink_metadata(&dir.0).unwrap();
+        let folder = fs::symlink_metadata(dir.path()).unwrap();
         assert_eq!(folder.mode() & 0o777, 0o700);
     }
 
     #[test]
     fn a_new_folder_is_created_private() {
-        let parent = PrivateDir::new();
-        let dir = parent.0.join("wirecatch");
+        let parent = new_dir();
+        let dir = parent.path().join("wirecatch");
         ensure_private_dir(&dir, current_uid()).unwrap();
         let meta = fs::symlink_metadata(&dir).unwrap();
         assert!(meta.is_dir());
@@ -336,8 +320,8 @@ mod tests {
 
     #[test]
     fn an_existing_open_folder_is_refused_and_left_alone() {
-        let parent = PrivateDir::new();
-        let dir = parent.0.join("open");
+        let parent = new_dir();
+        let dir = parent.path().join("open");
         fs::create_dir(&dir).unwrap();
         fs::set_permissions(&dir, Permissions::from_mode(0o755)).unwrap();
         assert!(matches!(
@@ -349,21 +333,21 @@ mod tests {
 
     #[test]
     fn a_folder_owned_by_another_uid_is_refused() {
-        let parent = PrivateDir::new();
+        let parent = new_dir();
         // Stand in for another user by expecting a different uid.
         let other = current_uid().wrapping_add(1);
         assert!(matches!(
-            verify_private_dir(&parent.0, other),
+            verify_private_dir(parent.path(), other),
             Err(IpcError::UnsafeDirectory { .. })
         ));
     }
 
     #[test]
     fn a_symlinked_folder_is_refused() {
-        let parent = PrivateDir::new();
-        let real = parent.0.join("real");
+        let parent = new_dir();
+        let real = parent.path().join("real");
         DirBuilder::new().mode(0o700).create(&real).unwrap();
-        let link = parent.0.join("link");
+        let link = parent.path().join("link");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         assert!(matches!(
             ensure_private_dir(&link, current_uid()),
@@ -373,8 +357,8 @@ mod tests {
 
     #[tokio::test]
     async fn bind_refuses_an_open_folder() {
-        let parent = PrivateDir::new();
-        let dir = parent.0.join("open");
+        let parent = new_dir();
+        let dir = parent.path().join("open");
         fs::create_dir(&dir).unwrap();
         fs::set_permissions(&dir, Permissions::from_mode(0o755)).unwrap();
         let endpoint = Endpoint::from_raw(dir.join(paths::SOCKET_NAME));
@@ -386,8 +370,8 @@ mod tests {
 
     #[tokio::test]
     async fn connector_refuses_a_server_owned_by_another_uid() {
-        let dir = PrivateDir::new();
-        let endpoint = dir.endpoint();
+        let dir = new_dir();
+        let endpoint = endpoint_in(&dir);
         let _listener = SocketListener::bind(&endpoint).unwrap();
         let other = current_uid().wrapping_add(1);
         match connect(&endpoint, other).await {
@@ -403,8 +387,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_stale_socket_is_replaced() {
-        let dir = PrivateDir::new();
-        let endpoint = dir.endpoint();
+        let dir = new_dir();
+        let endpoint = endpoint_in(&dir);
         drop(std::os::unix::net::UnixListener::bind(endpoint.as_os_str()).unwrap());
         assert!(fs::symlink_metadata(endpoint.as_os_str()).is_ok());
         let _listener = SocketListener::bind(&endpoint).unwrap();
@@ -413,8 +397,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_live_listener_is_not_replaced() {
-        let dir = PrivateDir::new();
-        let endpoint = dir.endpoint();
+        let dir = new_dir();
+        let endpoint = endpoint_in(&dir);
         let _first = SocketListener::bind(&endpoint).unwrap();
         assert!(matches!(
             SocketListener::bind(&endpoint),
@@ -424,8 +408,8 @@ mod tests {
 
     #[tokio::test]
     async fn dropping_the_listener_removes_its_socket() {
-        let dir = PrivateDir::new();
-        let endpoint = dir.endpoint();
+        let dir = new_dir();
+        let endpoint = endpoint_in(&dir);
         drop(SocketListener::bind(&endpoint).unwrap());
         assert!(fs::symlink_metadata(endpoint.as_os_str()).is_err());
         assert!(matches!(

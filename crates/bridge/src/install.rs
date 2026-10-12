@@ -1167,28 +1167,11 @@ fn planned_report(command: Command, scope: Scope) -> anyhow::Result<Report> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use wirecatch_test_support::{PrivateDir, private_dir};
 
-    /// A temporary folder removed on drop.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new() -> Self {
-            static NEXT: AtomicU32 = AtomicU32::new(0);
-            let path = std::env::temp_dir().join(format!(
-                "wirecatch-bridge-install-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir_all(&path).unwrap();
-            Self(path)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
+    /// A temporary folder for one test, removed on drop.
+    fn temp_dir() -> PrivateDir {
+        private_dir("bridge-install").unwrap()
     }
 
     /// Real files (inside a temporary folder) and an in-memory registry that
@@ -1449,13 +1432,13 @@ mod tests {
 
     #[test]
     fn windows_install_registers_every_browser_and_uninstall_restores_the_state() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let exe = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
-        let local = temp.0.join("LocalAppData");
+        let local = temp.path().join("LocalAppData");
         let layout = Layout::Windows {
             exe: exe.clone(),
             local_app_data: local.clone(),
@@ -1463,7 +1446,7 @@ mod tests {
         let plan = plan(&config(), &layout).unwrap();
         let mut host = FakeHost::default();
         seed_windows_state(&local, &mut host);
-        let files_before = tree(&temp.0);
+        let files_before = tree(temp.path());
         let registry_before = host.snapshot();
 
         let report = install(&plan, &mut host);
@@ -1473,15 +1456,15 @@ mod tests {
         assert_windows_keys(&plan, &host, &chromium, &firefox);
 
         // Installing again changes nothing.
-        let files_installed = tree(&temp.0);
+        let files_installed = tree(temp.path());
         let registry_installed = host.snapshot();
         assert_eq!(install(&plan, &mut host).failures, 0);
-        assert_eq!(tree(&temp.0), files_installed);
+        assert_eq!(tree(temp.path()), files_installed);
         assert_eq!(host.snapshot(), registry_installed);
 
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        assert_eq!(tree(&temp.0), files_before);
+        assert_eq!(tree(temp.path()), files_before);
         let hosts_keys: Vec<&str> = plan.keys.iter().map(|k| k.hosts_key.as_str()).collect();
         assert_only_empty_parents_added(&registry_before, &host.snapshot(), |key| {
             hosts_keys
@@ -1492,16 +1475,16 @@ mod tests {
         // Uninstalling again is harmless.
         let registry_after = host.snapshot();
         assert_eq!(uninstall(&plan, &mut host).failures, 0);
-        assert_eq!(tree(&temp.0), files_before);
+        assert_eq!(tree(temp.path()), files_before);
         assert_eq!(host.snapshot(), registry_after);
     }
 
     #[test]
     fn keys_earlier_versions_wrote_for_brave_and_vivaldi_are_removed_when_they_are_ours() {
-        let temp = TempDir::new();
-        let local = temp.0.join("LocalAppData");
+        let temp = temp_dir();
+        let local = temp.path().join("LocalAppData");
         let layout = Layout::Windows {
-            exe: temp.0.join("Wirecatch").join("wirecatch-bridge.exe"),
+            exe: temp.path().join("Wirecatch").join("wirecatch-bridge.exe"),
             local_app_data: local.clone(),
         };
         let plan = plan(&config(), &layout).unwrap();
@@ -1699,10 +1682,10 @@ mod tests {
 
     #[test]
     fn linux_install_writes_every_manifest_and_uninstall_restores_the_state() {
-        let temp = TempDir::new();
-        let home = temp.0.join("home");
+        let temp = temp_dir();
+        let home = temp.path().join("home");
         let exe = temp
-            .0
+            .path()
             .join("opt")
             .join("wirecatch")
             .join("wirecatch-bridge");
@@ -1710,7 +1693,7 @@ mod tests {
         let plan = plan(&config(), &layout).unwrap();
         let mut host = FakeHost::default();
         seed_linux_profiles(&home);
-        let before = tree(&temp.0);
+        let before = tree(temp.path());
 
         let report = install(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
@@ -1723,9 +1706,9 @@ mod tests {
         let hosts_dirs: Vec<PathBuf> = plan
             .files
             .iter()
-            .map(|f| f.hosts_dir.strip_prefix(&temp.0).unwrap().to_path_buf())
+            .map(|f| f.hosts_dir.strip_prefix(temp.path()).unwrap().to_path_buf())
             .collect();
-        assert_only_empty_parents_added(&before, &tree(&temp.0), |dir| {
+        assert_only_empty_parents_added(&before, &tree(temp.path()), |dir| {
             hosts_dirs
                 .iter()
                 .any(|hosts| hosts.starts_with(dir) && hosts != dir)
@@ -1763,12 +1746,12 @@ mod tests {
         // Two copies of the bridge for one user share LOCALAPPDATA, so they write
         // the same manifest paths and the same registry values; only the
         // manifest contents (the executable path) differ.
-        let temp = TempDir::new();
-        let local = temp.0.join("LocalAppData");
+        let temp = temp_dir();
+        let local = temp.path().join("LocalAppData");
         let mine = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.0.join("a").join("wirecatch-bridge.exe"),
+                exe: temp.path().join("a").join("wirecatch-bridge.exe"),
                 local_app_data: local.clone(),
             },
         )
@@ -1776,7 +1759,7 @@ mod tests {
         let theirs = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.0.join("b").join("wirecatch-bridge.exe"),
+                exe: temp.path().join("b").join("wirecatch-bridge.exe"),
                 local_app_data: local,
             },
         )
@@ -1787,7 +1770,7 @@ mod tests {
 
         let mut host = FakeHost::default();
         assert_eq!(install(&theirs, &mut host).failures, 0);
-        let files = tree(&temp.0);
+        let files = tree(temp.path());
         let registry = host.snapshot();
 
         let report = uninstall(&mine, &mut host);
@@ -1797,7 +1780,7 @@ mod tests {
             registry,
             "their registry keys were removed"
         );
-        assert_eq!(tree(&temp.0), files, "their manifests were removed");
+        assert_eq!(tree(temp.path()), files, "their manifests were removed");
 
         // Their own uninstall still removes everything.
         assert_eq!(uninstall(&theirs, &mut host).failures, 0);
@@ -1811,12 +1794,12 @@ mod tests {
 
     #[test]
     fn uninstall_removes_a_key_whose_manifest_is_already_gone() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let plan = plan(
             &config(),
             &Layout::Windows {
-                exe: temp.0.join("a").join("wirecatch-bridge.exe"),
-                local_app_data: temp.0.join("LocalAppData"),
+                exe: temp.path().join("a").join("wirecatch-bridge.exe"),
+                local_app_data: temp.path().join("LocalAppData"),
             },
         )
         .unwrap();
@@ -1876,7 +1859,7 @@ mod tests {
     }
 
     /// A per-machine install: the bridge in Program Files, registered for every user, and the same user plan the app runs on each start.
-    fn machine_and_user(temp: &TempDir, exe: &Path) -> (Plan, Plan) {
+    fn machine_and_user(temp: &PrivateDir, exe: &Path) -> (Plan, Plan) {
         let machine = plan(
             &config(),
             &Layout::WindowsMachine {
@@ -1888,7 +1871,7 @@ mod tests {
             &config(),
             &Layout::Windows {
                 exe: exe.to_path_buf(),
-                local_app_data: temp.0.join("LocalAppData"),
+                local_app_data: temp.path().join("LocalAppData"),
             },
         )
         .unwrap();
@@ -1897,9 +1880,9 @@ mod tests {
 
     #[test]
     fn a_machine_registration_lives_next_to_the_bridge_and_under_local_machine() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let exe = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
@@ -1942,9 +1925,9 @@ mod tests {
     // removed files.
     #[test]
     fn a_user_install_steps_aside_for_the_machine_registration() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let exe = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
@@ -1977,14 +1960,14 @@ mod tests {
     // longer rewrote it, so the extension could not start any bridge for that account.
     #[test]
     fn a_user_install_removes_registrations_of_bridges_that_are_gone() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let exe = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
         let (machine, user) = machine_and_user(&temp, &exe);
-        let deleted = temp.0.join("Deleted").join("wirecatch-bridge.exe");
+        let deleted = temp.path().join("Deleted").join("wirecatch-bridge.exe");
         let (_, deleted_user) = machine_and_user(&temp, &deleted);
         let mut host = FakeHost::default();
         assert_eq!(install(&deleted_user, &mut host).failures, 0);
@@ -2007,14 +1990,14 @@ mod tests {
 
     #[test]
     fn a_user_install_leaves_a_registration_of_another_copy_that_exists() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let exe = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
         let (machine, user) = machine_and_user(&temp, &exe);
-        let portable = temp.0.join("Portable").join("wirecatch-bridge.exe");
+        let portable = temp.path().join("Portable").join("wirecatch-bridge.exe");
         files::write(&portable, b"a bridge").unwrap();
         let (_, portable_user) = machine_and_user(&temp, &portable);
         let mut host = FakeHost::default();
@@ -2035,13 +2018,13 @@ mod tests {
 
     #[test]
     fn a_user_install_registers_when_no_machine_registration_covers_this_bridge() {
-        let temp = TempDir::new();
+        let temp = temp_dir();
         let installed = temp
-            .0
+            .path()
             .join("Program Files")
             .join("Wirecatch")
             .join("wirecatch-bridge.exe");
-        let portable = temp.0.join("Portable").join("wirecatch-bridge.exe");
+        let portable = temp.path().join("Portable").join("wirecatch-bridge.exe");
         let (machine, _) = machine_and_user(&temp, &installed);
         let (portable_machine, portable_user) = machine_and_user(&temp, &portable);
         let mut host = FakeHost::default();

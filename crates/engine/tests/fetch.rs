@@ -9,7 +9,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::{fresh_dir, test_data};
+use wirecatch_test_support::{fresh_dir, private_dir, test_data};
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -399,8 +399,8 @@ async fn a_redirect_into_the_local_network_is_blocked() {
     let f = blocking_fetcher(&site.url("index.m3u8"), PrivateNetwork::Block)
         .await
         .unwrap();
-    let path =
-        std::env::temp_dir().join(format!("wirecatch-fetch-redirect-{}", std::process::id()));
+    let dir = private_dir("fetch-redirect").unwrap();
+    let path = dir.path().join("seg.ts");
     let error = f
         .save(&site.url("seg.ts"), None, &path, |_| {})
         .await
@@ -408,7 +408,6 @@ async fn a_redirect_into_the_local_network_is_blocked() {
     assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
     assert_eq!(site.stats.seen().len(), 1, "the site answered the redirect");
     assert!(device.stats.seen().is_empty(), "the hop was never sent");
-    let _ = std::fs::remove_file(path);
 }
 
 #[tokio::test]

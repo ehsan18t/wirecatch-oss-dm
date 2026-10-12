@@ -181,17 +181,10 @@ fn remove_dir(dir: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    fn output(test: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("wirecatch-workdir-{test}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir.join("video.mp4")
-    }
-
     #[test]
     fn finished_segments_survive_only_with_the_right_size() {
-        let out = output("sizes");
+        let dir = wirecatch_test_support::private_dir("workdir").unwrap();
+        let out = dir.path().join("video.mp4");
         let work = WorkDir::open(&out, 1, &[3, 1]).unwrap();
         assert_eq!(path_for(&out).file_name().unwrap(), "video.mp4.wcstream");
         fs::write(work.segment_path(0, 0), b"abc").unwrap();

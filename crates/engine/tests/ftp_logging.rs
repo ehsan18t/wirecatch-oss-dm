@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
-use wirecatch_test_support::test_data;
+use wirecatch_test_support::{private_dir, test_data};
 
 /// Collects everything the engine logs, at every level.
 #[derive(Clone, Default)]
@@ -45,10 +45,9 @@ async fn credentials_are_never_logged() {
         ..Default::default()
     })
     .await;
-    let dir = std::env::temp_dir().join(format!("wirecatch-ftp-logging-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = private_dir("ftp-logging").unwrap();
     let url = server.url("ftp", "alice:hunter2-secret@", "pub/file.bin");
-    let mut request = DownloadRequest::new(url, &dir);
+    let mut request = DownloadRequest::new(url, dir.path());
     request.options.connections = 3;
 
     let outcome = download(
@@ -73,5 +72,4 @@ async fn credentials_are_never_logged() {
         "commands are logged: {logs}"
     );
     assert!(!logs.contains("hunter2"), "the password is never logged");
-    std::fs::remove_dir_all(&dir).unwrap();
 }

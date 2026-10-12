@@ -319,11 +319,10 @@ mod tests {
 
     #[test]
     fn unique_path_skips_existing_files() {
-        let dir = std::env::temp_dir().join(format!("wc-naming-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = wirecatch_test_support::private_dir("naming").unwrap();
+        let dir = dir.path();
         std::fs::write(dir.join("f.zip"), b"x").unwrap();
         std::fs::write(dir.join("f (1).zip.wcpart"), b"x").unwrap();
-        assert_eq!(unique_path(&dir, "f.zip"), dir.join("f (2).zip"));
-        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(unique_path(dir, "f.zip"), dir.join("f (2).zip"));
     }
 }

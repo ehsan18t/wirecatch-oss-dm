@@ -1090,8 +1090,8 @@ mod tests {
             &["93.184.215.14".parse().unwrap()],
             Duration::from_secs(5),
         );
-        let dir = std::env::temp_dir().join(format!("wirecatch-rebind-{}", std::process::id()));
-        let mut request = crate::DownloadRequest::new(url, &dir);
+        let dir = wirecatch_test_support::private_dir("rebind").unwrap();
+        let mut request = crate::DownloadRequest::new(url, dir.path());
         request.options.max_retries = 0;
         request.options.connect_timeout = Duration::from_secs(5);
         let clients = crate::http::Clients::new(&request.options).unwrap();
@@ -1109,7 +1109,6 @@ mod tests {
             0,
             "a connection reached the local address"
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

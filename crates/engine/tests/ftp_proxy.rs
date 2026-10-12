@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
+use wirecatch_test_support::private_dir;
 
 #[tokio::test(flavor = "current_thread")]
 async fn ftp_is_refused_while_a_proxy_is_set() {
@@ -15,7 +16,7 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
         ..Default::default()
     })
     .await;
-    let dir = std::env::temp_dir().join(format!("wirecatch-ftp-proxy-{}", std::process::id()));
+    let dir = private_dir("ftp-proxy").unwrap();
     let url = server.url("ftp", "", "file.bin");
 
     for variable in ["ALL_PROXY", "all_proxy", "FTP_PROXY", "ftp_proxy"] {
@@ -23,7 +24,7 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
         // nothing else reads the environment meanwhile.
         unsafe { std::env::set_var(variable, "http://proxy.example:8080") };
         let error = download(
-            DownloadRequest::new(url.clone(), &dir),
+            DownloadRequest::new(url.clone(), dir.path()),
             Arc::new(Progress::default()),
             CancellationToken::new(),
         )
@@ -58,11 +59,10 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
 
     // Without a proxy the same link downloads.
     download(
-        DownloadRequest::new(url, &dir),
+        DownloadRequest::new(url, dir.path()),
         Arc::new(Progress::default()),
         CancellationToken::new(),
     )
     .await
     .unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -11,7 +11,7 @@ use wirecatch_engine::{
     MAX_CONNECTIONS, Progress, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::{TestResult, test_data};
+use wirecatch_test_support::{TestResult, private_dir, test_data};
 
 /// Long enough for a refused download to return, short enough that a hang fails the test instead of stalling it.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -64,9 +64,9 @@ fn the_defaults_are_valid() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_download_with_an_unworkable_option_is_refused_before_any_request() {
     let server = TestServer::start(test_data(1024), Config::default()).await;
-    let dir = std::env::temp_dir().join(format!("wirecatch-options-{}", std::process::id()));
+    let dir = private_dir("options").unwrap();
     for (name, unworkable) in unworkable() {
-        let mut request = DownloadRequest::new(server.url("file.bin"), &dir);
+        let mut request = DownloadRequest::new(server.url("file.bin"), dir.path());
         unworkable(&mut request.options);
         let refused = download(
             request,

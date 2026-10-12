@@ -14,8 +14,8 @@ use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
 use reqwest::header::HeaderValue;
-use wirecatch_test_support::TestCertificate;
 use wirecatch_test_support::http3::{self as servers, Counts};
+use wirecatch_test_support::{TestCertificate, private_dir};
 
 #[test]
 fn alt_svc_values() {
@@ -94,10 +94,9 @@ async fn fetch_from(
     test: &str,
     tune: impl FnOnce(&mut crate::download::DownloadOptions),
 ) -> (Vec<u8>, Duration) {
-    let dir = std::env::temp_dir().join(format!("wirecatch-h3-{test}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = private_dir(&format!("h3-{test}")).unwrap();
     let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
-    let mut request = DownloadRequest::new(url, &dir);
+    let mut request = DownloadRequest::new(url, dir.path());
     request.options.connections = 4;
     request.options.http3 = http3;
     request.options.max_retries = 0;
@@ -117,7 +116,6 @@ async fn fetch_from(
         panic!("expected Completed, got {outcome:?}");
     };
     let bytes = std::fs::read(&path).unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
     (bytes, took)
 }
 
