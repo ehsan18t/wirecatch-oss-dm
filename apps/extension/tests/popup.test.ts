@@ -2,6 +2,7 @@
  * The popup, rendered in jsdom and wired to the real background hub and native
  * client, which talk to a fake app through a fake native port.
  */
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -126,6 +127,12 @@ describe('popup', () => {
     expect(screen.getByText('ads.example.org')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Ignore this site' })).toBeTruthy();
     expect(isDisabled(screen.getByRole('button', { name: 'Pause all' }))).toBe(false);
+  });
+
+  it('is titled with the product name', async () => {
+    document.title = '';
+    await openPopup();
+    expect(document.title).toBe(PRODUCT_NAME);
   });
 
   it('sends a changed setting to the app', async () => {

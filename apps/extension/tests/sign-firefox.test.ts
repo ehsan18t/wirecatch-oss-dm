@@ -60,7 +60,10 @@ describe('signing the Firefox package', () => {
   });
 
   it('is a package script, with web-ext pinned to an exact version', () => {
-    expect(pkg.scripts['sign:firefox']).toBe('node scripts/sign-firefox.mjs');
+    // The release check runs first, so no package with a placeholder is signed (D29).
+    expect(pkg.scripts['sign:firefox']).toBe(
+      'node ../../scripts/gate.mjs publish && node scripts/sign-firefox.mjs',
+    );
     expect(pkg.devDependencies['web-ext']).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

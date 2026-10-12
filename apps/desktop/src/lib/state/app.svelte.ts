@@ -4,6 +4,7 @@
 // questions, the add-ons, settings files); this one owns the list, the screens and dialogs, the
 // settings and the core's events.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type { AppSettings, DownloadId, UiEvent } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
@@ -11,6 +12,7 @@ import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { Addons } from './addons.svelte';
+import { runningAppName } from './app-name';
 import { Clock } from './clock.svelte';
 import { Connection } from './connection';
 import { DownloadActions } from './download-actions.svelte';
@@ -114,6 +116,8 @@ export class AppState {
   storageProblem = $state<string | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
+  /** The running app's name, for titles and labels: the backend's, the product name until it answers. */
+  name = $state(PRODUCT_NAME);
 
   /** Bumped by every init and dispose, so a superseded init cleans up after itself. */
   #generation = 0;
@@ -208,17 +212,19 @@ export class AppState {
   /** Loads the list, the queues, the settings and the waiting browser files. */
   async #load(current: () => boolean): Promise<void> {
     try {
-      const [downloads, queues, settings, pending] = await Promise.all([
+      const [downloads, queues, settings, pending, name] = await Promise.all([
         this.#backend.listDownloads(),
         this.#backend.listQueues(),
         this.#backend.getSettings(),
         this.#backend.pendingConfirmations(),
+        runningAppName(this.#backend),
       ]);
       if (!current()) return;
       this.downloads.load(downloads);
       this.queues.list = queues;
       this.settings = settings;
       this.questions.pending = pending;
+      this.name = name;
       this.loadError = null;
     } catch (err) {
       if (current()) this.loadError = errorMessage(err);

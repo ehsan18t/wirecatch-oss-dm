@@ -212,16 +212,12 @@ mod tests {
 
     #[test]
     fn command_lines_split_back_into_the_same_arguments() {
-        let line = command_line(
-            Path::new(r"C:\Users\A B\AppData\Local\Wirecatch\wirecatch-app.exe"),
-            &[OsString::from("--background")],
+        let app = format!(
+            r"C:\Users\A B\AppData\Local\Wirecatch\{}.exe",
+            wirecatch_product::APP_EXECUTABLE
         );
-        assert_eq!(
-            line,
-            OsString::from(
-                r#""C:\Users\A B\AppData\Local\Wirecatch\wirecatch-app.exe" --background"#
-            )
-        );
+        let line = command_line(Path::new(&app), &[OsString::from("--background")]);
+        assert_eq!(line, OsString::from(format!(r#""{app}" --background"#)));
         let tricky = command_line(
             Path::new(r"C:\x.exe"),
             &[

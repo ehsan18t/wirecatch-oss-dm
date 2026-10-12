@@ -2,6 +2,7 @@
 // normal browser. It simulates queues, limits, schedules, varied speeds, failures with fixes,
 // and browser captures, and pushes the same `UiEvent`s the real core will.
 
+import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import type {
   AddRequest,
   AppSettingsPatch,
@@ -65,6 +66,10 @@ type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
 export class MockBackend implements Backend {
   readonly kind = 'mock';
+
+  appName() {
+    return Promise.resolve(PRODUCT_NAME);
+  }
   /**
    * The download windows (D23). A browser tab cannot open real windows that share this sample
    * data, so the page shows them inside itself (`MockWindows.svelte`), with the desktop's rules.
@@ -450,7 +455,8 @@ export class MockBackend implements Backend {
 
   pickOpenFile() {
     return this.#call(
-      () => [...this.#state.files.keys()].pop() ?? `${HOME}\\Documents\\wirecatch-settings.json`,
+      () =>
+        [...this.#state.files.keys()].pop() ?? `${HOME}\\Documents\\${PRODUCT_SLUG}-settings.json`,
     );
   }
 

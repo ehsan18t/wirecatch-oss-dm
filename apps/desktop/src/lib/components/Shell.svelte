@@ -92,6 +92,8 @@
   }
 </script>
 
+<svelte:head><title>{app.name}</title></svelte:head>
+
 <svelte:window {onkeydown} {ondragover} {ondrop} />
 <svelte:document {onpaste} />
 
@@ -105,7 +107,7 @@
       <StorageBanner />
       {#if app.loadError}
         <div class="load-error" role="alert">
-          <p class="title">Wirecatch cannot reach its download engine.</p>
+          <p class="title">{app.name} cannot reach its download engine.</p>
           <p>{app.loadError}</p>
           <Button variant="primary" onclick={() => app.init()}>Try again</Button>
         </div>

@@ -1,3 +1,4 @@
+; Generated from config/templates/hooks.nsh and config/product.toml by `pnpm product:generate`. Do not edit: change those and run it again.
 ; Wirecatch hooks for the Tauri NSIS installer (per-machine, in Program Files; D25).
 ;
 ; The installer runs with administrator rights, so it registers the browser bridge for every user of the computer (manifests next to the bridge, keys under HKEY_LOCAL_MACHINE). The app's own per-user registration on each start then steps aside for it, so no user is left with a registration of their own that an uninstall could not reach.

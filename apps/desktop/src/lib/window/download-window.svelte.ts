@@ -3,6 +3,7 @@
 // Download now, that download's progress. It loads only its own question or download, and of
 // each event keeps only what concerns it, so a window costs nothing per download in the list.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type {
   AddonInfo,
   AppSettings,
@@ -21,6 +22,7 @@ import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/eve
 import { errorMessage, Runner } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
 import { ProgressActions } from './progress-actions';
+import { runningAppName } from '../state/app-name';
 
 /** What the window is showing. */
 export type Phase = 'loading' | 'ask' | 'progress' | 'gone';
@@ -84,6 +86,8 @@ export class DownloadWindowState {
   );
 
   phase = $state<Phase>('loading');
+  /** The running app's name, for the window title: the backend's, the product name until it answers. */
+  name = $state(PRODUCT_NAME);
   question = $state<Question | null>(null);
   row = $state<DownloadSummary | null>(null);
   queues = $state<Queue[]>([]);
@@ -142,12 +146,14 @@ export class DownloadWindowState {
       this.#unsubscribe = unsubscribe;
       this.clock.follow(this.#host.backend().sampleData?.now);
       this.clock.start();
-      const [queues, settings] = await Promise.all([
+      const [queues, settings, name] = await Promise.all([
         this.#host.backend().listQueues(),
         this.#host.backend().getSettings(),
+        runningAppName(this.#host.backend()),
       ]);
       this.queues = queues;
       this.settings = settings;
+      this.name = name;
       if ('download' in this.#target) {
         this.row = await this.#host.backend().getDownload(this.#target.download);
         this.phase = 'progress';

@@ -1,5 +1,12 @@
+import {
+  CHROMIUM_PUBLIC_KEY,
+  EXTENSION_DESCRIPTION,
+  FIREFOX_EXTENSION_ID,
+  PRODUCT_NAME,
+  WEBSITE_URL,
+} from '@wirecatch/product';
 import { defineConfig } from 'wxt';
-import { buildDefines, extensionIds as ids } from './build-values';
+import { buildDefines } from './build-values';
 import { SITE_ORIGINS } from './src/lib/site-access';
 
 /**
@@ -22,10 +29,11 @@ export default defineConfig({
     // The public key gives every unpacked Chromium build the one id every bridge trusts (D22).
     // The Chrome Web Store does not accept a manifest with a key, so the store package leaves it
     // out; the store gives it the same id because the first upload carried the private key.
-    const key = mode === STORE_MODE ? {} : { key: ids.chromium_public_key };
+    const key = mode === STORE_MODE ? {} : { key: CHROMIUM_PUBLIC_KEY };
     return {
-      name: 'Wirecatch',
-      description: 'Sends your downloads to the Wirecatch download manager.',
+      name: PRODUCT_NAME,
+      description: EXTENSION_DESCRIPTION,
+      homepage_url: WEBSITE_URL,
       // webRequest: observe responses (never block or change them) to spot video and audio,
       // that is HLS and DASH manifests and media files, so the media button and the popup can
       // offer them. No blocking, declarativeNetRequest or webRequestBlocking permission is asked for.
@@ -41,20 +49,20 @@ export default defineConfig({
       // to read the address of the current tab for "Ignore this site", for webRequest to
       // see media responses, and for the media button's content script.
       host_permissions: SITE_ORIGINS,
-      action: { default_title: 'Wirecatch' },
+      action: { default_title: PRODUCT_NAME },
       // A keyboard way to download a page's media; people can change or remove it in the
       // browser's extension shortcuts page.
       commands: {
         'download-media': {
           suggested_key: { default: 'Alt+Shift+D' },
-          description: "Download this page's video or audio with Wirecatch",
+          description: `Download this page's video or audio with ${PRODUCT_NAME}`,
         },
       },
       ...(isFirefox
         ? {
             browser_specific_settings: {
               gecko: {
-                id: ids.firefox_id,
+                id: FIREFOX_EXTENSION_ID,
                 // storage.session, MV3 host permission prompts and data_collection_permissions.
                 strict_min_version: '140.0',
                 data_collection_permissions: { required: ['none'] },

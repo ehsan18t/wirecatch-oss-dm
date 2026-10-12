@@ -8,13 +8,9 @@ use std::time::Duration;
 use wirecatch_core::{Manager, serve_connection};
 use wirecatch_ipc::{IpcError, Listener};
 
-/// File name of the bridge, installed next to `wirecatch-app`. The bridge starts the app from
-/// its own folder, so both must sit side by side.
-pub const BRIDGE_FILE_NAME: &str = if cfg!(windows) {
-    "wirecatch-bridge.exe"
-} else {
-    "wirecatch-bridge"
-};
+/// File name of the bridge, installed next to the app. The bridge starts the app from its own
+/// folder, so both must sit side by side (D19).
+pub use wirecatch_product::BRIDGE_FILE_NAME;
 
 /// Pause after a failed accept, so a persistent error cannot spin.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
@@ -226,11 +222,7 @@ mod tests {
 
     #[test]
     fn the_bridge_sits_next_to_the_app() {
-        let app = Path::new("install").join(if cfg!(windows) {
-            "wirecatch-app.exe"
-        } else {
-            "wirecatch-app"
-        });
+        let app = Path::new("install").join(wirecatch_product::APP_FILE_NAME);
         let bridge = bridge_path(&app).unwrap();
         assert_eq!(bridge, Path::new("install").join(BRIDGE_FILE_NAME));
     }

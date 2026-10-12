@@ -1,3 +1,4 @@
+import { NATIVE_HOST_NAME } from '@wirecatch/product';
 import { browser } from 'wxt/browser';
 import type { NativePort, NativeTransport } from './client';
 import { disconnectMessage } from './status';
@@ -8,7 +9,7 @@ import { disconnectMessage } from './status';
  */
 export function browserTransport(): NativeTransport {
   return {
-    connect: (): NativePort => browser.runtime.connectNative(__NATIVE_HOST_NAME__),
+    connect: (): NativePort => browser.runtime.connectNative(NATIVE_HOST_NAME),
     disconnectReason: (port) => disconnectMessage(browser.runtime.lastError, port),
   };
 }

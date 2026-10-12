@@ -4,6 +4,9 @@ description = "Command-line interface for the Wirecatch download engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 # Only the engine is published to crates.io.
 publish = false
 
@@ -13,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 wirecatch-engine.workspace = true
+wirecatch-product.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 indicatif.workspace = true

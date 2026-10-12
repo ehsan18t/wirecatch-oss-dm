@@ -158,13 +158,14 @@ fn rounded(value: f64) -> (f64, usize) {
     (round(value, digits), digits)
 }
 
-/// The tray tooltip: what runs and how fast.
+/// The tray tooltip: which app this is (by its channel's name), what runs and how fast.
 #[must_use]
 pub fn tooltip(active: usize, speed: u64) -> String {
+    let name = crate::host::CHANNEL.name();
     match active {
-        0 => "Wirecatch: nothing downloading".to_owned(),
-        1 => format!("Wirecatch: 1 download, {}/s", format_bytes(speed)),
-        n => format!("Wirecatch: {n} downloads, {}/s", format_bytes(speed)),
+        0 => format!("{name}: nothing downloading"),
+        1 => format!("{name}: 1 download, {}/s", format_bytes(speed)),
+        n => format!("{name}: {n} downloads, {}/s", format_bytes(speed)),
     }
 }
 
@@ -267,11 +268,13 @@ mod tests {
 
     #[test]
     fn tooltip_reads_plainly() {
-        assert_eq!(tooltip(0, 0), "Wirecatch: nothing downloading");
-        assert_eq!(tooltip(1, 1536), "Wirecatch: 1 download, 1.50 KB/s");
+        // The running app names itself: "Wirecatch Dev" in a debug build.
+        let name = crate::host::CHANNEL.name();
+        assert_eq!(tooltip(0, 0), format!("{name}: nothing downloading"));
+        assert_eq!(tooltip(1, 1536), format!("{name}: 1 download, 1.50 KB/s"));
         assert_eq!(
             tooltip(3, 12 * MIB + 400 * KIB),
-            "Wirecatch: 3 downloads, 12.4 MB/s"
+            format!("{name}: 3 downloads, 12.4 MB/s")
         );
     }
 

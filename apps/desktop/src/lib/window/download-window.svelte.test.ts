@@ -2,6 +2,7 @@
 // Cancel, the media add-on for a picked quality, questions closed elsewhere, and the progress
 // that follows.
 
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { mockBackend, windowState } from '$lib/testing/setup';
 import { BackendError } from '../backend';
@@ -341,5 +342,29 @@ describe('closing a window', () => {
     win.dispose();
     await loading;
     expect(stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('the window title', () => {
+  it('shows the question as usual when the shell will not say its name', async () => {
+    const b = backend();
+    b.simulateSlowReading();
+    vi.spyOn(b, 'appName').mockRejectedValue(new Error('core:app:allow-name not allowed'));
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    expect(win.phase).not.toBe('gone');
+    expect(win.question?.kind).toBe('reading');
+    expect(win.name).toBe(PRODUCT_NAME);
+  });
+
+  it('names the running app, as the main window does', async () => {
+    const b = backend();
+    b.simulateSlowReading();
+    vi.spyOn(b, 'appName').mockResolvedValue('Wirecatch Dev');
+    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const { win } = windowState(b, { question: id });
+    await win.init();
+    expect(win.name).toBe('Wirecatch Dev');
   });
 });

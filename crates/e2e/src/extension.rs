@@ -14,6 +14,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, timeout, timeout_at};
 use wirecatch_ipc::Endpoint;
+use wirecatch_product::{CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME};
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::extension::{
     AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
@@ -42,12 +43,12 @@ pub enum Caller {
 impl Caller {
     fn args(&self, scratch: &std::path::Path) -> Vec<OsString> {
         match self {
-            Self::Chrome => vec![bridge::chrome_origin().into()],
+            Self::Chrome => vec![CHROMIUM_EXTENSION_ORIGIN.into()],
             Self::ChromeOrigin(origin) => vec![origin.into()],
             // Firefox passes the host manifest's path, then the add-on id.
             Self::Firefox => vec![
-                scratch.join("app.wirecatch.bridge.json").into(),
-                bridge::firefox_id().into(),
+                scratch.join(format!("{NATIVE_HOST_NAME}.json")).into(),
+                FIREFOX_EXTENSION_ID.into(),
             ],
         }
     }
@@ -123,7 +124,12 @@ impl FakeExtension {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let mut child = command.spawn().expect("could not start wirecatch-bridge");
+        let mut child = command.spawn().unwrap_or_else(|e| {
+            panic!(
+                "could not start {}: {e}",
+                wirecatch_product::BRIDGE_EXECUTABLE
+            )
+        });
         let stdin = child.stdin.take();
         let mut stdout = child.stdout.take().expect("stdout is piped");
         let mut stderr_pipe = child.stderr.take().expect("stderr is piped");

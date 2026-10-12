@@ -238,7 +238,7 @@ mod tests {
         let data = dir.path().join("data");
         std::fs::create_dir(&data).unwrap();
         restrict(&data).unwrap();
-        let file = data.join("wirecatch.db");
+        let file = data.join(crate::DATABASE_FILE);
         std::fs::write(&file, b"x").unwrap();
 
         let sid = imp::current_user_sid().unwrap();
@@ -259,7 +259,7 @@ mod tests {
     fn only_the_current_user_can_open_the_folder_and_the_database() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("wirecatch.db");
+        let file = dir.path().join(crate::DATABASE_FILE);
         std::fs::write(&file, b"x").unwrap();
         restrict(dir.path()).unwrap();
         restrict(&file).unwrap();

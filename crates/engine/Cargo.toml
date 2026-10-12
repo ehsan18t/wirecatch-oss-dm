@@ -4,12 +4,14 @@ description = "Fast, resumable HTTP(S) and FTP(S) download engine: parallel conn
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 # The oldest Rust this published crate builds with; CI checks it (the msrv job). Other crates build with rust-toolchain.toml only.
 rust-version = "1.88"
 readme = "README.md"
 keywords = ["download", "downloader", "http", "ftp", "resume"]
 categories = ["network-programming", "web-programming::http-client", "asynchronous"]
-# `repository` and `homepage` are added once the public GitHub organization exists.
 # The package is the library only. The tests and examples use the unpublished
 # wirecatch-test-support crate, so they could not build from the package; they
 # run in the workspace instead. The gate checks the list (engine-package).
