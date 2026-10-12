@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use wirecatch_engine::numeric::f64_to_u64;
+use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
 use wirecatch_protocol::app::{
     MediaSubtitle, OutputFit, OutputFormat, PER_MILLE_DONE, StreamAction,
 };
@@ -572,9 +572,7 @@ pub(crate) fn video_kbps(
     });
     // `kbps` is positive here, so a rate that is no `u32` (or no `u64`, or
     // infinite after the efficiency factor) is one too large.
-    let whole = f64_to_u64(kbps.round())
-        .and_then(|k| u32::try_from(k).ok())
-        .unwrap_or(u32::MAX);
+    let whole = f64_to_u64(kbps.round()).map_or(u32::MAX, saturating_cast);
     whole.clamp(MIN_VIDEO_KBPS, MAX_VIDEO_KBPS)
 }
 
