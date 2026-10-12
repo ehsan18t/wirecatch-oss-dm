@@ -3,10 +3,5 @@
     "max-lines": {
       "count": 1
     }
-  },
-  "src/entrypoints/background.ts": {
-    "max-lines-per-function": {
-      "count": 1
-    }
   }
 }
