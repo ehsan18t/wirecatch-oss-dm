@@ -244,7 +244,7 @@ impl Store {
     /// `on_failure` is called (on the database thread) with the reason whenever a
     /// batch of writes could not be saved even after retrying.
     ///
-    /// A database file SQLite reports as damaged is moved aside and a new list is started, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recovery`] says so.
+    /// A database file SQLite reports as damaged is moved aside and a new list is started, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recoveries`] says so.
     pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
         Self::open_with(
             dir,

@@ -18,11 +18,7 @@ use crate::naming::{self, partial_files};
 impl Manager {
     /// Moves a download to `folder` (a full path or a `{Downloads}`-style path).
     ///
-    /// A finished download's file is moved. An unfinished download's partial files
-    /// move with it, so it continues where it was: a running one is stopped, moved
-    /// and started again, and a failed one (for example because its old folder
-    /// could not be written) goes back in line. The folder is created if needed and
-    /// must be writable. If the name is taken there, ` (1)` and so on is added.
+    /// A finished download's file is moved. An unfinished download's partial files move with it, so it continues where it was: a running one is stopped, moved and started again, and a failed one (for example because its old folder could not be written) goes back in line. The folder is created if needed and must be writable. If the name is taken there, ` (1)` and so on is added.
     ///
     /// # Errors
     ///
