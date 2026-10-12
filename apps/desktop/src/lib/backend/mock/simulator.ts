@@ -1,7 +1,14 @@
 // The simulation step: decides what runs and why the rest waits, moves bytes within the speed
 // limits, finishes joining and converting, and moves add-on installs along.
 
-import type { DownloadId, DownloadSummary, Queue, QueueId, WaitReason } from '@wirecatch/protocol';
+import {
+  PER_MILLE_DONE,
+  type DownloadId,
+  type DownloadSummary,
+  type Queue,
+  type QueueId,
+  type WaitReason,
+} from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { scheduleAllows } from '../../format';
 import { between, type Spread } from './rng';
@@ -256,11 +263,13 @@ function processRow(s: Step, row: DownloadSummary, sim: Sim) {
     row.processing = null;
     s.changed.set(row.id, row);
   } else if (row.processing && row.processing.per_mille !== null) {
-    // The per-mille scale (1000, and 999 short of done) is the protocol's; it is named here once
-    // `crates/protocol` generates it (lint plan, decision 5).
+    // Short of done until the step ends, as the core reports it.
     row.processing = {
       step: row.processing.step,
-      per_mille: Math.min(999, Math.floor((sim.processingMs / takes) * 1000)),
+      per_mille: Math.min(
+        PER_MILLE_DONE - 1,
+        Math.floor((sim.processingMs / takes) * PER_MILLE_DONE),
+      ),
     };
     s.changed.set(row.id, row);
   }

@@ -1,16 +1,17 @@
 // Turning raw numbers from the backend into short, readable text.
 
-import type {
-  Category,
-  DownloadSummary,
-  DownloadStatus,
-  FixAction,
-  MediaKind,
-  ProcessingStep,
-  Schedule,
-  TimeOfDay,
-  WaitReason,
-  Weekday,
+import {
+  PER_MILLE_DONE,
+  type Category,
+  type DownloadSummary,
+  type DownloadStatus,
+  type FixAction,
+  type MediaKind,
+  type ProcessingStep,
+  type Schedule,
+  type TimeOfDay,
+  type WaitReason,
+  type Weekday,
 } from '@wirecatch/protocol';
 import { formatBytes, formatRate } from '@wirecatch/units';
 import { ordinal } from './text';
@@ -68,7 +69,9 @@ export function processingFraction(
 ): number | null {
   if (row.status !== 'processing') return null;
   const perMille = row.processing?.per_mille;
-  return perMille === null || perMille === undefined ? null : Math.min(1, perMille / 1000);
+  return perMille === null || perMille === undefined
+    ? null
+    : Math.min(1, perMille / PER_MILLE_DONE);
 }
 
 /** A whole job in percent: the top of every progress bar. */

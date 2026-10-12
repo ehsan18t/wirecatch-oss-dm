@@ -1,10 +1,20 @@
 <script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Search from '@lucide/svelte/icons/search';
-  import type { AppSettings, Category, OutputFormat, Theme } from '@wirecatch/protocol';
+  import {
+    AUDIO_KBPS_CHOICES,
+    MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONNECTIONS_PER_DOWNLOAD,
+    type AppSettings,
+    type Category,
+    type OutputFormat,
+    type Theme,
+  } from '@wirecatch/protocol';
+  import { inUnit, MB, splitKbOrMb, toBytes } from '@wirecatch/units';
   import { tick } from 'svelte';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
-  import { FORMAT_LABEL, KBPS_CHOICES, nearestKbps } from '$lib/media-output';
+  import { concurrentDownloads, connectionsPerDownload } from '$lib/limits';
+  import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
   import {
     SECTIONS,
     searchSettings,
@@ -19,8 +29,8 @@
   import Toggle from './Toggle.svelte';
 
   const app = getApp();
-  const KB = 1024;
-  const MB = 1024 * 1024;
+  /** The total speed limit a person starts from when turning it on; a suggestion, not a default of the core. */
+  const FIRST_SPEED_LIMIT = 5 * MB;
 
   let query = $state('');
   /** How long a setting opened from elsewhere stays highlighted, so the eye finds it. */
@@ -84,21 +94,12 @@
     if (picked) save((d) => void (d.default_folder = picked));
   }
 
-  const sizeUnit = $derived(s && s.extension.min_capture_size >= MB ? 'mb' : 'kb');
-  const sizeValue = $derived(
-    s ? Math.round((s.extension.min_capture_size / (sizeUnit === 'mb' ? MB : KB)) * 10) / 10 : 0,
-  );
+  const minSize = $derived(splitKbOrMb(s?.extension.min_capture_size ?? 0));
 
-  function setMinSize(value: number, unit: string) {
-    const bytes = Math.max(
-      0,
-      Math.round((Number.isFinite(value) ? value : 0) * (unit === 'mb' ? MB : KB)),
-    );
+  /** Saves the smallest file the extension catches; anything but a size of zero or more is 0. */
+  function setMinSize(value: string | number, unit: 'KB' | 'MB') {
+    const bytes = toBytes(value, unit) ?? 0;
     save((d) => void (d.extension.min_capture_size = bytes));
-  }
-
-  function clampInt(v: number, min: number, max: number, fallback: number): number {
-    return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback;
   }
 </script>
 
@@ -346,17 +347,18 @@
             step="1"
             aria-labelledby="label-min_capture_size"
             aria-describedby={help}
-            value={sizeValue}
-            onchange={(e) => setMinSize(Number(e.currentTarget.value), sizeUnit)}
+            value={minSize.value}
+            onchange={(e) => setMinSize(e.currentTarget.value, minSize.unit)}
           />
           <select
             class="field"
             aria-label="Unit"
-            value={sizeUnit}
-            onchange={(e) => setMinSize(sizeValue, e.currentTarget.value)}
+            value={minSize.unit}
+            onchange={(e) =>
+              setMinSize(minSize.value, e.currentTarget.value === 'MB' ? 'MB' : 'KB')}
           >
-            <option value="kb">KB</option>
-            <option value="mb">MB</option>
+            <option value="KB">KB</option>
+            <option value="MB">MB</option>
           </select>
         {:else if def.id === 'default_queue'}
           <select
@@ -428,7 +430,7 @@
           />
         {:else if def.id === 'media_audio'}
           {@const audio = s.media.audio}
-          {@const kbpsList = KBPS_CHOICES[audio.format]}
+          {@const kbpsList = AUDIO_KBPS_CHOICES[audio.format]}
           <select
             class="field"
             aria-labelledby="label-media_audio"
@@ -438,7 +440,7 @@
               const v = e.currentTarget.value as OutputFormat;
               save((d) => {
                 d.media.audio.format = v;
-                const list = KBPS_CHOICES[v];
+                const list = AUDIO_KBPS_CHOICES[v];
                 const kbps = d.media.audio.audio_kbps;
                 d.media.audio.audio_kbps = list && kbps !== null ? nearestKbps(list, kbps) : null;
               });
@@ -469,7 +471,8 @@
             label="Limit total speed"
             describedby={help}
             checked={s.global_speed_limit !== null}
-            onchange={(v: boolean) => save((d) => void (d.global_speed_limit = v ? 5 * MB : null))}
+            onchange={(v: boolean) =>
+              save((d) => void (d.global_speed_limit = v ? FIRST_SPEED_LIMIT : null))}
           />
           {#if s.global_speed_limit !== null}
             <input
@@ -478,11 +481,10 @@
               min="0.1"
               step="0.5"
               aria-label="Speed limit in megabytes per second"
-              value={Math.round((s.global_speed_limit / MB) * 10) / 10}
+              value={inUnit(s.global_speed_limit, 'MB')}
               onchange={(e) => {
-                const v = Number(e.currentTarget.value);
-                if (Number.isFinite(v) && v > 0)
-                  save((d) => void (d.global_speed_limit = Math.round(v * MB)));
+                const bytes = toBytes(e.currentTarget.value, 'MB');
+                if (bytes !== null && bytes > 0) save((d) => void (d.global_speed_limit = bytes));
               }}
             />
             <span class="unit">MB/s</span>
@@ -503,12 +505,12 @@
           <input
             type="range"
             min="1"
-            max="32"
+            max={MAX_CONNECTIONS_PER_DOWNLOAD}
             aria-labelledby="label-connections_per_download"
             aria-describedby={help}
             value={s.connections_per_download}
             onchange={(e) => {
-              const v = clampInt(Number(e.currentTarget.value), 1, 32, 8);
+              const v = connectionsPerDownload(Number(e.currentTarget.value));
               save((d) => void (d.connections_per_download = v));
             }}
           />
@@ -518,12 +520,12 @@
             class="field narrow"
             type="number"
             min="1"
-            max="32"
+            max={MAX_CONCURRENT_DOWNLOADS}
             aria-labelledby="label-max_concurrent_downloads"
             aria-describedby={help}
             value={s.max_concurrent_downloads}
             onchange={(e) => {
-              const v = clampInt(Number(e.currentTarget.value), 1, 32, 4);
+              const v = concurrentDownloads(Number(e.currentTarget.value));
               save((d) => void (d.max_concurrent_downloads = v));
             }}
           />

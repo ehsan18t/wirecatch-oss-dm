@@ -2,14 +2,16 @@
 // each means (copied in seconds, or converted), the audio qualities, the subtitles to tick first
 // and the notes the window shows. The core decides what is offered; this only presents it.
 
-import type {
-  MediaChoice,
-  MediaOption,
-  MediaSelection,
-  MediaSubtitle,
-  OutputDefaults,
-  OutputFit,
-  OutputFormat,
+import {
+  AUDIO_DEFAULT_KBPS,
+  AUDIO_KBPS_CHOICES,
+  type MediaChoice,
+  type MediaOption,
+  type MediaSelection,
+  type MediaSubtitle,
+  type OutputDefaults,
+  type OutputFit,
+  type OutputFormat,
 } from '@wirecatch/protocol';
 
 /** Each format's name for a person. */
@@ -25,19 +27,8 @@ export const FORMAT_LABEL: Record<OutputFormat, string> = {
   wav: 'WAV',
 };
 
-/** The audio qualities offered for each lossy audio format, in kbps (the core accepts these). */
-export const KBPS_CHOICES: Partial<Record<OutputFormat, readonly number[]>> = {
-  mp3: [128, 192, 256, 320],
-  m4a: [128, 192, 256],
-  opus: [96, 128, 160, 192],
-};
-
-/** The usual quality of each lossy audio format, used when the audio must be converted. */
-export const DEFAULT_KBPS: Partial<Record<OutputFormat, number>> = {
-  mp3: 192,
-  m4a: 192,
-  opus: 128,
-};
+/** A bit rate in kbps times a length in milliseconds is a number of bits; this makes it bytes. */
+const BITS_PER_BYTE = 8;
 
 /** Formats that keep every bit of the sound. */
 const LOSSLESS: ReadonlySet<OutputFormat> = new Set(['flac', 'wav']);
@@ -74,11 +65,11 @@ export function kbpsFor(
   format: OutputFormat,
   wanted: number | null,
 ): number | null {
-  const choices = KBPS_CHOICES[format];
+  const choices = AUDIO_KBPS_CHOICES[format];
   if (!choices) return null;
   if (wanted !== null) return nearestKbps(choices, wanted);
   if (fit && fit.audio !== 'encode') return null;
-  return DEFAULT_KBPS[format] ?? choices[0] ?? null;
+  return AUDIO_DEFAULT_KBPS[format] ?? choices[0] ?? null;
 }
 
 /** Whether `language` (a site's code, `en-GB`) is the language `wanted` (`en`, `en-gb`). */
@@ -211,7 +202,7 @@ export function sizeFor(
   const fit = fitFor(option, format);
   if (!fit) return option.size;
   if (option.audio_only && kbps !== null && durationMs !== null) {
-    return Math.round((kbps * durationMs) / 8);
+    return Math.round((kbps * durationMs) / BITS_PER_BYTE);
   }
   return fit.size;
 }
@@ -226,7 +217,7 @@ export function outputSelection(
   const offered = new Set(choice.subtitles.map((s) => s.id));
   return {
     output: fit ? picked.format : 'original',
-    audio_kbps: fit && KBPS_CHOICES[picked.format] ? picked.kbps : null,
+    audio_kbps: fit && AUDIO_KBPS_CHOICES[picked.format] ? picked.kbps : null,
     subtitles: picked.subtitles.filter((id) => offered.has(id)),
     subtitle_files: picked.subtitleFiles,
     chapters: picked.chapters && choice.chapters && (fit?.chapters ?? false),

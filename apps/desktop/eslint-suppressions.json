@@ -1,9 +1,4 @@
 {
-  "src/lib/backend/mock/simulator.ts": {
-    "wirecatch/no-magic-numbers": {
-      "count": 2
-    }
-  },
   "src/lib/commands.ts": {
     "complexity": {
       "count": 1
@@ -108,11 +103,8 @@
     }
   },
   "src/lib/components/QueueDialog.svelte": {
-    "complexity": {
-      "count": 1
-    },
     "wirecatch/no-magic-numbers": {
-      "count": 4
+      "count": 1
     }
   },
   "src/lib/components/RefreshDialog.svelte": {
@@ -147,7 +139,7 @@
       "count": 7
     },
     "wirecatch/no-magic-numbers": {
-      "count": 11
+      "count": 2
     }
   },
   "src/lib/components/Shell.svelte": {
@@ -209,16 +201,8 @@
       "count": 4
     }
   },
-  "src/lib/format.ts": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
   "src/lib/media-output.ts": {
     "complexity": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },

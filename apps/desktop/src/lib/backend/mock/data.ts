@@ -1,6 +1,14 @@
 // Sample settings, queues and folders for the mock backend, set up as on a believable Windows machine.
 
-import type { AddonInfo, AppSettings, Category, CategoryRule, Queue } from '@wirecatch/protocol';
+import {
+  DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+  DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+  type AddonInfo,
+  type AppSettings,
+  type Category,
+  type CategoryRule,
+  type Queue,
+} from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 
 export const HOME = 'C:\\Users\\you';
@@ -68,8 +76,8 @@ export function defaultSettings(): AppSettings {
   return {
     default_folder: '{Downloads}',
     categories: defaultCategoryRules(),
-    connections_per_download: 8,
-    max_concurrent_downloads: 4,
+    connections_per_download: DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     global_speed_limit: null,
     extension: {
       capture_enabled: true,

@@ -4,7 +4,13 @@
   // A quality whose video and audio must be joined while the media add-on is missing installs the
   // add-on first. Save as, audio quality, subtitles and chapters start from the last choices for
   // videos or for audio only, and every choice says before it starts whether it converts.
-  import type { MediaChoice, MediaOption, OutputFormat, QueueId } from '@wirecatch/protocol';
+  import {
+    AUDIO_KBPS_CHOICES,
+    type MediaChoice,
+    type MediaOption,
+    type OutputFormat,
+    type QueueId,
+  } from '@wirecatch/protocol';
   import { isInstalled } from '$lib/addons';
   import { earlierNote, hostOf } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
@@ -13,7 +19,6 @@
     fitFor,
     FORMAT_LABEL,
     formatChoiceLabel,
-    KBPS_CHOICES,
     kbpsFor,
     outputSelection,
     qualityNotes,
@@ -48,7 +53,7 @@
 
   const picked = $derived(choice.options.find((o) => o.id === optionId));
   const fit = $derived(fitFor(picked, format));
-  const kbpsChoices = $derived(fit ? (KBPS_CHOICES[format] ?? null) : null);
+  const kbpsChoices = $derived(fit ? (AUDIO_KBPS_CHOICES[format] ?? null) : null);
   /** Save as, subtitles or chapters to show for this quality and video. */
   const offersOutput = $derived(
     (picked?.outputs.length ?? 0) > 1 || choice.subtitles.length > 0 || choice.chapters,

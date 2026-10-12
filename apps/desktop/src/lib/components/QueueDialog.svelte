@@ -1,7 +1,16 @@
 <script lang="ts">
-  import type { Queue, QueueId, Weekday } from '@wirecatch/protocol';
+  import {
+    MAX_CONCURRENT_DOWNLOADS,
+    NEW_QUEUE_MAX_CONCURRENT,
+    type Queue,
+    type QueueId,
+    type TimeOfDay,
+    type Weekday,
+  } from '@wirecatch/protocol';
+  import { MB, splitKbOrMb, toBytes } from '@wirecatch/units';
   import { formatDays, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
+  import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
   import Dialog from './Dialog.svelte';
 
@@ -10,19 +19,22 @@
 
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
   const original = (() => (id === null ? undefined : app.queueById(id)))();
-  const KB = 1024;
-  const MB = 1024 * 1024;
+  // What the form suggests when a limit or schedule is turned on for a queue that has none.
+  // The core makes a new queue without either; these are only where the fields start.
+  const FIRST_SPEED_LIMIT = 2 * MB;
+  const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
+  const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
 
   let name = $state(original?.name ?? '');
-  let maxConcurrent = $state(original?.max_concurrent ?? 2);
+  let maxConcurrent = $state(original?.max_concurrent ?? NEW_QUEUE_MAX_CONCURRENT);
   let limitOn = $state(original !== undefined && original.speed_limit !== null);
-  const initialLimit = original?.speed_limit ?? 2 * MB;
-  let limitUnit = $state<'kb' | 'mb'>(initialLimit < MB ? 'kb' : 'mb');
-  let limitValue = $state(Math.round((initialLimit / (initialLimit < MB ? KB : MB)) * 10) / 10);
+  const initialLimit = splitKbOrMb(original?.speed_limit ?? FIRST_SPEED_LIMIT);
+  let limitUnit = $state(initialLimit.unit);
+  let limitValue = $state(initialLimit.value);
   let scheduleOn = $state(original !== undefined && original.schedule !== null);
-  let start = $state(formatTime(original?.schedule?.start ?? { hour: 1, minute: 0 }));
+  let start = $state(formatTime(original?.schedule?.start ?? FIRST_START));
   let stopOn = $state(original?.schedule ? original.schedule.stop !== null : true);
-  let stop = $state(formatTime(original?.schedule?.stop ?? { hour: 7, minute: 0 }));
+  let stop = $state(formatTime(original?.schedule?.stop ?? FIRST_STOP));
   let days = $state<Weekday[]>(original?.schedule?.days ?? []);
   let error = $state('');
   let confirmDelete = $state(false);
@@ -42,33 +54,46 @@
     return `Runs only on ${words === 'Weekdays' || words === 'Weekends' ? words.toLowerCase() : words}.`;
   });
 
+  /** The speed limit the form describes, or why it is not one. */
+  function readLimit(): { limit: Queue['speed_limit'] } | string {
+    if (!limitOn) return { limit: null };
+    const limit = toBytes(limitValue, limitUnit);
+    return limit === null || limit <= 0
+      ? 'Enter a speed limit above zero, or turn the limit off.'
+      : { limit };
+  }
+
+  /** The schedule the form describes, or why it is not one. */
+  function readSchedule(): { schedule: Queue['schedule'] } | string {
+    if (!scheduleOn) return { schedule: null };
+    const s = parseTime(start);
+    const e = stopOn ? parseTime(stop) : null;
+    if (!s) return 'Enter a start time like 01:00.';
+    if (stopOn && !e) return 'Enter a stop time like 07:00.';
+    if (e?.hour === s.hour && e.minute === s.minute)
+      return 'The start and stop times are the same. Pick a different stop time.';
+    // Seven ticked days is the same as every day.
+    const every = days.length === DAYS_PER_WEEK;
+    return {
+      schedule: { start: s, stop: e, days: every ? [] : WEEKDAYS.filter((d) => days.includes(d)) },
+    };
+  }
+
   function build(base: Queue): Queue | string {
     if (!name.trim()) return 'Give the queue a name.';
-    const max = Math.round(maxConcurrent);
-    if (!Number.isFinite(max) || max < 1 || max > 32)
-      return 'Downloads at the same time must be between 1 and 32.';
-    let speed_limit: number | null = null;
-    if (limitOn) {
-      if (!Number.isFinite(limitValue) || limitValue <= 0)
-        return 'Enter a speed limit above zero, or turn the limit off.';
-      speed_limit = Math.round(limitValue * (limitUnit === 'kb' ? KB : MB));
-    }
-    let schedule: Queue['schedule'] = null;
-    if (scheduleOn) {
-      const s = parseTime(start);
-      const e = stopOn ? parseTime(stop) : null;
-      if (!s) return 'Enter a start time like 01:00.';
-      if (stopOn && !e) return 'Enter a stop time like 07:00.';
-      if (e?.hour === s.hour && e.minute === s.minute)
-        return 'The start and stop times are the same. Pick a different stop time.';
-      // Seven ticked days is the same as every day.
-      schedule = {
-        start: s,
-        stop: e,
-        days: days.length === DAYS_PER_WEEK ? [] : WEEKDAYS.filter((d) => days.includes(d)),
-      };
-    }
-    return { ...base, name: name.trim(), max_concurrent: max, speed_limit, schedule };
+    const tooMany = queueConcurrentProblem(maxConcurrent);
+    if (tooMany !== null) return tooMany;
+    const limit = readLimit();
+    if (typeof limit === 'string') return limit;
+    const schedule = readSchedule();
+    if (typeof schedule === 'string') return schedule;
+    return {
+      ...base,
+      name: name.trim(),
+      max_concurrent: Math.round(maxConcurrent),
+      speed_limit: limit.limit,
+      schedule: schedule.schedule,
+    };
   }
 
   async function save() {
@@ -147,7 +172,7 @@
         class="field narrow"
         type="number"
         min="1"
-        max="32"
+        max={MAX_CONCURRENT_DOWNLOADS}
         aria-describedby="queue-max-help"
         bind:value={maxConcurrent}
       />
@@ -171,8 +196,8 @@
             bind:value={limitValue}
           />
           <select class="field" aria-label="Unit" bind:value={limitUnit}>
-            <option value="kb">KB/s</option>
-            <option value="mb">MB/s</option>
+            <option value="KB">KB/s</option>
+            <option value="MB">MB/s</option>
           </select>
           <span class="help">Shared by everything running in this queue.</span>
         </div>

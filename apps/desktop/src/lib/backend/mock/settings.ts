@@ -1,11 +1,13 @@
 // What the mock core does with settings: change them, and export and import settings files.
 
-import type {
-  AppSettingsPatch,
-  ImportedFolder,
-  ImportPreview,
-  SettingsProfile,
+import {
+  PROFILE_FORMAT_VERSION,
+  type AppSettingsPatch,
+  type ImportedFolder,
+  type ImportPreview,
+  type SettingsProfile,
 } from '@wirecatch/protocol';
+import { version } from '../../../../package.json';
 import { applyPatch } from '../../state/settings-changes.svelte';
 import { BackendError } from '../types';
 import type { MockState } from './state';
@@ -17,8 +19,8 @@ export function changeSettings(state: MockState, patch: AppSettingsPatch): void 
 
 export function exportSettings(state: MockState, path: string): void {
   state.files.set(path, {
-    format_version: 1,
-    app_version: '0.1.0',
+    format_version: PROFILE_FORMAT_VERSION,
+    app_version: version,
     exported_at: state.now(),
     settings: structuredClone(state.settings),
     queues: structuredClone(state.queues),
