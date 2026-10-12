@@ -73,3 +73,7 @@ test('a malformed placeholder is an error, never left in the output', () => {
     assert.throws(() => fillTemplate(template, product, 't'), ManifestError, template);
   }
 });
+
+test('a value that happens to hold braces is filled in, not taken for a broken placeholder', () => {
+  assert.equal(fillTemplate('name: {{x.y}}', { x: { y: 'a {{b' } }, 't'), 'name: a {{b');
+});

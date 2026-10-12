@@ -74,16 +74,15 @@ function valueAt(product, path, template) {
 
 /** `template` with every `{{section.key}}` replaced by that value of `product`. */
 export function fillTemplate(template, product, name) {
-  const filled = template.replace(/\{\{\s*([a-z_.]+)\s*\}\}/g, (_, path) =>
-    valueAt(product, path, name),
-  );
-  const leftover = /\{\{[^\n]*/.exec(filled);
+  const placeholder = /\{\{\s*([a-z_.]+)\s*\}\}/g;
+  // Checked in the template, not the result, so a value holding braces is not taken for one.
+  const leftover = /\{\{[^\n]*/.exec(template.replace(placeholder, ''));
   if (leftover) {
     throw new ManifestError(
       `${name} has a placeholder that is not of the form {{section.key}}: ${leftover[0]}`,
     );
   }
-  return filled;
+  return template.replace(placeholder, (_, path) => valueAt(product, path, name));
 }
 
 /** How each kind of file writes a comment line, and whether a first line (a `#!`) must stay first. */
