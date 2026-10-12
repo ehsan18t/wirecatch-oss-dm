@@ -1,4 +1,5 @@
 import {
+  MAX_FRAME_LEN,
   PROTOCOL_VERSION,
   UNKNOWN_REQUEST_ID,
   type Call,
@@ -12,8 +13,8 @@ import {
 import { isNumber, isRecord, isString, literal, object, oneOf } from '../validate';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
 
-/** Largest message the bridge accepts (D14: 1 MiB of UTF-8 JSON). */
-export const MAX_MESSAGE_BYTES = 1024 * 1024;
+/** Largest message the bridge accepts (D14): the frame limit of every local connection, as `crates/protocol` sets it. */
+export const MAX_MESSAGE_BYTES = MAX_FRAME_LEN;
 
 /** How many timed-out requests are remembered so a late answer can still be recognized. */
 const LATE_MEMORY = 64;
