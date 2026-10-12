@@ -142,10 +142,10 @@ Parts of W0 findings carried into later workstreams:
 
 Parts of W14 carried into later workstreams:
 
-- The desktop bridge test hard-codes the extension's Chromium origin (`apps/desktop/src-tauri/tests/bridge.rs:25`): it now comes from `wirecatch_product::CHROMIUM_EXTENSION_ORIGIN`, and `config/extension-ids.json` is gone. Done (W2).
+- The desktop bridge test's Chromium origin comes from `wirecatch_product::CHROMIUM_EXTENSION_ORIGIN`, and `config/extension-ids.json` is gone. Done (W2).
 - `PrivateDir::remove` (`crates/test-support/src/lib.rs:133`) says it catches a handle left open, but only a file opened without delete sharing blocks removal, and std opens files with it, so it cannot prove the engine closed its files: say so in its docs, or check open handles another way (W6).
 - Flaky under load, each seen once: `resuming_checks_segment_sizes` (`crates/streams/tests/hls.rs:468`), `a_capture_starts_after_the_server_answers_and_completes` (`crates/e2e/tests/e2e.rs:46`, a `.wcpart` still listed after the row turned Completed), and the media tests in `apps/desktop/e2e/a11y.spec.ts` (90 s waiting for the sample download window, also on the base branch) (W6).
-- Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports (W6).
+- Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports; a `DownloadOptions::default()` in core outside `headers.rs`, which would send the engine's user agent instead of the app's (W6).
 - The HLS and DASH parsers still return `Result<_, String>` (`crates/streams/src/hls.rs:92`, `crates/streams/src/dash.rs:325` and their helpers): typed errors (W8).
 - Win32 helpers are copied: `win32_size_of` (`crates/ipc/src/windows.rs:51`, `crates/bridge/src/shell_parent.rs:89`), `os_error` (`crates/ipc/src/windows.rs:62`, `crates/bridge/src/install.rs:741`), a fourth `wide` (`crates/core/src/owner_only.rs:163`) and two current-user SID readers (`crates/core/src/owner_only.rs:124`, `crates/ipc/src/windows.rs:196`); add them to IPB-6, and the registry loop's literal 520 (`crates/bridge/src/install.rs:759`) to IPB-17 (W10).
 - Desktop lint rules, each clean today: no type argument on `querySelector` or `closest` and no `as` on DOM values (unchecked casts), no `setTimeout` in a `$effect` without its cleanup, no `vi.useRealTimers()` or timer spies outside `vitest-setup.ts`, and no import of `window/**` from `backend/**` (W12).
@@ -158,6 +158,7 @@ Parts of W2 carried into later workstreams:
 - IPB-16: a test-only bridge binary that never overwrites `wirecatch-bridge`, with its override variable names in one place (W6, with XC-13).
 - The release workflow (XC-20) runs `node scripts/gate.mjs publish` before it publishes anything; today the release scripts run it themselves (W6).
 - The engine's version follows the workspace (product) version; whether the published engine needs a version of its own is undecided (W7).
+- XC-14: after the engine's default user agent changes, `a_download_without_a_browser_agent_names_the_app` (`crates/core/tests/manager/lifecycle.rs`) should also assert the header differs from `DownloadOptions::default().user_agent`, and the add-on and media paths (`manager/addons.rs`, `manager/media.rs`) need the same check (W7).
 - `Lock::hold` in `crates/core/tests/manager/addons.rs` blocks deletion with a 0555 folder, which root ignores, so `a_failed_removal_leaves_a_consistent_state` and `a_half_finished_update_is_recorded_and_repaired` fail when tests run as root, as in containers (W6).
 
 Parts of the W1 review carried into later workstreams:
