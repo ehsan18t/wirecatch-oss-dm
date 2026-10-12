@@ -53,7 +53,7 @@ function unreasonedComments() {
       .map((c) => `${c.file}:${String(c.line)}: ${c.kind} ${c.lints.join(', ')}`)
       .join('\n');
     throw new GateError(
-      `A comment that switches a warning off says why it is wrong there, after \`--\` (\`${MARKUP} svelte-ignore a11y_x -- the reason -->\`, \`${MARKUP} eslint-disable-next-line rule -- the reason -->\`). Fix the cause where you can:\n${list}`,
+      `A comment that switches a warning off says why it is wrong there: \`${MARKUP} svelte-ignore a11y_x (the reason) -->\`, \`${MARKUP} eslint-disable-next-line rule -- the reason -->\`. Fix the cause where you can:\n${list}`,
     );
   }
 }

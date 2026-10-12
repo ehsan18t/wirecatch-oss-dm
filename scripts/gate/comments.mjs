@@ -32,8 +32,10 @@ const INLINE_CONFIG = new RegExp(`${OPEN}(eslint|globals?|eslint-env|exported)\\
 const SVELTE_IGNORE = new RegExp(`${OPEN}svelte-ignore\\s${CLOSE}`, 'gm');
 /** Svelte reads the codes, separated by commas, from the start of a svelte-ignore comment and treats what follows as prose. */
 const SVELTE_IGNORE_CODES = /^\s*[\w$-]+(?:\s*,\s*[\w$-]+)*/;
-/** Where a comment's reason starts: ESLint's `--` separator, which svelte-ignore comments use too. */
+/** Where an ESLint comment's reason starts: its `--` separator. */
 const REASON_SEPARATOR = /(?:^|\s)--+\s+\S/;
+/** A svelte-ignore comment's reason, in parentheses after its codes. Svelte reads text after the codes as prose, but svelte/no-unused-svelte-ignore reads every word as a code, so a `--` reason fails ESLint; parentheses pass both. */
+const SVELTE_IGNORE_REASON = /^\([^)]*[^)\s][^)]*\)$/;
 const REASON_SPLIT = /\s--+\s/;
 
 /** The names a comment's list gives, before its reason: `a, b -- why` gives `a` and `b`. */
@@ -86,7 +88,7 @@ function inlineConfigs(text, site) {
 function svelteIgnores(text, site) {
   return [...text.matchAll(SVELTE_IGNORE)].map((match) => {
     const codes = SVELTE_IGNORE_CODES.exec(match[2])?.[0] ?? '';
-    const reason = REASON_SEPARATOR.test(match[2].slice(codes.length).trim());
+    const reason = SVELTE_IGNORE_REASON.test(match[2].slice(codes.length).trim());
     return {
       ...site(match),
       kind: 'svelte-ignore',
