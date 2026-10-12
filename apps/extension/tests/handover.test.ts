@@ -461,6 +461,25 @@ describe('handover', () => {
       expect(result).toMatchObject({ kind: 'kept', reason: 'app_unreachable' });
     });
 
+    it('judges by settings the app sent while the settings request was waiting', async () => {
+      s = await setup({
+        configure: (app) => {
+          // Connected, but the app stops answering calls from its first settings request on.
+          app.onRequest = (call) => {
+            if (call.method === 'get_extension_settings') app.answers = false;
+          };
+        },
+      });
+      const pending = s.hub.onDownload(downloadItem());
+      await flush();
+      // An event still arrives while the request waits: it is the newest copy, and it says no.
+      s.app.changeSettings({ capture_enabled: false });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const result = await pending;
+      expect(result).toMatchObject({ kind: 'kept', reason: 'capture_off', browserCopy: 'resumed' });
+      expect(s.app.calls('add_download')).toHaveLength(0);
+    });
+
     it('resumes the browser download when the bridge cannot start the app', async () => {
       s = await setup({
         configure: (app) => {
@@ -758,6 +777,19 @@ describe('context menu', () => {
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.downloads.log).toEqual([]);
     expect(s.hub.snapshot().notice?.message).toContain('private windows');
+  });
+
+  it('lets the browser download it without site access, after the earlier checks', async () => {
+    s = await setup({ siteAccess: false });
+    expect(
+      await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, { incognito: true }),
+    ).toBe('private_window');
+    expect(s.downloads.log).toEqual([]);
+    const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, undefined);
+    expect(result).toBe('browser');
+    expect(s.downloads.log).toEqual(['start:https://example.com/a.zip']);
+    expect(s.app.calls('add_download')).toHaveLength(0);
+    expect(s.hub.snapshot().notice?.message).toContain('Allow access');
   });
 
   it('uses the media address when there is no link', async () => {

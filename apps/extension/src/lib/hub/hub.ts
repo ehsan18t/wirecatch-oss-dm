@@ -57,6 +57,18 @@ const DEFAULT_TIMING: HubTiming = {
 };
 
 /**
+ * The waits to use: each one given, or its `DEFAULT_TIMING` value. Field by field, so
+ * one given as `undefined` still gets its default (a spread would copy the undefined).
+ */
+export function hubTiming(given: Partial<HubTiming> = {}): HubTiming {
+  return {
+    connectWaitMs: given.connectWaitMs ?? DEFAULT_TIMING.connectWaitMs,
+    requestTimeoutMs: given.requestTimeoutMs ?? DEFAULT_TIMING.requestTimeoutMs,
+    withdrawTimeoutMs: given.withdrawTimeoutMs ?? DEFAULT_TIMING.withdrawTimeoutMs,
+  };
+}
+
+/**
  * The background script's state: the connection, the app's settings and queues,
  * open popups, and the capture and context menu flows.
  */
@@ -76,7 +88,7 @@ export class Hub {
   constructor(deps: HubDeps) {
     this.#deps = deps;
     this.#now = deps.now ?? Date.now;
-    const timing: HubTiming = { ...DEFAULT_TIMING, ...deps.timing };
+    const timing = hubTiming(deps.timing);
     this.#settings = new KnownSettings(deps, this.#now, () => this.#publish());
     this.#app = new AppCalls(deps.client, timing, this.#settings, deps.userAgent);
     this.#popups = new Popups({ media: deps.media, run: (command) => this.#runCommand(command) });
@@ -298,7 +310,7 @@ export class Hub {
    * such, so a cached "capture off" still keeps the download in the browser).
    */
   async #judgingSettings(): Promise<JudgingSettings | null> {
-    const { live, cached } = this.#settings;
+    const { live } = this.#settings;
     if (live !== null && this.#app.connected) {
       return { settings: live, fromApp: true };
     }
@@ -308,6 +320,8 @@ export class Hub {
     } catch {
       // Unreachable: fall back to the cache below.
     }
+    // Read after the wait: settings that came in meanwhile are the newest copy.
+    const { cached } = this.#settings;
     return cached === null ? null : { settings: cached.settings, fromApp: false };
   }
 
