@@ -1,5 +1,15 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { afterAll, vi } from 'vitest';
+
+// Test files share one jsdom window per worker (`isolate: false` in vite.config.ts), so each file
+// leaves it as it found it: no stored preferences, no theme, nothing left in the page, real
+// timers. Stubbed globals and environment variables are put back by the config.
+afterAll(() => {
+  localStorage.clear();
+  delete document.documentElement.dataset.theme;
+  document.body.replaceChildren();
+  vi.useRealTimers();
+});
 
 // jsdom leaves out a few browser features the interface uses. The DOM types declare every one of
 // them, so a truthiness check reads as always true to the type checker; they are checked with `in`

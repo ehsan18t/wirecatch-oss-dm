@@ -1,14 +1,25 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
 import { AppState } from './app.svelte';
 
+// Every app a test makes is disposed after it, even when the test fails, so no clock or
+// interval keeps running into the tests and files after it.
+const apps: AppState[] = [];
+function keep(app: AppState): AppState {
+  apps.push(app);
+  return app;
+}
+afterEach(() => {
+  for (const app of apps.splice(0)) app.dispose();
+});
+
 const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 async function make() {
   const backend = new MockBackend({ autoTick: false, now: () => NOON });
-  const app = new AppState(backend);
+  const app = keep(new AppState(backend));
   await app.init();
   return { app, backend };
 }
@@ -22,7 +33,6 @@ describe('AppState', () => {
     await app.setAskBeforeDownload(false);
     backend.simulateCapture();
     expect(app.toasts.items.at(-1)?.kind).toBe('capture');
-    app.dispose();
   });
 
   it('shows a readable error when the backend is not there', async () => {
@@ -30,10 +40,9 @@ describe('AppState', () => {
     vi.spyOn(backend, 'listDownloads').mockRejectedValue(
       new BackendError('Wirecatch is not connected to its download engine yet.'),
     );
-    const app = new AppState(backend);
+    const app = keep(new AppState(backend));
     await app.init();
     expect(app.loadError).toMatch(/not connected/);
-    app.dispose();
   });
 
   it('stops listening to events when the shell signals cannot be heard', async () => {
@@ -41,11 +50,10 @@ describe('AppState', () => {
     const stopEvents = vi.fn();
     vi.spyOn(backend, 'subscribe').mockResolvedValue(stopEvents);
     vi.spyOn(backend, 'onShellSignal').mockRejectedValue(new BackendError('No shell.'));
-    const app = new AppState(backend);
+    const app = keep(new AppState(backend));
     await app.init();
     expect(app.loadError).toBe('No shell.');
     expect(stopEvents).toHaveBeenCalledOnce();
-    app.dispose();
   });
 
   it('selects ranges in display order', async () => {
@@ -58,7 +66,6 @@ describe('AppState', () => {
     expect(app.selection.has(b!)).toBe(false);
     app.selection.move(1, true);
     expect(app.selection.active).toBe(c);
-    app.dispose();
   });
 
   it('places downloads inside their queue and tells the backend the new order', async () => {
@@ -72,7 +79,6 @@ describe('AppState', () => {
     // Dropping at the end.
     await app.placeInQueue(1, [q[3]!], null);
     expect(app.downloads.idsInQueue(1).at(-1)).toBe(q[3]);
-    app.dispose();
   });
 
   it('only nudges inside a queue view', async () => {
@@ -80,7 +86,6 @@ describe('AppState', () => {
     app.selection.only(app.visible[1]!);
     await app.nudge(-1);
     expect(app.toasts.items.at(-1)?.message).toMatch(/Open a queue/);
-    app.dispose();
   });
 
   it('turns pasted text into the Add dialog, or explains why not', async () => {
@@ -92,7 +97,6 @@ describe('AppState', () => {
       kind: 'add',
       urls: ['https://a.org/x.zip', 'https://a.org/y.zip'],
     });
-    app.dispose();
   });
 
   it('saves settings right away and puts them back if saving fails', async () => {
@@ -106,7 +110,6 @@ describe('AppState', () => {
     await app.updateSettings((d) => void (d.theme = 'light'));
     expect(app.settings?.theme).toBe('dark');
     expect(app.toasts.items.at(-1)?.message).toBe('Disk is read only.');
-    app.dispose();
   });
 
   it('runs fixes: choose a folder then retry', async () => {
@@ -115,7 +118,6 @@ describe('AppState', () => {
     await app.fix(id, 'choose_folder');
     expect(app.downloads.get(id)?.status).toBe('queued');
     expect(app.downloads.get(id)?.path).not.toContain('E:\\Backups');
-    app.dispose();
   });
 
   it('cancels a download, then starts it over from zero', async () => {
@@ -129,7 +131,6 @@ describe('AppState', () => {
     // Space on a cancelled download starts it over.
     await app.togglePause([id]);
     expect(app.downloads.get(id)?.status).toBe('queued');
-    app.dispose();
   });
 
   it('counts browser captures until their windows answer them', async () => {
@@ -147,7 +148,6 @@ describe('AppState', () => {
     });
     expect(app.questions.pending).toHaveLength(0);
     expect(app.questions.waitingCount).toBe(0);
-    app.dispose();
   });
 
   it('exports and imports settings', async () => {
@@ -168,7 +168,6 @@ describe('AppState', () => {
     expect(app.transfer.lastImport?.queues_updated).toBeGreaterThan(0);
     expect(app.transfer.lastImport?.folders[0]?.setting).toBe('Default folder');
     expect(app.transfer.lastImport?.addons_to_offer).toEqual([]);
-    app.dispose();
   });
 
   it('offers the add-ons an imported profile lists, and installs nothing by itself', async () => {
@@ -182,7 +181,6 @@ describe('AppState', () => {
     expect(app.transfer.lastImport?.addons_to_offer).toEqual(['media']);
     const [addon] = await backend.listAddons();
     expect(addon?.state.type).toBe('not_installed');
-    app.dispose();
   });
 });
 
@@ -192,7 +190,6 @@ describe('commands', () => {
     expect(buildCommands(app).some((c) => c.group === 'Selected downloads')).toBe(false);
     app.selection.only(app.visible[0]!);
     expect(buildCommands(app).some((c) => c.id === 'sel.pause')).toBe(true);
-    app.dispose();
   });
 
   it('rank good matches first and are plain language', async () => {
@@ -205,6 +202,5 @@ describe('commands', () => {
     ).toBe(true);
     expect(fuzzyScore('xyz', 'Pause all downloads')).toBe(-1);
     for (const c of all) expect(c.title).not.toMatch(/\u2014/);
-    app.dispose();
   });
 });

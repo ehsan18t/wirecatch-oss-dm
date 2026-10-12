@@ -65,6 +65,21 @@ export default wirecatch({
       },
     },
     {
+      // Test files share one module registry (`isolate: false` in vite.config.ts), so a module mock would leak into every file after it.
+      files: ['src/**/*.test.ts', 'src/lib/testing/**', 'vitest-setup.ts'],
+      rules: {
+        'no-restricted-properties': [
+          'error',
+          ...['mock', 'doMock'].map((property) => ({
+            object: 'vi',
+            property,
+            message:
+              'Test files share one module registry, so a module mock would leak into later files. Pass a fake in instead (as TauriBackend takes `invoke` and `listen`).',
+          })),
+        ],
+      },
+    },
+    {
       // Buttons and icons go through Button, IconButton and Icon, so their styles and sizes have one home.
       files: ['src/**/*.svelte'],
       ignores: [

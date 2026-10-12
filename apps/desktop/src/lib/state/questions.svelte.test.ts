@@ -4,11 +4,22 @@
 // mock backend.
 
 import type { UiEvent } from '@wirecatch/protocol';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../backend/mock';
 import type { ShellSignal } from '../backend';
 import { buildCommands } from '../commands';
 import { AppState } from './app.svelte';
+
+// Every app a test makes is disposed after it, even when the test fails, so no clock or
+// interval keeps running into the tests and files after it.
+const apps: AppState[] = [];
+function keep(app: AppState): AppState {
+  apps.push(app);
+  return app;
+}
+afterEach(() => {
+  for (const app of apps.splice(0)) app.dispose();
+});
 
 const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
@@ -17,7 +28,7 @@ function backend() {
 }
 
 async function make(b = backend()) {
-  const app = new AppState(b);
+  const app = keep(new AppState(b));
   await app.init();
   // The add-ons load in the background after the list.
   await vi.waitFor(() => expect(app.addons.list).not.toBeNull());
@@ -46,7 +57,6 @@ describe('media and add-ons', () => {
     expect(addon?.name).toBe('Media add-on');
     expect(addon?.description).toMatch(/YouTube \(yt-dlp\)/);
     expect(addon?.size).toBeGreaterThan(0);
-    app.dispose();
   });
 
   it('says it is joining, and a stuck join can be paused', async () => {
@@ -67,7 +77,6 @@ describe('media and add-ons', () => {
     await app.togglePause([id]);
     expect(app.downloads.get(id)?.status).toBe('paused');
     expect(app.counts.joining).toBe(0);
-    app.dispose();
   });
 });
 
@@ -95,7 +104,6 @@ describe('the main window only counts questions', () => {
     await backend.rejectCapture(app.questions.pending[0]?.id ?? -1);
     backend.simulateAnsweredElsewhere();
     expect(app.questions.waitingCount).toBe(2);
-    app.dispose();
   });
 
   it('offers the waiting windows from the sidebar entry and the palette', async () => {
@@ -108,7 +116,6 @@ describe('the main window only counts questions', () => {
     expect(show?.title).toBe('Show the download that is waiting for you');
     await show?.run();
     expect(backend.windows.windows.map((w) => w.label)).toEqual([window?.label]);
-    app.dispose();
   });
 
   it('opens a progress window for any download, once', async () => {
@@ -125,7 +132,6 @@ describe('the main window only counts questions', () => {
     await app.showProgressWindow(id);
     await app.showProgressWindow(id);
     expect(backend.windows.windows.map((w) => w.shows)).toEqual([{ kind: 'download', id }]);
-    app.dispose();
   });
 });
 
@@ -147,7 +153,6 @@ describe('a question answered anywhere never comes back', () => {
     expect(again.app.questions.waitingCount).toBe(0);
     expect(again.app.dialog).toBeNull();
     expect(await b.getQuestion(choice?.id ?? 0)).toBeNull();
-    again.app.dispose();
   });
 
   it('a confirmed file is not asked again by a window opened later', async () => {
@@ -164,7 +169,6 @@ describe('a question answered anywhere never comes back', () => {
     expect(app.questions.pending).toEqual([]);
     expect(app.questions.waitingCount).toBe(0);
     expect(app.dialog).toBeNull();
-    app.dispose();
   });
 
   it('a question put aside is counted, never shown, and not opened again by itself', async () => {
@@ -181,7 +185,6 @@ describe('a question answered anywhere never comes back', () => {
     // A reload counts it once, not twice.
     await app.init();
     await vi.waitFor(() => expect(app.questions.waitingCount).toBe(1));
-    app.dispose();
   });
 });
 
@@ -197,7 +200,6 @@ describe('questions asked while no window was open', () => {
     await app.init();
     await vi.waitFor(() => expect(app.questions.mediaChoices).toHaveLength(1));
     expect(app.questions.waitingCount).toBe(2);
-    app.dispose();
   });
 });
 
@@ -213,7 +215,7 @@ describe('shell signals', () => {
       .spyOn(b, 'takeLaunchLinks')
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce(['https://example.com/a.zip', 'https://example.com/b.zip']);
-    const app = new AppState(b);
+    const app = keep(new AppState(b));
     await app.init();
     await vi.waitFor(() => expect(links).toHaveBeenCalledTimes(1));
     expect(app.dialog).toBeNull();
@@ -229,7 +231,6 @@ describe('shell signals', () => {
     const list = vi.spyOn(b, 'listDownloads');
     signal?.('resync');
     await vi.waitFor(() => expect(list).toHaveBeenCalled());
-    app.dispose();
   });
 
   it('shows a storage failure from the core', async () => {
@@ -239,7 +240,7 @@ describe('shell signals', () => {
       push = listener;
       return Promise.resolve(vi.fn());
     });
-    const app = new AppState(b);
+    const app = keep(new AppState(b));
     await app.init();
     push?.({ type: 'storage_failed', data: { message: 'Could not save.', fix: null } });
     // A banner that stays, not a note that fades.
@@ -250,6 +251,5 @@ describe('shell signals', () => {
     push?.({ type: 'storage_failed', data: { message: 'Again.', fix: null } });
     app.dismissStorageProblem();
     expect(app.storageProblem).toBeNull();
-    app.dispose();
   });
 });

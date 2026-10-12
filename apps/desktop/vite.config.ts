@@ -22,13 +22,21 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     setupFiles: ['./vitest-setup.ts'],
     restoreMocks: true,
-    // Most of a run went to building a jsdom window for every test file and to compiling the same
-    // Svelte modules again on every run. A vm pool builds the window once per worker and still
-    // gives each file its own module graph; the module cache keeps compiled modules on disk
-    // between runs. Less work per run is what keeps the tests inside their time limit when the
-    // machine is busy with other builds.
-    pool: 'vmThreads',
+    // Compiled modules are kept on disk between runs, so a run does not compile the same Svelte
+    // modules again.
     fsModuleCache: true,
+    // Building a jsdom window for every test file was the largest share of a run, and when the
+    // machine was busy the full-app tests ran past their time limit. Test files share one window
+    // per worker instead: Testing Library unmounts after every test, and the suite passes with
+    // its files in any order (`--sequence.shuffle.files`). Not a vm pool: there structuredClone
+    // returns objects from another realm, which Svelte's $state does not proxy, so the tests
+    // would no longer be deeply reactive like the app.
+    pool: 'threads',
+    isolate: false,
+    // What one file stubs must not reach the next; vitest-setup.ts resets the rest of the window,
+    // and the lint config bans module mocks, which would leak through the shared module registry.
+    unstubGlobals: true,
+    unstubEnvs: true,
     // src/lib/layout.ts reads its lengths from the text of app.css, so tests need the real file.
     css: { include: [/\/src\/app\.css/] },
   },
