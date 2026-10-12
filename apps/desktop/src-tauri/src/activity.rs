@@ -188,6 +188,7 @@ pub fn notification_text(finished: &[Finished]) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_engine::units::{KIB, MIB};
     use wirecatch_protocol::QueueId;
     use wirecatch_protocol::app::Category;
 
@@ -269,11 +270,11 @@ mod tests {
         assert_eq!(tooltip(0, 0), "Wirecatch: nothing downloading");
         assert_eq!(tooltip(1, 1536), "Wirecatch: 1 download, 1.50 KB/s");
         assert_eq!(
-            tooltip(3, 12 * 1024 * 1024 + 400 * 1024),
+            tooltip(3, 12 * MIB + 400 * KIB),
             "Wirecatch: 3 downloads, 12.4 MB/s"
         );
         assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(200 * 1024 * 1024), "200 MB");
+        assert_eq!(format_bytes(200 * MIB), "200 MB");
     }
 
     /// Rounding can reach the next unit or need fewer decimals: the shown value

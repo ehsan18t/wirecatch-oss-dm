@@ -17,7 +17,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use wirecatch_engine::numeric::approx_f64;
+use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::http::{Config, TestServer};
@@ -126,7 +126,7 @@ async fn bench() -> Result<()> {
 
 /// The benchmark file's size over `secs`, in MiB a second.
 fn mib_per_second(secs: f64) -> f64 {
-    approx_f64((BENCH_SIZE / MIB_USIZE) as u64) / secs
+    approx_f64(saturating_cast(BENCH_SIZE / MIB_USIZE)) / secs
 }
 
 async fn timed_download(
@@ -156,7 +156,8 @@ async fn timed_download(
     let Outcome::Completed { path, bytes, .. } = outcome else {
         return Err(format!("the download did not complete: {outcome:?}").into());
     };
-    if bytes != server.data.len() as u64 || std::fs::read(&path)? != server.data {
+    if bytes != saturating_cast::<u64, _>(server.data.len()) || std::fs::read(&path)? != server.data
+    {
         return Err("downloaded bytes differ from the source".into());
     }
     std::fs::remove_dir_all(&dir)?;

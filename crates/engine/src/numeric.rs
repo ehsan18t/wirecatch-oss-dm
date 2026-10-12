@@ -13,10 +13,11 @@
 //!
 //! ```
 //! use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
+//! use wirecatch_engine::units::MIB;
 //!
 //! let seconds = 2.5;
-//! let bytes_per_second = approx_f64(10 * 1024 * 1024) / seconds;
-//! assert_eq!(f64_to_u64(bytes_per_second), Some(4 * 1024 * 1024));
+//! let bytes_per_second = approx_f64(10 * MIB) / seconds;
+//! assert_eq!(f64_to_u64(bytes_per_second), Some(4 * MIB));
 //!
 //! // A duration from a JSON document: anything that is not a usable count is refused.
 //! assert_eq!(f64_to_u64(f64::NAN), None);

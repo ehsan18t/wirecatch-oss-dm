@@ -8,6 +8,7 @@ use crate::media_support::{
     FileServer, Releases, addon_dir, exe, harness, install, next_event, path_exists, publish,
     sha256, sign, tar_xz, wait_addon, ytdlp_asset,
 };
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestResult {
@@ -169,7 +170,7 @@ async fn stopping_a_first_install_leaves_nothing_behind() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "cx")?).await?;
     // Slow enough to still be running when it is stopped.
-    server.throttle("cx/yt-dlp", Some(32 * 1024));
+    server.throttle("cx/yt-dlp", Some(32 * KIB));
     let mut ui = h.manager.subscribe();
     h.manager.install_addon("media").await.unwrap();
     wait_addon(&mut ui, "installing", |a| {
@@ -198,10 +199,7 @@ async fn stopping_an_update_keeps_the_installed_version_working() -> TestResult 
         None,
         OLD,
     )?;
-    server.throttle(
-        &format!("rel/2026.09.30/{}", ytdlp_asset()),
-        Some(16 * 1024),
-    );
+    server.throttle(&format!("rel/2026.09.30/{}", ytdlp_asset()), Some(16 * KIB));
     let mut ui = h.manager.subscribe();
     // A quiet update starts (auto_update_addons is on by default).
     h.manager.check_addon_updates().await.unwrap();
@@ -537,7 +535,7 @@ async fn an_update_only_comes_from_yt_dlps_release_folder() -> TestResult {
 async fn an_update_is_capped_at_its_announced_size() -> TestResult {
     let (server, h, new_ytdlp) = updatable("cap").await?;
     let hash = sha256(&new_ytdlp);
-    for listed in [0, 300 * 1024 * 1024] {
+    for listed in [0, 300 * MIB] {
         serve_release(&server, "2026.09.30", &new_ytdlp, listed, &hash, None, OLD)?;
         let info = check(&h).await?;
         assert_eq!(info.state, AddonState::Installed, "size {listed}");
@@ -879,8 +877,8 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "busy")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    server.put("fmt/v.mp4", crate::common::test_data(400 * 1024));
-    server.throttle("fmt/v.mp4", Some(50 * 1024));
+    server.put("fmt/v.mp4", crate::common::test_data(400 * KIB_USIZE));
+    server.throttle("fmt/v.mp4", Some(50 * KIB));
     let info = serde_json::json!({"title": "Busy", "formats": [
         {"format_id": "1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
          "protocol": "https", "url": server.url("fmt/v.mp4").as_str()}

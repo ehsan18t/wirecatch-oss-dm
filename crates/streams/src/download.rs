@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
-use wirecatch_engine::units::KIB_USIZE;
+use wirecatch_engine::units::{KIB_USIZE, MIB_USIZE};
 use wirecatch_engine::{Fetcher, naming};
 
 use crate::crypto;
@@ -522,7 +522,7 @@ fn concat(
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
     let path = work.track_path(track);
-    let mut out = BufWriter::with_capacity(1024 * 1024, File::create(&path)?);
+    let mut out = BufWriter::with_capacity(MIB_USIZE, File::create(&path)?);
     for index in 0..count {
         if cancel.is_cancelled() {
             return Ok(false);

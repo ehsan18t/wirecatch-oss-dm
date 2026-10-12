@@ -32,10 +32,13 @@ use crate::transport::proxy_variable;
 /// finding out before it falls back to TCP.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// One MiB as a `u32`, the type quinn's window settings take.
+const MIB_U32: u32 = 1024 * 1024;
+
 /// Flow control windows. The defaults suit a 100 Mbit/s link with 100 ms of
 /// latency; downloads can be much faster than that.
-const STREAM_WINDOW: u32 = 8 * 1024 * 1024;
-const CONNECTION_WINDOW: u32 = 16 * 1024 * 1024;
+const STREAM_WINDOW: u32 = 8 * MIB_U32;
+const CONNECTION_WINDOW: u32 = 16 * MIB_U32;
 
 /// The HTTP/3 endpoint the server advertised, shared by every worker of one
 /// download.

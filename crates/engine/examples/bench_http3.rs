@@ -19,7 +19,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use wirecatch_engine::numeric::approx_f64;
+use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
 use wirecatch_test_support::TestCertificate;
@@ -93,7 +93,7 @@ async fn run(cert: TestCertificate) -> Result<()> {
                 out,
                 "{:>8}  {connections:>11}  {secs:>8.2}  {:>8.1}  {cpu:>8.2}  {:>8.0}%",
                 if http3 { "HTTP/3" } else { "HTTP/2" },
-                approx_f64((SIZE / MIB_USIZE) as u64) / secs,
+                approx_f64(saturating_cast(SIZE / MIB_USIZE)) / secs,
                 share * PERCENT
             )?;
         }
@@ -180,7 +180,6 @@ fn cpu_time() -> Duration {
         usage
     };
     let time = |t: libc::timeval| {
-        use wirecatch_engine::numeric::saturating_cast;
         Duration::from_secs(saturating_cast(t.tv_sec))
             + Duration::from_micros(saturating_cast(t.tv_usec))
     };

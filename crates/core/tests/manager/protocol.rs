@@ -23,6 +23,7 @@ use wirecatch_protocol::wire::{
 use crate::common::{
     Config, Harness, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
 };
+use wirecatch_engine::units::KIB_USIZE;
 
 /// A socket client talking to `serve_connection` over an in-memory stream.
 struct Client {
@@ -37,7 +38,7 @@ struct Client {
 
 impl Client {
     fn connect(manager: &Manager) -> Self {
-        let (stream, server_side) = tokio::io::duplex(64 * 1024);
+        let (stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
         let server = tokio::spawn(serve_connection(manager.clone(), server_side));
         Self {
             stream,
@@ -214,7 +215,7 @@ async fn bad_messages_get_errors_and_the_connection_survives() -> TestResult {
         .write_all(&u32::try_from(len).unwrap().to_le_bytes())
         .await
         .unwrap();
-    let filler = vec![b' '; 64 * 1024];
+    let filler = vec![b' '; 64 * KIB_USIZE];
     let mut left = len;
     while left > 0 {
         let n = left.min(filler.len());

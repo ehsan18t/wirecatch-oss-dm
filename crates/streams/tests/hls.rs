@@ -10,6 +10,7 @@ use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit};
 use wirecatch_engine::header::{COOKIE, HeaderValue};
 use wirecatch_engine::numeric::approx_f64;
+use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadOptions, RateLimiter};
 use wirecatch_streams::{
     Choice, Error, Outcome, PrivateNetwork, Stage, StreamKind, StreamProgress, StreamRequest,
@@ -689,7 +690,7 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     server.put_typed("many.m3u8", text, MPEGURL);
     // Over 8 MiB: refused by size before parsing.
     let mut big = String::from("#EXTM3U\n");
-    while big.len() <= 8 * 1024 * 1024 {
+    while big.len() <= 8 * MIB_USIZE {
         big.push_str("#EXTINF:1,\nsome-rather-long-segment-name-to-fill-the-playlist.ts\n");
     }
     server.put_typed("big.m3u8", big, MPEGURL);

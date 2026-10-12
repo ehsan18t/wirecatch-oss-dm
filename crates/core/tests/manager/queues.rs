@@ -10,6 +10,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::common::{Harness, SilentServer, TestResult, fast_server, is_running, monday, tune};
+use wirecatch_engine::units::KIB;
 
 /// Downloads from a silent server never stop on their own; give up on them quickly.
 const SHORT: Duration = Duration::from_millis(300);
@@ -61,7 +62,7 @@ async fn a_paused_queue_starts_nothing_and_resumes_only_what_it_paused() -> Test
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn start_now_runs_a_scheduled_queue_until_it_is_empty() -> TestResult {
-    let server = fast_server(8 * 1024).await?;
+    let server = fast_server(8 * KIB).await?;
     let h = Harness::at(monday(12, 0)?).await?;
     let two = TimeOfDay { hour: 2, minute: 0 };
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;

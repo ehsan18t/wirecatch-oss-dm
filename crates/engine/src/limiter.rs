@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use crate::numeric::approx_f64;
+use crate::units::KIB;
 
 /// Caps the combined speed of every connection that shares it.
 ///
@@ -73,7 +74,7 @@ impl RateLimiter {
             let now = Instant::now();
             // A quarter second of burst smooths chunk-sized jitter without letting
             // an idle limiter release a large spike.
-            let burst = (rate / 4.0).max(16.0 * 1024.0);
+            let burst = (rate / 4.0).max(approx_f64(16 * KIB));
             let refill = now.duration_since(bucket.last).as_secs_f64() * rate;
             bucket.tokens = (bucket.tokens + refill).min(burst) - approx_f64(bytes);
             bucket.last = now;

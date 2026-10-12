@@ -14,6 +14,7 @@ use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
 use wirecatch_desktop_lib::questions::Question;
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AddRequest, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus, DownloadSummary,
@@ -24,10 +25,10 @@ use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{TestResult, test_data};
 
 /// A file big and slow enough to still be running while the test pauses and moves it.
-const SLOW_LEN: usize = 4 * 1024 * 1024;
-const SLOW_BPS: u64 = 64 * 1024;
+const SLOW_LEN: usize = 4 * MIB_USIZE;
+const SLOW_BPS: u64 = 64 * KIB;
 /// A file that downloads at once.
-const FAST_LEN: usize = 300 * 1024;
+const FAST_LEN: usize = 300 * KIB_USIZE;
 
 /// How long any wait may take before the test fails.
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -400,7 +401,7 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
 /// Download later adds it paused, answering with the new download's id.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_download_window_finds_its_question_and_its_download() -> TestResult {
-    const REPORT_LEN: u64 = 64 * 1024;
+    const REPORT_LEN: u64 = 64 * KIB;
     let sandbox = Sandbox::new()?;
     let fast = serve(usize::try_from(REPORT_LEN)?, None).await;
     let manager = sandbox.open().await?;

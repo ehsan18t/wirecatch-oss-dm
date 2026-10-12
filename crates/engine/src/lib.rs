@@ -108,14 +108,16 @@
 //! ```no_run
 //! # use std::sync::Arc;
 //! # use wirecatch_engine::{DownloadRequest, RateLimiter, Url};
-//! let global = Arc::new(RateLimiter::new(Some(10 * 1024 * 1024))); // 10 MiB/s for everything
+//! use wirecatch_engine::units::MIB;
+//!
+//! let global = Arc::new(RateLimiter::new(Some(10 * MIB))); // 10 MiB/s for everything
 //! let queue = Arc::new(RateLimiter::new(None)); // unlimited for now
 //!
 //! # let url = Url::parse("https://example.com/a.iso").unwrap();
 //! let mut request = DownloadRequest::new(url, "downloads");
 //! request.options.rate_limiters = vec![global.clone(), queue.clone()];
 //!
-//! queue.set_limit(Some(2 * 1024 * 1024)); // takes effect within one chunk
+//! queue.set_limit(Some(2 * MIB)); // takes effect within one chunk
 //! ```
 //!
 //! # Cookies and other request headers

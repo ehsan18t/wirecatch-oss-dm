@@ -13,6 +13,7 @@ crate::exported::exported_consts! {
     /// Largest message body in bytes. Browsers refuse messages from a native host larger
     /// than 1 MiB; the same cap applies to every local connection so no side can be made to
     /// allocate more.
+    // Written out rather than with the engine's units: this crate must not depend on the engine.
     pub const MAX_FRAME_LEN: usize = 1024 * 1024;
 }
 

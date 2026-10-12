@@ -1,8 +1,9 @@
 //! Byte sizes in binary units (1 KiB is 1024 bytes), written once.
 //!
 //! Byte counts on disk and over the network are `u64`: sizes, limits, rates.
-//! Lengths in memory (buffers, test data) are `usize`. Each unit comes in both,
-//! so a size is written as it reads (`4 * MIB`) without a conversion.
+//! Lengths in memory (buffers, test data) are `usize`, so the units used for
+//! them (KiB and MiB) come in that form too, and a size is written as it reads
+//! (`4 * MIB`) without a conversion.
 //!
 //! ```
 //! use wirecatch_engine::units::{MIB, MIB_USIZE};

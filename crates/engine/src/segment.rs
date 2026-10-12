@@ -413,6 +413,6 @@ mod tests {
         let mut t = SegmentTable::new(Some(10 * MIB + 12345), MIB);
         t.acquire(0).unwrap();
         let a = t.acquire(1).unwrap();
-        assert_eq!(a.from % (64 * 1024), 0);
+        assert_eq!(a.from % (64 * crate::units::KIB), 0);
     }
 }

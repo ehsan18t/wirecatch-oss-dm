@@ -860,10 +860,10 @@ mod tests {
         // What yt-dlp reports for every YouTube format.
         assert_eq!(limit(10_485_760.into()), Some(10_485_760));
         assert_eq!(limit(serde_json::json!(10_485_760.0)), Some(10_485_760));
-        assert_eq!(limit((64 * 1024).into()), Some(64 * 1024));
-        // Too large: cut to 1 GiB.
-        assert_eq!(limit((5u64 << 30).into()), Some(1 << 30));
-        assert_eq!(limit(serde_json::json!(1e300)), Some(1 << 30));
+        assert_eq!(limit((64 * KIB).into()), Some(64 * KIB));
+        // Too large: cut to the most it takes.
+        assert_eq!(limit((5 * GIB).into()), Some(MAX_REQUEST_LIMIT));
+        assert_eq!(limit(serde_json::json!(1e300)), Some(MAX_REQUEST_LIMIT));
         // Zero, negative, tiny, fractional or not a number: no limit, and the
         // page is still readable.
         for odd in [

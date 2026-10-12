@@ -4,6 +4,7 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindowBuilder};
+use wirecatch_engine::units::KIB_USIZE;
 
 /// Label of the one window, as declared in `tauri.conf.json`.
 pub const MAIN_WINDOW: &str = "main";
@@ -29,7 +30,7 @@ where
 pub const MAX_LAUNCH_LINKS: usize = 20;
 
 /// Longest link taken from a command line, in bytes.
-pub const MAX_LINK_LEN: usize = 8 * 1024;
+pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
 
 /// Schemes a command-line link may use.
 const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];

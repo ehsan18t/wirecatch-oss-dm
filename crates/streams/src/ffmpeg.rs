@@ -21,12 +21,13 @@ use std::process::Stdio;
 
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
+use wirecatch_engine::units::KIB_USIZE;
 
 use crate::error::{Error, Result};
 use crate::plan::Role;
 
 /// Most of ffmpeg's error output kept for the error message.
-const STDERR_KEPT: usize = 16 * 1024;
+const STDERR_KEPT: usize = 16 * KIB_USIZE;
 
 /// The container ffmpeg writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

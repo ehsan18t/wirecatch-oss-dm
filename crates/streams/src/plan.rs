@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use url::Url;
 use wirecatch_engine::Fetcher;
+use wirecatch_engine::units::MIB;
 
 use crate::dash::{self, Kind, Mpd, Segments};
 use crate::error::{Error, Result};
@@ -14,7 +15,7 @@ use crate::model::{AudioTrack, Choice, StreamInfo, StreamKind, SubtitleTrack, Vi
 
 /// Largest playlist or manifest read. A ten-hour HLS playlist of 2-second
 /// segments with long signed addresses is about 4 MiB.
-const MANIFEST_LIMIT: u64 = 8 * 1024 * 1024;
+const MANIFEST_LIMIT: u64 = 8 * MIB;
 
 /// The most pieces one track may have (about 55 hours of 1-second
 /// segments), so a broken or hostile playlist cannot exhaust memory.
@@ -28,7 +29,7 @@ pub(crate) fn too_many_segments() -> String {
 }
 
 /// Largest `sidx` index read for a DASH `SegmentBase`.
-const INDEX_LIMIT: u64 = 16 * 1024 * 1024;
+const INDEX_LIMIT: u64 = 16 * MIB;
 
 /// One thing to fetch: a whole resource or a byte range of it.
 #[derive(Debug, Clone, PartialEq, Eq)]

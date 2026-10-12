@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use wirecatch_engine::header::{AUTHORIZATION, COOKIE, HeaderValue, REFERER};
+use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
@@ -38,7 +39,7 @@ async fn gets_whole_resources_and_ranges() {
         .await
         .unwrap();
 
-    let whole = f.get(f.url(), None, 1 << 20).await.unwrap();
+    let whole = f.get(f.url(), None, MIB).await.unwrap();
     assert_eq!(whole.body[..], data[..]);
     assert_eq!(whole.url, server.url("a/index.m3u8"));
     assert_eq!(
@@ -46,7 +47,7 @@ async fn gets_whole_resources_and_ranges() {
         Some("application/vnd.apple.mpegurl")
     );
 
-    let part = f.get(f.url(), Some(1000..1100), 1 << 20).await.unwrap();
+    let part = f.get(f.url(), Some(1000..1100), MIB).await.unwrap();
     assert_eq!(part.body[..], data[1000..1100]);
     let seen = server.stats.seen();
     assert_eq!(
@@ -60,7 +61,7 @@ async fn a_server_without_ranges_still_yields_the_right_bytes() {
     let data = test_data(30_000);
     let server = TestServer::start(data.clone(), Config::default()).await;
     let f = fetcher(&server.url("seg.ts"), &options()).await.unwrap();
-    let part = f.get(f.url(), Some(20_000..20_010), 1 << 20).await.unwrap();
+    let part = f.get(f.url(), Some(20_000..20_010), MIB).await.unwrap();
     assert_eq!(part.body[..], data[20_000..20_010]);
 
     let dir = private_dir("noranges").unwrap();
@@ -185,15 +186,15 @@ async fn credentials_stay_with_their_origin() {
     let f = fetcher(&manifest, &options).await.unwrap();
     assert_eq!(f.url().username(), "");
 
-    f.get(f.url(), None, 1 << 20).await.unwrap();
-    f.get(&cdn.url("seg1.ts"), None, 1 << 20).await.unwrap();
+    f.get(f.url(), None, MIB).await.unwrap();
+    f.get(&cdn.url("seg1.ts"), None, MIB).await.unwrap();
     // Credentials written into a link for another origin are not sent either.
     let with_userinfo = Url::parse(&format!(
         "{}/seg2.ts",
         cdn.base.replace("http://", "http://x:y@")
     ))
     .unwrap();
-    f.get(&with_userinfo, None, 1 << 20).await.unwrap();
+    f.get(&with_userinfo, None, MIB).await.unwrap();
 
     let at_site = &site.stats.seen()[0];
     assert_eq!(at_site.header("cookie"), Some("session=secret"));
@@ -329,7 +330,7 @@ async fn rate_limits_apply() {
     options.rate_limiters = vec![Arc::new(RateLimiter::new(Some(400_000)))];
     let f = fetcher(&server.url("k"), &options).await.unwrap();
     let start = Instant::now();
-    f.get(f.url(), None, 1 << 20).await.unwrap();
+    f.get(f.url(), None, MIB).await.unwrap();
     // 200 kB at 400 kB/s is half a second, minus the limiter's small burst.
     assert!(start.elapsed() >= Duration::from_millis(300));
 }

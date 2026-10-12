@@ -277,7 +277,7 @@ mod tests {
             Call, ClientKind, ErrorCode, Hello, Message, Outcome, ProtocolError,
         };
 
-        let (mut client, server) = tokio::io::duplex(64 * 1024);
+        let (mut client, server) = tokio::io::duplex(64 * wirecatch_engine::units::KIB_USIZE);
         let serving =
             tokio::spawn(async move { answer_unavailable(server, "The disk is full.").await });
         let hello = Message::Request {

@@ -17,6 +17,7 @@ use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
     publish, real_ffmpeg, tell_tool, ytdlp_calls,
 };
+use wirecatch_engine::units::{KIB, KIB_USIZE};
 
 fn select(option: &str) -> MediaSelection {
     MediaSelection {
@@ -49,7 +50,7 @@ async fn choice_requested(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) ->
     .await
 }
 
-const SEGMENT: usize = 50 * 1024;
+const SEGMENT: usize = 50 * KIB_USIZE;
 
 /// An HLS stream: a master playlist with 720p and 360p, each two segments, and
 /// optionally separate audio. Returns the 720p segments' bytes.
@@ -325,7 +326,7 @@ async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResu
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(300 * 1024), mp4_data(100 * 1024));
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(100 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     // Long enough for the "Processing" status to be seen.
     tell_tool(&h, "ffmpeg-delay-ms", "800")?;
@@ -496,7 +497,7 @@ async fn a_refused_format_address_is_read_again_and_the_download_goes_on() -> Te
     let server = FileServer::start().await;
     let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     server.fail("fmt/video.mp4", 1, 403);
     let mut ui = h.manager.subscribe();
@@ -530,7 +531,7 @@ async fn a_format_address_refused_every_time_ends_with_a_plain_error() -> TestRe
     let server = FileServer::start().await;
     let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     server.fail("fmt/video.mp4", 1000, 403);
 
@@ -563,7 +564,7 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     let long = vec![Duration::from_secs(120)];
     let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, long).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     server.fail("fmt/video.mp4", 1000, 403);
 
@@ -613,10 +614,10 @@ async fn a_formats_chunk_size_limits_every_request_for_it() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(300 * 1024), mp4_data(20 * 1024));
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     let mut info: serde_json::Value =
         serde_json::from_str(&page_info(&server, &video, &audio)).unwrap();
-    let chunk = 64 * 1024u64;
+    let chunk = 64 * KIB;
     for format in info["formats"].as_array_mut().unwrap() {
         format["downloader_options"] = serde_json::json!({"http_chunk_size": chunk});
     }
@@ -640,9 +641,9 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     let server = FileServer::start().await;
     let mut h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let (video, audio) = (mp4_data(600 * 1024), mp4_data(20 * 1024));
+    let (video, audio) = (mp4_data(600 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
-    server.throttle("fmt/video.mp4", Some(150 * 1024));
+    server.throttle("fmt/video.mp4", Some(150 * KIB));
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(server.url("watch/2"), MediaKind::Page, None))
@@ -654,7 +655,7 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
         .await
         .unwrap();
     let id = h.manager.list_downloads()[0].id;
-    h.wait_for(id, "part of the video", |r| r.done >= 150 * 1024)
+    h.wait_for(id, "part of the video", |r| r.done >= 150 * KIB)
         .await;
     h.restart().await?;
     server.throttle("fmt/video.mp4", None);
@@ -815,7 +816,7 @@ async fn a_withdrawn_media_capture_closes_its_question() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     let server = FileServer::start().await;
-    server.put("clips/talk.mp4", test_data(10 * 1024));
+    server.put("clips/talk.mp4", test_data(10 * KIB_USIZE));
     let h = Harness::new().await?;
     let mut capture = media_capture(server.url("clips/talk.mp4"), MediaKind::Direct, None);
     capture.mime = Some("video/mp4".into());

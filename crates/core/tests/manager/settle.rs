@@ -4,7 +4,7 @@
 use wirecatch_protocol::app::{Category, DownloadStatus, UiEvent};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data};
-use wirecatch_engine::units::KIB_USIZE;
+use wirecatch_engine::units::{KIB, KIB_USIZE};
 
 async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
     TestServer::start(
@@ -22,7 +22,7 @@ async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
-    let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * 1024)).await;
+    let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * KIB)).await;
     let mut h = Harness::new().await?;
     let mut events = h.manager.subscribe();
     let row = h.add(&server.url("dl?id=1")).await?;
@@ -118,7 +118,7 @@ async fn a_folder_chosen_before_the_server_answers_is_kept() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
     let len = 512 * KIB_USIZE;
-    let server = server_naming("report.pdf", len, Some(128 * 1024)).await;
+    let server = server_naming("report.pdf", len, Some(128 * KIB)).await;
     let h = Harness::new().await?;
     let documents = h.folders.downloads.join("Documents");
     let path = documents.join("report.pdf");

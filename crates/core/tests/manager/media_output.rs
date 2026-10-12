@@ -17,6 +17,7 @@ use crate::media_support::{
     FileServer, Releases, harness, install, media_capture, next_event, publish, real_ffmpeg,
     tell_tool, ytdlp_calls,
 };
+use wirecatch_engine::units::{KIB, KIB_USIZE};
 
 /// Test data that starts like an MP4 file.
 fn mp4_data(len: usize) -> Vec<u8> {
@@ -44,10 +45,10 @@ const FORMATS: [(&str, &str); 4] = [
 /// AAC; English subtitles, German auto-generated ones (and a machine
 /// translation, which is not offered), two chapters and a thumbnail.
 fn page_info(server: &FileServer) -> String {
-    server.put("fmt/a251.webm", webm_data(40 * 1024));
-    server.put("fmt/a140.m4a", mp4_data(30 * 1024));
-    server.put("fmt/v313.webm", webm_data(200 * 1024));
-    server.put("fmt/v137.mp4", mp4_data(150 * 1024));
+    server.put("fmt/a251.webm", webm_data(40 * KIB_USIZE));
+    server.put("fmt/a140.m4a", mp4_data(30 * KIB_USIZE));
+    server.put("fmt/v313.webm", webm_data(200 * KIB_USIZE));
+    server.put("fmt/v137.mp4", mp4_data(150 * KIB_USIZE));
     server.put(
         "subs/en.vtt",
         "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n",
@@ -65,13 +66,13 @@ fn page_info(server: &FileServer) -> String {
         "thumbnail": url("thumb.jpg"),
         "formats": [
             {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160,
-             "protocol": "https", "url": url("fmt/a251.webm"), "filesize": 40 * 1024},
+             "protocol": "https", "url": url("fmt/a251.webm"), "filesize": 40 * KIB},
             {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128,
-             "protocol": "https", "url": url("fmt/a140.m4a"), "filesize": 30 * 1024},
+             "protocol": "https", "url": url("fmt/a140.m4a"), "filesize": 30 * KIB},
             {"format_id": "313", "ext": "webm", "vcodec": "vp9", "acodec": "none", "height": 2160, "tbr": 12000,
-             "protocol": "https", "url": url("fmt/v313.webm"), "filesize": 200 * 1024},
+             "protocol": "https", "url": url("fmt/v313.webm"), "filesize": 200 * KIB},
             {"format_id": "137", "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "height": 1080, "tbr": 4000,
-             "protocol": "https", "url": url("fmt/v137.mp4"), "filesize": 150 * 1024},
+             "protocol": "https", "url": url("fmt/v137.mp4"), "filesize": 150 * KIB},
         ],
         "subtitles": {
             "en": [{"ext": "json3", "url": url("subs/en.json3")}, {"ext": "vtt", "url": url("subs/en.vtt"), "name": "English"}],

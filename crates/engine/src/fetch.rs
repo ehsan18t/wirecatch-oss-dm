@@ -31,12 +31,13 @@
 //! ```no_run
 //! # async fn example() -> wirecatch_engine::Result<()> {
 //! use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
+//! use wirecatch_engine::units::MIB;
 //!
 //! let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
 //! let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
 //!
 //! // A small resource, read into memory, refused if larger than 1 MiB.
-//! let text = fetcher.get(fetcher.url(), None, 1024 * 1024).await?;
+//! let text = fetcher.get(fetcher.url(), None, MIB).await?;
 //!
 //! // A large one, streamed to disk; here only its first 1000 bytes.
 //! let segment = text.url.join("segment1.ts").unwrap();
