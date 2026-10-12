@@ -72,7 +72,10 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
             }
             Err(RecvError::Lagged(missed)) => {
                 tracing::warn!("the windows missed {missed} events; asking them to reload");
-                let _ = app.emit(RESYNC_EVENT, ());
+                crate::window::warn_if_failed(
+                    "ask the windows to reload",
+                    app.emit(RESYNC_EVENT, ()),
+                );
                 download_windows::restore(&app);
             }
             Err(RecvError::Closed) => return,

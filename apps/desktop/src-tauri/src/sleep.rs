@@ -37,7 +37,7 @@ pub fn hide_main<R: Runtime>(window: &WebviewWindow<R>) {
     if let Some(state) = window.try_state::<MainAsleep>() {
         state.set(true);
     }
-    let _ = window.hide();
+    crate::window::warn_if_failed("hide the main window", window.hide());
     set_asleep(window, true);
 }
 
@@ -51,7 +51,10 @@ pub fn wake_main<R: Runtime>(window: &WebviewWindow<R>) {
         return;
     }
     set_asleep(window, false);
-    let _ = window.emit_to(MAIN_WINDOW, crate::RESYNC_EVENT, ());
+    crate::window::warn_if_failed(
+        "ask the woken main window to reload",
+        window.emit_to(MAIN_WINDOW, crate::RESYNC_EVENT, ()),
+    );
 }
 
 #[cfg(windows)]

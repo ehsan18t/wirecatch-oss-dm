@@ -147,10 +147,13 @@ pub const RESYNC_EVENT: &str = "wirecatch://resync";
 fn init_logging() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt()
+    if let Err(e) = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
-        .try_init();
+        .try_init()
+    {
+        tracing::warn!("kept the logger that was already set up: {e}");
+    }
 }
 
 /// Starts the app.

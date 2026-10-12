@@ -36,6 +36,7 @@ use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS
 
 use crate::host::Core;
 use crate::questions::open_question_ids;
+use crate::window::{bring_forward, show_focused, warn_if_failed};
 
 /// Every download window's label starts with this. The capability in
 /// `capabilities/download-windows.json` matches it as `download-*`.
@@ -88,13 +89,19 @@ pub fn fit_to_content<R: Runtime>(window: &tauri::WebviewWindow<R>, height: f64)
     if (f64::from(size.height) / scale - height).abs() < 1.0 {
         return;
     }
-    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    warn_if_failed(
+        "resize a download window",
+        window.set_size(tauri::LogicalSize::new(width, height)),
+    );
     if let (Some((top, screen)), Ok(at)) = (area, window.outer_position()) {
         let y = f64::from(at.y) / scale;
         let bottom = top + screen - SCREEN_MARGIN / 2.0;
         if y + height > bottom {
             let x = f64::from(at.x) / scale;
-            let _ = window.set_position(LogicalPosition::new(x, (bottom - height).max(top)));
+            warn_if_failed(
+                "move a download window onto the screen",
+                window.set_position(LogicalPosition::new(x, (bottom - height).max(top))),
+            );
         }
     }
 }
@@ -450,9 +457,7 @@ fn apply<R: Runtime>(app: &AppHandle<R>, step: Step) {
         Step::Open(window) => create(&handle, &window),
         Step::Focus(label) => {
             if let Some(window) = handle.get_webview_window(&label) {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
+                bring_forward(&window);
             }
         }
     });
@@ -482,7 +487,7 @@ fn screen_area<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<Area> {
 fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
     if let Some(existing) = app.get_webview_window(&open.label) {
         // Still closing from before: show it rather than fail on the label.
-        let _ = existing.set_focus();
+        warn_if_failed("focus a download window", existing.set_focus());
         return;
     }
     let title = app
@@ -513,14 +518,14 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
     match screen_area(&window) {
         Some(area) => {
             let (x, y) = place(open.slot, area, WINDOW_SIZE);
-            let _ = window.set_position(LogicalPosition::new(x, y));
+            warn_if_failed(
+                "place a download window",
+                window.set_position(LogicalPosition::new(x, y)),
+            );
         }
-        None => {
-            let _ = window.center();
-        }
+        None => warn_if_failed("center a download window", window.center()),
     }
-    let _ = window.show();
-    let _ = window.set_focus();
+    show_focused(&window);
     // On top until it has had the focus and lost it, then a normal window.
     let had_focus = Arc::new(AtomicBool::new(false));
     let dropped = Arc::new(AtomicBool::new(false));
@@ -553,13 +558,19 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
 
 /// Makes a download window a normal window again, behind the window that took the focus.
 fn drop_always_on_top<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    let _ = window.set_always_on_top(false);
+    warn_if_failed(
+        "stop keeping a download window on top",
+        window.set_always_on_top(false),
+    );
     // Windows puts a window that stops being always on top above every normal window, so it
     // would jump over the browser the person just went back to. Put it right behind that one.
     #[cfg(windows)]
     {
         let this = window.clone();
-        let _ = window.run_on_main_thread(move || behind_foreground(&this));
+        warn_if_failed(
+            "reach the window thread",
+            window.run_on_main_thread(move || behind_foreground(&this)),
+        );
     }
 }
 

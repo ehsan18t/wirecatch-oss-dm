@@ -117,9 +117,7 @@ impl Launch {
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         crate::sleep::wake_main(&window);
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        bring_forward(&window);
         return;
     }
     let Some(config) = app
@@ -160,8 +158,27 @@ pub fn reveal_main<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     if window.is_visible().unwrap_or(true) {
         return;
     }
-    let _ = window.show();
-    let _ = window.set_focus();
+    show_focused(window);
+}
+
+/// Brings `window` to the front: restored if minimized, shown and focused.
+pub fn bring_forward<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    warn_if_failed("restore a minimized window", window.unminimize());
+    show_focused(window);
+}
+
+/// Shows `window` and gives it the focus.
+pub fn show_focused<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    warn_if_failed("show a window", window.show());
+    warn_if_failed("focus a window", window.set_focus());
+}
+
+/// Logs a window or event call that failed. Nothing can be retried: the window is closing or
+/// the system refused, and the person can still act on the window themselves.
+pub fn warn_if_failed(action: &str, result: tauri::Result<()>) {
+    if let Err(e) = result {
+        tracing::warn!("could not {action}: {e}");
+    }
 }
 
 /// Handles a launch: keeps its links for the interface and shows the window when it should.
@@ -171,7 +188,10 @@ pub fn handle_launch<R: Runtime>(app: &AppHandle<R>, launch: &Launch) {
             links.push(launch.links.iter().cloned());
         }
         // An open interface picks them up now; a new one asks for them when it loads.
-        let _ = app.emit(LINKS_EVENT, ());
+        warn_if_failed(
+            "tell the interface that links arrived",
+            app.emit(LINKS_EVENT, ()),
+        );
     }
     if launch.shows_window() {
         show_main_window(app);

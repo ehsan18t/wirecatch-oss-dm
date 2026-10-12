@@ -137,9 +137,11 @@ pub fn bridge_to_register(
         #[cfg(unix)]
         return crate::appimage::install_private_bridge(&bundled, appimage, private_dir);
         #[cfg(not(unix))]
-        {
-            let _ = (appimage, private_dir);
-        }
+        tracing::debug!(
+            appimage = %appimage.display(),
+            private_dir = %private_dir.display(),
+            "ignoring an AppImage outside Linux"
+        );
     }
     if crate::appimage::is_temporary(&bundled) {
         return Err(format!(

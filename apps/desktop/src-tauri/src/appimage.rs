@@ -141,7 +141,11 @@ fn write_private(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut name = dest.as_os_str().to_owned();
     name.push(".new");
     let tmp = PathBuf::from(name);
-    let _ = std::fs::remove_file(&tmp);
+    match std::fs::remove_file(&tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

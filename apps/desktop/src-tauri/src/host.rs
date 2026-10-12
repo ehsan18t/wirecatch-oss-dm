@@ -153,7 +153,11 @@ pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
 /// delete `from` afterwards is only logged: everything is in `to` by then.
 pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
     if let Err(e) = copy_dir(from, to) {
-        let _ = std::fs::remove_dir_all(to);
+        if let Err(cleanup) = std::fs::remove_dir_all(to) {
+            // Left behind, the half copy is taken for the moved folder on the next start, since
+            // `needs_move` sees that `to` exists.
+            tracing::error!(folder = %to.display(), error = %cleanup, "could not remove a half-made copy of the data folder; delete it before starting Wirecatch again");
+        }
         return Err(e);
     }
     if let Err(e) = std::fs::remove_dir_all(from) {
