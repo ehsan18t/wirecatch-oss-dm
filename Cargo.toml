@@ -34,7 +34,7 @@ tempfile = "3.27.0"
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl"] }
 axum = "0.8"
 
-# Every crate opts in with `[lints] workspace = true` once it is clean; the ones still to go are `LINT_PENDING` in scripts/gate.mjs (docs/AUDIT.md, W14). Levels are `warn` so local builds keep going while you work; the gate (`cargo clippy ... -- -D warnings`) turns every one into an error. An exception is written in place as `#[expect(lint, reason = "...")]`, never `allow`.
+# Every crate opts in with `[lints] workspace = true`; the gate's lint-policy check fails for one that does not. Levels are `warn` so local builds keep going while you work; the gate (`cargo clippy ... -- -D warnings`) turns every one into an error. An exception is written in place as `#[expect(lint, reason = "...")]`, never `allow`.
 [workspace.lints.rust]
 missing_docs = "warn"
 unsafe_op_in_unsafe_fn = "warn"
