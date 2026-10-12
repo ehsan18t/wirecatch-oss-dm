@@ -1,6 +1,8 @@
 // Every setting, in plain words, with a one-line explanation. The settings screen, its search
 // and the command palette all read this one list.
 
+import { DEFAULT_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+
 export type SectionId =
   'general' | 'files' | 'browser' | 'media' | 'addons' | 'speed' | 'transfer' | 'advanced';
 
@@ -247,7 +249,7 @@ const DEFS = [
     id: 'connections_per_download',
     section: 'advanced',
     label: 'Connections per download',
-    help: 'More connections can be faster on servers that allow it. 8 suits most servers.',
+    help: `More connections can be faster on servers that allow it. ${DEFAULT_CONNECTIONS_PER_DOWNLOAD} suits most servers.`,
     keywords: 'threads segments parts parallel connections speed',
   },
   {

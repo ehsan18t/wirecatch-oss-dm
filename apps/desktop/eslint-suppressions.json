@@ -1,12 +1,4 @@
 {
-  "src/lib/components/DetailPanel.svelte": {
-    "max-lines": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
-    }
-  },
   "src/lib/components/Sidebar.svelte": {
     "max-lines": {
       "count": 1

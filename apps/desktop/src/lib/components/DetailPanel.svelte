@@ -7,27 +7,27 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import Trash from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
-  import type { FixAction, QueueId } from '@wirecatch/protocol';
   import {
-    formatDate,
-    formatEta,
-    formatPercent,
-    formatSize,
+    DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    type FixAction,
+    type QueueId,
+  } from '@wirecatch/protocol';
+  import {
     folderOf,
+    formatDate,
     linkForDisplay,
     MEDIA_SOURCE_LABEL,
-    processingFraction,
-    progressFraction,
     shownWait,
     STATUS_LABEL,
     statusDetail,
     statusShort,
   } from '$lib/format';
-  import { formatBytes, formatSpeed } from '@wirecatch/units';
+  import { formatBytes } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
   import { isUnderWay } from '$lib/state/view';
   import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
+  import DetailProgress from './DetailProgress.svelte';
   import ErrorFix from './ErrorFix.svelte';
   import IconButton from './IconButton.svelte';
 
@@ -42,6 +42,10 @@
   const anyRunning = $derived(rows.some((r) => isUnderWay(r.status)));
   const anyStopped = $derived(rows.some((r) => r.status === 'paused' || r.status === 'failed'));
   const anyFailed = $derived(rows.some((r) => r.status === 'failed' || r.status === 'cancelled'));
+  /** Connections each download may open: the setting, or the core's default before it loads. */
+  const connectionsLimit = $derived(
+    app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+  );
   const totalSize = $derived(rows.reduce((sum, r) => sum + (r.total ?? 0), 0));
 
   async function copyLink(url: string) {
@@ -75,7 +79,6 @@
     />
   {/if}
   {#if one}
-    {@const fraction = processingFraction(one) ?? progressFraction(one.done, one.total)}
     <header>
       <span class="cat"><CategoryIcon category={one.category} size="lg" /></span>
       <h2>{one.file_name}</h2>
@@ -105,32 +108,7 @@
       </p>
     {/if}
 
-    <section class="progress" aria-label="Progress">
-      <p class="readout num">
-        {#if one.status === 'completed'}
-          {formatBytes(one.total ?? one.done)}
-        {:else if one.speed > 0}
-          {formatSpeed(one.speed)}
-        {:else}
-          {formatPercent(one.done, one.total) || formatBytes(one.done)}
-        {/if}
-      </p>
-      <div class="wire {one.status}" aria-hidden="true">
-        <span
-          class="fill"
-          style:transform="scaleX({one.status === 'completed' ? 1 : (fraction ?? 0)})"
-        ></span>
-      </div>
-      <p class="facts num">
-        <span>{formatSize(one.done, one.total, one.status)}</span>
-        {#if one.status !== 'completed' && formatPercent(one.done, one.total)}
-          <span>{formatPercent(one.done, one.total)} done</span>
-        {/if}
-        {#if one.eta_secs !== null && one.speed > 0}
-          <span>{formatEta(one.eta_secs)} left</span>
-        {/if}
-      </p>
-    </section>
+    <DetailProgress row={one} />
 
     <div class="actions">
       {#if isUnderWay(one.status)}
@@ -172,9 +150,9 @@
         <dt>Connections</dt>
         <dd class="num">
           {#if one.connections > 0}
-            {one.connections} open now, up to {app.settings?.connections_per_download ?? 8}
+            {one.connections} open now, up to {connectionsLimit}
           {:else}
-            Up to {app.settings?.connections_per_download ?? 8}
+            Up to {connectionsLimit}
           {/if}
         </dd>
       </div>
@@ -359,52 +337,6 @@
   .status.failed {
     color: var(--danger);
     font-weight: 600;
-  }
-
-  .readout {
-    margin: 0 0 8px;
-    font-size: var(--text-readout);
-    font-weight: 600;
-    font-variation-settings: 'wdth' 78;
-    line-height: 1;
-  }
-
-  .wire {
-    position: relative;
-    height: 4px;
-    overflow: hidden;
-    border-radius: 2px;
-    background: var(--wire-track);
-  }
-
-  .wire .fill {
-    position: absolute;
-    inset: 0;
-    background: var(--accent);
-    transform-origin: left center;
-    transition: transform 240ms linear;
-  }
-
-  .wire.paused .fill {
-    background: var(--warn-wire);
-  }
-
-  .wire.failed .fill {
-    background: var(--danger);
-  }
-
-  .wire.completed .fill,
-  .wire.queued .fill {
-    background: var(--wire-done);
-  }
-
-  .facts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px 14px;
-    margin: 8px 0 0;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
   }
 
   .actions {
