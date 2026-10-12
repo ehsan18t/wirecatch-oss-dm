@@ -19,6 +19,7 @@
 //! control connection's TLS session, which many servers require.
 
 mod control;
+pub(crate) mod reply;
 #[cfg(test)]
 mod tests;
 
@@ -242,18 +243,16 @@ impl Target {
         }
         let mut control = Control::new(stream, self.stall);
         let mut greeting = control.reply().await?;
-        // 120: "ready in a few minutes"; the real greeting follows.
-        while greeting.code == 120 {
+        while greeting.code == reply::READY_SOON {
             greeting = control.reply().await?;
         }
-        if greeting.code != 220 {
-            // 421 is how most servers say they have too many connections.
+        if greeting.code != reply::SERVICE_READY {
             return Err(self.reply_failure(&greeting));
         }
         if let (Security::Explicit, Some(tls)) = (self.security, tls) {
             let reply = control.command("AUTH TLS", "AUTH TLS").await?;
-            if reply.code != 234 {
-                return Err(if (400..500).contains(&reply.code) {
+            if reply.code != reply::SECURITY_ACCEPTED {
+                return Err(if reply::is_transient(reply.code) {
                     self.reply_failure(&reply)
                 } else {
                     Error::FtpTlsUnavailable {
@@ -275,14 +274,14 @@ impl Target {
         let mut reply = control
             .command(&format!("USER {}", self.user), "USER <hidden>")
             .await?;
-        if reply.code == 331 {
+        if reply.code == reply::NEED_PASSWORD {
             reply = control
                 .command(&format!("PASS {}", self.password), "PASS <hidden>")
                 .await?;
         }
         match reply.code {
-            230 | 202 => {}
-            530 if first => {
+            reply::LOGGED_IN | reply::NOT_NEEDED => {}
+            reply::NOT_LOGGED_IN if first => {
                 return Err(Error::FtpLoginRefused {
                     host: self.host_name(),
                     code: reply.code,
@@ -304,7 +303,7 @@ impl Target {
             for command in ["PBSZ 0", "PROT P"] {
                 let reply = control.command(command, command).await?;
                 if !reply.is_success() {
-                    return Err(if (400..500).contains(&reply.code) {
+                    return Err(if reply::is_transient(reply.code) {
                         self.reply_failure(&reply)
                     } else {
                         Error::FtpTlsUnavailable {
@@ -331,7 +330,7 @@ impl Target {
         let reply = control
             .command(&format!("SIZE {}", self.path), "SIZE")
             .await?;
-        Ok((reply.code == 213)
+        Ok((reply.code == reply::FILE_STATUS)
             .then(|| control::parse_size(&reply.text))
             .flatten())
     }
@@ -340,7 +339,7 @@ impl Target {
     /// code where an error was expected means the conversation went wrong,
     /// which a new connection may fix.
     fn reply_failure(&self, reply: &Reply) -> Failure {
-        if (400..600).contains(&reply.code) {
+        if reply::is_failure(reply.code) {
             Error::FtpReply {
                 code: reply.code,
                 message: reply.message(),
@@ -394,7 +393,7 @@ impl Server {
     async fn passive_port(&self, control: &mut Control) -> Result<u16, Failure> {
         if !self.epsv_refused.load(Ordering::Relaxed) {
             let reply = control.command("EPSV", "EPSV").await?;
-            if reply.code == 229 {
+            if reply.code == reply::EXTENDED_PASSIVE {
                 if let Some(port) = control::parse_epsv(&reply.text) {
                     return Ok(port);
                 }
@@ -408,7 +407,7 @@ impl Server {
             self.epsv_refused.store(true, Ordering::Relaxed);
         }
         let reply = control.command("PASV", "PASV").await?;
-        if reply.code == 227 {
+        if reply.code == reply::PASSIVE {
             control::parse_pasv(&reply.text).ok_or_else(|| unexpected(&reply))
         } else {
             Err(self.target.reply_failure(&reply))
@@ -436,7 +435,7 @@ impl Server {
             let reply = control
                 .command(&format!("REST {from}"), &format!("REST {from}"))
                 .await?;
-            if reply.code != 350 {
+            if reply.code != reply::PENDING {
                 return Err(self.target.reply_failure(&reply));
             }
         }
@@ -515,12 +514,12 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
         let mdtm = control
             .command(&format!("MDTM {}", target.path), "MDTM")
             .await?;
-        let modified = (mdtm.code == 213)
+        let modified = (mdtm.code == reply::FILE_STATUS)
             .then(|| control::parse_mdtm(&mdtm.text))
             .flatten();
         // `REST 0` is harmless (the transfer starts at 0 anyway) and tells
         // whether ranges are possible.
-        let rest = control.command("REST 0", "REST 0").await?.code == 350;
+        let rest = control.command("REST 0", "REST 0").await?.code == reply::PENDING;
 
         let server = Arc::new(Server {
             target: target.clone(),
@@ -704,7 +703,7 @@ impl Transfer {
         self.phase = Phase::Confirmed;
         if reply.is_success() {
             Ok(None)
-        } else if (400..600).contains(&reply.code) {
+        } else if reply::is_failure(reply.code) {
             Err(Error::FtpReply {
                 code: reply.code,
                 message: reply.message(),

@@ -3,6 +3,10 @@
 use std::fmt;
 use std::io;
 
+use reqwest::StatusCode;
+
+use crate::ftp::reply;
+
 /// Errors a download can end with.
 ///
 /// [`Error::is_retryable`] tells whether trying the same download again later
@@ -82,10 +86,11 @@ pub enum Error {
     #[error("resume state is unreadable: {0}")]
     State(String),
 
-    /// The link kept redirecting, more than 20 times, usually because it
-    /// redirects in a loop.
+    /// The link kept redirecting, past the limit browsers also use, usually
+    /// because it redirects in a loop.
     #[error(
-        "{url} redirected more than 20 times, probably in a loop. Open the link in a browser to check it, or get a fresh link"
+        "{url} redirected more than {max} times, probably in a loop. Open the link in a browser to check it, or get a fresh link",
+        max = crate::http::MAX_REDIRECTS
     )]
     TooManyRedirects {
         /// The URL that was asked for.
@@ -212,11 +217,11 @@ impl Error {
         match self {
             Error::Network(_) | Error::PrematureEof { .. } | Error::Stalled(_) => true,
             Error::HttpStatus { status, .. } => {
-                matches!(status, 408 | 425 | 429 | 500 | 502 | 503 | 504)
+                StatusCode::from_u16(*status).is_ok_and(crate::http::is_retryable_status)
             }
             // FTP's 4xx replies are "transient negative completion" (RFC 959):
             // too many connections, data connection failed, file busy.
-            Error::FtpReply { code, .. } => (400..500).contains(code),
+            Error::FtpReply { code, .. } => reply::is_transient(*code),
             _ => false,
         }
     }
@@ -259,7 +264,7 @@ impl Error {
 /// What to add to an FTP error reply to say how to fix it.
 fn ftp_reply_hint(code: u16) -> &'static str {
     match code {
-        550 => {
+        reply::FILE_UNAVAILABLE => {
             ". Check that the file exists. The path in the link is relative to the folder the server logs in to; to give a path from the top folder, start it with %2F, as in ftp://host/%2Fpub/file.iso"
         }
         _ => "",

@@ -21,7 +21,7 @@ use crate::naming;
 use crate::segment::UNKNOWN_END;
 
 /// Most redirects followed for one request, the same limit browsers use.
-const MAX_REDIRECTS: usize = 20;
+pub(crate) const MAX_REDIRECTS: usize = 20;
 
 /// Longest `Retry-After` the engine waits for; a longer one is cut to this.
 pub(crate) const MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
@@ -89,14 +89,11 @@ impl Failure {
     /// A response whose status is not the one wanted.
     pub(crate) fn status(response: &Response) -> Self {
         let status = response.status();
-        let retry_after = matches!(
-            status,
-            StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
-        )
-        .then(|| response.headers().get(RETRY_AFTER))
-        .flatten()
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| parse_retry_after(v, SystemTime::now()));
+        let retry_after = is_busy(status)
+            .then(|| response.headers().get(RETRY_AFTER))
+            .flatten()
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| parse_retry_after(v, SystemTime::now()));
         Self {
             error: Error::HttpStatus {
                 status: status.as_u16(),
@@ -105,6 +102,32 @@ impl Failure {
             retry_after,
         }
     }
+}
+
+/// Whether an answer says "not now" rather than "no", so the request is tried
+/// again after a pause: a timeout, too early, busy, or a server error a later
+/// attempt often gets past.
+pub(crate) fn is_retryable_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT
+            | StatusCode::TOO_EARLY
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::INTERNAL_SERVER_ERROR
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+/// Whether an answer says the server is busy: it may say when to come back
+/// (`Retry-After`), and to a download already receiving on other connections
+/// it means the server allows no more.
+pub(crate) fn is_busy(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
+    )
 }
 
 /// Reads a `Retry-After` value: either a number of seconds or an HTTP date.

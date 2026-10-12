@@ -35,6 +35,10 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 /// One MiB as a `u32`, the type quinn's window settings take.
 const MIB_U32: u32 = 1024 * 1024;
 
+/// Entries in the HTTP/3 TLS session cache, shared by the QUIC connections of
+/// one download: the same few hosts, with room to spare.
+const SESSION_CACHE_ENTRIES: usize = 64;
+
 /// Flow control windows. The defaults suit a 100 Mbit/s link with 100 ms of
 /// latency; downloads can be much faster than that.
 const STREAM_WINDOW: u32 = 8 * MIB_U32;
@@ -97,7 +101,7 @@ impl Origin {
         let mut tls = tls.clone();
         tls.alpn_protocols = vec![b"h3".to_vec()];
         // A cache of its own: tickets from TCP connections do not work for QUIC.
-        tls.resumption = rustls::client::Resumption::in_memory_sessions(64);
+        tls.resumption = rustls::client::Resumption::in_memory_sessions(SESSION_CACHE_ENTRIES);
         let crypto = match quinn::crypto::rustls::QuicClientConfig::try_from(tls) {
             Ok(crypto) => crypto,
             Err(e) => {

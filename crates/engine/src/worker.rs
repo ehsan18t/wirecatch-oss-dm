@@ -7,12 +7,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use reqwest::StatusCode;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::download::Shared;
 use crate::error::{Error, Result};
-use crate::http::Failure;
+use crate::ftp::reply;
+use crate::http::{self, Failure};
 use crate::limiter::{Paced, pace};
 use crate::numeric::{clamp_to_len, saturating_cast};
 use crate::segment::{Assignment, ByteRange, SharedTable, UNKNOWN_END};
@@ -346,14 +348,17 @@ async fn stream(
 /// then closed or reset. Timeouts are not refusals; a slow network is not a limit.
 fn is_refusal(error: &Error) -> bool {
     match error {
-        Error::HttpStatus { status, .. } => matches!(status, 429 | 503),
+        Error::HttpStatus { status, .. } => StatusCode::from_u16(*status).is_ok_and(http::is_busy),
         // No answer in time (`Stalled`) is not a refusal either.
         Error::Network(e) => !e.is_timeout(),
         Error::PrematureEof { .. } => true,
         // 421: too many connections. 530 on a later connection: this login
         // worked on the first one, so the server limits sessions. 425: the
         // server would not open another data connection.
-        Error::FtpReply { code, .. } => matches!(code, 421 | 425 | 530),
+        Error::FtpReply { code, .. } => matches!(
+            *code,
+            reply::SERVICE_UNAVAILABLE | reply::NO_DATA_CONNECTION | reply::NOT_LOGGED_IN
+        ),
         _ => false,
     }
 }

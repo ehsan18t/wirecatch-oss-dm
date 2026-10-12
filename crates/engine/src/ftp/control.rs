@@ -26,6 +26,11 @@ const MAX_LINES: usize = 256;
 /// Most reply text kept for an error message.
 const MAX_TEXT: usize = 512;
 
+/// Entries in one control connection's TLS session cache: room for one
+/// server's tickets. rustls keeps a server's entry only while the cache holds
+/// more than one server, so 8 or fewer would throw every ticket away at once.
+const SESSION_CACHE_ENTRIES: usize = 32;
+
 /// A socket, plain or encrypted.
 pub(crate) enum Stream {
     Plain(TcpStream),
@@ -117,10 +122,7 @@ impl Tls {
     /// a different session than its control connection.
     pub fn for_new_session(&self) -> Self {
         let mut config = (*self.config).clone();
-        // Room for one server's tickets: rustls keeps a server's entry only
-        // while the cache holds more than one server, so 8 or fewer would
-        // throw every ticket away at once.
-        config.resumption = rustls::client::Resumption::in_memory_sessions(32);
+        config.resumption = rustls::client::Resumption::in_memory_sessions(SESSION_CACHE_ENTRIES);
         Self::new(config, self.server_name.clone())
     }
 }

@@ -64,7 +64,7 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{debug, warn};
 use url::{Host, Url};
 
 use crate::download::DownloadOptions;
@@ -75,6 +75,10 @@ use crate::numeric::clamp_to_len;
 use crate::proxy;
 use crate::units::KIB_USIZE;
 use crate::worker;
+
+/// The port given to name lookups, which only need the name: the addresses a
+/// name has do not depend on the port.
+const LOOKUP_PORT: u16 = 0;
 
 /// Size of the write buffer used by [`Fetcher::save`].
 const SAVE_BUFFER: usize = 256 * KIB_USIZE;
@@ -658,10 +662,17 @@ fn embedded_ipv4(v6: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
 
 /// Every address `host` resolves to, or nothing if it does not resolve (the
 /// request then fails on its own).
-async fn resolve(host: &str, port: u16, timeout: Duration) -> Vec<IpAddr> {
-    match tokio::time::timeout(timeout, tokio::net::lookup_host((host, port))).await {
+async fn resolve(host: &str, timeout: Duration) -> Vec<IpAddr> {
+    match tokio::time::timeout(timeout, tokio::net::lookup_host((host, LOOKUP_PORT))).await {
         Ok(Ok(addrs)) => addrs.map(|a| a.ip()).collect(),
-        _ => Vec::new(),
+        Ok(Err(e)) => {
+            debug!(host, error = %e, "the name does not resolve");
+            Vec::new()
+        }
+        Err(_) => {
+            debug!(host, "looking up the name timed out");
+            Vec::new()
+        }
     }
 }
 
@@ -671,10 +682,7 @@ async fn host_addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
     match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
         Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
-        Some(Host::Domain(name)) => {
-            let port = url.port_or_known_default().unwrap_or(80);
-            resolve(name, port, timeout).await
-        }
+        Some(Host::Domain(name)) => resolve(name, timeout).await,
         None => Vec::new(),
     }
 }
@@ -784,8 +792,7 @@ impl NetworkGuard {
                 if let Some(refused) = known {
                     refused
                 } else {
-                    let port = url.port_or_known_default().unwrap_or(80);
-                    let addrs = resolve(name, port, self.timeout).await;
+                    let addrs = resolve(name, self.timeout).await;
                     // Refused when no address outside the local network
                     // is left, the same rule the resolver applies.
                     let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
@@ -831,7 +838,7 @@ impl Resolve for FilteringResolver {
             Vec::new()
         };
         Box::pin(async move {
-            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
+            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
                 .await?
                 .filter(|a| trusted || !is_private(a.ip()) || pinned.contains(&a.ip()))
                 .collect();
