@@ -46,3 +46,11 @@ export function dayBefore(date: Date): Date {
   earlier.setDate(date.getDate() - 1);
   return earlier;
 }
+
+/**
+ * The date at `ms` since 1970, as the calendar helpers take it. Each call gives a new value for
+ * one reading, never kept and changed, so it needs no reactive date: state holds the number.
+ */
+export function dateAt(ms: number): Date {
+  return new Date(ms);
+}
