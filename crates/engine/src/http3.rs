@@ -364,7 +364,7 @@ fn check_response(
         .and_then(|v| v.to_str().ok())
         .and_then(parse_content_range);
     match range {
-        Some(range) if range.start == from => {
+        Some(range) if range.start == Some(from) => {
             if let (Some(expected), Some(actual)) = (shared.total, range.total)
                 && expected != actual
             {

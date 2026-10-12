@@ -501,7 +501,7 @@ impl Fetcher {
             // The server ignores ranges and sends everything.
             (StatusCode::OK, Some(_)) => Ok((response, from)),
             (StatusCode::PARTIAL_CONTENT, Some(_)) => {
-                let got = http::content_range(response.headers()).map(|c| c.start);
+                let got = http::content_range(response.headers()).and_then(|c| c.start);
                 if got == Some(from) {
                     Ok((response, 0))
                 } else {

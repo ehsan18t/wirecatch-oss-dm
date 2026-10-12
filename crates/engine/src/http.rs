@@ -535,14 +535,12 @@ async fn probe_range(
     let (ranged, total) = match status {
         StatusCode::PARTIAL_CONTENT => match content_range(response_headers) {
             Some(ContentRange {
-                start: 0,
+                start: Some(0),
                 total: Some(total),
-                ..
             }) => (true, Some(total)),
             Some(ContentRange {
-                start: 0,
+                start: Some(0),
                 total: None,
-                ..
             }) => {
                 // Only the whole file if the request asked for all of it.
                 limited_without_size = range != "bytes=0-";
@@ -551,7 +549,7 @@ async fn probe_range(
             other => {
                 return Err(Error::RangeNotHonored {
                     expected: 0,
-                    got: other.map(|c| c.start),
+                    got: other.and_then(|c| c.start),
                 }
                 .into());
             }
@@ -610,10 +608,10 @@ pub(crate) async fn fetch(
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
     let got = content_range(response.headers());
-    if got.map(|c| c.start) != Some(from) {
+    if got.and_then(|c| c.start) != Some(from) {
         return Err(Error::RangeNotHonored {
             expected: from,
-            got: got.map(|c| c.start),
+            got: got.and_then(|c| c.start),
         }
         .into());
     }
@@ -633,10 +631,13 @@ fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {
     }
 }
 
+/// What a `Content-Range` header says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContentRange {
-    pub start: u64,
-    pub end_inclusive: u64,
+    /// The offset of the first byte sent; `None` for `bytes */N`, which sends
+    /// no bytes of the file and only says its size.
+    pub start: Option<u64>,
+    /// The size of the whole file, if the server says.
     pub total: Option<u64>,
 }
 
@@ -653,18 +654,13 @@ pub fn parse_content_range(value: &str) -> Option<ContentRange> {
         t => Some(t.parse().ok()?),
     };
     if span.trim() == "*" {
-        return Some(ContentRange {
-            start: 0,
-            end_inclusive: 0,
-            total,
-        });
+        return Some(ContentRange { start: None, total });
     }
     let (start, end) = span.split_once('-')?;
-    let start = start.trim().parse().ok()?;
-    let end_inclusive = end.trim().parse().ok()?;
+    let start: u64 = start.trim().parse().ok()?;
+    let end_inclusive: u64 = end.trim().parse().ok()?;
     (start <= end_inclusive).then_some(ContentRange {
-        start,
-        end_inclusive,
+        start: Some(start),
         total,
     })
 }
@@ -679,8 +675,14 @@ mod tests {
         assert_eq!(
             parse_content_range("bytes 0-99/1000"),
             Some(ContentRange {
-                start: 0,
-                end_inclusive: 99,
+                start: Some(0),
+                total: Some(1000)
+            })
+        );
+        assert_eq!(
+            parse_content_range("bytes */1000"),
+            Some(ContentRange {
+                start: None,
                 total: Some(1000)
             })
         );
@@ -973,6 +975,43 @@ mod tests {
             assert_eq!(response.url(), &plain);
             assert_eq!(response.bytes().await.unwrap(), "ok");
             assert_eq!(plain_requests.load(Ordering::SeqCst), 1);
+        }
+
+        /// `bytes */10` names no bytes at all: a `206` carrying it is not the
+        /// start of the file, whatever offset was asked for.
+        #[tokio::test]
+        async fn a_partial_answer_without_a_span_is_not_the_range_asked_for() {
+            let answer = b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes */10\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            let server = start_tls_server_answering(answer.to_vec()).await;
+            let opts = DownloadOptions::default();
+            let client = Clients::with_roots(&opts, server.roots.clone())
+                .build()
+                .unwrap();
+            let (session, url) = Session::new(&server.url, &opts, CancellationToken::new());
+            let probed = probe(&client, &url, &session, None).await;
+            assert!(
+                matches!(
+                    probed.as_ref().map_err(|f| &f.error),
+                    Err(Error::RangeNotHonored {
+                        expected: 0,
+                        got: None
+                    })
+                ),
+                "probe: {:?}",
+                probed.map(|p| (p.ranged, p.total)).map_err(|f| f.error)
+            );
+            let fetched = fetch(&client, &url, &session, 0, 10, true, Some(10)).await;
+            assert!(
+                matches!(
+                    fetched.as_ref().map_err(|f| &f.error),
+                    Err(Error::RangeNotHonored {
+                        expected: 0,
+                        got: None
+                    })
+                ),
+                "fetch: {:?}",
+                fetched.map(|(_, skip)| skip).map_err(|f| f.error)
+            );
         }
 
         #[tokio::test]
