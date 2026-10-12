@@ -97,14 +97,14 @@
       </section>
     {/if}
 
-    {#if snapshot?.notice}
-      <section class="panel panel-{snapshot.notice.tone}" aria-label="Message">
-        <p>{snapshot.notice.message}</p>
-        <button type="button" class="link-button" onclick={() => model.dismissNotice()}
+    {#each snapshot?.notices ?? [] as notice (notice.id)}
+      <section class="panel panel-{notice.tone}" aria-label="Message">
+        <p>{notice.message}</p>
+        <button type="button" class="link-button" onclick={() => model.dismissNotice(notice.id)}
           >Dismiss</button
         >
       </section>
-    {/if}
+    {/each}
 
     {#if cachedNote !== null}
       <p class="note">{cachedNote}</p>

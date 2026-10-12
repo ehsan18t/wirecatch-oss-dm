@@ -7,6 +7,7 @@ import type { DownloadItemLike } from '../src/lib/capture/candidate';
 import {
   registerCapture,
   type CaptureHandler,
+  type DownloadDelta,
   type DownloadEvents,
 } from '../src/lib/capture/register';
 import { Hub } from '../src/lib/hub/hub';
@@ -17,12 +18,14 @@ type Determining = (item: DownloadItemLike, suggest: () => void) => boolean | un
 
 function chromiumEvents(): {
   events: DownloadEvents;
+  change: (delta: DownloadDelta) => void;
   fire: (item: DownloadItemLike) => {
     suggest: ReturnType<typeof vi.fn>;
     returned: boolean | undefined;
   };
 } {
   let listener: Determining | null = null;
+  let changed: ((delta: DownloadDelta) => void) | null = null;
   const events: DownloadEvents = {
     onDeterminingFilename: {
       addListener: (l) => {
@@ -34,9 +37,18 @@ function chromiumEvents(): {
         throw new Error('Chromium must not use onCreated');
       },
     },
+    onChanged: {
+      addListener: (l) => {
+        changed = l;
+      },
+    },
   };
   return {
     events,
+    change: (delta) => {
+      if (changed === null) throw new Error('not registered');
+      changed(delta);
+    },
     fire: (item) => {
       const suggest = vi.fn();
       if (listener === null) throw new Error('not registered');
@@ -83,12 +95,34 @@ async function realHub(
   return hub;
 }
 
+describe('download changes', () => {
+  it.each<[string, DownloadDelta, boolean]>([
+    ['resumed', { id: 3, paused: { current: false } }, true],
+    ['finished', { id: 3, state: { current: 'complete' } }, true],
+    ['cancelled', { id: 3, state: { current: 'interrupted' } }, true],
+    ['paused', { id: 3, paused: { current: true } }, false],
+    ['renamed', { id: 3 }, false],
+  ])('tells the hub when a download is %s: %s', (_label, delta, moved) => {
+    const { events, change } = chromiumEvents();
+    const onDownloadMoved = vi.fn();
+    registerCapture(events, {
+      onDownload: () => Promise.resolve(null),
+      onDownloadMoved,
+    });
+    change(delta);
+    expect(onDownloadMoved).toHaveBeenCalledTimes(moved ? 1 : 0);
+  });
+});
+
 describe('registerCapture on Chromium', () => {
   it('uses onDeterminingFilename and tells Chromium to wait for suggest', async () => {
     const { events, fire } = chromiumEvents();
-    expect(registerCapture(events, { onDownload: () => Promise.resolve(null) })).toBe(
-      'determining_filename',
-    );
+    expect(
+      registerCapture(events, {
+        onDownload: () => Promise.resolve(null),
+        onDownloadMoved: () => undefined,
+      }),
+    ).toBe('determining_filename');
     const { suggest, returned } = fire(downloadItem());
     expect(returned).toBe(true);
     await flush();
@@ -122,6 +156,7 @@ describe('registerCapture on Chromium', () => {
   it('calls suggest only after the handover finished (so the download waits)', async () => {
     let finish: () => void = () => undefined;
     const handler: CaptureHandler = {
+      onDownloadMoved: () => undefined,
       onDownload: () =>
         new Promise((resolve) => {
           finish = () => resolve(null);
@@ -155,7 +190,10 @@ describe('registerCapture on Chromium', () => {
 
   it('calls suggest once when the handler rejects', async () => {
     const { events, fire } = chromiumEvents();
-    registerCapture(events, { onDownload: () => Promise.reject(new Error('boom')) });
+    registerCapture(events, {
+      onDownload: () => Promise.reject(new Error('boom')),
+      onDownloadMoved: () => undefined,
+    });
     const { suggest } = fire(downloadItem());
     await flush();
     expect(suggest).toHaveBeenCalledTimes(1);
@@ -164,6 +202,7 @@ describe('registerCapture on Chromium', () => {
   it('calls suggest once when the handler throws before returning a promise', async () => {
     const { events, fire } = chromiumEvents();
     registerCapture(events, {
+      onDownloadMoved: () => undefined,
       onDownload: () => {
         throw new Error('boom');
       },
@@ -177,7 +216,10 @@ describe('registerCapture on Chromium', () => {
 
   it('survives suggest throwing (the download was cancelled meanwhile)', async () => {
     const { events, fire } = chromiumEvents();
-    registerCapture(events, { onDownload: () => Promise.resolve(null) });
+    registerCapture(events, {
+      onDownload: () => Promise.resolve(null),
+      onDownloadMoved: () => undefined,
+    });
     const { suggest } = fire(downloadItem());
     suggest.mockImplementation(() => {
       throw new Error('Download must be in progress');
@@ -191,6 +233,7 @@ describe('registerCapture on Firefox', () => {
   it('uses onCreated and swallows handler failures', async () => {
     let listener: ((item: DownloadItemLike) => void) | null = null;
     const events: DownloadEvents = {
+      onChanged: { addListener: () => undefined },
       onCreated: {
         addListener: (l) => {
           listener = l;
@@ -198,7 +241,9 @@ describe('registerCapture on Firefox', () => {
       },
     };
     const onDownload = vi.fn(() => Promise.reject(new Error('boom')));
-    expect(registerCapture(events, { onDownload })).toBe('created');
+    expect(registerCapture(events, { onDownload, onDownloadMoved: () => undefined })).toBe(
+      'created',
+    );
     const fire = listener as ((item: DownloadItemLike) => void) | null;
     expect(fire).not.toBeNull();
     fire?.(downloadItem());

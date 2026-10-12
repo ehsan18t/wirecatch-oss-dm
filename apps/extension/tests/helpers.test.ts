@@ -11,7 +11,7 @@ import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
 import popupCss from '../src/entrypoints/popup/style.css?raw';
-import { asPopupRequest, isNotice } from '../src/lib/messages';
+import { asPopupRequest, isNotice, type Notice } from '../src/lib/messages';
 import {
   classifyDisconnect,
   describeProblem,
@@ -357,7 +357,14 @@ describe('cookieStoreOf', () => {
 });
 
 describe('notices kept in session storage', () => {
-  const notice = { tone: 'error', message: 'big.zip is paused in the browser.', at: 5 } as const;
+  const notice: Notice = {
+    id: 'd4',
+    downloadId: 4,
+    untilResumed: true,
+    tone: 'error',
+    message: 'big.zip is paused in the browser.',
+    at: 5,
+  };
 
   it('reads back only a well-formed notice', () => {
     expect(isNotice(notice)).toBe(true);
@@ -366,17 +373,17 @@ describe('notices kept in session storage', () => {
     expect(isNotice(null)).toBe(false);
   });
 
-  it('saves a notice, clears it, and ignores what it cannot read', async () => {
+  it('saves the notices, clears them, and drops those it cannot read', async () => {
     fakeBrowser.reset();
     const store = noticeStore();
     if (store === undefined) throw new Error('no session storage');
-    expect(await store.load()).toBeNull();
-    await store.save(notice);
-    expect(await store.load()).toEqual(notice);
-    await store.save(null);
-    expect(await store.load()).toBeNull();
-    await fakeBrowser.storage.session.set({ 'wirecatch.notice': { tone: 'loud' } });
-    expect(await store.load()).toBeNull();
+    expect(await store.load()).toEqual([]);
+    await store.save([notice]);
+    expect(await store.load()).toEqual([notice]);
+    await store.save([]);
+    expect(await store.load()).toEqual([]);
+    await fakeBrowser.storage.session.set({ 'wirecatch.notices': [{ tone: 'loud' }, notice] });
+    expect(await store.load()).toEqual([notice]);
   });
 });
 

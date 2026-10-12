@@ -9,7 +9,7 @@ import type { DownloadState } from '../src/lib/capture/handover';
 import type { CachedSettings, InFlightEntry, SettingsCache } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MENU_PRIVATE_WINDOW } from '../src/lib/hub/notices';
-import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
+import type { BackgroundMessage, Notice, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import {
   DEFAULT_SETTINGS,
@@ -112,6 +112,10 @@ function addDownloadCalls(app: FakeApp): NewDownload[] {
 }
 
 let s: Setup;
+
+function latestNotice(hub: Hub): Notice | null {
+  return hub.snapshot().notices[0] ?? null;
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -248,7 +252,7 @@ describe('handover', () => {
       uncertain: false,
     });
     expect(s.app.calls('withdraw_download')).toHaveLength(0);
-    expect(s.hub.snapshot().notice?.message).toBe(
+    expect(latestNotice(s.hub)?.message).toBe(
       'big.zip stayed in the browser: That address cannot be downloaded.',
     );
   });
@@ -266,7 +270,7 @@ describe('handover', () => {
     expect(s.app.calls('withdraw_download')).toHaveLength(1);
     // Told apart from a timeout: the app did answer, in a shape this version cannot read.
     expect(result).toMatchObject({ kind: 'kept', reason: 'app_unreadable', uncertain: false });
-    expect(s.hub.snapshot().notice?.message).toBe(
+    expect(latestNotice(s.hub)?.message).toBe(
       'big.zip stayed in the browser: Wirecatch answered in a way this version of the extension does not understand. Updating the extension may help.',
     );
   });
@@ -423,7 +427,7 @@ describe('handover', () => {
       expect(await pending).toMatchObject({ kind: 'kept', uncertain: true });
       await vi.advanceTimersByTimeAsync(1_000);
       // Unreadable, so it may or may not be a confirmation: never "took it after all".
-      expect(s.hub.snapshot().notice?.message).toBe(
+      expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
       );
     });
@@ -440,11 +444,11 @@ describe('handover', () => {
       await vi.advanceTimersByTimeAsync(8_000);
       await pending;
       // A failed withdraw leaves both copies possible, and says so at once.
-      expect(s.hub.snapshot().notice?.message).toBe(
+      expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
       );
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(s.hub.snapshot().notice?.message).toBe(
+      expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch took it after all, and the browser kept its copy too. You can cancel one of them.',
       );
     });
@@ -461,7 +465,7 @@ describe('handover', () => {
       await vi.advanceTimersByTimeAsync(8_000);
       await pending;
       expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
 
     it('does not warn when the app withdrew the download before its late answer arrived', async () => {
@@ -476,7 +480,7 @@ describe('handover', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       await pending;
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(s.hub.snapshot().notice?.message).not.toContain('twice');
+      expect(latestNotice(s.hub)?.message).not.toContain('twice');
     });
 
     it('withdraws over a new connection when the connection broke mid-handover', async () => {
@@ -726,7 +730,47 @@ describe('handover', () => {
     const result = await s.hub.onDownload(downloadItem());
     expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
     expect(s.downloads.log).toEqual(['pause:1', 'cancel:1']);
-    expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+    expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
+  });
+
+  it('shows an uncertain handover next to an unrelated error', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = 'hang';
+        app.withdrawBehavior = 'hang';
+      },
+    });
+    s.hub.notify('error', 'The video could not be sent.');
+    const pending = s.hub.onDownload(downloadItem());
+    await vi.advanceTimersByTimeAsync(8_000);
+    await pending;
+    expect(s.hub.snapshot().notices.map((n) => n.tone)).toEqual(['warning', 'error']);
+    expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
+  });
+
+  it('clears the notice asking to resume a download once the browser runs it', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = { error: { code: 'internal', message: 'Disk full.' } };
+      },
+    });
+    s.downloads.failing.add('resume');
+    await s.hub.onDownload(downloadItem({ id: 4 }));
+    s.hub.notify('warning', 'Something else.');
+    expect(s.hub.snapshot().notices).toHaveLength(2);
+    s.hub.onDownloadMoved(4);
+    expect(s.hub.snapshot().notices.map((n) => n.message)).toEqual(['Something else.']);
+  });
+
+  it('replaces the notice about a download with a newer one about it', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = { error: { code: 'internal', message: 'Disk full.' } };
+      },
+    });
+    await s.hub.onDownload(downloadItem({ id: 4 }));
+    await s.hub.onDownload(downloadItem({ id: 4 }));
+    expect(s.hub.snapshot().notices).toHaveLength(1);
   });
 
   it('warns of two copies when the browser cannot say how a cancelled copy stands', async () => {
@@ -755,7 +799,7 @@ describe('handover', () => {
     const pending = s.hub.onDownload(downloadItem());
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await pending).toMatchObject({ kind: 'kept', browserCopy: 'resumed' });
-    expect(s.hub.snapshot().notice?.tone).not.toBe('error');
+    expect(latestNotice(s.hub)?.tone).not.toBe('error');
   });
 
   it('says how to recover when the browser will not resume a download that is still waiting', async () => {
@@ -768,7 +812,7 @@ describe('handover', () => {
     s.downloads.browserState = { state: 'in_progress', paused: true };
     const result = await s.hub.onDownload(downloadItem());
     expect(result).toMatchObject({ kind: 'kept', browserCopy: 'stuck_paused' });
-    expect(s.hub.snapshot().notice).toMatchObject({
+    expect(latestNotice(s.hub)).toMatchObject({
       tone: 'error',
       message:
         "big.zip is paused in the browser. Open the browser's downloads page and click Resume.",
@@ -788,7 +832,7 @@ describe('handover', () => {
     s.downloads.browserState = state;
     const result = await s.hub.onDownload(downloadItem());
     expect(result).toMatchObject({ kind: 'kept', browserCopy: 'gone' });
-    expect(s.hub.snapshot().notice).toBeNull();
+    expect(latestNotice(s.hub)).toBeNull();
   });
 
   it('keeps the paused browser copy (and says so) when cancelling fails after the app took it', async () => {
@@ -797,7 +841,7 @@ describe('handover', () => {
     const result = await s.hub.onDownload(downloadItem());
     expect(s.downloads.log).toEqual(['pause:1', 'cancel:1']);
     expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'left_paused' });
-    expect(s.hub.snapshot().notice?.message).toContain('still in the browser');
+    expect(latestNotice(s.hub)?.message).toContain('still in the browser');
   });
 
   // The browser copy was cancelled and erased on the app's word without looking at it again:
@@ -815,7 +859,7 @@ describe('handover', () => {
       const result = await s.hub.onDownload(downloadItem());
       expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
       expect(s.downloads.log).toEqual(['pause:1']);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     },
   );
 
@@ -851,7 +895,7 @@ describe('handover', () => {
     expect(await s.hub.onDownload(downloadItem())).toBeNull();
     expect(s.downloads.log).toEqual([]);
     expect(s.app.calls('add_download')).toHaveLength(0);
-    expect(s.hub.snapshot().notice?.message).toContain('Allow access');
+    expect(latestNotice(s.hub)?.message).toContain('Allow access');
   });
 
   it('handles the same download only once at a time', async () => {
@@ -903,41 +947,59 @@ describe('downloads left paused by a restarted background', () => {
     });
     s.downloads.failing.add('resume');
     await s.hub.onDownload(downloadItem());
-    const shown = s.hub.snapshot().notice;
+    const shown = latestNotice(s.hub);
     expect(shown).toMatchObject({ tone: 'error' });
     s.client.stop();
 
     s = await setup({ notice: s.notice });
-    expect(s.hub.snapshot().notice).toEqual(shown);
+    expect(latestNotice(s.hub)).toEqual(shown);
     expect(s.badges.at(-1)).toBe('!');
 
     const [popup, background] = channelPair<PopupRequest, BackgroundMessage>();
     s.hub.addPopup(background);
-    popup.postMessage({ id: 1, command: { type: 'dismiss_notice' } });
+    popup.postMessage({ id: 1, command: { type: 'dismiss_notice', id: shown?.id ?? '' } });
     await flush();
-    expect(s.notice.value).toBeNull();
+    expect(s.notice.value).toEqual([]);
   });
 
   // A dismiss that came while the stored notice was still loading was undone by the load, so
   // the notice the person had just dismissed came back.
   it('does not bring back a notice dismissed while it was loading', async () => {
     const notice = new MemoryNotice();
-    notice.value = { tone: 'error', message: 'An old notice.', at: 1 };
+    notice.value = [
+      {
+        id: 'n1-1',
+        downloadId: null,
+        untilResumed: false,
+        tone: 'error',
+        message: 'An old notice.',
+        at: 1,
+      },
+    ];
     const release = notice.hold();
     s = await setup({ notice, start: false });
     const [popup, background] = channelPair<PopupRequest, BackgroundMessage>();
     s.hub.addPopup(background);
-    popup.postMessage({ id: 1, command: { type: 'dismiss_notice' } });
+    popup.postMessage({ id: 1, command: { type: 'dismiss_notice', id: 'n1-1' } });
     await flush();
     release();
     await s.started;
-    expect(s.hub.snapshot().notice).toBeNull();
-    expect(notice.value).toBeNull();
+    expect(s.hub.snapshot().notices).toEqual([]);
+    expect(notice.value).toEqual([]);
   });
 
   it('keeps a notice raised while the stored one was loading', async () => {
     const notice = new MemoryNotice();
-    notice.value = { tone: 'error', message: 'An old notice.', at: 1 };
+    notice.value = [
+      {
+        id: 'n1-1',
+        downloadId: null,
+        untilResumed: false,
+        tone: 'error',
+        message: 'An old notice.',
+        at: 1,
+      },
+    ];
     const release = notice.hold();
     s = await setup({ notice, start: false });
     await s.hub.onMenuClick(
@@ -946,7 +1008,10 @@ describe('downloads left paused by a restarted background', () => {
     );
     release();
     await s.started;
-    expect(s.hub.snapshot().notice?.message).toBe(MENU_PRIVATE_WINDOW);
+    expect(s.hub.snapshot().notices.map((n) => n.message)).toEqual([
+      MENU_PRIVATE_WINDOW,
+      'An old notice.',
+    ]);
   });
 
   // Recovery resumed every paused copy and could not tell whether the app had it: it either said
@@ -979,7 +1044,7 @@ describe('downloads left paused by a restarted background', () => {
         { method: 'withdraw_download', params: { handover_id: 'h-before' } },
       ]);
       expect(downloads.log).toEqual(['cancel:5', 'erase:5']);
-      expect(s.hub.snapshot().notice).toBeNull();
+      expect(latestNotice(s.hub)).toBeNull();
       expect(inFlight.entries).toEqual([]);
     });
 
@@ -1001,7 +1066,7 @@ describe('downloads left paused by a restarted background', () => {
         },
       });
       expect(downloads.log).toEqual([]);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
 
     it.each(['withdrawn', 'not_found'] as const)(
@@ -1009,7 +1074,7 @@ describe('downloads left paused by a restarted background', () => {
       async (outcome) => {
         const { downloads, inFlight } = await recover(outcome);
         expect(downloads.log).toEqual(['resume:5']);
-        expect(s.hub.snapshot().notice).toBeNull();
+        expect(latestNotice(s.hub)).toBeNull();
         expect(inFlight.entries).toEqual([]);
       },
     );
@@ -1027,8 +1092,8 @@ describe('downloads left paused by a restarted background', () => {
           filename: '/home/me/Downloads/big.zip',
         });
         expect(downloads.log).toEqual(['resume:5']);
-        expect(s.hub.snapshot().notice).toMatchObject({ tone: 'warning' });
-        expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip may be downloading twice/);
+        expect(latestNotice(s.hub)).toMatchObject({ tone: 'warning' });
+        expect(latestNotice(s.hub)?.message).toMatch(/^big\.zip may be downloading twice/);
       },
     );
 
@@ -1069,7 +1134,7 @@ describe('downloads left paused by a restarted background', () => {
           };
         },
       });
-      expect(s.hub.snapshot().notice).toBeNull();
+      expect(latestNotice(s.hub)).toBeNull();
     });
 
     it('says how to recover a download it cannot resume', async () => {
@@ -1079,7 +1144,7 @@ describe('downloads left paused by a restarted background', () => {
       downloads.browserState = { state: 'in_progress', paused: true };
       downloads.failing.add('resume');
       s = await setup({ inFlight, downloads });
-      expect(s.hub.snapshot().notice).toMatchObject({
+      expect(latestNotice(s.hub)).toMatchObject({
         tone: 'error',
         message:
           "A download is paused in the browser. Open the browser's downloads page and click Resume.",
@@ -1097,7 +1162,7 @@ describe('downloads left paused by a restarted background', () => {
         const { downloads, inFlight } = await recover('withdrawn', { ...state });
         expect(s.app.calls('withdraw_download')).toHaveLength(1);
         expect(downloads.log).toEqual([]);
-        expect(s.hub.snapshot().notice).toBeNull();
+        expect(latestNotice(s.hub)).toBeNull();
         expect(inFlight.entries).toEqual([]);
       },
     );
@@ -1108,17 +1173,17 @@ describe('downloads left paused by a restarted background', () => {
         paused: false,
       });
       expect(downloads.log).toEqual([]);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
 
     it('warns when the app cannot say whether it has a download the person resumed', async () => {
       const { downloads } = await recover('hang', { state: 'in_progress', paused: false });
       expect(downloads.log).toEqual([]);
-      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+      expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
 
     // A later warning replaced a "still paused" error, so that download stayed paused unseen.
-    it('does not let a warning hide an error about another download', async () => {
+    it('keeps a notice for each of two downloads', async () => {
       const inFlight = new MemoryInFlight();
       inFlight.entries = [
         { id: 5, handoverId: 'h5' },
@@ -1137,11 +1202,10 @@ describe('downloads left paused by a restarted background', () => {
       });
       await vi.advanceTimersByTimeAsync(20_000);
       await s.started;
-      expect(s.hub.snapshot().notice).toMatchObject({
-        tone: 'error',
-        message:
-          "A download is paused in the browser. Open the browser's downloads page and click Resume.",
-      });
+      expect(s.hub.snapshot().notices).toMatchObject([
+        { downloadId: 6, tone: 'warning' },
+        { downloadId: 5, tone: 'error', untilResumed: true },
+      ]);
     });
 
     // The recovery withdraw waited less than a hello may take, so an app it had to start often
@@ -1164,7 +1228,7 @@ describe('downloads left paused by a restarted background', () => {
       await vi.advanceTimersByTimeAsync(20_000);
       await s.started;
       expect(downloads.log).toEqual(['cancel:5', 'erase:5']);
-      expect(s.hub.snapshot().notice).toBeNull();
+      expect(latestNotice(s.hub)).toBeNull();
     });
 
     it('keeps the entries not yet settled saved, so another restart still has them', async () => {
@@ -1264,7 +1328,7 @@ describe('context menu', () => {
     expect(result).toBe('private_window');
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.downloads.log).toEqual([]);
-    expect(s.hub.snapshot().notice?.message).toContain('private windows');
+    expect(latestNotice(s.hub)?.message).toContain('private windows');
   });
 
   it('lets the browser download it without site access, after the earlier checks', async () => {
@@ -1280,7 +1344,7 @@ describe('context menu', () => {
     expect(result).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/a.zip']);
     expect(s.app.calls('add_download')).toHaveLength(0);
-    expect(s.hub.snapshot().notice?.message).toContain('Allow access');
+    expect(latestNotice(s.hub)?.message).toContain('Allow access');
   });
 
   it('uses the media address when there is no link', async () => {
@@ -1301,7 +1365,7 @@ describe('context menu', () => {
     const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
     expect(result).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/file.iso']);
-    expect(s.hub.snapshot().notice?.message).toContain('the browser is downloading it instead');
+    expect(latestNotice(s.hub)?.message).toContain('the browser is downloading it instead');
   });
 
   it('withdraws after a timeout: "already_started" means the app has it', async () => {
@@ -1340,7 +1404,7 @@ describe('context menu', () => {
     const pending = s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
     await vi.advanceTimersByTimeAsync(8_000);
     expect(await pending).toBe('browser');
-    expect(s.hub.snapshot().notice?.message).toBe(
+    expect(latestNotice(s.hub)?.message).toBe(
       'file.iso may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
     );
   });
@@ -1354,7 +1418,7 @@ describe('context menu', () => {
     expect(result).toBe('browser');
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.downloads.log).toEqual(['start:https://example.com/get/Setup.EXE']);
-    expect(s.hub.snapshot().notice?.message).toContain('is a program');
+    expect(latestNotice(s.hub)?.message).toContain('is a program');
   });
 
   it('lets the browser download it when site access was revoked', async () => {
@@ -1380,6 +1444,6 @@ describe('context menu', () => {
     s.downloads.failing.add('start');
     const result = await s.hub.onMenuClick({ srcUrl: 'blob:https://example.com/123' }, undefined);
     expect(result).toBe('failed');
-    expect(s.hub.snapshot().notice).toMatchObject({ tone: 'error' });
+    expect(latestNotice(s.hub)).toMatchObject({ tone: 'error' });
   });
 });

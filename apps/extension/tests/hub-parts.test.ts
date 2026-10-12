@@ -4,6 +4,7 @@ import type { HandoverResult } from '../src/lib/capture/handover';
 import { DuplicateWatch } from '../src/lib/hub/duplicates';
 import { hubTiming } from '../src/lib/hub/hub';
 import { planMenuClick } from '../src/lib/hub/menu';
+import { MAX_NOTICES, NoticeBoard } from '../src/lib/hub/notice-board';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
 import { UNREADABLE_ANSWER } from '../src/lib/native/client';
 
@@ -89,7 +90,7 @@ describe('DuplicateWatch', () => {
 
   it('warns once when the late confirmation comes after the browser kept it', () => {
     const w = watch();
-    expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(false);
+    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(false);
     w.watch.confirmedLate('h1', 'a.zip', true);
     w.watch.confirmedLate('h1', 'a.zip', true);
     expect(w.warned).toEqual(['a.zip']);
@@ -98,8 +99,8 @@ describe('DuplicateWatch', () => {
   it('warns once when the late confirmation came first', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(true);
-    expect(w.watch.keptUncertain('h1', 'a.zip')).toBe(false);
+    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(true);
+    expect(w.watch.keptUncertain('h1', 'a.zip', null)).toBe(false);
     expect(w.warned).toEqual(['a.zip']);
   });
 
@@ -107,8 +108,8 @@ describe('DuplicateWatch', () => {
     const certainty: boolean[] = [];
     const duplicates = new DuplicateWatch((_name, certain) => certainty.push(certain));
     duplicates.confirmedLate('h1', 'a.zip', false);
-    duplicates.keptUncertain('h1', 'a.zip');
-    duplicates.keptUncertain('h2', 'b.zip');
+    duplicates.keptUncertain('h1', 'a.zip', null);
+    duplicates.keptUncertain('h2', 'b.zip', null);
     duplicates.confirmedLate('h2', 'b.zip', true);
     expect(certainty).toEqual([false, true]);
   });
@@ -116,7 +117,7 @@ describe('DuplicateWatch', () => {
   it('does not match different handovers', () => {
     const w = watch();
     w.watch.confirmedLate('h1', 'a.zip', true);
-    expect(w.watch.keptUncertain('h2', 'b.zip')).toBe(false);
+    expect(w.watch.keptUncertain('h2', 'b.zip', null)).toBe(false);
     expect(w.warned).toEqual([]);
   });
 });
@@ -181,5 +182,35 @@ describe('mediaAnswer', () => {
     expect(uncertain).toBe(
       `${UNREADABLE_ANSWER} Open Wirecatch and check its list before adding it again.`,
     );
+  });
+});
+
+describe('NoticeBoard', () => {
+  it('keeps the newest notices, at most MAX_NOTICES', () => {
+    let now = 0;
+    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    for (let i = 1; i <= MAX_NOTICES + 2; i += 1) board.warn(`Notice ${String(i)}.`);
+    const shown = board.current.map((n) => n.message);
+    expect(shown).toHaveLength(MAX_NOTICES);
+    expect(shown[0]).toBe(`Notice ${String(MAX_NOTICES + 2)}.`);
+  });
+
+  it('drops general notices before one about a download, however old', () => {
+    let now = 0;
+    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    board.error('big.zip is paused.', { downloadId: 3, untilResumed: true });
+    for (let i = 1; i <= MAX_NOTICES; i += 1) board.warn(`Notice ${String(i)}.`);
+    expect(board.current).toHaveLength(MAX_NOTICES);
+    expect(board.current.at(-1)?.message).toBe('big.zip is paused.');
+    expect(board.current[0]?.message).toBe(`Notice ${String(MAX_NOTICES)}.`);
+  });
+
+  it('dismisses one notice and leaves the others', () => {
+    let now = 0;
+    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    board.warn('First.');
+    board.error('Second.', { downloadId: 3 });
+    board.dismiss(board.current[1]?.id ?? '');
+    expect(board.current.map((n) => n.message)).toEqual(['Second.']);
   });
 });

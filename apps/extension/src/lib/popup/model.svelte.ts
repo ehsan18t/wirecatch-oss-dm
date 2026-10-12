@@ -101,8 +101,8 @@ export class PopupModel {
     await this.#simple({ type: 'open_app' }, 'Wirecatch is open.');
   }
 
-  dismissNotice(): void {
-    void this.#send({ type: 'dismiss_notice' });
+  dismissNotice(id: string): void {
+    void this.#send({ type: 'dismiss_notice', id });
   }
 
   /** Asks for the media list of a tab (the active one), kept current while the popup is open. */

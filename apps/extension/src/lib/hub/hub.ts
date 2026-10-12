@@ -114,14 +114,12 @@ export class Hub {
     this.#client.onEvent((event) => this.#onEvent(event));
     this.#client.onLateAnswer((call, outcome) => this.#onLateAnswer(call, outcome));
     // All are read before `ready`, so no new download can overwrite the list of paused ones first.
-    const [cached, leftPaused, notice] = await Promise.all([
+    const [cached, leftPaused] = await Promise.all([
       this.#deps.cache.load().catch(() => null),
       this.#deps.inFlight?.load().catch(() => []) ?? Promise.resolve([]),
-      this.#deps.notice?.load().catch(() => null) ?? Promise.resolve(null),
+      this.#notices.load(),
     ]);
     this.#settings.loaded(cached);
-    // A notice from before the browser stopped the background.
-    this.#notices.restore(notice);
     if (cached?.appClosed !== true) this.#client.start();
     this.#markReady();
     this.#publish();
@@ -133,7 +131,7 @@ export class Hub {
     return {
       status,
       ...this.#settings.view(status.state === 'connected'),
-      notice: this.#notices.current,
+      notices: [...this.#notices.current],
     };
   }
 
@@ -183,7 +181,7 @@ export class Hub {
           userAgent: this.#deps.userAgent,
         },
       );
-      this.#notices.handover(result, name);
+      this.#notices.handover(result, name, item.id);
       return result;
     } finally {
       this.#inFlight.delete(item.id);
@@ -243,7 +241,7 @@ export class Hub {
     if (result.taken) return 'handed_over';
     if (!result.uncertain) return this.#browserFallback(url, menuNotTaken(name, result.detail));
     const fallback = await this.#browserFallback(url, null);
-    if (fallback === 'browser') this.#notices.uncertain(handoverId, name);
+    if (fallback === 'browser') this.#notices.uncertain(handoverId, name, null);
     return fallback;
   }
 
@@ -361,7 +359,7 @@ export class Hub {
       // The app may need connecting, or starting, first: this is the handover the person started.
       withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
     });
-    this.#notices.recovered(result, name);
+    this.#notices.recovered(result, name, entry.id);
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
@@ -383,7 +381,7 @@ export class Hub {
         await this.#app.showWindow();
         return;
       case 'dismiss_notice':
-        this.#notices.dismiss();
+        this.#notices.dismiss(command.id);
         return;
       case 'pause_all':
         await this.#app.call({ method: 'pause_all' });
@@ -439,6 +437,11 @@ export class Hub {
     return this.#settings.known();
   }
 
+  /** The browser reports a download running or finished, so a notice asking to resume it is done. */
+  onDownloadMoved(downloadId: number): void {
+    this.#notices.downloadMoved(downloadId);
+  }
+
   /** Shows a message in the popup (and the badge), for answers that have nowhere else to go. */
   notify(tone: Notice['tone'], message: string): void {
     this.#notices.notify(tone, message);
@@ -455,8 +458,8 @@ export class Hub {
     if (badge === undefined) return;
     if (snapshot.status.state === 'unavailable') {
       badge.set('!', 'Wirecatch is not connected. Click for details.');
-    } else if (snapshot.notice !== null) {
-      badge.set('!', 'Wirecatch has a message for you. Click to read it.');
+    } else if (snapshot.notices.length > 0) {
+      badge.set('!', 'Wirecatch has messages for you. Click to read them.');
     } else {
       badge.set('', 'Wirecatch');
     }

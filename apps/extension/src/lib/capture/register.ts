@@ -9,10 +9,20 @@ export interface DownloadEvents {
     ): void;
   };
   onCreated: { addListener(listener: (item: DownloadItemLike) => void): void };
+  onChanged: { addListener(listener: (delta: DownloadDelta) => void): void };
+}
+
+/** What changed about a download (`downloads.onChanged`); only the fields read here. */
+export interface DownloadDelta {
+  id: number;
+  paused?: { current?: boolean };
+  state?: { current?: string };
 }
 
 export interface CaptureHandler {
   onDownload(item: DownloadItemLike): Promise<unknown>;
+  /** The download now runs, finished or was cancelled: it no longer waits paused. */
+  onDownloadMoved(downloadId: number): void;
 }
 
 /**
@@ -28,6 +38,10 @@ export function registerCapture(
   downloads: DownloadEvents,
   handler: CaptureHandler,
 ): 'determining_filename' | 'created' {
+  downloads.onChanged.addListener((delta) => {
+    const finished = delta.state?.current !== undefined && delta.state.current !== 'in_progress';
+    if (delta.paused?.current === false || finished) handler.onDownloadMoved(delta.id);
+  });
   const onDeterminingFilename = downloads.onDeterminingFilename;
   if (onDeterminingFilename !== undefined) {
     onDeterminingFilename.addListener((item, suggest) => {

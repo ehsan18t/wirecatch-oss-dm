@@ -50,6 +50,12 @@ export function acceptsPopupPort(
 
 /** Something that happened in the background that the person should know about. */
 export interface Notice {
+  /** Names the notice for dismissing it; one about a browser download is named after it. */
+  id: string;
+  /** The browser download it is about; a newer notice about the same download replaces it. */
+  downloadId: number | null;
+  /** Cleared once the browser reports the download running or finished. */
+  untilResumed: boolean;
   tone: 'warning' | 'error';
   message: string;
   at: number;
@@ -57,6 +63,9 @@ export interface Notice {
 
 /** Checks a notice read back from storage. */
 export const isNotice = fields<Notice>({
+  id: isString,
+  downloadId: nullable(isNumber),
+  untilResumed: isBoolean,
   tone: member<Notice['tone']>({ warning: true, error: true }),
   message: isString,
   at: isNumber,
@@ -72,7 +81,8 @@ export interface Snapshot {
   /** When the cached copy was saved (milliseconds since the epoch). */
   cachedAt: number | null;
   queues: QueueSummary[];
-  notice: Notice | null;
+  /** Newest first. */
+  notices: Notice[];
 }
 
 export type PopupCommand =
@@ -82,7 +92,7 @@ export type PopupCommand =
   | { type: 'reconnect' }
   /** Start Wirecatch if it is closed, and show its window. */
   | { type: 'open_app' }
-  | { type: 'dismiss_notice' }
+  | { type: 'dismiss_notice'; id: string }
   /** Start sending `media` messages for this tab's "Media on this page" list. */
   | { type: 'watch_media'; tabId: number }
   /** Send one item of that list to the app. */
@@ -108,7 +118,7 @@ const isSnapshot = fields<Snapshot>({
   settingsFromCache: isBoolean,
   cachedAt: nullable(isNumber),
   queues: arrayOf(isQueueSummary),
-  notice: nullable(isNotice),
+  notices: arrayOf(isNotice),
 });
 
 const isMediaEntry = fields<MediaEntry>({
@@ -185,7 +195,10 @@ const isCommand = variants<PopupCommand>({
   resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),
   reconnect: fields<Command<'reconnect'>>({ type: literal('reconnect') }),
   open_app: fields<Command<'open_app'>>({ type: literal('open_app') }),
-  dismiss_notice: fields<Command<'dismiss_notice'>>({ type: literal('dismiss_notice') }),
+  dismiss_notice: fields<Command<'dismiss_notice'>>({
+    type: literal('dismiss_notice'),
+    id: isString,
+  }),
   watch_media: fields<Command<'watch_media'>>({ type: literal('watch_media'), tabId: isTabId }),
   download_media: fields<Command<'download_media'>>({
     type: literal('download_media'),

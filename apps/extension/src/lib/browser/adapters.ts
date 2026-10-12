@@ -19,7 +19,7 @@ import { originPattern } from '../site-access';
 import { fields, isNumber, isString, itemsOf, object } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
-const NOTICE_KEY = 'wirecatch.notice';
+const NOTICE_KEY = 'wirecatch.notices';
 const MEDIA_KEY = 'wirecatch.media.v1';
 
 interface FirefoxRuntime {
@@ -129,11 +129,10 @@ export function noticeStore(): NoticeStore | undefined {
   return {
     async load() {
       const items = await area.get(NOTICE_KEY);
-      const notice: unknown = items[NOTICE_KEY];
-      return isNotice(notice) ? notice : null;
+      return itemsOf(items[NOTICE_KEY], isNotice);
     },
-    async save(notice) {
-      await area.set({ [NOTICE_KEY]: notice });
+    async save(notices) {
+      await area.set({ [NOTICE_KEY]: notices });
     },
   };
 }

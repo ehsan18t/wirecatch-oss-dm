@@ -1,4 +1,4 @@
-/** The one notice the popup and the badge show, and which outcomes are worth one. */
+/** The notices the popup and the badge show, and which outcomes are worth one. */
 import type { HandoverResult } from '../capture/handover';
 import type { Notice } from '../messages';
 import type { NoticeStore } from './deps';
@@ -12,87 +12,123 @@ import {
 } from './notices';
 import type { Recovered } from './recovery';
 
+/**
+ * Most notices kept. The popup lists them all, and a person who has not opened it for this many
+ * has stopped reading them; the oldest go first, so the list cannot grow without bound.
+ */
+export const MAX_NOTICES = 5;
+
 export interface NoticeBoardDeps {
   now(): number;
-  /** Where the notice is kept across a background restart; without it, it lasts as long as this run. */
+  /** Where the notices are kept across a background restart; without it, they last as long as this run. */
   store?: NoticeStore;
-  /** Called after every change, to publish the new notice. */
+  /** Called after every change, to publish the notices. */
   changed(): void;
 }
 
+/** What a new notice is about: one browser download (a newer notice about it replaces this one), or nothing in particular. */
+interface About {
+  downloadId?: number | null;
+  /** Cleared once the browser reports the download running or finished. */
+  untilResumed?: boolean;
+}
+
 /**
- * Holds the notice and decides what each handover outcome says. Also watches for downloads
- * that may be in both places (`DuplicateWatch`), since that is said through the notice too.
+ * Holds the notices, newest first, at most one per browser download, and decides what each
+ * handover outcome says. Also watches for downloads that may be in both places
+ * (`DuplicateWatch`), since that is said through a notice too.
  */
 export class NoticeBoard {
   readonly #deps: NoticeBoardDeps;
-  readonly #duplicates = new DuplicateWatch((name, certain) =>
-    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name)),
+  readonly #duplicates = new DuplicateWatch((name, certain, downloadId) =>
+    this.warn(certain ? mayDownloadTwice(name) : mayDownloadTwiceUncertain(name), { downloadId }),
   );
-  #notice: Notice | null = null;
-  /** Whether this run set or dismissed the notice; then the one stored by an earlier run is out of date. */
-  #changed = false;
+  #notices: Notice[] = [];
+  /** Notices dismissed in this run, so loading those an earlier run stored does not bring them back. */
+  readonly #dismissed = new Set<string>();
+  #nextId = 1;
 
   constructor(deps: NoticeBoardDeps) {
     this.#deps = deps;
   }
 
-  get current(): Notice | null {
-    return this.#notice;
+  get current(): readonly Notice[] {
+    return this.#notices;
   }
 
-  /** Shows the notice an earlier run stored, unless this run already set or dismissed one. */
-  restore(stored: Notice | null): void {
-    if (!this.#changed) this.#notice = stored;
+  /** Adds the notices an earlier run stored to those of this run, except the ones dismissed or replaced since. */
+  async load(): Promise<void> {
+    const stored = (await this.#deps.store?.load().catch(() => [])) ?? [];
+    const kept = stored.filter(
+      (old) =>
+        !this.#dismissed.has(old.id) &&
+        !this.#notices.some((now) => now.id === old.id || sameDownload(now, old)),
+    );
+    this.#notices = newestFirst([...this.#notices, ...kept]);
   }
 
-  warn(message: string): void {
-    this.notify('warning', message);
+  warn(message: string, about: About = {}): void {
+    this.notify('warning', message, about);
   }
 
-  error(message: string): void {
-    this.notify('error', message);
+  error(message: string, about: About = {}): void {
+    this.notify('error', message, about);
   }
 
-  /**
-   * Shows a notice. There is room for one, so a warning never replaces an error: an error
-   * asks the person to act (a download left paused), and hiding it would leave that undone.
-   */
-  notify(tone: Notice['tone'], message: string): void {
-    if (tone === 'warning' && this.#notice?.tone === 'error') return;
-    this.#set({ tone, message, at: this.#deps.now() });
+  notify(tone: Notice['tone'], message: string, about: About = {}): void {
+    const downloadId = about.downloadId ?? null;
+    const at = this.#deps.now();
+    const id =
+      downloadId === null ? `n${String(at)}-${String(this.#nextId++)}` : `d${String(downloadId)}`;
+    const notice: Notice = {
+      id,
+      downloadId,
+      untilResumed: about.untilResumed ?? false,
+      tone,
+      message,
+      at,
+    };
+    this.#set(newestFirst([notice, ...this.#notices.filter((n) => n.id !== id)]));
   }
 
-  dismiss(): void {
-    this.#set(null);
+  dismiss(id: string): void {
+    this.#dismissed.add(id);
+    this.#set(this.#notices.filter((n) => n.id !== id));
+  }
+
+  /** The browser reports a download running or finished: a notice asking to resume it is done. */
+  downloadMoved(downloadId: number): void {
+    const left = this.#notices.filter((n) => !(n.downloadId === downloadId && n.untilResumed));
+    if (left.length !== this.#notices.length) this.#set(left);
   }
 
   /** Tells the person what became of a browser download, when there is something to say. */
-  handover(result: HandoverResult, name: string): void {
+  handover(result: HandoverResult, name: string, downloadId: number): void {
+    const about = { downloadId };
     if (result.kind === 'handed_over') {
-      if (result.browserCopy === 'left_paused') this.warn(copyLeftInBrowser(name));
-      if (result.browserCopy === 'kept_running') this.warn(mayDownloadTwice(name));
+      if (result.browserCopy === 'left_paused') this.warn(copyLeftInBrowser(name), about);
+      if (result.browserCopy === 'kept_running') this.warn(mayDownloadTwice(name), about);
       return;
     }
-    // The person cancelled it in the browser meanwhile, or it finished: nothing to say.
     if (result.browserCopy === 'gone') return;
     if (result.browserCopy === 'stuck_paused') {
-      this.error(stuckPaused(name));
+      this.error(stuckPaused(name), { downloadId, untilResumed: true });
       return;
     }
     const { handoverId } = result;
     if (result.uncertain && handoverId !== null) {
-      this.uncertain(handoverId, name);
+      this.uncertain(handoverId, name, downloadId);
       return;
     }
     const message = keptInBrowser(result, name);
-    if (message !== null) this.warn(message);
+    if (message !== null) this.warn(message, about);
   }
 
   /** The browser has a copy of something the app may have too: warns, surely if the app already confirmed it late. */
-  uncertain(handoverId: string, name: string): void {
-    if (!this.#duplicates.keptUncertain(handoverId, name))
-      this.warn(mayDownloadTwiceUncertain(name));
+  uncertain(handoverId: string, name: string, downloadId: number | null): void {
+    if (!this.#duplicates.keptUncertain(handoverId, name, downloadId)) {
+      this.warn(mayDownloadTwiceUncertain(name), { downloadId });
+    }
   }
 
   confirmedLate(handoverId: string, name: string, certain: boolean): void {
@@ -100,20 +136,38 @@ export class NoticeBoard {
   }
 
   /** Tells the person what became of a download a restarted background settled. */
-  recovered(result: Recovered, name: string): void {
-    if (result === 'copy_left') this.warn(copyLeftInBrowser(name));
-    if (result === 'both') this.warn(mayDownloadTwice(name));
-    if (result === 'stuck_paused') this.error(stuckPaused(name));
+  recovered(result: Recovered, name: string, downloadId: number): void {
+    const about = { downloadId };
+    if (result === 'copy_left') this.warn(copyLeftInBrowser(name), about);
+    if (result === 'both') this.warn(mayDownloadTwice(name), about);
+    if (result === 'stuck_paused')
+      this.error(stuckPaused(name), { downloadId, untilResumed: true });
     // Not registered with the duplicate watch: the ports of the run that sent it are gone, so
     // no late answer to it can come.
-    if (result === 'uncertain') this.warn(mayDownloadTwiceUncertain(name));
+    if (result === 'uncertain') this.warn(mayDownloadTwiceUncertain(name), about);
   }
 
-  #set(notice: Notice | null): void {
-    this.#notice = notice;
-    this.#changed = true;
-    // Session storage unavailable: the notice then lasts as long as this background script.
-    this.#deps.store?.save(notice).catch(() => undefined);
+  #set(notices: Notice[]): void {
+    this.#notices = newestFirst(notices);
+    // Session storage unavailable: the notices then last as long as this background script.
+    this.#deps.store?.save(this.#notices).catch(() => undefined);
     this.#deps.changed();
   }
+}
+
+function sameDownload(a: Notice, b: Notice): boolean {
+  return a.downloadId !== null && a.downloadId === b.downloadId;
+}
+
+/**
+ * Newest first, at most `MAX_NOTICES`. Notices about a download stay until it is resolved, so the
+ * oldest general ones go first, and one about a download only when nothing else is left to drop.
+ */
+function newestFirst(notices: Notice[]): Notice[] {
+  const sorted = [...notices].sort((a, b) => b.at - a.at);
+  while (sorted.length > MAX_NOTICES) {
+    const general = sorted.map((n) => n.downloadId).lastIndexOf(null);
+    sorted.splice(general >= 0 ? general : sorted.length - 1, 1);
+  }
+  return sorted;
 }

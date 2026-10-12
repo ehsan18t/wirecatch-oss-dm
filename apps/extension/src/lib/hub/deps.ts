@@ -42,8 +42,8 @@ export interface InFlightStore {
  * script the browser stopped.
  */
 export interface NoticeStore {
-  load(): Promise<Notice | null>;
-  save(notice: Notice | null): Promise<void>;
+  load(): Promise<Notice[]>;
+  save(notices: Notice[]): Promise<void>;
 }
 
 export interface BrowserDownloads extends DownloadControl {
