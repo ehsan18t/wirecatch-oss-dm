@@ -268,6 +268,9 @@ async fn a_disk_error_names_the_file_and_what_failed() {
         text.contains("create the folder") && text.contains("inside"),
         "{text}"
     );
+    // The system's own reason is the source, shown once in a chain of errors.
+    let reason = std::error::Error::source(&error).unwrap().to_string();
+    assert!(!text.contains(&reason), "{text}");
     dir.remove().unwrap();
 }
 

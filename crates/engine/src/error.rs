@@ -79,7 +79,7 @@ pub enum Error {
     /// Reading or writing a file failed, for example on a full disk, in a
     /// folder without write permission, or while another program holds the
     /// file. It says what was being done and with which file.
-    #[error("could not {action} ({}): {source}", path.display())]
+    #[error("could not {action} ({})", path.display())]
     Io {
         /// What was being done.
         action: IoAction,
