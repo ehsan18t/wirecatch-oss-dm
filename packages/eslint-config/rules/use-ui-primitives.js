@@ -1,16 +1,9 @@
 // Keeps buttons and icons going through a package's primitives once it has them.
 //
-// A Svelte package that has a text button, an icon button and an icon component (the desktop app's
-// Button, IconButton and Icon) turns this rule on everywhere except in those files. It then
-// reports the two patterns the primitives replaced:
+// A Svelte package that has a text button, an icon button and an icon component (the desktop app's Button, IconButton and Icon) turns this rule on everywhere except in those files. It then reports the two patterns the primitives replaced:
 //
-// - an element that carries one of the primitives' own classes (`btn`, `icon-btn`), which copies
-//   the primitive by hand instead of using it. Buttons with styles of their own, such as menu
-//   items and switches, stay plain buttons.
-// - a Lucide icon rendered directly, with or without a size or stroke of its own, instead of
-//   through the icon component and its scale: as its own tag, through a name it was given
-//   (`const Close = X; <Close />`), or with `<svelte:component this={X}>`. A name is followed through
-//   members, choices, objects and arrays; an icon passed into the file as a prop is not seen.
+// - an element that carries one of the primitives' own classes (`btn`, `icon-btn`), which copies the primitive by hand instead of using it. Buttons with styles of their own, such as menu items and switches, stay plain buttons.
+// - a Lucide icon rendered directly, with or without a size or stroke of its own, instead of through the icon component and its scale: as its own tag, through a name it was given (`const Close = X; <Close />`), or with `<svelte:component this={X}>`. A name is followed through members, choices, objects and arrays; an icon passed into the file as a prop is not seen.
 
 /** Where Lucide's Svelte icons come from: the package itself or one icon of it. */
 const LUCIDE_SOURCE = /^@lucide\/svelte(?:\/|$)/;
@@ -90,11 +83,7 @@ function dynamicComponent(element) {
   return directive?.expression ?? null;
 }
 
-/**
- * Which names hold a Lucide icon: the icons a file imports, and every name given one of them,
- * directly or through a member, a choice, an object or an array (`const Close = X`,
- * `{@const I = on ? A : B}`, `const icons = { close: X }`).
- */
+/** Which names hold a Lucide icon: the icons a file imports, and every name given one of them, directly or through a member, a choice, an object or an array (`const Close = X`, `{@const I = on ? A : B}`, `const icons = { close: X }`). */
 class IconNames {
   imported = new Set();
   /** Each `const name = init` in the file, script and markup alike. */
@@ -161,8 +150,7 @@ export const useUiPrimitives = {
   create(context) {
     const [{ buttonClasses: primitives, icon }] = context.options;
     const icons = new IconNames();
-    // The markup may come before the script that imports or names the icons, so what is rendered
-    // is checked once the whole file has been read.
+    // The markup may come before the script that imports or names the icons, so what is rendered is checked once the whole file has been read.
     const rendered = [];
     return {
       ImportDeclaration(node) {
