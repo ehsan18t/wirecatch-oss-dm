@@ -184,6 +184,34 @@ mod imp {
         use windows_sys::Win32::Security::Authorization::{
             ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW,
         };
+        use windows_sys::Win32::Security::{
+            OBJECT_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+        };
+
+        /// How SDDL writes the account `sid` (`S-1-...`): its alias when it has
+        /// one, such as `LA` for the built-in Administrator that CI runners use,
+        /// otherwise `sid` itself.
+        pub fn sddl_account(sid: &str) -> io::Result<String> {
+            let owner = wide(format!("O:{sid}").encode_utf16());
+            let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+            // SAFETY: `owner` is NUL-terminated; the descriptor is freed by the guard.
+            let converted = unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    owner.as_ptr(),
+                    SDDL_REVISION_1,
+                    &raw mut descriptor,
+                    null_mut(),
+                )
+            };
+            if converted == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let _descriptor = LocalMemory(descriptor);
+            let text = descriptor_text(descriptor, OWNER_SECURITY_INFORMATION)?;
+            text.strip_prefix("O:")
+                .map(str::to_owned)
+                .ok_or_else(|| io::Error::other(format!("not an owner: {text}")))
+        }
 
         /// The access list of `path` in SDDL form.
         pub fn dacl_text(path: &Path) -> io::Result<String> {
@@ -206,13 +234,21 @@ mod imp {
                 return Err(io::Error::from_raw_os_error(status.cast_signed()));
             }
             let _descriptor = LocalMemory(descriptor);
+            descriptor_text(descriptor, DACL_SECURITY_INFORMATION)
+        }
+
+        /// The parts of `descriptor` that `information` names, in SDDL form.
+        fn descriptor_text(
+            descriptor: PSECURITY_DESCRIPTOR,
+            information: OBJECT_SECURITY_INFORMATION,
+        ) -> io::Result<String> {
             let mut text: PWSTR = null_mut();
-            // SAFETY: valid descriptor; the string is freed by the guard.
+            // SAFETY: the caller passes a valid descriptor; the string is freed by the guard.
             let converted = unsafe {
                 ConvertSecurityDescriptorToStringSecurityDescriptorW(
                     descriptor,
                     SDDL_REVISION_1,
-                    DACL_SECURITY_INFORMATION,
+                    information,
                     &raw mut text,
                     null_mut(),
                 )
@@ -241,17 +277,25 @@ mod tests {
         let file = data.join(crate::DATABASE_FILE);
         std::fs::write(&file, b"x").unwrap();
 
-        let sid = imp::current_user_sid().unwrap();
+        let user = imp::current_user_sid().unwrap();
+        let allowed = format!(";;;{})", imp::inspect::sddl_account(&user).unwrap());
         let folder = imp::inspect::dacl_text(&data).unwrap();
         assert!(
             folder.starts_with("D:P"),
             "inherits from its parent: {folder}"
         );
         assert_eq!(folder.matches("(A;").count(), 1, "{folder}");
-        assert!(folder.contains(&sid), "{folder}");
+        assert!(folder.ends_with(&allowed), "{folder}");
         let created = imp::inspect::dacl_text(&file).unwrap();
         assert_eq!(created.matches("(A;").count(), 1, "{created}");
-        assert!(created.contains(&sid), "{created}");
+        assert!(created.ends_with(&allowed), "{created}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_account_with_an_alias_is_written_by_its_alias() {
+        // LocalSystem; the built-in Administrator CI runs as is `LA` the same way.
+        assert_eq!(imp::inspect::sddl_account("S-1-5-18").unwrap(), "SY");
     }
 
     #[cfg(unix)]
