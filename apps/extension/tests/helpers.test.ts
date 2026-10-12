@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
-import { cookieStoreOf } from '../src/lib/browser/adapters';
+import { cookieStoreOf, noticeStore } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
-import { asPopupRequest } from '../src/lib/messages';
+import { asPopupRequest, isNotice } from '../src/lib/messages';
 import {
   classifyDisconnect,
   describeProblem,
@@ -352,5 +353,29 @@ describe('cookieStoreOf', () => {
     expect(cookieStoreOf({ id: 1, incognito: false })).toBeNull();
     expect(cookieStoreOf({ cookieStoreId: 7 })).toBeNull();
     expect(cookieStoreOf(undefined)).toBeNull();
+  });
+});
+
+describe('notices kept in session storage', () => {
+  const notice = { tone: 'error', message: 'big.zip is paused in the browser.', at: 5 } as const;
+
+  it('reads back only a well-formed notice', () => {
+    expect(isNotice(notice)).toBe(true);
+    expect(isNotice({ ...notice, tone: 'loud' })).toBe(false);
+    expect(isNotice({ tone: 'warning', message: 'No time.' })).toBe(false);
+    expect(isNotice(null)).toBe(false);
+  });
+
+  it('saves a notice, clears it, and ignores what it cannot read', async () => {
+    fakeBrowser.reset();
+    const store = noticeStore();
+    if (store === undefined) throw new Error('no session storage');
+    expect(await store.load()).toBeNull();
+    await store.save(notice);
+    expect(await store.load()).toEqual(notice);
+    await store.save(null);
+    expect(await store.load()).toBeNull();
+    await fakeBrowser.storage.session.set({ 'wirecatch.notice': { tone: 'loud' } });
+    expect(await store.load()).toBeNull();
   });
 });

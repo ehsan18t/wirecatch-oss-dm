@@ -353,8 +353,22 @@ export class MemoryInFlight implements InFlightStore {
 
 export class MemoryNotice implements NoticeStore {
   value: Notice | null = null;
-  load(): Promise<Notice | null> {
-    return Promise.resolve(this.value);
+  #gate: Promise<void> = Promise.resolve();
+
+  /** Makes `load` answer only once the returned function is called, as a slow storage read does. */
+  hold(): () => void {
+    let release: () => void = () => undefined;
+    this.#gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    return release;
+  }
+
+  /** Reads the value when called, like storage does, and answers once any hold is released. */
+  async load(): Promise<Notice | null> {
+    const value = this.value;
+    await this.#gate;
+    return value;
   }
   save(notice: Notice | null): Promise<void> {
     this.value = notice;

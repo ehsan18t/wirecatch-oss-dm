@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
 import type { CachedSettings, SettingsCache } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
+import { MENU_PRIVATE_WINDOW } from '../src/lib/hub/notices';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import {
@@ -847,6 +848,37 @@ describe('downloads left paused by a restarted background', () => {
     popup.postMessage({ id: 1, command: { type: 'dismiss_notice' } });
     await flush();
     expect(s.notice.value).toBeNull();
+  });
+
+  // A dismiss that came while the stored notice was still loading was undone by the load, so
+  // the notice the person had just dismissed came back.
+  it('does not bring back a notice dismissed while it was loading', async () => {
+    const notice = new MemoryNotice();
+    notice.value = { tone: 'error', message: 'An old notice.', at: 1 };
+    const release = notice.hold();
+    s = await setup({ notice, start: false });
+    const [popup, background] = channelPair<PopupRequest, BackgroundMessage>();
+    s.hub.addPopup(background);
+    popup.postMessage({ id: 1, command: { type: 'dismiss_notice' } });
+    await flush();
+    release();
+    await s.started;
+    expect(s.hub.snapshot().notice).toBeNull();
+    expect(notice.value).toBeNull();
+  });
+
+  it('keeps a notice raised while the stored one was loading', async () => {
+    const notice = new MemoryNotice();
+    notice.value = { tone: 'error', message: 'An old notice.', at: 1 };
+    const release = notice.hold();
+    s = await setup({ notice, start: false });
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    release();
+    await s.started;
+    expect(s.hub.snapshot().notice?.message).toBe(MENU_PRIVATE_WINDOW);
   });
 
   it('leaves alone the ones that are no longer paused', async () => {

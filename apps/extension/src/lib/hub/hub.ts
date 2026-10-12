@@ -84,6 +84,8 @@ export class Hub {
   readonly #ready: Promise<void>;
   #markReady: () => void = () => undefined;
   #notice: Notice | null = null;
+  /** Whether this run set or dismissed the notice; then the one stored by an earlier run is out of date. */
+  #noticeChanged = false;
 
   constructor(deps: HubDeps) {
     this.#deps = deps;
@@ -122,8 +124,8 @@ export class Hub {
       this.#deps.notice?.load().catch(() => null) ?? Promise.resolve(null),
     ]);
     this.#settings.loaded(cached);
-    // A notice from before the browser stopped the background, unless a newer one came meanwhile.
-    this.#notice ??= notice;
+    // A notice from before the browser stopped the background, unless this run already set or dismissed one.
+    if (!this.#noticeChanged) this.#notice = notice;
     if (cached?.appClosed !== true) this.#client.start();
     this.#markReady();
     this.#publish();
@@ -456,6 +458,7 @@ export class Hub {
 
   #setNotice(notice: Notice | null): void {
     this.#notice = notice;
+    this.#noticeChanged = true;
     // Session storage unavailable: the notice then lasts as long as this background script.
     this.#deps.notice?.save(notice).catch(() => undefined);
     this.#publish();
