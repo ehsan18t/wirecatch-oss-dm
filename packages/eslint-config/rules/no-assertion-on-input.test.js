@@ -46,6 +46,15 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
       'export function f(raw: unknown) { const inner = (e: Event) => e as KeyboardEvent; return [raw, inner]; }',
     ),
     valid('export const first = (list: string[]) => list[0]!;'),
+    valid('export function f(raw: { type: string }) { return raw as Message; }'),
+    valid('export function f<T extends Event>(raw: T) { return raw as KeyboardEvent; }'),
+    // An assertion to a type that is itself unchecked claims nothing: the fields are read and checked one by one.
+    valid(
+      'export function f(raw: unknown) { if (typeof raw !== "object" || raw === null) return null; const fields = raw as Record<string, unknown>; return typeof fields.type === "string" ? fields.type : null; }',
+    ),
+    valid('export function f(raw: unknown) { return raw as unknown; }'),
+    // A literal written in place has the shape it is written with.
+    valid('export const counts = {} as Record<string, number>;'),
   ],
   invalid: [
     invalid('export function asMessage(raw: unknown) { return raw as Message; }'),
@@ -62,5 +71,23 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     invalid('export function all(...raw: unknown[]) { return raw[0] as string; }'),
     // Anywhere, not only in a function that reads input.
     invalid('declare const stored: unknown; export const settings = stored as Message;'),
+    // Knowing a value is an object says nothing about its shape.
+    invalid(
+      'export function f(raw: unknown) { if (typeof raw === "object" && raw !== null) return raw as Message; return null; }',
+    ),
+    invalid('export function f(raw: object) { return raw as Message; }'),
+    invalid('export function f(raw: {}) { return raw as Message; }'),
+    invalid('export function f(raw: Record<string, unknown>) { return raw as Message; }'),
+    invalid('export function f(raw: Record<string, any>) { return <Message>raw; }'),
+    invalid('export function f(raw: object | null) { return raw!; }'),
+    invalid('export function f(raw: string | object) { return raw as Message; }'),
+    // A type parameter is as unchecked as its constraint, and one without a constraint may be anything.
+    invalid('export function f<T>(raw: T) { return raw as Message; }'),
+    invalid('export function f<T extends object>(raw: T) { return raw as Message; }'),
+    invalid(
+      'export function f<T extends Record<string, unknown>>(raw: T) { return raw as Message; }',
+    ),
+    // Going through `unknown` does not launder the claim.
+    invalid('export function f(raw: object) { return raw as unknown as Message; }'),
   ],
 });
