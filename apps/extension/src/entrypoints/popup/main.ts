@@ -1,4 +1,3 @@
-import { PRODUCT_NAME } from '@wirecatch/product';
 import { mount } from 'svelte';
 import { browser } from 'wxt/browser';
 import App from '@/components/App.svelte';
@@ -34,7 +33,6 @@ function firstSnapshot(port: {
 }
 
 async function start(): Promise<void> {
-  document.title = PRODUCT_NAME;
   const port = browser.runtime.connect({ name: POPUP_PORT_NAME });
   const channel = {
     postMessage: (message: PopupRequest) => port.postMessage(message),
