@@ -36,6 +36,30 @@ function bigList(n: number, active: number): DownloadSummary[] {
 }
 
 describe('DownloadStore', () => {
+  it('tells readers of a row and of the size when rows come and go', () => {
+    const store = new DownloadStore();
+    const seen: [number, string | undefined][] = [];
+    const cleanup = $effect.root(() => {
+      $effect(() => {
+        seen.push([store.size, store.get(2)?.file_name]);
+      });
+    });
+    flushSync();
+    store.load([row(1)]);
+    flushSync();
+    store.apply([row(2)]);
+    flushSync();
+    store.remove([2]);
+    flushSync();
+    expect(seen).toEqual([
+      [0, undefined],
+      [1, undefined],
+      [2, 'f2.bin'],
+      [1, undefined],
+    ]);
+    cleanup();
+  });
+
   it('keeps totals right as speeds change, rows move and rows go', () => {
     const store = new DownloadStore();
     store.load([

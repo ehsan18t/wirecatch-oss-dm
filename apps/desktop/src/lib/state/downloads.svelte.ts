@@ -80,12 +80,18 @@ export class DownloadStore {
   /** How many rows each batch touched; tests use this to prove updates stay proportional. */
   lastBatchTouched = 0;
 
+  /** How many rows there are. Reading this subscribes to `version`. */
   get size(): number {
+    track(this.version);
     return this.#rows.size;
   }
 
-  /** The reactive row for an id. Reading its fields in a component subscribes to that row only. */
+  /**
+   * The reactive row for an id. Reading this subscribes to `version`, so a reader learns when the
+   * row comes or goes; reading the row's fields subscribes to that row only.
+   */
   get(id: DownloadId): DownloadSummary | undefined {
+    track(this.version);
     return this.#rows.get(id);
   }
 
