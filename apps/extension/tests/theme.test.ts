@@ -1,6 +1,12 @@
+/**
+ * @vitest-environment node
+ *
+ * Reads wxt.config.ts, which reads files next to it, so these run in Node rather than jsdom.
+ */
 import { describe, expect, it } from 'vitest';
+import config from '../wxt.config';
 import popupCss from '../src/entrypoints/popup/style.css?raw';
-import { BADGE_COLOR, cssColor } from '../src/lib/theme';
+import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 
 const SHEET = `
 :root {
@@ -26,8 +32,15 @@ describe('popup colors', () => {
     expect(() => cssColor('-ok', SHEET)).toThrow();
   });
 
-  it('gives the toolbar badge the popup warning color', () => {
-    expect(BADGE_COLOR).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(BADGE_COLOR).toBe(cssColor('--warn', popupCss));
+  it('gives the toolbar badge the popup warning color, which the build injects', async () => {
+    const color = cssColor(BADGE_TOKEN, popupCss);
+    expect(color).toMatch(/^#[0-9a-f]{6}$/i);
+    const vite = await config.vite?.({
+      browser: 'chrome',
+      mode: 'production',
+      command: 'build',
+      manifestVersion: 3,
+    });
+    expect(vite?.define?.__BADGE_COLOR__).toBe(JSON.stringify(color));
   });
 });

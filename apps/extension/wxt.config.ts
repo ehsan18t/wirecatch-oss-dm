@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'wxt';
 import { SITE_ORIGINS } from './src/lib/site-access';
+import { BADGE_TOKEN, cssColor } from './src/lib/theme';
 import { isRecord, isString, object, refine, type Guarded } from './src/lib/validate';
 
 const nonEmpty = refine(isString, (value) => value !== '');
@@ -27,6 +28,12 @@ function readExtensionIds(): Guarded<typeof isExtensionIds> {
 
 const ids = readExtensionIds();
 
+/** The toolbar badge's color, read from the popup's stylesheet; a missing token stops the build here. */
+const badgeColor = cssColor(
+  BADGE_TOKEN,
+  readFileSync(fileURLToPath(new URL('src/entrypoints/popup/style.css', import.meta.url)), 'utf8'),
+);
+
 /**
  * The WXT mode of `pnpm build:store`: the package uploaded to the Chrome Web Store, the only
  * Chromium build without the `key` field (see PUBLISHING.md).
@@ -43,6 +50,7 @@ export default defineConfig({
     define: {
       // The bridge registers itself under this name; the background script connects to it.
       __NATIVE_HOST_NAME__: JSON.stringify(ids.native_host_name),
+      __BADGE_COLOR__: JSON.stringify(badgeColor),
     },
   }),
   manifest: ({ browser, mode }) => {

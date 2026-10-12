@@ -10,7 +10,6 @@ import type { Badge, BrowserDownloads, InFlightStore, NoticeStore } from '../hub
 import type { MediaStore, TabInfo } from '../media/center';
 import { isNotice } from '../messages';
 import { originPattern } from '../site-access';
-import { BADGE_COLOR } from '../theme';
 import { isNumber, isString, itemsOf, object } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
@@ -184,7 +183,9 @@ export function toolbarBadge(): Badge {
       void browser.action.setBadgeText({ text }).catch(() => undefined);
       void browser.action.setTitle({ title }).catch(() => undefined);
       if (text !== '') {
-        void browser.action.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => undefined);
+        void browser.action
+          .setBadgeBackgroundColor({ color: __BADGE_COLOR__ })
+          .catch(() => undefined);
       }
     },
   };
