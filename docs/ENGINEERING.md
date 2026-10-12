@@ -2,7 +2,7 @@
 
 This is how code in Wirecatch is written. It applies to every package and every contributor, human or agent. Each rule says how it is enforced: **gate** means `pnpm gate` (and CI, which runs the same checks) fails when it is broken, **review** means a reviewer checks it. A rule enforced only by review is a candidate for a new check; propose one when you find a way.
 
-Every crate follows the workspace lints (`[lints] workspace = true`; the gate's `lint-policy` check fails a crate that does not), and every TypeScript and Svelte package uses the one shared ESLint configuration. Nothing is recorded as an accepted violation: there are no suppression files. The few exceptions are single `#[expect(..., reason = "...")]` attributes or one disable comment with a `--` reason, each where the rule is wrong for that line, listed in [AUDIT](AUDIT.md) W14.
+Every crate follows the workspace lints (`[lints] workspace = true`; the gate's `lint-policy` check fails a crate that does not), and every TypeScript and Svelte package uses the one shared ESLint configuration. Nothing is recorded as an accepted violation: there are no suppression files. The few exceptions are single `#[expect(..., reason = "...")]` attributes or one disable comment with a `--` reason, each where the rule is wrong for that code, listed with its reason in [AUDIT](AUDIT.md) W14 and by file and lint in `LINT_EXCEPTIONS` in `scripts/gate.mjs`. Gate (`exceptions`, which fails on any `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore` not in that list, and on a listed one that is gone).
 
 The gates are a floor. Passing them does not make a change good; breaking them makes it wrong.
 
