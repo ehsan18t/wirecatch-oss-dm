@@ -3,4 +3,4 @@
 /**
  * What in the browser handed a download to the app.
  */
-export type CaptureSource = "browser_download" | "context_menu" | "media_button";
+export type CaptureSource = 'browser_download' | 'context_menu' | 'media_button';

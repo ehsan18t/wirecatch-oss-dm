@@ -3,4 +3,4 @@
 /**
  * How the media is delivered.
  */
-export type MediaKind = "hls" | "dash" | "direct" | "page";
+export type MediaKind = 'hls' | 'dash' | 'direct' | 'page';

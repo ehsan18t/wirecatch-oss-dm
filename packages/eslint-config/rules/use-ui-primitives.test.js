@@ -8,7 +8,8 @@ RuleTester.describe = describe;
 RuleTester.it = it;
 RuleTester.afterAll = after;
 
-const svelteParser = svelte.configs.base.find((c) => c.languageOptions?.parser)?.languageOptions.parser;
+const svelteParser = svelte.configs.base.find((c) => c.languageOptions?.parser)?.languageOptions
+  .parser;
 const tester = new RuleTester({
   languageOptions: { parser: svelteParser, parserOptions: { parser: ts.parser } },
 });
@@ -16,7 +17,12 @@ const options = [{ buttonClasses: { btn: 'Button', 'icon-btn': 'IconButton' }, i
 const filename = 'Example.svelte';
 const script = (body) => `<script lang="ts">\n${body}\n</script>\n`;
 const valid = (code) => ({ code, options, filename });
-const primitiveClass = (code) => ({ code, options, filename, errors: [{ messageId: 'primitiveClass' }] });
+const primitiveClass = (code) => ({
+  code,
+  options,
+  filename,
+  errors: [{ messageId: 'primitiveClass' }],
+});
 const directIcon = (code) => ({ code, options, filename, errors: [{ messageId: 'directIcon' }] });
 
 tester.run('use-ui-primitives', useUiPrimitives, {
@@ -31,7 +37,9 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     valid('<div class={{ active: kind === "icon-btn" }}></div>'),
     // The primitives themselves, and icons drawn through Icon.
     valid('<Button variant="primary">Save</Button>'),
-    valid(`${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';")}<Icon icon={X} size="sm" />`),
+    valid(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';")}<Icon icon={X} size="sm" />`,
+    ),
     // Another component's size is its own business.
     valid(`${script("import Dialog from './Dialog.svelte';")}<Dialog size="wide" />`),
     // A type import cannot be rendered.
@@ -39,7 +47,9 @@ tester.run('use-ui-primitives', useUiPrimitives, {
   ],
   invalid: [
     primitiveClass('<button type="button" class="btn primary">Save</button>'),
-    primitiveClass('<button type="button" class={["icon-btn", extra]} aria-label="Close">x</button>'),
+    primitiveClass(
+      '<button type="button" class={["icon-btn", extra]} aria-label="Close">x</button>',
+    ),
     primitiveClass('<button type="button" class:btn={true}>Save</button>'),
     primitiveClass('<button type="button" class="{small ? `btn small` : `btn`}">Save</button>'),
     primitiveClass('<button type="button" class={{ btn: true, primary }}>Save</button>'),

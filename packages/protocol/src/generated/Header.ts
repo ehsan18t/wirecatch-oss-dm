@@ -3,12 +3,13 @@
 /**
  * One HTTP request header.
  */
-export type Header = { 
-/**
- * The header's name, for example `Authorization`.
- */
-name: string, 
-/**
- * The header's value.
- */
-value: string, };
+export type Header = {
+  /**
+   * The header's name, for example `Authorization`.
+   */
+  name: string;
+  /**
+   * The header's value.
+   */
+  value: string;
+};

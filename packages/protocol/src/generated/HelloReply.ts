@@ -3,12 +3,13 @@
 /**
  * The app's answer to [`Call::Hello`].
  */
-export type HelloReply = { 
-/**
- * The app's version.
- */
-app_version: string, 
-/**
- * The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the app speaks.
- */
-protocol_version: number, };
+export type HelloReply = {
+  /**
+   * The app's version.
+   */
+  app_version: string;
+  /**
+   * The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the app speaks.
+   */
+  protocol_version: number;
+};

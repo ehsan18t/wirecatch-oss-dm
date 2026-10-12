@@ -11,7 +11,9 @@ export function indexSource(folder) {
     .filter((f) => f.endsWith(EXTENSION))
     .map((f) => f.slice(0, -EXTENSION.length));
   if (!files.includes(CONSTANTS)) {
-    throw new Error(`${CONSTANTS}${EXTENSION} was not generated; it is written by \`cargo test -p wirecatch-protocol\`.`);
+    throw new Error(
+      `${CONSTANTS}${EXTENSION} was not generated; it is written by \`cargo test -p wirecatch-protocol\`.`,
+    );
   }
   const names = files.filter((n) => n !== CONSTANTS).sort();
   const lines = [

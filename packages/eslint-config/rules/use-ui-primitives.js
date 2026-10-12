@@ -26,17 +26,24 @@ function classStrings(node) {
     case 'Literal':
       return typeof node.value === 'string' ? [node.value] : [];
     case 'TemplateLiteral':
-      return [...node.quasis.map((q) => q.value.cooked ?? ''), ...node.expressions.flatMap(classStrings)];
+      return [
+        ...node.quasis.map((q) => q.value.cooked ?? ''),
+        ...node.expressions.flatMap(classStrings),
+      ];
     case 'ConditionalExpression':
       return [...classStrings(node.consequent), ...classStrings(node.alternate)];
     case 'LogicalExpression':
       // `on && "x"` yields only its right side; `a || "x"` and `a ?? "x"` may yield either.
-      return node.operator === '&&' ? classStrings(node.right) : [...classStrings(node.left), ...classStrings(node.right)];
+      return node.operator === '&&'
+        ? classStrings(node.right)
+        : [...classStrings(node.left), ...classStrings(node.right)];
     case 'ArrayExpression':
       return node.elements.flatMap(classStrings);
     case 'ObjectExpression':
       // Svelte 5 object classes: each key is a class, its value only a condition.
-      return node.properties.flatMap((p) => (p.type === 'Property' && !p.computed ? keyName(p.key) : []));
+      return node.properties.flatMap((p) =>
+        p.type === 'Property' && !p.computed ? keyName(p.key) : [],
+      );
     default:
       return [];
   }
@@ -49,19 +56,20 @@ function keyName(key) {
 
 /** The class names an element gets from its `class` attribute and `class:` directives. */
 function elementClasses(element) {
-  const names = new Set();
-  for (const attribute of element.startTag.attributes) {
-    if (attribute.type === 'SvelteAttribute' && attribute.key.name === 'class') {
-      for (const part of attribute.value) {
-        for (const text of classStrings(part)) {
-          for (const name of text.split(/\s+/)) if (name !== '') names.add(name);
-        }
-      }
-    } else if (attribute.type === 'SvelteDirective' && attribute.kind === 'Class') {
-      names.add(attribute.key.name.name);
-    }
+  return new Set(element.startTag.attributes.flatMap(attributeClasses));
+}
+
+/** The class names one attribute gives an element. */
+function attributeClasses(attribute) {
+  if (attribute.type === 'SvelteAttribute' && attribute.key.name === 'class') {
+    return attribute.value
+      .flatMap(classStrings)
+      .flatMap((text) => text.split(/\s+/))
+      .filter((name) => name !== '');
   }
-  return names;
+  if (attribute.type === 'SvelteDirective' && attribute.kind === 'Class')
+    return [attribute.key.name.name];
+  return [];
 }
 
 /** The import a component tag starts with: `X` in `<X>`, `L` in `<L.X>`. */
@@ -93,7 +101,8 @@ export const useUiPrimitives = {
     ],
     messages: {
       primitiveClass: 'The class `{{name}}` belongs to {{component}}: use {{component}} instead.',
-      directIcon: 'Render Lucide icons through {{icon}} (`<{{icon}} icon={...} size="sm" />`), which sets their size and stroke.',
+      directIcon:
+        'Render Lucide icons through {{icon}} (`<{{icon}} icon={...} size="sm" />`), which sets their size and stroke.',
     },
   },
   create(context) {
@@ -116,12 +125,17 @@ export const useUiPrimitives = {
         }
         const name = [...elementClasses(node)].find((c) => Object.hasOwn(primitives, c));
         if (name !== undefined) {
-          context.report({ node: node.startTag, messageId: 'primitiveClass', data: { name, component: primitives[name] } });
+          context.report({
+            node: node.startTag,
+            messageId: 'primitiveClass',
+            data: { name, component: primitives[name] },
+          });
         }
       },
       'Program:exit'() {
         for (const node of components) {
-          if (lucide.has(rootName(node.name))) context.report({ node: node.startTag, messageId: 'directIcon', data: { icon } });
+          if (lucide.has(rootName(node.name)))
+            context.report({ node: node.startTag, messageId: 'directIcon', data: { icon } });
         }
       },
     };

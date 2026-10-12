@@ -3,16 +3,29 @@
 /**
  * Where an add-on is.
  */
-export type AddonState = { "type": "not_installed" } | { "type": "installing", "data": { 
-/**
- * Bytes downloaded so far.
- */
-done: number, 
-/**
- * Size of the download in bytes, when known.
- */
-total: number | null, } } | { "type": "installed" } | { "type": "update_available" } | { "type": "failed", "data": { 
-/**
- * What went wrong, in plain language.
- */
-message: string, } };
+export type AddonState =
+  | { type: 'not_installed' }
+  | {
+      type: 'installing';
+      data: {
+        /**
+         * Bytes downloaded so far.
+         */
+        done: number;
+        /**
+         * Size of the download in bytes, when known.
+         */
+        total: number | null;
+      };
+    }
+  | { type: 'installed' }
+  | { type: 'update_available' }
+  | {
+      type: 'failed';
+      data: {
+        /**
+         * What went wrong, in plain language.
+         */
+        message: string;
+      };
+    };

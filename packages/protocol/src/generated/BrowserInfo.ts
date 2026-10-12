@@ -3,12 +3,13 @@
 /**
  * The browser the extension runs in.
  */
-export type BrowserInfo = { 
-/**
- * For example `chrome`, `edge`, `brave`, `firefox`.
- */
-name: string, 
-/**
- * The browser's version, when the extension can tell.
- */
-version: string | null, };
+export type BrowserInfo = {
+  /**
+   * For example `chrome`, `edge`, `brave`, `firefox`.
+   */
+  name: string;
+  /**
+   * The browser's version, when the extension can tell.
+   */
+  version: string | null;
+};

@@ -3,20 +3,21 @@
 /**
  * One subtitle language a video has (D24).
  */
-export type MediaSubtitle = { 
-/**
- * Identifies it in [`MediaSelection::subtitles`].
- */
-id: string, 
-/**
- * The language code the site gives, for example `en` or `pt-BR`.
- */
-language: string, 
-/**
- * The language in words, for example "English".
- */
-name: string, 
-/**
- * Made by speech recognition rather than written by a person.
- */
-auto: boolean, };
+export type MediaSubtitle = {
+  /**
+   * Identifies it in [`MediaSelection::subtitles`].
+   */
+  id: string;
+  /**
+   * The language code the site gives, for example `en` or `pt-BR`.
+   */
+  language: string;
+  /**
+   * The language in words, for example "English".
+   */
+  name: string;
+  /**
+   * Made by speech recognition rather than written by a person.
+   */
+  auto: boolean;
+};

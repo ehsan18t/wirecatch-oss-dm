@@ -33,6 +33,57 @@ const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/*
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
 
+/** The rules every package follows, on top of the recommended and strict sets. */
+const BASELINE_RULES = {
+  // Correctness. TypeScript already reports undefined names, and `no-undef` does not understand type-only globals.
+  'no-undef': 'off',
+  eqeqeq: ['error', 'always'],
+  'no-console': 'error',
+  'no-param-reassign': 'error',
+  '@typescript-eslint/no-explicit-any': 'error',
+  '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+  '@typescript-eslint/switch-exhaustiveness-check': 'error',
+  '@typescript-eslint/consistent-type-imports': 'error',
+  '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+  // `onclick={() => model.reconnect()}` is clearer than wrapping every handler in braces.
+  '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
+  // Outside data (`any` or `unknown`) gets its type from a guard that checks it, never from `as` or `!`.
+  'wirecatch/no-assertion-on-input': 'error',
+  // Every number that is not obvious gets a name that says what it means; the value of a module constant may be written the way it reads (`8 * 1024`).
+  'no-magic-numbers': 'off',
+  'wirecatch/no-magic-numbers': [
+    'error',
+    {
+      ignore: OBVIOUS_NUMBERS,
+      ignoreArrayIndexes: true,
+      ignoreDefaultValues: true,
+      ignoreEnums: true,
+      ignoreNumericLiteralTypes: true,
+      ignoreReadonlyClassProperties: true,
+      ignoreTypeIndexes: true,
+    },
+  ],
+  // A disable comment names its rules, says why after `--`, and switches them back on: an exception is one reasoned decision about a few lines, never a file or every rule.
+  '@eslint-community/eslint-comments/require-description': ['error', { ignore: ['eslint-enable'] }],
+  '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
+  '@eslint-community/eslint-comments/disable-enable-pair': 'error',
+  // Size limits.
+  complexity: ['error', MAX_COMPLEXITY],
+  'max-depth': ['error', MAX_DEPTH],
+  'max-params': ['error', MAX_PARAMS],
+  'max-lines-per-function': [
+    'error',
+    { max: MAX_FUNCTION_LINES, skipBlankLines: true, skipComments: true },
+  ],
+  'max-lines': ['error', { max: MAX_FILE_LINES, skipBlankLines: true, skipComments: true }],
+  // Svelte.
+  'svelte/require-each-key': 'error',
+  'svelte/no-at-html-tags': 'error',
+  'svelte/prefer-svelte-reactivity': 'error',
+  'svelte/no-unused-svelte-ignore': 'error',
+  'svelte/button-has-type': 'error',
+};
+
 /**
  * Builds the configuration for one package.
  *
@@ -42,9 +93,18 @@ const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
  * @param {string[]} [options.ignores] Folders the linter skips, such as build output.
  * @param {object} [options.svelteConfig] The package's `svelte.config.js`, when it has one.
  * @param {import('eslint').Linter.Config[]} [options.layers] Import rules that keep each layer of the package from reaching into the wrong one.
+ * @param {string[]} [options.untyped] More files linted without type information, like the scripts and configuration files every package has: JavaScript that has no types to check.
  * @returns {import('eslint').Linter.Config[]}
  */
-export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = [], svelteConfig, layers = [] }) {
+export function wirecatch({
+  tsconfigRootDir,
+  globals: runtimeGlobals,
+  ignores = [],
+  svelteConfig,
+  layers = [],
+  untyped = [],
+}) {
+  const untypedFiles = [...UNTYPED_FILES, ...untyped];
   return ts.config(
     { ignores: ['node_modules/', ...ignores] },
     js.configs.recommended,
@@ -60,55 +120,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
       },
       plugins: { wirecatch: plugin, '@eslint-community/eslint-comments': comments },
       linterOptions: { reportUnusedDisableDirectives: 'error' },
-      rules: {
-        // Correctness. TypeScript already reports undefined names, and `no-undef` does not understand type-only globals.
-        'no-undef': 'off',
-        eqeqeq: ['error', 'always'],
-        'no-console': 'error',
-        'no-param-reassign': 'error',
-        '@typescript-eslint/no-explicit-any': 'error',
-        '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-        '@typescript-eslint/switch-exhaustiveness-check': 'error',
-        '@typescript-eslint/consistent-type-imports': 'error',
-        '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
-        // `onclick={() => model.reconnect()}` is clearer than wrapping every handler in braces.
-        '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
-        // Outside data (`any` or `unknown`) gets its type from a guard that checks it, never from `as` or `!`.
-        'wirecatch/no-assertion-on-input': 'error',
-        // Every number that is not obvious gets a name that says what it means; the value of a module constant may be written the way it reads (`8 * 1024`).
-        'no-magic-numbers': 'off',
-        'wirecatch/no-magic-numbers': [
-          'error',
-          {
-            ignore: OBVIOUS_NUMBERS,
-            ignoreArrayIndexes: true,
-            ignoreDefaultValues: true,
-            ignoreEnums: true,
-            ignoreNumericLiteralTypes: true,
-            ignoreReadonlyClassProperties: true,
-            ignoreTypeIndexes: true,
-          },
-        ],
-        // A disable comment names its rules, says why after `--`, and switches them back on: an exception is one reasoned decision about a few lines, never a file or every rule.
-        '@eslint-community/eslint-comments/require-description': ['error', { ignore: ['eslint-enable'] }],
-        '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
-        '@eslint-community/eslint-comments/disable-enable-pair': 'error',
-        // Size limits.
-        complexity: ['error', MAX_COMPLEXITY],
-        'max-depth': ['error', MAX_DEPTH],
-        'max-params': ['error', MAX_PARAMS],
-        'max-lines-per-function': [
-          'error',
-          { max: MAX_FUNCTION_LINES, skipBlankLines: true, skipComments: true },
-        ],
-        'max-lines': ['error', { max: MAX_FILE_LINES, skipBlankLines: true, skipComments: true }],
-        // Svelte.
-        'svelte/require-each-key': 'error',
-        'svelte/no-at-html-tags': 'error',
-        'svelte/prefer-svelte-reactivity': 'error',
-        'svelte/no-unused-svelte-ignore': 'error',
-        'svelte/button-has-type': 'error',
-      },
+      rules: BASELINE_RULES,
     },
     {
       files: ['**/*.svelte', '**/*.svelte.ts'],
@@ -130,8 +142,8 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
       languageOptions: { globals: globals.node },
       rules: { 'no-console': 'off', 'wirecatch/no-magic-numbers': 'off' },
     },
-    { files: UNTYPED_FILES, ...ts.configs.disableTypeChecked },
-    { files: UNTYPED_FILES, rules: { 'wirecatch/no-assertion-on-input': 'off' } },
+    { files: untypedFiles, ...ts.configs.disableTypeChecked },
+    { files: untypedFiles, rules: { 'wirecatch/no-assertion-on-input': 'off' } },
     ...layers,
   );
 }

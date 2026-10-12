@@ -21,9 +21,14 @@
     "typescript-eslint": "catalog:"
   },
   "devDependencies": {
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "prettier-plugin-svelte": "catalog:",
     "typescript": "catalog:"
   },
   "scripts": {
+    "lint": "eslint . --max-warnings 0 && prettier --check .",
+    "format": "prettier --write .",
     "test": "node --test \"rules/*.test.js\""
   }
 }

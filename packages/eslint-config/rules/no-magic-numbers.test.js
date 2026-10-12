@@ -16,12 +16,19 @@ tester.run('no-magic-numbers', noMagicNumbers, {
     { code: 'const MAX_URL_LENGTH = 8 * 1024;', options },
     { code: 'export const BACKOFF_MS = [1_000, 2_000, 4_000] as const;', options },
     { code: 'const OFFSET = -42;', options },
-    { code: 'const LIMITS = { files: 50, bytes: 4 * 1024 * 1024 } satisfies Record<string, number>;', options },
+    {
+      code: 'const LIMITS = { files: 50, bytes: 4 * 1024 * 1024 } satisfies Record<string, number>;',
+      options,
+    },
     { code: 'const STEPS = [[5, 10], [15, 20]];', options },
   ],
   invalid: [
     // Inside a function the constant names something local; the base rule decides.
-    { code: 'function f() { const digits = 3 * 2; return digits; }', options, errors: [...magic, ...magic] },
+    {
+      code: 'function f() { const digits = 3 * 2; return digits; }',
+      options,
+      errors: [...magic, ...magic],
+    },
     // A call is logic, not a value written out.
     { code: 'const DELAY = Math.max(250, 100);', options, errors: [...magic, ...magic] },
     // `let` can change, so it does not name a value.

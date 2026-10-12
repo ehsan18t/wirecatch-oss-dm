@@ -3,4 +3,4 @@
 /**
  * The kind of file a download is; each has its own folder ([`CategoryRule`]).
  */
-export type Category = "video" | "audio" | "archive" | "document" | "program" | "image" | "other";
+export type Category = 'video' | 'audio' | 'archive' | 'document' | 'program' | 'image' | 'other';

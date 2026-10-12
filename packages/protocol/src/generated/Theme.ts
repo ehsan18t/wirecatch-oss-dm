@@ -3,4 +3,4 @@
 /**
  * How the app looks.
  */
-export type Theme = "system" | "light" | "dark";
+export type Theme = 'system' | 'light' | 'dark';

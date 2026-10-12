@@ -3,4 +3,12 @@
 /**
  * Where a download is in its life.
  */
-export type DownloadStatus = "queued" | "connecting" | "downloading" | "paused" | "completed" | "failed" | "cancelled" | "processing";
+export type DownloadStatus =
+  | 'queued'
+  | 'connecting'
+  | 'downloading'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'processing';

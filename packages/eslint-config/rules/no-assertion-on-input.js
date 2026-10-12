@@ -15,23 +15,32 @@ const UNCHECKED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
 /** Whether an assertion is `as const` (or `<const>`), which only fixes a literal's type. */
 function isConstAssertion(node) {
   const type = node.typeAnnotation;
-  return type.type === 'TSTypeReference' && type.typeName.type === 'Identifier' && type.typeName.name === 'const';
+  return (
+    type.type === 'TSTypeReference' &&
+    type.typeName.type === 'Identifier' &&
+    type.typeName.name === 'const'
+  );
 }
 
 /** @type {import('eslint').Rule.RuleModule} */
 export const noAssertionOnInput = {
   meta: {
     type: 'problem',
-    docs: { description: 'Disallow type and non-null assertions on values typed `any` or `unknown`.' },
+    docs: {
+      description: 'Disallow type and non-null assertions on values typed `any` or `unknown`.',
+    },
     schema: [],
     messages: {
-      assertion: 'This value is typed `{{type}}`: check its shape with a guard instead of asserting it.',
+      assertion:
+        'This value is typed `{{type}}`: check its shape with a guard instead of asserting it.',
     },
   },
   create(context) {
     const services = context.sourceCode.parserServices;
     if (!services?.program) {
-      throw new Error('wirecatch/no-assertion-on-input needs type information (parserOptions.projectService).');
+      throw new Error(
+        'wirecatch/no-assertion-on-input needs type information (parserOptions.projectService).',
+      );
     }
     const checker = services.program.getTypeChecker();
 

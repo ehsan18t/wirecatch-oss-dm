@@ -3,4 +3,5 @@
 /**
  * A fix the UI can offer for a [`UserError`].
  */
-export type FixAction = "retry" | "refresh_link" | "choose_folder" | "free_disk_space" | "keep_original";
+export type FixAction =
+  'retry' | 'refresh_link' | 'choose_folder' | 'free_disk_space' | 'keep_original';

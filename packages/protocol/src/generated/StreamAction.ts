@@ -3,4 +3,4 @@
 /**
  * What happens to the video or to the audio of a quality saved as one [`OutputFormat`].
  */
-export type StreamAction = "none" | "copy" | "encode";
+export type StreamAction = 'none' | 'copy' | 'encode';

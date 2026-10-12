@@ -3,4 +3,13 @@
 /**
  * The kinds of failure a client can tell apart.
  */
-export type ErrorCode = "unsupported_version" | "invalid_request" | "invalid_url" | "not_found" | "app_unavailable" | "app_not_running" | "internal" | "not_started" | "addon_required";
+export type ErrorCode =
+  | 'unsupported_version'
+  | 'invalid_request'
+  | 'invalid_url'
+  | 'not_found'
+  | 'app_unavailable'
+  | 'app_not_running'
+  | 'internal'
+  | 'not_started'
+  | 'addon_required';

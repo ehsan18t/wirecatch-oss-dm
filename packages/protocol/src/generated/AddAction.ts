@@ -3,4 +3,4 @@
 /**
  * What the app did with a captured download.
  */
-export type AddAction = "started" | "queued" | "awaiting_confirmation";
+export type AddAction = 'started' | 'queued' | 'awaiting_confirmation';

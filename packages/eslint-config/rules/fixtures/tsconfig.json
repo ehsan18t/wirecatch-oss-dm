@@ -1,4 +1,10 @@
 {
-  "compilerOptions": { "strict": true, "target": "ESNext", "module": "ESNext", "lib": ["ESNext", "DOM"], "noEmit": true },
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "noEmit": true
+  },
   "include": ["file.ts"]
 }

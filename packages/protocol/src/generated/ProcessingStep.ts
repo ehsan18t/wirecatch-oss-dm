@@ -3,4 +3,4 @@
 /**
  * One step after a media download's bytes have arrived.
  */
-export type ProcessingStep = "joining" | "finishing" | "converting";
+export type ProcessingStep = 'joining' | 'finishing' | 'converting';

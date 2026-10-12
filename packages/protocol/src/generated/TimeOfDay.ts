@@ -3,12 +3,13 @@
 /**
  * A time on the clock, in the computer's local time.
  */
-export type TimeOfDay = { 
-/**
- * 0 to 23.
- */
-hour: number, 
-/**
- * 0 to 59.
- */
-minute: number, };
+export type TimeOfDay = {
+  /**
+   * 0 to 23.
+   */
+  hour: number;
+  /**
+   * 0 to 59.
+   */
+  minute: number;
+};

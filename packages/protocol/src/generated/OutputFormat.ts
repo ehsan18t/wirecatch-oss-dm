@@ -4,4 +4,5 @@
  * What a media download is saved as (D24). `Original` keeps the format the site sends;
  * the others are for videos (`Mp4`, `Mkv`, `Webm`) or for audio only (the rest).
  */
-export type OutputFormat = "original" | "mp4" | "mkv" | "webm" | "mp3" | "m4a" | "opus" | "flac" | "wav";
+export type OutputFormat =
+  'original' | 'mp4' | 'mkv' | 'webm' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'wav';

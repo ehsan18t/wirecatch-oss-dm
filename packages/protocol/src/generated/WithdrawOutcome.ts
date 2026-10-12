@@ -3,4 +3,4 @@
 /**
  * The app's answer to a [`WithdrawRequest`].
  */
-export type WithdrawOutcome = "withdrawn" | "not_found" | "already_started";
+export type WithdrawOutcome = 'withdrawn' | 'not_found' | 'already_started';

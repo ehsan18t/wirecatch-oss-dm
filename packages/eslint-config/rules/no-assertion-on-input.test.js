@@ -24,17 +24,27 @@ declare const browserEvent: Event;
 declare const storage: { get(keys: string[]): Promise<Record<string, any>> };
 `;
 const valid = (code) => ({ code: DECLARATIONS + code, filename });
-const invalid = (code) => ({ code: DECLARATIONS + code, filename, errors: [{ messageId: 'assertion' }] });
+const invalid = (code) => ({
+  code: DECLARATIONS + code,
+  filename,
+  errors: [{ messageId: 'assertion' }],
+});
 
 tester.run('no-assertion-on-input', noAssertionOnInput, {
   valid: [
     // Checked with a guard, not asserted.
-    valid('export function asMessage(raw: unknown): Message | null { return isMessage(raw) ? raw : null; }'),
+    valid(
+      'export function asMessage(raw: unknown): Message | null { return isMessage(raw) ? raw : null; }',
+    ),
     // `as const` says nothing about the value.
-    valid('export function kinds(raw: unknown) { return raw === null ? (["a", "b"] as const) : <const>["c"]; }'),
+    valid(
+      'export function kinds(raw: unknown) { return raw === null ? (["a", "b"] as const) : <const>["c"]; }',
+    ),
     // A value whose type is known may be narrowed; that is a different decision.
     valid('export const pointer = browserEvent as PointerEvent;'),
-    valid('export function f(raw: unknown) { const inner = (e: Event) => e as KeyboardEvent; return [raw, inner]; }'),
+    valid(
+      'export function f(raw: unknown) { const inner = (e: Event) => e as KeyboardEvent; return [raw, inner]; }',
+    ),
     valid('export const first = (list: string[]) => list[0]!;'),
   ],
   invalid: [
@@ -44,7 +54,9 @@ tester.run('no-assertion-on-input', noAssertionOnInput, {
     // `any`, the type the browser's listener arguments and JSON.parse leave.
     invalid('export function onMessage(raw: any) { return raw as Message; }'),
     invalid('export const parse = (text: string) => JSON.parse(text) as Message;'),
-    invalid('export async function on() { const items = await storage.get(["on"]); return items.on as boolean; }'),
+    invalid(
+      'export async function on() { const items = await storage.get(["on"]); return items.on as boolean; }',
+    ),
     // Parameters that are not plain names.
     invalid('export function first({ raw }: { raw: unknown }) { return raw as string; }'),
     invalid('export function all(...raw: unknown[]) { return raw[0] as string; }'),
