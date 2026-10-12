@@ -64,6 +64,12 @@ fn http3_is_not_used_through_a_proxy() {
     assert!(advertised(&|name: &str| {
         (name == "HTTP_PROXY").then(|| OsString::from("http://proxy:8080"))
     }));
+    // A host the proxy settings exclude is reached directly, so QUIC goes nowhere the client would not.
+    assert!(advertised(&|name: &str| match name {
+        "HTTPS_PROXY" => Some(OsString::from("http://proxy:8080")),
+        "NO_PROXY" => Some(OsString::from("other.example,.files.example")),
+        _ => None,
+    }));
 }
 
 fn test_data(len: usize) -> Bytes {

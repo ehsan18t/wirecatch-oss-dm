@@ -72,6 +72,7 @@ use crate::error::{Error, Result};
 use crate::http::{self, Clients, Failure, Guard, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::numeric::clamp_to_len;
+use crate::proxy;
 use crate::units::KIB_USIZE;
 use crate::worker;
 
@@ -739,47 +740,9 @@ pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -
         resolver: Arc::new(FilteringResolver {
             exempt: url.host_str().map(str::to_string),
             pinned: pinned_addresses(start_addrs),
-            proxies: proxy_hosts(&|name| std::env::var_os(name)),
+            proxies: proxy::host_names(&proxy::system),
         }),
     }
-}
-
-/// The variables the HTTP client takes a proxy from.
-const PROXY_VARIABLES: &[&str] = &[
-    "ALL_PROXY",
-    "all_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "HTTPS_PROXY",
-    "https_proxy",
-];
-
-/// The host names of the proxies set in the environment, as `env` reads it.
-/// The HTTP client connects to these itself, so their names reach the
-/// resolver; a proxy given as an IP address needs no entry.
-fn proxy_hosts(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<String> {
-    let mut hosts = Vec::new();
-    for name in PROXY_VARIABLES {
-        let Some(value) = env(name) else { continue };
-        let value = value.to_string_lossy();
-        let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        // Like the HTTP client, a value without a scheme is an http proxy.
-        let parsed = if value.contains("://") {
-            Url::parse(value)
-        } else {
-            Url::parse(&format!("http://{value}"))
-        };
-        if let Ok(url) = parsed
-            && let Some(Host::Domain(host)) = url.host()
-            && !hosts.iter().any(|h| h == host)
-        {
-            hosts.push(host.to_string());
-        }
-    }
-    hosts
 }
 
 /// Refuses requests to the local network, before they are sent; checked for
@@ -852,7 +815,7 @@ pub(crate) struct FilteringResolver {
     /// the only local addresses it may use. Empty when it started public, so a
     /// later switch to a local address is filtered (DNS rebinding).
     pinned: Vec<IpAddr>,
-    /// The proxies the user set (see [`proxy_hosts`]), resolved without the
+    /// The proxies the user set (see [`proxy::host_names`]), resolved without the
     /// filter: the connection to a proxy is the user's choice, and a request
     /// that names one as its target is still checked by the [`NetworkGuard`].
     proxies: Vec<String>,
@@ -1137,31 +1100,6 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("blocks for safety"), "{error}");
-    }
-
-    #[test]
-    fn proxy_host_names_come_from_the_environment() {
-        let env = |values: &'static [(&'static str, &'static str)]| {
-            move |name: &str| {
-                values
-                    .iter()
-                    .find(|(n, _)| *n == name)
-                    .map(|(_, v)| std::ffi::OsString::from(v))
-            }
-        };
-        let hosts = proxy_hosts(&env(&[
-            ("HTTPS_PROXY", "http://user:secret@Proxy.Corp.example:8080"),
-            ("http_proxy", "proxy.corp.example:3128"),
-            ("ALL_PROXY", "socks5://socks.lan:1080"),
-            ("all_proxy", "http://10.0.0.5:8080"),
-            ("HTTP_PROXY", "  "),
-            ("https_proxy", "http://[::1]:8080"),
-        ]));
-        assert_eq!(hosts, ["socks.lan", "proxy.corp.example"]);
-        assert_eq!(
-            proxy_hosts(&env(&[("NO_PROXY", "localhost")])),
-            [] as [std::string::String; 0]
-        );
     }
 
     #[tokio::test]

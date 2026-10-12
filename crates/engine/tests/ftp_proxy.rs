@@ -1,5 +1,5 @@
 //! FTP with a proxy set in the environment is refused rather than going
-//! around the proxy. A test binary of its own, with a single test, because it
+//! around the proxy, unless `NO_PROXY` names the host. A test binary of its own, with a single test, because it
 //! changes the process environment.
 
 use std::sync::Arc;
@@ -19,6 +19,12 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
     let dir = private_dir("ftp-proxy").unwrap();
     let url = server.url("ftp", "", "file.bin");
 
+    // SAFETY: as below. The machine running the test may exclude local hosts
+    // from its proxy; this test decides that itself.
+    unsafe {
+        std::env::remove_var("NO_PROXY");
+        std::env::remove_var("no_proxy");
+    }
     for variable in ["ALL_PROXY", "all_proxy", "FTP_PROXY", "ftp_proxy"] {
         // SAFETY: this test binary runs this one test, on one thread, so
         // nothing else reads the environment meanwhile.
@@ -59,11 +65,31 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
 
     // Without a proxy the same link downloads.
     download(
-        DownloadRequest::new(url, dir.path()),
+        DownloadRequest::new(url.clone(), dir.path()),
         Arc::new(Progress::default()),
         CancellationToken::new(),
     )
     .await
     .unwrap();
+
+    // So it does with a proxy that NO_PROXY says this host does not use.
+    let host = url.host_str().unwrap().to_string();
+    // SAFETY: as above.
+    unsafe {
+        std::env::set_var("ALL_PROXY", "http://proxy.example:8080");
+        std::env::set_var("NO_PROXY", format!("other.example,{host}"));
+    }
+    let direct = download(
+        DownloadRequest::new(url, dir.path()),
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+    )
+    .await;
+    // SAFETY: as above.
+    unsafe {
+        std::env::remove_var("ALL_PROXY");
+        std::env::remove_var("NO_PROXY");
+    }
+    direct.unwrap();
     dir.remove().unwrap();
 }

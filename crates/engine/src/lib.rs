@@ -187,7 +187,7 @@
 //!
 //! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
 //! set, an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
-//! going around the proxy.
+//! going around the proxy, unless `NO_PROXY` names its host.
 //!
 //! Each connection logs in once and then downloads range after range: it
 //! asks for a passive data connection, sends `REST` with the offset and
@@ -220,6 +220,7 @@ mod limiter;
 pub mod naming;
 pub mod numeric;
 mod progress;
+mod proxy;
 mod segment;
 mod state;
 mod storage;

@@ -15,6 +15,7 @@ use crate::ftp;
 use crate::http::{self, Clients, Failure, Session, Validators};
 #[cfg(feature = "http3")]
 use crate::http3;
+use crate::proxy::{self, Scheme};
 use crate::worker;
 
 /// Where the file comes from; shared by every connection of one download.
@@ -228,9 +229,8 @@ pub(crate) async fn open(
         "ftp" | "ftps" | "ftpes" => {
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: refuse instead, until FTP proxies are supported.
-            if let Some(variable) =
-                proxy_variable(FTP_PROXY_VARIABLES, &|name| std::env::var_os(name))
-            {
+            let host = url.host_str().unwrap_or_default();
+            if let Some(variable) = proxy::configured(Scheme::Ftp, host, &proxy::system) {
                 return Err(Error::FtpProxyUnsupported {
                     variable: variable.to_string(),
                 });
@@ -299,21 +299,6 @@ async fn open_http(
             h3,
         },
     })
-}
-
-/// The variables a proxy for FTP is commonly set with.
-const FTP_PROXY_VARIABLES: &[&str] = &["FTP_PROXY", "ftp_proxy", "ALL_PROXY", "all_proxy"];
-
-/// The first of `names` that is set (and not empty) in the environment, as
-/// `env` reads it.
-pub(crate) fn proxy_variable(
-    names: &[&'static str],
-    env: &dyn Fn(&str) -> Option<std::ffi::OsString>,
-) -> Option<&'static str> {
-    names
-        .iter()
-        .copied()
-        .find(|name| env(name).is_some_and(|value| !value.is_empty()))
 }
 
 /// The first request gets the same retry treatment as every later one: a server
