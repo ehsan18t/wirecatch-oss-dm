@@ -13,5 +13,8 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['tests/**/*.test.ts'],
     restoreMocks: true,
+    // src/lib/theme.ts reads colors from the text of the popup's stylesheet, so tests need the
+    // real file.
+    css: { include: [/\/popup\/style\.css/] },
   },
 });

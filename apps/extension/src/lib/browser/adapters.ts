@@ -9,13 +9,11 @@ import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '
 import type { Badge, BrowserDownloads, InFlightStore } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
 import { originPattern } from '../site-access';
+import { BADGE_COLOR } from '../theme';
 import { isNumber, itemsOf } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
 const MEDIA_KEY = 'wirecatch.media.v1';
-
-/** The badge's background while it shows a message: the popup's `--warn` color (`popup/style.css`). */
-const BADGE_COLOR = '#b45309';
 
 interface FirefoxRuntime {
   getBrowserInfo?: () => Promise<{ name: string; version: string }>;

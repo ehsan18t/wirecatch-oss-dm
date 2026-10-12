@@ -11,6 +11,7 @@
   --accent: #1d4ed8;
   --on-accent: #ffffff;
   --ok: #15803d;
+  /* Also the toolbar badge's color: src/lib/theme.ts reads it from this block. */
   --warn: #b45309;
   --warn-bg: #fffbeb;
   --warn-border: #f2c94c;
