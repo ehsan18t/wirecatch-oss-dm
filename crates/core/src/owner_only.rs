@@ -77,7 +77,7 @@ mod imp {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 sddl.as_ptr(),
                 SDDL_REVISION_1,
-                &mut descriptor,
+                &raw mut descriptor,
                 null_mut(),
             )
         };
@@ -90,8 +90,14 @@ mod imp {
         let mut dacl: *mut ACL = null_mut();
         // SAFETY: `descriptor` is a valid descriptor; `dacl` points into it and is
         // only used while the descriptor is alive.
-        if unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) }
-            == 0
+        if unsafe {
+            GetSecurityDescriptorDacl(
+                descriptor,
+                &raw mut present,
+                &raw mut dacl,
+                &raw mut defaulted,
+            )
+        } == 0
         {
             return Err(io::Error::last_os_error());
         }
@@ -109,7 +115,7 @@ mod imp {
             )
         };
         if status != ERROR_SUCCESS {
-            return Err(io::Error::from_raw_os_error(status as i32));
+            return Err(io::Error::from_raw_os_error(status.cast_signed()));
         }
         Ok(())
     }
@@ -118,19 +124,25 @@ mod imp {
     pub fn current_user_sid() -> io::Result<String> {
         let mut token: HANDLE = null_mut();
         // SAFETY: plain out-parameter call; the handle is closed by the guard.
-        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) } == 0 {
             return Err(io::Error::last_os_error());
         }
         let _token = OwnedHandle(token);
 
         let mut len = 0u32;
         // SAFETY: asks only for the size; failing with "buffer too small" is expected.
-        unsafe { GetTokenInformation(token, TokenUser, null_mut(), 0, &mut len) };
+        unsafe { GetTokenInformation(token, TokenUser, null_mut(), 0, &raw mut len) };
         // u64 elements keep the buffer aligned for TOKEN_USER.
         let mut buffer = vec![0u64; (len as usize).div_ceil(8).max(1)];
         // SAFETY: the buffer holds at least `len` bytes.
         let filled = unsafe {
-            GetTokenInformation(token, TokenUser, buffer.as_mut_ptr().cast(), len, &mut len)
+            GetTokenInformation(
+                token,
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                len,
+                &raw mut len,
+            )
         };
         if filled == 0 {
             return Err(io::Error::last_os_error());
@@ -140,7 +152,7 @@ mod imp {
         let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
         let mut text: PWSTR = null_mut();
         // SAFETY: `sid` is valid; the string is freed by the guard.
-        if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        if unsafe { ConvertSidToStringSidW(sid, &raw mut text) } == 0 {
             return Err(io::Error::last_os_error());
         }
         let _text = LocalMemory(text.cast());
@@ -187,11 +199,11 @@ mod imp {
                     null_mut(),
                     null_mut(),
                     null_mut(),
-                    &mut descriptor,
+                    &raw mut descriptor,
                 )
             };
             if status != ERROR_SUCCESS {
-                return Err(io::Error::from_raw_os_error(status as i32));
+                return Err(io::Error::from_raw_os_error(status.cast_signed()));
             }
             let _descriptor = LocalMemory(descriptor);
             let mut text: PWSTR = null_mut();
@@ -201,7 +213,7 @@ mod imp {
                     descriptor,
                     SDDL_REVISION_1,
                     DACL_SECURITY_INFORMATION,
-                    &mut text,
+                    &raw mut text,
                     null_mut(),
                 )
             };

@@ -268,8 +268,13 @@ mod job {
     /// A job object that kills its processes when terminated or closed.
     pub struct Job(HANDLE);
 
-    // SAFETY: a job handle may be used from any thread.
+    // SAFETY: the handle is a kernel object handle, which Win32 lets any
+    // thread use, and `Job` owns it alone, so moving it to another thread is
+    // moving the only owner.
     unsafe impl Send for Job {}
+    // SAFETY: a shared `Job` only hands its handle to `TerminateJobObject`,
+    // which Win32 allows from several threads at once; nothing changes the
+    // handle until `Drop`, which has the job to itself.
     unsafe impl Sync for Job {}
 
     impl Job {
