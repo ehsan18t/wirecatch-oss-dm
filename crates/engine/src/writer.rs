@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     use crate::segment::SegmentTable;
 
-    /// A write failed while the next buffer was already full. Writing that buffer on the way out used to land it above the hole and count the hole as flushed, so a resumed or finished download could keep a range of zeros.
+    /// A write fails while the next buffer is already full. That buffer must not be written on the way out: landing above the hole, it would count the hole as flushed, and a resumed or finished download would keep a range of zeros.
     #[tokio::test]
     async fn a_failed_write_is_never_covered_by_the_next_one() {
         const CAPACITY: usize = 4;
@@ -191,7 +191,7 @@ mod tests {
             "both buffers were counted and dropped"
         );
 
-        // A push after the failure used to loop for ever: the full buffer was never emptied.
+        // A push after the failure must not loop on a full buffer that is never emptied.
         writer.push(b"CCCCCCCC", &table).await.unwrap();
         assert_eq!(writer.take_dropped(), 8);
 
