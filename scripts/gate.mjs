@@ -27,7 +27,6 @@ const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
  * Crates that do not yet opt into `[workspace.lints]`. A crate leaves the list in the change that makes it lint-clean (docs/AUDIT.md, W14), and the check fails if a listed crate has opted in or no longer exists. That the list never grows is a review rule: a new crate opts in from the start.
  */
 const LINT_PENDING = new Set([
-  'wirecatch-core',
   'wirecatch-desktop',
   'wirecatch-e2e',
 ]);

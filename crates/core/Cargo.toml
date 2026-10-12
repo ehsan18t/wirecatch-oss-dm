@@ -50,3 +50,6 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 tracing-subscriber.workspace = true
 wirecatch-test-support = { path = "../test-support" }
+
+[lints]
+workspace = true

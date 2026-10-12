@@ -7,8 +7,6 @@
 //! [`Event`](wirecatch_protocol::wire::Event)s for socket clients.
 //! [`serve_connection`] speaks the local protocol (D14) over any byte stream.
 
-#![warn(missing_docs)]
-
 mod addons;
 mod clock;
 mod error;
