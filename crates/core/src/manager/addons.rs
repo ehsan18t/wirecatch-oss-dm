@@ -590,9 +590,13 @@ impl Manager {
             return Err(STOPPED.into());
         }
         let base = self.lock().addon.record.clone();
-        self.blocking(move || Ok(swap_in(&dir, &work, base, staged)))
-            .await
-            .map_err(|e| e.to_string())?
+        self.blocking(move || {
+            Ok(swap_in(&dir, &work, base, staged, |from, to| {
+                std::fs::rename(from, to)
+            }))
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     /// Downloads one part (continuing an earlier attempt), checks it and unpacks
@@ -1013,28 +1017,43 @@ fn verify_and_unpack(
 }
 
 /// Puts staged parts in place of the old ones and writes the record, then
-/// deletes the release files. Blocks on the disk.
+/// deletes the release files. Folders are moved with `rename` (a parameter so
+/// tests can make a move fail). Blocks on the disk.
 fn swap_in(
     dir: &Path,
     work: &Path,
     mut record: Record,
     staged: Vec<(AddonComponent, (PathBuf, archive::Installed))>,
+    mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> std::result::Result<(Record, Option<MediaTools>), String> {
     for (component, (stage, files)) in staged {
         let target = dir.join(&component.name);
         let old = work.join(format!("old-{}", component.name));
         let _ = std::fs::remove_dir_all(&old);
-        if target.exists() {
-            std::fs::rename(&target, &old).map_err(|e| {
+        let had_old = target.exists();
+        if had_old {
+            rename(&target, &old).map_err(|e| {
                 format!(
                     "The old {} could not be replaced ({e}). Wait until no video is being processed, then try again.",
                     component.name
                 )
             })?;
         }
-        if let Err(e) = std::fs::rename(&stage, &target) {
+        if let Err(e) = rename(&stage, &target) {
             // Put the old part back, so what was installed keeps working.
-            let _ = std::fs::rename(&old, &target);
+            if had_old && let Err(restore) = rename(&old, &target) {
+                warn!(component = %component.name, from = %old.display(), to = %target.display(), error = %restore, "could not put the old add-on part back");
+                // The part is gone from its place: the record must not claim it,
+                // so the add-on shows as needing an install and nothing runs it.
+                record.components.remove(&component.name);
+                if let Err(error) = record.save(dir) {
+                    warn!(%error, "could not record that an add-on part is missing");
+                }
+                return Err(format!(
+                    "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings, Add-ons.",
+                    component.name
+                ));
+            }
             return Err(format!(
                 "{} could not be put in place ({e}).",
                 component.name
@@ -1068,6 +1087,62 @@ fn swap_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::addons::InstalledComponent;
+    use crate::addons::manifest::ArchiveKind;
+
+    /// A new part that cannot be put in place, when the old one cannot be put
+    /// back either, leaves the add-on without that part: the record must stop
+    /// claiming it, and the error must say to install the add-on again.
+    #[test]
+    fn a_part_that_cannot_be_put_back_is_no_longer_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join(".work");
+        std::fs::create_dir_all(&work).unwrap();
+        let target = dir.path().join("ffmpeg");
+        std::fs::create_dir_all(&target).unwrap();
+        let mut record = Record::default();
+        record.components.insert(
+            "ffmpeg".into(),
+            InstalledComponent {
+                version: "1".into(),
+                program: "ffmpeg".into(),
+                files: Vec::new(),
+            },
+        );
+        record.save(dir.path()).unwrap();
+        let component = AddonComponent {
+            name: "ffmpeg".into(),
+            version: "2".into(),
+            url: "https://example.com/ffmpeg".into(),
+            sha256: String::new(),
+            size: 0,
+            archive: ArchiveKind::Plain,
+            files: Vec::new(),
+            program: "ffmpeg".into(),
+        };
+        let staged = vec![(component, (work.join("stage-ffmpeg"), Vec::new()))];
+        let mut calls = 0;
+        let reason = swap_in(dir.path(), &work, record, staged, |from, to| {
+            calls += 1;
+            // Moving the old part aside works; putting the new one in place
+            // and the old one back both fail.
+            if calls == 1 {
+                std::fs::rename(from, to)
+            } else {
+                Err(std::io::ErrorKind::PermissionDenied.into())
+            }
+        })
+        .unwrap_err();
+        assert_eq!(calls, 3);
+        assert!(
+            reason.contains("Install the media add-on again"),
+            "{reason}"
+        );
+        assert!(
+            !Record::load(dir.path()).components.contains_key("ffmpeg"),
+            "the record still claims the part"
+        );
+    }
 
     #[test]
     fn a_release_file_must_announce_a_size_within_the_cap() {
