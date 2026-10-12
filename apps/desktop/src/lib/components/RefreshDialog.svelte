@@ -19,7 +19,7 @@
       return;
     }
     if (await app.refreshLink(id, found)) {
-      app.notify('New link saved. The download continues where it stopped.');
+      app.toasts.notify('New link saved. The download continues where it stopped.');
       app.closeDialog();
     }
   }

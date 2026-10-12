@@ -6,7 +6,7 @@
 </script>
 
 <section class="toasts" aria-label="Notifications" aria-live="polite">
-  {#each app.toasts as toast (toast.id)}
+  {#each app.toasts.items as toast (toast.id)}
     <ToastItem {toast} />
   {/each}
 </section>

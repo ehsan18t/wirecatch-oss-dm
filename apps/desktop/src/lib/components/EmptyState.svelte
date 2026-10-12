@@ -11,9 +11,11 @@
 
   const firstRun = $derived(app.downloads.size === 0 && app.counts.all === 0);
   const searching = $derived(app.search.trim() !== '');
-  const queue = $derived(app.view.kind === 'queue' ? app.queueById(app.view.id) : undefined);
+  const queue = $derived(app.view.kind === 'queue' ? app.queues.byId(app.view.id) : undefined);
 
-  const otherQueue = $derived(app.queues.find((q) => q.id !== queue?.id)?.name ?? 'another queue');
+  const otherQueue = $derived(
+    app.queues.list.find((q) => q.id !== queue?.id)?.name ?? 'another queue',
+  );
 </script>
 
 <div class="empty" role="status">

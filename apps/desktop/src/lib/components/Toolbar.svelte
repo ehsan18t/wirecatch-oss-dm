@@ -14,7 +14,7 @@
 
   const app = getApp();
 
-  const queue = $derived(app.view.kind === 'queue' ? app.queueById(app.view.id) : undefined);
+  const queue = $derived(app.view.kind === 'queue' ? app.queues.byId(app.view.id) : undefined);
 
   const title = $derived.by(() => {
     const v = app.view;
@@ -100,7 +100,7 @@
             variant="ghost"
             small
             icon={Play}
-            onclick={() => app.setQueuePaused(queue.id, false)}
+            onclick={() => app.queues.setPaused(queue.id, false)}
           >
             Resume queue
           </Button>
@@ -109,13 +109,13 @@
             variant="ghost"
             small
             icon={Pause}
-            onclick={() => app.setQueuePaused(queue.id, true)}
+            onclick={() => app.queues.setPaused(queue.id, true)}
           >
             Pause queue
           </Button>
         {/if}
-        {#if app.isOutsideSchedule(queue)}
-          <Button variant="ghost" small icon={Play} onclick={() => app.startQueueNow(queue.id)}>
+        {#if app.queues.isOutsideSchedule(queue)}
+          <Button variant="ghost" small icon={Play} onclick={() => app.queues.startNow(queue.id)}>
             Start now
           </Button>
         {/if}

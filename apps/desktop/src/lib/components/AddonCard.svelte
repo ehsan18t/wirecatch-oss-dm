@@ -29,9 +29,9 @@
 
   function main() {
     // Stopping never removes a working add-on: an update keeps the installed version.
-    if (installing) return run(() => app.cancelAddonOperation(addon.id));
+    if (installing) return run(() => app.addons.cancel(addon.id));
     return run(() =>
-      action === 'update' ? app.updateAddon(addon.id) : app.installAddon(addon.id),
+      action === 'update' ? app.addons.update(addon.id) : app.addons.install(addon.id),
     );
   }
 
@@ -98,14 +98,14 @@
       </Button>
     {/if}
     {#if isInstalled(addon)}
-      <Button small aria-disabled={busy} onclick={() => run(() => app.checkAddonUpdates())}
+      <Button small aria-disabled={busy} onclick={() => run(() => app.addons.checkUpdates())}
         >Check for updates</Button
       >
       <Button
         small
         aria-disabled={busy}
         aria-label="Remove the {addon.name.toLowerCase()}"
-        onclick={() => run(() => app.removeAddon(addon.id))}>Remove</Button
+        onclick={() => run(() => app.addons.remove(addon.id))}>Remove</Button
       >
     {/if}
   </div>

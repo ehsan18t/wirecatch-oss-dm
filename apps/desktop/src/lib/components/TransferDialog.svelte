@@ -23,11 +23,13 @@
   const excluded = ['Download history', 'Saved site passwords'];
 
   // What the import changed, as the core reported it.
-  const summary = $derived(app.lastImport);
+  const summary = $derived(app.transfer.lastImport);
   // Add-ons the file lists that are not installed here. The core downloads nothing on import;
   // the person decides here.
   const offered = $derived(
-    (summary?.addons_to_offer ?? []).flatMap((id) => app.addons?.find((a) => a.id === id) ?? []),
+    (summary?.addons_to_offer ?? []).flatMap(
+      (id) => app.addons.list?.find((a) => a.id === id) ?? [],
+    ),
   );
   let doneButton = $state<HTMLButtonElement>();
   // The button that started the import is gone once it is done; Done takes the focus.
@@ -48,7 +50,9 @@
   });
 
   // What importing the chosen file would change, shown before anything is applied.
-  const preview = $derived(mode === 'import' ? (app.importPreview?.preview ?? null) : null);
+  const preview = $derived(
+    mode === 'import' ? (app.transfer.importPreview?.preview ?? null) : null,
+  );
   const previewQueues = $derived.by(() => {
     if (!preview) return '';
     const names = (list: string[]) => list.join(', ');
@@ -60,7 +64,9 @@
       .join(' ');
   });
   const previewAddons = $derived(
-    (preview?.addons_to_offer ?? []).flatMap((id) => app.addons?.find((a) => a.id === id) ?? []),
+    (preview?.addons_to_offer ?? []).flatMap(
+      (id) => app.addons.list?.find((a) => a.id === id) ?? [],
+    ),
   );
   let importButton = $state<HTMLButtonElement>();
   // The button that chose the file is gone once the preview shows; Import takes the focus.
@@ -70,9 +76,9 @@
 
   async function run() {
     busy = true;
-    if (mode === 'export') done = await app.exportSettings();
-    else if (preview) done = await app.importSettings();
-    else await app.previewImport();
+    if (mode === 'export') done = await app.transfer.exportSettings();
+    else if (preview) done = await app.transfer.importSettings();
+    else await app.transfer.previewImport();
     busy = false;
   }
 </script>

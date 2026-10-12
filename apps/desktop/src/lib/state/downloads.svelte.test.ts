@@ -106,7 +106,11 @@ describe('DownloadStore', () => {
         const order = store.order;
         rebuilds += 1;
         return untrack(() =>
-          visibleIds(order, (id) => store.get(id), { kind: 'all' }, '', 'queue'),
+          visibleIds(order, (id) => store.get(id), {
+            view: { kind: 'all' },
+            search: '',
+            sort: 'queue',
+          }),
         );
       });
       $effect(() => {

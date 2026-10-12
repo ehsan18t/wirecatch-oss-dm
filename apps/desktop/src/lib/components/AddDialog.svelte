@@ -20,7 +20,7 @@
   let fileName = $state('');
   let folder = $state<string | null>(null);
   let queue = $state<QueueId>(
-    start.queue ?? (app.view.kind === 'queue' ? app.view.id : (app.defaultQueue?.id ?? 1)),
+    start.queue ?? (app.view.kind === 'queue' ? app.view.id : (app.queues.defaultQueue?.id ?? 1)),
   );
   let error = $state('');
   let busy = $state(false);
@@ -53,7 +53,7 @@
     if (ids.length > 0) {
       app.closeDialog();
       const first = ids[0];
-      if (first !== undefined) app.selectOnly(first);
+      if (first !== undefined) app.selection.only(first);
     }
   }
 </script>
@@ -124,7 +124,7 @@
     <label class="stack">
       <span class="label">Queue</span>
       <select class="field" bind:value={queue}>
-        {#each app.queues as q (q.id)}
+        {#each app.queues.list as q (q.id)}
           <option value={q.id}>{q.name}{q.is_default ? ' (default)' : ''}</option>
         {/each}
       </select>

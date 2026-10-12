@@ -31,7 +31,7 @@ const button = (name: RegExp | string) => screen.getByRole('button', { name });
 describe('2. the list does not jump back to the keyboard row', () => {
   it('keeps the scroll position when a status changes elsewhere', async () => {
     const { app, backend } = await setup();
-    app.selectOnly(app.visible[0]!);
+    app.selection.only(app.visible[0]!);
     await settle();
     const grid = screen.getByRole('grid', { name: 'Downloads' });
     const writes = vi.fn();
@@ -41,7 +41,7 @@ describe('2. the list does not jump back to the keyboard row', () => {
     await settle();
     expect(writes).not.toHaveBeenCalled();
     // Moving the keyboard row still brings it into view.
-    app.moveActive(1, false);
+    app.selection.move(1, false);
     await settle();
     expect(writes).toHaveBeenCalledWith(44);
   });
@@ -59,7 +59,7 @@ describe('3. closing a download window keeps the download waiting', () => {
     await user.keyboard('{Escape}');
     await settle();
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
-    expect(app.pending).toHaveLength(1);
+    expect(app.questions.pending).toHaveLength(1);
     expect(reject).not.toHaveBeenCalled();
     expect(buildCommands(app).some((c) => c.id === 'questions.show')).toBe(true);
     await click(button(/Waiting for you/));
@@ -67,7 +67,7 @@ describe('3. closing a download window keeps the download waiting', () => {
     expect(again).toHaveTextContent('Download this file?');
     await click(within(again).getByRole('button', { name: 'Cancel' }));
     expect(reject).toHaveBeenCalledTimes(1);
-    expect(app.pending).toHaveLength(0);
+    expect(app.questions.pending).toHaveLength(0);
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
   });
 });
@@ -76,7 +76,7 @@ describe('4 and 12. destructive actions ask first, with focus on the safe choice
   it('cancel asks, focuses Keep downloading, and only then discards', async () => {
     const { app, click } = await setup();
     await click(rowByName('LibreOffice'));
-    const id = app.selectedRows[0]!.id;
+    const id = app.selection.rows[0]!.id;
     await click(button('Cancel and discard the partial file'));
     expect(document.activeElement).toBe(button('Keep downloading'));
     expect(app.downloads.get(id)?.status).not.toBe('cancelled');
@@ -114,7 +114,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     const setPaused = vi.spyOn(backend, 'setQueuePaused');
     await click(button('Pause the Main queue'));
     expect(setPaused).toHaveBeenCalledWith(1, true);
-    expect(app.queueById(1)?.paused).toBe(true);
+    expect(app.queues.byId(1)?.paused).toBe(true);
     const main = screen.getByRole('button', { name: /^Main/ });
     expect(main).toHaveTextContent('Paused');
     const inMain = app.downloads.idsInQueue(1).map((id) => app.downloads.get(id));
@@ -127,14 +127,14 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
       'android-studio-2026.1.1-windows.exe',
     ]);
     await click(button('Resume the Main queue'));
-    expect(app.queueById(1)?.paused).toBe(false);
+    expect(app.queues.byId(1)?.paused).toBe(false);
   });
 
   it('starts a scheduled queue now and shows it runs outside its hours', async () => {
     const { app, backend, click } = await setup();
-    expect(app.isOutsideSchedule(app.queueById(2) as never)).toBe(true);
+    expect(app.queues.isOutsideSchedule(app.queues.byId(2) as never)).toBe(true);
     await click(button('Start now'));
-    expect(app.queueById(2)?.running_outside_schedule).toBe(true);
+    expect(app.queues.byId(2)?.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
       'Started by hand, outside its hours',
     );
@@ -175,7 +175,7 @@ describe('7. Try again does not double the listeners', () => {
     await settle();
     backend.simulateCapture();
     await settle();
-    expect(app.toasts.filter((t) => t.kind === 'capture')).toHaveLength(1);
+    expect(app.toasts.items.filter((t) => t.kind === 'capture')).toHaveLength(1);
   });
 
   it('dispose before the backend is ready leaves nothing listening', async () => {
@@ -187,7 +187,7 @@ describe('7. Try again does not double the listeners', () => {
     ready.resolve(backend);
     await started;
     backend.simulateCapture();
-    expect(app.toasts).toHaveLength(0);
+    expect(app.toasts.items).toHaveLength(0);
     expect(app.ready).toBe(false);
   });
 });
@@ -226,7 +226,7 @@ describe('10. the palette', () => {
 
   it('does not match letters scattered across a word', async () => {
     const { app } = await setup();
-    app.selectOnly(app.visible[0]!);
+    app.selection.only(app.visible[0]!);
     const titles = searchCommands(buildCommands(app), 'move').map((c) => c.title);
     expect(titles.length).toBeGreaterThan(0);
     for (const t of titles) expect(t).not.toMatch(/^Resume|^Remove/);
@@ -257,7 +257,7 @@ describe('13. creating a queue is one atomic step', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('Save again to retry');
     await click(button('Save'));
     expect(create).toHaveBeenCalledTimes(1);
-    expect(app.queues.filter((q) => q.name === 'Weekend')).toHaveLength(1);
+    expect(app.queues.list.filter((q) => q.name === 'Weekend')).toHaveLength(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
@@ -296,7 +296,7 @@ describe('16. bulk actions run together and report once', () => {
     expect(calls).toBe(3);
     for (const g of gates) g();
     await done;
-    const errors = app.toasts.filter((t) => t.kind === 'error');
+    const errors = app.toasts.items.filter((t) => t.kind === 'error');
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toBe(
       'Could not pause 2 of 3 downloads. The engine is busy. Try again.',
@@ -347,7 +347,7 @@ describe('21. right-click menu on rows', () => {
     await click(
       within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Move to Work files' }),
     );
-    expect(app.selectedRows[0]?.queue).toBe(3);
+    expect(app.selection.rows[0]?.queue).toBe(3);
   });
 });
 
@@ -367,7 +367,7 @@ describe('a password in a link is never shown or copied', () => {
       start: false,
     });
     await settle();
-    app.selectOnly(id);
+    app.selection.only(id);
     await settle();
     expect(screen.getByText('https://ada:***@example.com/files/locked.zip')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('s3cret');

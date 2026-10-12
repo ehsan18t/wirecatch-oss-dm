@@ -46,7 +46,7 @@ const DOWNLOADS: readonly CommandSpec<AppState>[] = [
     id: 'dl.selectall',
     title: 'Select every download in the list',
     key: 'select-all',
-    run: (app) => app.selectAll(),
+    run: (app) => app.selection.all(),
   },
   {
     id: 'dl.search',
@@ -103,21 +103,21 @@ const QUEUE: readonly CommandSpec<{ app: AppState; q: Queue }>[] = [
     title: ({ q }) => `Resume the ${q.name} queue`,
     keywords: 'start run continue unpause',
     when: ({ q }) => q.paused,
-    run: ({ app, q }) => app.setQueuePaused(q.id, false),
+    run: ({ app, q }) => app.queues.setPaused(q.id, false),
   },
   {
     id: ({ q }) => `queue.pause.${q.id}`,
     title: ({ q }) => `Pause the ${q.name} queue`,
     keywords: 'stop hold',
     when: ({ q }) => !q.paused,
-    run: ({ app, q }) => app.setQueuePaused(q.id, true),
+    run: ({ app, q }) => app.queues.setPaused(q.id, true),
   },
   {
     id: ({ q }) => `queue.startnow.${q.id}`,
     title: ({ q }) => `Start ${q.name} now, outside its hours`,
     keywords: 'run schedule override immediately',
-    when: ({ app, q }) => app.isOutsideSchedule(q),
-    run: ({ app, q }) => app.startQueueNow(q.id),
+    when: ({ app, q }) => app.queues.isOutsideSchedule(q),
+    run: ({ app, q }) => app.queues.startNow(q.id),
   },
   {
     id: ({ q }) => `queue.delete.${q.id}`,
@@ -142,11 +142,11 @@ const QUESTIONS: readonly CommandSpec<AppState>[] = [
   {
     id: 'questions.show',
     title: (app) =>
-      app.waitingCount === 1
+      app.questions.waitingCount === 1
         ? 'Show the download that is waiting for you'
-        : `Show the ${app.waitingCount} downloads that are waiting for you`,
+        : `Show the ${app.questions.waitingCount} downloads that are waiting for you`,
     keywords: 'waiting answer ask confirm pending capture video quality window add-on',
-    when: (app) => app.waitingCount > 0,
+    when: (app) => app.questions.waitingCount > 0,
     run: (app) => app.showQuestionWindows(),
   },
 ];
@@ -161,7 +161,7 @@ export function viewCommands(app: AppState): Command[] {
     ...STATUS_GROUPS.flatMap((group) => commandsFrom('Show', [SHOW_STATUS], { app, group })),
     ...CATEGORIES.flatMap((category) => commandsFrom('Show', [SHOW_CATEGORY], { app, category })),
     ...commandsFrom('Queues', [NEW_QUEUE], app),
-    ...app.queues.flatMap((q) => commandsFrom('Queues', QUEUE, { app, q })),
+    ...app.queues.list.flatMap((q) => commandsFrom('Queues', QUEUE, { app, q })),
   ];
 }
 

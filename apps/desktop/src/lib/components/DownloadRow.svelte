@@ -26,7 +26,7 @@
   // The row object is reactive per field: only this row re-renders when its numbers change.
   const row = $derived(app.downloads.get(id));
   const selected = $derived(app.selection.has(id));
-  const active = $derived(app.active === id);
+  const active = $derived(app.selection.active === id);
   const fraction = $derived(row ? progressFraction(row.done, row.total) : null);
   // While ffmpeg converts or joins, the wire shows that step's progress when it is known.
   const processed = $derived(row ? processingFraction(row) : null);

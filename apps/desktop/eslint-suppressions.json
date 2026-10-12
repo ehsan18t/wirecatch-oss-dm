@@ -25,30 +25,9 @@
       "count": 1
     }
   },
-  "src/lib/state/app.svelte.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "src/lib/state/view.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/lib/window/MediaQuestion.svelte": {
     "max-lines": {
       "count": 1
-    }
-  },
-  "src/lib/window/download-window.svelte.ts": {
-    "@typescript-eslint/switch-exhaustiveness-check": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 2
     }
   }
 }

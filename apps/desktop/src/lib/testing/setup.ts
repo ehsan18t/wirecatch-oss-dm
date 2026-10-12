@@ -11,7 +11,7 @@ export async function renderApp(options: MockOptions = {}) {
   const backend = new MockBackend({ autoTick: false, now: () => NOON, ...options });
   const app = new AppState(backend);
   // Schedules in labels follow the same fixed clock as the mock.
-  app.now = new Date(NOON);
+  app.clock.now = new Date(NOON);
   const result = render(TestHost, { props: { app } });
   await app.init();
   await settle();

@@ -58,10 +58,10 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     const { app, click, palette } = await setup();
     await click(rowByName('ubuntu-24.04.3'));
     await click(button('Pause'));
-    expect(app.selectedRows[0]?.status).toBe('paused');
+    expect(app.selection.rows[0]?.status).toBe('paused');
     expect(palette('sel.pause')).toBe(true);
     await click(button('Resume'));
-    expect(app.selectedRows[0]?.status).toBe('queued');
+    expect(app.selection.rows[0]?.status).toBe('queued');
     expect(palette('sel.resume')).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     await click(rowByName('LibreOffice'));
     await user.selectOptions(screen.getByLabelText('Queue'), 'Work files');
     await settle();
-    expect(app.selectedRows[0]?.queue).toBe(3);
+    expect(app.selection.rows[0]?.queue).toBe(3);
     expect(palette('sel.move.2')).toBe(true);
   });
 
@@ -138,7 +138,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(within(d).getByLabelText('Downloads at the same time')).toHaveValue(2);
     await click(within(d).getByRole('button', { name: 'Delete queue' }));
     await click(within(d).getByRole('button', { name: /Delete it/ }));
-    expect(app.queues.some((q) => q.name === 'Overnight')).toBe(false);
+    expect(app.queues.list.some((q) => q.name === 'Overnight')).toBe(false);
     await click(button('New queue'));
     expect(within(dialog()).getByText('New queue')).toBeInTheDocument();
     for (const id of [
@@ -218,7 +218,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const before = app.downloads.size;
     await click(window.getByRole('button', { name: 'Download now' }));
-    expect(app.pending).toHaveLength(0);
+    expect(app.questions.pending).toHaveLength(0);
     expect(app.downloads.size).toBe(before + 1);
     expect(window.getByRole('heading', { name: 'app-setup-3.2.0.exe' })).toBeInTheDocument();
     expect(window.getByRole('progressbar', { name: 'Downloaded' })).toBeInTheDocument();
@@ -239,22 +239,22 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(palette('addon.install.media')).toBe(true);
     await click(button(/^Settings/));
     await click(button('Install'));
-    expect(app.addons?.[0]?.state.type).toBe('installing');
+    expect(app.addons.list?.[0]?.state.type).toBe('installing');
     backend.tick(4500);
     await settle();
-    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(app.addons.list?.[0]?.state.type).toBe('installed');
     expect(palette('addon.remove.media')).toBe(true);
     await click(button('Remove the media add-on'));
-    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+    expect(app.addons.list?.[0]?.state.type).toBe('not_installed');
   });
 
   it('check for add-on updates: Settings, then Check for updates, 2 clicks; the result in words', async () => {
     const { app, backend, click, palette } = await setup();
-    await app.installAddon('media');
+    await app.addons.install('media');
     backend.tick(4500);
     await click(button(/^Settings/));
     expect(palette('addon.check.media')).toBe(true);
-    const note = () => app.toasts.at(-1);
+    const note = () => app.toasts.items.at(-1);
 
     await click(button('Check for updates'));
     expect(note()).toMatchObject({ kind: 'info', message: 'The media add-on is up to date.' });
@@ -270,7 +270,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     const waiting =
       'A newer version came out today; Wirecatch installs it once it is two days old.';
     expect(note()).toMatchObject({ kind: 'info', message: waiting });
-    expect(app.addons?.[0]?.state.type).toBe('installed');
+    expect(app.addons.list?.[0]?.state.type).toBe('installed');
     expect(screen.getByText(waiting, { selector: 'p.note' })).toBeInTheDocument();
 
     backend.nextUpdateCheck = 'newer';
@@ -284,18 +284,18 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     await click(button(/^Settings/));
     await click(button('Install'));
     await click(button('Stop installing the media add-on'));
-    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+    expect(app.addons.list?.[0]?.state.type).toBe('not_installed');
 
     await click(button('Install'));
     backend.tick(4500);
     await settle();
-    const version = app.addons?.[0]?.installed_version;
+    const version = app.addons.list?.[0]?.installed_version;
     expect(version).toBeTruthy();
-    await app.updateAddon('media');
+    await app.addons.update('media');
     await settle();
     await click(button('Stop updating the media add-on'));
-    expect(app.addons?.[0]?.state.type).toBe('installed');
-    expect(app.addons?.[0]?.installed_version).toBe(version);
+    expect(app.addons.list?.[0]?.state.type).toBe('installed');
+    expect(app.addons.list?.[0]?.installed_version).toBe(version);
   });
 
   it('import shows what the file would change and asks first; a startup folder is refused', async () => {
@@ -313,7 +313,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
           'C:\\Users\\ada\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
         connections_per_download: 3,
       },
-      queues: plain(app.queues),
+      queues: plain(app.queues.list),
       addons: [],
     };
     backend.putSettingsFile('C:\\Users\\ada\\Downloads\\evil.json', profile);
@@ -329,7 +329,7 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(plain(app.settings)).toEqual(before);
     await click(preview.getByRole('button', { name: 'Cancel' }));
     expect(plain(app.settings)).toEqual(before);
-    expect(app.importPreview).toBeNull();
+    expect(app.transfer.importPreview).toBeNull();
 
     // Imported after all: the startup folder is replaced by Downloads.
     app.openDialog({ kind: 'import' });
@@ -344,10 +344,10 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
 
   it('import asks before installing an add-on the file lists: Install in the dialog, 1 click', async () => {
     const { app, backend, click } = await setup();
-    await app.installAddon('media');
+    await app.addons.install('media');
     backend.tick(4500);
-    await app.exportSettings();
-    await app.removeAddon('media');
+    await app.transfer.exportSettings();
+    await app.addons.remove('media');
     await settle();
     app.openDialog({ kind: 'import' });
     await settle();
@@ -359,11 +359,11 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     await settle();
     const offer = within(dialog());
     expect(offer.getByText(/The file lists the media add-on/)).toBeInTheDocument();
-    expect(app.addons?.[0]?.state.type).toBe('not_installed');
+    expect(app.addons.list?.[0]?.state.type).toBe('not_installed');
     // The button that started the import is gone; Done has the focus.
     expect(offer.getByRole('button', { name: 'Done' })).toHaveFocus();
     await click(offer.getByRole('button', { name: 'Install' }));
-    expect(app.addons?.[0]?.state.type).toBe('installing');
+    expect(app.addons.list?.[0]?.state.type).toBe('installing');
     // The same button now stops the install, so the focus stays on it.
     const stop = offer.getByRole('button', { name: 'Stop installing the media add-on' });
     expect(stop).toHaveFocus();

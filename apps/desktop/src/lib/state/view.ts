@@ -75,6 +75,12 @@ export function groupOf(status: DownloadStatus): StatusGroup {
   }
 }
 
+/** On its way: running, or waiting in its queue to run. Pause applies to it. */
+export function isUnderWay(status: DownloadStatus): boolean {
+  const group = groupOf(status);
+  return group === 'active' || group === 'waiting';
+}
+
 export function sameView(a: View, b: View): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
@@ -102,13 +108,19 @@ function matches(row: DownloadSummary, view: View): boolean {
   }
 }
 
+/** What the list shows and in which order: the person's choices above the list. */
+export interface ListOptions {
+  view: View;
+  /** Text the name or the link must contain; empty shows every row of the view. */
+  search: string;
+  sort: SortKey;
+}
+
 /** The ids the list shows, in display order. */
 export function visibleIds(
   order: readonly DownloadId[],
   get: (id: DownloadId) => DownloadSummary | undefined,
-  view: View,
-  search: string,
-  sort: SortKey,
+  { view, search, sort }: ListOptions,
 ): DownloadId[] {
   const needle = search.trim().toLowerCase();
   const rows: DownloadSummary[] = [];

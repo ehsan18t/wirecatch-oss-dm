@@ -10,12 +10,15 @@ import type {
   DownloadId,
   DownloadSummary,
   FixAction,
+  MediaChoice,
   MediaSelection,
   Queue,
   UiEvent,
 } from '@wirecatch/protocol';
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend';
+import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
+import { errorMessage } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
 
 /** What the window is showing. */
@@ -37,12 +40,6 @@ export interface Answer {
   fileName: string | null;
   folder: string | null;
   queue: Queue['id'] | null;
-}
-
-function message(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === 'string' && err) return err;
-  return 'Something went wrong. Try again.';
 }
 
 /** Said when a question closes without an answer from this window. */
@@ -114,13 +111,9 @@ export class DownloadWindowState {
 
   /** Loads the window's question or download and starts listening. */
   async init(): Promise<void> {
-    const buffered: UiEvent[] = [];
-    let loading = true;
+    const events = new HeldEvents((e) => this.handle(e));
     try {
-      this.#unsubscribe = await this.backend.subscribe((e) => {
-        if (loading) buffered.push(e);
-        else this.handle(e);
-      });
+      this.#unsubscribe = await this.backend.subscribe(events.receive);
       const [queues, settings] = await Promise.all([
         this.backend.listQueues(),
         this.backend.getSettings(),
@@ -134,10 +127,9 @@ export class DownloadWindowState {
         await this.#loadQuestion(this.#target.question);
       }
     } catch (err) {
-      this.#gone(message(err));
+      this.#gone(errorMessage(err));
     } finally {
-      loading = false;
-      for (const e of buffered) this.handle(e);
+      events.release();
     }
     void this.#loadAddon();
   }
@@ -177,66 +169,76 @@ export class DownloadWindowState {
     this.goneReason = reason;
   }
 
+  /** Whether this window is asking question `id` right now. */
+  #asking(id: number): boolean {
+    return id === this.questionId && this.phase === 'ask';
+  }
+
+  /** What this window keeps from each core event; most concern other windows. */
+  readonly #handlers: UiEventHandlers = {
+    downloads_changed: (e) => {
+      const mine = this.downloadId;
+      if (mine === null || this.phase !== 'progress') return;
+      // A batch holds only the rows that changed: finding ours costs that, not the list.
+      for (const row of e.data) if (row.id === mine) this.row = row;
+    },
+    downloads_removed: (e) => {
+      const mine = this.downloadId;
+      if (this.phase === 'progress' && mine !== null && e.data.includes(mine)) {
+        this.#gone('This download was removed from the list.');
+      }
+    },
+    queues_changed: (e) => {
+      this.queues = e.data;
+    },
+    settings_changed: (e) => {
+      this.settings = e.data;
+    },
+    addons_changed: (e) => this.#addonsChanged(e.data),
+    media_analysing: (e) => {
+      if (this.#asking(e.data.id) && this.question?.kind !== 'choice') {
+        this.question = { kind: 'reading', data: e.data };
+      }
+    },
+    media_choice_requested: (e) => {
+      if (this.#asking(e.data.id)) this.#choiceArrived(e.data);
+    },
+    addon_required: (e) => {
+      if (!this.#asking(e.data.id)) return;
+      this.addon = e.data.addon;
+      // A quality list stays: the quality picked waits for the add-on (see `choose`).
+      if (this.question?.kind !== 'choice') {
+        this.question = { kind: 'addon', data: { ...e.data } };
+      }
+    },
+    confirmation_closed: (e) => {
+      if (!this.#asking(e.data.id) || this.#answered) return;
+      this.#gone(this.question?.kind === 'reading' ? READING_ENDED : ANSWERED_ELSEWHERE);
+    },
+    // About the main window and the download list, not one window's question.
+    captured: ignore,
+    confirmation_requested: ignore,
+    settings_imported: ignore,
+    storage_failed: ignore,
+    window_requested: ignore,
+  };
+
   /** Keeps what concerns this window from one core event. */
   handle(event: UiEvent): void {
-    const id = this.questionId;
-    switch (event.type) {
-      case 'downloads_changed': {
-        const mine = this.downloadId;
-        if (mine === null || this.phase !== 'progress') return;
-        // A batch holds only the rows that changed: finding ours costs that, not the list.
-        for (const row of event.data) if (row.id === mine) this.row = row;
-        return;
-      }
-      case 'downloads_removed':
-        if (this.phase === 'progress' && this.downloadId !== null) {
-          if (event.data.includes(this.downloadId)) {
-            this.#gone('This download was removed from the list.');
-          }
-        }
-        return;
-      case 'queues_changed':
-        this.queues = event.data;
-        return;
-      case 'settings_changed':
-        this.settings = event.data;
-        return;
-      case 'addons_changed':
-        this.#addonsChanged(event.data);
-        return;
-      case 'media_analysing':
-        if (event.data.id === id && this.phase === 'ask' && this.question?.kind !== 'choice') {
-          this.question = { kind: 'reading', data: event.data };
-        }
-        return;
-      case 'media_choice_requested':
-        if (event.data.id === id && this.phase === 'ask') {
-          this.question = { kind: 'choice', data: event.data };
-          void this.backend
-            .earlierDownload(event.data.id)
-            .then((row) => (this.earlier = row))
-            .catch(() => {
-              // Only a note, and the question works without it; but one read for the
-              // question before may no longer hold, so none is shown.
-              this.earlier = null;
-            });
-        }
-        return;
-      case 'addon_required':
-        if (event.data.id !== id || this.phase !== 'ask') return;
-        this.addon = event.data.addon;
-        // A quality list stays: the quality picked waits for the add-on (see `choose`).
-        if (this.question?.kind !== 'choice') {
-          this.question = { kind: 'addon', data: { ...event.data } };
-        }
-        return;
-      case 'confirmation_closed':
-        if (event.data.id !== id || this.#answered || this.phase !== 'ask') return;
-        this.#gone(this.question?.kind === 'reading' ? READING_ENDED : ANSWERED_ELSEWHERE);
-        return;
-      default:
-        return;
-    }
+    dispatch(this.#handlers, event);
+  }
+
+  /** The quality list for the video this window reads. */
+  #choiceArrived(choice: MediaChoice): void {
+    this.question = { kind: 'choice', data: choice };
+    void this.backend
+      .earlierDownload(choice.id)
+      .then((row) => (this.earlier = row))
+      .catch(() => {
+        // Only a note, and the question works without it; but one read for the question
+        // before may no longer hold, so none is shown.
+        this.earlier = null;
+      });
   }
 
   #addonsChanged(addons: AddonInfo[]): void {
@@ -257,7 +259,7 @@ export class DownloadWindowState {
     try {
       return await action();
     } catch (err) {
-      this.error = message(err);
+      this.error = errorMessage(err);
       return undefined;
     }
   }
@@ -298,11 +300,7 @@ export class DownloadWindowState {
     const choice = question.data;
     const option = choice.options.find((o) => o.id === selection.option_id);
     const needsAddon = option?.needs_ffmpeg ?? false;
-    if (needsAddon && this.addon && !isInstalled(this.addon)) {
-      this.awaitingAddon = { selection };
-      if (this.addon.state.type !== 'installing') void this.installAddon();
-      return true;
-    }
+    if (needsAddon && this.#installFirst(selection)) return true;
     this.busy = true;
     this.#answered = true;
     this.error = null;
@@ -312,16 +310,28 @@ export class DownloadWindowState {
     } catch (err) {
       this.#answered = false;
       this.busy = false;
-      if (needsAddon && isAddonRequired(message(err))) {
+      if (needsAddon && isAddonRequired(errorMessage(err))) {
         // The core asked for the add-on instead; the window offers it and goes on afterwards.
         this.awaitingAddon = { selection };
         return true;
       }
-      this.error = message(err);
+      this.error = errorMessage(err);
       return false;
     }
     this.busy = false;
     await this.#started(id, selection.later);
+    return true;
+  }
+
+  /**
+   * A quality that needs the media add-on while it is missing: the quality waits, and the add-on
+   * installs (unless it already is). False when the add-on is in, or not listed yet.
+   */
+  #installFirst(selection: MediaSelection): boolean {
+    const addon = this.addon;
+    if (!addon || isInstalled(addon)) return false;
+    this.awaitingAddon = { selection };
+    if (addon.state.type !== 'installing') void this.installAddon();
     return true;
   }
 
@@ -338,7 +348,7 @@ export class DownloadWindowState {
     try {
       this.row = await this.backend.getDownload(id);
     } catch (err) {
-      this.#gone(message(err));
+      this.#gone(errorMessage(err));
     }
   }
 

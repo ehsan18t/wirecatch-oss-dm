@@ -113,12 +113,12 @@ const ORDER: readonly CommandSpec<Selected>[] = [
     id: 'sel.clear',
     title: 'Clear the selection',
     key: 'escape',
-    run: (s) => s.app.clearSelection(),
+    run: (s) => s.app.selection.clear(),
   },
 ];
 
 export function selectionCommands(app: AppState): Command[] {
-  const rows = app.selectedRows;
+  const rows = app.selection.rows;
   const first = rows[0];
   if (!first) return [];
   const only = rows.length === 1 ? first : undefined;
@@ -130,7 +130,7 @@ export function selectionCommands(app: AppState): Command[] {
   };
   return [
     ...commandsFrom(GROUP, ACTIONS, s),
-    ...app.queues.flatMap((queue) => commandsFrom(GROUP, [MOVE], { ...s, queue })),
+    ...app.queues.list.flatMap((queue) => commandsFrom(GROUP, [MOVE], { ...s, queue })),
     ...(only ? commandsFrom(GROUP, ONE, { ...s, only }) : []),
     ...commandsFrom(GROUP, ORDER, s),
   ];

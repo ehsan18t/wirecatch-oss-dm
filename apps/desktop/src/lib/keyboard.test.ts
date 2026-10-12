@@ -44,15 +44,15 @@ describe('keyboard only', () => {
     list.focus();
     await press('{ArrowDown}');
     const first = app.visible[0];
-    expect(app.active).toBe(first);
+    expect(app.selection.active).toBe(first);
     expect(list).toHaveAttribute('aria-activedescendant', `row-${first}`);
     await press('{Shift>}{ArrowDown}{ArrowDown}{/Shift}');
     expect(app.selection.size).toBe(3);
     await press('{End}');
-    expect(app.active).toBe(app.visible.at(-1));
+    expect(app.selection.active).toBe(app.visible.at(-1));
     await press('{Home}');
     await press(' ');
-    expect(app.selectedRows[0]?.status).toBe('paused');
+    expect(app.selection.rows[0]?.status).toBe('paused');
     await press('{Delete}');
     expect(within(screen.getByRole('dialog')).getByText(/^Remove "/)).toBeInTheDocument();
     await press('{Escape}');
@@ -71,7 +71,7 @@ describe('keyboard only', () => {
     const list = screen.getByRole('grid', { name: 'Downloads' });
     list.focus();
     await press('{ArrowDown}{ArrowDown}');
-    const moving = app.active;
+    const moving = app.selection.active;
     expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(1);
     await press('{Alt>}{ArrowUp}{/Alt}');
     expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(0);
@@ -152,7 +152,7 @@ describe('automated accessibility checks (axe)', { timeout: 60_000 }, () => {
   it('main window, with a failed download selected', async () => {
     const { app } = await setup();
     const failed = app.visible.find((id) => app.downloads.get(id)?.status === 'failed');
-    if (failed !== undefined) app.selectOnly(failed);
+    if (failed !== undefined) app.selection.only(failed);
     await settle();
     expect(await axeViolations()).toEqual([]);
   });

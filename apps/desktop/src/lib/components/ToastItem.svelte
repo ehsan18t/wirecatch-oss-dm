@@ -23,7 +23,7 @@
   // Count down only while the person is not looking at or using the note.
   $effect(() => {
     if (hovered || focused) return;
-    const timer = setTimeout(() => app.dismissToast(toast.id), LIFETIME[toast.kind]);
+    const timer = setTimeout(() => app.toasts.dismiss(toast.id), LIFETIME[toast.kind]);
     return () => clearTimeout(timer);
   });
 </script>
@@ -60,7 +60,7 @@
       <p>{toast.message}</p>
     </div>
   {/if}
-  <IconButton class="close" icon={X} label="Dismiss" onclick={() => app.dismissToast(toast.id)} />
+  <IconButton class="close" icon={X} label="Dismiss" onclick={() => app.toasts.dismiss(toast.id)} />
 </div>
 
 <style>

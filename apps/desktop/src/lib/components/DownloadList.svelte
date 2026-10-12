@@ -38,7 +38,7 @@
     if (ids.length === 0) return null;
     const candidates: HintId[] = [];
     if (canReorder && ids.length > 1) candidates.push('reorder');
-    if (app.queues.length > 1) candidates.push('drag-to-queue');
+    if (app.queues.list.length > 1) candidates.push('drag-to-queue');
     candidates.push('palette');
     return candidates.find((h) => app.hints.isOpen(h)) ?? null;
   });
@@ -58,7 +58,7 @@
   // Keep the keyboard row on screen, but only when the keyboard row itself changes. The list
   // changing underneath (a download finishing, say) must never yank the view back.
   $effect(() => {
-    const active = app.active;
+    const active = app.selection.active;
     if (active !== null) untrack(() => reveal(active));
   });
 
@@ -76,9 +76,9 @@
   function onclick(e: MouseEvent) {
     const id = idFrom(e);
     if (id === null) return;
-    if (e.shiftKey) app.selectRange(id, e.ctrlKey || e.metaKey);
-    else if (e.ctrlKey || e.metaKey) app.toggle(id);
-    else app.selectOnly(id);
+    if (e.shiftKey) app.selection.range(id, e.ctrlKey || e.metaKey);
+    else if (e.ctrlKey || e.metaKey) app.selection.toggle(id);
+    else app.selection.only(id);
   }
 
   function ondblclick(e: MouseEvent) {
@@ -93,16 +93,16 @@
     const id = idFrom(e);
     if (id === null) return;
     e.preventDefault();
-    if (!app.selection.has(id)) app.selectOnly(id);
-    else app.active = id;
+    if (!app.selection.has(id)) app.selection.only(id);
+    else app.selection.active = id;
     menu = { x: e.clientX, y: e.clientY };
   }
 
   /** Opens the menu from the keyboard, next to the keyboard row. */
   function openMenuAtActive() {
-    if (app.active === null || !viewport) return;
-    if (!app.selection.has(app.active)) app.selectOnly(app.active);
-    const row = document.getElementById(`row-${app.active}`);
+    if (app.selection.active === null || !viewport) return;
+    if (!app.selection.has(app.selection.active)) app.selection.only(app.selection.active);
+    const row = document.getElementById(`row-${app.selection.active}`);
     const rowBox = (row ?? viewport).getBoundingClientRect();
     // Under the row, lined up with its name.
     const nameBox = row?.querySelector('[data-menu-anchor]')?.getBoundingClientRect() ?? rowBox;
@@ -114,28 +114,29 @@
 
   /** Enter: open a finished file, or run the fix a download that needs attention offers. */
   function openOrFix() {
-    const only = app.selectedRows.length === 1 ? app.selectedRows[0] : undefined;
+    const only = app.selection.rows.length === 1 ? app.selection.rows[0] : undefined;
     if (only?.status === 'completed') void app.openFile(only.id);
     else if (only?.status === 'failed' && only.error?.fix) void app.fix(only.id, only.error.fix);
   }
 
   const ACTIONS: Record<ListKey, (e: KeyboardEvent) => void> = {
-    up: () => app.moveActive(-1, false),
-    down: () => app.moveActive(1, false),
-    'extend-up': () => app.moveActive(-1, true),
-    'extend-down': () => app.moveActive(1, true),
-    'page-up': (e) => app.moveActive(-page, e.shiftKey),
-    'page-down': (e) => app.moveActive(page, e.shiftKey),
-    first: (e) => app.moveActive(-ids.length, e.shiftKey),
-    last: (e) => app.moveActive(ids.length, e.shiftKey),
-    'select-all': () => app.selectAll(),
+    up: () => app.selection.move(-1, false),
+    down: () => app.selection.move(1, false),
+    'extend-up': () => app.selection.move(-1, true),
+    'extend-down': () => app.selection.move(1, true),
+    'page-up': (e) => app.selection.move(-page, e.shiftKey),
+    'page-down': (e) => app.selection.move(page, e.shiftKey),
+    first: (e) => app.selection.move(-ids.length, e.shiftKey),
+    last: (e) => app.selection.move(ids.length, e.shiftKey),
+    'select-all': () => app.selection.all(),
     'pause-resume': () => {
-      if (app.selection.size === 0 && app.active !== null) app.selectOnly(app.active);
+      if (app.selection.size === 0 && app.selection.active !== null)
+        app.selection.only(app.selection.active);
       void app.togglePause();
     },
     open: openOrFix,
     remove: () => {
-      if (app.selection.size > 0) app.openDialog({ kind: 'remove', ids: app.selectedIds });
+      if (app.selection.size > 0) app.openDialog({ kind: 'remove', ids: app.selection.list });
     },
     'nudge-up': () => void app.nudge(-1),
     'nudge-down': () => void app.nudge(1),
@@ -152,8 +153,8 @@
   function ondragstart(e: DragEvent) {
     const id = idFrom(e);
     if (id === null) return;
-    if (!app.selection.has(id)) app.selectOnly(id);
-    setDragIds(e, app.selectedIds);
+    if (!app.selection.has(id)) app.selection.only(id);
+    setDragIds(e, app.selection.list);
   }
 
   function ondragover(e: DragEvent) {
@@ -218,8 +219,8 @@
     aria-label="Downloads"
     aria-multiselectable="true"
     aria-rowcount={ids.length}
-    aria-activedescendant={app.active !== null && ids.includes(app.active)
-      ? `row-${app.active}`
+    aria-activedescendant={app.selection.active !== null && ids.includes(app.selection.active)
+      ? `row-${app.selection.active}`
       : undefined}
     onscroll={() => (scrollTop = viewport?.scrollTop ?? 0)}
     {onclick}

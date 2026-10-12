@@ -66,7 +66,7 @@ describe('LIST_FIELDS', () => {
     const sorts = Object.keys(SORT_LABEL) as SortKey[];
     for (const view of views) {
       for (const sort of sorts) {
-        for (const search of ['', 'example']) visibleIds(order, watch, view, search, sort);
+        for (const search of ['', 'example']) visibleIds(order, watch, { view, search, sort });
       }
     }
     countRows(order, watch);
@@ -78,23 +78,47 @@ describe('LIST_FIELDS', () => {
 
 describe('visibleIds', () => {
   it('filters by view', () => {
-    expect(visibleIds(order, get, { kind: 'all' }, '', 'queue')).toEqual([1, 2, 3, 4]);
-    expect(visibleIds(order, get, { kind: 'queue', id: 2 }, '', 'queue')).toEqual([3, 4]);
-    expect(visibleIds(order, get, { kind: 'status', group: 'failed' }, '', 'queue')).toEqual([3]);
-    expect(visibleIds(order, get, { kind: 'category', category: 'video' }, '', 'queue')).toEqual([
-      1,
+    expect(visibleIds(order, get, { view: { kind: 'all' }, search: '', sort: 'queue' })).toEqual([
+      1, 2, 3, 4,
     ]);
+    expect(
+      visibleIds(order, get, { view: { kind: 'queue', id: 2 }, search: '', sort: 'queue' }),
+    ).toEqual([3, 4]);
+    expect(
+      visibleIds(order, get, {
+        view: { kind: 'status', group: 'failed' },
+        search: '',
+        sort: 'queue',
+      }),
+    ).toEqual([3]);
+    expect(
+      visibleIds(order, get, {
+        view: { kind: 'category', category: 'video' },
+        search: '',
+        sort: 'queue',
+      }),
+    ).toEqual([1]);
   });
 
   it('searches names and links, ignoring case', () => {
-    expect(visibleIds(order, get, { kind: 'all' }, 'SONG', 'queue')).toEqual([4]);
-    expect(visibleIds(order, get, { kind: 'all' }, 'example.com/c-', 'queue')).toEqual([3]);
+    expect(
+      visibleIds(order, get, { view: { kind: 'all' }, search: 'SONG', sort: 'queue' }),
+    ).toEqual([4]);
+    expect(
+      visibleIds(order, get, { view: { kind: 'all' }, search: 'example.com/c-', sort: 'queue' }),
+    ).toEqual([3]);
   });
 
   it('sorts', () => {
-    expect(visibleIds(order, get, { kind: 'all' }, '', 'name')).toEqual([2, 1, 3, 4]);
-    expect(visibleIds(order, get, { kind: 'all' }, '', 'size')).toEqual([3, 1, 2, 4]);
-    expect(visibleIds(order, get, { kind: 'all' }, '', 'newest')).toEqual([4, 1, 3, 2]);
+    expect(visibleIds(order, get, { view: { kind: 'all' }, search: '', sort: 'name' })).toEqual([
+      2, 1, 3, 4,
+    ]);
+    expect(visibleIds(order, get, { view: { kind: 'all' }, search: '', sort: 'size' })).toEqual([
+      3, 1, 2, 4,
+    ]);
+    expect(visibleIds(order, get, { view: { kind: 'all' }, search: '', sort: 'newest' })).toEqual([
+      4, 1, 3, 2,
+    ]);
   });
 });
 

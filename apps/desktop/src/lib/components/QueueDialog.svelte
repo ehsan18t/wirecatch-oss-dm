@@ -18,7 +18,7 @@
   const app = getApp();
 
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
-  const original = (() => (id === null ? undefined : app.queueById(id)))();
+  const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
   // The core makes a new queue without either; these are only where the fields start.
   const FIRST_SPEED_LIMIT = 2 * MB;
@@ -117,7 +117,7 @@
           error = check;
           return;
         }
-        base = await app.createQueue(name.trim());
+        base = await app.queues.create(name.trim());
         if (!base) return;
         created = base;
       }
@@ -126,7 +126,7 @@
         error = next;
         return;
       }
-      if (await app.updateQueue(next)) {
+      if (await app.queues.update(next)) {
         app.closeDialog();
         if (!original) app.show({ kind: 'queue', id: next.id });
       } else if (created) {
@@ -143,7 +143,7 @@
       confirmDelete = true;
       return;
     }
-    if (await app.deleteQueue(original.id)) app.closeDialog();
+    if (await app.queues.remove(original.id)) app.closeDialog();
   }
 </script>
 
@@ -254,7 +254,7 @@
     {#if original && !original.is_default}
       <button type="button" class="btn danger delete" onclick={remove}>
         {confirmDelete
-          ? `Delete it; downloads move to ${app.defaultQueue?.name ?? 'the default queue'}`
+          ? `Delete it; downloads move to ${app.queues.defaultQueue?.name ?? 'the default queue'}`
           : 'Delete queue'}
       </button>
     {/if}

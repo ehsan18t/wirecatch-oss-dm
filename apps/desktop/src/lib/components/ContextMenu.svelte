@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { linkForDisplay } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
+  import { isUnderWay } from '$lib/state/view';
 
   let { x, y, onclose }: { x: number; y: number; onclose: (refocusList: boolean) => void } =
     $props();
@@ -24,19 +25,11 @@
 
   // Built once, for the selection at the moment the menu opened.
   const items: Item[] = (() => {
-    const rows = app.selectedRows;
+    const rows = app.selection.rows;
     const ids = rows.map((r) => r.id);
     const one = rows.length === 1 ? rows[0] : undefined;
     const out: Item[] = [];
-    if (
-      rows.some(
-        (r) =>
-          r.status === 'downloading' ||
-          r.status === 'connecting' ||
-          r.status === 'queued' ||
-          r.status === 'processing',
-      )
-    ) {
+    if (rows.some((r) => isUnderWay(r.status))) {
       out.push({ label: 'Pause', run: () => app.pause(ids) });
     }
     if (rows.some((r) => r.status === 'paused'))
@@ -54,9 +47,9 @@
           run: async () => {
             try {
               await navigator.clipboard.writeText(linkForDisplay(one.url));
-              app.notify('Link copied.');
+              app.toasts.notify('Link copied.');
             } catch {
-              app.fail(
+              app.toasts.fail(
                 'Could not copy the link. Select it in the detail panel and copy it by hand.',
               );
             }
@@ -64,7 +57,7 @@
         },
       );
     }
-    const queues = app.queues.filter((q) => rows.some((r) => r.queue !== q.id));
+    const queues = app.queues.list.filter((q) => rows.some((r) => r.queue !== q.id));
     queues.forEach((q, i) =>
       out.push({
         label: `Move to ${q.name}`,

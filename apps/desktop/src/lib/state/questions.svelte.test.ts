@@ -20,7 +20,7 @@ async function make(b = backend()) {
   const app = new AppState(b);
   await app.init();
   // The add-ons load in the background after the list.
-  await vi.waitFor(() => expect(app.addons).not.toBeNull());
+  await vi.waitFor(() => expect(app.addons.list).not.toBeNull());
   return { app, backend: b };
 }
 
@@ -40,8 +40,8 @@ const select = (option: string, later = false) => ({
 describe('media and add-ons', () => {
   it('lists one media add-on with plain words and its size', async () => {
     const { app } = await make();
-    expect(app.addons).toHaveLength(1);
-    const addon = app.addons?.[0];
+    expect(app.addons.list).toHaveLength(1);
+    const addon = app.addons.list?.[0];
     expect(addon?.id).toBe('media');
     expect(addon?.name).toBe('Media add-on');
     expect(addon?.description).toMatch(/YouTube \(yt-dlp\)/);
@@ -51,10 +51,10 @@ describe('media and add-ons', () => {
 
   it('says it is joining, and a stuck join can be paused', async () => {
     const { app, backend } = await make();
-    await app.installAddon('media');
+    await app.addons.install('media');
     backend.tick(4500);
     backend.simulateMediaChoice();
-    const choice = app.mediaChoices[0];
+    const choice = app.questions.mediaChoices[0];
     const joined = choice?.options.find((o) => o.needs_ffmpeg);
     const id = await backend.chooseMedia(choice?.id ?? 0, select(joined?.id ?? ''));
     for (let i = 0; i < 400 && app.downloads.get(id)?.status !== 'processing'; i++) {
@@ -77,7 +77,7 @@ describe('the main window only counts questions', () => {
     backend.simulateConfirmation();
     backend.simulateMediaChoice();
     backend.simulateAddonRequired();
-    expect(app.waitingCount).toBe(3);
+    expect(app.questions.waitingCount).toBe(3);
     expect(app.dialog).toBeNull();
     // Each one opened its own window instead.
     expect(backend.windows.windows.map((w) => w.shows.kind)).toEqual([
@@ -87,14 +87,14 @@ describe('the main window only counts questions', () => {
     ]);
     // A quality picked that needs the add-on is still the one question.
     backend.simulateMediaChoice();
-    const choice = app.mediaChoices[1];
+    const choice = app.questions.mediaChoices[1];
     await expect(backend.chooseMedia(choice?.id ?? 0, select('2160'))).rejects.toThrow();
-    expect(app.waitingCount).toBe(4);
+    expect(app.questions.waitingCount).toBe(4);
 
     // Answered or taken back anywhere: no longer counted.
-    await backend.rejectCapture(app.pending[0]?.id ?? -1);
+    await backend.rejectCapture(app.questions.pending[0]?.id ?? -1);
     backend.simulateAnsweredElsewhere();
-    expect(app.waitingCount).toBe(2);
+    expect(app.questions.waitingCount).toBe(2);
     app.dispose();
   });
 
@@ -135,7 +135,7 @@ describe('a question answered anywhere never comes back', () => {
     const b = backend();
     const first = await make(b);
     b.simulateMediaChoice();
-    const choice = first.app.mediaChoices[0];
+    const choice = first.app.questions.mediaChoices[0];
     await b.chooseMedia(choice?.id ?? 0, select('720'));
     first.app.dispose();
 
@@ -143,8 +143,8 @@ describe('a question answered anywhere never comes back', () => {
     const again = await make(b);
     await vi.waitFor(() => expect(again.app.ready).toBe(true));
     await new Promise((r) => setTimeout(r, 0));
-    expect(again.app.mediaChoices).toEqual([]);
-    expect(again.app.waitingCount).toBe(0);
+    expect(again.app.questions.mediaChoices).toEqual([]);
+    expect(again.app.questions.waitingCount).toBe(0);
     expect(again.app.dialog).toBeNull();
     expect(await b.getQuestion(choice?.id ?? 0)).toBeNull();
     again.app.dispose();
@@ -161,8 +161,8 @@ describe('a question answered anywhere never comes back', () => {
       later: false,
     });
     const { app } = await make(b);
-    expect(app.pending).toEqual([]);
-    expect(app.waitingCount).toBe(0);
+    expect(app.questions.pending).toEqual([]);
+    expect(app.questions.waitingCount).toBe(0);
     expect(app.dialog).toBeNull();
     app.dispose();
   });
@@ -174,13 +174,13 @@ describe('a question answered anywhere never comes back', () => {
     // The person closes its window: put aside, not answered.
     b.windows.gone(window?.label ?? '');
     const { app } = await make(b);
-    expect(app.waitingCount).toBe(1);
+    expect(app.questions.waitingCount).toBe(1);
     expect(app.dialog).toBeNull();
     // Loading the main window opens no question window.
     expect(b.windows.windows).toHaveLength(0);
     // A reload counts it once, not twice.
     await app.init();
-    await vi.waitFor(() => expect(app.waitingCount).toBe(1));
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(1));
     app.dispose();
   });
 });
@@ -193,10 +193,10 @@ describe('questions asked while no window was open', () => {
     b.simulateAddonRequired();
 
     const { app } = await make(b);
-    await vi.waitFor(() => expect(app.waitingCount).toBe(2));
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(2));
     await app.init();
-    await vi.waitFor(() => expect(app.mediaChoices).toHaveLength(1));
-    expect(app.waitingCount).toBe(2);
+    await vi.waitFor(() => expect(app.questions.mediaChoices).toHaveLength(1));
+    expect(app.questions.waitingCount).toBe(2);
     app.dispose();
   });
 });
@@ -244,7 +244,7 @@ describe('shell signals', () => {
     push?.({ type: 'storage_failed', data: { message: 'Could not save.', fix: null } });
     // A banner that stays, not a note that fades.
     expect(app.storageProblem).toBe('Could not save.');
-    expect(app.toasts.some((t) => t.message === 'Could not save.')).toBe(false);
+    expect(app.toasts.items.some((t) => t.message === 'Could not save.')).toBe(false);
     await app.retryStorage();
     expect(app.storageProblem).toBeNull();
     push?.({ type: 'storage_failed', data: { message: 'Again.', fix: null } });

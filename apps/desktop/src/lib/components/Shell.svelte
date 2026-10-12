@@ -62,7 +62,7 @@
     help: () => app.openDialog({ kind: 'shortcuts' }),
     escape: () => {
       if (app.screen === 'settings') app.screen = 'downloads';
-      else app.clearSelection();
+      else app.selection.clear();
     },
   };
 

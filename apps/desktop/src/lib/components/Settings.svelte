@@ -222,13 +222,13 @@
             onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
           />
         {:else if def.id === 'media_addon'}
-          {@const addon = app.addons?.find((a) => a.id === MEDIA_ADDON)}
+          {@const addon = app.addons.list?.find((a) => a.id === MEDIA_ADDON)}
           {#if addon}
             <AddonCard {addon} describedby={help} />
-          {:else if app.addonsError}
+          {:else if app.addons.error}
             <p class="addon-note">
-              {app.addonsError}
-              <Button small onclick={() => app.loadAddons()}>Check again</Button>
+              {app.addons.error}
+              <Button small onclick={() => app.addons.load()}>Check again</Button>
             </p>
           {:else}
             <p class="addon-note">Checking.</p>
@@ -377,7 +377,7 @@
               save((d) => void (d.extension.default_queue = q));
             }}
           >
-            {#each app.queues as q (q.id)}
+            {#each app.queues.list as q (q.id)}
               <option value={q.id}>{q.name}</option>
             {/each}
           </select>

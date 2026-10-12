@@ -92,7 +92,7 @@
     </p>
   </header>
 
-  {#if app.waitingCount > 0}
+  {#if app.questions.waitingCount > 0}
     <!-- Each waiting download has its own window (D23); this brings them all back. -->
     <button
       type="button"
@@ -104,8 +104,9 @@
       <span class="waiting-label">Waiting for you</span>
       <span
         class="count num"
-        aria-label="{app.waitingCount} {app.waitingCount === 1 ? 'download' : 'downloads'}"
-        >{app.waitingCount}</span
+        aria-label="{app.questions.waitingCount} {app.questions.waitingCount === 1
+          ? 'download'
+          : 'downloads'}">{app.questions.waitingCount}</span
       >
     </button>
   {/if}
@@ -165,10 +166,10 @@
         </Button>
       </div>
       <ul class="queues">
-        {#each app.queues as q (q.id)}
+        {#each app.queues.list as q (q.id)}
           {@const qspeed = app.downloads.queueSpeed[q.id] ?? 0}
           {@const c = app.counts.queue.get(q.id)}
-          {@const status = app.queueStatus(q)}
+          {@const status = app.queues.status(q)}
           <li
             class="queue"
             class:paused={q.paused}
@@ -218,10 +219,10 @@
               icon={q.paused ? Play : Pause}
               label={q.paused ? `Resume the ${q.name} queue` : `Pause the ${q.name} queue`}
               title={q.paused ? 'Resume this queue' : 'Pause this queue'}
-              onclick={() => app.setQueuePaused(q.id, !q.paused)}
+              onclick={() => app.queues.setPaused(q.id, !q.paused)}
             />
-            {#if app.isOutsideSchedule(q) && !q.paused}
-              <Button small class="start-now" icon={Play} onclick={() => app.startQueueNow(q.id)}>
+            {#if app.queues.isOutsideSchedule(q) && !q.paused}
+              <Button small class="start-now" icon={Play} onclick={() => app.queues.startNow(q.id)}>
                 Start now
               </Button>
             {/if}

@@ -17,11 +17,11 @@ describe('AppState', () => {
   it('loads everything and applies events', async () => {
     const { app, backend } = await make();
     expect(app.ready).toBe(true);
-    expect(app.queues.length).toBe(3);
+    expect(app.queues.list.length).toBe(3);
     expect(app.downloads.size).toBe(app.counts.all);
     await app.setAskBeforeDownload(false);
     backend.simulateCapture();
-    expect(app.toasts.at(-1)?.kind).toBe('capture');
+    expect(app.toasts.items.at(-1)?.kind).toBe('capture');
     app.dispose();
   });
 
@@ -39,13 +39,13 @@ describe('AppState', () => {
   it('selects ranges in display order', async () => {
     const { app } = await make();
     const [a, b, c] = app.visible;
-    app.selectOnly(a!);
-    app.selectRange(c!);
-    expect([...app.selection]).toEqual([a, b, c]);
-    app.toggle(b!);
+    app.selection.only(a!);
+    app.selection.range(c!);
+    expect(app.selection.list).toEqual([a, b, c]);
+    app.selection.toggle(b!);
     expect(app.selection.has(b!)).toBe(false);
-    app.moveActive(1, true);
-    expect(app.active).toBe(c);
+    app.selection.move(1, true);
+    expect(app.selection.active).toBe(c);
     app.dispose();
   });
 
@@ -65,16 +65,16 @@ describe('AppState', () => {
 
   it('only nudges inside a queue view', async () => {
     const { app } = await make();
-    app.selectOnly(app.visible[1]!);
+    app.selection.only(app.visible[1]!);
     await app.nudge(-1);
-    expect(app.toasts.at(-1)?.message).toMatch(/Open a queue/);
+    expect(app.toasts.items.at(-1)?.message).toMatch(/Open a queue/);
     app.dispose();
   });
 
   it('turns pasted text into the Add dialog, or explains why not', async () => {
     const { app } = await make();
     expect(app.pasteText('hello')).toBe(false);
-    expect(app.toasts.at(-1)?.kind).toBe('error');
+    expect(app.toasts.items.at(-1)?.kind).toBe('error');
     expect(app.pasteText('https://a.org/x.zip\nhttps://a.org/y.zip')).toBe(true);
     expect(app.dialog).toEqual({
       kind: 'add',
@@ -93,7 +93,7 @@ describe('AppState', () => {
     );
     await app.updateSettings((d) => void (d.theme = 'light'));
     expect(app.settings?.theme).toBe('dark');
-    expect(app.toasts.at(-1)?.message).toBe('Disk is read only.');
+    expect(app.toasts.items.at(-1)?.message).toBe('Disk is read only.');
     app.dispose();
   });
 
@@ -124,50 +124,50 @@ describe('AppState', () => {
     const { app, backend } = await make();
     backend.simulateConfirmation();
     backend.simulateConfirmation();
-    expect(app.pending).toHaveLength(2);
-    expect(app.waitingCount).toBe(2);
-    await backend.rejectCapture(app.pending[0]?.id ?? -1);
-    await backend.confirmCapture(app.pending[0]?.id ?? -1, {
+    expect(app.questions.pending).toHaveLength(2);
+    expect(app.questions.waitingCount).toBe(2);
+    await backend.rejectCapture(app.questions.pending[0]?.id ?? -1);
+    await backend.confirmCapture(app.questions.pending[0]?.id ?? -1, {
       folder: null,
       file_name: null,
       queue: 3,
       later: false,
     });
-    expect(app.pending).toHaveLength(0);
-    expect(app.waitingCount).toBe(0);
+    expect(app.questions.pending).toHaveLength(0);
+    expect(app.questions.waitingCount).toBe(0);
     app.dispose();
   });
 
   it('exports and imports settings', async () => {
     const { app } = await make();
-    expect(await app.exportSettings()).toMatch(/wirecatch-settings\.json$/);
+    expect(await app.transfer.exportSettings()).toMatch(/wirecatch-settings\.json$/);
     await app.updateSettings((d) => void (d.connections_per_download = 2));
     // Nothing is imported without a preview first.
-    expect(await app.importSettings()).toBeNull();
+    expect(await app.transfer.importSettings()).toBeNull();
     expect(app.settings?.connections_per_download).toBe(2);
-    const preview = await app.previewImport();
+    const preview = await app.transfer.previewImport();
     expect(preview?.folders[0]?.setting).toBe('Default folder');
     // The preview changes nothing.
     expect(app.settings?.connections_per_download).toBe(2);
-    expect(await app.importSettings()).toMatch(/wirecatch-settings\.json$/);
-    expect(app.importPreview).toBeNull();
+    expect(await app.transfer.importSettings()).toMatch(/wirecatch-settings\.json$/);
+    expect(app.transfer.importPreview).toBeNull();
     expect(app.settings?.connections_per_download).toBe(8);
     // What changed, as the core reports it, for the import dialog to show.
-    expect(app.lastImport?.queues_updated).toBeGreaterThan(0);
-    expect(app.lastImport?.folders[0]?.setting).toBe('Default folder');
-    expect(app.lastImport?.addons_to_offer).toEqual([]);
+    expect(app.transfer.lastImport?.queues_updated).toBeGreaterThan(0);
+    expect(app.transfer.lastImport?.folders[0]?.setting).toBe('Default folder');
+    expect(app.transfer.lastImport?.addons_to_offer).toEqual([]);
     app.dispose();
   });
 
   it('offers the add-ons an imported profile lists, and installs nothing by itself', async () => {
     const { app, backend } = await make();
-    await app.installAddon('media');
+    await app.addons.install('media');
     backend.tick(4500);
-    expect(await app.exportSettings()).toBeTruthy();
-    await app.removeAddon('media');
-    expect((await app.previewImport())?.addons_to_offer).toEqual(['media']);
-    await app.importSettings();
-    expect(app.lastImport?.addons_to_offer).toEqual(['media']);
+    expect(await app.transfer.exportSettings()).toBeTruthy();
+    await app.addons.remove('media');
+    expect((await app.transfer.previewImport())?.addons_to_offer).toEqual(['media']);
+    await app.transfer.importSettings();
+    expect(app.transfer.lastImport?.addons_to_offer).toEqual(['media']);
     const [addon] = await backend.listAddons();
     expect(addon?.state.type).toBe('not_installed');
     app.dispose();
@@ -178,7 +178,7 @@ describe('commands', () => {
   it('cover the selection only when something is selected', async () => {
     const { app } = await make();
     expect(buildCommands(app).some((c) => c.group === 'Selected downloads')).toBe(false);
-    app.selectOnly(app.visible[0]!);
+    app.selection.only(app.visible[0]!);
     expect(buildCommands(app).some((c) => c.id === 'sel.pause')).toBe(true);
     app.dispose();
   });

@@ -6,14 +6,14 @@
   let { id }: { id: string } = $props();
   const app = getApp();
 
-  const addon = $derived(app.addons?.find((a) => a.id === id));
+  const addon = $derived(app.addons.list?.find((a) => a.id === id));
   const name = $derived(addon?.name.toLowerCase() ?? 'add-on');
 
   async function remove() {
     // Read before the dialog closes; its props go with it.
     const target = id;
     app.closeDialog();
-    await app.removeAddon(target);
+    await app.addons.remove(target);
   }
 </script>
 

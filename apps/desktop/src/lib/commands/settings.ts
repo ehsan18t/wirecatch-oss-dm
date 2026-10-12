@@ -115,7 +115,7 @@ const ADDON: readonly CommandSpec<Addon>[] = [
     when: ({ action }) => action === 'install' || action === 'retry',
     run: ({ app, addon }) => {
       app.openSettings('media_addon');
-      return app.installAddon(addon.id);
+      return app.addons.install(addon.id);
     },
   },
   {
@@ -125,7 +125,7 @@ const ADDON: readonly CommandSpec<Addon>[] = [
     when: ({ action }) => action === 'update',
     run: ({ app, addon }) => {
       app.openSettings('media_addon');
-      return app.updateAddon(addon.id);
+      return app.addons.update(addon.id);
     },
   },
   {
@@ -133,7 +133,7 @@ const ADDON: readonly CommandSpec<Addon>[] = [
     title: ({ name }) => `Check for ${name} updates`,
     keywords: `${ADDON_KEYWORDS} update newer version check`,
     when: ({ addon }) => isInstalled(addon),
-    run: ({ app }) => app.checkAddonUpdates(),
+    run: ({ app }) => app.addons.checkUpdates(),
   },
   {
     id: ({ addon }) => `addon.remove.${addon.id}`,
@@ -161,7 +161,7 @@ export function settingsCommands(app: AppState): Command[] {
 }
 
 export function addonCommands(app: AppState): Command[] {
-  return (app.addons ?? []).flatMap((addon) =>
+  return (app.addons.list ?? []).flatMap((addon) =>
     commandsFrom(GROUP, ADDON, {
       app,
       addon,

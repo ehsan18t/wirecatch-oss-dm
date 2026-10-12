@@ -1,32 +1,37 @@
-// Everything the interface knows and every action it can take. Components read from here and
-// call these methods; nothing else talks to the backend.
+// Everything the main window knows and every action it can take. Components read from here and
+// call these methods; nothing else talks to the backend. Each concern has its own class (the
+// selection, the queues, the notes, the questions, the add-ons, settings files); this one owns
+// the list, the screens and dialogs, the actions on downloads, and the core's events.
 
 import type {
-  AddonInfo,
   AddRequest,
   AppSettings,
   DownloadId,
-  DownloadSummary,
   FixAction,
-  ImportPreview,
-  ImportSummary,
-  MediaChoice,
-  PendingCapture,
-  Queue,
   QueueId,
   UiEvent,
 } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
-import { SvelteSet } from 'svelte/reactivity';
-import { MEDIA_ADDON } from '../addons';
-import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import type { Backend } from '../backend';
-import { extractUrls, formatTime, scheduleAllows } from '../format';
+import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
-import { MS_PER_SECOND } from '../time';
+import { Addons } from './addons.svelte';
+import { Clock } from './clock.svelte';
 import { DownloadStore } from './downloads.svelte';
+import { mainWindowEvents } from './app-events';
+import { dispatch, HeldEvents } from './events';
 import { Hints } from './hints.svelte';
-import { countRows, visibleIds, type SortKey, type View } from './view';
+import { nudged, placed } from './order';
+import { Questions } from './questions.svelte';
+import { Queues } from './queues.svelte';
+import { errorMessage, Runner } from './runner';
+import { Selection } from './selection.svelte';
+import { changeSettings, SettingsWriter } from './settings-changes.svelte';
+import { SettingsTransfer } from './settings-transfer.svelte';
+import { Toasts } from './toasts.svelte';
+import { countRows, isUnderWay, visibleIds, type SortKey, type View } from './view';
+
+export type { Toast } from './toasts.svelte';
 
 export type Screen = 'downloads' | 'settings';
 
@@ -42,23 +47,7 @@ export type Dialog =
   | { kind: 'open-program'; id: DownloadId }
   | { kind: 'remove-addon'; id: string };
 
-export interface Toast {
-  id: number;
-  kind: 'info' | 'error' | 'capture';
-  message: string;
-  downloadId?: DownloadId;
-}
-
 const CONTEXT = Symbol('wirecatch-app');
-
-/**
- * How often the clock behind schedule labels moves on. Labels show minutes, so twice a minute
- * keeps them at most half a minute late.
- */
-const CLOCK_REFRESH_MS = 30 * MS_PER_SECOND;
-
-/** Notes shown at once; a new one pushes out the oldest, so the stack stays short. */
-const TOASTS_MAX = 4;
 
 export function setApp(app: AppState): void {
   setContext(CONTEXT, app);
@@ -70,38 +59,41 @@ export function getApp(): AppState {
   return app;
 }
 
-function message(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === 'string' && err) return err;
-  return 'Something went wrong. Try again.';
-}
-
-/** Says what failed in a bulk action, once, instead of one note per download. */
-export function bulkFailureMessage(
-  verb: string,
-  failed: number,
-  total: number,
-  first: string,
-): string {
-  if (total === 1) return first;
-  return `Could not ${verb} ${failed} of ${total} downloads. ${first}`;
-}
-
 export class AppState {
   #backend: Backend | null = null;
   readonly #loadBackend: () => Promise<Backend>;
   readonly downloads = new DownloadStore();
   readonly hints = new Hints();
+  readonly toasts = new Toasts();
+  /** The time schedule labels follow. */
+  readonly clock = new Clock();
+  readonly #runner = new Runner((text) => this.toasts.fail(text));
+  readonly selection = new Selection(
+    () => this.visible,
+    (id) => this.downloads.get(id),
+  );
+  readonly questions = new Questions();
+  readonly addons = new Addons(() => this.backend, this.#runner, this.toasts);
+  readonly queues = new Queues({
+    backend: () => this.backend,
+    runner: this.#runner,
+    toasts: this.toasts,
+    now: () => this.clock.now,
+    counts: () => this.counts,
+  });
+  readonly transfer = new SettingsTransfer({
+    backend: () => this.backend,
+    runner: this.#runner,
+    imported: (settings, queues) => {
+      if (settings) this.settings = settings;
+      if (queues) this.queues.list = queues;
+    },
+  });
   /** Settings changes go to the app one after another, in the order they were made. */
-  readonly #settingsWriter = new SettingsWriter(
-    async (patch) =>
-      (await this.#run(async () => {
-        await this.backend.changeSettings(patch);
-        return true;
-      })) === true,
+  readonly #settingsWriter = new SettingsWriter((patch) =>
+    this.#runner.succeeds(() => this.backend.changeSettings(patch)),
   );
 
-  queues = $state<Queue[]>([]);
   settings = $state<AppSettings | null>(null);
   ready = $state(false);
   loadError = $state<string | null>(null);
@@ -113,11 +105,6 @@ export class AppState {
   search = $state('');
   sort = $state<SortKey>('queue');
 
-  readonly selection = new SvelteSet<DownloadId>();
-  /** The row the keyboard is on. */
-  active = $state<DownloadId | null>(null);
-  #anchor: DownloadId | null = null;
-
   /** The window is wide enough for the detail panel to have its own column. */
   wide = $state(true);
   /** In a wide window, whether the detail panel column is shown. */
@@ -125,41 +112,12 @@ export class AppState {
 
   dialog = $state<Dialog | null>(null);
   paletteOpen = $state(false);
-  toasts = $state<Toast[]>([]);
-  /**
-   * Browser files waiting for an answer in their own windows (D23). The main window only counts
-   * them ("Waiting for you"); it never asks them itself.
-   */
-  pending = $state<PendingCapture[]>([]);
-  /** Videos waiting for a quality in their own windows, counted the same way. */
-  mediaChoices = $state<MediaChoice[]>([]);
-  /** Video pages waiting for the media add-on in their own windows, by question id. */
-  addonPages = $state<number[]>([]);
   /** Saving the download list failed; shown in a banner until dealt with. */
   storageProblem = $state<string | null>(null);
-  /** Add-ons and their state; `null` until loaded. */
-  addons = $state<AddonInfo[] | null>(null);
-  /** Why the add-ons could not be listed, shown in their settings section. */
-  addonsError = $state<string | null>(null);
-  /** What the last settings import changed, shown in the import dialog. */
-  lastImport = $state<ImportSummary | null>(null);
-  /**
-   * A settings file chosen for import and what importing it would change. The import dialog
-   * shows this and applies the file only when the person says so.
-   */
-  importPreview = $state<{ path: string; preview: ImportPreview } | null>(null);
   /** True when the interface runs on sample data instead of the real engine. */
   sampleData = $state(false);
-  /** Refreshed every half minute so schedule labels stay true. */
-  // Replaced whole, never mutated, so a plain Date is enough.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  now = $state(new Date());
 
-  #toastId = 1;
   #unsubscribe: (() => void) | null = null;
-  #clock: ReturnType<typeof setInterval> | undefined;
-  /** Where "now" comes from: the system clock, or the sample clock of the mock backend. */
-  #clockSource: () => number = () => Date.now();
   /** Bumped by every init and dispose, so a superseded init cleans up after itself. */
   #generation = 0;
 
@@ -186,67 +144,14 @@ export class AppState {
   /** Ids the list shows. Rebuilt only when membership, view, search or sort change. */
   visible = $derived.by(() => {
     const order = this.downloads.order;
-    const view = this.view;
-    const search = this.search;
-    const sort = this.sort;
-    return untrack(() => visibleIds(order, this.#get, view, search, sort));
+    const options = { view: this.view, search: this.search, sort: this.sort };
+    return untrack(() => visibleIds(order, this.#get, options));
   });
 
   counts = $derived.by(() => {
     const order = this.downloads.order;
     return untrack(() => countRows(order, this.#get));
   });
-
-  selectedRows = $derived.by(() => {
-    const rows: DownloadSummary[] = [];
-    for (const id of this.selection) {
-      const row = this.downloads.get(id);
-      if (row) rows.push(row);
-    }
-    return rows;
-  });
-
-  defaultQueue = $derived(this.queues.find((q) => q.is_default) ?? this.queues[0]);
-
-  /**
-   * How many downloads wait for the person's answer in their own windows: browser files, videos
-   * waiting for a quality, and video pages waiting for the media add-on. Each counts once.
-   */
-  waitingCount = $derived.by(() => {
-    const ids = [
-      ...this.pending.map((p) => p.id),
-      ...this.mediaChoices.map((c) => c.id),
-      ...this.addonPages,
-    ];
-    return ids.filter((id, i) => ids.indexOf(id) === i).length;
-  });
-
-  queueById(id: QueueId): Queue | undefined {
-    return this.queues.find((q) => q.id === id);
-  }
-
-  /** True when a scheduled queue is outside its hours and not started by hand. */
-  isOutsideSchedule(queue: Queue): boolean {
-    return (
-      queue.schedule !== null &&
-      !queue.running_outside_schedule &&
-      !scheduleAllows(queue.schedule, this.now)
-    );
-  }
-
-  /** A short phrase for the sidebar: what this queue is doing right now. */
-  queueStatus(queue: Queue): string {
-    const c = this.counts.queue.get(queue.id);
-    if (queue.paused) return 'Paused';
-    if (queue.schedule && this.isOutsideSchedule(queue)) {
-      return `Starts at ${formatTime(queue.schedule.start)}`;
-    }
-    if (queue.running_outside_schedule) return 'Started by hand, outside its hours';
-    if (c && c.running > 0) return `${c.running} of ${queue.max_concurrent} running`;
-    if (c && c.waiting > 0) return `${c.waiting} waiting`;
-    if (c && c.paused > 0) return `${c.paused} paused`;
-    return 'Idle';
-  }
 
   // ---- Startup and events ----
 
@@ -258,44 +163,61 @@ export class AppState {
   async init(): Promise<void> {
     this.#teardown();
     const generation = ++this.#generation;
-    const buffered: UiEvent[] = [];
-    let loading = true;
-    let backend: Backend;
-    let unsubscribe: () => void;
-    try {
-      backend = this.#backend ?? (await this.#loadBackend());
-      this.#backend = backend;
-      this.sampleData = backend.kind === 'mock';
-      this.#clockSource = backend.sampleData?.now ?? (() => Date.now());
-      // Replaced whole, never mutated, so a plain Date is enough.
-      // eslint-disable-next-line svelte/prefer-svelte-reactivity
-      this.now = new Date(this.#clockSource());
-      const stopEvents = await backend.subscribe((e) => {
-        if (loading) buffered.push(e);
-        else this.handle(e);
-      });
-      const stopSignals = await backend.onShellSignal((signal) => {
-        if (generation !== this.#generation) return;
-        // Events were missed: load everything again rather than show a stale list.
-        if (signal === 'resync') void this.init();
-        else void this.#takeLaunchLinks();
-      });
-      unsubscribe = () => {
-        stopEvents();
-        stopSignals();
-      };
-    } catch (err) {
-      if (generation === this.#generation) {
-        this.loadError = message(err);
-        this.ready = true;
-      }
-      return;
-    }
-    if (generation !== this.#generation) {
+    const current = () => generation === this.#generation;
+    const events = new HeldEvents((e) => this.handle(e));
+    const unsubscribe = await this.#connect(current, events.receive);
+    if (!unsubscribe) return;
+    if (!current()) {
       unsubscribe();
       return;
     }
     this.#unsubscribe = unsubscribe;
+    await this.#load(current);
+    if (!current()) {
+      events.drop();
+      return;
+    }
+    events.release();
+    this.ready = true;
+    this.clock.start();
+    // Neither is needed for the list, so neither holds it up.
+    void this.addons.load();
+    void this.#takeLaunchLinks();
+    void this.questions.restore(this.backend);
+  }
+
+  /** Loads the backend and listens to it; `null` when that failed, which is then shown. */
+  async #connect(
+    current: () => boolean,
+    onEvent: (e: UiEvent) => void,
+  ): Promise<(() => void) | null> {
+    try {
+      const backend = this.#backend ?? (await this.#loadBackend());
+      this.#backend = backend;
+      this.sampleData = backend.kind === 'mock';
+      this.clock.follow(backend.sampleData?.now ?? (() => Date.now()));
+      const stopEvents = await backend.subscribe(onEvent);
+      const stopSignals = await backend.onShellSignal((signal) => {
+        if (!current()) return;
+        // Events were missed: load everything again rather than show a stale list.
+        if (signal === 'resync') void this.init();
+        else void this.#takeLaunchLinks();
+      });
+      return () => {
+        stopEvents();
+        stopSignals();
+      };
+    } catch (err) {
+      if (current()) {
+        this.loadError = errorMessage(err);
+        this.ready = true;
+      }
+      return null;
+    }
+  }
+
+  /** Loads the list, the queues, the settings and the waiting browser files. */
+  async #load(current: () => boolean): Promise<void> {
     try {
       const [downloads, queues, settings, pending] = await Promise.all([
         this.backend.listDownloads(),
@@ -303,56 +225,14 @@ export class AppState {
         this.backend.getSettings(),
         this.backend.pendingConfirmations(),
       ]);
-      if (generation !== this.#generation) return;
+      if (!current()) return;
       this.downloads.load(downloads);
-      this.queues = queues;
+      this.queues.list = queues;
       this.settings = settings;
-      this.pending = pending;
+      this.questions.pending = pending;
       this.loadError = null;
     } catch (err) {
-      if (generation === this.#generation) this.loadError = message(err);
-    } finally {
-      loading = false;
-      if (generation === this.#generation) {
-        for (const e of buffered) this.handle(e);
-        this.ready = true;
-      }
-    }
-    if (generation !== this.#generation) return;
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    this.#clock = setInterval(() => (this.now = new Date(this.#clockSource())), CLOCK_REFRESH_MS);
-    // Neither is needed for the list, so neither holds it up.
-    void this.loadAddons();
-    void this.#takeLaunchLinks();
-    void this.#restoreQuestions();
-  }
-
-  /**
-   * The questions open in the core, to count them in the sidebar: exactly what is open now, so
-   * one answered anywhere is never counted again. Confirmations come with the main load. They
-   * are only counted here; each is asked in its own window.
-   */
-  async #restoreQuestions(): Promise<void> {
-    try {
-      this.mediaChoices = await this.backend.pendingMediaChoices();
-    } catch {
-      // The events still bring new choices.
-    }
-    try {
-      const pages = await this.backend.pendingAddonRequests();
-      this.addonPages = pages.map((p) => p.id);
-    } catch {
-      // Same: the events still bring new pages.
-    }
-  }
-
-  /** Lists the add-ons. A failure is shown in their settings section, not as an error note. */
-  async loadAddons(): Promise<void> {
-    try {
-      this.addons = await this.backend.listAddons();
-      this.addonsError = null;
-    } catch (err) {
-      this.addonsError = message(err);
+      if (current()) this.loadError = errorMessage(err);
     }
   }
 
@@ -373,8 +253,7 @@ export class AppState {
   #teardown(): void {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
-    if (this.#clock) clearInterval(this.#clock);
-    this.#clock = undefined;
+    this.clock.stop();
   }
 
   dispose(): void {
@@ -382,123 +261,10 @@ export class AppState {
     this.#teardown();
   }
 
+  readonly #handlers = mainWindowEvents(this);
+
   handle(event: UiEvent): void {
-    switch (event.type) {
-      case 'downloads_changed':
-        this.downloads.apply(event.data);
-        break;
-      case 'downloads_removed': {
-        this.downloads.remove(event.data);
-        for (const id of event.data) this.selection.delete(id);
-        if (this.active !== null && event.data.includes(this.active)) this.active = null;
-        break;
-      }
-      case 'queues_changed':
-        this.queues = event.data;
-        if (this.view.kind === 'queue') {
-          const id = this.view.id;
-          if (!event.data.some((q) => q.id === id)) this.view = { kind: 'all' };
-        }
-        break;
-      case 'settings_changed':
-        this.settings = event.data;
-        break;
-      case 'captured':
-        this.downloads.apply([event.data]);
-        this.#toast({ kind: 'capture', message: event.data.file_name, downloadId: event.data.id });
-        break;
-      case 'confirmation_requested':
-        if (!this.pending.some((p) => p.id === event.data.id)) {
-          this.pending = [...this.pending, event.data];
-        }
-        break;
-      case 'media_choice_requested':
-        if (!this.mediaChoices.some((c) => c.id === event.data.id)) {
-          this.mediaChoices = [...this.mediaChoices, event.data];
-        }
-        this.addonPages = this.addonPages.filter((id) => id !== event.data.id);
-        break;
-      case 'media_analysing':
-        // Read once the add-on is in: no longer waiting for it.
-        this.addonPages = this.addonPages.filter((id) => id !== event.data.id);
-        break;
-      case 'addons_changed':
-        this.addons = event.data;
-        this.addonsError = null;
-        break;
-      case 'addon_required':
-        // A quality list whose picked quality needs the add-on is already counted.
-        if (
-          !this.mediaChoices.some((c) => c.id === event.data.id) &&
-          !this.addonPages.includes(event.data.id)
-        ) {
-          this.addonPages = [...this.addonPages, event.data.id];
-        }
-        break;
-      case 'confirmation_closed':
-        this.#questionClosed(event.data.id);
-        break;
-      case 'settings_imported':
-        this.lastImport = event.data;
-        break;
-      case 'storage_failed':
-        // Not a passing note: it stays until the person deals with it.
-        this.storageProblem = event.data.message;
-        break;
-      case 'window_requested':
-        // The desktop shell brings the window to the front; nothing changes in it.
-        break;
-    }
-  }
-
-  // ---- Toasts ----
-
-  #toast(t: Omit<Toast, 'id'>): number {
-    const id = this.#toastId++;
-    this.toasts = [...this.toasts, { ...t, id }].slice(-TOASTS_MAX);
-    return id;
-  }
-
-  notify(text: string): void {
-    this.#toast({ kind: 'info', message: text });
-  }
-
-  fail(text: string): void {
-    this.#toast({ kind: 'error', message: text });
-  }
-
-  dismissToast(id: number): void {
-    this.toasts = this.toasts.filter((t) => t.id !== id);
-  }
-
-  /**
-   * Runs one action for many downloads at once and reports any failures in a single note.
-   * Returns how many succeeded.
-   */
-  async #bulk(
-    ids: DownloadId[],
-    verb: string,
-    action: (id: DownloadId) => Promise<void>,
-  ): Promise<number> {
-    if (ids.length === 0) return 0;
-    const results = await Promise.allSettled(ids.map((id) => action(id)));
-    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-    if (failures.length > 0) {
-      this.fail(
-        bulkFailureMessage(verb, failures.length, ids.length, message(failures[0]?.reason)),
-      );
-    }
-    return ids.length - failures.length;
-  }
-
-  /** Runs a backend action and turns any failure into a readable error note. */
-  async #run<T>(action: () => Promise<T>): Promise<T | undefined> {
-    try {
-      return await action();
-    } catch (err) {
-      this.fail(message(err));
-      return undefined;
-    }
+    dispatch(this.#handlers, event);
   }
 
   // ---- Navigation ----
@@ -506,7 +272,7 @@ export class AppState {
   show(view: View): void {
     this.view = view;
     this.screen = 'downloads';
-    this.clearSelection();
+    this.selection.clear();
   }
 
   openSettings(focus: SettingId | null = null): void {
@@ -523,14 +289,14 @@ export class AppState {
   closeDialog(): void {
     this.dialog = null;
     // A settings file previewed but not imported is left as it was.
-    this.importPreview = null;
+    this.transfer.cancelImport();
   }
 
   /** Pasted text: open the Add dialog with every link in it. */
   pasteText(text: string): boolean {
     const urls = extractUrls(text);
     if (urls.length === 0) {
-      this.fail(
+      this.toasts.fail(
         'There is no link in what you pasted. Copy the full address, starting with https://.',
       );
       return false;
@@ -539,69 +305,16 @@ export class AppState {
     return true;
   }
 
-  // ---- Selection ----
-
-  selectOnly(id: DownloadId): void {
-    this.selection.clear();
-    this.selection.add(id);
-    this.#anchor = id;
-    this.active = id;
+  /** Brings every waiting question's window to the front, opening closed ones again. */
+  async showQuestionWindows(): Promise<void> {
+    this.paletteOpen = false;
+    await this.#runner.run(() => this.backend.showQuestionWindows());
   }
 
-  toggle(id: DownloadId): void {
-    if (this.selection.has(id)) this.selection.delete(id);
-    else this.selection.add(id);
-    this.#anchor = id;
-    this.active = id;
-  }
-
-  /** Selects from the last clicked row to this one, in display order. */
-  selectRange(id: DownloadId, additive = false): void {
-    const list = this.visible;
-    const from = this.#anchor === null ? -1 : list.indexOf(this.#anchor);
-    const to = list.indexOf(id);
-    if (from < 0 || to < 0) {
-      this.selectOnly(id);
-      return;
-    }
-    if (!additive) this.selection.clear();
-    const [a, b] = from < to ? [from, to] : [to, from];
-    for (let i = a; i <= b; i++) {
-      const x = list[i];
-      if (x !== undefined) this.selection.add(x);
-    }
-    this.active = id;
-  }
-
-  selectAll(): void {
-    for (const id of this.visible) this.selection.add(id);
-  }
-
-  clearSelection(): void {
-    this.selection.clear();
-    this.#anchor = null;
-    this.active = null;
-  }
-
-  /** Arrow keys: move the keyboard row, optionally extending the selection. */
-  moveActive(delta: number, extend: boolean): void {
-    const list = this.visible;
-    if (list.length === 0) return;
-    const current = this.active === null ? -1 : list.indexOf(this.active);
-    const next =
-      current < 0
-        ? delta > 0
-          ? 0
-          : list.length - 1
-        : Math.min(list.length - 1, Math.max(0, current + delta));
-    const id = list[next];
-    if (id === undefined) return;
-    if (extend) this.selectRange(id);
-    else this.selectOnly(id);
-  }
-
-  get selectedIds(): DownloadId[] {
-    return [...this.selection];
+  /** Opens (or brings forward) a download's own progress window. */
+  async showProgressWindow(id: DownloadId): Promise<void> {
+    this.paletteOpen = false;
+    await this.#runner.run(() => this.backend.showProgressWindow(id));
   }
 
   // ---- Download actions ----
@@ -609,34 +322,27 @@ export class AppState {
   async add(requests: AddRequest[]): Promise<DownloadId[]> {
     const ids: DownloadId[] = [];
     for (const r of requests) {
-      const id = await this.#run(() => this.backend.addDownload(r));
+      const id = await this.#runner.run(() => this.backend.addDownload(r));
       if (id !== undefined) ids.push(id);
     }
     if (ids.length > 0) {
-      this.notify(ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`);
+      this.toasts.notify(ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`);
     }
     return ids;
   }
 
-  async pause(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    await this.#bulk(ids, 'pause', (id) => this.backend.pause(id));
+  async pause(ids: DownloadId[] = this.selection.list): Promise<void> {
+    await this.#runner.bulk(ids, 'pause', (id) => this.backend.pause(id));
   }
 
-  async resume(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    await this.#bulk(ids, 'resume', (id) => this.backend.resume(id));
+  async resume(ids: DownloadId[] = this.selection.list): Promise<void> {
+    await this.#runner.bulk(ids, 'resume', (id) => this.backend.resume(id));
   }
 
   /** Space bar: pause what runs, resume what does not. */
-  async togglePause(ids: DownloadId[] = this.selectedIds): Promise<void> {
+  async togglePause(ids: DownloadId[] = this.selection.list): Promise<void> {
     const rows = ids.flatMap((id) => this.downloads.get(id) ?? []);
-    const running = rows.some(
-      (r) =>
-        r.status === 'downloading' ||
-        r.status === 'connecting' ||
-        r.status === 'queued' ||
-        r.status === 'processing',
-    );
-    if (running) {
+    if (rows.some((r) => isUnderWay(r.status))) {
       await this.pause(ids);
       return;
     }
@@ -646,70 +352,63 @@ export class AppState {
     await this.resume(ids.filter((id) => !cancelled.includes(id)));
   }
 
-  async retry(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    await this.#bulk(ids, 'restart', (id) => this.backend.retry(id));
+  async retry(ids: DownloadId[] = this.selection.list): Promise<void> {
+    await this.#runner.bulk(ids, 'restart', (id) => this.backend.retry(id));
   }
 
   /** Tries every download that needs attention again. */
   async retryAllFailed(): Promise<void> {
     const failed = this.downloads.order.filter((id) => this.downloads.get(id)?.status === 'failed');
     if (failed.length === 0) {
-      this.notify('Nothing needs attention right now.');
+      this.toasts.notify('Nothing needs attention right now.');
       return;
     }
-    const ok = await this.#bulk(failed, 'restart', (id) => this.backend.retry(id));
+    const ok = await this.#runner.bulk(failed, 'restart', (id) => this.backend.retry(id));
     if (ok > 0)
-      this.notify(ok === 1 ? 'Trying 1 download again.' : `Trying ${ok} downloads again.`);
+      this.toasts.notify(ok === 1 ? 'Trying 1 download again.' : `Trying ${ok} downloads again.`);
   }
 
-  async cancel(ids: DownloadId[] = this.selectedIds): Promise<void> {
-    await this.#bulk(ids, 'cancel', (id) => this.backend.cancel(id));
+  async cancel(ids: DownloadId[] = this.selection.list): Promise<void> {
+    await this.#runner.bulk(ids, 'cancel', (id) => this.backend.cancel(id));
   }
 
   async remove(ids: DownloadId[], deleteFile: boolean): Promise<void> {
-    await this.#run(() => this.backend.remove(ids, deleteFile));
+    await this.#runner.run(() => this.backend.remove(ids, deleteFile));
   }
 
-  async refreshLink(id: DownloadId, url: string): Promise<boolean> {
-    const ok = await this.#run(async () => {
-      await this.backend.refreshLink(id, url);
-      return true;
-    });
-    return ok === true;
+  refreshLink(id: DownloadId, url: string): Promise<boolean> {
+    return this.#runner.succeeds(() => this.backend.refreshLink(id, url));
   }
 
   /** Opens a finished file; a program asks first whether the person trusts where it came from. */
   async openFile(id: DownloadId): Promise<void> {
-    const program = await this.#run(() => this.backend.isProgram(id));
+    const program = await this.#runner.run(() => this.backend.isProgram(id));
     if (program === undefined) return;
     if (program) {
       this.openDialog({ kind: 'open-program', id });
       return;
     }
-    await this.#run(() => this.backend.openFile(id));
+    await this.#runner.run(() => this.backend.openFile(id));
   }
 
   /** Opens a program the person confirmed they trust. */
   async openProgram(id: DownloadId): Promise<void> {
     this.closeDialog();
-    await this.#run(() => this.backend.openFile(id, true));
+    await this.#runner.run(() => this.backend.openFile(id, true));
   }
 
   async openFolder(id: DownloadId): Promise<void> {
-    await this.#run(() => this.backend.openFolder(id));
+    await this.#runner.run(() => this.backend.openFolder(id));
   }
 
   /** Lets the person pick a new folder for one download. */
   async chooseFolderFor(id: DownloadId): Promise<boolean> {
     const row = this.downloads.get(id);
-    const picked = await this.#run(() => this.backend.pickFolder(row?.path));
+    const picked = await this.#runner.run(() => this.backend.pickFolder(row?.path));
     if (!picked) return false;
-    const ok = await this.#run(async () => {
-      await this.backend.setDownloadFolder(id, picked);
-      return true;
-    });
-    if (ok) this.notify(`Saving to ${picked}`);
-    return ok === true;
+    const ok = await this.#runner.succeeds(() => this.backend.setDownloadFolder(id, picked));
+    if (ok) this.toasts.notify(`Saving to ${picked}`);
+    return ok;
   }
 
   /** Runs the fix an error offers. */
@@ -728,20 +427,17 @@ export class AppState {
         await this.openFolder(id);
         break;
       case 'keep_original':
-        await this.#run(() => this.backend.keepOriginal(id));
+        await this.#runner.run(() => this.backend.keepOriginal(id));
         break;
     }
   }
 
   async moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void> {
     if (ids.length === 0) return;
-    const ok = await this.#run(async () => {
-      await this.backend.moveToQueue(ids, queue);
-      return true;
-    });
-    const name = this.queueById(queue)?.name ?? 'the queue';
+    const ok = await this.#runner.succeeds(() => this.backend.moveToQueue(ids, queue));
+    const name = this.queues.byId(queue)?.name ?? 'the queue';
     if (ok)
-      this.notify(
+      this.toasts.notify(
         ids.length === 1 ? `Moved to ${name}.` : `${ids.length} downloads moved to ${name}.`,
       );
   }
@@ -751,101 +447,30 @@ export class AppState {
    * `null`). Only downloads of that one queue take part.
    */
   async placeInQueue(queue: QueueId, ids: DownloadId[], before: DownloadId | null): Promise<void> {
-    const current = this.downloads.idsInQueue(queue);
-    const moving = current.filter((id) => ids.includes(id));
-    if (moving.length === 0) return;
-    const rest = current.filter((id) => !ids.includes(id));
-    const at = before === null ? rest.length : rest.indexOf(before);
-    const next = [
-      ...rest.slice(0, at < 0 ? rest.length : at),
-      ...moving,
-      ...rest.slice(at < 0 ? rest.length : at),
-    ];
-    if (next.every((id, i) => id === current[i])) return;
-    const ok = await this.#run(async () => {
-      await this.backend.reorder(queue, next);
-      return true;
-    });
-    if (ok) this.downloads.reorder(queue, next);
+    const next = placed(this.downloads.idsInQueue(queue), ids, before);
+    if (next === null) return;
+    if (await this.#runner.succeeds(() => this.backend.reorder(queue, next))) {
+      this.downloads.reorder(queue, next);
+    }
   }
 
   /** Alt+Up and Alt+Down: nudge the selection one place within its queue. */
   async nudge(delta: -1 | 1): Promise<void> {
     if (this.view.kind !== 'queue' || this.sort !== 'queue') {
-      this.notify('Open a queue in the sidebar to change its order.');
+      this.toasts.notify('Open a queue in the sidebar to change its order.');
       return;
     }
     const queue = this.view.id;
-    const current = this.downloads.idsInQueue(queue);
-    const chosen = current.filter((id) => this.selection.has(id));
-    const firstChosen = chosen.at(0);
-    const lastChosen = chosen.at(-1);
-    if (firstChosen === undefined || lastChosen === undefined) return;
-    const first = current.indexOf(firstChosen);
-    const last = current.indexOf(lastChosen);
-    const rest = current.filter((id) => !this.selection.has(id));
-    let before: DownloadId | null;
-    if (delta < 0) {
-      if (first === 0) return;
-      // The row just above the first selected one is never selected itself.
-      before = current[first - 1] ?? null;
-    } else {
-      if (last === current.length - 1) return;
-      const after = current[last + 1];
-      const i = after === undefined ? -1 : rest.indexOf(after);
-      before = i < 0 ? null : (rest[i + 1] ?? null);
-    }
-    await this.placeInQueue(queue, chosen, before);
+    const move = nudged(this.downloads.idsInQueue(queue), (id) => this.selection.has(id), delta);
+    if (move) await this.placeInQueue(queue, move.chosen, move.before);
   }
 
   async pauseAll(): Promise<void> {
-    await this.#run(() => this.backend.pauseAll());
+    await this.#runner.run(() => this.backend.pauseAll());
   }
 
   async resumeAll(): Promise<void> {
-    await this.#run(() => this.backend.resumeAll());
-  }
-
-  /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */
-  async setQueuePaused(queue: QueueId, paused: boolean): Promise<void> {
-    await this.#run(() => this.backend.setQueuePaused(queue, paused));
-  }
-
-  /** Runs a scheduled queue now, outside its hours, until it is empty or paused. */
-  async startQueueNow(queue: QueueId): Promise<void> {
-    const ok = await this.#run(async () => {
-      await this.backend.startQueueNow(queue);
-      return true;
-    });
-    const name = this.queueById(queue)?.name ?? 'The queue';
-    if (ok) this.notify(`${name} is running now. Its schedule applies again once it is empty.`);
-  }
-
-  // ---- Queues ----
-
-  async createQueue(name: string): Promise<Queue | undefined> {
-    return this.#run(() => this.backend.createQueue(name));
-  }
-
-  async updateQueue(queue: Queue): Promise<boolean> {
-    const ok = await this.#run(async () => {
-      await this.backend.updateQueue(queue);
-      return true;
-    });
-    return ok === true;
-  }
-
-  async deleteQueue(id: QueueId): Promise<boolean> {
-    const name = this.queueById(id)?.name;
-    const ok = await this.#run(async () => {
-      await this.backend.deleteQueue(id);
-      return true;
-    });
-    if (ok)
-      this.notify(
-        `Deleted ${name ?? 'the queue'}. Its downloads moved to ${this.defaultQueue?.name ?? 'the default queue'}.`,
-      );
-    return ok === true;
+    await this.#runner.run(() => this.backend.resumeAll());
   }
 
   // ---- Settings ----
@@ -853,142 +478,6 @@ export class AppState {
   /** Changes settings right away and saves only what changed; on failure those settings come back. */
   updateSettings(change: (draft: AppSettings) => void): Promise<void> {
     return changeSettings(this, change, this.#settingsWriter);
-  }
-
-  async exportSettings(): Promise<string | null> {
-    const path = await this.#run(() => this.backend.pickSaveFile('wirecatch-settings.json'));
-    if (!path) return null;
-    const ok = await this.#run(async () => {
-      await this.backend.exportSettings(path);
-      return true;
-    });
-    return ok ? path : null;
-  }
-
-  /**
-   * Asks for a settings file and reads what importing it would change, without changing
-   * anything yet: folders as they would be here, queues, add-ons. `importSettings` applies it.
-   */
-  async previewImport(): Promise<ImportPreview | null> {
-    const path = await this.#run(() => this.backend.pickOpenFile());
-    if (!path) return null;
-    const preview = await this.#run(() => this.backend.previewImport(path));
-    if (!preview) return null;
-    this.importPreview = { path, preview };
-    return preview;
-  }
-
-  /** Leaves the previewed settings file unimported. */
-  cancelImport(): void {
-    this.importPreview = null;
-  }
-
-  /** Applies the settings file previewed with `previewImport`; returns its path once done. */
-  async importSettings(): Promise<string | null> {
-    const path = this.importPreview?.path;
-    if (!path) return null;
-    // The core reports what changed with `settings_imported`.
-    this.lastImport = null;
-    const ok = await this.#run(async () => {
-      await this.backend.importSettings(path);
-      return true;
-    });
-    this.importPreview = null;
-    if (!ok) return null;
-    // The core also sends change events; reading back makes sure nothing is missed.
-    const [settings, queues] = await Promise.all([
-      this.#run(() => this.backend.getSettings()),
-      this.#run(() => this.backend.listQueues()),
-    ]);
-    if (settings) this.settings = settings;
-    if (queues) this.queues = queues;
-    return path;
-  }
-
-  // ---- Browser downloads (D23) ----
-
-  /** Brings every waiting question's window to the front, opening closed ones again. */
-  async showQuestionWindows(): Promise<void> {
-    this.paletteOpen = false;
-    await this.#run(() => this.backend.showQuestionWindows());
-  }
-
-  /** Opens (or brings forward) a download's own progress window. */
-  async showProgressWindow(id: DownloadId): Promise<void> {
-    this.paletteOpen = false;
-    await this.#run(() => this.backend.showProgressWindow(id));
-  }
-
-  /** A question closed in the core (answered, dismissed or taken back): no longer counted. */
-  #questionClosed(id: number): void {
-    this.pending = this.pending.filter((p) => p.id !== id);
-    this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
-    this.addonPages = this.addonPages.filter((page) => page !== id);
-  }
-
-  /** Tries saving again after a storage failure: an empty change still goes through the app's save. */
-  async retryStorage(): Promise<void> {
-    if (!this.settings) return;
-    const ok = await this.#settingsWriter.write({});
-    if (ok) this.storageProblem = null;
-  }
-
-  dismissStorageProblem(): void {
-    this.storageProblem = null;
-  }
-
-  // ---- Media and add-ons ----
-
-  async installAddon(id: string): Promise<boolean> {
-    const ok = await this.#run(async () => {
-      await this.backend.installAddon(id);
-      return true;
-    });
-    return ok === true;
-  }
-
-  async updateAddon(id: string): Promise<void> {
-    await this.#run(() => this.backend.updateAddon(id));
-  }
-
-  async removeAddon(id: string): Promise<void> {
-    await this.#run(() => this.backend.removeAddon(id));
-  }
-
-  /** Looks for a newer media add-on now and says what was found, in plain words. */
-  async checkAddonUpdates(): Promise<void> {
-    const addons = await this.#run(() => this.backend.checkAddonUpdates());
-    if (!addons) return;
-    this.addons = addons;
-    const media = addons.find((a) => a.id === MEDIA_ADDON);
-    if (!media) return;
-    switch (media.state.type) {
-      case 'update_available':
-        this.notify(
-          `A newer ${media.name.toLowerCase()} is ready (${media.latest_version ?? 'a new version'}). Choose Update in Settings, Add-ons to install it.`,
-        );
-        break;
-      case 'installing':
-        this.notify(`Found a newer ${media.name.toLowerCase()}. It is being installed now.`);
-        break;
-      case 'installed':
-        // A newer release may be waiting until it is two days old; the core says so.
-        this.notify(media.note ?? `The ${media.name.toLowerCase()} is up to date.`);
-        break;
-      case 'not_installed':
-        this.notify(
-          `The ${media.name.toLowerCase()} is not installed, so there is nothing to update.`,
-        );
-        break;
-      case 'failed':
-        this.fail(media.state.data.message);
-        break;
-    }
-  }
-
-  /** Stops an install or update in progress; an update keeps the installed version. */
-  async cancelAddonOperation(id: string): Promise<void> {
-    await this.#run(() => this.backend.cancelAddonOperation(id));
   }
 
   /** Whether each browser file shows its window before it starts (D23). */
@@ -1003,5 +492,16 @@ export class AppState {
     await this.updateSettings((s) => {
       s.show_progress_windows = show;
     });
+  }
+
+  /** Tries saving again after a storage failure: an empty change still goes through the app's save. */
+  async retryStorage(): Promise<void> {
+    if (!this.settings) return;
+    const ok = await this.#settingsWriter.write({});
+    if (ok) this.storageProblem = null;
+  }
+
+  dismissStorageProblem(): void {
+    this.storageProblem = null;
   }
 }

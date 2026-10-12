@@ -24,7 +24,7 @@ afterEach(() => {
 async function openQueueDialog(name: string | null) {
   const r = await renderApp();
   current = r;
-  const id = name === null ? null : (r.app.queues.find((q) => q.name === name)?.id ?? null);
+  const id = name === null ? null : (r.app.queues.list.find((q) => q.name === name)?.id ?? null);
   r.app.openDialog({ kind: 'queue', id });
   await settle();
   return { ...r, dialog: within(screen.getByRole('dialog')) };
@@ -51,7 +51,7 @@ describe('the queue dialog', () => {
     await fireEvent.change(dialog.getByLabelText('Unit'), { target: { value: 'KB' } });
     await save();
 
-    const made = app.queues.find((q) => q.name === 'Big batch');
+    const made = app.queues.list.find((q) => q.name === 'Big batch');
     expect(made?.max_concurrent).toBe(MANY_AT_ONCE);
     expect(made?.speed_limit).toBe(SLOW_LIMIT_KB * KB);
   });
@@ -64,12 +64,12 @@ describe('the queue dialog', () => {
     await save();
     // The field's own range stops the form; limits.test.ts covers the message behind it.
     expect(max).toBeInvalid();
-    expect(app.queues.some((q) => q.name === 'Too many')).toBe(false);
+    expect(app.queues.list.some((q) => q.name === 'Too many')).toBe(false);
   });
 
   it('shows a queue speed limit in megabytes from 1 MB on', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
-    const limit = app.queues.find((q) => q.name === 'Overnight')?.speed_limit;
+    const limit = app.queues.list.find((q) => q.name === 'Overnight')?.speed_limit;
     expect(limit).toBe(4 * MB);
     expect(dialog.getByLabelText('Speed limit')).toHaveValue(4);
     expect(dialog.getByLabelText('Unit')).toHaveValue('MB');

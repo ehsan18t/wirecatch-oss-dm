@@ -7,7 +7,7 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw';
   import Trash from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
-  import type { DownloadSummary, FixAction, QueueId } from '@wirecatch/protocol';
+  import type { FixAction, QueueId } from '@wirecatch/protocol';
   import {
     formatDate,
     formatEta,
@@ -25,6 +25,7 @@
   } from '$lib/format';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
   import { getApp } from '$lib/state/app.svelte';
+  import { isUnderWay } from '$lib/state/view';
   import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
   import ErrorFix from './ErrorFix.svelte';
@@ -35,19 +36,10 @@
 
   const app = getApp();
 
-  const rows = $derived(app.selectedRows);
+  const rows = $derived(app.selection.rows);
   const one = $derived(rows.length === 1 ? rows[0] : undefined);
 
-  function isRunning(r: DownloadSummary) {
-    return (
-      r.status === 'downloading' ||
-      r.status === 'connecting' ||
-      r.status === 'queued' ||
-      r.status === 'processing'
-    );
-  }
-
-  const anyRunning = $derived(rows.some(isRunning));
+  const anyRunning = $derived(rows.some((r) => isUnderWay(r.status)));
   const anyStopped = $derived(rows.some((r) => r.status === 'paused' || r.status === 'failed'));
   const anyFailed = $derived(rows.some((r) => r.status === 'failed' || r.status === 'cancelled'));
   const totalSize = $derived(rows.reduce((sum, r) => sum + (r.total ?? 0), 0));
@@ -55,15 +47,15 @@
   async function copyLink(url: string) {
     try {
       await navigator.clipboard.writeText(url);
-      app.notify('Link copied.');
+      app.toasts.notify('Link copied.');
     } catch {
-      app.fail('Could not copy the link. Select it and copy it by hand.');
+      app.toasts.fail('Could not copy the link. Select it and copy it by hand.');
     }
   }
 
   function move(e: Event & { currentTarget: HTMLSelectElement }) {
     const queue: QueueId = Number(e.currentTarget.value);
-    void app.moveToQueue(app.selectedIds, queue);
+    void app.moveToQueue(app.selection.list, queue);
   }
 
   const sharedQueue = $derived(
@@ -79,7 +71,7 @@
       size="md"
       label="Close details and clear the selection"
       title="Close"
-      onclick={() => app.clearSelection()}
+      onclick={() => app.selection.clear()}
     />
   {/if}
   {#if one}
@@ -93,7 +85,7 @@
     </header>
 
     {#if shownWait(one)}
-      <p class="waiting">{statusDetail(one, app.queueById(one.queue)?.name ?? 'Its queue')}</p>
+      <p class="waiting">{statusDetail(one, app.queues.byId(one.queue)?.name ?? 'Its queue')}</p>
     {/if}
 
     {#if one.status === 'failed' && one.error}
@@ -141,7 +133,7 @@
     </section>
 
     <div class="actions">
-      {#if isRunning(one)}
+      {#if isUnderWay(one.status)}
         <Button icon={Pause} onclick={() => app.pause([one.id])}>Pause</Button>
       {:else if one.status === 'paused'}
         <Button variant="primary" icon={Play} onclick={() => app.resume([one.id])}>Resume</Button>
@@ -170,7 +162,7 @@
         <dt><label for="detail-queue">Queue</label></dt>
         <dd>
           <select id="detail-queue" class="field" value={one.queue} onchange={move}>
-            {#each app.queues as q (q.id)}
+            {#each app.queues.list as q (q.id)}
               <option value={q.id}>{q.name}</option>
             {/each}
           </select>
@@ -219,12 +211,12 @@
       {/if}
       <div>
         <dt>Added</dt>
-        <dd class="num">{formatDate(one.added_at, app.now)}</dd>
+        <dd class="num">{formatDate(one.added_at, app.clock.now)}</dd>
       </div>
       {#if one.completed_at !== null}
         <div>
           <dt>Finished</dt>
-          <dd class="num">{formatDate(one.completed_at, app.now)}</dd>
+          <dd class="num">{formatDate(one.completed_at, app.clock.now)}</dd>
         </div>
       {/if}
     </dl>
@@ -253,7 +245,10 @@
       {#if anyFailed}
         <Button icon={RotateCw} onclick={() => app.retry()}>Try again</Button>
       {/if}
-      <Button icon={Trash} onclick={() => app.openDialog({ kind: 'remove', ids: app.selectedIds })}>
+      <Button
+        icon={Trash}
+        onclick={() => app.openDialog({ kind: 'remove', ids: app.selection.list })}
+      >
         Remove
       </Button>
     </div>
@@ -265,7 +260,7 @@
             {#if sharedQueue === undefined}
               <option value="" disabled>Choose a queue</option>
             {/if}
-            {#each app.queues as q (q.id)}
+            {#each app.queues.list as q (q.id)}
               <option value={q.id}>{q.name}</option>
             {/each}
           </select>
