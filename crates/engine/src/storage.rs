@@ -9,6 +9,16 @@ pub const PART_EXT: &str = ".wcpart";
 /// Suffix of the resume file next to it.
 pub const STATE_EXT: &str = ".wcstate";
 
+/// Runs file system work on the blocking pool, off the async threads, where a
+/// slow disk, an antivirus scan or a network drive stalls nothing else.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> crate::Result<T> + Send + 'static,
+) -> crate::Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| crate::Error::task(&e))?
+}
+
 /// Creates (or truncates) the part file and reserves `total` bytes if known.
 pub fn create_part(path: &Path, total: Option<u64>) -> io::Result<()> {
     let file = OpenOptions::new()

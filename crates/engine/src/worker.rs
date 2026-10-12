@@ -60,14 +60,18 @@ enum Ended {
     RequestDone,
 }
 
+/// Runs connection `id` of a download, writing through its own handle `file`
+/// on the part file, until no work is left, the download is cancelled or the
+/// connection gives up. `first` is work already under way: a range and the
+/// response streaming it.
 pub(crate) async fn run(
     id: usize,
     shared: Arc<Shared>,
+    file: File,
     mut connection: Connection,
     mut first: Option<(Assignment, Body)>,
 ) -> Result<()> {
-    let file = Arc::new(storage::open_for_write(&shared.part_path)?);
-    let mut writer = Writer::new(file, shared.opts.buffer_size);
+    let mut writer = Writer::new(Arc::new(file), shared.opts.buffer_size);
 
     loop {
         let (assignment, response) = match first.take() {

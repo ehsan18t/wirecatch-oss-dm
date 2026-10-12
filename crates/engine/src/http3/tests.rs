@@ -225,14 +225,16 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
     let (h3_port, h3) = servers::start_h3_breaking(
         data.clone(),
         &cert,
-        Some(7 * MIB_USIZE),
+        // Half of the 8 MiB the HTTP/3 connection asks for at most, so its
+        // range breaks even when the first connection got a head start.
+        Some(4 * MIB_USIZE),
         Duration::from_secs(1),
     );
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    // Two connections, 8 MiB each, and parts too big to split again: the TCP
-    // connection finishes its half and stops before HTTP/3 breaks.
+    // Two connections, up to 8 MiB each, and parts too big to split again: the
+    // TCP connection finishes its part and stops while HTTP/3 waits to break.
     let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
         o.connections = 2;
         o.min_split = 4 * MIB;

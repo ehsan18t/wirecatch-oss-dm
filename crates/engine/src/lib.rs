@@ -208,6 +208,7 @@
 //! bulk downloads several TCP connections are as fast, and QUIC costs more
 //! processor time per byte.
 
+mod checkpoint;
 mod download;
 mod error;
 pub mod fetch;
@@ -222,6 +223,7 @@ mod progress;
 mod segment;
 mod state;
 mod storage;
+mod target;
 mod transport;
 pub mod units;
 pub mod url;

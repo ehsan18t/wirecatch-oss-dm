@@ -1,8 +1,8 @@
 //! Runs one download from first request to final rename.
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use reqwest::header::HeaderMap;
@@ -11,18 +11,19 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use url::Url;
 
+use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Error, Result};
 use crate::fetch::{PrivateGuard, PrivateNetwork, private_guard};
-use crate::http::{Clients, Validators};
+use crate::http::Clients;
 use crate::limiter::RateLimiter;
 use crate::numeric::saturating_cast;
 use crate::progress::Progress;
-use crate::segment::{self, SegmentTable, SharedTable};
-use crate::state::ResumeState;
+use crate::segment::{self, SharedTable};
+use crate::target::{self, Described, Destination, Prepared, Target};
 use crate::transport::{self, Opened, Remote};
 use crate::units::{MIB, MIB_USIZE};
 use crate::url::without_password;
-use crate::{naming, storage, worker};
+use crate::{storage, worker};
 
 /// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
 pub const MAX_CONNECTIONS: usize = 64;
@@ -356,13 +357,6 @@ impl Shared {
     }
 }
 
-struct Target {
-    final_path: PathBuf,
-    part_path: PathBuf,
-    state_path: PathBuf,
-    resume: Option<ResumeState>,
-}
-
 /// Downloads `request.url` into `request.dest_dir`.
 ///
 /// `progress` is updated live and can be read from any task or thread.
@@ -437,7 +431,7 @@ pub(crate) async fn download_guarded(
     debug!(ranged = opened.ranged, total = ?opened.total, url = %opened.final_url, "probed");
     // What the resume file records and compares: never a password.
     let saved_url = without_password(&request.url).to_string();
-    let target = choose_target(&request, &opened, &saved_url)?;
+    let destination = Destination::choose(&request, &opened)?;
 
     let Opened {
         body,
@@ -450,13 +444,26 @@ pub(crate) async fn download_guarded(
         ..
     } = opened;
 
-    let (table, resumed_from) = starting_table(&target, total, ranged, opts.min_split)?;
+    let Prepared {
+        target,
+        table,
+        resumed,
+        resumed_from,
+    } = {
+        let described = Described {
+            ranged,
+            total,
+            validators: validators.clone(),
+        };
+        let (saved_url, min_split) = (saved_url.clone(), opts.min_split);
+        storage::blocking(move || destination.prepare(&saved_url, &described, min_split)).await?
+    };
     let file_name = target
-        .final_path
+        .file
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    progress.start(&target.final_path, &file_name, total, resumed_from);
+    progress.start(&target.file, &file_name, total, resumed_from);
 
     let shared = Arc::new(Shared {
         url: final_url,
@@ -464,28 +471,29 @@ pub(crate) async fn download_guarded(
         ranged,
         total,
         table: SharedTable::new(table),
-        part_path: target.part_path.clone(),
+        part_path: target.part.clone(),
         progress,
         cancel,
         opts,
         receiving: AtomicUsize::new(0),
     });
-    let saver = Arc::new(ResumeSaver {
-        shared: shared.clone(),
-        url: saved_url,
-        path: target.state_path.clone(),
+    let saver = Arc::new(ResumeSaver::new(
+        shared.clone(),
+        saved_url,
+        target.state.clone(),
         validators,
-        closed: Mutex::new(false),
-        abandoned: AtomicBool::new(false),
-    });
-    saver.save()?;
+    ));
+    {
+        let saver = saver.clone();
+        storage::blocking(move || saver.save()).await?;
+    }
 
     // The probe response already streams from byte 0; hand it to worker 0 along with
     // the matching range before any other worker can split it.
-    let acquired = if target.resume.is_none() {
-        shared.table.lock().acquire(0)
-    } else {
+    let acquired = if resumed {
         None
+    } else {
+        shared.table.lock().acquire(0)
     };
     let first = if let Some(assignment) = acquired {
         Some((assignment, body))
@@ -496,67 +504,19 @@ pub(crate) async fn download_guarded(
         None
     };
 
-    let workers = spawn_workers(&shared, &clients, connection, first)?;
+    let workers = spawn_workers(&shared, &clients, connection, first).await?;
     let checkpoints = Checkpoints::spawn(saver.clone());
     let first_error = join_workers(workers).await;
     checkpoints.stop();
-    finish(&shared, &saver, target, resumed_from, first_error)
-}
-
-/// Where the file goes: the caller's exact path, the path the caller's
-/// resolver picks from the server's answer, or a free name in the folder.
-fn choose_target(request: &DownloadRequest, opened: &Opened, saved_url: &str) -> Result<Target> {
-    match (&request.exact_path, &request.resolve_path) {
-        (Some(path), _) => plan_exact(path, opened),
-        (None, Some(resolve)) => {
-            let remote = RemoteFile {
-                suggested_name: suggested_name(None, opened, &request.url),
-                total: opened.total,
-                content_type: opened.content_type.clone(),
-                final_url: opened.final_url.clone(),
-                resumable: opened.ranged,
-            };
-            let path = resolve(&remote).map_err(Error::TargetRejected)?;
-            plan_exact(&path, opened)
-        }
-        (None, None) => {
-            let name = suggested_name(request.file_name.clone(), opened, &request.url);
-            std::fs::create_dir_all(&request.dest_dir)?;
-            Ok(plan_target(&request.dest_dir, &name, saved_url, opened))
-        }
-    }
-}
-
-/// The segment table to start from, and how many bytes an earlier run already
-/// has: the saved ranges when resuming, otherwise a new part file and table.
-fn starting_table(
-    target: &Target,
-    total: Option<u64>,
-    ranged: bool,
-    min_split: u64,
-) -> Result<(SegmentTable, u64)> {
-    if let Some(saved) = &target.resume {
-        let table = SegmentTable::from_remaining(&saved.remaining, min_split);
-        // `can_resume` checked that the ranges fit inside `total`.
-        let kept = total.unwrap_or(0).saturating_sub(table.remaining_bytes());
-        info!(kept, "resuming");
-        return Ok((table, kept));
-    }
-    storage::create_part(&target.part_path, total)?;
-    let table = SegmentTable::new(total, min_split);
-    let table = if ranged {
-        table
-    } else {
-        table.without_splitting()
-    };
-    Ok((table, 0))
+    storage::blocking(move || finish(&shared, &saver, target, resumed_from, first_error)).await
 }
 
 /// Starts the download's connections: one per [`DownloadOptions::min_split`]
 /// still to fetch, up to [`DownloadOptions::connections`], or one for a server
 /// without ranges. The first reuses the probe's connection and, when given,
-/// its response.
-fn spawn_workers(
+/// its response. Each gets a handle of its own on the part file, all opened
+/// before any starts, so they start together.
+async fn spawn_workers(
     shared: &Arc<Shared>,
     clients: &Clients,
     connection: transport::Connection,
@@ -573,8 +533,15 @@ fn spawn_workers(
     if shared.table.lock().is_complete() {
         return Ok(workers);
     }
+    let part = shared.part_path.clone();
+    let files = storage::blocking(move || {
+        (0..worker_count)
+            .map(|_| storage::open_for_write(&part).map_err(Error::from))
+            .collect::<Result<Vec<_>>>()
+    })
+    .await?;
     let mut first_connection = Some(connection);
-    for id in 0..worker_count {
+    for (id, file) in files.into_iter().enumerate() {
         let connection = match first_connection.take() {
             Some(connection) => connection,
             None => shared.remote.connection(clients)?,
@@ -582,6 +549,7 @@ fn spawn_workers(
         workers.spawn(worker::run(
             id,
             shared.clone(),
+            file,
             connection,
             if id == 0 { first.take() } else { None },
         ));
@@ -604,6 +572,7 @@ async fn join_workers(mut workers: JoinSet<Result<()>>) -> Option<Error> {
 
 /// Ends a download whose connections have all stopped: renames a complete
 /// file into place, or saves the resume file and reports a pause or an error.
+/// Blocks.
 fn finish(
     shared: &Shared,
     saver: &ResumeSaver,
@@ -621,11 +590,11 @@ fn finish(
 
     if complete {
         saver.close();
-        storage::finalize(&target.part_path, &target.final_path, file_len)?;
-        discard(&target.state_path);
-        info!(path = %target.final_path.display(), bytes = file_len, "completed");
+        storage::finalize(&target.part, &target.file, file_len)?;
+        target::discard(&target.state);
+        info!(path = %target.file.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {
-            path: target.final_path,
+            path: target.file,
             bytes: file_len,
             resumed_from,
         });
@@ -635,7 +604,7 @@ fn finish(
     saver.close();
     if shared.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
-            path: target.final_path,
+            path: target.file,
             remaining,
         });
     }
@@ -643,214 +612,4 @@ fn finish(
         at: file_len - remaining,
         end: file_len,
     }))
-}
-
-/// Writes the resume file, one save at a time.
-///
-/// A checkpoint already running on the blocking pool is not stopped by
-/// aborting its task, and two saves at once would race on the same temporary
-/// file, so saves hold `closed`. Once the download has ended, `closed` is set
-/// and a late checkpoint writes nothing (it could otherwise put back a resume
-/// file next to a finished download).
-struct ResumeSaver {
-    shared: Arc<Shared>,
-    /// The URL the resume file records, without a password.
-    url: String,
-    path: PathBuf,
-    validators: Validators,
-    /// Set once the download has ended.
-    closed: Mutex<bool>,
-    /// Set if the download's future is dropped before it ends: a save already
-    /// queued on the blocking pool then writes nothing either.
-    abandoned: AtomicBool,
-}
-
-impl ResumeSaver {
-    /// Locks `closed`. A lock poisoned by a panic in another holder is taken
-    /// over as it is, for the reason [`SharedTable::lock`] gives.
-    fn closed(&self) -> MutexGuard<'_, bool> {
-        self.closed.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Saves the ranges still to download, unless the download has ended.
-    fn save(&self) -> Result<()> {
-        let closed = self.closed();
-        if *closed || self.abandoned.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let remaining = self.shared.table.lock().remaining();
-        let shared = &self.shared;
-        ResumeState::new(
-            &self.url,
-            shared.total,
-            shared.ranged,
-            &self.validators,
-            remaining,
-        )
-        .save(&self.path)
-    }
-
-    /// Waits for a save still writing, then stops any later one.
-    fn close(&self) {
-        *self.closed() = true;
-    }
-}
-
-/// The task that saves the resume file at every checkpoint while a download runs.
-///
-/// It must never outlive the download: if the download's future is dropped before
-/// it ends (its task aborted), dropping this stops the task and marks the download
-/// abandoned, so a save already queued writes nothing. Otherwise it would keep
-/// rewriting the resume file, bringing it back after its owner deleted it or
-/// overwriting a newer run's with stale ranges.
-struct Checkpoints {
-    task: tokio::task::JoinHandle<()>,
-    saver: Arc<ResumeSaver>,
-    /// Set by [`stop`](Self::stop): the download ended normally.
-    ended: bool,
-}
-
-impl Checkpoints {
-    /// Saves every [`DownloadOptions::checkpoint_interval`] until the download
-    /// is cancelled or this is dropped.
-    fn spawn(saver: Arc<ResumeSaver>) -> Self {
-        let every = saver.shared.opts.checkpoint_interval;
-        let cancel = saver.shared.cancel.clone();
-        let saving = saver.clone();
-        let task = tokio::spawn(async move {
-            let mut tick = tokio::time::interval(every);
-            tick.tick().await;
-            loop {
-                tokio::select! {
-                    _ = tick.tick() => {}
-                    // Once asked to stop, the download saves its state itself on
-                    // the way out.
-                    () = cancel.cancelled() => return,
-                }
-                let save = saving.clone();
-                if let Ok(Err(e)) = tokio::task::spawn_blocking(move || save.save()).await {
-                    warn!(error = %e, "could not save resume state");
-                }
-            }
-        });
-        Self {
-            task,
-            saver,
-            ended: false,
-        }
-    }
-
-    /// Stops the checkpoints of a download that ended normally; it saves its
-    /// final state itself.
-    fn stop(mut self) {
-        self.ended = true;
-    }
-}
-
-impl Drop for Checkpoints {
-    fn drop(&mut self) {
-        self.task.abort();
-        if !self.ended {
-            self.saver.abandoned.store(true, Ordering::SeqCst);
-        }
-    }
-}
-
-/// The file name to use: the caller's, else the server's `Content-Disposition`,
-/// else the URL's last segment, made safe for the file system (`download` if
-/// nothing usable is left).
-fn suggested_name(chosen: Option<String>, probe: &Opened, url: &Url) -> String {
-    naming::sanitize(
-        &chosen
-            .or_else(|| probe.file_name.clone())
-            .or_else(|| naming::from_url(&probe.final_url))
-            .or_else(|| naming::from_url(url))
-            .unwrap_or_default(),
-    )
-}
-
-/// Target for [`DownloadRequest::exact_path`]: the URL is not compared, only what
-/// the server says about the file.
-fn plan_exact(path: &Path, probe: &Opened) -> Result<Target> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
-    let (part_path, state_path) = naming::part_paths(path);
-    let part_len = std::fs::metadata(&part_path).map(|m| m.len()).ok();
-    let resume = ResumeState::load(&state_path)
-        .ok()
-        .filter(|saved| saved.can_resume(probe.ranged, probe.total, &probe.validators))
-        .filter(|_| part_len == probe.total);
-    if resume.is_none() {
-        discard(&part_path);
-        discard(&state_path);
-    }
-    Ok(Target {
-        final_path: path.to_path_buf(),
-        part_path,
-        state_path,
-        resume,
-    })
-}
-
-/// Deletes a part or resume file that is of no more use, if there is one. A
-/// failure is only logged: a part file left behind is emptied when the
-/// download starts over, and a resume file is replaced or never matches again.
-fn discard(path: &Path) {
-    match std::fs::remove_file(path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            warn!(path = %path.display(), error = %e, "could not delete a file that is no longer needed");
-        }
-    }
-}
-
-/// Whether a resume file's URL is `url`. Resume files written before
-/// passwords were left out of them still match, so they are continued once
-/// and rewritten without the password straight away.
-fn same_download(saved: &str, url: &str) -> bool {
-    saved == url || Url::parse(saved).is_ok_and(|saved| without_password(&saved).as_str() == url)
-}
-
-/// Decides where the file goes and whether an earlier run can be continued.
-fn plan_target(dir: &Path, name: &str, url: &str, probe: &Opened) -> Target {
-    let preferred = dir.join(name);
-    let (part_path, state_path) = naming::part_paths(&preferred);
-
-    if let Ok(saved) = ResumeState::load(&state_path)
-        && same_download(&saved.url, url)
-        && !preferred.exists()
-    {
-        let part_len = std::fs::metadata(&part_path).map(|m| m.len()).ok();
-        if saved.can_resume(probe.ranged, probe.total, &probe.validators) && part_len == probe.total
-        {
-            return Target {
-                final_path: preferred,
-                part_path,
-                state_path,
-                resume: Some(saved),
-            };
-        }
-        // Same download, but it cannot continue (file changed, or no range support):
-        // start over under the same name.
-        info!("previous partial download cannot be resumed; starting over");
-        discard(&part_path);
-        discard(&state_path);
-        return Target {
-            final_path: preferred,
-            part_path,
-            state_path,
-            resume: None,
-        };
-    }
-
-    let final_path = naming::unique_path(dir, name);
-    let (part_path, state_path) = naming::part_paths(&final_path);
-    Target {
-        final_path,
-        part_path,
-        state_path,
-        resume: None,
-    }
 }
