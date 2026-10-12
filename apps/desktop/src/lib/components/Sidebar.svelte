@@ -35,7 +35,7 @@
       <Icon icon={Bell} size="sm" />
       <span class="waiting-label">Waiting for you</span>
       <span
-        class="count num"
+        class="waiting-count num"
         aria-label="{app.questions.waitingCount} {app.questions.waitingCount === 1
           ? 'download'
           : 'downloads'}">{app.questions.waitingCount}</span
@@ -310,7 +310,8 @@
     flex: 1;
   }
 
-  .count {
+  /* Only the waiting downloads get a pill; every other count in the sidebar is quiet text. */
+  .waiting-count {
     min-width: 20px;
     padding: 0 6px;
     border-radius: 999px;

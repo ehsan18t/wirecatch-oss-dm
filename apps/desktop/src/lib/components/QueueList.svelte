@@ -167,16 +167,10 @@
     font-weight: 600;
   }
 
-  /* The same pill the sidebar's other counts have. */
+  /* Quiet, like the sidebar's other counts. */
   .count {
-    min-width: 20px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: var(--text-xs);
-    line-height: 18px;
-    text-align: center;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
   }
 
   .qstate {
