@@ -481,6 +481,19 @@ describe('handover', () => {
         s.downloads.states.set(1, { state: 'in_progress', paused: false });
       };
 
+      it.each([
+        ['interrupted', { state: 'interrupted', paused: false }],
+        ['erased', null],
+      ] as const)(
+        'says nothing new when the copy was %s before a sure answer',
+        async (_label, state) => {
+          await stuckWithLateAnswer('started', 9_000, () => {
+            s.downloads.states.set(1, state === null ? null : { ...state });
+          });
+          expect(s.hub.snapshot().notices).toMatchObject([{ message: STUCK }]);
+        },
+      );
+
       it('warns of two copies when a sure answer comes after the person resumed the copy', async () => {
         await stuckWithLateAnswer('started', 9_000, resumedByThePerson);
         expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
