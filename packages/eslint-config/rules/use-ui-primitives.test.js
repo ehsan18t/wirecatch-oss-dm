@@ -44,6 +44,15 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     valid(`${script("import Dialog from './Dialog.svelte';")}<Dialog size="wide" />`),
     // A type import cannot be rendered.
     valid(`${script("import type { LucideIcon } from '@lucide/svelte';")}<LucideIcon />`),
+    // A name that holds an icon, passed to Icon, and a dynamic component that is not an icon.
+    valid(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';\nconst Close = X;")}<Icon icon={Close} size="sm" />`,
+    ),
+    valid(
+      `${script("import Dialog from './Dialog.svelte';\nconst Shown = Dialog;")}<Shown /><svelte:component this={Dialog} />`,
+    ),
+    // A name declared from itself does not loop.
+    valid(`${script('let Loop = Loop;')}<Loop />`),
   ],
   invalid: [
     primitiveClass('<button type="button" class="btn primary">Save</button>'),
@@ -62,5 +71,21 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     directIcon(`${script("import * as L from '@lucide/svelte';")}<L.X size={14} />`),
     // The markup may come before the script.
     directIcon(`<X />\n${script("import X from '@lucide/svelte/icons/x';")}`),
+    // Through a name it was given, in the script or the markup.
+    directIcon(`${script("import X from '@lucide/svelte/icons/x';\nconst Close = X;")}<Close />`),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst First = X;\nconst Close = First;")}<Close />`,
+    ),
+    directIcon(
+      `${script("import { Pause, Play } from '@lucide/svelte';")}{#if on}{@const Shown = paused ? Play : Pause}<Shown />{/if}`,
+    ),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst icons = { close: X };")}<icons.close />`,
+    ),
+    // Through svelte:component.
+    directIcon(`${script("import X from '@lucide/svelte/icons/x';")}<svelte:component this={X} />`),
+    directIcon(
+      `${script("import * as L from '@lucide/svelte';\nconst Close = L.X;")}<svelte:component this={Close} size={14} />`,
+    ),
   ],
 });

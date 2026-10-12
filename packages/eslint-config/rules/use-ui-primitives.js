@@ -8,7 +8,9 @@
 //   the primitive by hand instead of using it. Buttons with styles of their own, such as menu
 //   items and switches, stay plain buttons.
 // - a Lucide icon rendered directly, with or without a size or stroke of its own, instead of
-//   through the icon component and its scale.
+//   through the icon component and its scale: as its own tag, through a name it was given
+//   (`const Close = X; <Close />`), or with `<svelte:component this={X}>`. A name is followed through
+//   members, choices, objects and arrays; an icon passed into the file as a prop is not seen.
 
 /** Where Lucide's Svelte icons come from: the package itself or one icon of it. */
 const LUCIDE_SOURCE = /^@lucide\/svelte(?:\/|$)/;
@@ -72,11 +74,62 @@ function attributeClasses(attribute) {
   return [];
 }
 
-/** The import a component tag starts with: `X` in `<X>`, `L` in `<L.X>`. */
+/** The name a component tag starts with: `X` in `<X>`, `L` in `<L.X>`. */
 function rootName(name) {
   let node = name;
   while (node.type === 'SvelteMemberExpressionName') node = node.object;
   return node.type === 'Identifier' ? node.name : null;
+}
+
+/** The expression `<svelte:component this={...}>` renders, or null for any other element. */
+function dynamicComponent(element) {
+  if (element.kind !== 'special' || element.name.name !== 'svelte:component') return null;
+  const directive = element.startTag.attributes.find(
+    (a) => a.type === 'SvelteSpecialDirective' && a.kind === 'this',
+  );
+  return directive?.expression ?? null;
+}
+
+/**
+ * Which names hold a Lucide icon: the icons a file imports, and every name given one of them,
+ * directly or through a member, a choice, an object or an array (`const Close = X`,
+ * `{@const I = on ? A : B}`, `const icons = { close: X }`).
+ */
+class IconNames {
+  imported = new Set();
+  /** Each `const name = init` in the file, script and markup alike. */
+  declared = new Map();
+
+  /** Whether `expression` may evaluate to a Lucide icon. */
+  holdsIcon(expression, seen = new Set()) {
+    switch (expression?.type) {
+      case 'Identifier':
+        return this.nameHoldsIcon(expression.name, seen);
+      case 'MemberExpression':
+        return this.holdsIcon(expression.object, seen);
+      case 'ConditionalExpression':
+        return (
+          this.holdsIcon(expression.consequent, seen) || this.holdsIcon(expression.alternate, seen)
+        );
+      case 'LogicalExpression':
+        return this.holdsIcon(expression.left, seen) || this.holdsIcon(expression.right, seen);
+      case 'ObjectExpression':
+        return expression.properties.some(
+          (p) => p.type === 'Property' && this.holdsIcon(p.value, seen),
+        );
+      case 'ArrayExpression':
+        return expression.elements.some((e) => this.holdsIcon(e, seen));
+      default:
+        return false;
+    }
+  }
+
+  nameHoldsIcon(name, seen) {
+    if (this.imported.has(name)) return true;
+    if (seen.has(name) || !this.declared.has(name)) return false;
+    seen.add(name);
+    return this.holdsIcon(this.declared.get(name), seen);
+  }
 }
 
 /** @type {import('eslint').Rule.RuleModule} */
@@ -107,22 +160,28 @@ export const useUiPrimitives = {
   },
   create(context) {
     const [{ buttonClasses: primitives, icon }] = context.options;
-    const lucide = new Set();
-    // The markup may come before the script that imports the icons, so components are checked
-    // once the whole file has been read.
-    const components = [];
+    const icons = new IconNames();
+    // The markup may come before the script that imports or names the icons, so what is rendered
+    // is checked once the whole file has been read.
+    const rendered = [];
     return {
       ImportDeclaration(node) {
         if (!LUCIDE_SOURCE.test(String(node.source.value)) || node.importKind === 'type') return;
         for (const specifier of node.specifiers) {
-          if (specifier.importKind !== 'type') lucide.add(specifier.local.name);
+          if (specifier.importKind !== 'type') icons.imported.add(specifier.local.name);
         }
+      },
+      VariableDeclarator(node) {
+        if (node.id.type === 'Identifier' && node.init) icons.declared.set(node.id.name, node.init);
       },
       SvelteElement(node) {
         if (node.kind === 'component') {
-          components.push(node);
+          const name = rootName(node.name);
+          if (name !== null) rendered.push({ node, expression: { type: 'Identifier', name } });
           return;
         }
+        const expression = dynamicComponent(node);
+        if (expression !== null) rendered.push({ node, expression });
         const name = [...elementClasses(node)].find((c) => Object.hasOwn(primitives, c));
         if (name !== undefined) {
           context.report({
@@ -133,9 +192,10 @@ export const useUiPrimitives = {
         }
       },
       'Program:exit'() {
-        for (const node of components) {
-          if (lucide.has(rootName(node.name)))
+        for (const { node, expression } of rendered) {
+          if (icons.holdsIcon(expression)) {
             context.report({ node: node.startTag, messageId: 'directIcon', data: { icon } });
+          }
         }
       },
     };
