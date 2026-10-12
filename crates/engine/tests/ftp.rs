@@ -12,7 +12,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
-use wirecatch_test_support::{TestResult, files_in, fresh_dir, test_data};
+use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
 
 fn serving(data: &[u8]) -> FtpConfig {
     FtpConfig {
@@ -52,7 +52,7 @@ async fn plain_download_is_byte_identical_over_parallel_connections() {
     // Slow enough per connection that the other connections join in.
     config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("parallel");
+    let dir = private_dir("parallel").unwrap();
 
     let (path, bytes, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 4))
@@ -91,7 +91,6 @@ async fn plain_download_is_byte_identical_over_parallel_connections() {
     ] {
         assert!(stats.count(command) >= 1, "{command} was sent");
     }
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -101,7 +100,7 @@ async fn resumes_after_cancel_without_downloading_again() {
     config.login = Some(("alice".into(), "s3cret word".into()));
     config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("resume");
+    let dir = private_dir("resume").unwrap();
     let url = server.url("ftp", "alice:s3cret%20word@", "pub/file.bin");
 
     // Pause once a quarter has arrived.
@@ -162,7 +161,6 @@ async fn resumes_after_cancel_without_downloading_again() {
             .iter()
             .any(|&o| o >= 2 * MIB)
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -172,7 +170,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     config.login = Some(("alice".into(), "s3cret".into()));
     config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("old-state");
+    let dir = private_dir("old-state").unwrap();
     let url = server.url("ftp", "alice:s3cret@", "pub/file.bin");
     let pause_after = |bytes: u64| {
         let cancel = CancellationToken::new();
@@ -213,7 +211,6 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
         "downloaded bytes differ"
     );
     assert_eq!(files_in(&dir), ["file.bin"]);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -222,7 +219,7 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
     let mut config = serving(&data);
     config.data_bps = Some(MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("changed");
+    let dir = private_dir("changed").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
     let progress = Arc::new(Progress::default());
@@ -254,7 +251,6 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
         std::fs::read(&path).unwrap() == new_data,
         "the new version, not a mix"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResult {
@@ -263,7 +259,7 @@ async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResul
     config.max_sessions = Some((2, refuse));
     config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir(test);
+    let dir = private_dir(test)?;
 
     let (path, _, _) =
         completed(run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 6)).await?);
@@ -280,7 +276,6 @@ async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResul
         2,
         "both allowed sessions were used"
     );
-    std::fs::remove_dir_all(&dir)?;
     Ok(())
 }
 
@@ -304,7 +299,7 @@ async fn a_wrong_password_is_a_plain_language_error() {
     let mut config = serving(&data);
     config.login = Some(("alice".into(), "right".into()));
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("password");
+    let dir = private_dir("password").unwrap();
 
     let error = run(request(
         &server.url("ftp", "alice:wrong-pass@", "pub/file.bin"),
@@ -338,7 +333,6 @@ async fn a_wrong_password_is_a_plain_language_error() {
         "a refused login is not retried"
     );
     assert!(files_in(&dir).is_empty(), "nothing written");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -346,7 +340,7 @@ async fn a_refused_anonymous_login_says_to_add_a_login() {
     let mut config = serving(b"x");
     config.login = Some(("alice".into(), "right".into()));
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("anonymous");
+    let dir = private_dir("anonymous").unwrap();
 
     let error = run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 1))
         .await
@@ -368,13 +362,12 @@ async fn a_refused_anonymous_login_says_to_add_a_login() {
         text.contains("ftp://user:password@127.0.0.1/path"),
         "{text}"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn a_missing_file_is_reported_and_nothing_is_written() {
     let server = FtpServer::start(serving(b"x")).await;
-    let dir = fresh_dir("missing");
+    let dir = private_dir("missing").unwrap();
 
     let error = run(request(
         &server.url("ftp", "bob:pw@", "pub/nothing.bin"),
@@ -396,7 +389,6 @@ async fn a_missing_file_is_reported_and_nothing_is_written() {
         "says how to fix the path: {error}"
     );
     assert!(files_in(&dir).is_empty(), "nothing written");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -407,7 +399,7 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
     // A server naming another machine must not send the client there.
     config.pasv_ip = [192, 0, 2, 1];
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("pasv");
+    let dir = private_dir("pasv").unwrap();
 
     let (path, _, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 3))
@@ -422,7 +414,6 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
     let stats = &server.stats;
     assert!(stats.count("PASV") >= 2);
     assert_eq!(stats.count("EPSV"), 1, "a refused EPSV is not asked again");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -431,7 +422,7 @@ async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
     let mut config = serving(&data);
     config.quirks.push(Quirk::EpsvGarbage);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("epsv-garbage");
+    let dir = private_dir("epsv-garbage").unwrap();
 
     let (path, _, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 3))
@@ -445,7 +436,6 @@ async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
     );
     assert_eq!(server.stats.count("EPSV"), 1, "not asked again");
     assert!(server.stats.count("PASV") >= 2);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -458,7 +448,7 @@ async fn paths_are_sent_as_utf8() {
     )];
     config.quirks.push(Quirk::Utf8AfterOpts);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("utf8");
+    let dir = private_dir("utf8").unwrap();
 
     let url = server.url("ftp", "", "pub/%C3%BCbung%20%E2%80%93%201.bin");
     let (path, _, _) = completed(run(request(&url, &dir, 2)).await.unwrap());
@@ -469,7 +459,6 @@ async fn paths_are_sent_as_utf8() {
         "downloaded bytes differ"
     );
     assert!(server.stats.count("OPTS UTF8 ON") >= 1);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -478,7 +467,7 @@ async fn a_server_refusing_utf8_mode_still_downloads() {
     let mut config = serving(&data);
     config.quirks.push(Quirk::RefuseOpts);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("no-opts");
+    let dir = private_dir("no-opts").unwrap();
 
     let (path, _, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 2))
@@ -491,7 +480,6 @@ async fn a_server_refusing_utf8_mode_still_downloads() {
         "downloaded bytes differ"
     );
     assert!(server.stats.count("OPTS UTF8 ON") >= 1);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -500,7 +488,7 @@ async fn a_server_without_rest_is_downloaded_over_one_connection() {
     let mut config = serving(&data);
     config.quirks.push(Quirk::NoRest);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("no-rest");
+    let dir = private_dir("no-rest").unwrap();
 
     let (path, _, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 8))
@@ -513,7 +501,6 @@ async fn a_server_without_rest_is_downloaded_over_one_connection() {
         "downloaded bytes differ"
     );
     assert_eq!(server.stats.transfers.load(Ordering::SeqCst), 1);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -523,7 +510,7 @@ async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
     config.quirks.push(Quirk::NoSize);
     config.data_bps = Some(8 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("no-size");
+    let dir = private_dir("no-size").unwrap();
 
     let progress = Arc::new(Progress::default());
     let outcome = download(
@@ -548,7 +535,6 @@ async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
         server.stats.max_transfers.load(Ordering::SeqCst) >= 2,
         "still split"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -557,7 +543,7 @@ async fn dropped_data_connections_are_retried() {
     let mut config = serving(&data);
     config.drop_first = Some((2, 100_000));
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("dropped");
+    let dir = private_dir("dropped").unwrap();
 
     let (path, _, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 2))
@@ -570,13 +556,12 @@ async fn dropped_data_connections_are_retried() {
         "downloaded bytes differ"
     );
     assert!(server.stats.transfers.load(Ordering::SeqCst) >= 3);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn an_empty_file_completes() {
     let server = FtpServer::start(serving(b"")).await;
-    let dir = fresh_dir("empty");
+    let dir = private_dir("empty").unwrap();
 
     let (path, bytes, _) = completed(
         run(request(&server.url("ftp", "", "pub/file.bin"), &dir, 4))
@@ -586,14 +571,13 @@ async fn an_empty_file_completes() {
 
     assert_eq!(bytes, 0);
     assert_eq!(std::fs::read(&path).unwrap(), b"");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn ftpes_never_falls_back_to_an_unencrypted_login() {
     // This server offers no TLS at all.
     let server = FtpServer::start(serving(b"secret file")).await;
-    let dir = fresh_dir("no-tls");
+    let dir = private_dir("no-tls").unwrap();
 
     let error = run(request(
         &server.url("ftpes", "alice:pw@", "pub/file.bin"),
@@ -618,20 +602,18 @@ async fn ftpes_never_falls_back_to_an_unencrypted_login() {
     );
     assert_eq!(server.stats.count("PASS"), 0);
     assert_eq!(files_in(&dir), [] as [std::string::String; 0]);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn a_folder_link_is_refused_before_connecting() {
     let server = FtpServer::start(serving(b"x")).await;
-    let dir = fresh_dir("folder");
+    let dir = private_dir("folder").unwrap();
     let error = run(request(&server.url("ftp", "", "pub/"), &dir, 1))
         .await
         .unwrap_err();
     assert!(matches!(error, Error::InvalidUrl(_)), "{error:?}");
     assert!(error.to_string().contains("folder"), "{error}");
     assert_eq!(server.stats.sessions.load(Ordering::SeqCst), 0);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// Cancels `cancel` once `ready` holds, and records when.
@@ -662,7 +644,7 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     let mut config = serving(&data);
     config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("held-426");
+    let dir = private_dir("held-426").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
     // A first run pauses with most of the file still to come.
@@ -695,7 +677,6 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
     assert!(took < Duration::from_secs(2), "paused after {took:?}");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -704,7 +685,7 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
     let mut config = serving(&data);
     config.data_bps = Some(4 * MIB);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("reuse");
+    let dir = private_dir("reuse").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
     // Pause early, then resume: the resumed run's first transfer (from byte
@@ -740,7 +721,6 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
         logins < transfers,
         "{logins} logins for {transfers} transfers"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -751,7 +731,7 @@ async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     // Only the first session is greeted; the others wait forever.
     config.silent_after = Some(1);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("silent");
+    let dir = private_dir("silent").unwrap();
 
     let cancel = CancellationToken::new();
     let progress = Arc::new(Progress::default());
@@ -768,7 +748,6 @@ async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
     assert!(took < Duration::from_secs(2), "paused after {took:?}");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
@@ -776,7 +755,7 @@ async fn cancelling_before_the_server_greets_returns_at_once() {
     let mut config = serving(b"x");
     config.silent_after = Some(0);
     let server = FtpServer::start(config).await;
-    let dir = fresh_dir("silent-first");
+    let dir = private_dir("silent-first").unwrap();
 
     let cancel = CancellationToken::new();
     let stats = server.stats.clone();
@@ -793,12 +772,11 @@ async fn cancelling_before_the_server_greets_returns_at_once() {
     assert!(matches!(error, Error::Cancelled), "{error:?}");
     assert!(took < Duration::from_secs(2), "returned after {took:?}");
     assert_eq!(files_in(&dir), [] as [std::string::String; 0]);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn an_unsupported_scheme_is_reported_without_the_password() {
-    let dir = fresh_dir("scheme");
+    let dir = private_dir("scheme").unwrap();
     let gopher = Url::parse("gopher://bob:hunter2@files.example/a.bin").unwrap();
     let error = run(request(&gopher, &dir, 1)).await.unwrap_err();
 
@@ -810,5 +788,4 @@ async fn an_unsupported_scheme_is_reported_without_the_password() {
         !text.contains("hunter2"),
         "the password is not in the message: {text}"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }

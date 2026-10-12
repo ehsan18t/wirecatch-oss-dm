@@ -10,7 +10,7 @@ use std::time::Duration;
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{Error, Outcome, StreamProgress, StreamRequest, download};
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{TestResult, fresh_dir, ts_segment};
+use wirecatch_test_support::{PrivateDir, TestResult, private_dir, ts_segment};
 
 const MPEGURL: &str = "application/vnd.apple.mpegurl";
 
@@ -107,16 +107,19 @@ fn video_and_audio(server: &FileServer) -> TestResult {
 }
 
 /// A folder name full of characters a shell or ffmpeg would treat specially.
-fn hostile_dir(test: &str) -> TestResult<PathBuf> {
+/// A folder whose name a shell would misread, inside a folder of the test's
+/// own that holds it until the test ends.
+fn hostile_dir(test: &str) -> TestResult<(PrivateDir, PathBuf)> {
     // Windows does not allow `"` in names; other systems get it too.
     let name = if cfg!(windows) {
         "-y it's & $HOME `x` (1);"
     } else {
         "-y it's \"odd\" & $HOME `x` (1);"
     };
-    let dir = fresh_dir(test).join(name);
+    let root = private_dir(test)?;
+    let dir = root.join(name);
     std::fs::create_dir_all(&dir)?;
-    Ok(dir)
+    Ok((root, dir))
 }
 
 #[tokio::test]
@@ -124,7 +127,7 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     let ffmpeg = fake_ffmpeg().unwrap();
     let server = FileServer::start().await;
     video_and_audio(&server).unwrap();
-    let dir = hostile_dir("ffmpeg-args").unwrap();
+    let (_root, dir) = hostile_dir("ffmpeg-args").unwrap();
     let output = dir.join("-i evil name.mp4");
     let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
     request.options = options();
@@ -184,7 +187,7 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     let ffmpeg = fake_ffmpeg().unwrap();
     let server = FileServer::start().await;
     video_and_audio(&server).unwrap();
-    let dir = fresh_dir("ffmpeg-fail");
+    let dir = private_dir("ffmpeg-fail").unwrap();
     let output = dir.join("fail-please.mp4");
     let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
     request.options = options();
@@ -275,7 +278,7 @@ fn serve_folder(server: &FileServer, dir: &Path) -> TestResult {
 #[tokio::test]
 async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
-    let source = fresh_dir("real-ffmpeg-source");
+    let source = private_dir("real-ffmpeg-source").unwrap();
     generate(
         &ffmpeg,
         &source,
@@ -294,7 +297,7 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
          #EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS=\"mp4v.20.9,mp4a.40.2\",AUDIO=\"aud\"\nv.m3u8\n",
         MPEGURL,
     );
-    let dir = hostile_dir("real-ffmpeg").unwrap();
+    let (_root, dir) = hostile_dir("real-ffmpeg").unwrap();
     let mut request = StreamRequest::new(server.url("master.m3u8"), dir.join("-out video.mp4"));
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
@@ -311,7 +314,7 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
 #[tokio::test]
 async fn real_ffmpeg_remuxes_a_single_ts_track() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
-    let source = fresh_dir("real-ffmpeg-single-source");
+    let source = private_dir("real-ffmpeg-single-source").unwrap();
     let status = Command::new(&ffmpeg)
         .args(["-hide_banner", "-loglevel", "error", "-y"])
         .args([
@@ -348,7 +351,7 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
     assert!(status.success());
     let server = FileServer::start().await;
     serve_folder(&server, &source).unwrap();
-    let dir = fresh_dir("real-ffmpeg-single");
+    let dir = private_dir("real-ffmpeg-single").unwrap();
     let mut request = StreamRequest::new(server.url("index.m3u8"), dir.join("clip"));
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
@@ -380,7 +383,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     let server = FileServer::start().await;
     // An ffconcat script would make ffmpeg read whatever files it names.
     one_segment(&server, "ffconcat version 1.0\nfile secret.mp4\n");
-    let dir = fresh_dir("ffmpeg-unknown");
+    let dir = private_dir("ffmpeg-unknown").unwrap();
     let output = dir.join("clip.mp4");
     let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
     request.options = options();
@@ -405,7 +408,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
 async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
     // A file elsewhere on the computer that the "segment" tries to pull in.
-    let elsewhere = fresh_dir("real-ffmpeg-elsewhere");
+    let elsewhere = private_dir("real-ffmpeg-elsewhere").unwrap();
     let secret = elsewhere.join("secret.mp4");
     let status = Command::new(&ffmpeg)
         .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
@@ -437,7 +440,7 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     );
     let server = FileServer::start().await;
     one_segment(&server, payload);
-    let dir = fresh_dir("real-ffmpeg-disguised");
+    let dir = private_dir("real-ffmpeg-disguised").unwrap();
     let output = dir.join("clip.mp4");
     let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
     request.options = options();

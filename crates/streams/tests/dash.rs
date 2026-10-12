@@ -10,7 +10,7 @@ use wirecatch_streams::{
     inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{TestResult, fresh_dir, ts_segment};
+use wirecatch_test_support::{TestResult, private_dir, ts_segment};
 
 const DASH: &str = "application/dash+xml";
 
@@ -108,7 +108,7 @@ async fn number_templates_download_the_chosen_representation() {
     assert_eq!(info.extension(&Choice::Skip, &Choice::Auto, true), "m4a");
     assert_eq!(info.extension(&Choice::Auto, &Choice::Skip, false), "mp4");
 
-    let dir = fresh_dir("dash-number");
+    let dir = private_dir("dash-number").unwrap();
     // Separate audio needs ffmpeg; video alone does not.
     assert!(matches!(
         run(request(&server, "dash/manifest.mpd", &dir.join("x.mp4"))).await,
@@ -160,7 +160,7 @@ async fn timelines_use_times_in_addresses() {
   </AdaptationSet></Period></MPD>"#,
         DASH,
     );
-    let dir = fresh_dir("dash-timeline");
+    let dir = private_dir("dash-timeline").unwrap();
     assert_eq!(
         saved(
             run(request(&server, "tl/manifest.mpd", &dir.join("v.mp4")))
@@ -210,7 +210,7 @@ async fn segment_base_files_are_split_through_their_index() {
         ),
         DASH,
     );
-    let dir = fresh_dir("dash-sidx");
+    let dir = private_dir("dash-sidx").unwrap();
     let mut req = request(&server, "sb/manifest.mpd", &dir.join("v.mp4"));
     req.options.connections = 4;
     assert_eq!(saved(run(req).await.unwrap()).unwrap(), file);
@@ -256,7 +256,7 @@ async fn live_drm_and_several_periods_are_refused() {
     .await
     .unwrap();
     assert!(info.live);
-    let dir = fresh_dir("dash-refused");
+    let dir = private_dir("dash-refused").unwrap();
     let error = run(request(&server, "live.mpd", &dir.join("a.mp4")))
         .await
         .unwrap_err();
@@ -289,7 +289,7 @@ async fn a_base_url_into_the_local_network_is_refused() {
           <Representation id="v" bandwidth="1"/></AdaptationSet></Period></MPD>"#,
         DASH,
     );
-    let dir = fresh_dir("dash-private");
+    let dir = private_dir("dash-private").unwrap();
     let mut req = request(&server, "lan.mpd", &dir.join("v.mp4"));
     req.private_network = PrivateNetwork::Block;
     let error = run(req).await.unwrap_err();

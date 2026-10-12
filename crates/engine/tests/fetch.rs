@@ -9,7 +9,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::{fresh_dir, private_dir, test_data};
+use wirecatch_test_support::{private_dir, test_data};
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -20,10 +20,6 @@ fn options() -> DownloadOptions {
 
 async fn fetcher(url: &Url, options: &DownloadOptions) -> wirecatch_engine::Result<Fetcher> {
     Fetcher::new(url, options, CancellationToken::new()).await
-}
-
-fn temp_file(test: &str) -> std::path::PathBuf {
-    fresh_dir(test).join("out.bin")
 }
 
 #[tokio::test]
@@ -67,7 +63,8 @@ async fn a_server_without_ranges_still_yields_the_right_bytes() {
     let part = f.get(f.url(), Some(20_000..20_010), 1 << 20).await.unwrap();
     assert_eq!(part.body[..], data[20_000..20_010]);
 
-    let path = temp_file("noranges");
+    let dir = private_dir("noranges").unwrap();
+    let path = dir.join("out.bin");
     let n = f
         .save(f.url(), Some(5..29_000), &path, |_| {})
         .await
@@ -108,7 +105,8 @@ async fn save_continues_from_the_byte_it_reached() {
     )
     .await;
     let f = fetcher(&server.url("big.ts"), &options()).await.unwrap();
-    let path = temp_file("short");
+    let dir = private_dir("short").unwrap();
+    let path = dir.join("out.bin");
     let counted = AtomicU64::new(0);
     let n = f
         .save(f.url(), Some(0..400_000), &path, |b| {
@@ -148,7 +146,8 @@ async fn save_survives_a_reset_without_counting_bytes_twice() {
     )
     .await;
     let f = fetcher(&server.url("big.ts"), &options()).await.unwrap();
-    let path = temp_file("drop");
+    let dir = private_dir("drop").unwrap();
+    let path = dir.join("out.bin");
     let counted = AtomicU64::new(0);
     let n = f
         .save(f.url(), None, &path, |b| {

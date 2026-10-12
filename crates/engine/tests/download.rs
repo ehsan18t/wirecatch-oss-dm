@@ -11,7 +11,7 @@ use wirecatch_engine::{
     download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::{TestResult, files_in, fresh_dir, test_data};
+use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
 
 fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
     let mut req = DownloadRequest::new(server.url(path), dir);
@@ -50,7 +50,7 @@ async fn parallel_download_is_byte_identical() {
         },
     )
     .await;
-    let dir = fresh_dir("parallel");
+    let dir = private_dir("parallel").unwrap();
 
     let outcome = run(request(&server, "files/big.bin", &dir, 8))
         .await
@@ -83,7 +83,7 @@ async fn parallel_download_is_byte_identical() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn falls_back_to_one_connection_without_range_support() {
     let server = TestServer::start(test_data(3 * MIB_USIZE), Config::default()).await;
-    let dir = fresh_dir("norange");
+    let dir = private_dir("norange").unwrap();
 
     let outcome = run(request(&server, "plain.bin", &dir, 8)).await.unwrap();
 
@@ -104,7 +104,7 @@ async fn unknown_length_download_completes() {
         },
     )
     .await;
-    let dir = fresh_dir("unknown");
+    let dir = private_dir("unknown").unwrap();
 
     let outcome = run(request(&server, "stream.bin", &dir, 8)).await.unwrap();
 
@@ -128,7 +128,7 @@ async fn resumes_after_pause_without_downloading_again() {
         },
     )
     .await;
-    let dir = fresh_dir("resume");
+    let dir = private_dir("resume").unwrap();
 
     let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB)
         .await
@@ -170,7 +170,7 @@ async fn starts_over_when_the_remote_file_changed() {
         },
     )
     .await;
-    let dir = fresh_dir("changed");
+    let dir = private_dir("changed").unwrap();
 
     let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB)
         .await
@@ -205,7 +205,7 @@ async fn retries_dropped_connections() {
         },
     )
     .await;
-    let dir = fresh_dir("retry");
+    let dir = private_dir("retry").unwrap();
 
     let outcome = run(request(&server, "flaky.bin", &dir, 4)).await.unwrap();
 
@@ -226,7 +226,7 @@ async fn retries_without_range_support_by_skipping_received_bytes() {
         },
     )
     .await;
-    let dir = fresh_dir("retry-norange");
+    let dir = private_dir("retry-norange").unwrap();
 
     let outcome = run(request(&server, "flaky.bin", &dir, 4)).await.unwrap();
 
@@ -247,7 +247,7 @@ async fn uses_content_disposition_and_never_overwrites() {
         },
     )
     .await;
-    let dir = fresh_dir("naming");
+    let dir = private_dir("naming").unwrap();
     std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
 
     let outcome = run(request(&server, "download?id=7", &dir, 4))
@@ -272,7 +272,7 @@ async fn empty_file() {
         },
     )
     .await;
-    let dir = fresh_dir("empty");
+    let dir = private_dir("empty").unwrap();
 
     let outcome = run(request(&server, "empty.txt", &dir, 8)).await.unwrap();
 
@@ -293,7 +293,7 @@ async fn rate_limiter_caps_combined_speed() {
         },
     )
     .await;
-    let dir = fresh_dir("limited");
+    let dir = private_dir("limited").unwrap();
     let mut req = request(&server, "slow.bin", &dir, 4);
     req.options.rate_limiters = vec![Arc::new(wirecatch_engine::RateLimiter::new(Some(MIB)))];
 
@@ -325,7 +325,7 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
         },
     )
     .await;
-    let dir = fresh_dir("dropped");
+    let dir = private_dir("dropped").unwrap();
     let progress = Arc::new(Progress::default());
     let task = tokio::spawn(download(
         request(&server, "d.bin", &dir, 2),
@@ -365,7 +365,7 @@ async fn exact_path_continues_after_the_link_changes() {
         },
     )
     .await;
-    let dir = fresh_dir("exact");
+    let dir = private_dir("exact").unwrap();
     let target = dir.join("nested").join("video.mp4");
 
     let mut first = request(&server, "old-signed-link", &dir, 4);
@@ -426,7 +426,7 @@ async fn run_watching_path(req: DownloadRequest) -> TestResult<(Outcome, Option<
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_path_is_the_server_chosen_name_once_it_answers() {
     let server = slow_to_answer("attachment; filename=\"report.pdf\"").await;
-    let dir = fresh_dir("progress-path");
+    let dir = private_dir("progress-path").unwrap();
     std::fs::write(dir.join("report.pdf"), b"keep me").unwrap();
 
     let (outcome, path) = run_watching_path(request(&server, "download?id=7", &dir, 4))
@@ -443,7 +443,7 @@ async fn progress_path_is_the_server_chosen_name_once_it_answers() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_path_is_the_exact_path_once_the_server_answers() {
     let server = slow_to_answer("attachment; filename=\"ignored.pdf\"").await;
-    let dir = fresh_dir("progress-exact");
+    let dir = private_dir("progress-exact").unwrap();
     let target = dir.join("chosen").join("by-manager.bin");
     let mut req = request(&server, "file", &dir, 4);
     req.exact_path = Some(target.clone());
@@ -468,7 +468,7 @@ async fn progress_path_stays_unset_when_the_first_request_fails() {
         },
     )
     .await;
-    let dir = fresh_dir("progress-404");
+    let dir = private_dir("progress-404").unwrap();
     let progress = Arc::new(Progress::default());
 
     let result = download(
@@ -501,7 +501,7 @@ async fn path_resolver_sees_the_server_answer_and_picks_the_path() {
         },
     )
     .await;
-    let dir = fresh_dir("resolver");
+    let dir = private_dir("resolver").unwrap();
     let folder = dir.join("Documents");
     std::fs::create_dir_all(&folder).unwrap();
     // The resolver owns naming: an existing file is replaced, no "(1)" suffix.
@@ -552,7 +552,7 @@ async fn path_resolver_can_refuse_the_file_with_nothing_written() {
         },
     )
     .await;
-    let dir = fresh_dir("resolver-refuses");
+    let dir = private_dir("resolver-refuses").unwrap();
     let mut req = request(&server, "files/setup.exe", &dir, 4);
     req.resolve_path = Some(Arc::new(|remote: &RemoteFile| {
         Err(format!(
@@ -590,7 +590,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         },
     )
     .await;
-    let dir = fresh_dir("resolver-resume");
+    let dir = private_dir("resolver-resume").unwrap();
     let target = dir.join("picked").join("video.mp4");
 
     let mut first = request(&server, "video", &dir, 4);
@@ -631,7 +631,7 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
         },
     )
     .await;
-    let dir = fresh_dir("private-redirect");
+    let dir = private_dir("private-redirect").unwrap();
 
     // The site's own file still downloads.
     let mut own = request(&site, "own.bin", &dir, 2);

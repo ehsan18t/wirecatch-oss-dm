@@ -20,10 +20,10 @@
 //!
 //! - [`TestResult`]: what a fallible test or helper returns.
 //! - [`test_data`], [`seeded_data`] and [`ts_segment`]: deterministic bytes to
-//!   serve, and [`fresh_dir`] and [`files_in`] for the folders tests download
-//!   into.
-//! - [`private_dir`]: a folder only its owner can enter, with a local endpoint
-//!   name of its own, for tests of the app's local endpoint.
+//!   serve, and [`files_in`] to list what a test downloaded.
+//! - [`private_dir`]: a new folder for one test, removed when the test ends
+//!   (passed or failed), which only its owner can enter and which has a local
+//!   endpoint name of its own for tests of the app's local endpoint.
 //!
 //! The crate does not depend on the engine, so the engine's own unit tests can
 //! use it too.
@@ -58,20 +58,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// decides how to report the failure.
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// An empty folder for one test, under the system's temporary folder: anything
-/// an earlier run left there is removed first. `name` must be unique among the
-/// tests of one test binary; the process id keeps binaries apart.
-#[must_use]
-pub fn fresh_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("wirecatch-test-{name}-{}", std::process::id()));
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-/// A new folder for one test that only its owner can enter, removed on drop.
+/// A new, empty folder for one test that only its owner can enter, removed on
+/// drop, so a test that fails leaves nothing behind. It dereferences to its
+/// [`Path`].
 ///
 /// On Unix it is created with mode 0700, like the app's runtime folder, so a
 /// socket inside it is as private as the app's. [`PrivateDir::endpoint_name`]
@@ -127,6 +116,20 @@ impl PrivateDir {
         } else {
             self.path.join("app.sock").into_os_string()
         }
+    }
+}
+
+impl std::ops::Deref for PrivateDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for PrivateDir {
+    fn as_ref(&self) -> &Path {
+        &self.path
     }
 }
 

@@ -16,7 +16,7 @@ use wirecatch_streams::{
     download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{TestResult, fresh_dir, ts_segment};
+use wirecatch_test_support::{TestResult, private_dir, ts_segment};
 
 /// The bytes of a playlist's segments, in order.
 type Segments = Vec<Vec<u8>>;
@@ -120,7 +120,7 @@ async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_ord
          low/index.m3u8\n",
         MPEGURL,
     );
-    let dir = fresh_dir("hls-reordered");
+    let dir = private_dir("hls-reordered").unwrap();
     let mut req = request(&server, "master.m3u8", &dir.join("v.mp4"));
     req.video = Choice::Track(chosen);
     let (path, _) = completed(run(req).await.unwrap());
@@ -155,7 +155,7 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     assert_eq!(info.subtitles[0].language.as_deref(), Some("de"));
 
     // Automatic choice: the best quality.
-    let dir = fresh_dir("hls-auto");
+    let dir = private_dir("hls-auto").unwrap();
     let (path, bytes) = completed(
         run(request(&server, "master.m3u8", &dir.join("auto.mp4")))
             .await
@@ -222,7 +222,7 @@ async fn aes_128_segments_are_decrypted_with_explicit_and_sequence_ivs() {
          #EXT-X-KEY:METHOD=NONE\n#EXTINF:2,\ns4.ts\n#EXT-X-ENDLIST\n",
         MPEGURL,
     );
-    let dir = fresh_dir("hls-aes");
+    let dir = private_dir("hls-aes").unwrap();
     let (path, _) = completed(
         run(request(&server, "enc/index.m3u8", &dir.join("v.ts")))
             .await
@@ -252,7 +252,7 @@ async fn a_wrong_key_is_a_clear_error() {
         "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"short\"\n#EXTINF:2,\ns0.ts\n#EXT-X-ENDLIST\n",
         MPEGURL,
     );
-    let dir = fresh_dir("hls-wrong-key");
+    let dir = private_dir("hls-wrong-key").unwrap();
     let error = run(request(&server, "wrong.m3u8", &dir.join("a.ts")))
         .await
         .unwrap_err();
@@ -304,7 +304,7 @@ async fn byte_ranges_and_init_sections_rebuild_the_file() {
         ),
         MPEGURL,
     );
-    let dir = fresh_dir("hls-ranges");
+    let dir = private_dir("hls-ranges").unwrap();
     let (path, _) = completed(
         run(request(&server, "fmp4/index.m3u8", &dir.join("v.mp4")))
             .await
@@ -337,7 +337,7 @@ async fn parallel_downloads_join_in_playlist_order() {
     for i in (0..40).step_by(3) {
         server.delay(&format!("many/seg{i}.ts"), Duration::from_millis(60));
     }
-    let dir = fresh_dir("hls-parallel");
+    let dir = private_dir("hls-parallel").unwrap();
     let mut req = request(&server, "many/index.m3u8", &dir.join("v.ts"));
     req.options.connections = 8;
     let progress = Arc::new(StreamProgress::default());
@@ -361,7 +361,7 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     for i in 0..30 {
         server.delay(&format!("r/seg{i}.ts"), Duration::from_millis(40));
     }
-    let dir = fresh_dir("hls-resume");
+    let dir = private_dir("hls-resume").unwrap();
     let output = dir.join("v.mp4");
     let mut req = request(&server, "r/index.m3u8", &output);
     req.options.connections = 2;
@@ -419,7 +419,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
         text
     };
     server.put_typed("t/index.m3u8", signed("first"), MPEGURL);
-    let dir = fresh_dir("hls-refreshed");
+    let dir = private_dir("hls-refreshed").unwrap();
     let output = dir.join("v.mp4");
     let mut req = request(&server, "t/index.m3u8", &output);
     req.options.connections = 2;
@@ -459,7 +459,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
 async fn resuming_checks_segment_sizes() {
     let server = FileServer::start().await;
     let segments = media_playlist(&server, "s", 4, 5).unwrap();
-    let dir = fresh_dir("hls-sizes");
+    let dir = private_dir("hls-sizes").unwrap();
     let output = dir.join("v.ts");
     // Pause while the last segment is still on its way, leaving three finished.
     let req = request(&server, "s/index.m3u8", &output);
@@ -511,7 +511,7 @@ async fn live_streams_are_refused_with_a_plain_message() {
     .await
     .unwrap();
     assert!(info.live);
-    let dir = fresh_dir("hls-live");
+    let dir = private_dir("hls-live").unwrap();
     let error = run(request(&server, "live/index.m3u8", &dir.join("v.ts")))
         .await
         .unwrap_err();
@@ -546,7 +546,7 @@ async fn credentials_stay_with_the_playlist_origin() {
     text.push_str("#EXT-X-ENDLIST\n");
     site.put_typed("watch/index.m3u8", text, MPEGURL);
 
-    let dir = fresh_dir("hls-origin");
+    let dir = private_dir("hls-origin").unwrap();
     let mut req = request(&site, "watch/index.m3u8", &dir.join("v.ts"));
     req.options
         .headers
@@ -567,7 +567,7 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
     let server = FileServer::start().await;
     let segments = media_playlist(&server, "f", 5, 6).unwrap();
     server.fail("f/seg2.ts", 2, 503);
-    let dir = fresh_dir("hls-fail");
+    let dir = private_dir("hls-fail").unwrap();
     let (path, _) = completed(
         run(request(&server, "f/index.m3u8", &dir.join("a.ts")))
             .await
@@ -625,7 +625,7 @@ async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
         .unwrap();
     assert_eq!(info.audio.len(), 1);
     assert!(info.audio[0].default);
-    let dir = fresh_dir("hls-noffmpeg");
+    let dir = private_dir("hls-noffmpeg").unwrap();
     let error = run(request(&server, "av.m3u8", &dir.join("v.mp4")))
         .await
         .unwrap_err();
@@ -741,7 +741,7 @@ async fn the_extension_is_known_in_advance() {
     .await
     .unwrap();
     assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, false), "mp4");
-    let dir = fresh_dir("hls-extension");
+    let dir = private_dir("hls-extension").unwrap();
     let (path, _) = completed(
         run(request(&server, "f/index.m3u8", &dir.join("clip")))
             .await
@@ -758,7 +758,7 @@ async fn the_extension_is_known_in_advance() {
 async fn a_changed_extension_never_replaces_another_file() {
     let server = FileServer::start().await;
     let segments = media_playlist(&server, "p", 2, 9).unwrap();
-    let dir = fresh_dir("hls-no-overwrite");
+    let dir = private_dir("hls-no-overwrite").unwrap();
     // The caller asked for .mp4; without ffmpeg the result is .ts, and a
     // different file already has that name.
     std::fs::write(dir.join("video.ts"), b"precious").unwrap();
@@ -808,7 +808,7 @@ async fn streams_from_the_internet_cannot_reach_the_local_network() {
             device.url("x").port().unwrap()
         ),
     ];
-    let dir = fresh_dir("hls-private");
+    let dir = private_dir("hls-private").unwrap();
     for (i, text) in playlists.iter().enumerate() {
         site.put_typed(&format!("p{i}.m3u8"), text.clone(), MPEGURL);
         let mut req = request(&site, &format!("p{i}.m3u8"), &dir.join(format!("{i}.ts")));
@@ -840,7 +840,7 @@ async fn no_more_than_the_configured_connections_are_used() {
     for i in 0..12 {
         server.delay(&format!("c/seg{i}.ts"), Duration::from_millis(80));
     }
-    let dir = fresh_dir("hls-connections");
+    let dir = private_dir("hls-connections").unwrap();
     let mut req = request(&server, "c/index.m3u8", &dir.join("v.ts"));
     req.options.connections = 3;
     let (path, _) = completed(run(req).await.unwrap());
@@ -867,7 +867,7 @@ async fn speed_limits_apply_to_streams() {
     text.push_str("#EXT-X-ENDLIST\n");
     server.put_typed("r/index.m3u8", text, MPEGURL);
     let total = u64::try_from(segments.iter().map(Vec::len).sum::<usize>()).unwrap();
-    let dir = fresh_dir("hls-rate");
+    let dir = private_dir("hls-rate").unwrap();
 
     let mut req = request(&server, "r/index.m3u8", &dir.join("fast.ts"));
     req.options.connections = 4;

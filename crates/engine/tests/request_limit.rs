@@ -14,7 +14,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, RateLimiter, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::{fresh_dir, test_data};
+use wirecatch_test_support::{private_dir, test_data};
 
 /// A server with ranges that refuses requests for more than `limit` bytes.
 async fn strict_server(len: usize, limit: u64, bps: Option<u64>) -> TestServer {
@@ -83,7 +83,7 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
     let limit = 512 * KIB;
     // Slow enough per connection that idle connections split the busy ones.
     let server = strict_server(5 * MIB_USIZE + 333, limit, Some(4 * MIB)).await;
-    let dir = fresh_dir("split");
+    let dir = private_dir("split").unwrap();
 
     let (path, _) = completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
 
@@ -103,7 +103,7 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn without_the_limit_the_strict_server_refuses() {
     let server = strict_server(2 * MIB_USIZE, 512 * KIB, None).await;
-    let dir = fresh_dir("unlimited");
+    let dir = private_dir("unlimited").unwrap();
 
     let error = download(
         request(&server, &dir, 4, None),
@@ -125,7 +125,7 @@ async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connecti
     let limit = 256 * KIB;
     let len = 3 * MIB_USIZE + 5;
     let server = strict_server(len, limit, None).await;
-    let dir = fresh_dir("keepalive");
+    let dir = private_dir("keepalive").unwrap();
 
     let start = Instant::now();
     let (path, _) = completed(run(request(&server, &dir, 1, Some(limit))).await.unwrap());
@@ -158,7 +158,7 @@ async fn a_paused_download_resumes_with_limited_requests() {
     let limit = 256 * KIB;
     let len = 4 * MIB_USIZE;
     let server = strict_server(len, limit, Some(MIB)).await;
-    let dir = fresh_dir("resume");
+    let dir = private_dir("resume").unwrap();
 
     let progress = Arc::new(Progress::default());
     let cancel = CancellationToken::new();
@@ -212,7 +212,7 @@ async fn limited_requests_are_retried_after_dropped_connections() {
         },
     )
     .await;
-    let dir = fresh_dir("retry");
+    let dir = private_dir("retry").unwrap();
 
     let (path, _) = completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
 
@@ -238,7 +238,7 @@ async fn a_request_that_hangs_is_given_up_after_the_stall_timeout_and_sent_again
         },
     )
     .await;
-    let dir = fresh_dir("stall");
+    let dir = private_dir("stall").unwrap();
     let mut req = request(&server, &dir, 1, Some(limit));
     req.options.stall_timeout = Duration::from_millis(500);
 
@@ -258,7 +258,7 @@ async fn a_request_that_hangs_is_given_up_after_the_stall_timeout_and_sent_again
 async fn limited_requests_keep_to_the_speed_limit() {
     let limit = 128 * KIB;
     let server = strict_server(2 * MIB_USIZE, limit, None).await;
-    let dir = fresh_dir("speed");
+    let dir = private_dir("speed").unwrap();
     let mut req = request(&server, &dir, 4, Some(limit));
     req.options.rate_limiters = vec![Arc::new(RateLimiter::new(Some(MIB)))];
 
@@ -278,13 +278,13 @@ async fn limited_requests_keep_to_the_speed_limit() {
 async fn whole_answers_and_small_files_take_one_request() {
     let limit = 256 * KIB;
     let plain = TestServer::start(test_data(MIB_USIZE + 1), Config::default()).await;
-    let dir = fresh_dir("plain");
+    let dir = private_dir("plain").unwrap();
     let (path, _) = completed(run(request(&plain, &dir, 4, Some(limit))).await.unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), plain.data);
     assert_eq!(plain.stats.requests.load(Ordering::SeqCst), 1);
 
     let small = strict_server(100 * KIB_USIZE, limit, None).await;
-    let dir = fresh_dir("small");
+    let dir = private_dir("small").unwrap();
     let (path, _) = completed(run(request(&small, &dir, 4, Some(limit))).await.unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), small.data);
     assert_eq!(small.stats.requests.load(Ordering::SeqCst), 1);
@@ -309,7 +309,7 @@ async fn a_range_answer_without_a_size_is_asked_for_whole() {
         },
     )
     .await;
-    let dir = fresh_dir("no-size");
+    let dir = private_dir("no-size").unwrap();
 
     let (path, _) = completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
 
