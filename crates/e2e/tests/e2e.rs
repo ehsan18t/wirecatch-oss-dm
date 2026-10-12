@@ -429,6 +429,11 @@ fn the_bridge_starts_the_app_when_it_is_not_running() {
     });
 }
 
+/// Takes the outcome of writing to a bridge that refuses its caller. It may already have exited, so the write may fail; what the test checks is that nothing comes back.
+fn bridge_may_have_exited(sent: &std::io::Result<u64>) {
+    let (Ok(_) | Err(_)) = sent;
+}
+
 /// Scenario 8: a caller that is not our extension is refused before anything
 /// reaches the app.
 #[test]
@@ -441,9 +446,8 @@ fn an_unknown_caller_is_refused_and_nothing_reaches_the_app() {
         ];
         for caller in strangers {
             let mut ext = FakeExtension::start(&sandbox.endpoint, &caller, Launch::Nothing);
-            // The bridge may already have exited, so the write may fail.
-            let _ = ext.try_send(hello_call()).await;
-            let _ = ext.try_send(withdraw_call("handover-stranger")).await;
+            bridge_may_have_exited(&ext.try_send(hello_call()).await);
+            bridge_may_have_exited(&ext.try_send(withdraw_call("handover-stranger")).await);
             let answers = ext.wait_stdout_closed().await;
             assert!(answers.is_empty(), "{caller:?} got {answers:?}");
             let status = ext.wait_exit().await;
