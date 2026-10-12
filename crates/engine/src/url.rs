@@ -8,7 +8,7 @@ use ::url::Url;
 
 /// `url` without its `user:password@`, for passing on, logging or storing where
 /// credentials must not go. A URL that cannot carry credentials has none and
-/// comes back as it is. [`without_password`] keeps the user name.
+/// comes back as it is.
 ///
 /// ```
 /// use wirecatch_engine::Url;
@@ -28,18 +28,24 @@ pub fn without_credentials(url: &Url) -> Url {
 /// `url` without its password, keeping the user name: an FTP link shown or
 /// saved this way still says which account it signs in with, which tells two
 /// downloads from the same server apart. [`without_credentials`] removes both.
-///
-/// ```
-/// use wirecatch_engine::Url;
-/// use wirecatch_engine::url::without_password;
-///
-/// let url = Url::parse("ftp://alice:secret@example.com/file.zip").unwrap();
-/// assert_eq!(without_password(&url).as_str(), "ftp://alice@example.com/file.zip");
-/// ```
 #[must_use]
-pub fn without_password(url: &Url) -> Url {
+pub(crate) fn without_password(url: &Url) -> Url {
     let mut clean = url.clone();
     // Fails only for URLs that cannot carry credentials, which then have none.
     let _ = clean.set_password(None);
     clean
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn without_password_keeps_the_user_name() {
+        let url = Url::parse("ftp://alice:secret@example.com/file.zip").unwrap();
+        assert_eq!(
+            without_password(&url).as_str(),
+            "ftp://alice@example.com/file.zip"
+        );
+    }
 }
