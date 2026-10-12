@@ -414,7 +414,7 @@ mod tests {
         }
     }
 
-    /// A VP9 video and an Opus audio of two seconds, as `WebM` files, plus a
+    /// A VP9 video and an Opus audio of two seconds, as WebM files, plus a
     /// `WebVTT` and a `SubRip` subtitle and a metadata file with two chapters.
     struct Fixture {
         dir: tempfile::TempDir,
@@ -722,7 +722,7 @@ mod tests {
         assert!(!text.contains("Chapter"), "{text}");
     }
 
-    /// `WebM` keeps VP9 and Opus as they are and takes `WebVTT` subtitles.
+    /// WebM keeps VP9 and Opus as they are and takes `WebVTT` subtitles.
     #[tokio::test]
     async fn real_ffmpeg_copies_into_webm_with_webvtt() {
         let Some(ffmpeg) = real_ffmpeg() else { return };

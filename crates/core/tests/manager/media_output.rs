@@ -25,7 +25,7 @@ fn mp4_data(len: usize) -> Vec<u8> {
     data
 }
 
-/// Test data that starts like a `WebM` file.
+/// Test data that starts like a WebM file.
 fn webm_data(len: usize) -> Vec<u8> {
     let mut data = test_data(len);
     data[..8].copy_from_slice(b"\x1A\x45\xDF\xA3webm");
@@ -446,7 +446,7 @@ async fn a_paused_conversion_starts_again_without_downloading() -> TestResult {
     Ok(())
 }
 
-/// Two seconds of VP9 video and of Opus audio, each in a `WebM` file, made with
+/// Two seconds of VP9 video and of Opus audio, each in a WebM file, made with
 /// the real `ffmpeg` in `dir`.
 fn sample_streams(ffmpeg: &Path, dir: &Path) -> TestResult<(Vec<u8>, Vec<u8>)> {
     let make = |args: &[&str], out: &str| -> TestResult<Vec<u8>> {

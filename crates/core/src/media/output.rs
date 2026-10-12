@@ -500,7 +500,7 @@ pub(crate) struct Variant {
 }
 
 /// The extension downloaded streams get when kept as they came: MP4 for MP4
-/// video with M4A audio, `WebM` for `WebM` with `WebM`, MKV for any other pair; a
+/// video with M4A audio, WebM for WebM with WebM, MKV for any other pair; a
 /// single file keeps its own (a media extension, never one a site chose
 /// otherwise).
 pub(crate) fn kept_ext(video: Option<&Format>, audio: Option<&Format>) -> String {
@@ -625,7 +625,7 @@ fn best_audio<'a>(formats: impl Iterator<Item = &'a Format>) -> Option<&'a Forma
 }
 
 /// The "Save as" choices of one video quality, Original first: the original
-/// formats copied into their own container, then MP4, MKV and `WebM`. Each takes
+/// formats copied into their own container, then MP4, MKV and WebM. Each takes
 /// the streams of this height that fit the container as they are, and re-encodes
 /// only what has no such stream.
 ///
@@ -945,14 +945,14 @@ fn plain_key(key: &str) -> bool {
         && !matches!(key, "live_chat" | "rechat" | "danmaku" | "comments")
 }
 
-/// The language code of a subtitle key: `en-orig` (`YouTube`'s name for the
+/// The language code of a subtitle key: `en-orig` (YouTube's name for the
 /// language a video is spoken in) is `en`.
 pub(crate) fn language_of(key: &str) -> String {
     key.strip_suffix("-orig").unwrap_or(key).to_string()
 }
 
 /// A language name from the site, cut to a sensible length, without control
-/// characters, and without `YouTube`'s "(Original)".
+/// characters, and without YouTube's "(Original)".
 fn clean_name(name: &str) -> String {
     let name: String = name
         .chars()
@@ -965,7 +965,7 @@ fn clean_name(name: &str) -> String {
         .to_string()
 }
 
-/// A machine translation of a subtitle (`YouTube`'s `tlang`).
+/// A machine translation of a subtitle (YouTube's `tlang`).
 fn translated(file: &SubtitleFile) -> bool {
     file.url
         .as_deref()
@@ -1302,7 +1302,7 @@ pub(crate) const H264_ENCODERS: &[Encoder] = &[
     },
 ];
 
-/// VP9 encoders (for `WebM`), in the order they are tried.
+/// VP9 encoders (for WebM), in the order they are tried.
 pub(crate) const VP9_ENCODERS: &[Encoder] = &[
     Encoder {
         name: "vp9_qsv",
@@ -1892,7 +1892,7 @@ mod tests {
         assert!(Container::Mp3.cover() && Container::M4a.cover() && !Container::Opus.cover());
     }
 
-    /// A format as yt-dlp describes one of a `YouTube` page's.
+    /// A format as yt-dlp describes one of a YouTube page's.
     fn listed(
         id: &str,
         ext: &str,
@@ -1907,7 +1907,7 @@ mod tests {
         }))
     }
 
-    /// A `YouTube`-like 1080p row: VP9 is best, but MP4 takes the H.264 of the
+    /// A YouTube-like 1080p row: VP9 is best, but MP4 takes the H.264 of the
     /// same height and frame rate and copies it.
     #[test]
     fn a_container_takes_matching_streams_of_the_same_quality() {
@@ -1989,7 +1989,7 @@ mod tests {
         assert_eq!(mp4.fit.size, Some(16_800 * 60_000 / 8 + 1000));
     }
 
-    /// `WebM` from a page with only H.264 and AAC: both are re-encoded.
+    /// WebM from a page with only H.264 and AAC: both are re-encoded.
     #[test]
     fn webm_from_h264_and_aac_re_encodes_both() {
         let avc30 = listed(

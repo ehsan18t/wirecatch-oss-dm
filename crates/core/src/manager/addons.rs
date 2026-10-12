@@ -774,7 +774,7 @@ impl Manager {
     ///
     /// Only yt-dlp's own release folder is trusted for the files, the file's
     /// size must be known and reasonable, and its checksum comes from the
-    /// release's checksum list, which must carry a valid `OpenPGP` signature by
+    /// release's checksum list, which must carry a valid OpenPGP signature by
     /// yt-dlp's pinned release key (D21.1).
     async fn checked_release(
         &self,

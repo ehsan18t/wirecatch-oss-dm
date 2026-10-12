@@ -75,7 +75,7 @@ pub struct MediaAddonSources {
     /// The name of this platform's yt-dlp file in a release, for example
     /// `yt-dlp.exe`.
     pub ytdlp_asset: String,
-    /// The name of the checksum list in a yt-dlp release. Its detached `OpenPGP`
+    /// The name of the checksum list in a yt-dlp release. Its detached OpenPGP
     /// signature is the file of the same name with `.sig` added.
     pub ytdlp_checksums_asset: String,
     /// The key the checksum list of a newer yt-dlp must be signed with; a

@@ -193,7 +193,7 @@ impl Format {
     }
 
     /// The most bytes one request for this format should ask for, from yt-dlp's
-    /// `http_chunk_size`: some servers (`YouTube`'s among them) slow down any
+    /// `http_chunk_size`: some servers (YouTube's among them) slow down any
     /// request for more, which is why yt-dlp itself downloads them in pieces.
     /// `None` when yt-dlp gave none, or a value that is not a whole number of
     /// at least 64 KiB; values above 1 GiB are cut to 1 GiB.
@@ -266,11 +266,11 @@ pub(crate) struct Context<'a> {
 
 /// Whether the browser's cookies go to yt-dlp from the first try for `page`.
 ///
-/// Not for `YouTube`: with a signed-in browser's cookies yt-dlp reads `YouTube` as a
-/// web player whose video addresses `YouTube` often refuses (403) for minutes at
+/// Not for YouTube: with a signed-in browser's cookies yt-dlp reads YouTube as a
+/// web player whose video addresses YouTube often refuses (403) for minutes at
 /// a time, while without them it reads it as another player whose addresses
 /// work. Measured on 2026-10-11: with cookies, 3 of 5 fresh reads gave refused
-/// addresses; without, 5 of 5 worked. So `YouTube` is read without the cookies
+/// addresses; without, 5 of 5 worked. So YouTube is read without the cookies
 /// first, and with them only when that fails (age-restricted, members-only or
 /// private videos need the sign-in).
 pub(crate) fn cookies_first(page: &Url) -> bool {
@@ -293,7 +293,7 @@ fn without_cookies<'a>(ctx: &Context<'a>) -> Option<Context<'a>> {
     })
 }
 
-/// Reads a page's formats with `yt-dlp -J`: on `YouTube` without the browser's
+/// Reads a page's formats with `yt-dlp -J`: on YouTube without the browser's
 /// cookies first, then with them if yt-dlp could not read the page that way.
 pub(crate) async fn extract(
     ctx: &Context<'_>,
@@ -392,7 +392,7 @@ const PROGRESS_MARK: &str = "wcprogress";
 /// Lets yt-dlp download format selection `format` into `work` (for streams
 /// Wirecatch cannot download itself), reporting progress into `progress`.
 ///
-/// On `YouTube` it runs without the browser's cookies first, like [`extract`],
+/// On YouTube it runs without the browser's cookies first, like [`extract`],
 /// and with them only if yt-dlp failed that way; the parts it saved are kept.
 pub(crate) async fn download(
     ctx: &Context<'_>,
@@ -915,7 +915,7 @@ mod tests {
         assert_eq!(progress_report(""), None);
     }
 
-    /// A page description as yt-dlp prints it for `YouTube`: every format has
+    /// A page description as yt-dlp prints it for YouTube: every format has
     /// `downloader_options.http_chunk_size`, and the whole page still reads
     /// when one format has an odd value there.
     #[test]

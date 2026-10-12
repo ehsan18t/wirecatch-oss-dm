@@ -269,8 +269,8 @@ fn cookie_use(h: &Harness) -> TestResult<Vec<bool>> {
         .collect()
 }
 
-/// `YouTube` is read without the browser's sign-in first: with a signed-in
-/// browser's cookies yt-dlp gets video addresses `YouTube` often refuses.
+/// YouTube is read without the browser's sign-in first: with a signed-in
+/// browser's cookies yt-dlp gets video addresses YouTube often refuses.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn youtube_is_read_without_the_browser_sign_in_first() -> TestResult {
     let server = FileServer::start().await;

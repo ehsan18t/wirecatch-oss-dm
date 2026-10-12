@@ -1,4 +1,4 @@
-//! Checking yt-dlp's `OpenPGP` signature on a release's checksum list (D21.1).
+//! Checking yt-dlp's OpenPGP signature on a release's checksum list (D21.1).
 //!
 //! A newer yt-dlp is only installed when its `SHA2-256SUMS` carries a valid
 //! detached signature (`SHA2-256SUMS.sig`) from yt-dlp's release signing key,
@@ -26,7 +26,7 @@ const YTDLP_PUBLIC_KEY: &str = include_str!("ytdlp-signing-key.asc");
 /// The full fingerprint of [`YTDLP_PUBLIC_KEY`]'s primary key.
 const YTDLP_FINGERPRINT: &str = "AC0CBBE6848D6A873464AF4E57CF65933B5A7581";
 
-/// An `OpenPGP` public key trusted for one purpose, pinned by its full
+/// An OpenPGP public key trusted for one purpose, pinned by its full
 /// fingerprint: a key whose fingerprint differs is never used.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinnedKey {
@@ -48,7 +48,7 @@ impl PinnedKey {
     }
 }
 
-/// Checks that `signature` (a detached `OpenPGP` signature, binary or armored)
+/// Checks that `signature` (a detached OpenPGP signature, binary or armored)
 /// is a valid signature over `data` by `key`'s primary key, and that the key
 /// is the pinned one. `Err` says why not, as a short phrase.
 pub(crate) fn verify_detached(

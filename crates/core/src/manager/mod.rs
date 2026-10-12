@@ -100,7 +100,7 @@ pub const DEFAULT_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
 ///
 /// A video server sometimes refuses a perfectly good address for a while, and
 /// an address read again from the page usually works at once, so the first try
-/// comes quickly. `YouTube` has been seen refusing one video for several minutes
+/// comes quickly. YouTube has been seen refusing one video for several minutes
 /// and then sending it as usual, so the later tries spread over about eight
 /// minutes in all, with the row saying when the next one is, rather than
 /// giving up after a minute and asking the person to press Try again. The gaps
