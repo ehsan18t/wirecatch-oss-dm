@@ -13,6 +13,7 @@ import {
   type OutputFit,
   type OutputFormat,
 } from '@wirecatch/protocol';
+import { bytesAtBitRate } from '@wirecatch/units';
 
 /** Each format's name for a person. */
 export const FORMAT_LABEL: Record<OutputFormat, string> = {
@@ -26,9 +27,6 @@ export const FORMAT_LABEL: Record<OutputFormat, string> = {
   flac: 'FLAC',
   wav: 'WAV',
 };
-
-/** A bit rate in kbps times a length in milliseconds is a number of bits; this makes it bytes. */
-const BITS_PER_BYTE = 8;
 
 /** Formats that keep every bit of the sound. */
 const LOSSLESS: ReadonlySet<OutputFormat> = new Set(['flac', 'wav']);
@@ -208,7 +206,7 @@ export function sizeFor(
   const fit = fitFor(option, format);
   if (!fit) return option.size;
   if (option.audio_only && kbps !== null && durationMs !== null) {
-    return Math.round((kbps * durationMs) / BITS_PER_BYTE);
+    return bytesAtBitRate(kbps, durationMs);
   }
   return fit.size;
 }

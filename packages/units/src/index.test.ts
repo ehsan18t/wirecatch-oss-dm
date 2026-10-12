@@ -3,6 +3,7 @@ import {
   GB,
   KB,
   MB,
+  bytesAtBitRate,
   formatBytes,
   formatRate,
   formatSpeed,
@@ -91,5 +92,12 @@ describe('size fields', () => {
     expect(splitKbOrMb(3 * GB)).toEqual({ value: 3072, unit: 'MB' });
     // Just under a megabyte stays in kilobytes, rounded up to the next one.
     expect(splitKbOrMb(MB - 1)).toEqual({ value: 1024, unit: 'KB' });
+  });
+});
+
+describe('bytesAtBitRate', () => {
+  it('turns a bit rate and a length into bytes', () => {
+    expect(bytesAtBitRate(128, 60_000)).toBe(960_000);
+    expect(bytesAtBitRate(0, 60_000)).toBe(0);
   });
 });

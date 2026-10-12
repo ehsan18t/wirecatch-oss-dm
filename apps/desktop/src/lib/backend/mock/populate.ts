@@ -1,7 +1,7 @@
 // Fills a new mock with sample downloads: the hand-written ones, then generated ones for load testing.
 
 import { MB } from '@wirecatch/units';
-import { MS_PER_HOUR } from '../../time';
+import { MS_PER_HOUR, MS_PER_MINUTE } from '../../time';
 import { MAIN_QUEUE_ID, OVERNIGHT_QUEUE_ID, WORK_QUEUE_ID } from './data';
 import { between, type Spread } from './rng';
 import { bulkItem, SEEDS } from './seeds';
@@ -20,8 +20,8 @@ const BULK_MOST_DONE = 0.5;
 /** Generated downloads take turns over the sample queues; the running ones are all in Main. */
 const BULK_QUEUES = [MAIN_QUEUE_ID, OVERNIGHT_QUEUE_ID, WORK_QUEUE_ID];
 /** Generated downloads were added a minute apart, and each finished half a minute after it was added. */
-const BULK_ADDED_EVERY_MS = 60_000;
-const BULK_FINISHED_AFTER_MS = 30_000;
+const BULK_ADDED_EVERY_MS = MS_PER_MINUTE;
+const BULK_FINISHED_AFTER_MS = MS_PER_MINUTE / 2;
 
 /** A load test runs every active download at once: the limits get this much room above them. */
 const LOAD_TEST_MIN_GLOBAL_LIMIT = 4;

@@ -7,6 +7,14 @@ export const MB = KB * KB;
 /** Bytes in a gigabyte. */
 export const GB = MB * KB;
 
+/** Bits in a byte. */
+export const BITS_PER_BYTE = 8;
+
+/** Bytes a stream at `kbps` takes for `durationMs`: kilobits per second times milliseconds is bits. */
+export function bytesAtBitRate(kbps: number, durationMs: number): number {
+  return Math.round((kbps * durationMs) / BITS_PER_BYTE);
+}
+
 const SHOWN_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
 /** From this many of a unit on, a size shows no decimals (`820 MB`). */

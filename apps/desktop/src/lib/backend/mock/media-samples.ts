@@ -1,7 +1,7 @@
 // Sample media for the mock backend: the pages the browser "finds", and the qualities and formats each offers.
 
 import type { MediaOption, MediaSubtitle, OutputFit } from '@wirecatch/protocol';
-import { MB } from '@wirecatch/units';
+import { bytesAtBitRate, MB } from '@wirecatch/units';
 
 /** A sample media page: its title, its address, and whether it is a page or a stream. */
 export interface MediaSample {
@@ -151,11 +151,9 @@ const SAMPLE_QUALITIES: readonly SampleQuality[] = [
   },
 ];
 
-const BITS_PER_BYTE = 8;
-
 /** Bytes of audio at `kbps` for the length of the sample videos. */
 function audioBytes(kbps: number): number {
-  return Math.round((kbps * SAMPLE_DURATION_MS) / BITS_PER_BYTE);
+  return bytesAtBitRate(kbps, SAMPLE_DURATION_MS);
 }
 
 /** A sample fit as the core sends it, with everything it leaves out set to its default. */
