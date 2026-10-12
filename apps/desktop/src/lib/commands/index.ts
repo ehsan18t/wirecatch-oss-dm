@@ -9,7 +9,7 @@ import { addonCommands, settingsCommands } from './settings';
 import type { Command } from './table';
 
 export { focusSearch } from './library';
-export { fuzzyScore, searchCommands } from './search';
+export { fuzzyScore, groupCommands, searchCommands } from './search';
 export type { Command, CommandGroup } from './table';
 
 export function buildCommands(app: AppState): Command[] {

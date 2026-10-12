@@ -1,6 +1,6 @@
-// How the palette finds commands from what is typed.
+// How the palette finds commands from what is typed, and groups them when nothing is.
 
-import type { Command } from './table';
+import type { Command, CommandGroup } from './table';
 
 // How the palette ranks a match. Each typed word scores against its best word in the text.
 /** The typed word is the whole word. */
@@ -71,4 +71,17 @@ export function searchCommands(commands: readonly Command[], query: string): Com
   }
   scored.sort((a, b) => b.s - a.s);
   return scored.map((x) => x.c);
+}
+
+/** Commands in groups, in the order each group first appears; each keeps its own order inside. */
+export function groupCommands(
+  commands: readonly Command[],
+): { name: CommandGroup; items: Command[] }[] {
+  const groups = new Map<CommandGroup, Command[]>();
+  for (const c of commands) {
+    const items = groups.get(c.group);
+    if (items) items.push(c);
+    else groups.set(c.group, [c]);
+  }
+  return [...groups].map(([name, items]) => ({ name, items }));
 }

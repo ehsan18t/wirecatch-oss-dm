@@ -1,7 +1,7 @@
 <script lang="ts">
   import Search from '@lucide/svelte/icons/search';
   import { onMount } from 'svelte';
-  import { buildCommands, searchCommands, type Command, type CommandGroup } from '$lib/commands';
+  import { buildCommands, groupCommands, searchCommands, type Command } from '$lib/commands';
   import { getApp } from '$lib/state/app.svelte';
   import Icon from './Icon.svelte';
 
@@ -21,15 +21,7 @@
   // While searching, best matches come first; otherwise actions stay grouped.
   const groups = $derived.by(() => {
     if (query.trim()) return [{ name: 'Best matches', items: results }];
-    // A throwaway grouping, rebuilt on every change; it does not need to be reactive.
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const map = new Map<CommandGroup, Command[]>();
-    for (const c of results) {
-      const g = map.get(c.group) ?? [];
-      g.push(c);
-      map.set(c.group, g);
-    }
-    return [...map].map(([name, items]) => ({ name, items }));
+    return groupCommands(results);
   });
   const flat = $derived(groups.flatMap((g) => g.items));
 
