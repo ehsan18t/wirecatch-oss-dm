@@ -9,9 +9,12 @@ import type { ObservedResponse } from './detect';
 import { MEDIA_COMMAND } from './messages';
 import type { MediaWatcher } from './watch';
 
+/** The resource types the media side watches, named as the browser names them. */
+type ResourceType = 'main_frame' | 'sub_frame' | 'media' | 'object' | 'xmlhttprequest' | 'other';
+
 export interface RequestFilter {
   urls: string[];
-  types: string[];
+  types: ResourceType[];
 }
 
 interface Event<L> {
@@ -24,7 +27,7 @@ export interface MediaEventApi {
     addListener(
       listener: (details: ObservedResponse) => void,
       filter: RequestFilter,
-      extra: string[],
+      extra: 'responseHeaders'[],
     ): void;
   };
   onTabRemoved: Event<(tabId: number) => void>;

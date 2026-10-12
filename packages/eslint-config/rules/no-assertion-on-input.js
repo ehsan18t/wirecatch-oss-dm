@@ -1,26 +1,16 @@
-// No type assertion where outside data is checked.
+// No type assertion on a value whose type is not known.
 //
-// A function that takes a parameter typed `unknown`, or that is a type guard (`value is T`), is
-// where a message, a stored value or an answer from another process becomes a type. An `as` there
-// claims a shape nothing has checked, which is exactly the mistake such a function exists to
-// prevent; the shape is checked with a guard instead (in the extension, the combinators in
-// src/lib/validate.ts). `as const` claims nothing about outside data and stays allowed.
+// A value typed `any` or `unknown` is outside data until something checks it: a message from
+// another script or process, what browser storage gives back, `JSON.parse`, a listener argument
+// the browser's types leave open. `raw as Message`, `<Message>raw` and `raw!` claim a shape nothing
+// has checked, which is the mistake a guard exists to prevent; the shape is checked with a guard
+// instead (in the extension, the combinators in src/lib/validate.ts). Asserting a value whose type
+// is already known (an Event to a PointerEvent) is a different decision and is left to review.
+// `as const` claims nothing about the value and stays allowed.
+import ts from 'typescript';
 
-/** Function nodes whose parameters and return type say what they accept. */
-const FUNCTIONS = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
-
-/** The type annotation of a parameter, looking through defaults and `...rest`. */
-function annotationOf(param) {
-  if (param.type === 'AssignmentPattern') return annotationOf(param.left);
-  if (param.type === 'TSParameterProperty') return annotationOf(param.parameter);
-  return param.typeAnnotation?.typeAnnotation;
-}
-
-/** Whether `fn` reads outside data: an `unknown` parameter, or a type guard's return type. */
-function readsInput(fn) {
-  if (fn.returnType?.typeAnnotation.type === 'TSTypePredicate') return true;
-  return fn.params.some((param) => annotationOf(param)?.type === 'TSUnknownKeyword');
-}
+/** Type flags of a value nothing has checked. */
+const UNCHECKED = ts.TypeFlags.Any | ts.TypeFlags.Unknown;
 
 /** Whether an assertion is `as const` (or `<const>`), which only fixes a literal's type. */
 function isConstAssertion(node) {
@@ -32,21 +22,33 @@ function isConstAssertion(node) {
 export const noAssertionOnInput = {
   meta: {
     type: 'problem',
-    docs: { description: 'Disallow type assertions in functions that check outside data.' },
+    docs: { description: 'Disallow type and non-null assertions on values typed `any` or `unknown`.' },
     schema: [],
     messages: {
-      assertion:
-        'This function checks outside data: check the shape with a guard instead of asserting it with `as`.',
+      assertion: 'This value is typed `{{type}}`: check its shape with a guard instead of asserting it.',
     },
   },
   create(context) {
-    function check(node) {
-      if (isConstAssertion(node)) return;
-      const inInputFunction = context.sourceCode
-        .getAncestors(node)
-        .some((ancestor) => FUNCTIONS.has(ancestor.type) && readsInput(ancestor));
-      if (inInputFunction) context.report({ node, messageId: 'assertion' });
+    const services = context.sourceCode.parserServices;
+    if (!services?.program) {
+      throw new Error('wirecatch/no-assertion-on-input needs type information (parserOptions.projectService).');
     }
-    return { TSAsExpression: check, TSTypeAssertion: check };
+    const checker = services.program.getTypeChecker();
+
+    function check(node) {
+      const type = checker.getTypeAtLocation(services.esTreeNodeToTSNodeMap.get(node.expression));
+      if ((type.flags & UNCHECKED) === 0) return;
+      context.report({ node, messageId: 'assertion', data: { type: checker.typeToString(type) } });
+    }
+
+    return {
+      TSAsExpression(node) {
+        if (!isConstAssertion(node)) check(node);
+      },
+      TSTypeAssertion(node) {
+        if (!isConstAssertion(node)) check(node);
+      },
+      TSNonNullExpression: check,
+    };
   },
 };

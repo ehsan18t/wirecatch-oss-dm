@@ -9,7 +9,8 @@
     ".": "./index.js"
   },
   "peerDependencies": {
-    "eslint": "catalog:"
+    "eslint": "catalog:",
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@eslint/js": "catalog:",
@@ -17,6 +18,9 @@
     "eslint-plugin-svelte": "catalog:",
     "globals": "catalog:",
     "typescript-eslint": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
   },
   "scripts": {
     "test": "node --test \"rules/*.test.js\""

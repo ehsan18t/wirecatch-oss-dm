@@ -72,6 +72,8 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
         '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
         // `onclick={() => model.reconnect()}` is clearer than wrapping every handler in braces.
         '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
+        // Outside data (`any` or `unknown`) gets its type from a guard that checks it, never from `as` or `!`.
+        'wirecatch/no-assertion-on-input': 'error',
         // Every number that is not obvious gets a name that says what it means; the value of a module constant may be written the way it reads (`8 * 1024`).
         'no-magic-numbers': 'off',
         'wirecatch/no-magic-numbers': [
@@ -112,6 +114,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
       files: TEST_FILES,
       rules: {
         'wirecatch/no-magic-numbers': 'off',
+        'wirecatch/no-assertion-on-input': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',
         'max-lines-per-function': 'off',
         'max-lines': 'off',
@@ -123,6 +126,7 @@ export function wirecatch({ tsconfigRootDir, globals: runtimeGlobals, ignores = 
       rules: { 'no-console': 'off', 'wirecatch/no-magic-numbers': 'off' },
     },
     { files: UNTYPED_FILES, ...ts.configs.disableTypeChecked },
+    { files: UNTYPED_FILES, rules: { 'wirecatch/no-assertion-on-input': 'off' } },
     ...layers,
   );
 }

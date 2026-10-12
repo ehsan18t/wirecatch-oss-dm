@@ -11,11 +11,6 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
-      // Messages, stored values and the app's answers get their types from the guards in `src/lib/validate.ts`, never from an `as`.
-      files: ['src/**'],
-      rules: { 'wirecatch/no-assertion-on-input': 'error' },
-    },
-    {
       // Only `src/lib/native` opens the connection to the app, so there is one place that owns its lifecycle and errors.
       files: ['src/**'],
       ignores: ['src/lib/native/**'],

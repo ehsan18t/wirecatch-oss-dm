@@ -17,7 +17,7 @@ import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import type { MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
 import { MediaCenter, type MediaSendResult } from '@/lib/media/center';
-import { registerMediaListeners, type MediaEventApi } from '@/lib/media/listen';
+import { registerMediaListeners } from '@/lib/media/listen';
 import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
@@ -50,8 +50,7 @@ function registerContextMenu(hub: Hub): void {
 function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): void {
   registerMediaListeners(
     {
-      onResponseStarted: browser.webRequest
-        .onResponseStarted as unknown as MediaEventApi['onResponseStarted'],
+      onResponseStarted: browser.webRequest.onResponseStarted,
       onTabRemoved: browser.tabs.onRemoved,
       onTabUpdated: browser.tabs.onUpdated,
       onMessage: browser.runtime.onMessage,

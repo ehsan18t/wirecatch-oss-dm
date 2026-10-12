@@ -2,24 +2,27 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'wxt';
 import { SITE_ORIGINS } from './src/lib/site-access';
+import { isRecord, isString, object, refine, type Guarded } from './src/lib/validate';
+
+const nonEmpty = refine(isString, (value) => value !== '');
 
 /** Shared identities, owned by the lead and read by both the bridge and the extension. */
-interface ExtensionIds {
-  chromium_public_key: string;
-  firefox_id: string;
-  native_host_name: string;
-}
+const EXTENSION_IDS = {
+  chromium_public_key: nonEmpty,
+  firefox_id: nonEmpty,
+  native_host_name: nonEmpty,
+};
+const isExtensionIds = object(EXTENSION_IDS);
 
-function readExtensionIds(): ExtensionIds {
+function readExtensionIds(): Guarded<typeof isExtensionIds> {
   const path = fileURLToPath(new URL('../../config/extension-ids.json', import.meta.url));
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
-  const ids = parsed as Partial<ExtensionIds>;
-  for (const field of ['chromium_public_key', 'firefox_id', 'native_host_name'] as const) {
-    if (typeof ids[field] !== 'string' || ids[field] === '') {
-      throw new Error(`config/extension-ids.json is missing "${field}". Restore it from git.`);
-    }
-  }
-  return ids as ExtensionIds;
+  if (isExtensionIds(parsed)) return parsed;
+  const fields = isRecord(parsed) ? parsed : {};
+  const missing = Object.keys(EXTENSION_IDS).find((field) => !nonEmpty(fields[field]));
+  throw new Error(
+    `config/extension-ids.json is missing "${missing ?? 'its fields'}". Restore it from git.`,
+  );
 }
 
 const ids = readExtensionIds();
