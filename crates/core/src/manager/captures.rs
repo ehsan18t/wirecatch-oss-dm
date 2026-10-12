@@ -195,8 +195,9 @@ impl Manager {
                 .is_err()
             {
                 tracing::warn!(
+                    handover,
                     ?patience,
-                    "the first attempt to take a download over is still undecided"
+                    "the first attempt to take this download over is still undecided; answering that it did not start"
                 );
             }
         }

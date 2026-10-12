@@ -200,13 +200,36 @@ impl Write for Hashing {
     }
 }
 
-/// Copies `input` to a new file at `target`, at most [`MAX_FILE`] bytes.
-/// Returns its size and SHA-256.
+/// Copies `input` to a new file at `target` with [`copy_file`] and marks it
+/// executable or not.
+#[cfg(unix)]
 fn write_file(
     input: &mut impl Read,
     target: &Path,
     executable: bool,
 ) -> Result<(u64, String), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let written = copy_file(input, target)?;
+    let mode = if executable { 0o755 } else { 0o644 };
+    std::fs::set_permissions(target, std::fs::Permissions::from_mode(mode))
+        .map_err(|e| disk(&e))?;
+    Ok(written)
+}
+
+/// Copies `input` to a new file at `target` with [`copy_file`]. Windows has no
+/// executable bit: a file runs by its name.
+#[cfg(not(unix))]
+fn write_file(
+    input: &mut impl Read,
+    target: &Path,
+    _executable: bool,
+) -> Result<(u64, String), String> {
+    copy_file(input, target)
+}
+
+/// Copies `input` to a new file at `target`, at most [`MAX_FILE`] bytes.
+/// Returns its size and SHA-256.
+fn copy_file(input: &mut impl Read, target: &Path) -> Result<(u64, String), String> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| disk(&e))?;
     }
@@ -232,23 +255,8 @@ fn write_file(
     out.flush().map_err(|e| disk(&e))?;
     let sha256 = hex(&out.hasher.finalize());
     drop(out.file);
-    #[cfg(unix)]
-    set_mode(target, executable).map_err(|e| disk(&e))?;
-    #[cfg(not(unix))]
-    set_mode(executable);
     Ok((copied, sha256))
 }
-
-#[cfg(unix)]
-fn set_mode(path: &Path, executable: bool) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let mode = if executable { 0o755 } else { 0o644 };
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-}
-
-/// Sets nothing: Windows has no executable bit, a file runs by its name.
-#[cfg(not(unix))]
-fn set_mode(_executable: bool) {}
 
 fn disk(error: &io::Error) -> String {
     format!(

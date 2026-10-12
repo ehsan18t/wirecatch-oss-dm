@@ -1,5 +1,6 @@
-//! Deleting files and folders nothing needs any more. A failure is logged and
-//! stops nothing: what is left behind takes disk space but is never read again.
+//! Deleting files and folders the app is done with. A failure is logged and
+//! stops nothing: what is left behind takes disk space but the app never reads
+//! it again.
 
 use std::io;
 use std::path::Path;
@@ -22,7 +23,7 @@ fn logged(path: &Path, deleted: io::Result<()>) {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => {
-            warn!(path = %path.display(), error = %e, "could not delete a file that is no longer needed");
+            warn!(path = %path.display(), error = %e, "could not delete a file or folder");
         }
     }
 }
