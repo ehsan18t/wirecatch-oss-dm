@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
@@ -17,6 +17,7 @@ use wirecatch_engine::{Fetcher, naming};
 use crate::crypto;
 use crate::error::{Error, Result};
 use crate::ffmpeg::{self, Container, InputFormat};
+use crate::lock;
 use crate::model::{Outcome, Stage, StreamProgress, StreamRequest, with_extension};
 use crate::plan::{Piece, Plan, Role, Source, mp4_compatible};
 use crate::workdir::WorkDir;
@@ -545,13 +546,6 @@ async fn blocking<T: Send + 'static>(
     Ok(tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| Error::task(&e))??)
-}
-
-/// Locks a mutex; one poisoned by a panic elsewhere is still usable here.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

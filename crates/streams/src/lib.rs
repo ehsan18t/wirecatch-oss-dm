@@ -99,7 +99,19 @@ pub use model::{
 pub use wirecatch_engine::PrivateNetwork;
 pub use workdir::DIR_SUFFIX;
 
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
 use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
+
+/// Locks a mutex of this crate's. A lock poisoned by a panic in another holder
+/// is taken over as it is: what these locks guard is replaced whole (a queue
+/// entry, a cache cell, the open log, whose lines are written whole or ignored
+/// on reading), so it is never half written. Wirecatch's release builds abort on
+/// panic, so there a poisoned lock cannot be seen at all; refusing the lock as
+/// well would only add a second, less telling panic.
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Reads the playlist or manifest at `url` and describes what it offers.
 ///

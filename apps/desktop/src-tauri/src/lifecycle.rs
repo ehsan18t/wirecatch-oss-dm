@@ -7,7 +7,7 @@
 //! process exits. Closing a download window (D23) never quits, even when it is the last one.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use tauri::async_runtime::JoinHandle;
@@ -42,14 +42,19 @@ pub struct Lifecycle {
 
 type ExitHook = Box<dyn FnOnce() + Send>;
 
+/// Locks one of [`Lifecycle`]'s fields. A lock poisoned by a panic in another holder is taken
+/// over as it is: each field is replaced or drained whole, so it is never half written, and
+/// Wirecatch's release builds abort on panic (`panic = "abort"`), so there a poisoned lock cannot
+/// be seen at all. Refusing the lock as well would only add a second, less telling panic.
+fn locked<T>(field: &Mutex<T>) -> MutexGuard<'_, T> {
+    field.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 impl Lifecycle {
     /// Runs `hook` instead of exiting the process at the end of a quit. For tests, whose mock
     /// runtime cannot exit.
     pub fn on_exit(&self, hook: impl FnOnce() + Send + 'static) {
-        *self
-            .exit_hook
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
+        *locked(&self.exit_hook) = Some(Box::new(hook));
     }
 
     /// Whether a quit has finished stopping everything and asked the process to exit.
@@ -65,19 +70,11 @@ impl Lifecycle {
 
     /// Keeps a background task so quitting can stop it.
     pub fn keep(&self, task: JoinHandle<()>) {
-        self.tasks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(task);
+        locked(&self.tasks).push(task);
     }
 
     fn stop_tasks(&self) {
-        for task in self
-            .tasks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-        {
+        for task in locked(&self.tasks).drain(..) {
             task.abort();
         }
     }
@@ -129,10 +126,7 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
         quit_core(core.as_deref(), || {
             let hook = app.try_state::<Lifecycle>().and_then(|life| {
                 life.finished.store(true, Ordering::SeqCst);
-                life.exit_hook
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .take()
+                locked(&life.exit_hook).take()
             });
             if let Some(hook) = hook {
                 hook();
@@ -160,16 +154,13 @@ impl Lifecycle {
         if !self.is_quitting() {
             return false;
         }
-        *self.relaunch.lock().unwrap_or_else(PoisonError::into_inner) = Some(args.to_vec());
+        *locked(&self.relaunch) = Some(args.to_vec());
         true
     }
 
     /// The command line to start again after exiting, if a launch arrived while quitting.
     pub fn take_relaunch(&self) -> Option<Vec<String>> {
-        self.relaunch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
+        locked(&self.relaunch).take()
     }
 }
 

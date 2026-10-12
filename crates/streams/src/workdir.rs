@@ -18,6 +18,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::lock;
+
 /// Added to the output file name to name the temporary folder that holds a
 /// stream download in progress (for example `video.mp4.wcstream`).
 pub const DIR_SUFFIX: &str = ".wcstream";
@@ -140,11 +142,7 @@ impl WorkDir {
     }
 
     fn append(&self, line: &str) -> io::Result<()> {
-        let mut log = self
-            .log
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match log.as_mut() {
+        match lock(&self.log).as_mut() {
             Some(log) => log.write_all(line.as_bytes()),
             None => Err(io::Error::other(
                 "the download's temporary folder was already removed",
@@ -160,10 +158,7 @@ impl WorkDir {
     /// Removes the whole folder. Blocks on the file system.
     pub fn remove(&self) -> io::Result<()> {
         // The log must be closed first: Windows cannot delete an open file.
-        self.log
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
+        lock(&self.log).take();
         remove_dir(&self.dir)
     }
 }
