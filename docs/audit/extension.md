@@ -1,5 +1,7 @@
 # Extension audit (apps/extension)
 
+> This audit is a snapshot: its paths and line numbers name the code as it was when the audit was made (it was recorded in commit 0bd101a). Some files have since moved or been split, so a path that no longer exists, or a line that no longer matches, refers to the code of that time; `git log -- <path>` shows the commit that moved or removed it.
+
 ## EXT-1 Quitting the app does not stick: the extension relaunches it within a second and on every background wake
 - severity: high
 - category: design

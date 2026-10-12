@@ -1,5 +1,7 @@
 # Cross-cutting audit: identity inventory and seams
 
+> This audit is a snapshot: its paths and line numbers name the code as it was when the audit was made (it was recorded in commit 0bd101a). Some files have since moved or been split, so a path that no longer exists, or a line that no longer matches, refers to the code of that time; `git log -- <path>` shows the commit that moved or removed it.
+
 Audited against the committed tree at `HEAD` (9e1580d, branch `refactor/code-quality`). Note: while this audit ran, the working tree gained uncommitted edits to every `Cargo.toml` (a new `[workspace.lints]` table plus `[lints] workspace = true` in each crate) and a new untracked `clippy.toml`. Findings below describe `HEAD`; XC-22 says what the in-progress change already covers.
 
 Line numbers are for `HEAD`. "Prod" means non-test code; test-only occurrences are listed because a rename has to touch them too.

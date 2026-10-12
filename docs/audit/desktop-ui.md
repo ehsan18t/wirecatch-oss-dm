@@ -1,5 +1,7 @@
 # Desktop UI audit (apps/desktop/src, scripts, configs, tests)
 
+> This audit is a snapshot: its paths and line numbers name the code as it was when the audit was made (it was recorded in commit 0bd101a). Some files have since moved or been split, so a path that no longer exists, or a line that no longer matches, refers to the code of that time; `git log -- <path>` shows the commit that moved or removed it.
+
 Scope note: the working tree has an uncommitted, stricter shared ESLint config (`apps/desktop/eslint.config.js` now uses `@wirecatch/eslint-config`). Under it `eslint .` reports 674 errors in this package (329 `no-magic-numbers`, 79 `button-has-type`, 56 `require-await`, 17 `no-restricted-imports`, 13 `complexity`, 8 `max-lines`, ...). Those mechanical hits are not repeated below; findings here are the structural problems behind them plus issues no linter catches.
 
 ## DUI-1 Download store silently drops `processing` and `media` updates
