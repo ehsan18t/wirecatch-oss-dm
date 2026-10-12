@@ -11,7 +11,7 @@ import type { MediaStore, TabInfo } from '../media/center';
 import { isNotice } from '../messages';
 import { originPattern } from '../site-access';
 import { BADGE_COLOR } from '../theme';
-import { isNumber, itemsOf } from '../validate';
+import { isNumber, isString, itemsOf, object } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
 const NOTICE_KEY = 'wirecatch.notice';
@@ -145,16 +145,21 @@ export function mediaStore(): MediaStore | undefined {
   };
 }
 
+const hasCookieStore = object({ cookieStoreId: isString });
+
+/** The Firefox container or private cookie store of a tab; null in Chromium, whose tabs have none and use the default store. */
+export function cookieStoreOf(tab: unknown): string | null {
+  return hasCookieStore(tab) ? tab.cookieStoreId : null;
+}
+
 export async function tabInfo(tabId: number): Promise<TabInfo | null> {
   try {
     const tab = await browser.tabs.get(tabId);
-    // Firefox adds `cookieStoreId` to tabs; Chromium tabs use the default cookie store.
-    const cookieStoreId = (tab as { cookieStoreId?: string }).cookieStoreId ?? null;
     return {
       url: tab.url ?? null,
       title: tab.title ?? null,
       incognito: tab.incognito,
-      cookieStoreId,
+      cookieStoreId: cookieStoreOf(tab),
     };
   } catch {
     return null;

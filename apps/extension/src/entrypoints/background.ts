@@ -3,6 +3,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import {
   browserDownloads,
   cookieHeaderFor,
+  cookieStoreOf,
   hasSiteAccess,
   helloFromExtension,
   inFlightStore,
@@ -41,8 +42,10 @@ function registerContextMenu(hub: Hub): void {
   });
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId !== MENU_ID) return;
-    // Firefox adds `cookieStoreId` to tabs; Chromium tabs use the default cookie store.
-    const menuTab = tab as MenuTab | undefined;
+    const menuTab: MenuTab | undefined =
+      tab === undefined
+        ? undefined
+        : { incognito: tab.incognito, cookieStoreId: cookieStoreOf(tab) };
     hub.onMenuClick(info, menuTab).catch(() => undefined);
   });
 }

@@ -39,12 +39,17 @@ describe('planMenuClick', () => {
   const web = 'https://example.com/a.zip';
 
   it('fails without a link or source, before anything else', () => {
-    expect(planMenuClick({}, { incognito: true })).toEqual({ kind: 'failed' });
+    expect(planMenuClick({}, { incognito: true, cookieStoreId: null })).toEqual({ kind: 'failed' });
     expect(planMenuClick({ linkUrl: '' }, undefined)).toEqual({ kind: 'failed' });
   });
 
   it('keeps private windows out, before looking at the link', () => {
-    expect(planMenuClick({ linkUrl: 'blob:https://example.com/1' }, { incognito: true })).toEqual({
+    expect(
+      planMenuClick(
+        { linkUrl: 'blob:https://example.com/1' },
+        { incognito: true, cookieStoreId: null },
+      ),
+    ).toEqual({
       kind: 'private_window',
     });
   });
@@ -65,7 +70,9 @@ describe('planMenuClick', () => {
     expect(planMenuClick({ linkUrl: web, srcUrl: 'https://example.com/b.mp4' }, undefined)).toEqual(
       { kind: 'wirecatch', url: web, name: 'a.zip' },
     );
-    expect(planMenuClick({ srcUrl: 'https://example.com/' }, { incognito: false })).toEqual({
+    expect(
+      planMenuClick({ srcUrl: 'https://example.com/' }, { incognito: false, cookieStoreId: null }),
+    ).toEqual({
       kind: 'wirecatch',
       url: 'https://example.com/',
       name: 'this item',

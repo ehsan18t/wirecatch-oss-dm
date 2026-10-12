@@ -856,7 +856,10 @@ describe('context menu', () => {
 
   it('uses the default cookie store in Chromium (no cookieStoreId)', async () => {
     s = await setup();
-    await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, { incognito: false });
+    await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: false, cookieStoreId: null },
+    );
     expect(s.cookieCalls).toEqual([['https://example.com/a.zip', null]]);
   });
 
@@ -864,7 +867,7 @@ describe('context menu', () => {
     s = await setup();
     const result = await s.hub.onMenuClick(
       { linkUrl: 'https://example.com/a.zip' },
-      { incognito: true },
+      { incognito: true, cookieStoreId: null },
     );
     expect(result).toBe('private_window');
     expect(s.app.calls('add_download')).toHaveLength(0);
@@ -875,7 +878,10 @@ describe('context menu', () => {
   it('lets the browser download it without site access, after the earlier checks', async () => {
     s = await setup({ siteAccess: false });
     expect(
-      await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, { incognito: true }),
+      await s.hub.onMenuClick(
+        { linkUrl: 'https://example.com/a.zip' },
+        { incognito: true, cookieStoreId: null },
+      ),
     ).toBe('private_window');
     expect(s.downloads.log).toEqual([]);
     const result = await s.hub.onMenuClick({ linkUrl: 'https://example.com/a.zip' }, undefined);

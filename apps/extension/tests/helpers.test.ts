@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectBrowser } from '../src/lib/browser-info';
+import { cookieStoreOf } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
@@ -340,5 +341,16 @@ describe('popup messages', () => {
     expect(
       asPopupRequest({ id: 1, command: { type: 'download_media', tabId: 3, key: 'k' } }),
     ).not.toBeNull();
+  });
+});
+
+describe('cookieStoreOf', () => {
+  it("reads a Firefox tab's cookie store, and null for a Chromium tab or anything else", () => {
+    expect(cookieStoreOf({ id: 1, cookieStoreId: 'firefox-container-1' })).toBe(
+      'firefox-container-1',
+    );
+    expect(cookieStoreOf({ id: 1, incognito: false })).toBeNull();
+    expect(cookieStoreOf({ cookieStoreId: 7 })).toBeNull();
+    expect(cookieStoreOf(undefined)).toBeNull();
   });
 });

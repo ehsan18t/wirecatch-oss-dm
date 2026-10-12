@@ -85,9 +85,9 @@ export interface MenuClick {
 }
 
 export interface MenuTab {
-  incognito?: boolean;
-  /** Firefox container or private cookie store of the tab. */
-  cookieStoreId?: string;
+  incognito: boolean;
+  /** Firefox container or private cookie store of the tab; null in Chromium. */
+  cookieStoreId: string | null;
 }
 
 export type MenuResult = 'handed_over' | 'browser' | 'failed' | 'private_window';
