@@ -198,11 +198,21 @@ export class NativeClient {
     return this.#status;
   }
 
-  /** Connects for the first time, to an app that is already running. Calling it again does nothing. */
+  /**
+   * Connects for the first time, to an app that is already running. Does nothing when a
+   * connection exists or is being made (a request may have connected first, perhaps
+   * starting the app; replacing that port would lose its answers), and nothing when
+   * called again.
+   */
   start(): void {
     if (this.#started) return;
     this.#started = true;
-    void this.#connect(false);
+    const idle =
+      !this.#stopped &&
+      this.#port === null &&
+      this.#retryTimer === null &&
+      this.#status.state !== 'connected';
+    if (idle) void this.#connect(false);
   }
 
   /** Closes the connection for good and fails everything still waiting. */

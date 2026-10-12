@@ -507,19 +507,67 @@ describe('handover', () => {
   // Every wake of the background (any web response, any tab change) started a bridge process, also
   // while Wirecatch was closed, only to learn it was still closed.
   it('starts no bridge on waking while the app was closed when last seen', async () => {
-    const { app, hub } = await setup({
+    s = await setup({
       configure: (fake, cache) => {
         fake.running = false;
         cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
       },
     });
-    expect(app.ports).toHaveLength(0);
+    expect(s.app.ports).toHaveLength(0);
     // The popup shows whether the app runs, so it finds out.
     const [, background] = channelPair<PopupRequest, BackgroundMessage>();
-    hub.addPopup(background);
+    s.hub.addPopup(background);
     await flush();
-    expect(app.ports).toHaveLength(1);
-    expect(app.starts).toBe(0);
+    expect(s.app.ports).toHaveLength(1);
+    expect(s.app.starts).toBe(0);
+  });
+
+  // Opening the popup replaced the port a download had opened to start the app with one that
+  // may not start it: the bridge said the app was not running, and the download stayed in the browser.
+  it('keeps the connection a download is starting the app with when the popup opens', async () => {
+    s = await setup({
+      configure: (fake, cache) => {
+        fake.running = false;
+        fake.startDelayMs = 1_000;
+        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+      },
+    });
+    const download = s.hub.onDownload(downloadItem());
+    await flush();
+    expect(s.app.ports).toHaveLength(1);
+
+    const [, background] = channelPair<PopupRequest, BackgroundMessage>();
+    s.hub.addPopup(background);
+    await flush();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(await download).toMatchObject({ kind: 'handed_over' });
+    expect(s.app.ports).toHaveLength(1);
+    expect(s.app.starts).toBe(1);
+  });
+
+  // Opening the popup dropped the live connection a download was being handed over on, so its
+  // answer never came: the download waited out its time and was withdrawn.
+  it('keeps the live connection a download is being handed over on when the popup opens', async () => {
+    s = await setup({
+      configure: (fake, cache) => {
+        fake.running = false;
+        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+      },
+    });
+    const [, background] = channelPair<PopupRequest, BackgroundMessage>();
+    s.app.onRequest = (call) => {
+      if (call.method === 'add_download') s.hub.addPopup(background);
+    };
+
+    const download = s.hub.onDownload(downloadItem());
+    await flush();
+    // Long enough for the request to time out and be withdrawn, as it did.
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(await download).toMatchObject({ kind: 'handed_over' });
+    expect(s.app.ports).toHaveLength(1);
+    expect(s.app.calls('withdraw_download')).toHaveLength(0);
   });
 
   it('remembers that the app is closed, and forgets it once the app runs', async () => {

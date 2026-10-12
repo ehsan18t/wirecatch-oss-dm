@@ -99,12 +99,12 @@ export class FakeNativePort implements NativePort {
 export type AddBehavior =
   AddAction | { error: ProtocolError } | 'hang' | 'disconnect' | 'unexpected_action';
 
-/** The bridge plus the app, answering the protocol like the real ones would. */
 /** Like the bridge: a hello without `start_app` comes from an older client, which always started the app. */
 function mayStartApp(hello: Partial<Pick<Hello, 'start_app'>>): boolean {
   return hello.start_app ?? true;
 }
 
+/** The bridge plus the app, answering the protocol like the real ones would. */
 export class FakeApp implements NativeTransport {
   settings: ExtensionSettings = { ...DEFAULT_SETTINGS };
   queues: QueueSummary[] = QUEUES;
@@ -118,6 +118,8 @@ export class FakeApp implements NativeTransport {
   running = true;
   /** How many times a `hello` started the app. */
   starts = 0;
+  /** When set, a `hello` that starts the closed app is answered only after this many milliseconds, as the app takes to start; until then the app is not running. */
+  startDelayMs: number | null = null;
   /** When false, nothing is answered (a hung bridge). */
   answers = true;
   addBehavior: AddBehavior = 'started';
@@ -177,7 +179,7 @@ export class FakeApp implements NativeTransport {
     const reply = (outcome: Outcome): void => port.deliver({ kind: 'response', id, outcome });
     switch (call.method) {
       case 'hello':
-        reply(this.hello(call.params));
+        this.greet(call.params, reply);
         return;
       case 'get_extension_settings':
         reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
@@ -200,6 +202,16 @@ export class FakeApp implements NativeTransport {
         this.add(port, { id, call }, reply);
         return;
     }
+  }
+
+  /** Answers `hello`, after `startDelayMs` when it starts the app. */
+  private greet(params: Hello, reply: (outcome: Outcome) => void): void {
+    const delay = this.startDelayMs;
+    if (!this.running && mayStartApp(params) && delay !== null) {
+      setTimeout(() => reply(this.hello(params)), delay);
+      return;
+    }
+    reply(this.hello(params));
   }
 
   private hello(params: Hello): Outcome {
