@@ -21,6 +21,9 @@ bytes.workspace = true
 # to gain on a header's worth of text.
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 httpdate = "1.0.3"
+# Only for the proxy matcher the HTTP client itself uses (see src/proxy.rs), so
+# the engine reads NO_PROXY exactly as reqwest does; reqwest already builds it.
+hyper-util = { version = "0.1.12", default-features = false, features = ["client-proxy"] }
 percent-encoding.workspace = true
 # Only the HTTP client: TLS comes preconfigured from the rustls dependency below,
 # so reqwest needs neither its own root certificates nor a crypto provider.

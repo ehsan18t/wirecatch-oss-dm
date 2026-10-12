@@ -68,19 +68,9 @@ impl Origin {
     /// belong to that host.
     ///
     /// `peer` is the address the first request reached. Nothing is used when
-    /// a proxy is set in the environment: QUIC would go around it.
+    /// a proxy is set for the host in the environment `env` reads: QUIC would
+    /// go around it.
     pub fn advertised(
-        url: &Url,
-        headers: &HeaderMap,
-        peer: Option<SocketAddr>,
-        tls: &rustls::ClientConfig,
-        opts: &DownloadOptions,
-    ) -> Option<Arc<Self>> {
-        Self::advertised_in(url, headers, peer, tls, opts, &proxy::system)
-    }
-
-    /// [`Origin::advertised`], reading environment variables with `env`.
-    fn advertised_in(
         url: &Url,
         headers: &HeaderMap,
         peer: Option<SocketAddr>,

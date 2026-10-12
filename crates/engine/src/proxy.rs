@@ -10,14 +10,13 @@
 //! As in the client, a scheme's own variable (`HTTPS_PROXY` or `https_proxy`
 //! for `https`) comes first and `ALL_PROXY` (or `all_proxy`) second, and a host
 //! that `NO_PROXY` (or `no_proxy`) names is reached directly. `NO_PROXY` is
-//! matched exactly as the client matches it: a list of names and addresses
+//! matched by the client's own matcher (from `hyper-util`): a list of names and addresses
 //! separated by commas, where a name also covers its subdomains (`example.com`
 //! and `.example.com` both cover `files.example.com`), an address or a network
 //! (`10.0.0.0/8`) covers the addresses in it, and `*` covers every name.
 
+use hyper_util::client::proxy::matcher::Matcher;
 use std::ffi::OsString;
-use std::net::IpAddr;
-
 use url::{Host, Url};
 
 /// Reads an environment variable; tests pass their own.
@@ -26,6 +25,12 @@ pub(crate) type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
 /// Reads the process's environment.
 pub(crate) fn system(name: &str) -> Option<OsString> {
     std::env::var_os(name)
+}
+
+/// An environment with no variables set.
+#[cfg(test)]
+pub(crate) fn nothing(_: &str) -> Option<OsString> {
+    None
 }
 
 /// What a request is sent with, as far as proxies go.
@@ -52,13 +57,13 @@ impl Scheme {
 /// The variable whose proxy a request with `scheme` to `host` goes through, or
 /// `None` when it goes directly.
 pub(crate) fn configured(scheme: Scheme, host: &str, env: Env<'_>) -> Option<&'static str> {
-    let variable = scheme.variables().into_iter().find_map(|pair| {
+    let (variable, proxy) = scheme.variables().into_iter().find_map(|pair| {
         let (name, value) = first_set(&pair, env)?;
-        (!value.trim().is_empty()).then_some(name)
+        (!value.trim().is_empty()).then_some((name, value))
     })?;
     let no_proxy = first_set(&["NO_PROXY", "no_proxy"], env).map(|(_, value)| value);
     match no_proxy {
-        Some(list) if excluded(&list, host) => None,
+        Some(list) if excluded(&proxy, &list, host) => None,
         _ => Some(variable),
     }
 }
@@ -100,81 +105,20 @@ fn first_set(names: &[&'static str], env: Env<'_>) -> Option<(&'static str, Stri
         .find_map(|&name| env(name).map(|value| (name, value.to_string_lossy().into_owned())))
 }
 
-/// Whether the `NO_PROXY` list `list` names `host` (a name, an IP address, or
-/// an IPv6 address in brackets).
-fn excluded(list: &str, host: &str) -> bool {
-    let host = host
-        .strip_prefix('[')
-        .and_then(|h| h.strip_suffix(']'))
-        .unwrap_or(host);
-    let entries = list.split(',').map(str::trim).filter(|e| !e.is_empty());
-    match host.parse::<IpAddr>() {
-        Ok(ip) => entries
-            .filter_map(network)
-            .any(|(net, bits)| within(net, bits, ip)),
-        // Entries that are addresses or networks only ever cover addresses.
-        Err(_) => entries
-            .filter(|entry| network(entry).is_none())
-            .any(|entry| names(entry, host)),
-    }
-}
-
-/// An address (`10.0.0.1`) or network (`10.0.0.0/8`) entry, as the network and
-/// the number of leading bits that must match.
-fn network(entry: &str) -> Option<(IpAddr, u32)> {
-    if let Ok(ip) = entry.parse::<IpAddr>() {
-        return Some((ip, full_bits(ip)));
-    }
-    let (net, bits) = entry.split_once('/')?;
-    let net: IpAddr = net.parse().ok()?;
-    let bits: u32 = bits.parse().ok()?;
-    (bits <= full_bits(net)).then_some((net, bits))
-}
-
-/// How many bits an address of this kind has.
-fn full_bits(ip: IpAddr) -> u32 {
-    match ip {
-        IpAddr::V4(_) => u32::BITS,
-        IpAddr::V6(_) => u128::BITS,
-    }
-}
-
-/// Whether `ip` is in the network `net` whose first `bits` bits count. An IPv4
-/// address is never in an IPv6 network, nor the other way round.
-fn within(net: IpAddr, bits: u32, ip: IpAddr) -> bool {
-    match (net, ip) {
-        (IpAddr::V4(net), IpAddr::V4(ip)) => {
-            let mask = u32::MAX.checked_shl(u32::BITS - bits).unwrap_or(0);
-            u32::from(net) & mask == u32::from(ip) & mask
-        }
-        (IpAddr::V6(net), IpAddr::V6(ip)) => {
-            let mask = u128::MAX.checked_shl(u128::BITS - bits).unwrap_or(0);
-            u128::from(net) & mask == u128::from(ip) & mask
-        }
-        _ => false,
-    }
-}
-
-/// Whether the name entry `entry` covers the host name `host`: the name
-/// itself, with or without a leading dot, any subdomain of it, or `*`.
-fn names(entry: &str, host: &str) -> bool {
-    if entry.eq_ignore_ascii_case(host)
-        || entry
-            .strip_prefix('.')
-            .is_some_and(|e| e.eq_ignore_ascii_case(host))
-    {
-        return true;
-    }
-    let Some(cut) = host.len().checked_sub(entry.len()) else {
-        return entry == "*";
+/// Whether a request to `host` would bypass the proxy `proxy` because of the
+/// `NO_PROXY` list `no_proxy`, decided by the matcher the HTTP client itself
+/// uses, so the two never disagree. A host that cannot be put in a URL counts
+/// as going through the proxy, the careful answer.
+fn excluded(proxy: &str, no_proxy: &str, host: &str) -> bool {
+    let Ok(destination) = format!("http://{host}/").parse::<::http::Uri>() else {
+        return false;
     };
-    let ends_with_entry = host
-        .get(cut..)
-        .is_some_and(|tail| tail.eq_ignore_ascii_case(entry));
-    if ends_with_entry {
-        return entry.starts_with('.') || cut > 0 && host.as_bytes().get(cut - 1) == Some(&b'.');
-    }
-    entry == "*"
+    Matcher::builder()
+        .all(proxy.to_string())
+        .no(no_proxy.to_string())
+        .build()
+        .intercept(&destination)
+        .is_none()
 }
 
 #[cfg(test)]
@@ -267,20 +211,6 @@ mod tests {
             configured(Scheme::Https, "x.1.2.3.4", &address),
             Some("HTTPS_PROXY")
         );
-    }
-
-    #[test]
-    fn networks_cover_their_addresses_only() {
-        let net = |entry: &str| network(entry).unwrap();
-        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
-        let (v4, bits) = net("100.64.0.0/10");
-        assert!(within(v4, bits, ip("100.127.255.255")));
-        assert!(!within(v4, bits, ip("100.128.0.0")));
-        let (all, bits) = net("0.0.0.0/0");
-        assert!(within(all, bits, ip("8.8.8.8")));
-        assert!(!within(all, bits, ip("::1")));
-        assert_eq!(network("10.0.0.0/33"), None);
-        assert_eq!(network("example.com"), None);
     }
 
     #[test]

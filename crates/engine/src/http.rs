@@ -19,6 +19,7 @@ use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::naming;
 use crate::net_guard::{FilteringResolver, Guard};
+use crate::proxy;
 
 mod range;
 
@@ -284,6 +285,18 @@ pub(crate) struct Clients {
     /// Resolves names for every client [`build`](Self::build) makes, when set
     /// (to keep a download away from the local network).
     resolver: Option<Arc<FilteringResolver>>,
+    /// Where proxy settings come from.
+    proxies: Proxies,
+}
+
+/// Where the proxy settings of [`Clients`] come from.
+#[derive(Debug, Clone, Copy)]
+enum Proxies {
+    /// The process's environment, as for any download.
+    System,
+    /// Nowhere: tests must not depend on the machine they run on.
+    #[cfg(test)]
+    Ignored,
 }
 
 /// The process-wide TLS configuration: the system's root certificates are read
@@ -315,10 +328,25 @@ impl Clients {
         &self.tls
     }
 
-    /// Uses the given root certificates and a session cache of its own.
+    /// Uses the given root certificates and a session cache of its own, and
+    /// no proxy whatever the environment says, so a test behaves the same on
+    /// every machine.
     #[cfg(test)]
     pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {
-        Self::with_config(opts, tls_config(roots).unwrap())
+        Self {
+            proxies: Proxies::Ignored,
+            ..Self::with_config(opts, tls_config(roots).unwrap())
+        }
+    }
+
+    /// Reads the environment variables that set proxies, as these clients see
+    /// them.
+    pub fn environment(&self) -> proxy::Env<'static> {
+        match self.proxies {
+            Proxies::System => &proxy::system,
+            #[cfg(test)]
+            Proxies::Ignored => &proxy::nothing,
+        }
     }
 
     fn with_config(opts: &DownloadOptions, tls: rustls::ClientConfig) -> Self {
@@ -327,6 +355,7 @@ impl Clients {
             user_agent: opts.user_agent.clone(),
             connect_timeout: opts.connect_timeout,
             resolver: None,
+            proxies: Proxies::System,
         }
     }
 
@@ -349,7 +378,15 @@ impl Clients {
         let mut headers = HeaderMap::new();
         // Compressed transfer encodings break byte offsets.
         headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-        Client::builder()
+        let builder = Client::builder();
+        // The HTTP client reads the process's environment itself; without one,
+        // it must not either.
+        let builder = match self.proxies {
+            Proxies::System => builder,
+            #[cfg(test)]
+            Proxies::Ignored => builder.no_proxy(),
+        };
+        builder
             // A clone shares the session cache: it lives behind an `Arc` in the config.
             .use_preconfigured_tls(self.tls.clone())
             .user_agent(self.user_agent.as_str())

@@ -249,7 +249,7 @@ pub(crate) async fn open(
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: refuse instead, until FTP proxies are supported.
             let host = url.host_str().unwrap_or_default();
-            if let Some(variable) = proxy::configured(Scheme::Ftp, host, &proxy::system) {
+            if let Some(variable) = proxy::configured(Scheme::Ftp, host, clients.environment()) {
                 return Err(Error::FtpProxyUnsupported {
                     variable: variable.to_string(),
                 });
@@ -295,6 +295,7 @@ async fn open_http(
             probe.response.remote_addr(),
             clients.tls(),
             opts,
+            clients.environment(),
         )
     } else {
         None
