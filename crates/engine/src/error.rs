@@ -328,7 +328,7 @@ impl<T> IoContext<T> for io::Result<T> {
     }
 }
 
-/// An error followed by every error below it, separated by `: `, for log lines: each level says only what it adds (an [`Error::Io`] the action and file, its source the system's reason), so a log needs them all.
+/// An error followed by every error below it, separated by `: `, for log lines about errors whose message leaves their source out: each level says only what it adds (an [`Error::Io`] the action and file, its source the system's reason), so a log needs them all. An error whose message already includes its source (such as `rustls_native_certs::Error`) is logged on its own, or the reason would show twice.
 pub(crate) struct Chain<'a>(pub &'a dyn std::error::Error);
 
 impl fmt::Display for Chain<'_> {
