@@ -100,6 +100,7 @@ pub(crate) fn finalize(
             tracing::debug!(error = %e, "could not clear the sparse flag of a finished file");
         }
     }
+    #[cfg(test)]
     abandoned.flushed();
     abandoned.check()?;
     std::fs::rename(part, final_path).context(IoAction::Finish, final_path)

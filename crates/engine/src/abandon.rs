@@ -23,8 +23,8 @@ pub(crate) struct Abandonment(Arc<Flags>);
 #[derive(Default)]
 struct Flags {
     dropped: AtomicBool,
-    /// Count the download as dropped the next time a flush ends: set only by
-    /// tests, which drop a download in the middle of its work this way.
+    /// Tests: count the download as dropped the next time a slow step ends.
+    #[cfg(test)]
     drop_at_flush: AtomicBool,
 }
 
@@ -64,8 +64,8 @@ impl Abandoned {
         }
     }
 
-    /// Called right after a flush to the disk ends, before the check that
-    /// follows it; tests drop the download here.
+    /// Tests: called right after a slow step ends (a flush to the disk, creating a folder), before the check that follows it; a test drops the download here.
+    #[cfg(test)]
     pub fn flushed(&self) {
         if self.0.drop_at_flush.load(Ordering::SeqCst) {
             self.0.dropped.store(true, Ordering::SeqCst);

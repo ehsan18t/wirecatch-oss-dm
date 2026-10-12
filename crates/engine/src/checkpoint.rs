@@ -123,6 +123,7 @@ fn flush_then(
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
     part.sync_data().context(IoAction::Flush, path)?;
+    #[cfg(test)]
     abandoned.flushed();
     if abandoned.is_set() {
         return Ok(());
