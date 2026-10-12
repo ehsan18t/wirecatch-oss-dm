@@ -25,17 +25,31 @@ function tableBody(lines, header, path) {
   return { start, end: next === -1 ? lines.length : next };
 }
 
+/** Whether a TOML value goes on past its line: an unclosed array or table, or a multi-line string. */
+function continuesOnNextLine(value) {
+  const opened = (value.match(/[[{]/g) ?? []).length;
+  const closed = (value.match(/[\]}]/g) ?? []).length;
+  return opened > closed || value.startsWith('"""') || value.startsWith("'''");
+}
+
 /**
  * `text` (the Cargo.toml at `path`) with `key = value` set in the table `header`: the line that sets the key is replaced, or one is added after the table's last setting. `value` is already TOML (`"0.1.0"`, `["a"]`). Comments and every other line stay as they are.
  */
 export function setTomlKey(text, path, header, [key, value]) {
   const lines = text.split('\n');
   const { start, end } = tableBody(lines, header, path);
-  const setting = new RegExp(`^\\s*${key.replace(/\./g, '\\.')}\\s*=`);
+  // The indentation, the key, its value and a trailing comment that holds no quote.
+  const setting = new RegExp(`^(\\s*)${key.replace(/\./g, '\\.')}\\s*=\\s*(.*?)(\\s+#[^"']*)?$`);
   const line = `${key} = ${value}`;
   const existing = lines.findIndex((l, i) => i >= start && i < end && setting.test(l));
   if (existing !== -1) {
-    lines[existing] = line;
+    const [, indent, current, comment = ''] = setting.exec(lines[existing]) ?? [];
+    if (continuesOnNextLine(current ?? '')) {
+      throw new ManifestError(
+        `${path}: ${key} in ${header} takes more than one line; write it on one line for the generator to update it.`,
+      );
+    }
+    lines[existing] = `${indent ?? ''}${line}${comment}`;
   } else {
     let last = end - 1;
     while (last >= start && (lines[last].trim() === '' || lines[last].trim().startsWith('#')))

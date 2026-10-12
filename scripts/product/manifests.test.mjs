@@ -77,3 +77,18 @@ test('a malformed placeholder is an error, never left in the output', () => {
 test('a value that happens to hold braces is filled in, not taken for a broken placeholder', () => {
   assert.equal(fillTemplate('name: {{x.y}}', { x: { y: 'a {{b' } }, 't'), 'name: a {{b');
 });
+
+test('a Cargo setting that continues onto the next line is refused, never cut in half', () => {
+  assert.throws(
+    () => setTomlKey('[package]\nauthors = [\n  "a",\n]\n', 'x', '[package]', ['authors', '["b"]']),
+    /more than one line/,
+  );
+});
+
+test('a trailing comment on a Cargo setting stays with the setting', () => {
+  const text = setTomlKey('[[bin]]\nname = "old" # the shipped name\n', 'x', '[[bin]]', [
+    'name',
+    '"new"',
+  ]);
+  assert.equal(text, '[[bin]]\nname = "new" # the shipped name\n');
+});
