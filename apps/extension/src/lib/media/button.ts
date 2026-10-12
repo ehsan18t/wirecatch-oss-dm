@@ -5,14 +5,17 @@
  * needs to know about the tab comes from the background script through `deps`.
  */
 import { BUTTON_HEIGHT, SHADOW_CSS, TYPICAL_BUTTON_WIDTH, icon } from './button-style';
+import { DownloadableChecks } from './checks';
+import { LiveMessage } from './live-message';
 import type { DownloadAnswer, ElementInfo } from './messages';
 import {
   containsDeep,
   elementInfo,
   findMedia,
-  isCandidate,
-  isDecorative,
+  isUsable,
+  mediaAt,
   mediaTitle,
+  playerMedia,
 } from './page-media';
 import { INSET, placeButton, type Position } from './placement';
 
@@ -28,14 +31,10 @@ export interface ButtonDeps {
   isTrusted?(event: Event): boolean;
 }
 
-/** A focused container stands for the media inside it when it is at most this much larger. */
-const PLAYER_AREA_RATIO = 1.5;
 /** Added to the wait for the button to fade, so the timer fires just after that moment, not before. */
 const WAKE_SLACK_MS = 20;
 /** How long the button stays fully visible after the last pointer movement or play. */
 export const ACTIVE_MS = 3000;
-/** A "nothing to download" answer is asked again after this long (media may show up once playback starts). */
-const RECHECK_MS = 3000;
 
 /** Page-wide listeners capture: media events such as `play` do not bubble, and a page may stop others from bubbling. */
 const CAPTURE = { capture: true };
@@ -55,9 +54,6 @@ const CONTAINED = [
 
 /** `message`: the button is gone but its last message stays readable (and announced) until it expires. */
 export type Shown = 'none' | 'shown' | 'idle' | 'message';
-
-/** How long a message stays, long enough for screen readers to announce it. */
-export const MESSAGE_MS = { ok: 4000, error: 8000 };
 
 /**
  * A media element shown full screen by itself cannot have anything drawn over it;
@@ -79,11 +75,8 @@ export class MediaButton {
   readonly #doc: Document;
   readonly #now: () => number;
   readonly #tracked = new Set<HTMLMediaElement>();
-  readonly #checks = new WeakMap<
-    HTMLMediaElement,
-    { src: string | null; show: boolean; at: number }
-  >();
-  readonly #asking = new WeakSet<HTMLMediaElement>();
+  readonly #checks: DownloadableChecks;
+  readonly #message: LiveMessage;
   /** Open shadow roots already searched for media, each once. */
   readonly #searched = new WeakSet<ShadowRoot>();
   /** Removes the listeners that watch the page; run when the setting goes off. */
@@ -105,7 +98,6 @@ export class MediaButton {
   /** The position last written to the host, so an unchanged one is not written again. */
   #style = '';
   #timer: ReturnType<typeof setTimeout> | null = null;
-  #statusTimer: ReturnType<typeof setTimeout> | null = null;
   #state: Shown = 'none';
 
   constructor(deps: ButtonDeps, doc: Document = document, now: () => number = Date.now) {
@@ -129,6 +121,12 @@ export class MediaButton {
     this.status.className = 's';
     this.status.setAttribute('role', 'status');
     this.#wrap.append(this.button, this.status);
+    this.#checks = new DownloadableChecks(
+      (info) => deps.check(info),
+      now,
+      () => this.#update(),
+    );
+    this.#message = new LiveMessage(this.status, () => this.#update());
     root.append(style, this.#wrap);
     for (const type of CONTAINED) this.#wrap.addEventListener(type, (e) => e.stopPropagation());
     // Only a real click or key press, never one a page script made up.
@@ -148,7 +146,7 @@ export class MediaButton {
     for (const el of findMedia(doc)) {
       const tracked = this.#track(el);
       // Already playing when the setting came on: no `play` event will say so.
-      if (tracked !== null && !tracked.paused && isCandidate(tracked) && !isDecorative(tracked)) {
+      if (tracked !== null && !tracked.paused && isUsable(tracked)) {
         this.#playing = tracked;
         this.#lastActive = this.#now();
       }
@@ -196,7 +194,7 @@ export class MediaButton {
       this.#state = 'message';
     }
     // The live region is in the page first, then gets its text, so it is announced.
-    const say = (): void => this.#say(message, error);
+    const say = (): void => this.#message.say(message, error);
     const view = this.#doc.defaultView;
     if (view === null) say();
     else view.requestAnimationFrame(say);
@@ -232,7 +230,7 @@ export class MediaButton {
   destroy(): void {
     this.#unwatch();
     if (this.#timer !== null) clearTimeout(this.#timer);
-    if (this.#statusTimer !== null) clearTimeout(this.#statusTimer);
+    this.#message.stop();
     this.host.remove();
   }
 
@@ -275,7 +273,7 @@ export class MediaButton {
 
   #onPlay(event: Event): void {
     const el = this.#track(event.target);
-    if (el === null || !isCandidate(el) || isDecorative(el)) return;
+    if (el === null || !isUsable(el)) return;
     this.#playing = el;
     this.#lastActive = this.#now();
     this.#update();
@@ -326,17 +324,11 @@ export class MediaButton {
     ) {
       return null;
     }
-    const usable = (el: HTMLMediaElement): boolean => isCandidate(el) && !isDecorative(el);
-    if (target instanceof HTMLMediaElement) return usable(target) ? this.#track(target) : null;
+    if (target instanceof HTMLMediaElement) return isUsable(target) ? this.#track(target) : null;
     const box = target.getBoundingClientRect();
     // A player's media may not have been seen yet (added without any event reaching the page).
     if (box.width * box.height > 0) for (const el of findMedia(target)) this.#track(el);
-    for (const el of this.#tracked) {
-      if (!usable(el) || !containsDeep(target, el)) continue;
-      const r = el.getBoundingClientRect();
-      if (box.width * box.height <= PLAYER_AREA_RATIO * r.width * r.height) return el;
-    }
-    return null;
+    return playerMedia(target, this.#tracked);
   }
 
   /**
@@ -385,46 +377,9 @@ export class MediaButton {
     const p = this.#pointer;
     // On the button, the element it belongs to stays the one in use.
     if (p === null || this.#overButton) return;
-    const hit = this.#trackedAt(p.x, p.y);
+    const hit = mediaAt(this.#tracked, p.x, p.y);
     if (hit !== null) this.#lastActive = this.#now();
     this.#hovered = hit;
-  }
-
-  #trackedAt(x: number, y: number): HTMLMediaElement | null {
-    let hit: HTMLMediaElement | null = null;
-    for (const el of this.#tracked) {
-      if (!el.isConnected) {
-        this.#tracked.delete(el);
-        continue;
-      }
-      // A moving background is not something to download, hovered or not.
-      if (!isCandidate(el) || isDecorative(el)) continue;
-      const r = el.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = el;
-    }
-    return hit;
-  }
-
-  /** Whether the background knows something to download for this element; asks when it does not know yet. */
-  #allowed(el: HTMLMediaElement): boolean {
-    const { src } = elementInfo(el);
-    const known = this.#checks.get(el);
-    if (known?.src === src && (known.show || this.#now() - known.at < RECHECK_MS)) {
-      return known.show;
-    }
-    if (!this.#asking.has(el)) {
-      this.#asking.add(el);
-      this.#deps
-        .check(elementInfo(el))
-        .catch(() => false)
-        .then((show) => {
-          this.#asking.delete(el);
-          this.#checks.set(el, { src, show, at: this.#now() });
-          this.#update();
-        })
-        .catch(() => undefined);
-    }
-    return known?.show ?? false;
   }
 
   #update(): void {
@@ -432,7 +387,8 @@ export class MediaButton {
     const holding = this.#isFocused() || this.#busy;
     if (!holding) this.#target = this.#hovered ?? this.#playing;
     const target = this.#target;
-    const wanted = target !== null && this.#enabled && target.isConnected && this.#allowed(target);
+    const wanted =
+      target !== null && this.#enabled && target.isConnected && this.#checks.allowed(target);
     this.#render(wanted ? this.#visibility(target, holding) : 'none', target);
   }
 
@@ -492,7 +448,7 @@ export class MediaButton {
   }
 
   #hide(): void {
-    if (this.status.textContent !== '' && this.host.isConnected) {
+    if (this.#message.showing && this.host.isConnected) {
       // Keep the message (a live region) in place until it has been read; it expires on its own.
       this.#wrap.classList.add('msg');
       this.#state = 'message';
@@ -530,7 +486,7 @@ export class MediaButton {
     this.#busy = true;
     this.button.setAttribute('aria-busy', 'true');
     this.#label.textContent = 'Sending…';
-    this.#say('', false);
+    this.#message.say('', false);
     let answer: DownloadAnswer;
     try {
       answer = await this.#deps.download({
@@ -547,25 +503,8 @@ export class MediaButton {
     this.#busy = false;
     this.button.removeAttribute('aria-busy');
     this.#label.textContent = 'Download';
-    this.#say(answer.message, !answer.ok);
+    this.#message.say(answer.message, !answer.ok);
     this.#lastActive = this.#now();
     this.#update();
-  }
-
-  #say(message: string, error: boolean): void {
-    this.status.textContent = message;
-    this.status.classList.toggle('err', error);
-    if (this.#statusTimer !== null) clearTimeout(this.#statusTimer);
-    this.#statusTimer =
-      message === ''
-        ? null
-        : setTimeout(
-            () => {
-              this.#statusTimer = null;
-              this.status.textContent = '';
-              this.#update();
-            },
-            error ? MESSAGE_MS.error : MESSAGE_MS.ok,
-          );
   }
 }

@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/lib/media/button.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/lib/native/client.ts": {
     "complexity": {
       "count": 1

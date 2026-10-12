@@ -13,6 +13,54 @@ export function isCandidate(el: HTMLMediaElement): boolean {
   return el.tagName === 'VIDEO' || (el.tagName === 'AUDIO' && el.controls);
 }
 
+/** Media the button may be shown for: a candidate that is not decoration. */
+export function isUsable(el: HTMLMediaElement): boolean {
+  return isCandidate(el) && !isDecorative(el);
+}
+
+/** A focused container stands for the media inside it when it is at most this much larger. */
+const PLAYER_AREA_RATIO = 1.5;
+
+/**
+ * The media a player container stands for: a usable one inside it, about the
+ * container's size. A large container (the page's main area, say) is not a player.
+ */
+export function playerMedia(
+  container: Element,
+  media: Iterable<HTMLMediaElement>,
+): HTMLMediaElement | null {
+  const box = container.getBoundingClientRect();
+  for (const el of media) {
+    if (!isUsable(el) || !containsDeep(container, el)) continue;
+    const r = el.getBoundingClientRect();
+    if (box.width * box.height <= PLAYER_AREA_RATIO * r.width * r.height) return el;
+  }
+  return null;
+}
+
+/**
+ * The usable media under a point, the last one in `media` when several overlap, even
+ * under a player's transparent overlay. Drops elements no longer in the page from `media`.
+ */
+export function mediaAt(
+  media: Set<HTMLMediaElement>,
+  x: number,
+  y: number,
+): HTMLMediaElement | null {
+  let hit: HTMLMediaElement | null = null;
+  for (const el of media) {
+    if (!el.isConnected) {
+      media.delete(el);
+      continue;
+    }
+    // A moving background is not something to download, hovered or not.
+    if (!isUsable(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = el;
+  }
+  return hit;
+}
+
 export function elementInfo(el: HTMLMediaElement): ElementInfo {
   // The browser reports a missing address as an empty string.
   const src = nonEmpty(el.currentSrc) ?? nonEmpty(el.src) ?? el.querySelector('source')?.src ?? '';
