@@ -47,8 +47,8 @@ export interface MockOptions {
   now?: () => number;
   /**
    * How long each answer takes to come back, in milliseconds, as a call to the real core does.
-   * Zero (the default) answers on the next microtask; more lets answers arrive well after the
-   * events the call caused, which shows races in the interface.
+   * Zero (the default) answers as soon as the call returns, as the mock always has; more lets
+   * answers arrive well after the events the call caused, which shows races in the interface.
    */
   latencyMs?: number;
 }
@@ -85,6 +85,8 @@ export class MockBackend implements Backend {
   readonly #latencyMs: number;
   #timer: ReturnType<typeof setInterval> | undefined;
   #captureTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Answers waiting out `latencyMs`. */
+  readonly #answers = new Set<ReturnType<typeof setTimeout>>();
   #lastTick: number;
   #captureIndex = 0;
   #mediaIndex = 0;
@@ -106,16 +108,19 @@ export class MockBackend implements Backend {
     }
   }
 
-  /** Stops the timers. */
+  /** Stops the timers, including answers still on their way back; those never arrive. */
   dispose(): void {
     if (this.#timer) clearInterval(this.#timer);
     if (this.#captureTimer) clearTimeout(this.#captureTimer);
+    for (const answer of this.#answers) clearTimeout(answer);
+    this.#answers.clear();
   }
 
   /**
    * One call to the mock core. The work happens at once, as if the request reached the core
-   * immediately, so its events go out first; the answer (or the error) comes back after
-   * `latencyMs`, as from the real core over IPC.
+   * immediately, so its events go out first. Without latency the answer (or the error) settles
+   * the returned promise straight away; with `latencyMs` it comes back that much later, as from
+   * the real core over IPC.
    */
   async #call<T>(work: () => T): Promise<T> {
     let outcome: Outcome<T>;
@@ -124,12 +129,20 @@ export class MockBackend implements Backend {
     } catch (error) {
       outcome = { ok: false, error };
     }
-    await new Promise<void>((resolve) => {
-      if (this.#latencyMs > 0) setTimeout(resolve, this.#latencyMs);
-      else resolve();
-    });
+    if (this.#latencyMs > 0) await this.#delay(this.#latencyMs);
     if (!outcome.ok) throw outcome.error;
     return outcome.value;
+  }
+
+  /** Waits `ms`, unless `dispose` stops the wait first. */
+  #delay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const answer = setTimeout(() => {
+        this.#answers.delete(answer);
+        resolve();
+      }, ms);
+      this.#answers.add(answer);
+    });
   }
 
   /** Advances the simulation. Called on a timer, or directly by tests. */

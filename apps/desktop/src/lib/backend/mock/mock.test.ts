@@ -85,7 +85,10 @@ describe('MockBackend', () => {
     for (let i = 0; i < 12; i++) advance(250);
     const work = running(await mock.listDownloads(), 3);
     const total = work.reduce((s, r) => s + r.speed, 0);
-    expect(total).toBeLessThanOrEqual(1024 * 1024 + 1);
+    const limit = (await mock.listQueues()).find((q) => q.id === 3)?.speed_limit;
+    expect(limit).toBeTypeOf('number');
+    // Speeds are rounded to whole bytes, so the total may go one byte over.
+    expect(total).toBeLessThanOrEqual((limit ?? 0) + 1);
   });
 
   it('pauses, resumes, retries and refreshes links', async () => {
@@ -235,6 +238,32 @@ describe('MockBackend', () => {
       expect(error).toBeNull();
       await vi.advanceTimersByTimeAsync(1);
       expect(error).toBeInstanceOf(BackendError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('answers within one microtask by default', async () => {
+    const { mock } = make({ empty: true });
+    let answered = false;
+    let failed = false;
+    void mock.listDownloads().then(() => (answered = true));
+    void mock.pause(42).catch(() => (failed = true));
+    await Promise.resolve();
+    expect(answered).toBe(true);
+    expect(failed).toBe(true);
+  });
+
+  it('drops answers still on their way back when disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { mock } = make({ empty: true, latencyMs: 100 });
+      let answered = false;
+      void mock.listDownloads().then(() => (answered = true));
+      mock.dispose();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(answered).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }
