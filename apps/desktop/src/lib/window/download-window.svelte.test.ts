@@ -312,3 +312,16 @@ describe('a progress window', () => {
     expect(win.phase).toBe('gone');
   });
 });
+
+describe('closing a window', () => {
+  it('lets go of its listener when closed while it still loads', async () => {
+    const b = backend();
+    const stop = vi.fn();
+    vi.spyOn(b, 'subscribe').mockResolvedValue(stop);
+    const { win } = windowState(b, { question: 1 });
+    const loading = win.init();
+    win.dispose();
+    await loading;
+    expect(stop).toHaveBeenCalledOnce();
+  });
+});

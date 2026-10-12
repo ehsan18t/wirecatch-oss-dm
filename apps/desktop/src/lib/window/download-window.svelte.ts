@@ -87,6 +87,8 @@ export class DownloadWindowState {
 
   #answered = false;
   #unsubscribe: (() => void) | null = null;
+  /** Bumped by every init and dispose, so a superseded init lets go of what it set up. */
+  #generation = 0;
 
   constructor(backend: Backend, target: Target, host: WindowHost) {
     this.backend = backend;
@@ -110,9 +112,17 @@ export class DownloadWindowState {
 
   /** Loads the window's question or download and starts listening. */
   async init(): Promise<void> {
+    const generation = ++this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
     try {
-      this.#unsubscribe = await this.backend.subscribe(events.receive);
+      const unsubscribe = await this.backend.subscribe(events.receive);
+      if (generation !== this.#generation) {
+        // Closed (or loaded again) while subscribing: nothing would ever close this listener.
+        unsubscribe();
+        events.drop();
+        return;
+      }
+      this.#unsubscribe = unsubscribe;
       const [queues, settings] = await Promise.all([
         this.backend.listQueues(),
         this.backend.getSettings(),
@@ -159,6 +169,7 @@ export class DownloadWindowState {
   }
 
   dispose(): void {
+    this.#generation += 1;
     this.#unsubscribe?.();
     this.#unsubscribe = null;
   }
