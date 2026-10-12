@@ -18,6 +18,19 @@ const desktop = resolve(here, '..');
 const root = resolve(desktop, '..', '..');
 const release = process.argv.includes('--release');
 
+// A release carries the product identity into installers, so it must hold no placeholder (D29).
+if (release) {
+  try {
+    execFileSync(process.execPath, [join(root, 'scripts', 'gate.mjs'), 'publish'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+  } catch {
+    console.error('The product identity is not ready for a release; see the message above.');
+    process.exit(1);
+  }
+}
+
 /** The bridge's file name, without `.exe`: the one sidecar the bundle configuration lists. */
 function bridgeName() {
   const config = JSON.parse(
