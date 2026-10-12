@@ -10,121 +10,16 @@
       "count": 1
     }
   },
-  "src/lib/components/AddDialog.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/AddonCard.svelte": {
-    "svelte/button-has-type": {
-      "count": 3
-    }
-  },
-  "src/lib/components/CancelDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/CategoryIcon.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/ContextMenu.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 5
-    }
-  },
   "src/lib/components/DetailPanel.svelte": {
     "max-lines": {
       "count": 1
     },
-    "svelte/button-has-type": {
-      "count": 17
-    },
     "wirecatch/no-magic-numbers": {
-      "count": 16
-    }
-  },
-  "src/lib/components/Dialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
+      "count": 2
     }
   },
   "src/lib/components/DownloadList.svelte": {
     "complexity": {
-      "count": 1
-    },
-    "svelte/button-has-type": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 3
-    }
-  },
-  "src/lib/components/EmptyState.svelte": {
-    "svelte/button-has-type": {
-      "count": 6
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
-    }
-  },
-  "src/lib/components/ErrorFix.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/ListEditor.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/OpenProgramDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/PaletteBody.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/QueueDialog.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/RefreshDialog.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/RemoveAddonDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/RemoveDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
@@ -134,71 +29,16 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "svelte/button-has-type": {
-      "count": 7
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
     }
   },
   "src/lib/components/Shell.svelte": {
     "complexity": {
-      "count": 1
-    },
-    "svelte/button-has-type": {
-      "count": 1
-    }
-  },
-  "src/lib/components/ShortcutsDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
   "src/lib/components/Sidebar.svelte": {
     "max-lines": {
       "count": 1
-    },
-    "svelte/button-has-type": {
-      "count": 12
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 13
-    }
-  },
-  "src/lib/components/StorageBanner.svelte": {
-    "svelte/button-has-type": {
-      "count": 2
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
-  "src/lib/components/ToastItem.svelte": {
-    "svelte/button-has-type": {
-      "count": 4
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
-    }
-  },
-  "src/lib/components/Toolbar.svelte": {
-    "svelte/button-has-type": {
-      "count": 8
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 9
-    }
-  },
-  "src/lib/components/TransferDialog.svelte": {
-    "svelte/button-has-type": {
-      "count": 5
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 4
     }
   },
   "src/lib/media-output.ts": {
@@ -219,26 +59,8 @@
       "count": 1
     }
   },
-  "src/lib/window/FileQuestion.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 1
-    }
-  },
   "src/lib/window/MediaQuestion.svelte": {
     "max-lines": {
-      "count": 1
-    }
-  },
-  "src/lib/window/MockWindow.svelte": {
-    "svelte/button-has-type": {
-      "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 3
-    }
-  },
-  "src/lib/window/ProgressView.svelte": {
-    "wirecatch/no-magic-numbers": {
       "count": 1
     }
   },
