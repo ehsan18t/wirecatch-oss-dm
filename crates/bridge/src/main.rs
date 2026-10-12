@@ -90,13 +90,7 @@ fn main() -> ExitCode {
 }
 
 fn native_messaging_host(args: &[OsString]) -> ExitCode {
-    let config = match config::Config::embedded() {
-        Ok(config) => config,
-        Err(e) => {
-            log!("{e:#}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let config = config::Config::embedded();
     if let Err(reason) = caller::identify(args, &config) {
         log!(
             "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `wirecatch-bridge --help` for the commands you can use."

@@ -30,6 +30,7 @@ test-overrides = []
 [dependencies]
 wirecatch-ipc.workspace = true
 wirecatch-protocol.workspace = true
+wirecatch-product.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

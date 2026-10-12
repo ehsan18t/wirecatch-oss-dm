@@ -48,9 +48,7 @@ use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-
-/// Text shown in each manifest.
-const DESCRIPTION: &str = "Wirecatch browser bridge";
+use wirecatch_product::{Channel, NATIVE_HOST_DESCRIPTION};
 
 /// Browser engines, which decide the manifest format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -415,14 +413,14 @@ fn manifest(config: &Config, exe: &str, engine: Engine) -> anyhow::Result<String
     let mut text = match engine {
         Engine::Chromium => serde_json::to_string_pretty(&ChromiumManifest {
             name: &config.native_host_name,
-            description: DESCRIPTION,
+            description: NATIVE_HOST_DESCRIPTION,
             path: exe,
             kind: "stdio",
             allowed_origins: config.chromium_origins(),
         })?,
         Engine::Firefox => serde_json::to_string_pretty(&FirefoxManifest {
             name: &config.native_host_name,
-            description: DESCRIPTION,
+            description: NATIVE_HOST_DESCRIPTION,
             path: exe,
             kind: "stdio",
             allowed_extensions: &config.firefox_ids,
@@ -453,8 +451,10 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
     };
     match layout {
         Layout::Windows { local_app_data, .. } => {
+            // The release app's data folder: every build registers under the one
+            // host name (D22), so every build writes the same manifests.
             let dir = local_app_data
-                .join("Wirecatch")
+                .join(Channel::Release.windows_data_folder())
                 .join("NativeMessagingHosts");
             plan_windows(&mut plan, config, exe_text, &dir, Hive::CurrentUser)?;
         }
@@ -1155,7 +1155,7 @@ fn print_report(lines: &[String], summary: Option<&str>) -> io::Result<()> {
 }
 
 fn planned_report(command: Command, scope: Scope) -> anyhow::Result<Report> {
-    let config = Config::embedded()?;
+    let config = Config::embedded();
     let report = match (command, scope) {
         (Command::Install, Scope::User) => {
             let user = plan(&config, &Layout::current()?)?;
@@ -1182,7 +1182,20 @@ fn planned_report(command: Command, scope: Scope) -> anyhow::Result<Report> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use wirecatch_product::{
+        CHROMIUM_EXTENSION_ORIGIN, DATABASE_FILE, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
+    };
     use wirecatch_test_support::{PrivateDir, private_dir};
+
+    /// The key under `parent` where Windows browsers look for the bridge.
+    fn hosts_key(parent: &str) -> String {
+        format!(r"{parent}\NativeMessagingHosts\{NATIVE_HOST_NAME}")
+    }
+
+    /// The app's data folder, which holds the per-user manifests on Windows.
+    fn data_folder(local: &Path) -> PathBuf {
+        local.join(Channel::Release.windows_data_folder())
+    }
 
     /// A temporary folder for one test, removed on drop.
     fn temp_dir() -> PrivateDir {
@@ -1304,20 +1317,20 @@ mod tests {
     }
 
     fn config() -> Config {
-        Config::embedded().unwrap()
+        Config::embedded()
     }
 
     fn json(path: &Path) -> serde_json::Value {
         serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
     }
 
-    const ORIGIN: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
+    const ORIGIN: &str = CHROMIUM_EXTENSION_ORIGIN;
 
     /// Registry values and files from before Wirecatch, which install and uninstall
     /// must leave alone.
     fn seed_windows_state(local: &Path, host: &mut FakeHost) {
-        fs::create_dir_all(local.join("Wirecatch")).unwrap();
-        fs::write(local.join("Wirecatch").join("downloads.db"), b"keep").unwrap();
+        fs::create_dir_all(data_folder(local)).unwrap();
+        fs::write(data_folder(local).join(DATABASE_FILE), b"keep").unwrap();
         host.set_registry_value(
             Hive::CurrentUser,
             r"Software\Google\Chrome\PreferenceMACs",
@@ -1340,10 +1353,10 @@ mod tests {
     /// Checks the two manifests a Windows install writes into `dir`, and returns
     /// the Chromium one's path and the Firefox one's.
     fn assert_windows_manifests(dir: &Path, exe: &Path) -> (PathBuf, PathBuf) {
-        let chromium = dir.join("app.wirecatch.bridge.chromium.json");
-        let firefox = dir.join("app.wirecatch.bridge.firefox.json");
+        let chromium = dir.join(format!("{NATIVE_HOST_NAME}.chromium.json"));
+        let firefox = dir.join(format!("{NATIVE_HOST_NAME}.firefox.json"));
         let chromium_manifest = json(&chromium);
-        assert_eq!(chromium_manifest["name"], "app.wirecatch.bridge");
+        assert_eq!(chromium_manifest["name"], NATIVE_HOST_NAME);
         assert_eq!(chromium_manifest["type"], "stdio");
         assert_eq!(chromium_manifest["path"], exe.to_str().unwrap());
         assert_eq!(
@@ -1352,11 +1365,11 @@ mod tests {
         );
         assert!(chromium_manifest.get("allowed_extensions").is_none());
         let firefox_manifest = json(&firefox);
-        assert_eq!(firefox_manifest["name"], "app.wirecatch.bridge");
+        assert_eq!(firefox_manifest["name"], NATIVE_HOST_NAME);
         assert_eq!(firefox_manifest["path"], exe.to_str().unwrap());
         assert_eq!(
             firefox_manifest["allowed_extensions"],
-            serde_json::json!(["extension@wirecatch.app"])
+            serde_json::json!([FIREFOX_EXTENSION_ID])
         );
         assert!(firefox_manifest.get("allowed_origins").is_none());
         (chromium, firefox)
@@ -1367,29 +1380,17 @@ mod tests {
     fn assert_windows_keys(plan: &Plan, host: &FakeHost, chromium: &Path, firefox: &Path) {
         let chromium_path = chromium.to_str().unwrap();
         let expected = [
-            (
-                r"Software\Google\Chrome\NativeMessagingHosts\app.wirecatch.bridge",
-                chromium_path,
-            ),
-            (
-                r"Software\Chromium\NativeMessagingHosts\app.wirecatch.bridge",
-                chromium_path,
-            ),
-            (
-                r"Software\Microsoft\Edge\NativeMessagingHosts\app.wirecatch.bridge",
-                chromium_path,
-            ),
-            (
-                r"Software\Mozilla\NativeMessagingHosts\app.wirecatch.bridge",
-                firefox.to_str().unwrap(),
-            ),
+            (hosts_key(r"Software\Google\Chrome"), chromium_path),
+            (hosts_key(r"Software\Chromium"), chromium_path),
+            (hosts_key(r"Software\Microsoft\Edge"), chromium_path),
+            (hosts_key(r"Software\Mozilla"), firefox.to_str().unwrap()),
         ];
-        for (key, value) in expected {
+        for (key, value) in &expected {
             assert_eq!(
                 host.registry_value(Hive::CurrentUser, key)
                     .unwrap()
                     .as_deref(),
-                Some(value),
+                Some(*value),
                 "{key}"
             );
         }
@@ -1434,11 +1435,11 @@ mod tests {
         // Only keys a browser reads: none of Brave's or Vivaldi's own.
         assert_eq!(plan.keys.len(), expected.len());
         for retired in [
-            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge",
-            r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge",
+            hosts_key(r"Software\BraveSoftware\Brave-Browser"),
+            hosts_key(r"Software\Vivaldi"),
         ] {
             assert_eq!(
-                host.registry_value(Hive::CurrentUser, retired).unwrap(),
+                host.registry_value(Hive::CurrentUser, &retired).unwrap(),
                 None,
                 "{retired}"
             );
@@ -1466,7 +1467,7 @@ mod tests {
 
         let report = install(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
-        let dir = local.join("Wirecatch").join("NativeMessagingHosts");
+        let dir = data_folder(&local).join("NativeMessagingHosts");
         let (chromium, firefox) = assert_windows_manifests(&dir, &exe);
         assert_windows_keys(&plan, &host, &chromium, &firefox);
 
@@ -1503,14 +1504,14 @@ mod tests {
             local_app_data: local.clone(),
         };
         let plan = plan(&config(), &layout).unwrap();
-        let manifest_path = local
-            .join("Wirecatch")
+        let manifest_path = data_folder(&local)
             .join("NativeMessagingHosts")
-            .join("app.wirecatch.bridge.chromium.json");
+            .join(format!("{NATIVE_HOST_NAME}.chromium.json"));
         let ours = manifest_path.to_str().unwrap();
-        let brave =
-            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\app.wirecatch.bridge";
-        let vivaldi = r"Software\Vivaldi\NativeMessagingHosts\app.wirecatch.bridge";
+        let brave = hosts_key(r"Software\BraveSoftware\Brave-Browser");
+        let brave = brave.as_str();
+        let vivaldi = hosts_key(r"Software\Vivaldi");
+        let vivaldi = vivaldi.as_str();
         let mut host = FakeHost::default();
         // What an earlier version left: its own manifest (an older allow list)
         // and a Brave key pointing to it; a Vivaldi key someone else points elsewhere.
@@ -1633,9 +1634,9 @@ mod tests {
             dir.extend(parts);
             let manifest = json(
                 &dir.join("NativeMessagingHosts")
-                    .join("app.wirecatch.bridge.json"),
+                    .join(format!("{NATIVE_HOST_NAME}.json")),
             );
-            assert_eq!(manifest["name"], "app.wirecatch.bridge");
+            assert_eq!(manifest["name"], NATIVE_HOST_NAME);
             assert_eq!(manifest["type"], "stdio");
             assert_eq!(manifest["path"], exe.to_str().unwrap());
             assert_eq!(manifest["allowed_origins"], serde_json::json!([ORIGIN]));
@@ -1644,12 +1645,12 @@ mod tests {
             &home
                 .join(".mozilla")
                 .join("native-messaging-hosts")
-                .join("app.wirecatch.bridge.json"),
+                .join(format!("{NATIVE_HOST_NAME}.json")),
         );
         assert_eq!(firefox["path"], exe.to_str().unwrap());
         assert_eq!(
             firefox["allowed_extensions"],
-            serde_json::json!(["extension@wirecatch.app"])
+            serde_json::json!([FIREFOX_EXTENSION_ID])
         );
     }
 
@@ -1743,12 +1744,12 @@ mod tests {
             let plan = plan.unwrap();
             assert_eq!(
                 plan.files[0].path,
-                Path::new(
-                    "/home/u/cfg/google-chrome/NativeMessagingHosts/app.wirecatch.bridge.json"
-                )
+                Path::new(&format!(
+                    "/home/u/cfg/google-chrome/NativeMessagingHosts/{NATIVE_HOST_NAME}.json"
+                ))
             );
-            let firefox =
-                Path::new("/home/u/.mozilla/native-messaging-hosts/app.wirecatch.bridge.json");
+            let firefox = Path::new("/home/u/.mozilla/native-messaging-hosts")
+                .join(format!("{NATIVE_HOST_NAME}.json"));
             assert!(
                 plan.files.iter().any(|file| file.path == firefox),
                 "Firefox ignores XDG_CONFIG_HOME"
@@ -1848,7 +1849,7 @@ mod tests {
     #[test]
     fn real_registry_round_trip() {
         let root = format!(r"Software\WirecatchBridgeTest-{}", std::process::id());
-        let key = format!(r"{root}\NativeMessagingHosts\app.wirecatch.bridge");
+        let key = hosts_key(&root);
         let mut host = RealHost;
         assert_eq!(host.registry_value(Hive::CurrentUser, &key).unwrap(), None);
         host.set_registry_value(Hive::CurrentUser, &key, r"C:\path\manifest.json")

@@ -7462,6 +7462,7 @@ dependencies = [
  "tokio",
  "windows-sys 0.59.0",
  "wirecatch-ipc",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
 ]

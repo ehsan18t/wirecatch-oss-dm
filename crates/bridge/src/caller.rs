@@ -82,64 +82,71 @@ pub(crate) fn identify(args: &[OsString], config: &Config) -> Result<Caller, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_product::{
+        CHROMIUM_EXTENSION_ID, CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
+    };
 
     /// The configuration every build has, release builds with default features
     /// included: no cargo feature changes which extensions are trusted.
     fn config() -> Config {
-        Config::embedded().unwrap()
+        Config::embedded()
     }
 
-    fn args(list: &[&str]) -> Vec<OsString> {
-        list.iter().map(OsString::from).collect()
+    fn args<S: AsRef<str>>(list: &[S]) -> Vec<OsString> {
+        list.iter()
+            .map(|arg| OsString::from(arg.as_ref()))
+            .collect()
     }
-
-    const CHROME: &str = "chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/";
 
     #[test]
     fn allowed_chromium_origin_is_accepted() {
         let expected = Caller::Chromium {
-            id: "chdgnmpjoipbgfeldicipccjjghmagki".into(),
+            id: CHROMIUM_EXTENSION_ID.into(),
         };
-        assert_eq!(identify(&args(&[CHROME]), &config()), Ok(expected.clone()));
         assert_eq!(
-            identify(&args(&[CHROME, "--parent-window=1234"]), &config()),
+            identify(&args(&[CHROMIUM_EXTENSION_ORIGIN]), &config()),
+            Ok(expected.clone())
+        );
+        assert_eq!(
+            identify(
+                &args(&[CHROMIUM_EXTENSION_ORIGIN, "--parent-window=1234"]),
+                &config()
+            ),
             Ok(expected)
         );
     }
 
     #[test]
     fn allowed_firefox_addon_is_accepted() {
+        let manifest = format!("/home/u/.mozilla/native-messaging-hosts/{NATIVE_HOST_NAME}.json");
         assert_eq!(
-            identify(
-                &args(&[
-                    "/home/u/.mozilla/native-messaging-hosts/app.wirecatch.bridge.json",
-                    "extension@wirecatch.app"
-                ]),
-                &config()
-            ),
+            identify(&args(&[manifest.as_str(), FIREFOX_EXTENSION_ID]), &config()),
             Ok(Caller::Firefox {
-                id: "extension@wirecatch.app".into()
+                id: FIREFOX_EXTENSION_ID.into()
             })
         );
     }
 
     #[test]
     fn everything_else_is_refused() {
-        let refused: &[&[&str]] = &[
-            &[],
-            &["chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"],
-            &["chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki"],
-            &["chrome-extension://chdgnmpjoipbgfeldicipccjjghmagki/x"],
-            &["CHROME-EXTENSION://chdgnmpjoipbgfeldicipccjjghmagki/"],
-            &[CHROME, "install"],
-            &["manifest.json", "evil@example.com"],
-            &["manifest.json", "EXTENSION@wirecatch.app"],
-            &["manifest.json"],
-            &["manifest.json", "extension@wirecatch.app", "extra"],
-            &["moz-extension://extension@wirecatch.app/"],
-            &["install"],
+        let origin = CHROMIUM_EXTENSION_ORIGIN;
+        let id = CHROMIUM_EXTENSION_ID;
+        let firefox = FIREFOX_EXTENSION_ID;
+        let refused: Vec<Vec<String>> = vec![
+            vec![],
+            vec!["chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/".into()],
+            vec![format!("chrome-extension://{id}")],
+            vec![format!("chrome-extension://{id}/x")],
+            vec![origin.to_uppercase()],
+            vec![origin.into(), "install".into()],
+            vec!["manifest.json".into(), "evil@example.com".into()],
+            vec!["manifest.json".into(), firefox.to_uppercase()],
+            vec!["manifest.json".into()],
+            vec!["manifest.json".into(), firefox.into(), "extra".into()],
+            vec![format!("moz-extension://{firefox}/")],
+            vec!["install".into()],
         ];
-        for list in refused {
+        for list in &refused {
             assert!(identify(&args(list), &config()).is_err(), "{list:?}");
         }
     }
