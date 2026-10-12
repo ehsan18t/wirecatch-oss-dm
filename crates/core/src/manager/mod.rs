@@ -256,9 +256,9 @@ impl Manager {
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
-        let (store, restored, recovery) = blocking(&runtime, move || {
+        let (store, restored, recoveries) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_failure)?;
-            let recovery = snapshot.recovery.take();
+            let recoveries = std::mem::take(&mut snapshot.recoveries);
             let around = restore::Surroundings {
                 now,
                 now_millis,
@@ -268,7 +268,7 @@ impl Manager {
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             // Cookies files left by a crash: nothing may keep them.
             let _ = std::fs::remove_dir_all(&temp_at);
-            Ok((store, restored, recovery))
+            Ok((store, restored, recoveries))
         })
         .await?;
         store.save_settings(restored.state.settings.clone());
@@ -295,7 +295,7 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notice: recovery.as_ref().map(user_error::list_recovered),
+            startup_notice: user_error::list_recovered(&recoveries),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
             #[cfg(test)]

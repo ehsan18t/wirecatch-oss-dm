@@ -277,7 +277,7 @@ mod tests {
                 stored(2, 1, DownloadStatus::Downloading),
                 stored(3, 9, DownloadStatus::Paused),
             ],
-            recovery: None,
+            recoveries: Vec::new(),
         };
         let restored = restore(snapshot, &nowhere(&|_| None));
         let state = &restored.state;

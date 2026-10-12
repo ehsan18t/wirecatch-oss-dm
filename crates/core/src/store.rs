@@ -149,7 +149,7 @@ pub(crate) struct Snapshot {
     pub queues: Vec<Queue>,
     pub downloads: Vec<StoredDownload>,
     /// What had to be repaired to open the list, for the person to be told.
-    pub recovery: Option<Recovery>,
+    pub recoveries: Vec<Recovery>,
 }
 
 /// A repair made while opening the download list.
@@ -162,6 +162,13 @@ pub(crate) enum Recovery {
     },
     /// This many downloads could not be read (a newer version may have saved them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
     UnreadableKept(usize),
+    /// Downloads and queues held a negative size, count or speed limit, which Wirecatch never saves. Each was reset and written back, so it is counted once: a size to unknown (or, for a finished download, its file's size), a downloaded count to nothing (or the whole file), a speed limit to none.
+    ValuesReset {
+        /// Downloads whose size or downloaded count was reset.
+        downloads: usize,
+        /// Queues whose speed limit was removed.
+        queues: usize,
+    },
 }
 
 /// Suffix of a damaged database moved aside, followed by the Unix time in milliseconds.
@@ -277,7 +284,9 @@ impl Store {
             }
             Err(e) => return Err(e),
         };
-        snapshot.recovery = damaged.or(snapshot.recovery);
+        if let Some(damaged) = damaged {
+            snapshot.recoveries.insert(0, damaged);
+        }
 
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
@@ -815,18 +824,36 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
     Ok(())
 }
 
-fn load(conn: &Connection) -> Result<Snapshot> {
-    let settings = read_value(conn, SETTINGS_KEY, "settings")?;
-    let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
-
+/// The queues, in order, and how many had a damaged speed limit removed (and
+/// written back).
+fn load_queues(conn: &Connection) -> Result<(Vec<Queue>, usize)> {
     let mut stmt = conn.prepare(
         "SELECT id, name, max_concurrent, speed_limit, schedule, is_default, paused,
                 running_outside_schedule
          FROM queues ORDER BY position",
     )?;
-    let queues = stmt
-        .query_map([], read_queue)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut queues = Vec::new();
+    let mut reset = 0;
+    for row in stmt.query_map([], read_queue)? {
+        let (queue, limit_damaged) = row?;
+        if limit_damaged {
+            conn.execute(
+                "UPDATE queues SET speed_limit = NULL WHERE id = ?1",
+                params![queue.id.0],
+            )?;
+            reset += 1;
+        }
+        queues.push(queue);
+    }
+    Ok((queues, reset))
+}
+
+fn load(conn: &Connection) -> Result<Snapshot> {
+    let settings = read_value(conn, SETTINGS_KEY, "settings")?;
+    let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
+
+    let (queues, queues_reset) = load_queues(conn)?;
+    let mut downloads_reset = 0;
 
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
@@ -840,7 +867,20 @@ fn load(conn: &Connection) -> Result<Snapshot> {
             StoredRow::Readable {
                 download,
                 origin_damaged,
+                counts_damaged,
             } => {
+                if counts_damaged {
+                    let summary = &download.summary;
+                    conn.execute(
+                        "UPDATE downloads SET total = ?2, done = ?3 WHERE id = ?1",
+                        params![
+                            summary.id.0,
+                            summary.total.map(saturating::<i64, u64>),
+                            saturating::<i64, _>(summary.done)
+                        ],
+                    )?;
+                    downloads_reset += 1;
+                }
                 if origin_damaged {
                     // Rewritten at once, so the damaged text, which may hold cookies, is gone.
                     conn.execute(
@@ -868,7 +908,16 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         last_ids,
         queues,
         downloads,
-        recovery: (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
+        recoveries: [
+            (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
+            (downloads_reset + queues_reset > 0).then_some(Recovery::ValuesReset {
+                downloads: downloads_reset,
+                queues: queues_reset,
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
     })
 }
 
@@ -921,19 +970,30 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn read_queue(row: &Row<'_>) -> rusqlite::Result<Queue> {
-    Ok(Queue {
+/// A size, count or limit as SQLite stores it (signed). Wirecatch never saves a
+/// negative one, so that is damage: `None`, for the caller to repair and report.
+fn stored_count(value: i64) -> Option<u64> {
+    u64::try_from(value).ok()
+}
+
+/// A queue, and whether its stored speed limit was damaged (and dropped).
+fn read_queue(row: &Row<'_>) -> rusqlite::Result<(Queue, bool)> {
+    let stored_limit = row.get::<_, Option<i64>>(3)?;
+    let speed_limit = stored_limit.and_then(stored_count);
+    let limit_damaged = stored_limit.is_some() && speed_limit.is_none();
+    let queue = Queue {
         id: QueueId(row.get(0)?),
         name: row.get(1)?,
         max_concurrent: row.get(2)?,
-        speed_limit: row.get::<_, Option<i64>>(3)?.map(saturating::<u64, i64>),
+        speed_limit,
         schedule: row
             .get::<_, Option<String>>(4)?
             .and_then(|json| from_json(&json, "queue schedule")),
         is_default: row.get(5)?,
         paused: row.get(6)?,
         running_outside_schedule: row.get(7)?,
-    })
+    };
+    Ok((queue, limit_damaged))
 }
 
 fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result<()> {
@@ -972,12 +1032,33 @@ enum StoredRow {
         download: Box<StoredDownload>,
         /// Its stored origin could not be read and was replaced by [`forgotten_origin`].
         origin_damaged: bool,
+        /// Its stored size or downloaded count was negative and was reset.
+        counts_damaged: bool,
     },
     Unreadable {
         id: DownloadId,
         /// The stored origin, as it is.
         origin: String,
     },
+}
+
+/// A download's size and downloaded count, and whether either was damaged (and
+/// repaired).
+fn read_counts(
+    row: &Row<'_>,
+    status: DownloadStatus,
+    path: &str,
+) -> rusqlite::Result<(Option<u64>, u64, bool)> {
+    let stored_total = row.get::<_, Option<i64>>(7)?;
+    let total = stored_total.and_then(stored_count);
+    let done = stored_count(row.get(8)?);
+    let damaged = (stored_total.is_some() && total.is_none()) || done.is_none();
+    if damaged && status == DownloadStatus::Completed {
+        // A finished download is whole: what is damaged is its file's size.
+        let total = total.or_else(|| std::fs::metadata(path).ok().map(|m| m.len()));
+        return Ok((total, done.or(total).unwrap_or(0), true));
+    }
+    Ok((total, done.unwrap_or(0), damaged))
 }
 
 /// A row that cannot be understood is reported rather than failing the whole start. A damaged origin costs only the sign-in it held.
@@ -1026,8 +1107,10 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let (total, done, counts_damaged) = read_counts(row, status, &path)?;
     Ok(StoredRow::Readable {
         origin_damaged,
+        counts_damaged,
         download: Box::new(StoredDownload {
             summary: DownloadSummary {
                 id,
@@ -1037,8 +1120,8 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 queue: QueueId(row.get(3)?),
                 category,
                 status,
-                total: row.get::<_, Option<i64>>(7)?.map(saturating::<u64, i64>),
-                done: saturating::<u64, i64>(row.get(8)?),
+                total,
+                done,
                 speed: 0,
                 connections: 0,
                 eta_secs: None,
@@ -1406,10 +1489,10 @@ mod tests {
     }
 
     fn assert_set_aside(dir: &Path, snapshot: &Snapshot, original: &[u8]) {
-        let Some(Recovery::Damaged { kept_at }) = &snapshot.recovery else {
+        let [Recovery::Damaged { kept_at }] = snapshot.recoveries.as_slice() else {
             panic!(
                 "expected a damaged list to be set aside, got {:?}",
-                snapshot.recovery
+                snapshot.recoveries
             );
         };
         assert_eq!(
@@ -1436,7 +1519,7 @@ mod tests {
         store.save_downloads(vec![download(1)]);
         drop(store);
         let (_, reopened) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(reopened.recovery, None, "the new list opens normally");
+        assert_eq!(reopened.recoveries, vec![], "the new list opens normally");
     }
 
     #[test]
@@ -1497,13 +1580,13 @@ mod tests {
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
 
-        let Some(Recovery::Damaged { kept_at }) = snapshot.recovery else {
+        let [Recovery::Damaged { kept_at }] = snapshot.recoveries.as_slice() else {
             panic!(
                 "expected the list to be set aside, got {:?}",
-                snapshot.recovery
+                snapshot.recoveries
             );
         };
-        let kept = std::fs::read(with_suffix(&kept_at, "-wal")).unwrap();
+        let kept = std::fs::read(with_suffix(kept_at, "-wal")).unwrap();
         assert!(
             kept == journal,
             "the journal is kept as it was, next to the list"
@@ -1653,6 +1736,100 @@ mod tests {
         );
     }
 
+    /// A negative size, count or limit cannot be saved by Wirecatch, so it is
+    /// damage: it is repaired (an unknown size, nothing downloaded, no limit),
+    /// written back, and reported once rather than read as zero in silence.
+    #[tokio::test]
+    async fn negative_counts_are_repaired_and_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let queue = Queue {
+            id: QueueId(2),
+            name: "Night".into(),
+            max_concurrent: 2,
+            speed_limit: Some(1000),
+            schedule: None,
+            is_default: false,
+            paused: false,
+            running_outside_schedule: false,
+        };
+        let mut finished = download(3);
+        finished.summary.status = DownloadStatus::Completed;
+        finished.summary.done = 100;
+        store.save_queues(vec![queue.clone()]);
+        store.save_downloads(vec![download(1), download(2), finished.clone()]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute(
+            "UPDATE downloads SET total = -1, done = -5 WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        // A finished download is whole: its count comes back as its size.
+        conn.execute("UPDATE downloads SET done = -1 WHERE id = 3", [])
+            .unwrap();
+        conn.execute("UPDATE queues SET speed_limit = -1 WHERE id = 2", [])
+            .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(
+            snapshot.recoveries,
+            vec![Recovery::ValuesReset {
+                downloads: 2,
+                queues: 1
+            }]
+        );
+        let mut repaired = download(2);
+        repaired.summary.total = None;
+        repaired.summary.done = 0;
+        let expected = vec![download(1), repaired, finished];
+        assert_eq!(snapshot.downloads, expected);
+        let unlimited = Queue {
+            speed_limit: None,
+            ..queue
+        };
+        assert_eq!(snapshot.queues, vec![unlimited.clone()]);
+
+        let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(again.recoveries, vec![], "told once");
+        assert_eq!(again.downloads, expected);
+        assert_eq!(again.queues, vec![unlimited]);
+    }
+
+    /// Repairs found on the same start are all reported, since each is written
+    /// back at once and would not be found again.
+    #[tokio::test]
+    async fn every_repair_of_one_start_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1), download(2)]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute("UPDATE downloads SET done = -5 WHERE id = 1", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE downloads SET status = 'from_a_newer_version' WHERE id = 2",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(
+            snapshot.recoveries,
+            vec![
+                Recovery::UnreadableKept(1),
+                Recovery::ValuesReset {
+                    downloads: 1,
+                    queues: 0
+                }
+            ]
+        );
+    }
+
     // Rows this build could not read were deleted for good, including rows a newer version wrote
     // with a status this one does not know, which going back to an older version then lost.
     #[tokio::test]
@@ -1682,7 +1859,7 @@ mod tests {
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(snapshot.recovery, Some(Recovery::UnreadableKept(1)));
+        assert_eq!(snapshot.recoveries, vec![Recovery::UnreadableKept(1)]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         let origin: String = conn
@@ -1695,7 +1872,7 @@ mod tests {
         assert!(origin.contains("Referer"), "{origin}");
 
         let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(again.recovery, None, "told once");
+        assert_eq!(again.recoveries, vec![], "told once");
         assert_eq!(again.downloads, vec![download(1)]);
     }
 
@@ -1715,7 +1892,7 @@ mod tests {
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert_eq!(snapshot.recovery, None);
+        assert_eq!(snapshot.recoveries, vec![]);
         let mut recovered = download(2);
         recovered.origin = forgotten_origin();
         assert_eq!(snapshot.downloads, vec![download(1), recovered]);

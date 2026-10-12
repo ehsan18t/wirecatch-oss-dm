@@ -111,8 +111,25 @@ pub struct StartupNotice {
     pub message: String,
 }
 
-/// The notice for a download list that had to be repaired while opening.
-pub(crate) fn list_recovered(recovery: &Recovery) -> StartupNotice {
+/// The notice for a download list that had to be repaired while opening, if it
+/// had to be: one notice, saying everything that was repaired.
+pub(crate) fn list_recovered(recoveries: &[Recovery]) -> Option<StartupNotice> {
+    match recoveries {
+        [] => None,
+        [one] => Some(recovered(one)),
+        several => Some(StartupNotice {
+            title: "Wirecatch repaired its download list".to_owned(),
+            message: several
+                .iter()
+                .map(|r| recovered(r).message)
+                .collect::<Vec<_>>()
+                .join(" "),
+        }),
+    }
+}
+
+/// The notice for one repair.
+fn recovered(recovery: &Recovery) -> StartupNotice {
     match recovery {
         Recovery::Damaged { kept_at } => StartupNotice {
             title: "Wirecatch started a new download list".to_owned(),
@@ -131,6 +148,25 @@ pub(crate) fn list_recovered(recovery: &Recovery) -> StartupNotice {
                 if *count == 1 { "its" } else { "their" },
             ),
         },
+        Recovery::ValuesReset { downloads, queues } => {
+            let mut said = Vec::new();
+            if *downloads > 0 {
+                said.push(format!(
+                    "{downloads} {} in the list held an impossible size or progress, which Wirecatch reset.",
+                    if *downloads == 1 { "download" } else { "downloads" },
+                ));
+            }
+            if *queues > 0 {
+                said.push(format!(
+                    "{queues} {} held an impossible speed limit, which Wirecatch removed. Check your queues' speed limits.",
+                    if *queues == 1 { "queue" } else { "queues" },
+                ));
+            }
+            StartupNotice {
+                title: "Wirecatch repaired some damaged values".to_owned(),
+                message: said.join(" "),
+            }
+        }
     }
 }
 
@@ -494,5 +530,58 @@ mod tests {
                 assert!(m.ends_with('.'), "{m}");
             }
         }
+    }
+
+    #[test]
+    fn startup_notices_follow_the_house_style_and_agree_in_number() {
+        let recoveries = [
+            Recovery::Damaged {
+                kept_at: "/data/downloads.db.damaged-1".into(),
+            },
+            Recovery::UnreadableKept(1),
+            Recovery::UnreadableKept(3),
+            Recovery::ValuesReset {
+                downloads: 1,
+                queues: 0,
+            },
+            Recovery::ValuesReset {
+                downloads: 3,
+                queues: 2,
+            },
+        ];
+        let notices = recoveries
+            .iter()
+            .map(|r| list_recovered(std::slice::from_ref(r)))
+            .chain([list_recovered(&recoveries[1..])]);
+        for notice in notices {
+            let notice = notice.expect("a repair without a notice");
+            for text in [&notice.title, &notice.message] {
+                assert!(!text.contains('\u{2014}'), "em dash in {text}");
+            }
+            assert!(notice.message.ends_with('.'), "{}", notice.message);
+        }
+        assert_eq!(list_recovered(&[]), None);
+        let message = |downloads, queues| {
+            list_recovered(&[Recovery::ValuesReset { downloads, queues }])
+                .map(|n| n.message)
+                .unwrap_or_default()
+        };
+        assert!(
+            message(1, 0).starts_with("1 download in"),
+            "{}",
+            message(1, 0)
+        );
+        assert!(!message(1, 0).contains("speed limit"), "{}", message(1, 0));
+        let both = message(3, 2);
+        assert!(both.starts_with("3 downloads in"), "{both}");
+        assert!(both.contains("2 queues held"), "{both}");
+        assert!(both.ends_with("Check your queues' speed limits."), "{both}");
+        // Several repairs make one notice that says each.
+        let together = list_recovered(&recoveries[1..3]).unwrap().message;
+        assert!(together.contains("could not read 1 download"), "{together}");
+        assert!(
+            together.contains("could not read 3 downloads"),
+            "{together}"
+        );
     }
 }
