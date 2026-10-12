@@ -66,7 +66,7 @@ export function capture(command, args, { allowed = [0], hint = '' } = {}) {
       `${describe(command, args)} failed with status ${String(result.status)}${detail ? `:\n${detail}` : '.'}${hint ? `\n${hint}` : ''}`,
     );
   }
-  return { out: result.stdout, status: result.status };
+  return { out: result.stdout, err: result.stderr, status: result.status };
 }
 
 export const cargo = (...args) => run('cargo', args);
