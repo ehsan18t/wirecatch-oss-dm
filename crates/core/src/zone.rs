@@ -9,11 +9,12 @@
 
 use std::path::Path;
 
+#[cfg(any(windows, test))]
 use wirecatch_engine::Url;
 
 /// Longest URL written into the mark; longer ones are cut.
-// Only Windows writes the mark; the text is built and tested on every platform.
-#[cfg_attr(not(windows), allow(dead_code))]
+// Only Windows writes the mark; the text is built there and in tests on every platform.
+#[cfg(any(windows, test))]
 const MAX_URL_LEN: usize = 2048;
 
 /// The text of the `Zone.Identifier` stream for a file downloaded from
@@ -21,8 +22,8 @@ const MAX_URL_LEN: usize = 2048;
 /// URLs lose any user name, password and fragment, and the file's address its
 /// query too (which often carries a token); anything that is not a URL is left
 /// out.
-// Only Windows writes the mark; the text is built and tested on every platform.
-#[cfg_attr(not(windows), allow(dead_code))]
+// Only Windows writes the mark; the text is built there and in tests on every platform.
+#[cfg(any(windows, test))]
 pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String {
     let mut text = String::from("[ZoneTransfer]\r\nZoneId=3\r\n");
     if let Some(referrer) = referrer.and_then(clean_url) {
@@ -43,8 +44,8 @@ pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String 
 
 /// A URL fit for the mark: no credentials or fragment, at most [`MAX_URL_LEN`]
 /// characters, and certainly no line breaks.
-// Only Windows writes the mark; the text is built and tested on every platform.
-#[cfg_attr(not(windows), allow(dead_code))]
+// Only Windows writes the mark; the text is built there and in tests on every platform.
+#[cfg(any(windows, test))]
 fn clean_url(raw: &str) -> Option<String> {
     let mut url = Url::parse(raw.trim()).ok()?;
     let _ = url.set_username("");
