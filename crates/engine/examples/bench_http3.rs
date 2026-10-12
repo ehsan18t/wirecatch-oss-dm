@@ -12,24 +12,22 @@
 //! The servers use a self-signed certificate, which the engine is told to
 //! trust through `SSL_CERT_FILE` (read by the system certificate loader).
 
-#[path = "../tests/common/h3_server.rs"]
-mod h3_server;
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use h3_server::{Cert, Counts};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
+use wirecatch_test_support::TestCertificate;
+use wirecatch_test_support::http3::{self as servers, Counts};
 
 const MIB: u64 = 1024 * 1024;
 
 fn main() {
-    let cert = Cert::new();
+    let cert = TestCertificate::new();
     let pem_path =
         std::env::temp_dir().join(format!("wirecatch-bench-h3-{}.pem", std::process::id()));
-    std::fs::write(&pem_path, &cert.pem).unwrap();
+    std::fs::write(&pem_path, cert.pem()).unwrap();
     // SAFETY: no other thread exists yet; the runtime is built afterwards.
     unsafe { std::env::set_var("SSL_CERT_FILE", &pem_path) };
     tokio::runtime::Builder::new_multi_thread()
@@ -40,16 +38,16 @@ fn main() {
     let _ = std::fs::remove_file(&pem_path);
 }
 
-async fn run(cert: Cert) {
+async fn run(cert: TestCertificate) {
     let size = 256 * MIB;
     let data = Bytes::from(
         (0..size as usize)
             .map(|i| (i * 31 + i / 509) as u8)
             .collect::<Vec<u8>>(),
     );
-    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let (tcp_port, tcp) =
-        h3_server::start_tcp(data.clone(), &cert, Some(format!(r#"h3=":{h3_port}""#))).await;
+        servers::start_tcp(data.clone(), &cert, Some(format!(r#"h3=":{h3_port}""#))).await;
     let url = Url::parse(&format!("https://localhost:{tcp_port}/bench.bin")).unwrap();
 
     println!(

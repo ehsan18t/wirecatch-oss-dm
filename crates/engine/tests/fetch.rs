@@ -1,14 +1,13 @@
-mod common;
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Busy, Config, TestServer, test_data};
 use wirecatch_engine::header::{AUTHORIZATION, COOKIE, HeaderValue, REFERER};
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
+use wirecatch_test_support::http::{Busy, Config, TestServer};
+use wirecatch_test_support::test_data;
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();

@@ -1,9 +1,6 @@
 //! URL rules, and FTPS against the scripted server with its test certificate
 //! trusted (plain FTP is tested through the public API in `tests/ftp.rs`).
 
-#[path = "../../tests/common/ftp_server.rs"]
-mod ftp_server;
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -13,7 +10,7 @@ use super::*;
 use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
-use ftp_server::{FtpConfig, FtpServer, test_tls};
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, test_tls};
 
 fn url(s: &str) -> Url {
     Url::parse(s).unwrap()
@@ -249,7 +246,7 @@ async fn a_reply_sent_ahead_of_encryption_is_refused() {
     config.tls = Some(tls);
     // A forged "230" right behind "234", in the clear: it must not be read as
     // if it had come over TLS.
-    config.inject_after_auth = true;
+    config.quirks.push(Quirk::InjectAfterAuth);
     let server = FtpServer::start(config).await;
 
     let error = secure_download(&server, "ftpes", roots).await.unwrap_err();
@@ -270,7 +267,7 @@ async fn a_server_refusing_to_encrypt_data_is_not_used() {
     let (tls, roots) = test_tls();
     let mut config = served(&file);
     config.tls = Some(tls);
-    config.refuse_prot_p = true;
+    config.quirks.push(Quirk::RefuseProtP);
     let server = FtpServer::start(config).await;
 
     let error = secure_download(&server, "ftpes", roots).await.unwrap_err();

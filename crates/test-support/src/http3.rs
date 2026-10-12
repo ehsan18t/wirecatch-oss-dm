@@ -2,11 +2,6 @@
 //! that can advertise HTTP/3 with `Alt-Svc`, an HTTP/3 server over QUIC, and
 //! a UDP port that swallows every packet (QUIC blocked). All of them serve one
 //! byte buffer with range support and count what they serve.
-//!
-//! Needs the engine's `http3` feature (for quinn and h3). It does not depend
-//! on the engine, so its unit tests and the benchmark example can both use it.
-
-#![allow(dead_code)]
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -18,65 +13,23 @@ use hyper::body::Incoming;
 use hyper::header::{ALT_SVC, CONTENT_LENGTH, CONTENT_RANGE, HeaderMap, RANGE};
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-/// A self-signed certificate for 127.0.0.1 and localhost.
-pub struct Cert {
-    pub chain: Vec<CertificateDer<'static>>,
-    key: PrivatePkcs8KeyDer<'static>,
-    /// The certificate in PEM, for `SSL_CERT_FILE`.
-    pub pem: String,
-    pub roots: rustls::RootCertStore,
-}
+use crate::TestCertificate;
+use crate::http::index;
 
-impl Cert {
-    pub fn new() -> Self {
-        let cert = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into(), "localhost".into()])
-            .unwrap();
-        let der = CertificateDer::from(cert.cert.der().to_vec());
-        let mut roots = rustls::RootCertStore::empty();
-        roots.add(der.clone()).unwrap();
-        Self {
-            pem: pem(&der),
-            chain: vec![der],
-            key: PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()),
-            roots,
-        }
-    }
+/// How much the QUIC server may have in flight on one connection.
+const QUIC_SEND_WINDOW: u64 = 32 * 1024 * 1024;
+/// How much of a body the HTTP/3 server sends at once.
+const H3_CHUNK: usize = 256 * 1024;
 
-    fn server_config(&self, alpn: &[&[u8]]) -> rustls::ServerConfig {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let mut config = rustls::ServerConfig::builder_with_provider(provider)
-            .with_protocol_versions(rustls::ALL_VERSIONS)
-            .unwrap()
-            .with_no_client_auth()
-            .with_single_cert(
-                self.chain.clone(),
-                PrivateKeyDer::Pkcs8(self.key.clone_key()),
-            )
-            .unwrap();
-        config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
-        config
-    }
-}
-
-fn pem(der: &[u8]) -> String {
-    use base64::Engine as _;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(der);
-    let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
-    for line in encoded.as_bytes().chunks(64) {
-        pem.push_str(std::str::from_utf8(line).unwrap());
-        pem.push('\n');
-    }
-    pem.push_str("-----END CERTIFICATE-----\n");
-    pem
-}
-
+/// What a server has served.
 #[derive(Default)]
 pub struct Counts {
+    /// Requests answered.
     pub requests: AtomicUsize,
     /// Requests that arrived over HTTP/2.
     pub http2: AtomicUsize,
+    /// Body bytes sent.
     pub bytes: AtomicU64,
     /// The most bytes one request asked for; `u64::MAX` once a request asked
     /// for a range with no end, or for no range.
@@ -91,7 +44,7 @@ fn asked(headers: &HeaderMap) -> u64 {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("bytes="))
         .and_then(|v| v.split_once('-'))
-        .and_then(|(a, b)| Some((a.parse::<u64>().ok()?, b.parse::<u64>().ok()?)))
+        .and_then(|(first, last)| Some((first.parse::<u64>().ok()?, last.parse::<u64>().ok()?)))
         .map_or(u64::MAX, |(start, last)| {
             last.saturating_sub(start).saturating_add(1)
         })
@@ -100,12 +53,12 @@ fn asked(headers: &HeaderMap) -> u64 {
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
 fn range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
     let spec = headers.get(RANGE)?.to_str().ok()?.strip_prefix("bytes=")?;
-    let (a, b) = spec.split_once('-')?;
-    let start: u64 = a.parse().ok()?;
-    let end = if b.is_empty() {
+    let (first, last) = spec.split_once('-')?;
+    let start: u64 = first.parse().ok()?;
+    let end = if last.is_empty() {
         len
     } else {
-        b.parse::<u64>().ok()?.saturating_add(1).min(len)
+        last.parse::<u64>().ok()?.saturating_add(1).min(len)
     };
     (start < end).then_some((start, end))
 }
@@ -123,12 +76,16 @@ fn answer(data: &Bytes, headers: &HeaderMap) -> (StatusCode, HeaderMap, Bytes) {
         None => (StatusCode::OK, 0, len),
     };
     out.insert(CONTENT_LENGTH, (end - start).into());
-    (status, out, data.slice(start as usize..end as usize))
+    (status, out, data.slice(index(start)..index(end)))
 }
 
 /// An HTTPS server on TCP (HTTP/2 or HTTP/1.1, as the client prefers) that
 /// sends `alt_svc` as `Alt-Svc` when given. Returns its port.
-pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u16, Arc<Counts>) {
+pub async fn start_tcp(
+    data: Bytes,
+    cert: &TestCertificate,
+    alt_svc: Option<String>,
+) -> (u16, Arc<Counts>) {
     let acceptor =
         tokio_rustls::TlsAcceptor::from(Arc::new(cert.server_config(&[b"h2", b"http/1.1"])));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -136,10 +93,7 @@ pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u1
     let counts = Arc::new(Counts::default());
     let served = counts.clone();
     tokio::spawn(async move {
-        loop {
-            let Ok((tcp, _)) = listener.accept().await else {
-                return;
-            };
+        while let Ok((tcp, _)) = listener.accept().await {
             let (acceptor, data, counts, alt_svc) = (
                 acceptor.clone(),
                 data.clone(),
@@ -163,14 +117,19 @@ pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u1
                     if let Some(alt_svc) = &alt_svc {
                         headers.insert(ALT_SVC, alt_svc.parse().unwrap());
                     }
-                    let mut response = Response::new(http_body_full(body));
+                    let mut response = Response::new(Full(Some(body)));
                     *response.status_mut() = status;
                     *response.headers_mut() = headers;
                     async move { Ok::<_, Infallible>(response) }
                 });
-                let _ = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                    .serve_connection(TokioIo::new(tls), service)
-                    .await;
+                // The connection ends when the client closes it; how is not the test's concern.
+                if let Err(error) =
+                    hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                        .serve_connection(TokioIo::new(tls), service)
+                        .await
+                {
+                    drop(error);
+                }
             });
         }
     });
@@ -178,11 +137,7 @@ pub async fn start_tcp(data: Bytes, cert: &Cert, alt_svc: Option<String>) -> (u1
 }
 
 /// A body of one `Bytes`, without pulling in another crate for it.
-fn http_body_full(bytes: Bytes) -> Full {
-    Full(Some(bytes))
-}
-
-pub struct Full(Option<Bytes>);
+struct Full(Option<Bytes>);
 
 impl hyper::body::Body for Full {
     type Data = Bytes;
@@ -204,16 +159,20 @@ impl hyper::body::Body for Full {
     }
 }
 
-/// An HTTP/3 server on a UDP port of its own. Returns the port.
-pub async fn start_h3(data: Bytes, cert: &Cert) -> (u16, Arc<Counts>) {
-    start_h3_breaking(data, cert, None, Duration::ZERO).await
+/// An HTTP/3 server on a UDP port of its own. Returns the port. Needs a
+/// Tokio runtime.
+#[must_use]
+pub fn start_h3(data: Bytes, cert: &TestCertificate) -> (u16, Arc<Counts>) {
+    start_h3_breaking(data, cert, None, Duration::ZERO)
 }
 
 /// Like [`start_h3`], but every response stream is reset after
 /// `break_after` bytes and a pause of `pause`, as a broken QUIC path would.
-pub async fn start_h3_breaking(
+/// Needs a Tokio runtime.
+#[must_use]
+pub fn start_h3_breaking(
     data: Bytes,
-    cert: &Cert,
+    cert: &TestCertificate,
     break_after: Option<usize>,
     pause: Duration,
 ) -> (u16, Arc<Counts>) {
@@ -221,7 +180,7 @@ pub async fn start_h3_breaking(
     let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(tls).unwrap();
     let mut config = quinn::ServerConfig::with_crypto(Arc::new(crypto));
     let mut transport = quinn::TransportConfig::default();
-    transport.send_window(32 * 1024 * 1024);
+    transport.send_window(QUIC_SEND_WINDOW);
     config.transport_config(Arc::new(transport));
     let endpoint = quinn::Endpoint::server(config, "127.0.0.1:0".parse().unwrap()).unwrap();
     let port = endpoint.local_addr().unwrap().port();
@@ -240,37 +199,9 @@ pub async fn start_h3_breaking(
                 while let Ok(Some(resolver)) = h3.accept().await {
                     let (data, counts) = (data.clone(), counts.clone());
                     tokio::spawn(async move {
-                        let Ok((request, mut stream)) = resolver.resolve_request().await else {
-                            return;
-                        };
-                        let (status, headers, body) = answer(&data, request.headers());
-                        counts.requests.fetch_add(1, Ordering::SeqCst);
-                        counts
-                            .largest_ask
-                            .fetch_max(asked(request.headers()), Ordering::SeqCst);
-                        let mut response = http::Response::new(());
-                        *response.status_mut() = status;
-                        *response.headers_mut() = headers;
-                        if stream.send_response(response).await.is_err() {
-                            return;
+                        if let Ok((request, stream)) = resolver.resolve_request().await {
+                            respond(request, stream, &data, &counts, break_after, pause).await;
                         }
-                        if let Some(limit) = break_after {
-                            let cut = body.slice(..limit.min(body.len()));
-                            let _ = stream.send_data(cut).await;
-                            tokio::time::sleep(pause).await;
-                            stream.stop_stream(h3::error::Code::H3_INTERNAL_ERROR);
-                            return;
-                        }
-                        // The client stops reading once its range is split off.
-                        for chunk in body.chunks(256 * 1024) {
-                            let chunk = body.slice_ref(chunk);
-                            let n = chunk.len() as u64;
-                            if stream.send_data(chunk).await.is_err() {
-                                return;
-                            }
-                            counts.bytes.fetch_add(n, Ordering::Relaxed);
-                        }
-                        let _ = stream.finish().await;
                     });
                 }
             });
@@ -279,8 +210,54 @@ pub async fn start_h3_breaking(
     (port, counts)
 }
 
+/// Answers one HTTP/3 request, breaking the stream off as configured.
+async fn respond(
+    request: http::Request<()>,
+    mut stream: h3::server::RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>,
+    data: &Bytes,
+    counts: &Counts,
+    break_after: Option<usize>,
+    pause: Duration,
+) {
+    let (status, headers, body) = answer(data, request.headers());
+    counts.requests.fetch_add(1, Ordering::SeqCst);
+    counts
+        .largest_ask
+        .fetch_max(asked(request.headers()), Ordering::SeqCst);
+    let mut response = http::Response::new(());
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    if stream.send_response(response).await.is_err() {
+        return;
+    }
+    if let Some(limit) = break_after {
+        let cut = body.slice(..limit.min(body.len()));
+        // The stream is reset next anyway; whether this part arrived is what the test checks.
+        if let Err(error) = stream.send_data(cut).await {
+            drop(error);
+        }
+        tokio::time::sleep(pause).await;
+        stream.stop_stream(h3::error::Code::H3_INTERNAL_ERROR);
+        return;
+    }
+    // The client stops reading once its range is split off.
+    for chunk in body.chunks(H3_CHUNK) {
+        let chunk = body.slice_ref(chunk);
+        let n = chunk.len() as u64;
+        if stream.send_data(chunk).await.is_err() {
+            return;
+        }
+        counts.bytes.fetch_add(n, Ordering::Relaxed);
+    }
+    // A client that already has its range may close first; that is fine.
+    if let Err(error) = stream.finish().await {
+        drop(error);
+    }
+}
+
 /// A UDP port that receives and drops everything, the way a firewall that
 /// blocks QUIC looks from the client. Keep the socket alive while it is used.
+#[must_use]
 pub fn blackhole() -> (std::net::UdpSocket, u16) {
     let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let port = socket.local_addr().unwrap().port();

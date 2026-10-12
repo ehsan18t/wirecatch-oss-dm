@@ -2,15 +2,11 @@
 //! around the proxy. A test binary of its own, with a single test, because it
 //! changes the process environment.
 
-mod common;
-#[path = "common/ftp_server.rs"]
-mod ftp_server;
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use ftp_server::{FtpConfig, FtpServer};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Progress, Url, download};
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 
 #[tokio::test(flavor = "current_thread")]
 async fn ftp_is_refused_while_a_proxy_is_set() {

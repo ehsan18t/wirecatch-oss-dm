@@ -1,15 +1,14 @@
-mod common;
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use common::{Busy, Config, TestServer, test_data};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, RemoteFile,
     download,
 };
+use wirecatch_test_support::http::{Busy, Config, TestServer};
+use wirecatch_test_support::test_data;
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;

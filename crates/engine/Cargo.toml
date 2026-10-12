@@ -45,7 +45,9 @@ quinn = { version = "0.11.9", default-features = false, features = ["runtime-tok
 default = []
 # Experimental HTTP/3 support, see `DownloadOptions::http3`. Off by default to
 # keep the default build lean (it adds 18 crates, quinn and h3 among them).
-http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn"]
+# It also turns on the HTTP/3 test servers for the engine's own tests; that
+# part is dropped from the published manifest with the test-support dependency.
+http3 =["dep:h3", "dep:h3-quinn", "dep:http", "dep:quinn", "wirecatch-test-support/http3"]
 
 # docs.rs documents the http3 API too; the gate builds the docs the same way (engine-docs).
 [package.metadata.docs.rs]
@@ -58,15 +60,12 @@ windows-sys.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-axum.workspace = true
+# The shared test servers. A path dependency without a version, so publishing
+# leaves it out (it is never published).
+wirecatch-test-support = { path = "../test-support" }
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
-futures-util.workspace = true
-# An HTTP/2 test server for the HTTP/3 tests and benchmark.
-hyper = { version = "1.4.0", features = ["server", "http1", "http2"] }
-hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"] }
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
-rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
 
 [target.'cfg(windows)'.dev-dependencies]

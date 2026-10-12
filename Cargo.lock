@@ -7558,7 +7558,6 @@ dependencies = [
 name = "wirecatch-engine"
 version = "0.1.0"
 dependencies = [
- "axum",
  "base64 0.22.1",
  "bytes",
  "futures-util",
@@ -7566,13 +7565,10 @@ dependencies = [
  "h3-quinn",
  "http",
  "httpdate",
- "hyper",
- "hyper-util",
  "libc",
  "percent-encoding",
  "proptest",
  "quinn",
- "rcgen",
  "reqwest 0.12.28",
  "rustls",
  "rustls-native-certs",
@@ -7586,6 +7582,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "windows-sys 0.59.0",
+ "wirecatch-test-support",
 ]
 
 [[package]]
@@ -7625,6 +7622,27 @@ dependencies = [
  "tracing",
  "url",
  "wirecatch-engine",
+]
+
+[[package]]
+name = "wirecatch-test-support"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "futures-util",
+ "h3",
+ "h3-quinn",
+ "http",
+ "hyper",
+ "hyper-util",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "tokio",
+ "tokio-rustls",
+ "url",
 ]
 
 [[package]]

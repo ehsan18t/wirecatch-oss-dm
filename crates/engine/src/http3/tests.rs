@@ -2,9 +2,6 @@
 //! advertised, ignored when switched off, and abandoned for TCP when QUIC is
 //! blocked or breaks mid-download.
 
-#[path = "../../tests/common/h3_server.rs"]
-mod h3_server;
-
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -16,8 +13,9 @@ use super::*;
 use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
-use h3_server::{Cert, Counts};
 use reqwest::header::HeaderValue;
+use wirecatch_test_support::TestCertificate;
+use wirecatch_test_support::http3::{self as servers, Counts};
 
 #[test]
 fn alt_svc_values() {
@@ -79,12 +77,17 @@ const MIB: usize = 1024 * 1024;
 
 /// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
 /// No retries are allowed: falling back from HTTP/3 must never need one.
-async fn fetch(cert: &Cert, tcp_port: u16, http3: bool, test: &str) -> (Vec<u8>, Duration) {
+async fn fetch(
+    cert: &TestCertificate,
+    tcp_port: u16,
+    http3: bool,
+    test: &str,
+) -> (Vec<u8>, Duration) {
     fetch_from(cert, "127.0.0.1", tcp_port, http3, test, |_| {}).await
 }
 
 async fn fetch_from(
-    cert: &Cert,
+    cert: &TestCertificate,
     host: &str,
     tcp_port: u16,
     http3: bool,
@@ -99,7 +102,7 @@ async fn fetch_from(
     request.options.http3 = http3;
     request.options.max_retries = 0;
     tune(&mut request.options);
-    let clients = Clients::with_roots(&request.options, cert.roots.clone());
+    let clients = Clients::with_roots(&request.options, cert.roots());
     let started = Instant::now();
     let outcome = download_with(
         request,
@@ -125,10 +128,10 @@ fn requests(counts: &Counts) -> usize {
 #[tokio::test]
 async fn downloads_over_http3_when_the_server_advertises_it() {
     let data = test_data(8 * MIB + 777);
-    let cert = Cert::new();
-    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}"; ma=3600"#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let (bytes, _) = fetch(&cert, tcp_port, true, "used").await;
 
@@ -142,10 +145,10 @@ async fn downloads_over_http3_when_the_server_advertises_it() {
 #[tokio::test]
 async fn quic_goes_to_the_address_the_first_request_reached() {
     let data = test_data(8 * MIB);
-    let cert = Cert::new();
-    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost", |_| {}).await;
 
@@ -161,10 +164,10 @@ async fn quic_goes_to_the_address_the_first_request_reached() {
 #[tokio::test]
 async fn http3_is_not_used_unless_switched_on() {
     let data = test_data(4 * MIB);
-    let cert = Cert::new();
-    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let (bytes, _) = fetch(&cert, tcp_port, false, "off").await;
 
@@ -181,10 +184,10 @@ async fn http3_is_not_used_unless_switched_on() {
 #[tokio::test]
 async fn falls_back_to_tcp_when_quic_is_blocked() {
     let data = test_data(8 * MIB);
-    let cert = Cert::new();
-    let (_socket, blocked_port) = h3_server::blackhole();
+    let cert = TestCertificate::new();
+    let (_socket, blocked_port) = servers::blackhole();
     let alt_svc = format!(r#"h3=":{blocked_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let (bytes, took) = fetch(&cert, tcp_port, true, "blocked").await;
 
@@ -197,11 +200,11 @@ async fn falls_back_to_tcp_when_quic_is_blocked() {
 #[tokio::test]
 async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
     let data = test_data(8 * MIB);
-    let cert = Cert::new();
+    let cert = TestCertificate::new();
     let (h3_port, h3) =
-        h3_server::start_h3_breaking(data.clone(), &cert, Some(100_000), Duration::ZERO).await;
+        servers::start_h3_breaking(data.clone(), &cert, Some(100_000), Duration::ZERO);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let (bytes, _) = fetch(&cert, tcp_port, true, "broken").await;
 
@@ -220,12 +223,11 @@ async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
 #[tokio::test]
 async fn falling_back_mid_stream_does_not_use_up_a_retry() {
     let data = test_data(16 * MIB);
-    let cert = Cert::new();
+    let cert = TestCertificate::new();
     let (h3_port, h3) =
-        h3_server::start_h3_breaking(data.clone(), &cert, Some(7 * MIB), Duration::from_secs(1))
-            .await;
+        servers::start_h3_breaking(data.clone(), &cert, Some(7 * MIB), Duration::from_secs(1));
     let alt_svc = format!(r#"h3=":{h3_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     // Two connections, 8 MiB each, and parts too big to split again: the TCP
     // connection finishes its half and stops before HTTP/3 breaks.
@@ -245,10 +247,10 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
 #[tokio::test]
 async fn http3_requests_keep_to_the_request_limit() {
     let data = test_data(8 * MIB + 777);
-    let cert = Cert::new();
-    let (h3_port, h3) = h3_server::start_h3(data.clone(), &cert).await;
+    let cert = TestCertificate::new();
+    let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let alt_svc = format!(r#"h3=":{h3_port}""#);
-    let (tcp_port, tcp) = h3_server::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
+    let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let limit = MIB as u64 / 2;
     let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "limited", |o| {

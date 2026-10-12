@@ -12,16 +12,12 @@
 //! `cargo run --release -p wirecatch-engine --example bench_local -- serve-ftp [port] [MiB/s per connection]`
 //!     The same with an FTP server (anonymous login, at most 4 sessions).
 
-#[path = "../tests/common/mod.rs"]
-mod common;
-#[path = "../tests/common/ftp_server.rs"]
-mod ftp_server;
-
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use common::{Config, TestServer, test_data};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
+use wirecatch_test_support::http::{Config, TestServer};
+use wirecatch_test_support::{ftp, test_data};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -167,15 +163,15 @@ async fn serve(port: u16, cap_mib: u64) {
 }
 
 async fn serve_ftp(port: u16, cap_mib: u64) {
-    let _server = ftp_server::FtpServer::start_on(
+    let _server = ftp::FtpServer::start_on(
         port,
-        ftp_server::FtpConfig {
+        ftp::FtpConfig {
             files: vec![(
                 "file.bin".to_string(),
                 Arc::new(test_data(256 * MIB as usize)),
             )],
             mdtm: Some("20260101000000".to_string()),
-            max_sessions: Some((4, ftp_server::Refuse::Greeting421)),
+            max_sessions: Some((4, ftp::Refuse::Greeting421)),
             data_bps: Some(cap_mib * MIB),
             ..Default::default()
         },

@@ -3,18 +3,17 @@
 //! down), every request keeps to the limit, and splitting, resuming, retries,
 //! the stall timeout and speed limits all still work.
 
-mod common;
-
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use common::{Config, TestServer, test_data};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, RateLimiter, download,
 };
+use wirecatch_test_support::http::{Config, TestServer};
+use wirecatch_test_support::test_data;
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;

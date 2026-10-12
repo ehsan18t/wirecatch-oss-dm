@@ -1,0 +1,37 @@
+[package]
+name = "wirecatch-test-support"
+description = "Local test servers and helpers shared by the Wirecatch crates' tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Test support only; never published.
+publish = false
+
+[dependencies]
+axum.workspace = true
+base64 = "0.22.1"
+bytes.workspace = true
+futures-util.workspace = true
+# The same major version and crypto provider (ring) as the engine, so a test's
+# root store is the type the engine's TLS configuration takes.
+rcgen = { version = "0.14.0", default-features = false, features = ["crypto", "ring"] }
+rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }
+tokio = { workspace = true, features = ["io-util"] }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"] }
+url.workspace = true
+
+# The HTTP/3 test servers, only with the `http3` feature.
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+http = { version = "1.1.0", optional = true }
+hyper = { version = "1.4.0", features = ["server", "http1", "http2"], optional = true }
+hyper-util = { version = "0.1.10", features = ["server-auto", "tokio"], optional = true }
+quinn = { version = "0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring"], optional = true }
+
+[features]
+default = []
+# HTTPS servers that advertise and speak HTTP/3, for the engine's `http3` feature.
+http3 = ["dep:h3", "dep:h3-quinn", "dep:http", "dep:hyper", "dep:hyper-util", "dep:quinn"]
+
+[lints]
+workspace = true

@@ -1,18 +1,17 @@
 //! Options that cannot work are refused before anything is sent. A zero buffer size used to hang a thread, a zero split size panicked, and a zero checkpoint interval silently turned off resume files.
 
-mod common;
-
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use common::{Config, TestServer, test_data};
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error, Fetcher, MAX_BUFFER_SIZE,
     MAX_CONNECTIONS, Progress, download,
 };
+use wirecatch_test_support::http::{Config, TestServer};
+use wirecatch_test_support::test_data;
 
 /// Long enough for a refused download to return, short enough that a hang fails the test instead of stalling it.
 const DEADLINE: Duration = Duration::from_secs(10);

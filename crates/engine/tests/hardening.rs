@@ -1,18 +1,17 @@
 //! Behavior toward servers: credentials and redirects, `Retry-After`, and
 //! servers that limit how many connections one client may open.
 
-mod common;
-
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime};
 
-use common::{Busy, Config, Refuse, TestServer, test_data};
 use wirecatch_engine::header::{
     AUTHORIZATION, COOKIE, HeaderValue, PROXY_AUTHORIZATION, REFERER, USER_AGENT,
 };
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
+use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
+use wirecatch_test_support::test_data;
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;

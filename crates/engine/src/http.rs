@@ -806,7 +806,6 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         use rustls::HandshakeKind;
-        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         struct TlsServer {
@@ -838,20 +837,9 @@ mod tests {
 
         /// Answers every request with `response` and closes the connection.
         async fn start_tls_server_answering(response: Vec<u8>) -> TlsServer {
-            let cert = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
-            let cert_der = CertificateDer::from(cert.cert.der().to_vec());
-            let key =
-                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()));
-            let mut roots = rustls::RootCertStore::empty();
-            roots.add(cert_der.clone()).unwrap();
-
-            let provider = Arc::new(rustls::crypto::ring::default_provider());
-            let config = rustls::ServerConfig::builder_with_provider(provider)
-                .with_protocol_versions(rustls::ALL_VERSIONS)
-                .unwrap()
-                .with_no_client_auth()
-                .with_single_cert(vec![cert_der], key)
-                .unwrap();
+            let cert = wirecatch_test_support::TestCertificate::new();
+            let roots = cert.roots();
+            let config = cert.server_config(&[]);
             let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();

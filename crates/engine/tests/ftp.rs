@@ -1,21 +1,17 @@
 //! FTP downloads through the public `download()` API, against the scripted
-//! server in `common/ftp_server.rs`. FTPS needs the test certificate trusted,
+//! server in `wirecatch_test_support::ftp`. FTPS needs the test certificate trusted,
 //! so those tests live inside the crate (`src/ftp/tests.rs`).
-
-mod common;
-#[path = "common/ftp_server.rs"]
-mod ftp_server;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use common::test_data;
-use ftp_server::{FtpConfig, FtpServer, Refuse};
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, Url, download,
 };
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
+use wirecatch_test_support::test_data;
 
 const MIB: usize = 1024 * 1024;
 
@@ -425,7 +421,7 @@ async fn a_missing_file_is_reported_and_nothing_is_written() {
 async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);
-    config.epsv = false;
+    config.quirks.push(Quirk::NoEpsv);
     // A server naming another machine must not send the client there.
     config.pasv_ip = [192, 0, 2, 1];
     let server = FtpServer::start(config).await;
@@ -451,7 +447,7 @@ async fn pasv_is_used_without_epsv_and_its_address_is_ignored() {
 async fn an_unreadable_epsv_answer_falls_back_to_pasv_once() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);
-    config.epsv_garbage = true;
+    config.quirks.push(Quirk::EpsvGarbage);
     let server = FtpServer::start(config).await;
     let dir = temp_dir("epsv-garbage");
 
@@ -478,7 +474,7 @@ async fn paths_are_sent_as_utf8() {
         "pub/\u{fc}bung \u{2013} 1.bin".to_string(),
         Arc::new(data.clone()),
     )];
-    config.utf8_after_opts = true;
+    config.quirks.push(Quirk::Utf8AfterOpts);
     let server = FtpServer::start(config).await;
     let dir = temp_dir("utf8");
 
@@ -498,7 +494,7 @@ async fn paths_are_sent_as_utf8() {
 async fn a_server_refusing_utf8_mode_still_downloads() {
     let data = test_data(MIB);
     let mut config = serving(&data);
-    config.refuse_opts = true;
+    config.quirks.push(Quirk::RefuseOpts);
     let server = FtpServer::start(config).await;
     let dir = temp_dir("no-opts");
 
@@ -520,7 +516,7 @@ async fn a_server_refusing_utf8_mode_still_downloads() {
 async fn a_server_without_rest_is_downloaded_over_one_connection() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);
-    config.rest = false;
+    config.quirks.push(Quirk::NoRest);
     let server = FtpServer::start(config).await;
     let dir = temp_dir("no-rest");
 
@@ -542,7 +538,7 @@ async fn a_server_without_rest_is_downloaded_over_one_connection() {
 async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
     let data = test_data(4 * MIB);
     let mut config = serving(&data);
-    config.size = false;
+    config.quirks.push(Quirk::NoSize);
     config.data_bps = Some(8 * MIB as u64);
     let server = FtpServer::start(config).await;
     let dir = temp_dir("no-size");

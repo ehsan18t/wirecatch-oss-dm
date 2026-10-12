@@ -1,15 +1,11 @@
 //! FTP credentials never reach the logs. A test binary of its own: it installs
 //! a process-wide log subscriber, which would also catch other tests' logs.
 
-mod common;
-#[path = "common/ftp_server.rs"]
-mod ftp_server;
-
 use std::sync::{Arc, Mutex};
 
-use common::test_data;
-use ftp_server::{FtpConfig, FtpServer};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
+use wirecatch_test_support::test_data;
 
 /// Collects everything the engine logs, at every level.
 #[derive(Clone, Default)]
