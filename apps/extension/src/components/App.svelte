@@ -46,6 +46,31 @@
   };
 
   const snapshot = $derived(model.snapshot);
+  const notices = $derived(snapshot?.notices ?? []);
+
+  let mainArea = $state<HTMLElement | null>(null);
+  let noticeList = $state<HTMLUListElement | null>(null);
+  /** A dismissed notice and its place, until the list without it arrives and focus can move. */
+  let dismissed = $state<{ id: string; index: number } | null>(null);
+
+  function dismissNotice(id: string, index: number): void {
+    dismissed = { id, index };
+    model.dismissNotice(id);
+  }
+
+  // Focus would otherwise fall to the page with the removed button: it goes to the notice now
+  // in that place (or the last one), or to the main area when none is left. Focus the person
+  // moved elsewhere in the meantime stays there.
+  $effect(() => {
+    if (dismissed === null) return;
+    const { id, index } = dismissed;
+    if (notices.some((n) => n.id === id)) return;
+    dismissed = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const buttons = noticeList?.querySelectorAll('button') ?? [];
+    (buttons[Math.min(index, buttons.length - 1)] ?? mainArea)?.focus();
+  });
   const settings = $derived(model.settings ?? EMPTY);
   const queues = $derived(snapshot?.queues ?? []);
   const editable = $derived(model.editable);
@@ -67,7 +92,7 @@
 <div class="popup">
   <PopupHeader {status} />
 
-  <main aria-busy={snapshot === null}>
+  <main aria-busy={snapshot === null} tabindex="-1" bind:this={mainArea}>
     {#if problem !== null && problemText !== null}
       {@const closed = problem.kind === 'app_closed'}
       <section
@@ -97,14 +122,21 @@
       </section>
     {/if}
 
-    {#each snapshot?.notices ?? [] as notice (notice.id)}
-      <section class="panel panel-{notice.tone}" aria-label="Message">
-        <p>{notice.message}</p>
-        <button type="button" class="link-button" onclick={() => model.dismissNotice(notice.id)}
-          >Dismiss</button
-        >
-      </section>
-    {/each}
+    {#if notices.length > 0}
+      <ul class="notices" aria-label="Messages" bind:this={noticeList}>
+        {#each notices as notice, index (notice.id)}
+          <li class="panel panel-{notice.tone}">
+            <p id="notice-{notice.id}">{notice.message}</p>
+            <button
+              type="button"
+              class="link-button"
+              aria-describedby="notice-{notice.id}"
+              onclick={() => dismissNotice(notice.id, index)}>Dismiss</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
     {#if cachedNote !== null}
       <p class="note">{cachedNote}</p>
@@ -169,6 +201,12 @@
     border-radius: 8px;
     border: 1px solid var(--warn-border);
     background: var(--warn-bg);
+  }
+
+  .notices {
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
   .panel-error {

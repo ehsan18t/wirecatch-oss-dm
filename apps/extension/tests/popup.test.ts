@@ -2,7 +2,7 @@
  * The popup, rendered in jsdom and wired to the real background hub and native
  * client, which talk to a fake app through a fake native port.
  */
-import { cleanup, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -448,8 +448,48 @@ describe('popup', () => {
     await hub.onDownload(downloadItem());
     const message = await screen.findByText('big.zip stayed in the browser: Disk full.');
     expect(message).toBeTruthy();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Dismiss' }));
+    await userEvent.setup().click(
+      screen.getByRole('button', {
+        name: 'Dismiss',
+        description: 'big.zip stayed in the browser: Disk full.',
+      }),
+    );
     await waitFor(() => expect(screen.queryByText(/stayed in the browser/)).toBeNull());
+  });
+
+  it('lists the messages and moves focus to the next one after a dismiss', async () => {
+    const { hub } = await openPopup();
+    hub.notify('warning', 'First message.');
+    hub.notify('error', 'Second message.');
+    const list = await screen.findByRole('list', { name: 'Messages' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
+    const dismiss = (message: string): HTMLElement =>
+      screen.getByRole('button', { name: 'Dismiss', description: message });
+    const user = userEvent.setup();
+
+    await user.click(dismiss('Second message.'));
+    await waitFor(() => expect(document.activeElement).toBe(dismiss('First message.')));
+
+    await user.click(dismiss('First message.'));
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Messages' })).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole('main'));
+  });
+
+  it('leaves focus where the person moved it before the dismissed message went', async () => {
+    const { hub } = await openPopup();
+    hub.notify('warning', 'First message.');
+    hub.notify('error', 'Second message.');
+    const button = await screen.findByRole('button', {
+      name: 'Dismiss',
+      description: 'Second message.',
+    });
+    const elsewhere = screen.getByRole('main');
+    button.focus();
+    // Clicked without awaiting, so focus moves before the list without the notice arrives.
+    void fireEvent.click(button);
+    elsewhere.focus();
+    await waitFor(() => expect(screen.queryByText('Second message.')).toBeNull());
+    expect(document.activeElement).toBe(elsewhere);
   });
 });
 
