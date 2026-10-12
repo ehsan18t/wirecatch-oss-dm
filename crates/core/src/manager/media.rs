@@ -875,7 +875,7 @@ fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
 
 /// Request options carrying the browser's headers for the stream or page.
 pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
-    let mut options = DownloadOptions::default();
+    let mut options = headers::download_options();
     options.headers = headers::to_map(&origin.headers);
     if let Some(agent) = &origin.user_agent {
         options.user_agent.clone_from(agent);

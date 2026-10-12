@@ -688,7 +688,7 @@ impl Manager {
 
     fn addon_download_options(&self) -> DownloadOptions {
         let state = self.lock();
-        let mut options = DownloadOptions::default();
+        let mut options = crate::headers::download_options();
         options.connections = usize::from(state.settings.connections_per_download);
         options.rate_limiters = vec![self.inner.global_limiter.clone()];
         options
@@ -738,7 +738,7 @@ impl Manager {
         };
         let api = Url::parse(api).map_err(|e| Lookup::Refused(e.to_string()))?;
         let cancel = self.inner.stopped.child_token();
-        let mut options = DownloadOptions::default();
+        let mut options = crate::headers::download_options();
         options.headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.github+json"),
