@@ -4,6 +4,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use tracing::warn;
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath};
@@ -26,7 +27,8 @@ impl Manager {
     ///
     /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it
     /// cannot be created or written to or the files cannot be moved there,
-    /// [`CoreError::WrongState`] for an unfinished video or a download already being
+    /// [`CoreError::FilesSplit`] when, after that, some files already moved could
+    /// not be put back, [`CoreError::WrongState`] for an unfinished video or a download already being
     /// moved, [`CoreError::DownloadNotFound`] when there is no download `id`, and
     /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn set_download_folder(&self, id: DownloadId, folder: &str) -> Result<()> {
@@ -194,15 +196,41 @@ fn move_download_files(from: &Path, to: &Path, completed: bool) -> Result<()> {
         .zip(partial_files(to))
         .filter(|(old, _)| old.exists())
         .collect();
+    move_together(&pairs, move_file)
+}
+
+/// Moves each `(old, new)` pair of a download's files with `move_one`. When one
+/// cannot be moved, those already moved are put back, so the download stays
+/// whole in its old folder. A file that cannot be put back either is logged,
+/// and the error says the download's files are split between the two folders.
+fn move_together(
+    pairs: &[(PathBuf, PathBuf)],
+    mut move_one: impl FnMut(&Path, &Path) -> io::Result<()>,
+) -> Result<()> {
     for (done, (old, new)) in pairs.iter().enumerate() {
-        if let Err(source) = move_file(old, new) {
-            // Put back what was already moved, so the download stays whole.
+        if let Err(source) = move_one(old, new) {
+            let mut stuck = Vec::new();
             for (old, new) in &pairs[..done] {
-                let _ = move_file(new, old);
+                if let Err(error) = move_one(new, old) {
+                    warn!(from = %new.display(), to = %old.display(), %error, "could not move a download's file back after a failed move");
+                    stuck.push(format!(
+                        "{} (it belongs at {})",
+                        new.display(),
+                        old.display()
+                    ));
+                }
             }
-            return Err(CoreError::File {
-                path: new.display().to_string(),
-                source,
+            return Err(if stuck.is_empty() {
+                CoreError::File {
+                    path: new.display().to_string(),
+                    source,
+                }
+            } else {
+                CoreError::FilesSplit {
+                    path: old.display().to_string(),
+                    source,
+                    stuck: stuck.join(", "),
+                }
             });
         }
     }
@@ -259,5 +287,40 @@ mod tests {
         assert_eq!(std::fs::read(new_part).unwrap(), b"data");
         assert_eq!(std::fs::read(new_state).unwrap(), b"state");
         assert!(!part.exists() && !state.exists());
+    }
+
+    /// A file that cannot be moved back after a failed move leaves the download
+    /// split between two folders: the error says so and names the new folder.
+    #[test]
+    fn a_file_that_cannot_be_moved_back_is_reported() {
+        let old = Path::new("old");
+        let new = Path::new("new");
+        let pairs = [
+            (old.join("a.bin.part"), new.join("a (1).bin.part")),
+            (old.join("a.bin.wcstate"), new.join("a (1).bin.wcstate")),
+        ];
+        let mut calls = 0;
+        let error = move_together(&pairs, |_, _| {
+            calls += 1;
+            // The first move works; the second and the move back fail.
+            if calls == 1 {
+                Ok(())
+            } else {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+        })
+        .unwrap_err();
+        assert_eq!(calls, 3);
+        let message = error.to_string();
+        assert!(matches!(error, CoreError::FilesSplit { .. }), "{message}");
+        // The file that failed, then each stranded file and the name it must have.
+        let failed = format!("Could not move {} ", old.join("a.bin.wcstate").display());
+        assert!(message.starts_with(&failed), "{message}");
+        let stuck = format!(
+            "{} (it belongs at {})",
+            new.join("a (1).bin.part").display(),
+            old.join("a.bin.part").display()
+        );
+        assert!(message.contains(&stuck), "{message}");
     }
 }

@@ -97,6 +97,22 @@ pub enum CoreError {
         source: io::Error,
     },
 
+    /// Moving a download's files to another folder failed, and some of the files
+    /// already moved could not be put back, so they are split between the two
+    /// folders.
+    #[error(
+        "Could not move {path} ({source}), and some of this download's files could not be moved back: {stuck}. Move each one back by hand, under the name given, then try the download again."
+    )]
+    FilesSplit {
+        /// The file that could not be moved.
+        path: String,
+        /// What the operating system reported.
+        source: io::Error,
+        /// Each file left in the new folder and the path it must have to be
+        /// found again, in words.
+        stuck: String,
+    },
+
     /// A captured download could not be taken over; the text says why, in one or
     /// more whole sentences.
     #[error("Wirecatch could not take over this download. {0} The browser keeps it.")]
@@ -147,6 +163,7 @@ impl CoreError {
             CoreError::DatabaseTooNew { .. }
             | CoreError::Database(_)
             | CoreError::File { .. }
+            | CoreError::FilesSplit { .. }
             | CoreError::Closed
             | CoreError::Internal(_) => ErrorCode::Internal,
         };
@@ -193,6 +210,11 @@ mod tests {
             CoreError::File {
                 path: "/x".into(),
                 source: io(),
+            },
+            CoreError::FilesSplit {
+                path: "/x".into(),
+                source: io(),
+                stuck: "/new/a (1).bin.part (it belongs at /old/a.bin.part)".into(),
             },
             CoreError::NotStarted("It was removed.".into()),
             CoreError::AddonRequired,
