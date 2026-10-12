@@ -2,7 +2,7 @@
 
 This is how code in Wirecatch is written. It applies to every package and every contributor, human or agent. Each rule says how it is enforced: **gate** means `pnpm gate` (and CI, which runs the same checks) fails when it is broken, **review** means a reviewer checks it. A rule enforced only by review is a candidate for a new check; propose one when you find a way.
 
-Every crate follows the workspace lints (`[lints] workspace = true`; the gate's `lint-policy` check fails a crate that does not), and every TypeScript and Svelte package uses the one shared ESLint configuration. Nothing is recorded as an accepted violation: there are no suppression files. The few exceptions are single `#[expect(..., reason = "...")]` attributes or one disable comment with a `--` reason, each where the rule is wrong for that code, listed with its reason in [AUDIT](AUDIT.md) W14 and by file and lint in `LINT_EXCEPTIONS` in `scripts/gate.mjs`. Gate (`exceptions`, which fails on any `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore` not in that list, and on a listed one that is gone).
+Every crate follows the workspace lints (`[lints] workspace = true`; the gate's `lint-policy` check fails a crate that does not), and every workspace package with TypeScript or Svelte sources uses the one shared ESLint configuration (the `js-policy` check fails a package that does not, or whose `lint` script allows warnings or skips the format check). Nothing is recorded as an accepted violation: there are no suppression files. The few exceptions are single `#[expect(..., reason = "...")]` attributes or one disable comment with a `--` reason, each where the rule is wrong for that code, listed with its reason in [AUDIT](AUDIT.md) W14 and by file and lint in `LINT_EXCEPTIONS` in `scripts/gate.mjs`. Gate (`exceptions`, which fails on any `#[expect]`, `#[allow]`, ESLint disable comment or `svelte-ignore` not in that list, and on a listed one that is gone).
 
 The gates are a floor. Passing them does not make a change good; breaking them makes it wrong.
 
@@ -16,8 +16,8 @@ A fact written in two places will disagree with itself. Each kind of fact has on
 | Anything that crosses a process boundary: types, command and event names, limits, defaults, error codes | `crates/protocol`, generated into `packages/protocol` (D15) | gate (`protocol`) |
 | Commands every check runs, and the versions of the cargo tools they use | `scripts/gate.mjs` | review |
 | Rust lint policy | `[workspace.lints]` in `Cargo.toml` and `clippy.toml` | gate (`lint-policy` checks every crate follows it; `clippy` lints for the system it runs on, and `clippy-linux` lints for Linux from Windows and macOS every crate whose dependencies compile no C, so code behind `cfg(unix)` is checked before Linux CI sees it) |
-| TypeScript and Svelte lint policy | `packages/eslint-config` | review |
-| Formatting | `rustfmt.toml`, `.prettierrc.json` | gate for Rust and the two apps; review for `packages/` and `scripts/` |
+| TypeScript and Svelte lint policy | `packages/eslint-config` | gate (`js-policy` checks every package with TypeScript or Svelte sources builds its configuration with `wirecatch()` and lints with `--max-warnings 0`) |
+| Formatting | `rustfmt.toml`, `.prettierrc.json` | gate for Rust and every workspace package (`js-policy` requires `prettier --check` in each `lint` script; `pnpm protocol:generate` formats the generated types); review for `scripts/` |
 | Shared Rust dependency versions | `[workspace.dependencies]` | review |
 | Shared JavaScript tool versions | the `catalog` in `pnpm-workspace.yaml` | review |
 | The Rust release | `rust-toolchain.toml` (rustup and CI read it) | review |

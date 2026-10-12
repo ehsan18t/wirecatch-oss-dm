@@ -117,7 +117,7 @@ The lead's decisions on the way: `wirecatch/no-magic-numbers` lets named module 
 
 Parts of W0 findings carried into later workstreams:
 
-- XC-23: `packages/units` is linted, formatted and type-checked; `packages/eslint-config`, `packages/protocol/scripts` and `scripts/` are not yet (W6).
+- XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is not yet: `gate.mjs` is past the 400-line file limit and needs splitting into modules first (W6).
 - XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml` (W2).
