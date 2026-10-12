@@ -17,10 +17,10 @@ import type {
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend';
 import { Clock } from '../state/clock.svelte';
-import { ProgressActions } from './progress-actions';
 import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
 import { errorMessage, Runner } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
+import { ProgressActions } from './progress-actions';
 
 /** What the window is showing. */
 export type Phase = 'loading' | 'ask' | 'progress' | 'gone';

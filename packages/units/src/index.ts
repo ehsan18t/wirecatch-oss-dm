@@ -8,7 +8,7 @@ export const MB = KB * KB;
 export const GB = MB * KB;
 
 /** Bits in a byte. */
-export const BITS_PER_BYTE = 8;
+const BITS_PER_BYTE = 8;
 
 /** Bytes a stream at `kbps` takes for `durationMs`: kilobits per second times milliseconds is bits. */
 export function bytesAtBitRate(kbps: number, durationMs: number): number {

@@ -35,7 +35,7 @@
         Start over</Button
       >
     {:else if one.status === 'failed' && !one.error}
-      <!-- With an error, the error box above already offers Try again. -->
+      <!-- A failure with an error offers Try again with its fix (ErrorFix), shown by the panel. -->
       <Button icon={RotateCw} onclick={() => app.actions.retry([one.id])}>Try again</Button>
     {/if}
     {#if one.status === 'completed'}

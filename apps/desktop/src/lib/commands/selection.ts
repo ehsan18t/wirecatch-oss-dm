@@ -111,7 +111,6 @@ const ORDER: readonly CommandSpec<Selected>[] = [
   },
 ];
 
-/** Escape on the list: lets go of the selection and of the row the keyboard is on. */
 const CLEAR: CommandSpec<AppState> = {
   id: 'sel.clear',
   title: 'Clear the selection',
