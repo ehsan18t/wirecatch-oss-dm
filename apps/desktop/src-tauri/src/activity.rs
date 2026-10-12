@@ -109,26 +109,53 @@ impl Activity {
 }
 
 /// Bytes as a person reads them, matching the interface: `512 B`, `1.50 KB`, `12.4 MB`.
+///
+/// Three significant digits: two decimals below 10, one below 100, none above. The unit and the
+/// decimals are chosen for the value as shown, after rounding: 10239 B is `10.0 KB`, not
+/// `10.00 KB`, and 1048575 B is `1.00 MB`, not `1024 KB`.
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    const STEP: f64 = 1024.0;
     let mut value = approx_f64(bytes);
     let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
+    while value >= STEP && unit < UNITS.len() - 1 {
+        value /= STEP;
         unit += 1;
     }
     if unit == 0 {
         return format!("{bytes} B");
     }
-    let digits = if value >= 100.0 {
-        0
-    } else if value >= 10.0 {
-        1
-    } else {
-        2
+    let (mut shown, mut digits) = rounded(value);
+    // Rounding up can reach the next unit: 1023.996 KB shows as 1.00 MB.
+    if shown >= STEP && unit < UNITS.len() - 1 {
+        unit += 1;
+        (shown, digits) = rounded(value / STEP);
+    }
+    format!("{shown:.digits$} {}", UNITS[unit])
+}
+
+/// `value` rounded to three significant digits (at most two decimals), and the decimals to
+/// show. Decimals are chosen again after rounding, since 9.996 rounds to 10.00 and 99.96 to
+/// 100.0, which show with fewer.
+fn rounded(value: f64) -> (f64, usize) {
+    let decimals = |v: f64| {
+        if v >= 100.0 {
+            0
+        } else if v >= 10.0 {
+            1
+        } else {
+            2
+        }
     };
-    format!("{value:.digits$} {}", UNITS[unit])
+    let round = |v: f64, digits: usize| {
+        let scale = [1.0, 10.0, 100.0][digits];
+        (v * scale).round() / scale
+    };
+    let first = decimals(value);
+    let shown = round(value, first);
+    let digits = decimals(shown);
+    (round(value, digits), digits)
 }
 
 /// The tray tooltip: what runs and how fast.
@@ -247,6 +274,19 @@ mod tests {
         );
         assert_eq!(format_bytes(512), "512 B");
         assert_eq!(format_bytes(200 * 1024 * 1024), "200 MB");
+    }
+
+    /// Rounding can reach the next unit or need fewer decimals: the shown value
+    /// is what is checked, never the value before rounding.
+    #[test]
+    fn sizes_that_round_up_keep_the_unit_and_decimals_of_the_rounded_value() {
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.00 KB");
+        assert_eq!(format_bytes(10_239), "10.0 KB");
+        assert_eq!(format_bytes(102_398), "100 KB");
+        assert_eq!(format_bytes(1_048_575), "1.00 MB");
+        assert_eq!(format_bytes(1_048_576), "1.00 MB");
+        assert_eq!(format_bytes(u64::MAX), "16777216 TB");
     }
 
     #[test]
