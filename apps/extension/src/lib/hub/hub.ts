@@ -338,13 +338,7 @@ export class Hub {
     }
   }
 
-  /**
-   * Settles the handovers a previous run of the background script paused and never finished,
-   * exactly as after a timeout: `withdraw_download` decides. `already_started` means the app has
-   * it, so the browser copy goes; `withdrawn` or `not_found` means it does not, so the browser
-   * resumes it; no answer, or one that cannot be read, keeps the browser copy with a warning
-   * that the file may download twice.
-   */
+  /** Settles the handovers a previous run of the background script never finished (see `recoverHandover`). */
   async #recoverInFlight(entries: readonly InFlightEntry[]): Promise<void> {
     const left = entries.filter((entry) => !this.#inFlight.has(entry.id));
     // Kept in the persisted list until settled, so another restart picks them up again.

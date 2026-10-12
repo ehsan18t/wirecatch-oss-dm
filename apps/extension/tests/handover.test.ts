@@ -994,13 +994,47 @@ describe('downloads left paused by a restarted background', () => {
       });
     });
 
-    it('leaves alone, without asking the app, the ones no longer paused', async () => {
-      const { downloads, inFlight } = await recover('withdrawn', {
-        state: 'complete',
+    // A download the person resumed after the restart was skipped without asking the app, so
+    // one the app had taken before the restart ran in both places with no warning.
+    it.each([
+      ['resumed', { state: 'in_progress', paused: false }],
+      ['finished', { state: 'complete', paused: false }],
+    ] as const)(
+      'asks the app about a download the person %s, and settles it',
+      async (_l, state) => {
+        const { downloads, inFlight } = await recover('withdrawn', { ...state });
+        expect(s.app.calls('withdraw_download')).toHaveLength(1);
+        expect(downloads.log).toEqual([]);
+        expect(s.hub.snapshot().notice).toBeNull();
+        expect(inFlight.entries).toEqual([]);
+      },
+    );
+
+    it('warns, without cancelling it, when the app has a download the person resumed', async () => {
+      const { downloads } = await recover('already_started', {
+        state: 'in_progress',
         paused: false,
       });
       expect(downloads.log).toEqual([]);
+      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+    });
+
+    it('warns when the app cannot say whether it has a download the person resumed', async () => {
+      const { downloads } = await recover('hang', { state: 'in_progress', paused: false });
+      expect(downloads.log).toEqual([]);
+      expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+    });
+
+    it.each([
+      ['cancelled', { state: 'interrupted', paused: false }],
+      ['taken off the list', null],
+    ] as const)('does not ask the app about a download the person %s', async (_l, state) => {
+      const { downloads, inFlight } = await recover(
+        'withdrawn',
+        state === null ? null : { ...state },
+      );
       expect(s.app.calls('withdraw_download')).toHaveLength(0);
+      expect(downloads.log).toEqual([]);
       expect(inFlight.entries).toEqual([]);
     });
   });
