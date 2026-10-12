@@ -211,9 +211,7 @@ mod tests {
         ]
     }
 
-    /// Where `ts-rs` writes the types: `TS_RS_EXPORT_DIR`, which `.cargo/config.toml` points into
-    /// `target/` for plain test runs and `pnpm protocol:generate` points at a staging folder, or
-    /// its own default.
+    /// Where `ts-rs` writes the types: `TS_RS_EXPORT_DIR`, which `.cargo/config.toml` points into `target/` for plain test runs and `pnpm protocol:generate` points at a staging folder, or its own default.
     fn export_dir() -> PathBuf {
         std::env::var_os("TS_RS_EXPORT_DIR")
             .map_or_else(|| PathBuf::from("./bindings"), PathBuf::from)

@@ -1,9 +1,6 @@
 //! Types shared by every Wirecatch component.
 //!
-//! These Rust types are the single source of truth. TypeScript definitions for the
-//! desktop UI and the browser extension are generated from them with `ts-rs` into
-//! `packages/protocol/src/generated` (run `cargo test -p wirecatch-protocol`), together
-//! with the limits and defaults the apps need as values (see `exported.rs`).
+//! These Rust types are the single source of truth. `pnpm protocol:generate` generates the TypeScript definitions for the desktop UI and the browser extension from them with `ts-rs` into `packages/protocol/src/generated`, together with the limits and defaults the apps need as values (see `exported.rs`); a plain `cargo test` writes them into `target/ts-rs` instead.
 //!
 //! - [`wire`]: messages exchanged between the extension, the bridge and the app.
 //! - [`extension`]: what the extension sends and the settings it can change.
