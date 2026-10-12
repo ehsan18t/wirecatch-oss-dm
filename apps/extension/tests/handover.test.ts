@@ -916,7 +916,7 @@ describe('downloads left paused by a restarted background', () => {
           app.withdrawBehavior = withdraw;
         },
       });
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(20_000);
       await s.started;
       return { downloads, inFlight };
     }
@@ -1050,6 +1050,29 @@ describe('downloads left paused by a restarted background', () => {
         message:
           "A download is paused in the browser. Open the browser's downloads page and click Resume.",
       });
+    });
+
+    // The recovery withdraw waited less than a hello may take, so an app it had to start often
+    // answered too late and the download ended with a false "may download twice".
+    it('waits for an app it has to start for as long as hello may take', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h5' }];
+      const downloads = new FakeDownloads();
+      s = await setup({
+        inFlight,
+        downloads,
+        start: false,
+        configure: (app, cache) => {
+          app.running = false;
+          app.startDelayMs = 9_500;
+          app.withdrawBehavior = 'already_started';
+          cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+        },
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await s.started;
+      expect(downloads.log).toEqual(['cancel:5', 'erase:5']);
+      expect(s.hub.snapshot().notice).toBeNull();
     });
 
     it('keeps the entries not yet settled saved, so another restart still has them', async () => {

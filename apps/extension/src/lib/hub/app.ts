@@ -53,12 +53,16 @@ export class AppCalls {
     return reply.data;
   }
 
-  /** Asks the app to forget a handover. `connecting`: wait for the connection first too, as a restarted background must. */
+  /**
+   * Asks the app to forget a handover. `connecting`: the app may not be connected, or even
+   * running, so the wait also covers a full hello, which may start it; a shorter one would
+   * end a slow start as "no answer" and warn of two copies for nothing.
+   */
   async withdraw(handoverId: string, connecting = false): Promise<WithdrawOutcome> {
-    const { connectWaitMs, withdrawTimeoutMs } = this.#timing;
+    const { withdrawTimeoutMs } = this.#timing;
     const reply = await this.#client.request(
       { method: 'withdraw_download', params: { handover_id: handoverId } },
-      connecting ? connectWaitMs + withdrawTimeoutMs : withdrawTimeoutMs,
+      connecting ? this.#client.helloTimeoutMs + withdrawTimeoutMs : withdrawTimeoutMs,
     );
     if (reply.type !== 'withdrawn') throw new Error('Wirecatch gave an unexpected answer.');
     return reply.data;

@@ -199,6 +199,11 @@ export class NativeClient {
     this.#now = options.now ?? Date.now;
   }
 
+  /** How long the answer to `hello` may take, starting the app included. */
+  get helloTimeoutMs(): number {
+    return this.#options.helloTimeoutMs ?? HELLO_TIMEOUT_MS;
+  }
+
   get status(): ConnectionStatus {
     return this.#status;
   }
@@ -335,10 +340,7 @@ export class NativeClient {
     try {
       const hello: Hello = { ...(await this.#options.hello()), start_app: startApp };
       if (generation !== this.#generation) return;
-      reply = await this.#send(
-        { method: 'hello', params: hello },
-        this.#options.helloTimeoutMs ?? HELLO_TIMEOUT_MS,
-      );
+      reply = await this.#send({ method: 'hello', params: hello }, this.helloTimeoutMs);
     } catch (error) {
       if (generation !== this.#generation) return;
       const failure =
