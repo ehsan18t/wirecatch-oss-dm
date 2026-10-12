@@ -114,6 +114,10 @@ The lead's decisions on the way: `wirecatch/no-magic-numbers` lets named module 
 
 Planned as the next round, not enabled yet: `clippy::let_underscore_must_use`, so a `Result` or other `#[must_use]` value is never dropped with `let _ =` (section 4 of ENGINEERING.md says so today, enforced by review only). It is its own round because each existing `let _ =` needs a decision: handle, propagate or log with a reason.
 
+### W15. Comments only where they earn their place
+
+Added by the maintainer on 2026-10-12, to run after every other workstream. Most files carry comments that restate the code, narrate history or repeat what a commit message says; they add lines and cost every review its reading time. Remove them across every crate and package, keeping the comments that carry what the code cannot: critical paths, decisions and invariants that are not obvious, `SAFETY:` proofs. Then review the rules that ask for comments everywhere: a doc comment on every named constant (ENGINEERING section 2) and `missing_docs` on every public item (section 4), which stays for the published engine API and is reconsidered for internal crates. Propose a gate check, for example one that flags history words such as "now", "no longer", "used to" and "previously" in comments.
+
 ## Status
 
 | Workstream | Status |
@@ -122,6 +126,7 @@ Planned as the next round, not enabled yet: `clippy::let_underscore_must_use`, s
 | W1 | done and independently reviewed: all 12 fixed, each with a test shown to fail without its fix, and the review's 29 defects (2 high, 7 medium, 20 low) fixed the same way. Also done alongside: per-machine install (D25). What is left of the review moved to later workstreams, listed below |
 | W14 | fixed (2026-10-12): every crate on the workspace lints, no suppression files, `thread::sleep` banned; each part was verified by an agent that did not write it. Review of the whole workstream running |
 | W2 to W13 | not started |
+| W15 | planned last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
 Parts of W0 findings carried into later workstreams:
 

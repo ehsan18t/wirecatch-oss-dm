@@ -135,6 +135,7 @@ Everything a person reads: UI copy, CLI output, errors, docs, comments and commi
 - Plain language. An error says what happened and how to fix it.
 - No em dashes. Use a comma, colon, parentheses or a new sentence. Gate (`text`).
 - Never hard-wrap a paragraph. One paragraph is one line.
+- A code comment is only for what the code cannot say: a critical path where a change could go wrong, a decision or invariant that is not obvious, a `SAFETY:` proof. Never restate the code, and never narrate history ("now", "no longer", "used to", what a change did): that belongs in the commit message. Review; the existing comments are cleaned up in [AUDIT](AUDIT.md) W15.
 
 ## 9. Commits
 
