@@ -567,7 +567,7 @@ async fn one_download_can_be_read_by_its_id() -> TestResult {
 }
 
 /// Files downloaded with Wirecatch carry the Mark of the Web, as a browser's do,
-/// so `SmartScreen` and Office Protected View still look at them.
+/// so SmartScreen and Office Protected View still look at them.
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_finished_download_is_marked_as_from_the_internet() -> TestResult {

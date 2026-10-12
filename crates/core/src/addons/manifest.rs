@@ -101,7 +101,7 @@ const FFMPEG_VERSION: &str = "n9.0.2-25-g67b60c310b";
 const DENO_VERSION: &str = "2.9.7";
 
 /// The ffmpeg shared libraries `ffmpeg` links against (`BtbN` LGPL shared build,
-/// `FFmpeg` 9.0): avcodec 63, avdevice 63, avfilter 12, avformat 63, avutil 61,
+/// FFmpeg 9.0): avcodec 63, avdevice 63, avfilter 12, avformat 63, avutil 61,
 /// swresample 7 and swscale 10.
 #[cfg(windows)]
 const FFMPEG_LIBRARIES: [&str; 7] = [

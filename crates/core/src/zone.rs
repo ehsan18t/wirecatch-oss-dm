@@ -1,6 +1,6 @@
 //! The Mark of the Web: on Windows, a finished download gets a `Zone.Identifier`
 //! alternate data stream saying it came from the internet, as browsers do. The
-//! extension takes downloads away from the browser, so without it `SmartScreen`,
+//! extension takes downloads away from the browser, so without it SmartScreen,
 //! Office Protected View and the "this file came from another computer" check
 //! would never see files downloaded with Wirecatch.
 //!
