@@ -5,9 +5,16 @@ import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import ts from 'typescript-eslint';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
+import { useUiPrimitives } from './rules/use-ui-primitives.js';
 
 /** Rules of our own, used as `wirecatch/<name>`. */
-const plugin = { meta: { name: '@wirecatch/eslint-config' }, rules: { 'no-magic-numbers': noMagicNumbers } };
+const plugin = {
+  meta: { name: '@wirecatch/eslint-config' },
+  rules: {
+    'no-magic-numbers': noMagicNumbers,
+    'use-ui-primitives': useUiPrimitives,
+  },
+};
 
 /** Numbers that read as themselves and never need a name. */
 const OBVIOUS_NUMBERS = [-1, 0, 1, 2];

@@ -65,6 +65,21 @@ export default wirecatch({
       },
     },
     {
+      // Buttons and icons go through Button, IconButton and Icon, so their styles and sizes have one home.
+      files: ['src/**/*.svelte'],
+      ignores: [
+        'src/lib/components/Button.svelte',
+        'src/lib/components/IconButton.svelte',
+        'src/lib/components/Icon.svelte',
+      ],
+      rules: {
+        'wirecatch/use-ui-primitives': [
+          'error',
+          { buttonClasses: { btn: 'Button', 'icon-btn': 'IconButton' }, icon: 'Icon' },
+        ],
+      },
+    },
+    {
       // Components show state and report what the person did; the state classes call the backend, and the routes wire the two together.
       files: ['src/lib/components/**'],
       rules: {
