@@ -10,7 +10,7 @@
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const app = getApp();
 
@@ -42,7 +42,7 @@
     label={def.label}
     describedby={help}
     checked={s.auto_update_addons}
-    onchange={(v: boolean) => void app.updateSettings((d) => void (d.auto_update_addons = v))}
+    onchange={(v: boolean) => save((d) => void (d.auto_update_addons = v))}
   />
 {/snippet}
 

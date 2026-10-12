@@ -1,24 +1,16 @@
 <script lang="ts">
   // Speed: a limit on all downloads together.
-  import type { AppSettings } from '@wirecatch/protocol';
   import { inUnit, MB, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import type { SettingIn } from '$lib/settings-schema';
-  import { getApp } from '$lib/state/app.svelte';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
-
-  const app = getApp();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   /** The total speed limit a person starts from when turning it on; a suggestion, not a default of the core. */
   const FIRST_SPEED_LIMIT = 5 * MB;
-
-  function save(change: (d: AppSettings) => void) {
-    void app.updateSettings(change);
-  }
 
   const controls: Record<SettingIn<'speed'>, Snippet<[Row]>> = {
     global_speed_limit: speedLimit,

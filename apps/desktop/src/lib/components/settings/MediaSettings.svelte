@@ -1,18 +1,15 @@
 <script lang="ts">
   // Media: what the quality window starts with, separately for videos and for audio only.
-  import { AUDIO_KBPS_CHOICES, type AppSettings, type OutputFormat } from '@wirecatch/protocol';
+  import { AUDIO_KBPS_CHOICES, type OutputFormat } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
-  import { getApp } from '$lib/state/app.svelte';
   import ListEditor from '../ListEditor.svelte';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
-
-  const app = getApp();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const VIDEO_FORMATS: OutputFormat[] = ['original', 'mp4', 'mkv', 'webm'];
   const AUDIO_FORMATS: OutputFormat[] = ['original', 'mp3', 'm4a', 'opus', 'flac', 'wav'];
@@ -29,10 +26,6 @@
 
   function kindOf(id: SettingId): Kind {
     return AUDIO_ONLY.has(id) ? 'audio' : 'video';
-  }
-
-  function save(change: (d: AppSettings) => void) {
-    void app.updateSettings(change);
   }
 
   function formatName(f: OutputFormat): string {
@@ -77,10 +70,10 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet videoFormat({ s, help }: Row)}
+{#snippet videoFormat({ s, labelId, help }: Row)}
   <select
     class="field"
-    aria-labelledby="label-media"
+    aria-labelledby={labelId}
     aria-describedby={help}
     value={s.media.video.format}
     onchange={(e) => {
@@ -92,12 +85,12 @@
   </select>
 {/snippet}
 
-{#snippet audioFormat({ s, help }: Row)}
+{#snippet audioFormat({ s, labelId, help }: Row)}
   {@const audio = s.media.audio}
   {@const kbpsList = AUDIO_KBPS_CHOICES[audio.format]}
   <select
     class="field"
-    aria-labelledby="label-media_audio"
+    aria-labelledby={labelId}
     aria-describedby={help}
     value={audio.format}
     onchange={(e) => {

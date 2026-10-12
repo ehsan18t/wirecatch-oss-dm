@@ -11,7 +11,7 @@
     settings,
     flash,
     controls,
-  }: SectionProps & {
+  }: Omit<SectionProps, 'save'> & {
     /** Each setting's control. */
     controls: Partial<Record<SettingId, Snippet<[Row]>>>;
   } = $props();
@@ -19,14 +19,15 @@
 
 {#each items as def (def.id)}
   {@const help = `help-${def.id}`}
+  {@const labelId = `label-${def.id}`}
   {@const control = controls[def.id]}
   <div class="setting" class:flash={flash === def.id} id={settingAnchor(def.id)}>
     <div class="text">
-      <span class="label" id="label-{def.id}">{def.label}</span>
+      <span class="label" id={labelId}>{def.label}</span>
       <span class="help" id={help}>{def.help}</span>
     </div>
     <div class="control">
-      {#if control}{@render control({ def, s: settings, help })}{/if}
+      {#if control}{@render control({ def, s: settings, labelId, help })}{/if}
     </div>
   </div>
 {/each}

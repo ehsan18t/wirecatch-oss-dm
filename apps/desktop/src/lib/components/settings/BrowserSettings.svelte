@@ -1,7 +1,6 @@
 <script lang="ts">
   // Browser: what the extension catches and how a caught download is asked about. The extension's
   // popup changes these same settings.
-  import type { AppSettings } from '@wirecatch/protocol';
   import { splitKbOrMb, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import type { SettingIn } from '$lib/settings-schema';
@@ -11,13 +10,9 @@
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const app = getApp();
-
-  function save(change: (d: AppSettings) => void) {
-    void app.updateSettings(change);
-  }
 
   const minSize = $derived(splitKbOrMb(settings.extension.min_capture_size));
 
@@ -108,13 +103,13 @@
   />
 {/snippet}
 
-{#snippet minCaptureSize({ help }: Row)}
+{#snippet minCaptureSize({ labelId, help }: Row)}
   <input
     class="field narrow"
     type="number"
     min="0"
     step="1"
-    aria-labelledby="label-min_capture_size"
+    aria-labelledby={labelId}
     aria-describedby={help}
     value={minSize.value}
     onchange={(e) => setMinSize(e.currentTarget.value, minSize.unit)}
@@ -130,10 +125,10 @@
   </select>
 {/snippet}
 
-{#snippet defaultQueue({ s, help }: Row)}
+{#snippet defaultQueue({ s, labelId, help }: Row)}
   <select
     class="field"
-    aria-labelledby="label-default_queue"
+    aria-labelledby={labelId}
     aria-describedby={help}
     value={s.extension.default_queue}
     onchange={(e) => {

@@ -120,7 +120,12 @@
           <section aria-labelledby="sec-{section.id}">
             <h2 id="sec-{section.id}">{section.title}</h2>
             <p class="blurb">{section.blurb}</p>
-            <View {items} settings={app.settings} flash={flash?.id ?? null} />
+            <View
+              {items}
+              settings={app.settings}
+              flash={flash?.id ?? null}
+              save={(change) => void app.updateSettings(change)}
+            />
           </section>
         {/if}
       {/each}

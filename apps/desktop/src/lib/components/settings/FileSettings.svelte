@@ -1,6 +1,6 @@
 <script lang="ts">
   // Saving files: the download folder, and a folder for each type of file.
-  import type { AppSettings, Category } from '@wirecatch/protocol';
+  import type { Category } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
   import type { SettingIn } from '$lib/settings-schema';
@@ -9,13 +9,9 @@
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const app = getApp();
-
-  function save(change: (d: AppSettings) => void) {
-    void app.updateSettings(change);
-  }
 
   function ruleFor(category: Category) {
     return settings.categories.find((r) => r.category === category);

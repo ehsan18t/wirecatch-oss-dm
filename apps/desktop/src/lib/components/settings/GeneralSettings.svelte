@@ -1,26 +1,19 @@
 <script lang="ts">
   // General: the theme, and how Wirecatch starts, closes and tells about finished files.
-  import type { AppSettings, Theme } from '@wirecatch/protocol';
+  import type { Theme } from '@wirecatch/protocol';
   import { tick, type Snippet } from 'svelte';
   import type { SettingIn } from '$lib/settings-schema';
-  import { getApp } from '$lib/state/app.svelte';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
-
-  const app = getApp();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const THEMES: { value: Theme; label: string }[] = [
     { value: 'system', label: 'Match system' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ];
-
-  function save(change: (d: AppSettings) => void) {
-    void app.updateSettings(change);
-  }
 
   /** Arrow keys move the theme choice along, as in any group of radio buttons. */
   function onThemeKey(e: KeyboardEvent & { currentTarget: HTMLElement }, current: Theme) {
@@ -44,8 +37,8 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet theme({ s, help }: Row)}
-  <div class="segmented" role="radiogroup" aria-labelledby="label-theme" aria-describedby={help}>
+{#snippet theme({ s, labelId, help }: Row)}
+  <div class="segmented" role="radiogroup" aria-labelledby={labelId} aria-describedby={help}>
     {#each THEMES as t (t.value)}
       <button
         type="button"
