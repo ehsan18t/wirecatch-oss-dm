@@ -60,3 +60,9 @@ test('the generated note never displaces a #! line', () => {
   assert.equal(withNote('Name\n', 'note', 'a.nsh'), '; note\nName\n');
   assert.equal(withNote('# Title\n', 'note', 'a.md'), '<!-- note -->\n# Title\n');
 });
+
+test('an indented Cargo setting is replaced, never added a second time', () => {
+  const text = setTomlKey('[[bin]]\n  name = "old"\n', 'x', '[[bin]]', ['name', '"new"']);
+  assert.equal(text.match(/name =/g)?.length, 1);
+  assert.match(text, /name = "new"/);
+});

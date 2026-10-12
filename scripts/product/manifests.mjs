@@ -31,7 +31,7 @@ function tableBody(lines, header, path) {
 export function setTomlKey(text, path, header, [key, value]) {
   const lines = text.split('\n');
   const { start, end } = tableBody(lines, header, path);
-  const setting = new RegExp(`^${key.replace(/\./g, '\\.')}\\s*=`);
+  const setting = new RegExp(`^\\s*${key.replace(/\./g, '\\.')}\\s*=`);
   const line = `${key} = ${value}`;
   const existing = lines.findIndex((l, i) => i >= start && i < end && setting.test(l));
   if (existing !== -1) {
