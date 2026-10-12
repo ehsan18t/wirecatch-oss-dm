@@ -12,7 +12,8 @@
     "generate": "node scripts/generate.mjs",
     "check": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0 && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "node --test \"scripts/*.test.mjs\""
   },
   "devDependencies": {
     "@wirecatch/eslint-config": "workspace:*",

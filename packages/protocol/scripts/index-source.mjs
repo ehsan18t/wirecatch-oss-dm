@@ -1,4 +1,4 @@
-// The text of src/index.ts: it re-exports every generated type and the generated constants, so consumers import from "@wirecatch/protocol" without knowing the file layout.
+// The text of src/index.ts, which scripts/generate.mjs writes: it re-exports every generated type and the generated constants, so consumers import from "@wirecatch/protocol" without knowing the file layout.
 import { readdirSync } from 'node:fs';
 
 // Written by the generator test in crates/protocol/src/exported.rs: values, not a type.

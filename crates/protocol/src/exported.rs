@@ -129,7 +129,7 @@ mod tests {
     use super::Constant;
     use crate::app::OutputFormat;
 
-    /// The file written into the generated folder. `packages/protocol/scripts/write-index.mjs`
+    /// The file written into the generated folder. `packages/protocol/scripts/index-source.mjs`
     /// re-exports it from the package by this name.
     const FILE_NAME: &str = "constants.ts";
 
