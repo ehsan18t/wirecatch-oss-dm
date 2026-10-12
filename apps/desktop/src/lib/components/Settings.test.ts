@@ -7,13 +7,12 @@ import { KB, MB } from '@wirecatch/units';
 import { describe, expect, it, vi } from 'vitest';
 import { settingAnchor } from '$lib/settings-schema';
 import { renderApp, settle } from '$lib/testing/setup';
+import { FLASH_MS } from './Settings.svelte';
 
 /** More downloads at once than the desktop used to allow (32), and fewer than the core's limit. */
 const MANY_AT_ONCE = 50;
-/** How long a setting opened from elsewhere stays highlighted. */
-const FLASH_MS = 1600;
-/** A little over half of that. */
-const FLASH_HALF = 900;
+/** A little over half the time a setting opened from elsewhere stays highlighted. */
+const FLASH_HALF = FLASH_MS / 2 + 100;
 
 async function openSettings() {
   const r = await renderApp();

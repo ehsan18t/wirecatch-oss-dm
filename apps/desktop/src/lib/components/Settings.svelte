@@ -1,6 +1,12 @@
-<script lang="ts">
+<script lang="ts" module>
   // The settings screen: its search, and each section that has a setting matching it. Every
   // section shows its own settings, and must show each one (see SettingRows).
+
+  /** How long a setting opened from elsewhere stays highlighted, so the eye finds it. */
+  export const FLASH_MS = 1600;
+</script>
+
+<script lang="ts">
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Search from '@lucide/svelte/icons/search';
   import { tick, type Component } from 'svelte';
@@ -27,9 +33,6 @@
   import TransferSettings from './settings/TransferSettings.svelte';
 
   const app = getApp();
-
-  /** How long a setting opened from elsewhere stays highlighted, so the eye finds it. */
-  const FLASH_MS = 1600;
 
   /** The component that shows each section's settings. */
   const SECTION_VIEW: Record<SectionId, Component<SectionProps>> = {
