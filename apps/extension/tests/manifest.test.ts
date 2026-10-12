@@ -5,18 +5,10 @@
  * unpacked load gets the one id every bridge trusts (D22); only the Chrome Web Store package
  * leaves it out, because the store does not accept it.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { CHROMIUM_PUBLIC_KEY, FIREFOX_EXTENSION_ID } from '@wirecatch/product';
 import { describe, expect, it } from 'vitest';
 import type { ConfigEnv, UserManifest } from 'wxt';
 import config, { STORE_MODE } from '../wxt.config';
-
-const ids = JSON.parse(
-  readFileSync(resolve(__dirname, '../../../config/extension-ids.json'), 'utf8'),
-) as {
-  chromium_public_key: string;
-  firefox_id: string;
-};
 
 async function manifest(env: Omit<ConfigEnv, 'manifestVersion'>): Promise<UserManifest> {
   const fn = config.manifest;
@@ -32,7 +24,7 @@ describe('the manifest key', () => {
     ['production', 'build'],
   ] as const)('is in every Chromium build (%s, %s)', async (mode, command) => {
     const built = await manifest({ browser: 'chrome', mode, command });
-    expect(built.key).toBe(ids.chromium_public_key);
+    expect(built.key).toBe(CHROMIUM_PUBLIC_KEY);
   });
 
   it('is left out of the Chrome Web Store package, which is otherwise the same', async () => {
@@ -46,7 +38,7 @@ describe('the manifest key', () => {
     for (const mode of ['development', 'production', STORE_MODE]) {
       const built = await manifest({ browser: 'firefox', mode, command: 'build' });
       expect(built).not.toHaveProperty('key');
-      expect(built.browser_specific_settings?.gecko?.id).toBe(ids.firefox_id);
+      expect(built.browser_specific_settings?.gecko?.id).toBe(FIREFOX_EXTENSION_ID);
     }
   });
 });

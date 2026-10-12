@@ -266,6 +266,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: 2.8.2
         version: 2.8.2
+      '@wirecatch/product':
+        specifier: workspace:*
+        version: link:../../packages/product
       '@wirecatch/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -339,6 +342,9 @@ importers:
 
   apps/extension:
     dependencies:
+      '@wirecatch/product':
+        specifier: workspace:*
+        version: link:../../packages/product
       '@wirecatch/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

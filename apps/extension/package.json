@@ -21,6 +21,7 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
     "@wirecatch/units": "workspace:*"
   },

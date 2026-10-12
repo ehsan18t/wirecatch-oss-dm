@@ -6,30 +6,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { BADGE_TOKEN, cssColor } from './src/lib/theme';
-import { isRecord, isString, object, refine, type Guarded } from './src/lib/validate';
-
-const nonEmpty = refine(isString, (value) => value !== '');
-
-/** Shared identities, owned by the lead and read by both the bridge and the extension. */
-const EXTENSION_IDS = {
-  chromium_public_key: nonEmpty,
-  firefox_id: nonEmpty,
-  native_host_name: nonEmpty,
-};
-const isExtensionIds = object(EXTENSION_IDS);
-
-function readExtensionIds(): Guarded<typeof isExtensionIds> {
-  const path = fileURLToPath(new URL('../../config/extension-ids.json', import.meta.url));
-  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
-  if (isExtensionIds(parsed)) return parsed;
-  const fields = isRecord(parsed) ? parsed : {};
-  const missing = Object.keys(EXTENSION_IDS).find((field) => !nonEmpty(fields[field]));
-  throw new Error(
-    `config/extension-ids.json is missing "${missing ?? 'its fields'}". Restore it from git.`,
-  );
-}
-
-export const extensionIds = readExtensionIds();
 
 /** The toolbar badge's color, read from the popup's stylesheet; a missing token stops the build here. */
 const badgeColor = cssColor(
@@ -40,8 +16,6 @@ const badgeColor = cssColor(
 /** The globals `src/env.d.ts` declares, as Vite's `define` takes them. */
 export function buildDefines(): Record<string, string> {
   return {
-    // The bridge registers itself under this name; the background script connects to it.
-    __NATIVE_HOST_NAME__: JSON.stringify(extensionIds.native_host_name),
     __BADGE_COLOR__: JSON.stringify(badgeColor),
   };
 }

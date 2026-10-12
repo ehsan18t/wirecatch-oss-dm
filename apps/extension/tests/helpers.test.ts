@@ -1,3 +1,4 @@
+import { NATIVE_HOST_NAME } from '@wirecatch/product';
 import type { ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -152,7 +153,7 @@ describe('connection problems', () => {
   // The exact strings Firefox reports (NativeMessaging.sys.mjs and the subprocess module).
   it.each([
     // No manifest, an unreadable one, or one that leaves this add-on out: one generic message.
-    ['No such native application app.wirecatch.bridge', 'host_missing'],
+    [`No such native application ${NATIVE_HOST_NAME}`, 'host_missing'],
     // Registered, but the program it names is gone.
     [
       'File at path "/home/u/.local/share/wirecatch/bin/wirecatch-bridge" does not exist, or is not executable',
@@ -165,11 +166,11 @@ describe('connection problems', () => {
     ['Executable not found: wirecatch-bridge', 'host_missing'],
     // What Firefox logs when the id is not allowed, in case a version passes it on.
     [
-      'This extension does not have permission to use native manifest /usr/lib/mozilla/native-messaging-hosts/app.wirecatch.bridge.json',
+      `This extension does not have permission to use native manifest /usr/lib/mozilla/native-messaging-hosts/${NATIVE_HOST_NAME}.json`,
       'host_untrusted',
     ],
     [
-      'This extension does not have permission to use native application app.wirecatch.bridge (or the application is not installed)',
+      `This extension does not have permission to use native application ${NATIVE_HOST_NAME} (or the application is not installed)`,
       'host_untrusted',
     ],
   ] as const)('sorts the Firefox message "%s" as %s', (message, kind) => {
@@ -177,7 +178,7 @@ describe('connection problems', () => {
   });
 
   it('reads the reason where each browser puts it', () => {
-    const missing = 'No such native application app.wirecatch.bridge';
+    const missing = `No such native application ${NATIVE_HOST_NAME}`;
     // Firefox: port.error is an Error; runtime.lastError is not set for ports.
     expect(disconnectMessage(undefined, { error: new Error(missing) })).toBe(missing);
     // Firefox, host exited: port.error is null.
@@ -196,7 +197,7 @@ describe('connection problems', () => {
   });
 
   it('recognizes a missing native host in Firefox and a port closed without a reason', () => {
-    expect(classifyDisconnect('No such native application app.wirecatch.bridge')).toBe(
+    expect(classifyDisconnect(`No such native application ${NATIVE_HOST_NAME}`)).toBe(
       'host_missing',
     );
     expect(classifyDisconnect(null)).toBe('disconnected');

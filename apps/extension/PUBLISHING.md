@@ -2,7 +2,7 @@
 
 ## One Chromium id everywhere
 
-The Chromium extension id is `chdgnmpjoipbgfeldicipccjjghmagki` (`chromium_id` in `config/extension-ids.json`). It follows from the public key in `chromium_public_key`, and it is the only Chromium id any Wirecatch bridge trusts, in development and release builds alike (D22). So the Chrome Web Store copy must have this id too, or Chrome refuses to connect it to Wirecatch.
+The Chromium extension id is `chdgnmpjoipbgfeldicipccjjghmagki` (`chromium_id` in `config/product.toml`). It follows from the public key in `chromium_public_key`, and it is the only Chromium id any Wirecatch bridge trusts, in development and release builds alike (D22). So the Chrome Web Store copy must have this id too, or Chrome refuses to connect it to Wirecatch.
 
 Every Chromium build (`pnpm dev`, `pnpm build`, `pnpm build:dev`) puts the public key in the manifest's `key` field, which gives an unpacked load this id. The one exception is the store package, because the Chrome Web Store does not accept a manifest with a `key` field.
 
@@ -37,7 +37,7 @@ Release and Beta Firefox only install add-ons signed by Mozilla. Signing on the 
 
 The first signing creates the add-on on addons.mozilla.org under `extension@wirecatch.app`, which reserves that id for our account so nobody else can claim it. D21 lists this as an action only the maintainer can take; do it soon, even before the first release.
 
-addons.mozilla.org asks for the source code of bundled add-ons, which is why the sources zip is uploaded. That zip holds only `apps/extension`; the build also needs `config/extension-ids.json`, `packages/protocol` and the workspace lockfile, so if a reviewer asks how to rebuild, point them to the tagged release in the GitHub repository and the build steps in `CONTRIBUTING.md`.
+addons.mozilla.org asks for the source code of bundled add-ons, which is why the sources zip is uploaded. That zip holds only `apps/extension`; the build also needs `packages/product` (generated from `config/product.toml`), `packages/protocol` and the workspace lockfile, so if a reviewer asks how to rebuild, point them to the tagged release in the GitHub repository and the build steps in `CONTRIBUTING.md`.
 
 Self-distributed copies do not update by themselves unless the manifest gets an `update_url`; until then people install each new `.xpi` from our download page.
 
