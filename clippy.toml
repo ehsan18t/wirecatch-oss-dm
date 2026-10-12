@@ -4,6 +4,11 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-print-in-tests = true
 
+# A blocked thread cannot be woken: a shutdown or a change waits out the whole sleep, and a test that sleeps is slow or flaky.
+disallowed-methods = [
+    { path = "std::thread::sleep", reason = "wait on the condition instead (a channel, a watch, `recv_timeout`), or use `tokio::time::sleep` in async code" },
+]
+
 # docs/ENGINEERING.md, section 4: a function past 80 lines is a signal to split.
 too-many-lines-threshold = 80
 

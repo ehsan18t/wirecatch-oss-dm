@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
@@ -232,6 +232,30 @@ impl Store {
     ///
     /// A database file SQLite reports as damaged is moved aside and a new list is started, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recovery`] says so.
     pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
+        Self::open_with(
+            dir,
+            on_failure,
+            #[cfg(test)]
+            None,
+        )
+    }
+
+    /// [`open`](Self::open), with `backing_off` called on the database thread each time a
+    /// failed batch starts waiting to be tried again, before the wait begins.
+    #[cfg(test)]
+    fn open_watched(
+        dir: &Path,
+        on_failure: FailureHandler,
+        backing_off: BackOffHook,
+    ) -> Result<(Store, Snapshot)> {
+        Self::open_with(dir, on_failure, Some(backing_off))
+    }
+
+    fn open_with(
+        dir: &Path,
+        on_failure: FailureHandler,
+        #[cfg(test)] backing_off: Option<BackOffHook>,
+    ) -> Result<(Store, Snapshot)> {
         std::fs::create_dir_all(dir).map_err(|source| CoreError::File {
             path: dir.display().to_string(),
             source,
@@ -257,7 +281,15 @@ impl Store {
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
             .name("wirecatch-db".into())
-            .spawn(move || run(conn, &rx, &on_failure))
+            .spawn(move || {
+                let mut inbox = Inbox {
+                    ops: &rx,
+                    arrived: Vec::new(),
+                    #[cfg(test)]
+                    backing_off,
+                };
+                run(conn, &mut inbox, &on_failure);
+            })
             .map_err(|source| CoreError::File {
                 path: path.display().to_string(),
                 source,
@@ -329,8 +361,8 @@ impl Store {
 /// told why. Writes that still fail are kept, in order, and tried again before
 /// the next writes (or after a while if none come), never dropped: a lost delete
 /// would bring back a removed download.
-fn run(conn: Connection, ops: &mpsc::Receiver<Op>, on_failure: &FailureHandler) {
-    let (conn, closed) = write_until_closed(conn, ops, on_failure);
+fn run(conn: Connection, inbox: &mut Inbox<'_>, on_failure: &FailureHandler) {
+    let (conn, closed) = write_until_closed(conn, inbox, on_failure);
     // Closing the connection checkpoints the journal and releases the files.
     if let Err((_, e)) = conn.close() {
         warn!(error = %e, "the database did not close cleanly");
@@ -344,12 +376,15 @@ fn run(conn: Connection, ops: &mpsc::Receiver<Op>, on_failure: &FailureHandler) 
 /// gone, and returns the connection with the waiting `Close`, if any.
 fn write_until_closed(
     mut conn: Connection,
-    ops: &mpsc::Receiver<Op>,
+    inbox: &mut Inbox<'_>,
     on_failure: &FailureHandler,
 ) -> (Connection, Option<oneshot::Sender<()>>) {
+    let ops = inbox.ops;
     let mut kept: Vec<Op> = Vec::new();
     loop {
-        let first = if kept.is_empty() {
+        let first = if !inbox.arrived.is_empty() {
+            None
+        } else if kept.is_empty() {
             match ops.recv() {
                 Ok(op) => Some(op),
                 Err(mpsc::RecvError) => return (conn, None),
@@ -359,14 +394,7 @@ fn write_until_closed(
                 Ok(op) => Some(op),
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    // Closing: one last try, then whatever still fails is lost.
-                    let lost = apply_one_by_one(&mut conn, std::mem::take(&mut kept));
-                    if !lost.is_empty() {
-                        error!(
-                            writes = lost.len(),
-                            "changes could not be saved before closing"
-                        );
-                    }
+                    last_try(&mut conn, kept);
                     return (conn, None);
                 }
             }
@@ -376,7 +404,8 @@ fn write_until_closed(
         #[cfg(test)]
         let mut flushed = Vec::new();
         let mut closing = None;
-        for op in first.into_iter().chain(ops.try_iter()) {
+        let early = std::mem::take(&mut inbox.arrived);
+        for op in early.into_iter().chain(first).chain(ops.try_iter()) {
             match op {
                 #[cfg(test)]
                 Op::Flush(done) => flushed.push(done),
@@ -388,8 +417,14 @@ fn write_until_closed(
                 write => writes.push(write),
             }
         }
+        // When the close is already here, a failing batch gets one more try, not the back-off.
+        let pauses: &[Duration] = if closing.is_some() {
+            &[]
+        } else {
+            &RETRY_PAUSES
+        };
         if !writes.is_empty()
-            && let Err(e) = apply_with_retries(&mut conn, &writes)
+            && let Err(e) = apply_with_retries(&mut conn, &writes, pauses, inbox)
         {
             error!(error = %e, "could not save changes to the database");
             let fresh = writes.len() > retried;
@@ -411,17 +446,23 @@ fn write_until_closed(
             let _ = done.send(());
         }
         if let Some(done) = closing {
-            if !kept.is_empty() {
-                let lost = apply_one_by_one(&mut conn, std::mem::take(&mut kept));
-                if !lost.is_empty() {
-                    error!(
-                        writes = lost.len(),
-                        "changes could not be saved before closing"
-                    );
-                }
-            }
+            last_try(&mut conn, kept);
             return (conn, Some(done));
         }
+    }
+}
+
+/// Closing: one last try of the `kept` writes, then whatever still fails is lost.
+fn last_try(conn: &mut Connection, kept: Vec<Op>) {
+    if kept.is_empty() {
+        return;
+    }
+    let lost = apply_one_by_one(conn, kept);
+    if !lost.is_empty() {
+        error!(
+            writes = lost.len(),
+            "changes could not be saved before closing"
+        );
     }
 }
 
@@ -484,18 +525,80 @@ fn target_of(op: &Op) -> Target {
     }
 }
 
-fn apply_with_retries(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
-    let mut pauses = RETRY_PAUSES.iter();
+/// Applies `writes`, trying again after each of `pauses` while they fail. The pauses are spent
+/// waiting on the operations channel (see [`Inbox::back_off`]), so a close cuts them short.
+fn apply_with_retries(
+    conn: &mut Connection,
+    writes: &[Op],
+    pauses: &[Duration],
+    inbox: &mut Inbox<'_>,
+) -> rusqlite::Result<()> {
+    let mut pauses = pauses.iter();
     loop {
-        match apply(conn, writes) {
-            Ok(()) => return Ok(()),
-            Err(e) => match pauses.next() {
-                Some(pause) => {
-                    warn!(error = %e, retry_in = ?pause, "saving failed; trying again");
-                    thread::sleep(*pause);
+        let Err(e) = apply(conn, writes) else {
+            return Ok(());
+        };
+        let Some(pause) = pauses.next() else {
+            return Err(e);
+        };
+        warn!(error = %e, retry_in = ?pause, "saving failed; trying again");
+        if inbox.back_off(*pause) == Pause::Closing {
+            // One more try at once, then whatever still fails is kept or reported.
+            pauses = [].iter();
+        }
+    }
+}
+
+/// How a pause between retries ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Pause {
+    /// The whole pause went by.
+    Elapsed,
+    /// A `Close` arrived, or every handle is gone: the store is closing.
+    Closing,
+}
+
+/// Called on the database thread each time a failed batch starts waiting to be tried again.
+#[cfg(test)]
+type BackOffHook = Box<dyn Fn() + Send>;
+
+/// The database thread's end of the operations channel.
+struct Inbox<'a> {
+    ops: &'a mpsc::Receiver<Op>,
+    /// Operations that arrived while a failed batch waited to be tried again; they come
+    /// before anything still in the channel.
+    arrived: Vec<Op>,
+    /// Told when a back-off begins, so a test can act while the writer waits.
+    #[cfg(test)]
+    backing_off: Option<BackOffHook>,
+}
+
+impl Inbox<'_> {
+    /// Waits `pause` before the next try of a failed batch by waiting on the operations
+    /// channel rather than sleeping: an operation that arrives meanwhile is kept in
+    /// `arrived`, in order, for the next batch, and a `Close` (or every handle gone) ends the
+    /// wait at once, so closing is never held up by the back-off.
+    fn back_off(&mut self, pause: Duration) -> Pause {
+        #[cfg(test)]
+        if let Some(backing_off) = &self.backing_off {
+            backing_off();
+        }
+        let deadline = Instant::now() + pause;
+        loop {
+            match self
+                .ops
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(op) => {
+                    let close = matches!(op, Op::Close(_));
+                    self.arrived.push(op);
+                    if close {
+                        return Pause::Closing;
+                    }
                 }
-                None => return Err(e),
-            },
+                Err(mpsc::RecvTimeoutError::Timeout) => return Pause::Elapsed,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Pause::Closing,
+            }
         }
     }
 }
@@ -1079,6 +1182,70 @@ mod tests {
         let reports = reports.lock().unwrap();
         assert_eq!(reports.len(), 1, "{reports:?}");
         assert!(reports[0].contains("downloads"), "{reports:?}");
+    }
+
+    /// Closing waits for one more try of a failing write, not for every pause between its
+    /// retries: an app that quits while the disk is busy quits at once.
+    #[tokio::test]
+    async fn closing_does_not_wait_out_the_pauses_between_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush().await;
+
+        // Something outside the app breaks the database, so every try of the next write fails.
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute("DROP TABLE downloads", []).unwrap();
+        store.save_downloads(vec![download(2)]);
+        let started = Instant::now();
+        store.close(Duration::from_secs(10)).await;
+        let took = started.elapsed();
+        let back_off: Duration = RETRY_PAUSES.iter().sum();
+        assert!(
+            took < back_off / 2,
+            "closing took {took:?}, waiting out the pauses between retries ({back_off:?})"
+        );
+    }
+
+    /// Writes that arrive while a failed batch waits to be tried again are kept, in order,
+    /// and a close that arrives then ends the wait: the failed write gets one more try, and
+    /// everything sent before the close is saved.
+    #[test]
+    fn writes_and_a_close_during_the_back_off_are_kept_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        // The writer stops at the start of its back-off until the test has queued its work,
+        // so everything below arrives during the wait, whatever the timing.
+        let (entered_tx, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let hook: BackOffHook = Box::new(move || {
+            entered_tx
+                .send(())
+                .expect("the test waits for the back-off");
+            released.recv().expect("the test lets the writer go on");
+        });
+        let (store, _) = Store::open_watched(dir.path(), ignore_failures(), hook).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other
+            .execute_batch(
+                "CREATE TRIGGER refuse_two BEFORE INSERT ON downloads WHEN NEW.id = 2
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+
+        store.save_downloads(vec![download(2)]);
+        entered.recv().expect("the failed write backs off");
+        store.save_downloads(vec![download(3)]);
+        store.delete_downloads(vec![DownloadId(3)]);
+        store.save_downloads(vec![download(1)]);
+        store.delete_downloads(vec![DownloadId(5)]);
+        other.execute_batch("DROP TRIGGER refuse_two").unwrap();
+        let (done, closed) = oneshot::channel();
+        store.send(Op::Close(done));
+        release.send(()).unwrap();
+        // A second back-off would find nobody to let it go on, and the close would fail.
+        drop(release);
+        closed.blocking_recv().expect("the store closed");
+        assert_eq!(stored_ids(&other), vec![1, 2]);
     }
 
     fn stored_ids(conn: &Connection) -> Vec<i64> {

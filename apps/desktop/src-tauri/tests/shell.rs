@@ -46,12 +46,33 @@ fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
     Ok(builder.build(context)?)
 }
 
+/// How long a wait may take before the test fails.
+const PATIENCE: Duration = Duration::from_secs(30);
+/// How often a wait looks again: the mock runtime's windows and notifications offer nothing
+/// to wait on.
+const POLL: Duration = Duration::from_millis(20);
+
 fn wait_until(what: &str, done: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while !done() {
-        assert!(Instant::now() < deadline, "timed out waiting: {what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    tauri::async_runtime::block_on(async {
+        let deadline = Instant::now() + PATIENCE;
+        while !done() {
+            assert!(Instant::now() < deadline, "timed out waiting: {what}");
+            tokio::time::sleep(POLL).await;
+        }
+    });
+}
+
+/// Whether `forward` has passed on an event whose payload contains `name`, which it does
+/// only after handling the event and every one before it.
+fn passed_on(handle: &tauri::AppHandle<MockRuntime>, name: &'static str) -> Arc<AtomicBool> {
+    let seen = Arc::new(AtomicBool::new(false));
+    let flag = seen.clone();
+    handle.listen_any(EVENT_NAME, move |e| {
+        if e.payload().contains(name) {
+            flag.store(true, Ordering::SeqCst);
+        }
+    });
+    seen
 }
 
 /// Quit from the tray menu on an app whose manager `open_first` decides is open or not yet.
@@ -148,6 +169,7 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         .unwrap();
     // With the main window open, it shows a storage failure itself: no notification.
     wirecatch_desktop_lib::window::show_main_window(&handle);
+    let closed = passed_on(&handle, "confirmation_closed");
     sender
         .send(UiEvent::StorageFailed(UserError {
             message: "Still full.".into(),
@@ -155,10 +177,7 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         }))
         .unwrap();
     sender.send(UiEvent::ConfirmationClosed { id: 1 }).unwrap();
-    wait_until("the events to be handled", || {
-        handle.state::<DownloadWindows>().snapshot().len() == 1
-    });
-    std::thread::sleep(Duration::from_millis(200));
+    wait_until("the events to be handled", || closed.load(Ordering::SeqCst));
     assert_eq!(
         handle.state::<ShownNotifications>().0.lock().unwrap().len(),
         1
@@ -189,7 +208,9 @@ fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() -> Tes
                 .is_some()
         })
     });
-    std::thread::sleep(Duration::from_millis(200));
+    wait_until("the sixth question to wait", || {
+        handle.state::<DownloadWindows>().waiting() == [6]
+    });
     assert!(handle.get_webview_window("download-q6").is_none());
 
     // A window closing makes room for the next question.

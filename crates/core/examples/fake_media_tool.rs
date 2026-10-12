@@ -33,18 +33,21 @@ use std::time::Duration;
 /// The exit code when standard output cannot be written, as when its reader
 /// has gone.
 const OUTPUT_FAILED: u8 = 4;
+/// The exit code when the call cannot be logged.
+const LOG_FAILED: u8 = 3;
 
-fn main() -> ExitCode {
+/// How often the stand-in for a program yt-dlp started writes its heartbeat,
+/// and how many beats it writes before it gives up waiting to be killed.
+const HEARTBEAT: Duration = Duration::from_millis(50);
+const MAX_BEATS: u32 = 1200;
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let [flag, heartbeat] = args.as_slice()
         && flag == "--fake-sleeper"
     {
-        // A program yt-dlp started: it beats until it is killed.
-        for beat in 0..1200u32 {
-            let _ = std::fs::write(heartbeat, beat.to_string());
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        return ExitCode::SUCCESS;
+        return beat(Path::new(heartbeat)).await;
     }
     let exe = std::env::current_exe().unwrap_or_default();
     let dir = exe
@@ -58,9 +61,9 @@ fn main() -> ExitCode {
         .map(|s| s.to_string_lossy().to_lowercase())
         .unwrap_or_default();
     let ran = if name.starts_with("yt-dlp") {
-        ytdlp(&dir, &args)
+        ytdlp(&dir, &args).await
     } else if name.starts_with("ffmpeg") {
-        ffmpeg(&dir, &args)
+        ffmpeg(&dir, &args).await
     } else {
         say("deno 2.9.7 (fake)").map(|()| ExitCode::SUCCESS)
     };
@@ -76,12 +79,30 @@ fn say(line: impl Display) -> io::Result<()> {
     writeln!(io::stdout().lock(), "{line}")
 }
 
-fn wait(file: &Path) {
+/// A program yt-dlp started: it writes a growing number to `heartbeat` every
+/// [`HEARTBEAT`] until it is killed. The test reads a heartbeat that stops as a
+/// kill, so it stops early only when the test's folder is gone; any other
+/// failed write skips that beat.
+async fn beat(heartbeat: &Path) -> ExitCode {
+    let mut beats = tokio::time::interval(HEARTBEAT);
+    for beat in 0..MAX_BEATS {
+        beats.tick().await;
+        match std::fs::write(heartbeat, beat.to_string()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return ExitCode::SUCCESS,
+            Err(e) => eprintln!("fake tool: cannot write {}: {e}", heartbeat.display()),
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Waits the number of milliseconds written in `file`, if there is one.
+async fn wait(file: &Path) {
     if let Some(ms) = std::fs::read_to_string(file)
         .ok()
         .and_then(|t| t.trim().parse::<u64>().ok())
     {
-        std::thread::sleep(Duration::from_millis(ms));
+        tokio::time::sleep(Duration::from_millis(ms)).await;
     }
 }
 
@@ -91,7 +112,7 @@ fn after<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
         .map(|w| w[1].as_str())
 }
 
-fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
+async fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     let cookies = after(args, "--cookies").map(PathBuf::from);
     let text = cookies
         .as_ref()
@@ -112,25 +133,32 @@ fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
         "cookies": text,
         "cookies_mode": mode,
     });
-    let _ = std::fs::create_dir_all(dir);
     let log = dir.join("calls.jsonl");
     let mut lines = std::fs::read_to_string(&log).unwrap_or_default();
     lines.push_str(&call.to_string());
     lines.push('\n');
-    if std::fs::write(&log, lines).is_err() {
-        return Ok(ExitCode::from(3));
+    if let Err(e) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&log, lines)) {
+        eprintln!(
+            "ERROR: fake yt-dlp cannot log its call in {} ({e})",
+            dir.display()
+        );
+        return Ok(ExitCode::from(LOG_FAILED));
     }
 
     if args.iter().any(|a| a == "-J") {
         if dir.join("spawn-child").exists()
             && let Ok(me) = std::env::current_exe()
         {
-            let _ = std::process::Command::new(me)
+            // Left running on purpose: the test checks it is killed with this process.
+            if let Err(e) = std::process::Command::new(me)
                 .arg("--fake-sleeper")
                 .arg(dir.join("heartbeat"))
-                .spawn();
+                .spawn()
+            {
+                eprintln!("ERROR: fake yt-dlp cannot start its child ({e})");
+            }
         }
-        wait(&dir.join("delay-ms"));
+        wait(&dir.join("delay-ms")).await;
         let unsigned = cookies
             .is_none()
             .then(|| std::fs::read_to_string(dir.join("fail-without-cookies.txt")).ok())
@@ -168,7 +196,7 @@ fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
+async fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
     let Some(output) = args.last().and_then(|a| a.strip_prefix("file:")) else {
         eprintln!("fake ffmpeg: the last argument is not a file: output");
         return Ok(ExitCode::from(2));
@@ -187,7 +215,7 @@ fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
         say("out_time_us=1000000")?;
         say("progress=continue")?;
     }
-    wait(&dir.join("ffmpeg-delay-ms"));
+    wait(&dir.join("ffmpeg-delay-ms")).await;
     let converting = args.iter().any(|a| a == "-progress");
     if converting && let Ok(reason) = std::fs::read_to_string(dir.join("ffmpeg-fail.txt")) {
         eprintln!("{}", reason.trim());

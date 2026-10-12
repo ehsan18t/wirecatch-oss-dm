@@ -374,6 +374,11 @@ impl DownloadWindows {
     pub fn snapshot(&self) -> Vec<OpenWindow> {
         self.with(|r| r.windows().to_vec())
     }
+
+    /// The questions waiting for room to open their window, oldest first, for tests.
+    pub fn waiting(&self) -> Vec<u64> {
+        self.with(|r| r.waiting().collect())
+    }
 }
 
 fn update<R: Runtime>(app: &AppHandle<R>, change: impl FnOnce(&mut Registry) -> Vec<Step>) {
