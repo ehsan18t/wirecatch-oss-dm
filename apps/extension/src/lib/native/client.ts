@@ -101,7 +101,7 @@ function isMessage(raw: unknown): raw is Message {
 }
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
-function backoffDelay(backoff: Backoff, attempt: number): number {
+export function backoffDelay(backoff: Backoff, attempt: number): number {
   const [first, ...rest] = backoff;
   return attempt === 0 ? first : (rest[Math.min(attempt, rest.length) - 1] ?? first);
 }
