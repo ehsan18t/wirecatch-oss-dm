@@ -14,19 +14,8 @@ use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progr
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
 use wirecatch_test_support::{TestResult, private_dir, test_data};
 
-fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
-    let mut req = DownloadRequest::new(server.url(path), dir);
-    req.options.connections = connections;
-    req.options.min_split = 128 * KIB;
-    req.options.buffer_size = 64 * KIB_USIZE;
-    req.options.stall_timeout = Duration::from_secs(5);
-    req.options.checkpoint_interval = Duration::from_millis(100);
-    req
-}
-
-async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
-    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
-}
+mod common;
+use common::{request, run};
 
 fn completed_path(outcome: Outcome) -> PathBuf {
     match outcome {

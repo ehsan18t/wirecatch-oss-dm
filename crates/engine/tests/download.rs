@@ -1,6 +1,6 @@
 //! Downloads over HTTP through the public `download()` API, against the local test server: parallel connections, resuming, retries, naming and where the file goes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,19 +13,8 @@ use wirecatch_engine::{
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
 
-fn request(server: &TestServer, path: &str, dir: &Path, connections: usize) -> DownloadRequest {
-    let mut req = DownloadRequest::new(server.url(path), dir);
-    req.options.connections = connections;
-    req.options.min_split = 128 * KIB;
-    req.options.buffer_size = 64 * KIB_USIZE;
-    req.options.stall_timeout = Duration::from_secs(5);
-    req.options.checkpoint_interval = Duration::from_millis(100);
-    req
-}
-
-async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
-    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
-}
+mod common;
+use common::{request, run};
 
 /// Starts a download, waits until `at_least` bytes arrived, then cancels it.
 async fn pause_midway(req: DownloadRequest, at_least: u64) -> TestResult<Outcome> {

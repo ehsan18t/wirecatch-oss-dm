@@ -16,6 +16,9 @@ use wirecatch_engine::{
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{private_dir, test_data};
 
+mod common;
+use common::run;
+
 /// A server with ranges that refuses requests for more than `limit` bytes.
 async fn strict_server(len: usize, limit: u64, bps: Option<u64>) -> TestServer {
     TestServer::start(
@@ -31,24 +34,16 @@ async fn strict_server(len: usize, limit: u64, bps: Option<u64>) -> TestServer {
     .await
 }
 
+/// [`common::request`] for the strict server's file, with `limit` on each request.
 fn request(
     server: &TestServer,
     dir: &Path,
     connections: usize,
     limit: Option<u64>,
 ) -> DownloadRequest {
-    let mut req = DownloadRequest::new(server.url("video.mp4"), dir);
-    req.options.connections = connections;
-    req.options.min_split = 128 * KIB;
-    req.options.buffer_size = 64 * KIB_USIZE;
-    req.options.stall_timeout = Duration::from_secs(5);
-    req.options.checkpoint_interval = Duration::from_millis(100);
+    let mut req = common::request(server, "video.mp4", dir, connections);
     req.options.max_request_bytes = limit;
     req
-}
-
-async fn run(req: DownloadRequest) -> wirecatch_engine::Result<Outcome> {
-    download(req, Arc::new(Progress::default()), CancellationToken::new()).await
 }
 
 fn completed(outcome: Outcome) -> (PathBuf, u64) {
