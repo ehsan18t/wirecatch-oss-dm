@@ -28,7 +28,11 @@ export interface AnnounceMessage {
   message: string;
 }
 
-const isAnnounce = object({ type: literal(MEDIA_ANNOUNCE), ok: isBoolean, message: isString });
+const isAnnounce = fields<AnnounceMessage>({
+  type: literal(MEDIA_ANNOUNCE),
+  ok: isBoolean,
+  message: isString,
+});
 
 export function asAnnounce(raw: unknown): AnnounceMessage | null {
   if (!isAnnounce(raw)) return null;
