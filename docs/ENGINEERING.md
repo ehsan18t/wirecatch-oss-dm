@@ -56,7 +56,8 @@ Enforced by: review.
 - Never decide anything from the text of an error message. Match on a variant or an error code.
 - An error says what failed and where: the operation and the path, URL host or id it concerned. Wrap the source with `#[source]`; never flatten it into a string.
 - Errors shown to people are written for them (section 8) and are produced at the edge that shows them, not deep in a library.
-- Never discard an error with `let _ =` or an empty `if let Err(_)`. Handle it, propagate it, or log it with a reason.
+- Never discard an error with `let _ =`, `.ok();`, `drop(result)` or an empty `if let Err(_)`. Handle it, propagate it, or log it saying what failed and what it means. Gate for `let _ =` on a `#[must_use]` value (`let_underscore_must_use`); review for the other forms.
+- Where a failure truly cannot matter, pass the result to a small function whose name says why (`client_may_hang_up`, `stderr_may_be_closed`), taking it by reference and matching both outcomes (`let (Ok(_) | Err(_)) = result;`), so the reason is stated once and a change of the result's type stops compiling.
 
 ### Panics
 
