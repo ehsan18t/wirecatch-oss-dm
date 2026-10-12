@@ -152,4 +152,24 @@ describe('mediaAnswer', () => {
       mediaAnswer({ taken: false, reason: 'no_answer', detail: null, uncertain: false }).message,
     ).toContain('nothing was added');
   });
+
+  it('says when the app answered in a way this version cannot read, not that it was silent', () => {
+    const certain = mediaAnswer({
+      taken: false,
+      reason: 'unreadable',
+      detail: null,
+      uncertain: false,
+    }).message;
+    expect(certain).toContain('does not understand');
+    expect(certain).toContain('nothing was added');
+    expect(certain).not.toContain('in time');
+    const uncertain = mediaAnswer({
+      taken: false,
+      reason: 'unreadable',
+      detail: null,
+      uncertain: true,
+    }).message;
+    expect(uncertain).toContain('does not understand');
+    expect(uncertain).toContain('check its list');
+  });
 });

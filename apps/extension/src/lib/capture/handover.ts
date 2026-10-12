@@ -49,7 +49,8 @@ export type SubmitResult =
   | { taken: true; action: AddAction; via: 'answer' | 'withdraw' }
   | {
       taken: false;
-      reason: 'refused' | 'no_answer';
+      /** `unreadable`: the app answered in a shape this version cannot read, and then withdrew it (or could not be asked). */
+      reason: 'refused' | 'no_answer' | 'unreadable';
       detail: string | null;
       /** The app may still have it (the withdraw failed), so it may end up in both places. */
       uncertain: boolean;
@@ -78,19 +79,15 @@ export async function submit(download: NewDownload, deps: SubmitDeps): Promise<S
     const lost = error instanceof RequestError && LOST_KINDS.has(error.kind);
     if (!lost)
       return { taken: false, reason: 'refused', detail: messageOf(error), uncertain: false };
+    const reason = error.kind === 'unreadable' ? 'unreadable' : 'no_answer';
     let outcome: WithdrawOutcome;
     try {
       outcome = await deps.withdraw(download.handover_id);
     } catch (withdrawError) {
-      return {
-        taken: false,
-        reason: 'no_answer',
-        detail: messageOf(withdrawError),
-        uncertain: true,
-      };
+      return { taken: false, reason, detail: messageOf(withdrawError), uncertain: true };
     }
     if (outcome === 'already_started') return { taken: true, action: 'started', via: 'withdraw' };
-    return { taken: false, reason: 'no_answer', detail: messageOf(error), uncertain: false };
+    return { taken: false, reason, detail: messageOf(error), uncertain: false };
   }
   // Every action the app answers with means it has the download; one this version does not
   // know never gets here, because the client fails such an answer as unreadable.
@@ -120,8 +117,10 @@ export type KeptReason =
   | SkipReason
   /** The app answered with an error. */
   | 'app_refused'
-  /** No answer came back, or one that could not be read, and the app then withdrew it (or could not be asked). */
-  | 'no_answer';
+  /** No answer came back, and the app then withdrew it (or could not be asked). */
+  | 'no_answer'
+  /** The app answered in a shape this version cannot read, and then withdrew it (or could not be asked). */
+  | 'app_unreadable';
 
 /** What happened to the browser's copy of a kept download. */
 export type BrowserCopy =
@@ -231,17 +230,19 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
   };
   const result = await submit(download, deps);
   if (!result.taken) {
-    return keep(
-      handoverId,
-      result.reason === 'refused' ? 'app_refused' : 'no_answer',
-      result.detail,
-      result.uncertain,
-    );
+    return keep(handoverId, KEPT_REASONS[result.reason], result.detail, result.uncertain);
   }
 
   const browserCopyRemoved = await removeBrowserCopy(deps.downloads, downloadId);
   return { kind: 'handed_over', handoverId, action: result.action, browserCopyRemoved };
 }
+
+/** Why the browser keeps a download the app did not take, by why the app did not take it. */
+const KEPT_REASONS = {
+  refused: 'app_refused',
+  no_answer: 'no_answer',
+  unreadable: 'app_unreadable',
+} as const satisfies Record<Extract<SubmitResult, { taken: false }>['reason'], KeptReason>;
 
 /** The browser may have flagged the file since it was first seen; its latest verdict counts. */
 async function withLatestVerdict(

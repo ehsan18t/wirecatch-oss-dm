@@ -18,6 +18,9 @@ export const MENU_PRIVATE_WINDOW =
 export const BROWSER_DOWNLOAD_FAILED =
   'This item could not be downloaded. Try the browser\'s own "Save as" option instead.';
 
+/** What the person is told when the app answered in a shape this version cannot read. */
+const UNREADABLE = 'Wirecatch answered in a way this version of the extension does not understand';
+
 /** A popup command's error, as the popup shows it. */
 export function describeError(error: unknown): string {
   if (error instanceof RequestError) {
@@ -57,6 +60,7 @@ function keptReason(result: Extract<HandoverResult, { kind: 'kept' }>): string |
   // The other reasons are the settings or a download the browser would not pause: nothing to tell.
   if (result.reason === 'app_unreachable') return 'Wirecatch could not be reached';
   if (result.reason === 'no_answer') return 'Wirecatch did not answer in time';
+  if (result.reason === 'app_unreadable') return `${UNREADABLE}. Updating the extension may help`;
   if (result.reason === 'app_refused') return result.detail ?? 'Wirecatch did not accept it';
   return null;
 }
@@ -82,10 +86,11 @@ export function mediaAnswer(result: SubmitResult): MediaSendResult {
     const why = result.detail === null ? '' : ` ${result.detail.replace(/\.?$/, '.')}`;
     return { ok: false, message: `Wirecatch did not take it.${why}` };
   }
+  const what = result.reason === 'unreadable' ? UNREADABLE : 'Wirecatch did not answer in time';
   return {
     ok: false,
     message: result.uncertain
-      ? 'Wirecatch did not answer in time. Open Wirecatch and check its list before trying again.'
-      : 'Wirecatch did not answer in time, so nothing was added. Open Wirecatch, then try again.',
+      ? `${what}. Open Wirecatch and check its list before trying again.`
+      : `${what}, so nothing was added. Open Wirecatch, then try again.`,
   };
 }

@@ -263,7 +263,11 @@ describe('handover', () => {
     const result = await s.hub.onDownload(downloadItem());
     expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
     expect(s.app.calls('withdraw_download')).toHaveLength(1);
-    expect(result).toMatchObject({ kind: 'kept', reason: 'no_answer', uncertain: false });
+    // Told apart from a timeout: the app did answer, in a shape this version cannot read.
+    expect(result).toMatchObject({ kind: 'kept', reason: 'app_unreadable', uncertain: false });
+    expect(s.hub.snapshot().notice?.message).toBe(
+      'big.zip stayed in the browser: Wirecatch answered in a way this version of the extension does not understand. Updating the extension may help.',
+    );
   });
 
   it('counts a download as handed over when the withdraw after an unreadable answer says the app has it', async () => {
