@@ -62,6 +62,10 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
     // A class name from a name that holds another class.
     valid(`${script("const cls = 'btn-row';")}<button type="button" class={cls}>Row</button>`),
+    // A name destructured from a const is its own property, not the whole object.
+    valid(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';\nimport EmptyState from './EmptyState.svelte';\nconst { view: V, icon } = { view: EmptyState, icon: X };")}<Icon {icon} /><V />`,
+    ),
     // An {#each} item destructured to one property is that property, not the whole element.
     valid(
       `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';\nimport Panel from './Panel.svelte';\nconst items = [{ icon: X, view: Panel }];")}{#each items as { icon, view: V } (icon)}<Icon {icon} /><V />{/each}`,
@@ -120,6 +124,24 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
     primitiveClass(
       `${script("const base = 'icon-btn';\nconst cls = $derived(small ? base : 'x');")}<button type="button" class={[cls]}>x</button>`,
+    ),
+    // A destructuring not followed property by property stands for the whole value.
+    directIcon(`${script("import X from '@lucide/svelte/icons/x';\nconst [C] = [X];")}<C />`),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst { ...r } = { c: X };")}<r.c />`,
+    ),
+    // Both branches of a choice are followed, whichever comes first.
+    primitiveClass(
+      `${script("const S = { plain: 'plain', primary: 'btn' };")}<button type="button" class={on ? S.plain : S.primary}>Save</button>`,
+    ),
+    primitiveClass(
+      `${script("const S = { plain: 'plain', primary: 'btn' };")}<button type="button" class={on ? S.primary : S.plain}>Save</button>`,
+    ),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Panel from './Panel.svelte';\nconst I = { a: Panel, b: X };")}<svelte:component this={on ? I.a : I.b} />`,
+    ),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Panel from './Panel.svelte';\nconst I = { a: Panel, b: X };")}<svelte:component this={on ? I.b : I.a} />`,
     ),
     // Through the other runes, a member, and the matching property of an {#each} item.
     directIcon(

@@ -18,7 +18,12 @@ function declared(def) {
   if (def.type === 'ImportBinding')
     return { kind: 'import', key: def.node, declaration: def.parent, specifier: def.node };
   if (def.type === 'Variable' && def.node.init)
-    return { kind: 'value', key: def.node, node: def.node.init };
+    return {
+      kind: 'value',
+      key: def.name,
+      node: def.node.init,
+      path: pathTo(def.node.id, def.name),
+    };
   if (def.node.type === 'SvelteEachBlock')
     return { kind: 'each', key: def.name, block: def.node, binding: def.name };
   return null;
@@ -99,10 +104,19 @@ export class SvelteValues {
     const def = variableOf(this.sourceCode, identifier)?.defs[0];
     const found = def === undefined ? null : declared(def);
     if (found === null || seen.has(found.key)) return [];
+    // `seen` holds the declarations on the current path only, so a name declared from itself ends while two branches may both follow the same name.
     seen.add(found.key);
+    const values = this.ofDeclaration(found, seen);
+    seen.delete(found.key);
+    return values;
+  }
+
+  ofDeclaration(found, seen) {
     if (found.kind === 'import') return [found];
-    if (found.kind === 'value') return this.of(found.node, seen);
-    return this.ofEachItem(found, seen);
+    if (found.kind === 'each') return this.ofEachItem(found, seen);
+    return found.path === null
+      ? this.of(found.node, seen)
+      : this.atPath(found.node, found.path, seen);
   }
 
   ofRune(call, seen) {
