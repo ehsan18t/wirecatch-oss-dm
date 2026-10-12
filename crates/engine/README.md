@@ -52,7 +52,7 @@ The [API documentation](https://docs.rs/wirecatch-engine) covers speed limits, r
 
 ## Performance
 
-`cargo run --release -p wirecatch-engine --example bench_local` downloads a 256 MiB file from a local server that caps each connection at 16 MiB/s, with 1 to 16 connections, and then from an uncapped server to show the engine's own ceiling. The speedup is close to linear in the number of connections.
+`cargo run --release -p wirecatch-engine --example bench_local` downloads a 256 MiB file from a local server that caps each connection at 16 MiB/s, with 1 to 16 connections, and then from an uncapped server to show the engine's own ceiling. Each case runs five times (`-- bench <runs>` to change that) and the median is reported with the fastest and slowest run, since a single run can vary by 40 percent. The speedup is close to linear in the number of connections; the uncapped cases include flushing the finished file to the disk.
 
 `cargo run --release -p wirecatch-engine --features http3 --example bench_http3` compares HTTP/3 with HTTP/2 over localhost. On a busy Windows 11 machine, with 4 and 8 connections, both moved a 256 MiB file in about 0.85 to 1 second, but the HTTP/3 runs used 2.4 to 3 seconds of processor time against 0.45 to 0.7 for HTTP/2 (client and server together), with only about half the file going over QUIC. That is why HTTP/3 stays off by default.
 
