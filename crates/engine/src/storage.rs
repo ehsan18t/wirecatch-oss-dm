@@ -70,15 +70,11 @@ fn write_at(file: &File, buf: &[u8], offset: u64) -> io::Result<usize> {
 /// one; the part file and its resume file are then still there, and the next
 /// run finishes them again.
 ///
-/// Nothing is renamed once the download is `abandoned`, checked again after
-/// the flush: a slow flush is when an owner gives up, and the part file may
-/// then already be another run's.
+/// Nothing is renamed once the download is `abandoned`, checked again after the flush: a slow flush is when an owner gives up, and the part file may then already be another run's.
 ///
 /// # Errors
 ///
-/// [`Error::Io`](crate::Error::Io) naming the step that failed and its file:
-/// opening, sizing or flushing the part file, or the rename to `final_path`;
-/// [`Error::Cancelled`](crate::Error::Cancelled) once abandoned.
+/// [`Error::Io`](crate::Error::Io) naming the step that failed and its file: opening, sizing or flushing the part file, or the rename to `final_path`; [`Error::Cancelled`](crate::Error::Cancelled) once abandoned.
 pub(crate) fn finalize(
     part: &Path,
     final_path: &Path,
@@ -101,7 +97,7 @@ pub(crate) fn finalize(
         }
     }
     #[cfg(test)]
-    abandoned.flushed();
+    abandoned.slow_step_done();
     abandoned.check()?;
     std::fs::rename(part, final_path).context(IoAction::Finish, final_path)
 }
@@ -204,7 +200,7 @@ mod tests {
         create_part(&part, Some(10)).unwrap();
         let abandonment = Abandonment::new();
         let abandoned = abandonment.flag();
-        abandoned.drop_at_flush();
+        abandoned.drop_after_slow_step();
         let error = finalize(&part, &done, 10, &abandoned).unwrap_err();
         assert!(matches!(error, crate::Error::Cancelled), "{error:?}");
         assert!(part.exists() && !done.exists(), "the part file was renamed");

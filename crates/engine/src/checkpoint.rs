@@ -113,9 +113,7 @@ impl ResumeSaver {
     }
 }
 
-/// Flushes `part` (at `path`) to the disk, then runs `write`, unless the
-/// download was abandoned meanwhile: a slow flush is just when an owner gives
-/// up waiting and drops the download, and then deletes its files.
+/// Flushes `part` (at `path`) to the disk, then runs `write`, unless the download was abandoned meanwhile: a slow flush is just when an owner gives up waiting and drops the download, and then deletes its files.
 fn flush_then(
     part: &File,
     path: &Path,
@@ -124,7 +122,7 @@ fn flush_then(
 ) -> Result<()> {
     part.sync_data().context(IoAction::Flush, path)?;
     #[cfg(test)]
-    abandoned.flushed();
+    abandoned.slow_step_done();
     if abandoned.is_set() {
         return Ok(());
     }
@@ -207,7 +205,7 @@ mod tests {
         .unwrap();
         assert!(wrote, "a live download writes after the flush");
 
-        abandoned.drop_at_flush();
+        abandoned.drop_after_slow_step();
         let mut wrote = false;
         flush_then(&part, &path, &abandoned, || {
             wrote = true;

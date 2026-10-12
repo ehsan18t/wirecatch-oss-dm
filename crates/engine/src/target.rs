@@ -118,7 +118,7 @@ impl Destination {
             }
         };
         #[cfg(test)]
-        abandoned.flushed();
+        abandoned.slow_step_done();
         abandoned.check()?;
         if let Some(saved) = resume {
             let table = SegmentTable::from_remaining(&saved.remaining, min_split);
@@ -261,8 +261,7 @@ mod tests {
     use super::*;
     use crate::abandon::Abandonment;
 
-    /// Dropped while its folder was being created, a download deletes and
-    /// creates nothing: the files may already be a restarted run's.
+    /// Dropped while its folder was being created, a download deletes and creates nothing: the files may already be a restarted run's.
     #[test]
     fn a_download_dropped_while_its_folder_is_made_touches_no_file() {
         let dir = wirecatch_test_support::private_dir("prepare-dropped").unwrap();
@@ -272,7 +271,7 @@ mod tests {
         std::fs::write(&state, b"other run").unwrap();
         let abandonment = Abandonment::new();
         let abandoned = abandonment.flag();
-        abandoned.drop_at_flush();
+        abandoned.drop_after_slow_step();
         let file = Described {
             ranged: true,
             total: Some(10),
