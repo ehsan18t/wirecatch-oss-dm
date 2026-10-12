@@ -228,6 +228,14 @@ mod tests {
     use super::*;
     use wirecatch_product::DATABASE_FILE;
 
+    /// The tests that build their expectations from `CHANNEL` only mean something if a debug
+    /// build really is the dev channel.
+    #[test]
+    fn a_debug_build_is_the_dev_channel() {
+        assert_eq!(CHANNEL == Channel::Dev, cfg!(debug_assertions));
+        assert_ne!(Channel::Dev.name(), Channel::Release.name());
+    }
+
     #[test]
     fn the_data_folder_moves_only_once_and_never_over_another() {
         let (old, new) = (Path::new("roaming/Wirecatch"), Path::new("local/Wirecatch"));
