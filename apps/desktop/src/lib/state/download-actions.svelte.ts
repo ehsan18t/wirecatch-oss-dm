@@ -5,11 +5,11 @@
 import type { AddRequest, DownloadId, FixAction, QueueId } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { linkForDisplay } from '../format';
-import type { Dialog } from './app.svelte';
 import type { DownloadStore } from './downloads.svelte';
 import { nudged, placed } from './order';
 import type { Queues } from './queues.svelte';
 import type { Runner } from './runner';
+import type { Dialog } from './screens';
 import type { Selection } from './selection.svelte';
 import type { Toasts } from './toasts.svelte';
 import { isUnderWay, type SortKey, type View } from './view';

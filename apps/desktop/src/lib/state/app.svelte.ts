@@ -4,7 +4,7 @@
 // questions, the add-ons, settings files); this one owns the list, the screens and dialogs, the
 // settings and the core's events.
 
-import type { AppSettings, DownloadId, QueueId, UiEvent } from '@wirecatch/protocol';
+import type { AppSettings, DownloadId, UiEvent } from '@wirecatch/protocol';
 import { getContext, setContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
@@ -21,27 +21,15 @@ import { Hints } from './hints.svelte';
 import { Questions } from './questions.svelte';
 import { Queues } from './queues.svelte';
 import { errorMessage, Runner } from './runner';
+import type { Dialog, Screen } from './screens';
 import { Selection } from './selection.svelte';
 import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import { SettingsTransfer } from './settings-transfer.svelte';
 import { Toasts } from './toasts.svelte';
 import { countRows, visibleIds, type SortKey, type View } from './view';
 
+export type { Dialog, Screen } from './screens';
 export type { Toast } from './toasts.svelte';
-
-export type Screen = 'downloads' | 'settings';
-
-export type Dialog =
-  | { kind: 'add'; urls: string[]; queue?: QueueId }
-  | { kind: 'remove'; ids: DownloadId[] }
-  | { kind: 'cancel'; ids: DownloadId[] }
-  | { kind: 'queue'; id: QueueId | null }
-  | { kind: 'refresh'; id: DownloadId }
-  | { kind: 'export' }
-  | { kind: 'import' }
-  | { kind: 'shortcuts' }
-  | { kind: 'open-program'; id: DownloadId }
-  | { kind: 'remove-addon'; id: string };
 
 const CONTEXT = Symbol('wirecatch-app');
 
