@@ -1,9 +1,4 @@
 {
-  "src/lib/components/Sidebar.svelte": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/lib/media-output.ts": {
     "complexity": {
       "count": 1
