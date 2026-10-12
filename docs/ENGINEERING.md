@@ -104,12 +104,13 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 ## 5. TypeScript and Svelte
 
 - Svelte 5 runes only. `$derived` for values computed from state, `$effect` only for side effects, and every effect that subscribes, listens or starts a timer returns its cleanup.
-- Strict TypeScript. No `any`. No `as` casts or `!` assertions on data from outside the program (IPC, storage, messages, the DOM); validate it with the generated validators instead.
+- Strict TypeScript. No `any`. No `as` casts or `!` assertions on data from outside the program (IPC, storage, messages, the DOM); validate it with the generated validators instead. Gate (`wirecatch/no-assertion-on-input`, which reports an `as`, `<T>` or `!` on any value typed `any` or `unknown`, in every package).
 - Layers in the desktop app: components get what they need from state and never import the backend; the state classes call the backend; routes wire the two together; only `src/lib/backend` talks to Tauri. In the extension, only `src/lib/native` talks to the app. Gate (`no-restricted-imports`, `no-restricted-syntax`, including dynamic `import()` and destructuring).
+- Buttons and icons in the desktop app go through the `Button`, `IconButton` and `Icon` primitives: no element carries their `btn` or `icon-btn` classes, and no Lucide icon is rendered directly or given its own size or stroke. Gate (`wirecatch/use-ui-primitives`).
 - Every `{#each}` has a key. Lists that can be long are virtualized. A progress tick updates the rows that changed, not the whole list.
 - Functions stay under 80 lines and a complexity of 12, files under 400 lines. Gate.
 
-Existing violations are recorded in each app's `eslint-suppressions.json`. That file only shrinks: fix the violations in any file you touch, and never add to it.
+No app records lint violations any more, and none is added: fix a violation at its cause. A disable comment is only for a rule that is truly wrong in one place, on that one line, with a `--` reason.
 
 ## 6. Logging
 
