@@ -62,6 +62,14 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
     // A class name from a name that holds another class.
     valid(`${script("const cls = 'btn-row';")}<button type="button" class={cls}>Row</button>`),
+    // An {#each} item destructured to one property is that property, not the whole element.
+    valid(
+      `${script("import X from '@lucide/svelte/icons/x';\nimport Icon from './Icon.svelte';\nimport Panel from './Panel.svelte';\nconst items = [{ icon: X, view: Panel }];")}{#each items as { icon, view: V } (icon)}<Icon {icon} /><V />{/each}`,
+    ),
+    // A member reads its own property.
+    valid(
+      `${script("const C = { primary: 'primary', icon: 'icon-btn' };")}<button type="button" class={C.primary}>Save</button>`,
+    ),
   ],
   invalid: [
     primitiveClass('<button type="button" class="btn primary">Save</button>'),
@@ -112,6 +120,17 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
     primitiveClass(
       `${script("const base = 'icon-btn';\nconst cls = $derived(small ? base : 'x');")}<button type="button" class={[cls]}>x</button>`,
+    ),
+    // Through the other runes, a member, and the matching property of an {#each} item.
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst D = $derived.by(() => { if (on) return X; return null; });")}<D />`,
+    ),
+    directIcon(`${script("import X from '@lucide/svelte/icons/x';\nlet S = $state.raw(X);")}<S />`),
+    directIcon(
+      `${script("import X from '@lucide/svelte/icons/x';\nconst items = [{ icon: X }];")}{#each items as { icon: I } (I)}<I />{/each}`,
+    ),
+    primitiveClass(
+      `${script("const C = { primary: 'btn' };")}<button type="button" class={C.primary}>Save</button>`,
     ),
   ],
 });
