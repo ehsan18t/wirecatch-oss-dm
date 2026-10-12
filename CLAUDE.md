@@ -42,6 +42,8 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 - Build the desktop interface (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app itself; the gate compiles the desktop crate against a placeholder page when it is missing.
 - Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files; the gate fails otherwise.
 - `wirecatch-bridge/test-overrides` is for tests only and is never enabled in a build.
+- A run that builds Rust needs 15 GiB free where cargo builds (`CARGO_TARGET_DIR`, or `target/`) and 2 GiB on the repository's disk; the gate checks before it starts and says how to free space.
+- On Windows and macOS, `clippy-linux` lints for Linux; it needs the target's standard library: `rustup target add x86_64-unknown-linux-gnu`.
 - Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.
 
 ## How to work here
