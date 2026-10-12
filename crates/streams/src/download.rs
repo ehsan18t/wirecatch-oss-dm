@@ -273,7 +273,7 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
                 let mut output = BufWriter::with_capacity(256 * KIB_USIZE, File::create(&path)?);
                 let Some(len) = crypto::decrypt(&mut input, &mut output, &key, &iv)? else {
                     drop(output);
-                    let _ = fs::remove_file(&path);
+                    discarded(&path, fs::remove_file(&path));
                     return Ok(false);
                 };
                 output
@@ -415,7 +415,7 @@ async fn mux(
             Ok(false) => return Ok(None),
             Err(Error::Ffmpeg(message)) => {
                 warn!(%message, ?container, "ffmpeg failed");
-                let _ = fs::remove_file(&muxed);
+                discarded(&muxed, tokio::fs::remove_file(&muxed).await);
                 failures.push((*container, message));
             }
             Err(e) => return Err(e),
@@ -538,6 +538,19 @@ fn concat(
     work.record_joined(track, size)?;
     work.remove_segments(track)?;
     Ok(true)
+}
+
+/// Logs a failure to delete a file the download no longer needs. It stops
+/// nothing: the file is in the download's temporary folder, which goes when the
+/// download ends.
+fn discarded(path: &Path, deleted: io::Result<()>) {
+    match deleted {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => {
+            warn!(path = %path.display(), error = %e, "could not delete a file that is no longer needed");
+        }
+    }
 }
 
 /// Runs file system work off the async threads.

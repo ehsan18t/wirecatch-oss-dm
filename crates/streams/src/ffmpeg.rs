@@ -361,7 +361,9 @@ pub(crate) async fn run(
         }
     };
     let Some((status, output)) = finished else {
-        let _ = child.kill().await;
+        if let Err(e) = child.kill().await {
+            tracing::warn!(error = %e, "could not stop ffmpeg after the download was cancelled");
+        }
         return Ok(false);
     };
     let status = status.map_err(|e| Error::Ffmpeg(format!("waiting for it failed ({e})")))?;
