@@ -1,6 +1,7 @@
 <script lang="ts">
-  // The rows of one settings section: each setting's name and help, and its control. A section
-  // passes a control for each of its settings, typed so that none can be left out.
+  // The rows of one settings section: each setting's name and help, and its control. This takes
+  // the controls by any setting id; each section builds them as a Record of its own settings
+  // (SettingIn), which is what makes leaving one out a type error.
   import type { Snippet } from 'svelte';
   import { settingAnchor, type SettingId } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
