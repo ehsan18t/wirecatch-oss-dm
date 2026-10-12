@@ -241,7 +241,7 @@ mod tests {
         );
 
         create_part(&part, Some(10)).unwrap();
-        // No file system holds a file this long.
+        // A length past the largest signed file offset, which setting the size refuses (`InvalidInput`).
         let error = finalize(&part, &done, u64::MAX, &live.flag()).unwrap_err();
         assert!(
             matches!(&error, crate::Error::Io { action: IoAction::Resize, path, .. } if *path == part),
