@@ -8,7 +8,7 @@
 //! information are inherited from the period and adaptation set as the
 //! standard says. Several periods are reported as unsupported.
 
-use std::fmt::Write as _;
+use std::borrow::Cow;
 use std::ops::Range;
 
 use roxmltree::{Document, Node};
@@ -270,10 +270,10 @@ pub(crate) fn substitute(
     number: Option<u64>,
     time: Option<u64>,
 ) -> Result<String, String> {
-    let mut out = String::with_capacity(template.len() + 16);
+    let mut pieces: Vec<Cow<'_, str>> = Vec::new();
     let mut rest = template;
     while let Some(start) = rest.find('$') {
-        out.push_str(&rest[..start]);
+        pieces.push(Cow::Borrowed(&rest[..start]));
         let after = &rest[start + 1..];
         let end = after
             .find('$')
@@ -281,7 +281,7 @@ pub(crate) fn substitute(
         let identifier = &after[..end];
         rest = &after[end + 1..];
         if identifier.is_empty() {
-            out.push('$');
+            pieces.push(Cow::Borrowed("$"));
             continue;
         }
         let (name, format) = match identifier.split_once('%') {
@@ -290,7 +290,7 @@ pub(crate) fn substitute(
         };
         let value = match name {
             "RepresentationID" if format.is_none() => {
-                out.push_str(id);
+                pieces.push(Cow::Borrowed(id));
                 continue;
             }
             "Number" => number,
@@ -299,27 +299,25 @@ pub(crate) fn substitute(
             _ => return Err(format!("a segment address uses the unknown ${identifier}$")),
         }
         .ok_or_else(|| format!("${name}$ is used where it has no value"))?;
-        match format {
-            None => out.push_str(&value.to_string()),
-            Some(format) => {
-                let width: usize = format
-                    .strip_suffix('d')
-                    .and_then(|w| {
-                        if w.is_empty() {
-                            Some(0)
-                        } else {
-                            w.parse().ok()
-                        }
-                    })
-                    .filter(|w| *w <= 32)
-                    .ok_or_else(|| format!("${identifier}$ has a width it cannot use"))?;
-                // Writing to a `String` cannot fail.
-                let _ = write!(out, "{value:0width$}");
-            }
-        }
+        // No width writes the number as it is, as a width of zero does.
+        let width: usize = match format {
+            None => 0,
+            Some(format) => format
+                .strip_suffix('d')
+                .and_then(|w| {
+                    if w.is_empty() {
+                        Some(0)
+                    } else {
+                        w.parse().ok()
+                    }
+                })
+                .filter(|w| *w <= 32)
+                .ok_or_else(|| format!("${identifier}$ has a width it cannot use"))?,
+        };
+        pieces.push(Cow::Owned(format!("{value:0width$}")));
     }
-    out.push_str(rest);
-    Ok(out)
+    pieces.push(Cow::Borrowed(rest));
+    Ok(pieces.concat())
 }
 
 /// Reads a manifest; relative addresses are resolved against `base` (its own
