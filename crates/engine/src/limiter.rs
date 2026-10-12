@@ -48,6 +48,16 @@ struct Bucket {
     last: Instant,
 }
 
+impl Bucket {
+    /// The tokens at `now`, refilled at `rate` bytes per second since `last`
+    /// and capped at the burst that rate allows.
+    fn refilled(&self, rate: f64, now: Instant) -> f64 {
+        let burst = (rate * BURST_SECONDS).max(approx_f64(MIN_BURST));
+        let refill = now.duration_since(self.last).as_secs_f64() * rate;
+        (self.tokens + refill).min(burst)
+    }
+}
+
 impl RateLimiter {
     /// `limit` in bytes per second; `None` is unlimited. A limit of 0 is treated as 1.
     #[must_use]
@@ -72,9 +82,17 @@ impl RateLimiter {
     pub fn set_limit(&self, limit: Option<u64>) {
         {
             let mut bucket = self.bucket();
-            bucket.limit = normalize(limit);
-            bucket.tokens = bucket.tokens.min(0.0);
-            bucket.last = Instant::now();
+            let now = Instant::now();
+            let new = normalize(limit);
+            bucket.tokens = match (bucket.limit, new) {
+                // What the old limit already paid off counts; a burst saved up
+                // under it does not carry over to the new one.
+                (Some(old), Some(_)) => bucket.refilled(approx_f64(old), now).min(0.0),
+                // Without a limit before or after, nothing is owed.
+                _ => 0.0,
+            };
+            bucket.limit = new;
+            bucket.last = now;
         }
         self.changed.notify_waiters();
     }
@@ -120,9 +138,7 @@ impl RateLimiter {
         let mut bucket = self.bucket();
         let rate = approx_f64(bucket.limit?);
         let now = Instant::now();
-        let burst = (rate * BURST_SECONDS).max(approx_f64(MIN_BURST));
-        let refill = now.duration_since(bucket.last).as_secs_f64() * rate;
-        bucket.tokens = (bucket.tokens + refill).min(burst) - approx_f64(bytes);
+        bucket.tokens = bucket.refilled(rate, now) - approx_f64(bytes);
         bucket.last = now;
         if bucket.tokens >= 0.0 {
             return None;
@@ -237,6 +253,46 @@ mod tests {
             tokio::spawn(async move { limiter.consume(secs * 1_000, &cancel).await })
         };
         (limiter, cancel, paying)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lifted_limit_leaves_no_debt_behind() {
+        let (limiter, _cancel, paying) = in_debt(60);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        limiter.set_limit(None);
+        assert_eq!(paying.await.unwrap(), Paced::Done);
+        limiter.set_limit(Some(1_000));
+        let start = Instant::now();
+        let cancel = CancellationToken::new();
+        assert_eq!(limiter.consume(1, &cancel).await, Paced::Done);
+        // One byte at 1 kB/s takes a millisecond; the lifted debt was a minute.
+        assert!(
+            start.elapsed() <= Duration::from_millis(1),
+            "the lifted debt was charged: {:?}",
+            start.elapsed()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_raised_limit_keeps_what_the_old_one_already_paid() {
+        // 2 s owed at 1 kB/s; after 1 s, 1 kB is still owed, 0.5 s at 2 kB/s.
+        let limiter = RateLimiter::new(Some(1_000));
+        let cancel = CancellationToken::new();
+        let start = Instant::now();
+        let paying = limiter.consume(2_000, &cancel);
+        let raising = async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            limiter.set_limit(Some(2_000));
+        };
+        let (paced, ()) = tokio::join!(paying, raising);
+        assert_eq!(paced, Paced::Done);
+        let waited = start.elapsed().as_secs_f64();
+        assert!((1.4..=1.6).contains(&waited), "waited {waited} s");
+        // The next 1 kB is owed after that debt, not on top of it twice.
+        let start = Instant::now();
+        limiter.consume(1_000, &cancel).await;
+        let waited = start.elapsed().as_secs_f64();
+        assert!(waited <= 0.6, "waited {waited} s");
     }
 
     #[tokio::test(start_paused = true)]
