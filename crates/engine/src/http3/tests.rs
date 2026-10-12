@@ -45,7 +45,7 @@ fn http3_is_not_used_through_a_proxy() {
     let url = Url::parse("https://files.example/a.iso").unwrap();
     let mut headers = HeaderMap::new();
     headers.insert("alt-svc", HeaderValue::from_static(r#"h3=":443""#));
-    let advertised = |env: &dyn Fn(&str) -> Option<OsString>| {
+    let advertised = |env: crate::proxy::Env<'_>| {
         Origin::advertised(&url, &headers, None, clients.tls(), &opts, env).is_some()
     };
 

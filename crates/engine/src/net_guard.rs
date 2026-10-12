@@ -207,11 +207,13 @@ pub(crate) struct PrivateGuard {
 }
 
 /// The protection `rule` asks for, for requests that start at `url`; `None`
-/// when local addresses are allowed.
+/// when local addresses are allowed. `env` reads the proxy settings of the
+/// clients the requests go through.
 pub(crate) async fn private_guard(
     url: &Url,
     rule: PrivateNetwork,
     timeout: Duration,
+    env: proxy::Env<'_>,
 ) -> Option<PrivateGuard> {
     if rule == PrivateNetwork::Allow {
         return None;
@@ -223,11 +225,17 @@ pub(crate) async fn private_guard(
     if rule == PrivateNetwork::Auto && all_private(&start_addrs) {
         return None;
     }
-    Some(guard_from(url, &start_addrs, timeout))
+    Some(guard_from(url, &start_addrs, timeout, env))
 }
 
-/// The protection for requests starting at `url`, whose host had `start_addrs`.
-pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -> PrivateGuard {
+/// The protection for requests starting at `url`, whose host had `start_addrs`,
+/// through clients whose proxy settings `env` reads.
+pub(crate) fn guard_from(
+    url: &Url,
+    start_addrs: &[IpAddr],
+    timeout: Duration,
+    env: proxy::Env<'_>,
+) -> PrivateGuard {
     let check = Arc::new(NetworkGuard::new(url, timeout));
     PrivateGuard {
         guard: Guard(Arc::new(move |target: &Url| {
@@ -237,7 +245,7 @@ pub(crate) fn guard_from(url: &Url, start_addrs: &[IpAddr], timeout: Duration) -
         resolver: Arc::new(FilteringResolver {
             exempt: url.host_str().map(str::to_string),
             pinned: pinned_addresses(start_addrs),
-            proxies: proxy::host_names(&proxy::system),
+            proxies: proxy::host_names(env),
         }),
     }
 }
@@ -506,25 +514,41 @@ mod tests {
             }
         });
         let url = Url::parse(&format!("http://localhost:{port}/video.mp4")).unwrap();
+        let dir = wirecatch_test_support::private_dir("rebind").unwrap();
+        let mut request = crate::DownloadRequest::new(url.clone(), dir.path());
+        request.options.max_retries = 0;
+        request.options.connect_timeout = Duration::from_secs(5);
+        request.options.stall_timeout = Duration::from_millis(200);
+        // Clients that use no proxy whatever the machine sets, so the address
+        // is reached directly unless the guard stops it.
+        let clients =
+            || crate::http::Clients::with_roots(&request.options, rustls::RootCertStore::empty());
+        let run = |guard| {
+            crate::download::download_guarded(
+                request.clone(),
+                Arc::new(crate::Progress::default()),
+                CancellationToken::new(),
+                clients(),
+                guard,
+            )
+        };
+        // Without the guard the download reaches the listener, so the check
+        // below proves something.
+        assert!(run(None).await.is_err(), "the listener sends nothing");
+        assert!(
+            accepted.load(Ordering::SeqCst) > 0,
+            "the listener was not reached"
+        );
+        accepted.store(0, Ordering::SeqCst);
+
         // The addresses seen at the start: public (none of them local).
         let guard = guard_from(
             &url,
             &["93.184.215.14".parse().unwrap()],
             Duration::from_secs(5),
+            clients().environment(),
         );
-        let dir = wirecatch_test_support::private_dir("rebind").unwrap();
-        let mut request = crate::DownloadRequest::new(url, dir.path());
-        request.options.max_retries = 0;
-        request.options.connect_timeout = Duration::from_secs(5);
-        let clients = crate::http::Clients::new(&request.options).unwrap();
-        let result = crate::download::download_guarded(
-            request,
-            Arc::new(crate::Progress::default()),
-            CancellationToken::new(),
-            clients,
-            Some(guard),
-        )
-        .await;
+        let result = run(Some(guard)).await;
         assert!(result.is_err(), "the download went through");
         assert_eq!(
             accepted.load(Ordering::SeqCst),

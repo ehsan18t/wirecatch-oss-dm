@@ -20,7 +20,7 @@ use std::ffi::OsString;
 use url::{Host, Url};
 
 /// Reads an environment variable; tests pass their own.
-pub(crate) type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
+pub(crate) type Env<'a> = &'a (dyn Fn(&str) -> Option<OsString> + Sync);
 
 /// Reads the process's environment.
 pub(crate) fn system(name: &str) -> Option<OsString> {

@@ -170,7 +170,13 @@ impl Fetcher {
                 .map_err(|e| Error::task(&e))??
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
-        let protection = private_guard(&url, private_network, options.stall_timeout).await;
+        let protection = private_guard(
+            &url,
+            private_network,
+            options.stall_timeout,
+            clients.environment(),
+        )
+        .await;
         let blocking_private = protection.is_some();
         let resolver = protection.map(|p| {
             session.guard = Some(p.guard);
