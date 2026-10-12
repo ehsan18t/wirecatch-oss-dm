@@ -31,8 +31,6 @@ pub(crate) struct RequestContext {
     pub total: Option<u64>,
     /// Cancelled when the download pauses.
     pub cancel: CancellationToken,
-    /// [`DownloadOptions::user_agent`].
-    pub user_agent: String,
     /// [`DownloadOptions::stall_timeout`].
     pub stall_timeout: Duration,
 }

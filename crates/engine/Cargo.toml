@@ -17,7 +17,6 @@ include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE"]
 
 [dependencies]
 bytes.workspace = true
-futures-util.workspace = true
 # Only the portable engine: the default SIMD engines are unsafe code with nothing
 # to gain on a header's worth of text.
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }

@@ -56,7 +56,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use futures_util::StreamExt;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -66,10 +65,11 @@ use url::Url;
 
 use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
-use crate::http::{self, Clients, Failure, Session};
+use crate::http::{self, Clients, Failure, RequestRange, Session};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
+use crate::receive::{Received, receive, skip_start};
 use crate::retry::{Attempts, Next, Refusals};
 use crate::units::KIB_USIZE;
 
@@ -374,29 +374,19 @@ impl Fetcher {
             .map(str::to_string);
 
         let stall = self.inner.stall_timeout;
-        let mut body = response.bytes_stream();
+        let mut response = response;
         loop {
             let at = position.base + position.written;
             if position.end.is_some_and(|end| at >= end) {
                 break;
             }
-            let next = tokio::select! {
-                biased;
-                () = self.inner.cancel.cancelled() => return Err(Error::Cancelled.into()),
-                next = tokio::time::timeout(stall, body.next()) => next,
+            let next = async { response.chunk().await.map_err(Error::network) };
+            let chunk = match receive(&self.inner.cancel, stall, next).await? {
+                Received::Data(chunk) => chunk,
+                Received::End => break,
+                Received::Cancelled => return Err(Error::Cancelled.into()),
             };
-            let chunk = match next {
-                Err(_) => return Err(Error::Stalled(stall.as_secs()).into()),
-                Ok(None) => break,
-                Ok(Some(Err(e))) => return Err(Error::network(e).into()),
-                Ok(Some(Ok(chunk))) => chunk,
-            };
-            let mut data = &chunk[..];
-            if skip > 0 {
-                let n = clamp_to_len(skip, data.len());
-                data = &data[n..];
-                skip -= n as u64;
-            }
+            let mut data = skip_start(&chunk, &mut skip);
             if let Some(end) = position.end {
                 data = &data[..clamp_to_len(end.saturating_sub(at), data.len())];
             }
@@ -435,27 +425,16 @@ impl Fetcher {
         from: u64,
         end: Option<u64>,
     ) -> Result<(Response, u64), Failure> {
-        let range = match (from, end) {
-            (0, None) => None,
-            (from, None) => Some(format!("bytes={from}-")),
-            (from, Some(end)) => Some(format!("bytes={from}-{}", end.saturating_sub(1))),
-        };
-        let response = http::send(client, url, &self.inner.session, range.as_deref()).await?;
+        let range = RequestRange { from, to: end };
+        let range = (!range.is_whole()).then_some(range);
+        let response = http::send(client, url, &self.inner.session, range).await?;
         match (response.status(), range) {
             (StatusCode::OK, None) => Ok((response, 0)),
             // The server ignores ranges and sends everything.
             (StatusCode::OK, Some(_)) => Ok((response, from)),
             (StatusCode::PARTIAL_CONTENT, Some(_)) => {
-                let got = http::content_range(response.headers()).and_then(|c| c.start);
-                if got == Some(from) {
-                    Ok((response, 0))
-                } else {
-                    Err(Error::RangeNotHonored {
-                        expected: from,
-                        got,
-                    }
-                    .into())
-                }
+                http::check_partial(response.headers(), from, None)?;
+                Ok((response, 0))
             }
             _ => Err(Failure::status(&response)),
         }

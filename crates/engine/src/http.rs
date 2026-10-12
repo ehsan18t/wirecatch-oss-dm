@@ -7,8 +7,8 @@ use base64::Engine as _;
 use percent_encoding::percent_decode_str;
 use reqwest::header::{
     ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION,
-    CONTENT_RANGE, CONTENT_TYPE, DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED,
-    LOCATION, PRAGMA, RANGE, REFERER, RETRY_AFTER, USER_AGENT,
+    CONTENT_TYPE, DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA,
+    RANGE, REFERER, RETRY_AFTER, USER_AGENT,
 };
 use reqwest::{Client, Response, StatusCode, redirect};
 use tokio_util::sync::CancellationToken;
@@ -19,7 +19,10 @@ use crate::download::DownloadOptions;
 use crate::error::{Error, Result};
 use crate::naming;
 use crate::net_guard::{FilteringResolver, Guard};
-use crate::segment::UNKNOWN_END;
+
+mod range;
+
+pub(crate) use range::{RequestRange, check_partial, content_range};
 
 /// Most redirects followed for one request, the same limit browsers use.
 pub(crate) const MAX_REDIRECTS: usize = 20;
@@ -89,16 +92,22 @@ impl From<reqwest::Error> for Failure {
 impl Failure {
     /// A response whose status is not the one wanted.
     pub(crate) fn status(response: &Response) -> Self {
-        let status = response.status();
+        Self::from_status(response.status(), response.headers(), response.url())
+    }
+
+    /// An answer with `status` and `headers` from `url` that is not the one
+    /// wanted, over any version of HTTP: a busy answer keeps the wait its
+    /// `Retry-After` asks for.
+    pub(crate) fn from_status(status: StatusCode, headers: &HeaderMap, url: &Url) -> Self {
         let retry_after = is_busy(status)
-            .then(|| response.headers().get(RETRY_AFTER))
+            .then(|| headers.get(RETRY_AFTER))
             .flatten()
             .and_then(|v| v.to_str().ok())
             .and_then(|v| parse_retry_after(v, SystemTime::now()));
         Self {
             error: Error::HttpStatus {
                 status: status.as_u16(),
-                url: response.url().to_string(),
+                url: url.to_string(),
             },
             retry_after,
         }
@@ -406,7 +415,7 @@ pub(crate) async fn send(
     client: &Client,
     url: &Url,
     session: &Session,
-    range: Option<&str>,
+    range: Option<RequestRange>,
 ) -> Result<Response, Failure> {
     let asked = url;
     let mut url = url.clone();
@@ -419,7 +428,7 @@ pub(crate) async fn send(
             .get(url.clone())
             .headers(session.headers.for_url(&url).clone());
         if let Some(range) = range {
-            request = request.header(RANGE, range);
+            request = request.header(RANGE, range.to_string());
         }
         let response = tokio::select! {
             biased;
@@ -507,23 +516,22 @@ pub(crate) async fn probe(
     limit: Option<u64>,
 ) -> Result<Probe, Failure> {
     if let Some(limit) = limit.filter(|&n| n > 0) {
-        let range = format!("bytes=0-{}", limit - 1);
-        let probe = probe_range(client, url, session, &range).await?;
+        let probe = probe_range(client, url, session, RequestRange::new(0, limit)).await?;
         if probe.limited_without_size {
             debug!("the server sent part of the file without its size; asking for all of it");
         } else {
             return Ok(probe);
         }
     }
-    probe_range(client, url, session, "bytes=0-").await
+    probe_range(client, url, session, RequestRange::from(0)).await
 }
 
-/// [`probe`] with the given `Range` header.
+/// [`probe`] asking for `range`, which starts at byte 0.
 async fn probe_range(
     client: &Client,
     url: &Url,
     session: &Session,
-    range: &str,
+    range: RequestRange,
 ) -> Result<Probe, Failure> {
     let response = send(client, url, session, Some(range)).await?;
     let status = response.status();
@@ -541,27 +549,15 @@ async fn probe_range(
 
     let mut limited_without_size = false;
     let (ranged, total) = match status {
-        StatusCode::PARTIAL_CONTENT => match content_range(response_headers) {
-            Some(ContentRange {
-                start: Some(0),
-                total: Some(total),
-            }) => (true, Some(total)),
-            Some(ContentRange {
-                start: Some(0),
-                total: None,
-            }) => {
+        StatusCode::PARTIAL_CONTENT => {
+            if let Some(total) = check_partial(response_headers, 0, None)?.total {
+                (true, Some(total))
+            } else {
                 // Only the whole file if the request asked for all of it.
-                limited_without_size = range != "bytes=0-";
+                limited_without_size = !range.is_whole();
                 (false, None)
             }
-            other => {
-                return Err(Error::RangeNotHonored {
-                    expected: 0,
-                    got: other.and_then(|c| c.start),
-                }
-                .into());
-            }
-        },
+        }
         StatusCode::OK => (false, response.content_length()),
         // `bytes=0-` on an empty file.
         StatusCode::RANGE_NOT_SATISFIABLE
@@ -601,12 +597,7 @@ pub(crate) async fn fetch(
         return Ok((response, from));
     }
 
-    let range = if to == UNKNOWN_END {
-        format!("bytes={from}-")
-    } else {
-        format!("bytes={from}-{}", to - 1)
-    };
-    let response = send(client, url, session, Some(&range)).await?;
+    let response = send(client, url, session, Some(RequestRange::new(from, to))).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
@@ -615,19 +606,7 @@ pub(crate) async fn fetch(
         .into());
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
-    let got = content_range(response.headers());
-    if got.and_then(|c| c.start) != Some(from) {
-        return Err(Error::RangeNotHonored {
-            expected: from,
-            got: got.and_then(|c| c.start),
-        }
-        .into());
-    }
-    if let (Some(expected), Some(actual)) = (expected_total, got.and_then(|c| c.total))
-        && expected != actual
-    {
-        return Err(Error::RemoteChanged.into());
-    }
+    check_partial(response.headers(), from, expected_total)?;
     Ok((response, 0))
 }
 
@@ -639,66 +618,10 @@ fn check_status(response: &Response, want: StatusCode) -> Result<(), Failure> {
     }
 }
 
-/// What a `Content-Range` header says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ContentRange {
-    /// The offset of the first byte sent; `None` for `bytes */N`, which sends
-    /// no bytes of the file and only says its size.
-    pub start: Option<u64>,
-    /// The size of the whole file, if the server says.
-    pub total: Option<u64>,
-}
-
-pub(crate) fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
-    parse_content_range(headers.get(CONTENT_RANGE)?.to_str().ok()?)
-}
-
-/// Parses `bytes 0-99/1000`, `bytes 0-99/*` and `bytes */1000`.
-pub fn parse_content_range(value: &str) -> Option<ContentRange> {
-    let rest = value.trim().strip_prefix("bytes")?.trim_start();
-    let (span, total) = rest.split_once('/')?;
-    let total = match total.trim() {
-        "*" => None,
-        t => Some(t.parse().ok()?),
-    };
-    if span.trim() == "*" {
-        return Some(ContentRange { start: None, total });
-    }
-    let (start, end) = span.split_once('-')?;
-    let start: u64 = start.trim().parse().ok()?;
-    let end_inclusive: u64 = end.trim().parse().ok()?;
-    (start <= end_inclusive).then_some(ContentRange {
-        start: Some(start),
-        total,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use reqwest::header::{AUTHORIZATION, COOKIE};
-
-    #[test]
-    fn content_range_forms() {
-        assert_eq!(
-            parse_content_range("bytes 0-99/1000"),
-            Some(ContentRange {
-                start: Some(0),
-                total: Some(1000)
-            })
-        );
-        assert_eq!(
-            parse_content_range("bytes */1000"),
-            Some(ContentRange {
-                start: None,
-                total: Some(1000)
-            })
-        );
-        assert_eq!(parse_content_range("bytes 5-9/*").unwrap().total, None);
-        assert_eq!(parse_content_range("bytes */0").unwrap().total, Some(0));
-        assert_eq!(parse_content_range("bytes 9-5/10"), None);
-        assert_eq!(parse_content_range("items 0-1/2"), None);
-    }
 
     #[test]
     fn retry_after_forms() {

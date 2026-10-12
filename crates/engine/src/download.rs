@@ -466,7 +466,6 @@ pub(crate) async fn download_guarded(
             ranged,
             total,
             cancel,
-            user_agent: opts.user_agent.clone(),
             stall_timeout: opts.stall_timeout,
         },
         remote,

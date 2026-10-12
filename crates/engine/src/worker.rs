@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
+use crate::receive::{Received, receive, skip_start};
 use crate::retry::{Attempts, Next, Refusals};
 use crate::segment::{Assignment, UNKNOWN_END};
 use crate::transport::{Body, Connection};
@@ -177,34 +178,20 @@ async fn stream(
     let _connection = shared.progress.connection_opened();
     let _receiving = Receiving::new(&shared.receiving);
     writer.start(index, from);
-    let stall = shared.opts.stall_timeout;
+    let stall = shared.request.stall_timeout;
     // Whether receiving failed (rather than, say, writing to disk).
     let mut body_failed = false;
 
     let outcome: Result<Ended> = loop {
-        let next = tokio::select! {
-            biased;
-            () = shared.request.cancel.cancelled() => break Ok(Ended::Cancelled),
-            next = tokio::time::timeout(stall, body.next()) => next,
-        };
-        let mut data = match next {
-            Err(_) => {
-                body_failed = true;
-                break Err(Error::Stalled(stall.as_secs()));
-            }
-            Ok(Ok(None)) => break Ok(Ended::Eof),
-            Ok(Err(e)) => {
+        let data = match receive(&shared.request.cancel, stall, body.next()).await {
+            Ok(Received::Data(data)) => skip_start(data, &mut skip),
+            Ok(Received::End) => break Ok(Ended::Eof),
+            Ok(Received::Cancelled) => break Ok(Ended::Cancelled),
+            Err(e) => {
                 body_failed = true;
                 break Err(e);
             }
-            Ok(Ok(Some(chunk))) => chunk,
         };
-
-        if skip > 0 {
-            let n = clamp_to_len(skip, data.len());
-            data = &data[n..];
-            skip -= n as u64;
-        }
         if data.is_empty() {
             continue;
         }
