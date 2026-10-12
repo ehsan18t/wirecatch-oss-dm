@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NOON } from '$lib/testing/setup';
 import { MockBackend } from '../backend/mock';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
@@ -14,8 +15,6 @@ function keep(app: AppState): AppState {
 afterEach(() => {
   for (const app of apps.splice(0)) app.dispose();
 });
-
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 async function make() {
   const backend = new MockBackend({ autoTick: false, now: () => NOON });

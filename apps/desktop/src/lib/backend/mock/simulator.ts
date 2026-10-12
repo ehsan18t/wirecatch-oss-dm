@@ -11,6 +11,7 @@ import {
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { scheduleAllows } from '../../format';
+import { MS_PER_SECOND } from '../../time';
 import { between, type Spread } from './rng';
 import { RUNNING, stop, type AddonPage, type MockState, type Sim } from './state';
 
@@ -24,7 +25,6 @@ const WOBBLE: Spread = { min: 0.75, span: 0.5 };
 const SPEED_SMOOTHING = 0.4;
 /** Connections a download with a known size opens, within the setting; one with no size opens one. */
 const SIMULATED_CONNECTIONS = 8;
-const MS_PER_SECOND = 1000;
 /** How long joining video and audio takes after a media download; converting takes three times as long. */
 const PROCESSING_MS = 2500;
 const CONVERTING_TAKES = 3;

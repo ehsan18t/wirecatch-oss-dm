@@ -3,6 +3,7 @@
 // that follows.
 
 import { describe, expect, it, vi } from 'vitest';
+import { NOON } from '$lib/testing/setup';
 import { MockBackend } from '../backend/mock';
 import {
   ANSWERED_ELSEWHERE,
@@ -10,8 +11,6 @@ import {
   READING_ENDED,
   type Target,
 } from './download-window.svelte';
-
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 function backend() {
   return new MockBackend({ autoTick: false, now: () => NOON, empty: true });

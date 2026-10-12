@@ -5,11 +5,9 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '$lib/backend/mock';
-import { settle } from '$lib/testing/setup';
+import { NOON, settle } from '$lib/testing/setup';
 import DownloadWindow from './DownloadWindow.svelte';
 import { CLOSE_AFTER_MS, DownloadWindowState, type Target } from './download-window.svelte';
-
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 let cleanup: (() => void) | undefined;
 afterEach(() => {

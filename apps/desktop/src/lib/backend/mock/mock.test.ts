@@ -1,10 +1,10 @@
 import type { DownloadSummary, UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
+import { NOON } from '$lib/testing/setup';
 import { BackendError } from '../types';
 import { MockBackend } from '.';
 
 // Noon on Saturday 10 October 2026: the Overnight queue (01:00 to 07:00) is closed.
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
   let now = NOON;

@@ -1,11 +1,10 @@
 // Opening finished files: a program asks first; anything else opens at once.
 
 import { describe, expect, it } from 'vitest';
+import { NOON } from '$lib/testing/setup';
 import { MockBackend } from '../backend/mock';
 import { isProgramName } from '../filetypes';
 import { AppState } from './app.svelte';
-
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 async function finished(url: string) {
   const backend = new MockBackend({ autoTick: false, now: () => NOON, empty: true });

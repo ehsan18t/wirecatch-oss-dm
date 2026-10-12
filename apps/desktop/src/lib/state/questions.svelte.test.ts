@@ -5,6 +5,7 @@
 
 import type { UiEvent } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NOON } from '$lib/testing/setup';
 import { MockBackend } from '../backend/mock';
 import type { ShellSignal } from '../backend';
 import { buildCommands } from '../commands';
@@ -20,8 +21,6 @@ function keep(app: AppState): AppState {
 afterEach(() => {
   for (const app of apps.splice(0)) app.dispose();
 });
-
-const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 function backend() {
   return new MockBackend({ autoTick: false, now: () => NOON, empty: true });

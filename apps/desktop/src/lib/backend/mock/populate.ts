@@ -1,12 +1,12 @@
 // Fills a new mock with sample downloads: the hand-written ones, then generated ones for load testing.
 
 import { MB } from '@wirecatch/units';
+import { MS_PER_HOUR } from '../../time';
 import { MAIN_QUEUE_ID, OVERNIGHT_QUEUE_ID, WORK_QUEUE_ID } from './data';
 import { between, type Spread } from './rng';
 import { bulkItem, SEEDS } from './seeds';
 import type { MockState } from './state';
 
-const HOUR_MS = 60 * 60 * 1000;
 /** A finished sample finished this many hours after it was added. */
 const SEED_FINISHED_AFTER_HOURS = 0.2;
 
@@ -47,10 +47,10 @@ function addSamples(state: MockState, count: number) {
         total: s.total === null ? null : Math.round(s.total),
         done: s.total === null ? 0 : Math.round(s.total * s.fraction),
         error: s.error ?? null,
-        added_at: Math.round(now - s.age * HOUR_MS),
+        added_at: Math.round(now - s.age * MS_PER_HOUR),
         completed_at:
           s.status === 'completed'
-            ? Math.round(now - (s.age - SEED_FINISHED_AFTER_HOURS) * HOUR_MS)
+            ? Math.round(now - (s.age - SEED_FINISHED_AFTER_HOURS) * MS_PER_HOUR)
             : null,
       },
       s.rate,
