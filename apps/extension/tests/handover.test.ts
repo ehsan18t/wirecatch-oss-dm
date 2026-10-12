@@ -710,6 +710,35 @@ describe('handover', () => {
     expect(s.app.calls('add_download')).toHaveLength(0);
   });
 
+  it('cancels the copy when the browser cannot say how it stands, and warns it may run twice', async () => {
+    s = await setup();
+    s.downloads.failing.add('state');
+    const result = await s.hub.onDownload(downloadItem());
+    expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
+    expect(s.downloads.log).toEqual(['pause:1', 'cancel:1']);
+  });
+
+  it('keeps a copy that finished just before the cancel, and warns of two copies', async () => {
+    s = await setup();
+    s.downloads.afterCall = (call) => {
+      if (call === 'cancel:1') s.downloads.states.set(1, { state: 'complete', paused: false });
+    };
+    const result = await s.hub.onDownload(downloadItem());
+    expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
+    expect(s.downloads.log).toEqual(['pause:1', 'cancel:1']);
+    expect(s.hub.snapshot().notice?.message).toContain('may be downloading twice');
+  });
+
+  it('warns of two copies when the browser cannot say how a cancelled copy stands', async () => {
+    s = await setup();
+    s.downloads.afterCall = (call) => {
+      if (call === 'cancel:1') s.downloads.failing.add('state');
+    };
+    const result = await s.hub.onDownload(downloadItem());
+    expect(result).toMatchObject({ kind: 'handed_over', browserCopy: 'kept_running' });
+    expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
+  });
+
   it('counts a copy the person resumed during the withdraw as resumed when resume fails', async () => {
     s = await setup({
       configure: (app) => {
@@ -1002,6 +1031,27 @@ describe('downloads left paused by a restarted background', () => {
         expect(s.hub.snapshot().notice?.message).toMatch(/^big\.zip may be downloading twice/);
       },
     );
+
+    it('still asks the app, and resumes the copy, when the browser cannot say how it stands', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.failing.add('state');
+      s = await setup({ inFlight, downloads });
+      expect(s.app.calls('withdraw_download')).toHaveLength(1);
+      expect(downloads.log).toEqual(['resume:5']);
+      expect(inFlight.entries).toEqual([]);
+    });
+
+    it('says the copy may be paused when resume fails and the browser cannot say', async () => {
+      const inFlight = new MemoryInFlight();
+      inFlight.entries = [{ id: 5, handoverId: 'h-before' }];
+      const downloads = new FakeDownloads();
+      downloads.failing.add('state');
+      downloads.failing.add('resume');
+      s = await setup({ inFlight, downloads });
+      expect(latestNotice(s.hub)).toMatchObject({ tone: 'error', downloadId: 5 });
+    });
 
     it('raises no error for a copy the person resumed while the withdraw was waiting', async () => {
       const inFlight = new MemoryInFlight();

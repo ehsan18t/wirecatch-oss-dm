@@ -309,7 +309,7 @@ export class FakeApp implements NativeTransport {
 /** A browser downloads API that records every call in order and can be told to fail. */
 export class FakeDownloads implements BrowserDownloads {
   readonly log: string[] = [];
-  readonly failing = new Set<'pause' | 'resume' | 'cancel' | 'erase' | 'start'>();
+  readonly failing = new Set<'pause' | 'resume' | 'cancel' | 'erase' | 'start' | 'state'>();
   /** Calls that fail for one download only, written as in `log` (`resume:5`). */
   readonly failingCalls = new Set<string>();
   /** What `state()` reports (the browser's own view of the download). */
@@ -317,7 +317,11 @@ export class FakeDownloads implements BrowserDownloads {
   /** What `state()` reports for one download, over `browserState`. */
   readonly states = new Map<number, DownloadState | null>();
 
+  /** Runs after each logged call succeeds, as the browser would change the download. */
+  afterCall: ((call: string) => void) | null = null;
+
   state(id: number): Promise<DownloadState | null> {
+    if (this.failing.has('state')) return Promise.reject(new Error('search failed'));
     return Promise.resolve(this.states.has(id) ? (this.states.get(id) ?? null) : this.browserState);
   }
 
@@ -327,7 +331,16 @@ export class FakeDownloads implements BrowserDownloads {
     if (this.failing.has(op) || this.failingCalls.has(call)) {
       return Promise.reject(new Error(`${op} failed`));
     }
+    if (op === 'cancel' && typeof arg === 'number') this.#cancelled(arg);
+    this.afterCall?.(call);
     return Promise.resolve();
+  }
+
+  /** As the browser does: a cancel interrupts a download in progress, and does nothing to a finished one. */
+  #cancelled(id: number): void {
+    const state = this.states.has(id) ? this.states.get(id) : this.browserState;
+    if (state?.state === 'in_progress')
+      this.states.set(id, { state: 'interrupted', paused: false });
   }
 
   pause(id: number): Promise<void> {

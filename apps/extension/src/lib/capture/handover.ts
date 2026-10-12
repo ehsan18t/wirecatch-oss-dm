@@ -263,33 +263,66 @@ export type CopyRemoval =
   | 'removed'
   /** Could not be cancelled: it stays paused in the browser's list. */
   | 'left_paused'
-  /** The person resumed it, or it finished, while the app was answering: left alone, so it is in both places. */
+  /**
+   * The person resumed it, or it finished, while the app was answering, so it was left alone;
+   * or it could not be read after the cancel, so it may have finished first. Either way it may
+   * be in both places.
+   */
   | 'kept_running';
+
+/** The browser's view of a download, null when it no longer lists it, or `unreadable` when it would not say. */
+export async function readBrowserCopy(
+  downloads: DownloadControl,
+  id: number,
+): Promise<DownloadState | null | 'unreadable'> {
+  try {
+    return await downloads.state(id);
+  } catch {
+    return 'unreadable';
+  }
+}
 
 /**
  * Cancels the browser's copy and takes it off the browser's list, but only while it is still
- * paused: the answer may have taken seconds, and a copy the person resumed meanwhile is theirs
- * (cancelling a finished one does nothing, and erasing it would only lose its history).
+ * paused: the answer may have taken seconds, and a copy the person resumed meanwhile is theirs.
+ * It is erased only once it reads as interrupted, since one that finished just before the
+ * cancel is a whole file, and erasing it would only lose its history.
  */
 export async function removeBrowserCopy(
   downloads: DownloadControl,
   id: number,
 ): Promise<CopyRemoval> {
-  const state = await downloads.state(id).catch(() => null);
-  // Cancelled by the person, or taken off the list: there is no copy left.
-  if (state === null || state.state === 'interrupted') return 'removed';
-  if (state.state !== 'in_progress' || !state.paused) return 'kept_running';
+  const settled = beforeCancel(await readBrowserCopy(downloads, id));
+  if (settled !== null) return settled;
   try {
     await downloads.cancel(id);
   } catch {
     return 'left_paused';
   }
+  const after = afterCancel(await readBrowserCopy(downloads, id));
+  if (after !== 'erase') return after;
   try {
     await downloads.erase(id);
   } catch {
     // Cancelled but still listed: harmless, the person can clear it from the list.
   }
   return 'removed';
+}
+
+/** What a copy read before the cancel comes to without one; null when it is to be cancelled (an unreadable one too). */
+function beforeCancel(state: DownloadState | null | 'unreadable'): CopyRemoval | null {
+  if (state === 'unreadable') return null;
+  if (state === null || state.state === 'interrupted') return 'removed';
+  return state.state === 'in_progress' && state.paused ? null : 'kept_running';
+}
+
+/** What a copy read after the cancel comes to; `erase` once it reads as cancelled. */
+function afterCancel(state: DownloadState | null | 'unreadable'): CopyRemoval | 'erase' {
+  if (state === null) return 'removed';
+  // A copy that cannot be read may have finished before the cancel: warn of two copies.
+  if (state === 'unreadable') return 'kept_running';
+  if (state.state === 'interrupted') return 'erase';
+  return state.state === 'in_progress' && state.paused ? 'left_paused' : 'kept_running';
 }
 
 /** Resumes a paused browser download; if that fails, finds out whether it is still waiting or already gone. */
@@ -301,7 +334,9 @@ export async function resumeBrowserCopy(
     await downloads.resume(id);
     return 'resumed';
   } catch {
-    const state = await downloads.state(id).catch(() => null);
+    const state = await readBrowserCopy(downloads, id);
+    // A copy that cannot be read may still be paused, so the person is asked to look.
+    if (state === 'unreadable') return 'stuck_paused';
     // Resuming a download that already runs fails in Firefox: the person resumed it.
     if (state?.state === 'in_progress') return state.paused ? 'stuck_paused' : 'resumed';
     return 'gone';
