@@ -4,31 +4,24 @@
   // A quality whose video and audio must be joined while the media add-on is missing installs the
   // add-on first. Save as, audio quality, subtitles and chapters start from the last choices for
   // videos or for audio only, and every choice says before it starts whether it converts.
-  import {
-    AUDIO_KBPS_CHOICES,
-    type MediaChoice,
-    type MediaOption,
-    type OutputFormat,
-    type QueueId,
-  } from '@wirecatch/protocol';
+  import type { MediaChoice, MediaOption, QueueId } from '@wirecatch/protocol';
   import { isInstalled } from '$lib/addons';
   import Button from '$lib/components/Button.svelte';
   import { earlierNote, hostOf } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
   import {
-    conversionNote,
     fitFor,
     FORMAT_LABEL,
-    formatChoiceLabel,
     kbpsFor,
     outputSelection,
-    qualityNotes,
     rowTag,
     sizeFor,
     startingChoice,
   } from '$lib/media-output';
   import type { DownloadWindowState } from './download-window.svelte';
   import { enterSubmits } from './keys';
+  import { OutputChoiceState } from './output-choice.svelte';
+  import SaveAsOptions from './SaveAsOptions.svelte';
   import WindowFrame from './WindowFrame.svelte';
   import WindowOptions from './WindowOptions.svelte';
 
@@ -46,30 +39,16 @@
   let fileName = $state('');
   let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
-  let format = $state<OutputFormat>(start.format);
-  let kbps = $state<number | null>(start.kbps);
-  let subtitles = $state<string[]>(start.subtitles);
-  let subtitleFiles = $state(start.subtitleFiles);
-  let chapters = $state(start.chapters);
+  const output = new OutputChoiceState(start);
 
   const picked = $derived(choice.options.find((o) => o.id === optionId));
-  const fit = $derived(fitFor(picked, format));
-  const kbpsChoices = $derived(fit ? (AUDIO_KBPS_CHOICES[format] ?? null) : null);
-  /** Save as, subtitles or chapters to show for this quality and video. */
-  const offersOutput = $derived(
-    (picked?.outputs.length ?? 0) > 1 || choice.subtitles.length > 0 || choice.chapters,
-  );
-  const note = $derived(conversionNote(fit, format, kbps));
-  const notes = $derived(qualityNotes(fit, format, kbps));
-  const canChapters = $derived(choice.chapters && (fit?.chapters ?? false));
-
   const needsInstall = $derived(
     picked?.needs_ffmpeg === true && !isInstalled(win.addon ?? undefined),
   );
   const joinNote = $derived.by(() => {
     if (!picked?.needs_ffmpeg) return null;
     if (!needsInstall) {
-      return format === 'original'
+      return output.format === 'original'
         ? 'This quality comes as separate video and audio. Wirecatch joins them into one file when the download finishes.'
         : null;
     }
@@ -79,13 +58,15 @@
 
   /** A row's words: as today for Original, else the quality in the chosen format. */
   function rowLabel(option: MediaOption): string {
+    const format = output.format;
     if (format === 'original' || !fitFor(option, format)) return option.label;
     return `${option.quality || option.label}, ${FORMAT_LABEL[format]}`;
   }
 
   function rowSize(option: MediaOption): number | null {
-    const shown = fitFor(option, format) ? format : 'original';
-    return sizeFor(option, shown, option.id === optionId ? kbps : null, choice.duration_ms);
+    const shown = fitFor(option, output.format) ? output.format : 'original';
+    const kbps = option.id === optionId ? output.kbps : null;
+    return sizeFor(option, shown, kbps, choice.duration_ms);
   }
 
   /** Another quality: switching between video and audio only starts from that kind's choices. */
@@ -95,20 +76,11 @@
     const now = picked;
     if (!now || now === before) return;
     if (before?.audio_only !== now.audio_only) {
-      const next = startingChoice(now, choice, defaultsFor(now));
-      format = next.format;
-      kbps = next.kbps;
-      subtitles = next.subtitles;
-      chapters = next.chapters;
-      subtitleFiles = next.subtitleFiles;
+      output.reset(startingChoice(now, choice, defaultsFor(now)));
       return;
     }
-    if (!fitFor(now, format)) format = 'original';
-    kbps = kbpsFor(fitFor(now, format), format, kbps);
-  }
-
-  function formatChanged() {
-    kbps = kbpsFor(fit, format, kbps ?? defaultsFor(picked)?.audio_kbps ?? null);
+    if (!fitFor(now, output.format)) output.format = 'original';
+    output.kbps = kbpsFor(fitFor(now, output.format), output.format, output.kbps);
   }
 
   async function changeFolder() {
@@ -124,7 +96,7 @@
       folder: folder !== choice.folder ? folder : null,
       queue: queue !== choice.queue ? queue : null,
       later,
-      ...outputSelection(picked, choice, { format, kbps, subtitles, subtitleFiles, chapters }),
+      ...outputSelection(picked, choice, output),
     });
   }
 </script>
@@ -148,7 +120,7 @@
     <fieldset class="options">
       <legend class="label">Quality</legend>
       {#each choice.options as option, i (option.id)}
-        {@const tag = rowTag(option, format, option.id === optionId ? kbps : null)}
+        {@const tag = rowTag(option, output.format, option.id === optionId ? output.kbps : null)}
         {@const size = rowSize(option)}
         <label class="option" class:chosen={option.id === optionId}>
           <input
@@ -175,81 +147,8 @@
       <p class="note" role="note">{joinNote}</p>
     {/if}
 
-    {#if offersOutput && picked}
-      <div class="output">
-        {#if picked.outputs.length > 1}
-          <div class="pair">
-            <label class="stack">
-              <span class="label">Save as</span>
-              <select class="field" bind:value={format} onchange={formatChanged}>
-                {#each picked.outputs as each (each.format)}
-                  <option value={each.format}>{formatChoiceLabel(each)}</option>
-                {/each}
-              </select>
-            </label>
-            {#if kbpsChoices && fit}
-              <label class="stack">
-                <span class="label">Audio quality</span>
-                <select
-                  class="field"
-                  value={kbps === null ? '' : String(kbps)}
-                  onchange={(e) => {
-                    const v = e.currentTarget.value;
-                    kbps = v === '' ? null : Number(v);
-                  }}
-                >
-                  {#if fit.audio !== 'encode'}
-                    <option value=""
-                      >As downloaded{fit.audio_kbps === null
-                        ? ''
-                        : ` (${fit.audio_kbps} kbps)`}</option
-                    >
-                  {/if}
-                  {#each kbpsChoices as k (k)}
-                    <option value={String(k)}>{k} kbps</option>
-                  {/each}
-                </select>
-              </label>
-            {/if}
-          </div>
-        {/if}
-        {#if note}<p class="note" role="note">{note}</p>{/if}
-        {#each notes as text (text)}<p class="note" role="note">{text}</p>{/each}
-
-        {#if choice.subtitles.length > 0}
-          <fieldset class="subs">
-            <legend class="label">Subtitles</legend>
-            <div class="sub-list">
-              {#each choice.subtitles as subtitle (subtitle.id)}
-                <label class="check">
-                  <input type="checkbox" value={subtitle.id} bind:group={subtitles} />
-                  <span
-                    >{subtitle.name}{#if subtitle.auto}<span class="auto">, auto-generated</span
-                      >{/if}</span
-                  >
-                </label>
-              {/each}
-            </div>
-            {#if subtitles.length > 0}
-              {#if fit?.embeds_subtitles}
-                <label class="check">
-                  <input type="checkbox" bind:checked={subtitleFiles} />
-                  <span>Save them as .srt files next to the video instead</span>
-                </label>
-              {:else}
-                <p class="help">They are saved as .srt files next to the file.</p>
-              {/if}
-            {/if}
-          </fieldset>
-        {/if}
-
-        {#if canChapters}
-          <label class="check">
-            <input type="checkbox" bind:checked={chapters} />
-            <span>Add the video's chapters</span>
-          </label>
-        {/if}
-      </div>
+    {#if picked}
+      <SaveAsOptions option={picked} {choice} defaults={defaultsFor(picked)} {output} />
     {/if}
 
     <label class="stack">
@@ -388,62 +287,6 @@
     color: var(--ink-2);
     font-size: var(--text-sm);
     line-height: 1.5;
-  }
-
-  .output {
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-m);
-    background: var(--surface-2);
-  }
-
-  .pair {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
-  }
-
-  .subs {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .subs legend {
-    margin-bottom: 4px;
-    padding: 0;
-  }
-
-  .sub-list {
-    display: grid;
-    gap: 2px;
-    max-height: 7.5rem;
-    overflow-y: auto;
-    padding: 4px 8px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-s);
-    background: var(--surface);
-  }
-
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  .check input {
-    margin: 0;
-    accent-color: var(--accent);
-  }
-
-  .auto {
-    color: var(--ink-2);
   }
 
   .stack {

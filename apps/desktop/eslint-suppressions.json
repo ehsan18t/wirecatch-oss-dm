@@ -1,7 +1,0 @@
-{
-  "src/lib/window/MediaQuestion.svelte": {
-    "max-lines": {
-      "count": 1
-    }
-  }
-}
