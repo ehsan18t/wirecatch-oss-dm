@@ -175,7 +175,7 @@ impl Checkpoints {
         let every = saver.shared.opts.checkpoint_interval;
         let cancel = saver.shared.request.cancel.clone();
         let task = tokio::spawn(async move {
-            let mut tick = tokio::time::interval(every);
+            let mut tick = ticker(every);
             tick.tick().await;
             loop {
                 tokio::select! {
@@ -194,8 +194,40 @@ impl Checkpoints {
     }
 }
 
+/// Ticks every `every`. A save that takes longer than that (a disk slower than
+/// the network, since each save flushes the part file) delays the next tick
+/// rather than being followed by a burst of saves to catch up.
+fn ticker(every: std::time::Duration) -> tokio::time::Interval {
+    let mut tick = tokio::time::interval(every);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    tick
+}
+
 impl Drop for Checkpoints {
     fn drop(&mut self) {
         self.task.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_save_delays_the_next_checkpoint_instead_of_bunching_them() {
+        let every = Duration::from_secs(1);
+        let mut tick = ticker(every);
+        tick.tick().await;
+        // A save that took three intervals.
+        tokio::time::sleep(3 * every).await;
+        tick.tick().await;
+        let start = tokio::time::Instant::now();
+        tick.tick().await;
+        assert_eq!(
+            start.elapsed(),
+            every,
+            "the missed checkpoints came at once"
+        );
     }
 }
