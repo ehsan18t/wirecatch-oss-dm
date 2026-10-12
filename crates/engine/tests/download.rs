@@ -461,15 +461,23 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
         .expect("the pause waited for the rate limiter")
         .unwrap()
         .unwrap();
-    assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
+    let Outcome::Paused { remaining, .. } = outcome else {
+        panic!("not paused: {outcome:?}")
+    };
+    let kept = server.data.len() as u64 - remaining;
 
-    // Resumed at the same tiny limit, then lifted: the download finishes at once.
-    let task = tokio::spawn(download(
-        req,
-        Arc::new(Progress::default()),
-        CancellationToken::new(),
-    ));
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Resumed at the same tiny limit, then lifted once a new chunk has put
+    // the limiter in debt: the download finishes at once.
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
+    let deadline = tokio::time::Instant::now() + PROMPT;
+    while progress.done() <= kept {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "nothing new arrived"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     limiter.set_limit(None);
     let finished = tokio::time::timeout(PROMPT, task).await;
     let outcome = finished
