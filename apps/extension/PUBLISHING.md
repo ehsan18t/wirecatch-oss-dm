@@ -16,7 +16,7 @@ The private key that belongs to `chromium_public_key` is kept by the maintainer 
 
 ## Chrome Web Store
 
-1. Build the package: `pnpm build:store`. It builds `.output/chrome-mv3-store` and zips it to `.output/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
+1. Build the package: `pnpm build:store`. It first runs `node scripts/gate.mjs publish` from the repository root, which fails while `config/product.toml` still holds a placeholder (D29); `pnpm sign:firefox` does the same. It builds `.output/chrome-mv3-store` and zips it to `.output/wirecatchextension-<version>-chrome-store.zip`. It is the same as `pnpm build` without the `key` field.
 2. First upload only: add the private key to the root of the zip, named `key.pem`, for example by copying it into an empty temporary folder as `key.pem` and running `zip -j .output/wirecatchextension-<version>-chrome-store.zip <that folder>/key.pem`. Upload that zip as a new item, then delete the temporary copy and that zip. The Chrome Web Store uses the key to give the item our id instead of a new one.
 3. Before publishing, check that the item's id in the developer dashboard is `chdgnmpjoipbgfeldicipccjjghmagki`. An item's id never changes, so if it shows another id, remove that item and upload again with the key.
 4. Every later update: upload the zip from step 1 as it is, without `key.pem`.
