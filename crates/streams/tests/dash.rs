@@ -1,3 +1,5 @@
+//! DASH downloads end to end, from a local server.
+
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +10,7 @@ use wirecatch_streams::{
     inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{fresh_dir, ts_segment};
+use wirecatch_test_support::{TestResult, fresh_dir, ts_segment};
 
 const DASH: &str = "application/dash+xml";
 
@@ -34,10 +36,11 @@ async fn run(request: StreamRequest) -> Result<Outcome, Error> {
     .await
 }
 
-fn saved(outcome: Outcome) -> Vec<u8> {
+/// The bytes of the file a completed download saved.
+fn saved(outcome: Outcome) -> TestResult<Vec<u8>> {
     match outcome {
-        Outcome::Completed { path, .. } => std::fs::read(path).unwrap(),
-        other => panic!("expected completion, got {other:?}"),
+        Outcome::Completed { path, .. } => Ok(std::fs::read(path)?),
+        other => Err(format!("expected completion, got {other:?}").into()),
     }
 }
 
@@ -53,11 +56,11 @@ async fn number_templates_download_the_chosen_representation() {
     let server = FileServer::start().await;
     let mut expected = std::collections::HashMap::new();
     for rep in ["v1", "v2", "a1"] {
-        let mut bytes = init(rep.len() as u64 + rep.as_bytes()[1] as u64);
+        let mut bytes = init(rep.len() as u64 + u64::from(rep.as_bytes()[1]));
         server.put(&format!("dash/{rep}/init.mp4"), bytes.clone());
         // 10 s in 4 s segments: three, numbered from 1, with a width of 3.
         for n in 1..=3u64 {
-            let data = ts_segment(n * 7 + rep.as_bytes()[1] as u64, 2000);
+            let data = ts_segment(n * 7 + u64::from(rep.as_bytes()[1]), 2000);
             server.put(&format!("dash/{rep}/seg-{n:03}.m4s"), data.clone());
             bytes.extend(data);
         }
@@ -114,7 +117,7 @@ async fn number_templates_download_the_chosen_representation() {
     let mut req = request(&server, "dash/manifest.mpd", &dir.join("best.mp4"));
     req.audio = Choice::Skip;
     assert_eq!(
-        saved(run(req).await.unwrap()),
+        saved(run(req).await.unwrap()).unwrap(),
         expected["v2"],
         "the best quality by default"
     );
@@ -122,11 +125,11 @@ async fn number_templates_download_the_chosen_representation() {
     let mut req = request(&server, "dash/manifest.mpd", &dir.join("low.mp4"));
     req.video = Choice::Track(info.video[0].id.clone());
     req.audio = Choice::Skip;
-    assert_eq!(saved(run(req).await.unwrap()), expected["v1"]);
+    assert_eq!(saved(run(req).await.unwrap()).unwrap(), expected["v1"]);
 
     let mut req = request(&server, "dash/manifest.mpd", &dir.join("audio.mp4"));
     req.video = Choice::Skip;
-    assert_eq!(saved(run(req).await.unwrap()), expected["a1"]);
+    assert_eq!(saved(run(req).await.unwrap()).unwrap(), expected["a1"]);
 }
 
 #[tokio::test]
@@ -163,7 +166,8 @@ async fn timelines_use_times_in_addresses() {
             run(request(&server, "tl/manifest.mpd", &dir.join("v.mp4")))
                 .await
                 .unwrap()
-        ),
+        )
+        .unwrap(),
         expected
     );
 }
@@ -176,14 +180,15 @@ async fn segment_base_files_are_split_through_their_index() {
     let index_start = file.len() as u64;
     let sizes = [3000u32, 2500, 1800];
     let mut sidx = Vec::new();
-    let body = 4 + 4 + 4 + 4 + 4 + 2 + 2 + sizes.len() * 12;
-    sidx.extend_from_slice(&((8 + body) as u32).to_be_bytes());
+    let count = u16::try_from(sizes.len()).unwrap();
+    let body = 4 + 4 + 4 + 4 + 4 + 2 + 2 + u32::from(count) * 12;
+    sidx.extend_from_slice(&(8 + body).to_be_bytes());
     sidx.extend_from_slice(b"sidx");
     sidx.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0x03, 0xE8]);
     sidx.extend_from_slice(&[0; 4]); // earliest presentation time
     sidx.extend_from_slice(&[0; 4]); // first_offset
     sidx.extend_from_slice(&[0, 0]);
-    sidx.extend_from_slice(&(sizes.len() as u16).to_be_bytes());
+    sidx.extend_from_slice(&count.to_be_bytes());
     for size in sizes {
         sidx.extend_from_slice(&size.to_be_bytes());
         sidx.extend_from_slice(&[0; 8]);
@@ -208,7 +213,7 @@ async fn segment_base_files_are_split_through_their_index() {
     let dir = fresh_dir("dash-sidx");
     let mut req = request(&server, "sb/manifest.mpd", &dir.join("v.mp4"));
     req.options.connections = 4;
-    assert_eq!(saved(run(req).await.unwrap()), file);
+    assert_eq!(saved(run(req).await.unwrap()).unwrap(), file);
     // The index read, then the head and three subsegments, each by range.
     assert_eq!(server.requests("sb/video.mp4"), 5);
     assert!(
@@ -269,7 +274,7 @@ async fn live_drm_and_several_periods_are_refused() {
         .unwrap_err();
     assert!(matches!(error, Error::Unsupported(_)), "{error}");
     assert!(
-        !server.seen().iter().any(|s| s.path.ends_with(".m4s")),
+        !server.seen().iter().any(|s| s.has_extension("m4s")),
         "nothing fetched"
     );
 }

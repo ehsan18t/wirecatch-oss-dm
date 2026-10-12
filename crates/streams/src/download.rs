@@ -86,32 +86,7 @@ async fn run(
         Arc::new(blocking(move || WorkDir::open(&output, fingerprint, &counts)).await?)
     };
 
-    let mut jobs = VecDeque::new();
-    let (mut done, mut bytes) = (0, 0);
-    let mut number = 0;
-    for (track, planned) in plan.tracks.iter().enumerate() {
-        if let Some(size) = work.joined.get(&track) {
-            done += planned.pieces.len();
-            bytes += size;
-            number += planned.pieces.len();
-            continue;
-        }
-        for (index, piece) in planned.pieces.iter().enumerate() {
-            number += 1;
-            match work.done.get(&(track, index)) {
-                Some(size) => {
-                    done += 1;
-                    bytes += size;
-                }
-                None => jobs.push_back(Job {
-                    track,
-                    index,
-                    number,
-                    piece: piece.clone(),
-                }),
-            }
-        }
-    }
+    let Queue { jobs, done, bytes } = queue(&plan, &work);
     info!(
         total,
         kept = done,
@@ -130,32 +105,79 @@ async fn run(
             keys: Keys::default(),
             queue: Mutex::new(jobs),
             total,
-            stop: stop.clone(),
+            stop,
         });
-        let mut set = JoinSet::new();
-        for _ in 0..workers {
-            set.spawn(worker(shared.clone()));
-        }
-        let mut first_error = None;
-        while let Some(joined) = set.join_next().await {
-            if let Err(e) = joined.map_err(Error::task).and_then(|r| r) {
-                warn!(error = %e, "segment download failed; stopping the others");
-                stop.cancel();
-                first_error.get_or_insert(e);
-            }
-        }
+        let result = fetch_all(shared, workers).await;
         if cancel.is_cancelled() {
             return Ok(Outcome::Paused {
                 segments_left: total.saturating_sub(progress.segments_done()),
             });
         }
-        if let Some(error) = first_error {
-            return Err(error);
-        }
+        result?;
     }
 
     progress.set_stage(Stage::Joining);
     join(&plan, work, request, &output, cancel).await
+}
+
+/// The pieces still to fetch, and what earlier runs already saved.
+struct Queue {
+    jobs: VecDeque<Job>,
+    /// Pieces already saved, joined tracks included.
+    done: usize,
+    /// Their size in bytes.
+    bytes: u64,
+}
+
+/// Queues every piece of `plan` that `work` does not hold yet.
+fn queue(plan: &Plan, work: &WorkDir) -> Queue {
+    let mut queue = Queue {
+        jobs: VecDeque::new(),
+        done: 0,
+        bytes: 0,
+    };
+    let mut number = 0;
+    for (track, planned) in plan.tracks.iter().enumerate() {
+        if let Some(size) = work.joined.get(&track) {
+            queue.done += planned.pieces.len();
+            queue.bytes += size;
+            number += planned.pieces.len();
+            continue;
+        }
+        for (index, piece) in planned.pieces.iter().enumerate() {
+            number += 1;
+            if let Some(size) = work.done.get(&(track, index)) {
+                queue.done += 1;
+                queue.bytes += size;
+            } else {
+                queue.jobs.push_back(Job {
+                    track,
+                    index,
+                    number,
+                    piece: piece.clone(),
+                });
+            }
+        }
+    }
+    queue
+}
+
+/// Fetches the queued pieces with `workers` tasks. The first failure stops
+/// the others and is returned.
+async fn fetch_all(shared: Arc<Shared>, workers: usize) -> Result<()> {
+    let mut set = JoinSet::new();
+    for _ in 0..workers {
+        set.spawn(worker(shared.clone()));
+    }
+    let mut first_error = None;
+    while let Some(joined) = set.join_next().await {
+        if let Err(e) = joined.map_err(|e| Error::task(&e)).and_then(|r| r) {
+            warn!(error = %e, "segment download failed; stopping the others");
+            shared.stop.cancel();
+            first_error.get_or_insert(e);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 /// One piece to fetch.
@@ -212,7 +234,7 @@ async fn fetch_piece(shared: &Shared, job: &Job) -> Result<()> {
     shared
         .fetcher
         .save(&job.piece.url, job.piece.range.clone(), &part, move |n| {
-            progress.add_bytes(n)
+            progress.add_bytes(n);
         })
         .await
         .map_err(|e| match e {
@@ -286,7 +308,7 @@ impl Keys {
         let cell = lock(&self.cells).entry(url.clone()).or_default().clone();
         let key = cell
             .get_or_try_init(|| async {
-                let fetched = fetcher
+                let response = fetcher
                     .get(url, None, KEY_LIMIT)
                     .await
                     .map_err(|e| match e {
@@ -297,9 +319,9 @@ impl Keys {
                             reason: e.to_string(),
                         },
                     })?;
-                <[u8; 16]>::try_from(&fetched.body[..]).map_err(|_| Error::Key {
+                <[u8; 16]>::try_from(&response.body[..]).map_err(|_| Error::Key {
                     url: url.to_string(),
-                    reason: format!("it is {} bytes long instead of 16", fetched.body.len()),
+                    reason: format!("it is {} bytes long instead of 16", response.body.len()),
                 })
             })
             .await?;
@@ -326,87 +348,12 @@ async fn join(
         }
     }
 
-    let audio_only = plan.tracks.iter().all(|t| t.role == Role::Audio);
     let saved = match &request.ffmpeg {
-        Some(program) => {
-            let first = container_for(plan);
-            let containers: &[Container] = match first {
-                // Codecs the stream did not name may not fit MP4.
-                Container::Mp4 => &[Container::Mp4, Container::Matroska],
-                Container::Matroska => &[Container::Matroska],
-            };
-            let tracks: Vec<(PathBuf, Role)> = plan
-                .tracks
-                .iter()
-                .enumerate()
-                .map(|(i, t)| (work.track_path(i), t.role))
-                .collect();
-            // ffmpeg is told each track's format instead of guessing it from
-            // bytes a website chose; an unknown one is never handed over.
-            let inputs = blocking(move || {
-                tracks
-                    .into_iter()
-                    .map(|(path, role)| {
-                        let format = InputFormat::detect(&path)?;
-                        Ok((path, role, format))
-                    })
-                    .collect::<io::Result<Vec<_>>>()
-            })
-            .await?;
-            let mut known = Vec::with_capacity(inputs.len());
-            for (path, role, format) in &inputs {
-                let Some(format) = format else {
-                    return Err(Error::UnknownFormat { role: role.name() });
-                };
-                known.push((path.as_path(), *role, *format));
-            }
-            let inputs = known;
-            let mut saved = None;
-            // What ffmpeg said for each container tried, in order.
-            let mut failures: Vec<(Container, String)> = Vec::new();
-            for container in containers {
-                let extension = container.extension(audio_only);
-                let muxed = work.muxed_path(extension);
-                let args = ffmpeg::arguments(&inputs, &muxed, *container);
-                match ffmpeg::run(program, &args, cancel).await {
-                    Ok(true) => {
-                        let (from, output) = (muxed.clone(), output.to_path_buf());
-                        let target = blocking(move || {
-                            let target = free_target(&output, extension)?;
-                            fs::rename(from, &target)?;
-                            Ok(target)
-                        })
-                        .await?;
-                        saved = Some(target);
-                        break;
-                    }
-                    Ok(false) => return Ok(Outcome::Paused { segments_left: 0 }),
-                    Err(e @ Error::FfmpegMissing(_)) => return Err(e),
-                    Err(Error::Ffmpeg(message)) => {
-                        warn!(%message, ?container, "ffmpeg failed");
-                        let _ = fs::remove_file(&muxed);
-                        failures.push((*container, message));
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-            match saved {
-                Some(saved) => saved,
-                None => return Err(Error::Ffmpeg(failure_summary(&failures))),
-            }
-        }
-        None => {
-            let (from, output) = (work.track_path(0), output.to_path_buf());
-            blocking(move || {
-                // Saved as is, never read by ffmpeg: an unknown format only
-                // needs an extension, and `.ts` is the most likely one.
-                let extension = InputFormat::detect(&from)?.map_or("ts", InputFormat::extension);
-                let target = free_target(&output, extension)?;
-                fs::rename(&from, &target)?;
-                Ok(target)
-            })
-            .await?
-        }
+        Some(program) => match mux(plan, &work, program, output, cancel).await? {
+            Some(saved) => saved,
+            None => return Ok(Outcome::Paused { segments_left: 0 }),
+        },
+        None => move_single_track(&work, output).await?,
     };
 
     let bytes = {
@@ -420,6 +367,98 @@ async fn join(
     };
     info!(path = %saved.display(), bytes, "stream saved");
     Ok(Outcome::Completed { path: saved, bytes })
+}
+
+/// Muxes the joined tracks with `program` into the first container that takes
+/// them and moves the result to a free name beside `output`. `None` when
+/// `cancel` stopped ffmpeg.
+async fn mux(
+    plan: &Plan,
+    work: &WorkDir,
+    program: &Path,
+    output: &Path,
+    cancel: &CancellationToken,
+) -> Result<Option<PathBuf>> {
+    let audio_only = plan.tracks.iter().all(|t| t.role == Role::Audio);
+    let containers: &[Container] = match container_for(plan) {
+        // Codecs the stream did not name may not fit MP4.
+        Container::Mp4 => &[Container::Mp4, Container::Matroska],
+        Container::Matroska => &[Container::Matroska],
+    };
+    let tracks = track_formats(plan, work).await?;
+    let mut inputs = Vec::with_capacity(tracks.len());
+    for (path, role, format) in &tracks {
+        let Some(format) = format else {
+            return Err(Error::UnknownFormat { role: role.name() });
+        };
+        inputs.push((path.as_path(), *role, *format));
+    }
+    // What ffmpeg said for each container tried, in order.
+    let mut failures: Vec<(Container, String)> = Vec::new();
+    for container in containers {
+        let extension = container.extension(audio_only);
+        let muxed = work.muxed_path(extension);
+        let args = ffmpeg::arguments(&inputs, &muxed, *container);
+        match ffmpeg::run(program, &args, cancel).await {
+            Ok(true) => {
+                let output = output.to_path_buf();
+                let target = blocking(move || {
+                    let target = free_target(&output, extension)?;
+                    fs::rename(muxed, &target)?;
+                    Ok(target)
+                })
+                .await?;
+                return Ok(Some(target));
+            }
+            Ok(false) => return Ok(None),
+            Err(Error::Ffmpeg(message)) => {
+                warn!(%message, ?container, "ffmpeg failed");
+                let _ = fs::remove_file(&muxed);
+                failures.push((*container, message));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(Error::Ffmpeg(failure_summary(&failures)))
+}
+
+/// Each joined track's file, role and format. ffmpeg is told each track's
+/// format instead of guessing it from bytes a website chose, so an unknown
+/// one (`None`) is never handed over.
+async fn track_formats(
+    plan: &Plan,
+    work: &WorkDir,
+) -> Result<Vec<(PathBuf, Role, Option<InputFormat>)>> {
+    let tracks: Vec<(PathBuf, Role)> = plan
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (work.track_path(i), t.role))
+        .collect();
+    blocking(move || {
+        tracks
+            .into_iter()
+            .map(|(path, role)| {
+                let format = InputFormat::detect(&path)?;
+                Ok((path, role, format))
+            })
+            .collect::<io::Result<Vec<_>>>()
+    })
+    .await
+}
+
+/// Moves the only track, joined without ffmpeg, to a free name beside `output`.
+async fn move_single_track(work: &WorkDir, output: &Path) -> Result<PathBuf> {
+    let (from, output) = (work.track_path(0), output.to_path_buf());
+    blocking(move || {
+        // Saved as is, never read by ffmpeg: an unknown format only needs an
+        // extension, and `.ts` is the most likely one.
+        let extension = InputFormat::detect(&from)?.map_or("ts", InputFormat::extension);
+        let target = free_target(&output, extension)?;
+        fs::rename(&from, &target)?;
+        Ok(target)
+    })
+    .await
 }
 
 /// ffmpeg's messages for every container tried: one alone as is, several
@@ -505,14 +544,14 @@ async fn blocking<T: Send + 'static>(
 ) -> Result<T> {
     Ok(tokio::task::spawn_blocking(f)
         .await
-        .map_err(Error::task)??)
+        .map_err(|e| Error::task(&e))??)
 }
 
 /// Locks a mutex; one poisoned by a panic elsewhere is still usable here.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

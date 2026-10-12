@@ -30,7 +30,6 @@ const LINT_PENDING = new Set([
   'wirecatch-core',
   'wirecatch-desktop',
   'wirecatch-e2e',
-  'wirecatch-streams',
 ]);
 
 /** Cargo tools some checks run, with the versions CI installs (`--install-tools`). */

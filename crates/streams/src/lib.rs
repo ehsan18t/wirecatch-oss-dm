@@ -46,8 +46,8 @@
 //! - Resuming: finished segments are kept in `<output>.wcstream/` next to the
 //!   output and not downloaded again.
 //!
-//! Refused with a plain-language [`Error`]: live broadcasts, DRM (FairPlay,
-//! Widevine, PlayReady, Common Encryption) and HLS `SAMPLE-AES`, DASH
+//! Refused with a plain-language [`Error`]: live broadcasts, DRM (`FairPlay`,
+//! Widevine, `PlayReady`, Common Encryption) and HLS `SAMPLE-AES`, DASH
 //! manifests with several periods. Subtitles are listed, not downloaded.
 //!
 //! # Credentials
@@ -78,8 +78,6 @@
 //! share one track can be saved, as its segments joined end to end (for
 //! example an MPEG-TS `.ts` file); separate tracks fail with
 //! [`Error::NeedsFfmpeg`] before anything is downloaded.
-
-#![deny(missing_docs)]
 
 mod crypto;
 mod dash;

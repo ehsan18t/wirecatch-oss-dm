@@ -63,7 +63,8 @@ pub fn files_in(dir: &Path) -> Vec<String> {
     names
 }
 
-/// The xorshift64 generator's state for seed 1; any odd value works.
+/// Multiplies a seed into the xorshift64 generator's first state (2^64
+/// divided by the golden ratio), so seeds next to each other start far apart.
 const GOLDEN_RATIO_64: u64 = 0x9E37_79B9_7F4A_7C15;
 /// The first byte of every MPEG transport stream packet.
 const TS_SYNC_BYTE: u8 = 0x47;
@@ -79,7 +80,7 @@ pub fn test_data(len: usize) -> Vec<u8> {
 /// that serve several files and must tell them apart.
 #[must_use]
 pub fn seeded_data(seed: u64, len: usize) -> Vec<u8> {
-    // The xorshift64 generator; its state must not be zero, which `| 1` ensures.
+    // The xorshift64 generator. Its state must never be zero, which `| 1` ensures.
     let mut x = seed.wrapping_mul(GOLDEN_RATIO_64) | 1;
     (0..len)
         .map(|_| {

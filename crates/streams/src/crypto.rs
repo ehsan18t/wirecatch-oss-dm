@@ -127,7 +127,9 @@ mod tests {
         // Lengths around the chunk size, so the held-back block and the
         // padding land on every side of a chunk boundary.
         for len in [0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 49, 64, 100, 4096] {
-            let plain: Vec<u8> = (0..len).map(|i| (i * 31 + 7) as u8).collect();
+            let plain: Vec<u8> = (0..len)
+                .map(|i| u8::try_from((i * 31 + 7) % 256).unwrap())
+                .collect();
             let data = encrypt(&plain, &key, &iv);
             for chunk in [16, 32, 48, CHUNK] {
                 assert_eq!(
@@ -157,7 +159,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        let iv: [u8; 16] = core::array::from_fn(|i| i as u8);
+        let iv = 0x0001_0203_0405_0607_0809_0a0b_0c0d_0e0f_u128.to_be_bytes();
         let plain: [u8; 16] = [
             0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93,
             0x17, 0x2a,

@@ -8,10 +8,12 @@
 //! information are inherited from the period and adaptation set as the
 //! standard says. Several periods are reported as unsupported.
 
+use std::fmt::Write as _;
 use std::ops::Range;
 
 use roxmltree::{Document, Node};
 use url::Url;
+use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 
 use crate::plan::{MAX_SEGMENTS, Piece, is_audio_codec, is_video_codec, too_many_segments};
 
@@ -101,7 +103,7 @@ struct Entry {
 }
 
 impl Template {
-    fn merge(&mut self, node: Node) {
+    fn merge(&mut self, node: Node<'_, '_>) {
         let text = |name| node.attribute(name).map(str::to_string);
         let number = |name| node.attribute(name).and_then(|v| v.trim().parse().ok());
         self.media = text("media").or(self.media.take());
@@ -163,6 +165,13 @@ impl Segments {
     }
 }
 
+/// A period of `seconds` (finite and not negative, as [`iso_duration`] gives)
+/// in ticks of `timescale` per second, rounded. A period too long to count in
+/// ticks is counted as the most there can be, so its segments are too many.
+fn period_ticks(seconds: f64, timescale: u64) -> u64 {
+    f64_to_u64((seconds * approx_f64(timescale)).round()).unwrap_or(u64::MAX)
+}
+
 fn expand(
     template: &Template,
     base: &Url,
@@ -184,7 +193,7 @@ fn expand(
         pieces.push(piece);
     }
     let offset = template.presentation_time_offset.unwrap_or(0);
-    let period_ticks = period.map(|p| (p * timescale as f64).round() as u64);
+    let period_ticks = period.map(|seconds| period_ticks(seconds, timescale));
     let mut push = |number: u64, time: u64| -> Result<(), String> {
         if pieces.len() as u64 > MAX_SEGMENTS {
             return Err(too_many_segments());
@@ -205,8 +214,10 @@ fn expand(
             if entry.d == 0 {
                 return Err("a segment timeline entry has no duration".into());
             }
-            let count = if entry.r >= 0 {
-                entry.r as u64 + 1
+            // A negative repeat count means "until the next entry's time, or
+            // the end of the period".
+            let count = if let Ok(repeats) = u64::try_from(entry.r) {
+                repeats + 1
             } else {
                 let end = timeline
                     .get(i + 1)
@@ -302,7 +313,8 @@ pub(crate) fn substitute(
                     })
                     .filter(|w| *w <= 32)
                     .ok_or_else(|| format!("${identifier}$ has a width it cannot use"))?;
-                out.push_str(&format!("{value:0width$}"));
+                // Writing to a `String` cannot fail.
+                let _ = write!(out, "{value:0width$}");
             }
         }
     }
@@ -323,21 +335,12 @@ pub(crate) fn parse(text: &str, base: &Url) -> Result<Mpd, String> {
         .attribute("mediaPresentationDuration")
         .and_then(iso_duration);
     let mpd_base = base_url(base, root);
-    let periods: Vec<Node> = children(root, "Period").collect();
+    let periods: Vec<Node<'_, '_>> = children(root, "Period").collect();
     let Some(period) = periods.first().copied() else {
         return Err("it has no periods".into());
     };
     let period_base = base_url(&mpd_base, period);
-    let period_length = period
-        .attribute("duration")
-        .and_then(iso_duration)
-        .or_else(|| {
-            let start = period
-                .attribute("start")
-                .and_then(iso_duration)
-                .unwrap_or(0.0);
-            duration.map(|d| (d - start).max(0.0))
-        });
+    let period_length = period_length(period, duration);
 
     let mut reps = Vec::new();
     for set in children(period, "AdaptationSet") {
@@ -398,16 +401,31 @@ pub(crate) fn parse(text: &str, base: &Url) -> Result<Mpd, String> {
     })
 }
 
+/// How long `period` lasts, in seconds: its own `duration`, or what the
+/// presentation's `duration` leaves after the period's `start`.
+fn period_length(period: Node<'_, '_>, presentation: Option<f64>) -> Option<f64> {
+    period
+        .attribute("duration")
+        .and_then(iso_duration)
+        .or_else(|| {
+            let start = period
+                .attribute("start")
+                .and_then(iso_duration)
+                .unwrap_or(0.0);
+            presentation.map(|d| (d - start).max(0.0))
+        })
+}
+
 /// Finds a representation's segment information on its own level, its
 /// adaptation set's or its period's (`levels` goes from outer to inner).
 fn segments(
-    levels: [Node; 3],
+    levels: [Node<'_, '_>; 3],
     base: &Url,
     id: &str,
     bandwidth: u64,
     period: Option<f64>,
 ) -> Result<Segments, String> {
-    let templates: Vec<Node> = levels
+    let templates: Vec<Node<'_, '_>> = levels
         .iter()
         .filter_map(|l| child(*l, "SegmentTemplate"))
         .collect();
@@ -425,7 +443,7 @@ fn segments(
         });
     }
 
-    let lists: Vec<Node> = levels
+    let lists: Vec<Node<'_, '_>> = levels
         .iter()
         .filter_map(|l| child(*l, "SegmentList"))
         .collect();
@@ -595,7 +613,7 @@ fn byte_range(value: &str) -> Result<Range<u64>, String> {
     Ok(first..end)
 }
 
-fn set_kind(set: Node, first: Option<Node>) -> Option<Kind> {
+fn set_kind(set: Node<'_, '_>, first: Option<Node<'_, '_>>) -> Option<Kind> {
     match set.attribute("contentType") {
         Some("video") => return Some(Kind::Video),
         Some("audio") => return Some(Kind::Audio),
@@ -630,7 +648,7 @@ fn set_kind(set: Node, first: Option<Node>) -> Option<Kind> {
     }
 }
 
-fn is_trick_mode(set: Node) -> bool {
+fn is_trick_mode(set: Node<'_, '_>) -> bool {
     children(set, "EssentialProperty")
         .chain(children(set, "SupplementalProperty"))
         .any(|p| {
@@ -640,7 +658,7 @@ fn is_trick_mode(set: Node) -> bool {
 }
 
 /// The DRM a node's `ContentProtection` elements name, if it has any.
-fn protection(node: Node) -> Option<String> {
+fn protection(node: Node<'_, '_>) -> Option<String> {
     let schemes: Vec<String> = children(node, "ContentProtection")
         .map(|p| {
             p.attribute("schemeIdUri")
@@ -667,7 +685,7 @@ fn protection(node: Node) -> Option<String> {
     Some(name.to_string())
 }
 
-fn base_url(parent: &Url, node: Node) -> Url {
+fn base_url(parent: &Url, node: Node<'_, '_>) -> Url {
     child(node, "BaseURL")
         .and_then(|b| b.text())
         .and_then(|t| parent.join(t.trim()).ok())
@@ -879,8 +897,8 @@ mod tests {
     #[test]
     fn sidx_boxes_give_subsegment_ranges() {
         let mut sidx = Vec::new();
-        let body_len = 4 + 4 + 4 + 4 + 4 + 2 + 2 + 2 * 12;
-        sidx.extend_from_slice(&(8 + body_len as u32).to_be_bytes());
+        let body_len: u32 = 4 + 4 + 4 + 4 + 4 + 2 + 2 + 2 * 12;
+        sidx.extend_from_slice(&(8 + body_len).to_be_bytes());
         sidx.extend_from_slice(b"sidx");
         sidx.extend_from_slice(&[0, 0, 0, 0]); // version 0, flags
         sidx.extend_from_slice(&1u32.to_be_bytes()); // reference_ID
@@ -955,6 +973,32 @@ mod tests {
                 .unwrap_err()
                 .contains("byte range")
         );
+    }
+
+    #[test]
+    fn period_lengths_are_counted_in_ticks() {
+        assert_eq!(period_ticks(9.6, 1000), 9600);
+        assert_eq!(period_ticks(0.0, 48_000), 0);
+        // Rounded to the nearest tick, not cut off.
+        assert_eq!(period_ticks(1.000_01, 90_000), 90_001);
+        assert_eq!(period_ticks(1e30, 1000), u64::MAX);
+        assert_eq!(period_ticks(f64::MAX, u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn periods_too_long_to_count_have_too_many_segments() {
+        let huge = format!("PT{}S", "9".repeat(40));
+        for segments in [
+            r#"<SegmentTemplate media="$Number$" timescale="1000" duration="1"/>"#,
+            r#"<SegmentTemplate media="$Time$"><SegmentTimeline><S d="1" r="-1"/></SegmentTimeline></SegmentTemplate>"#,
+        ] {
+            let text = format!(
+                r#"<MPD mediaPresentationDuration="{huge}"><Period><AdaptationSet mimeType="video/mp4"><Representation id="v">{segments}</Representation></AdaptationSet></Period></MPD>"#
+            );
+            let mpd = parse(&text, &base()).unwrap();
+            let error = mpd.reps[0].segments.pieces().unwrap_err();
+            assert_eq!(error, too_many_segments(), "{segments}");
+        }
     }
 
     #[test]

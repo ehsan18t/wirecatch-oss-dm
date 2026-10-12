@@ -155,7 +155,7 @@ impl From<wirecatch_engine::Error> for Error {
 
 impl Error {
     /// For a background task that panicked: a bug, reported as such.
-    pub(crate) fn task(error: tokio::task::JoinError) -> Self {
+    pub(crate) fn task(error: &tokio::task::JoinError) -> Self {
         Error::Request(wirecatch_engine::Error::Internal(format!(
             "a background task failed: {error}"
         )))

@@ -1,3 +1,6 @@
+//! HLS downloads end to end, from a local server.
+
+use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,13 +9,17 @@ use aes::Aes128;
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockEncryptMut, KeyIvInit};
 use wirecatch_engine::header::{COOKIE, HeaderValue};
+use wirecatch_engine::numeric::approx_f64;
 use wirecatch_engine::{CancellationToken, DownloadOptions, RateLimiter};
 use wirecatch_streams::{
     Choice, Error, Outcome, PrivateNetwork, Stage, StreamKind, StreamProgress, StreamRequest,
     download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{fresh_dir, ts_segment};
+use wirecatch_test_support::{TestResult, fresh_dir, ts_segment};
+
+/// The bytes of a playlist's segments, in order.
+type Segments = Vec<Vec<u8>>;
 
 const MPEGURL: &str = "application/vnd.apple.mpegurl";
 
@@ -47,23 +54,29 @@ fn completed(outcome: Outcome) -> (std::path::PathBuf, u64) {
 
 /// Serves a media playlist of `count` segments under `prefix`, returning
 /// the segments' bytes.
-fn media_playlist(server: &FileServer, prefix: &str, count: usize, seed: u64) -> Vec<Vec<u8>> {
+fn media_playlist(
+    server: &FileServer,
+    prefix: &str,
+    count: usize,
+    seed: u64,
+) -> TestResult<Segments> {
     let mut text = String::from("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n");
     let mut segments = Vec::new();
     for i in 0..count {
         let data = ts_segment(seed * 1000 + i as u64, 3000 + i * 17);
         server.put(&format!("{prefix}/seg{i}.ts"), data.clone());
-        text.push_str(&format!("#EXTINF:4.0,\nseg{i}.ts\n"));
+        write!(text, "#EXTINF:4.0,\nseg{i}.ts\n")?;
         segments.push(data);
     }
     text.push_str("#EXT-X-ENDLIST\n");
     server.put_typed(&format!("{prefix}/index.m3u8"), text, MPEGURL);
-    segments
+    Ok(segments)
 }
 
-fn master(server: &FileServer) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
-    let low = media_playlist(server, "low", 3, 1);
-    let high = media_playlist(server, "high", 3, 2);
+/// Serves a master playlist of two qualities, returning each one's segments.
+fn master(server: &FileServer) -> TestResult<(Segments, Segments)> {
+    let low = media_playlist(server, "low", 3, 1)?;
+    let high = media_playlist(server, "high", 3, 2)?;
     server.put_typed(
         "master.m3u8",
         "#EXTM3U\n\
@@ -74,14 +87,14 @@ fn master(server: &FileServer) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
          #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"s\",LANGUAGE=\"de\",NAME=\"Deutsch\",URI=\"subs/de.m3u8\"\n",
         MPEGURL,
     );
-    (low, high)
+    Ok((low, high))
 }
 
 /// Track ids were list positions, and core keeps the chosen id to continue after a restart. A refreshed master playlist that lists its variants in another order then silently gave another quality.
 #[tokio::test]
 async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_order() {
     let server = FileServer::start().await;
-    let (low, _high) = master(&server);
+    let (low, _high) = master(&server).unwrap();
     let info = inspect(
         &server.url("master.m3u8"),
         &options(),
@@ -122,7 +135,7 @@ async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_ord
 #[tokio::test]
 async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     let server = FileServer::start().await;
-    let (low, high) = master(&server);
+    let (low, high) = master(&server).unwrap();
 
     let info = inspect(
         &server.url("master.m3u8"),
@@ -175,9 +188,7 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
 }
 
 fn encrypt(plain: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
-    cbc::Encryptor::<Aes128>::new_from_slices(key, iv)
-        .unwrap()
-        .encrypt_padded_vec_mut::<Pkcs7>(plain)
+    cbc::Encryptor::<Aes128>::new(key.into(), iv.into()).encrypt_padded_vec_mut::<Pkcs7>(plain)
 }
 
 #[tokio::test]
@@ -185,11 +196,11 @@ async fn aes_128_segments_are_decrypted_with_explicit_and_sequence_ivs() {
     let server = FileServer::start().await;
     let key1: [u8; 16] = *b"0123456789abcdef";
     let key2: [u8; 16] = *b"fedcba9876543210";
-    let explicit: [u8; 16] = core::array::from_fn(|i| 0xA0 + i as u8);
+    let explicit = 0xa0a1_a2a3_a4a5_a6a7_a8a9_aaab_acad_aeaf_u128.to_be_bytes();
     server.put("keys/1", key1.to_vec());
     server.put("keys/2", key2.to_vec());
-    let plain: Vec<Vec<u8>> = (0..5)
-        .map(|i| ts_segment(50 + i, 1000 + 333 * i as usize))
+    let plain: Vec<Vec<u8>> = (0..5u16)
+        .map(|i| ts_segment(50 + u64::from(i), 1000 + 333 * usize::from(i)))
         .collect();
     // Media sequence 40: segments 0 and 1 use IVs 40 and 41; 2 and 3 use the
     // explicit IV with the second key; 4 is clear.
@@ -321,7 +332,7 @@ async fn byte_ranges_and_init_sections_rebuild_the_file() {
 #[tokio::test]
 async fn parallel_downloads_join_in_playlist_order() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "many", 40, 3);
+    let segments = media_playlist(&server, "many", 40, 3).unwrap();
     // Uneven answer times, so segments finish out of order.
     for i in (0..40).step_by(3) {
         server.delay(&format!("many/seg{i}.ts"), Duration::from_millis(60));
@@ -346,7 +357,7 @@ async fn parallel_downloads_join_in_playlist_order() {
 #[tokio::test]
 async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "r", 30, 4);
+    let segments = media_playlist(&server, "r", 30, 4).unwrap();
     for i in 0..30 {
         server.delay(&format!("r/seg{i}.ts"), Duration::from_millis(40));
     }
@@ -381,7 +392,7 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     assert_eq!(std::fs::read(path).unwrap(), segments.concat());
     let again: Vec<_> = server.seen()[before..]
         .iter()
-        .filter(|s| s.path.ends_with(".ts"))
+        .filter(|s| s.has_extension("ts"))
         .map(|s| s.path.clone())
         .collect();
     assert_eq!(again.len(), left, "only the missing segments: {again:?}");
@@ -395,14 +406,14 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
 #[tokio::test]
 async fn resuming_with_a_refreshed_link_keeps_the_segments() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "t", 30, 5);
+    let segments = media_playlist(&server, "t", 30, 5).unwrap();
     for i in 0..30 {
         server.delay(&format!("t/seg{i}.ts"), Duration::from_millis(40));
     }
     let signed = |token: &str| {
         let mut text = String::from("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n");
         for i in 0..30 {
-            text.push_str(&format!("#EXTINF:4.0,\nseg{i}.ts?token={token}\n"));
+            write!(text, "#EXTINF:4.0,\nseg{i}.ts?token={token}\n").unwrap();
         }
         text.push_str("#EXT-X-ENDLIST\n");
         text
@@ -439,7 +450,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
     assert_eq!(std::fs::read(path).unwrap(), segments.concat());
     let fetched = server.seen()[before..]
         .iter()
-        .filter(|s| s.path.ends_with(".ts"))
+        .filter(|s| s.has_extension("ts"))
         .count();
     assert_eq!(fetched, left, "only the missing segments are fetched again");
 }
@@ -447,7 +458,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
 #[tokio::test]
 async fn resuming_checks_segment_sizes() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "s", 4, 5);
+    let segments = media_playlist(&server, "s", 4, 5).unwrap();
     let dir = fresh_dir("hls-sizes");
     let output = dir.join("v.ts");
     // Pause while the last segment is still on its way, leaving three finished.
@@ -476,7 +487,7 @@ async fn resuming_checks_segment_sizes() {
     assert_eq!(std::fs::read(path).unwrap(), segments.concat());
     let mut again: Vec<_> = server.seen()[before..]
         .iter()
-        .filter(|s| s.path.ends_with(".ts"))
+        .filter(|s| s.has_extension("ts"))
         .map(|s| s.path.clone())
         .collect();
     again.sort();
@@ -520,15 +531,17 @@ async fn credentials_stay_with_the_playlist_origin() {
     cdn.put("key", key.to_vec());
     let plain = [ts_segment(1, 900), ts_segment(2, 900)];
     let mut text = String::from("#EXTM3U\n");
-    text.push_str(&format!(
-        "#EXT-X-KEY:METHOD=AES-128,URI=\"{}\",IV=0x01\n",
+    writeln!(
+        text,
+        "#EXT-X-KEY:METHOD=AES-128,URI=\"{}\",IV=0x01",
         cdn.url("key")
-    ));
+    )
+    .unwrap();
     for (i, p) in plain.iter().enumerate() {
         let mut iv = [0u8; 16];
         iv[15] = 1;
         cdn.put(&format!("seg{i}.ts"), encrypt(p, &key, &iv));
-        text.push_str(&format!("#EXTINF:2,\n{}\n", cdn.url(&format!("seg{i}.ts"))));
+        write!(text, "#EXTINF:2,\n{}\n", cdn.url(&format!("seg{i}.ts"))).unwrap();
     }
     text.push_str("#EXT-X-ENDLIST\n");
     site.put_typed("watch/index.m3u8", text, MPEGURL);
@@ -552,7 +565,7 @@ async fn credentials_stay_with_the_playlist_origin() {
 #[tokio::test]
 async fn a_failing_segment_is_retried_and_then_reported_clearly() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "f", 5, 6);
+    let segments = media_playlist(&server, "f", 5, 6).unwrap();
     server.fail("f/seg2.ts", 2, 503);
     let dir = fresh_dir("hls-fail");
     let (path, _) = completed(
@@ -599,8 +612,8 @@ async fn a_failing_segment_is_retried_and_then_reported_clearly() {
 #[tokio::test]
 async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
     let server = FileServer::start().await;
-    media_playlist(&server, "v", 2, 7);
-    media_playlist(&server, "a", 2, 8);
+    media_playlist(&server, "v", 2, 7).unwrap();
+    media_playlist(&server, "a", 2, 8).unwrap();
     server.put_typed(
         "av.m3u8",
         "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",LANGUAGE=\"en\",DEFAULT=YES,URI=\"a/index.m3u8\"\n\
@@ -621,7 +634,7 @@ async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
         error.to_string(),
         "Joining video and audio needs the ffmpeg add-on. Install it and try again."
     );
-    assert!(!server.seen().iter().any(|s| s.path.ends_with(".ts")));
+    assert!(!server.seen().iter().any(|s| s.has_extension("ts")));
 
     // Video alone, leaving the separate audio out, works without ffmpeg.
     let mut req = request(&server, "av.m3u8", &dir.join("v.mp4"));
@@ -701,7 +714,7 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
 #[tokio::test]
 async fn the_extension_is_known_in_advance() {
     let server = FileServer::start().await;
-    master(&server);
+    master(&server).unwrap();
     let info = inspect(
         &server.url("master.m3u8"),
         &options(),
@@ -744,7 +757,7 @@ async fn the_extension_is_known_in_advance() {
 #[tokio::test]
 async fn a_changed_extension_never_replaces_another_file() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "p", 2, 9);
+    let segments = media_playlist(&server, "p", 2, 9).unwrap();
     let dir = fresh_dir("hls-no-overwrite");
     // The caller asked for .mp4; without ffmpeg the result is .ts, and a
     // different file already has that name.
@@ -822,7 +835,7 @@ async fn streams_from_the_internet_cannot_reach_the_local_network() {
 #[tokio::test]
 async fn no_more_than_the_configured_connections_are_used() {
     let server = FileServer::start().await;
-    let segments = media_playlist(&server, "c", 12, 11);
+    let segments = media_playlist(&server, "c", 12, 11).unwrap();
     // Slow answers keep every connection busy, so the limit is reached.
     for i in 0..12 {
         server.delay(&format!("c/seg{i}.ts"), Duration::from_millis(80));
@@ -843,34 +856,24 @@ async fn no_more_than_the_configured_connections_are_used() {
 async fn speed_limits_apply_to_streams() {
     let server = FileServer::start().await;
     // Ten segments of 30 kB: 300 kB in all.
-    let mut text = String::from(
-        "#EXTM3U
-",
-    );
+    let mut text = String::from("#EXTM3U\n");
     let mut segments = Vec::new();
     for i in 0..10 {
         let data = ts_segment(500 + i, 30_000);
         server.put(&format!("r/{i}.ts"), data.clone());
-        text.push_str(&format!(
-            "#EXTINF:2,
-{i}.ts
-"
-        ));
+        write!(text, "#EXTINF:2,\n{i}.ts\n").unwrap();
         segments.push(data);
     }
-    text.push_str(
-        "#EXT-X-ENDLIST
-",
-    );
+    text.push_str("#EXT-X-ENDLIST\n");
     server.put_typed("r/index.m3u8", text, MPEGURL);
-    let total: usize = segments.iter().map(Vec::len).sum();
+    let total = u64::try_from(segments.iter().map(Vec::len).sum::<usize>()).unwrap();
     let dir = fresh_dir("hls-rate");
 
     let mut req = request(&server, "r/index.m3u8", &dir.join("fast.ts"));
     req.options.connections = 4;
     let start = std::time::Instant::now();
     completed(run(req.clone()).await.unwrap());
-    let unlimited = start.elapsed();
+    let full_speed = start.elapsed();
 
     // 200 kB/s shared by all four connections: 300 kB takes 1.5 s, minus at
     // most the limiter's quarter-second burst.
@@ -879,16 +882,16 @@ async fn speed_limits_apply_to_streams() {
     req.options.rate_limiters = vec![limiter];
     let start = std::time::Instant::now();
     let (path, _) = completed(run(req).await.unwrap());
-    let limited = start.elapsed();
+    let capped = start.elapsed();
     assert_eq!(std::fs::read(path).unwrap(), segments.concat());
-    let expected = Duration::from_secs_f64(total as f64 / 200_000.0);
+    let expected = Duration::from_secs_f64(approx_f64(total) / 200_000.0);
     assert!(
-        limited >= expected.mul_f64(0.75),
-        "{total} bytes took {limited:?} at 200 kB/s"
+        capped >= expected.mul_f64(0.75),
+        "{total} bytes took {capped:?} at 200 kB/s"
     );
     assert!(
-        unlimited < expected / 2,
-        "without a limit it took {unlimited:?}"
+        full_speed < expected / 2,
+        "without a limit it took {full_speed:?}"
     );
 }
 

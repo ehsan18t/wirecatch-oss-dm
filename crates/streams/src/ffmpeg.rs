@@ -76,7 +76,7 @@ pub enum InputFormat {
     Mp4,
     /// Matroska (`.mkv`).
     Matroska,
-    /// WebM, the Matroska flavor browsers play (`.webm`).
+    /// `WebM`, the Matroska flavor browsers play (`.webm`).
     WebM,
     /// Raw AAC audio in ADTS frames (`.aac`), as in HLS packed audio.
     Aac,
@@ -139,6 +139,7 @@ impl InputFormat {
 
     /// The name of the ffmpeg demuxer that reads this format (as in
     /// `ffmpeg -demuxers`).
+    #[must_use]
     pub fn demuxer(self) -> &'static str {
         match self {
             InputFormat::MpegTs => "mpegts",
@@ -152,6 +153,7 @@ impl InputFormat {
     }
 
     /// The usual file extension, without the dot.
+    #[must_use]
     pub fn extension(self) -> &'static str {
         match self {
             InputFormat::MpegTs => "ts",
@@ -226,7 +228,7 @@ fn read_up_to(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
     Ok(len)
 }
 
-/// The full length of the ID3v2 tag `head` starts with, if it starts with one.
+/// The full length of the `ID3v2` tag `head` starts with, if it starts with one.
 fn id3_len(head: &[u8]) -> Option<u64> {
     let header = head.get(..10)?;
     if !header.starts_with(b"ID3") || header[6..10].iter().any(|b| b & 0x80 != 0) {
@@ -353,7 +355,7 @@ pub(crate) async fn run(
         let both = async { tokio::join!(child.wait(), read) };
         tokio::select! {
             biased;
-            _ = cancel.cancelled() => None,
+            () = cancel.cancelled() => None,
             done = both => Some(done),
         }
     };

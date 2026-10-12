@@ -106,7 +106,7 @@ pub(crate) struct Plan {
     pub tracks: Vec<Track>,
 }
 
-/// Query parameters that sign a link or say when it expires, compared without case. Their values change every time a link is refreshed while the content stays the same, so the fingerprint keeps only their names. Covers CloudFront, Akamai, S3, Google Cloud Storage, nginx `secure_link` and the common generic names.
+/// Query parameters that sign a link or say when it expires, compared without case. Their values change every time a link is refreshed while the content stays the same, so the fingerprint keeps only their names. Covers `CloudFront`, Akamai, S3, Google Cloud Storage, nginx `secure_link` and the common generic names.
 const SIGNING_PARAMETERS: &[&str] = &[
     "token",
     "__token__",
@@ -169,7 +169,7 @@ impl Plan {
                 if let Some(encryption) = &piece.encryption {
                     hash.write(&encryption.iv);
                 }
-                hash.write(&[piece.init as u8, 0xFF]);
+                hash.write(&[u8::from(piece.init), 0xFF]);
             }
         }
         hash.0
@@ -206,10 +206,10 @@ pub(crate) enum Source {
 impl Source {
     /// Fetches and reads the link the fetcher was made for.
     pub async fn load(fetcher: &Fetcher) -> Result<Self> {
-        let fetched = fetcher.get(fetcher.url(), None, MANIFEST_LIMIT).await?;
-        let url = fetched.url;
-        let text = String::from_utf8_lossy(&fetched.body);
-        match detect(&text, fetched.content_type.as_deref(), &url) {
+        let response = fetcher.get(fetcher.url(), None, MANIFEST_LIMIT).await?;
+        let url = response.url;
+        let text = String::from_utf8_lossy(&response.body);
+        match detect(&text, response.content_type.as_deref(), &url) {
             Some(StreamKind::Hls) => match hls::parse(&text, &url).map_err(Error::Manifest)? {
                 Playlist::Master(master) => Ok(Source::HlsMaster { url, master }),
                 Playlist::Media(media) => Ok(Source::HlsMedia { url, media }),
@@ -227,110 +227,9 @@ impl Source {
     /// whether the stream is live.
     pub async fn info(&self, fetcher: &Fetcher) -> Result<StreamInfo> {
         match self {
-            Source::HlsMaster { url, master } => {
-                let best = best_variant(master, |v| !v.audio_only())
-                    .or_else(|| best_variant(master, |_| true))
-                    .ok_or(Error::NothingChosen)?;
-                let media = media_playlist(fetcher, &master.variants[best].url).await?;
-                let format = hls_format(&media);
-                let variant_ids = track_id::variants(&master.variants);
-                let rendition_ids = track_id::renditions(&master.renditions);
-                Ok(StreamInfo {
-                    kind: StreamKind::Hls,
-                    url: url.clone(),
-                    duration: seconds(media.duration),
-                    live: !media.ended,
-                    video: master
-                        .variants
-                        .iter()
-                        .zip(variant_ids)
-                        .filter(|(v, _)| !v.audio_only())
-                        .map(|(v, id)| VideoTrack {
-                            id,
-                            width: v.resolution.map(|r| r.0),
-                            height: v.resolution.map(|r| r.1),
-                            bandwidth: v.bandwidth,
-                            codecs: v.codecs.clone(),
-                            frame_rate: v.frame_rate,
-                            format,
-                        })
-                        .collect(),
-                    audio: hls_audio(master, format),
-                    subtitles: master
-                        .renditions
-                        .iter()
-                        .zip(rendition_ids)
-                        .filter(|(r, _)| r.kind == RenditionKind::Subtitles)
-                        .map(|(r, id)| SubtitleTrack {
-                            id,
-                            language: r.language.clone(),
-                            name: r.name.clone(),
-                        })
-                        .collect(),
-                })
-            }
-            Source::HlsMedia { url, media } => Ok(StreamInfo {
-                kind: StreamKind::Hls,
-                url: url.clone(),
-                duration: seconds(media.duration),
-                live: !media.ended,
-                video: vec![VideoTrack {
-                    id: track_id::SINGLE.into(),
-                    width: None,
-                    height: None,
-                    bandwidth: None,
-                    codecs: None,
-                    frame_rate: None,
-                    format: hls_format(media),
-                }],
-                audio: Vec::new(),
-                subtitles: Vec::new(),
-            }),
-            Source::Dash { url, mpd } => {
-                let ids = track_id::representations(&mpd.reps);
-                let tracks = |kind: Kind| {
-                    mpd.reps
-                        .iter()
-                        .zip(ids.iter().cloned())
-                        .filter(move |(r, _)| r.kind == kind)
-                };
-                Ok(StreamInfo {
-                    kind: StreamKind::Dash,
-                    url: url.clone(),
-                    duration: mpd.duration.and_then(seconds),
-                    live: mpd.dynamic,
-                    video: tracks(Kind::Video)
-                        .map(|(r, id)| VideoTrack {
-                            id,
-                            width: r.width,
-                            height: r.height,
-                            bandwidth: r.bandwidth,
-                            codecs: r.codecs.clone(),
-                            frame_rate: r.frame_rate,
-                            format: dash_format(r),
-                        })
-                        .collect(),
-                    audio: tracks(Kind::Audio)
-                        .map(|(r, id)| AudioTrack {
-                            id,
-                            language: r.language.clone(),
-                            name: r.label.clone(),
-                            bandwidth: r.bandwidth,
-                            codecs: r.codecs.clone(),
-                            channels: r.channels.clone(),
-                            default: r.main,
-                            format: dash_format(r),
-                        })
-                        .collect(),
-                    subtitles: tracks(Kind::Text)
-                        .map(|(r, id)| SubtitleTrack {
-                            id,
-                            language: r.language.clone(),
-                            name: r.label.clone(),
-                        })
-                        .collect(),
-                })
-            }
+            Source::HlsMaster { url, master } => hls_master_info(fetcher, url, master).await,
+            Source::HlsMedia { url, media } => Ok(hls_media_info(url, media)),
+            Source::Dash { url, mpd } => Ok(dash_info(url, mpd)),
         }
     }
 
@@ -391,14 +290,20 @@ pub(crate) fn detect(text: &str, content_type: Option<&str>, url: &Url) -> Optio
     if content_type.contains("dash+xml") {
         return Some(StreamKind::Dash);
     }
-    let path = url.path().to_ascii_lowercase();
-    if path.ends_with(".m3u8") || path.ends_with(".m3u") {
+    let path = url.path();
+    if has_extension(path, "m3u8") || has_extension(path, "m3u") {
         Some(StreamKind::Hls)
-    } else if path.ends_with(".mpd") {
+    } else if has_extension(path, "mpd") {
         Some(StreamKind::Dash)
     } else {
         None
     }
+}
+
+/// Whether `path` ends in `.` and `extension`, in any case.
+fn has_extension(path: &str, extension: &str) -> bool {
+    path.rsplit_once('.')
+        .is_some_and(|(_, ending)| ending.eq_ignore_ascii_case(extension))
 }
 
 /// A duration read from a playlist or manifest, or `None` when it is missing, zero, negative or too large to be real. The value comes from the network, so it must never panic: `Duration::from_secs_f64` does above about 1.8e19 seconds, and release builds abort on panic.
@@ -528,11 +433,11 @@ mod track_id {
 
     /// Adds `~<suffix>` to every id that several entries share; `suffix` gets the entry's index and its number among them, in list order, and `None` keeps the id.
     fn suffix_shared(
-        ids: Vec<String>,
+        ids: &[String],
         suffix: impl Fn(usize, usize) -> Option<String>,
     ) -> Vec<String> {
         let mut counts: HashMap<&str, usize> = HashMap::new();
-        for id in &ids {
+        for id in ids {
             *counts.entry(id).or_default() += 1;
         }
         let mut seen: HashMap<&str, usize> = HashMap::new();
@@ -551,14 +456,14 @@ mod track_id {
     }
 
     /// Tracks that are the same in every respect are told apart by their number among them, in list order: the one case where a reordered list can still swap them.
-    fn numbered(ids: Vec<String>) -> Vec<String> {
+    fn numbered(ids: &[String]) -> Vec<String> {
         suffix_shared(ids, |_, n| Some((n + 1).to_string()))
     }
 
     /// Every variant's id: a hash of its playlist link, bandwidth, picture size, frame rate, codecs and audio group.
     pub(super) fn variants(variants: &[hls::Variant]) -> Vec<String> {
         numbered(
-            variants
+            &variants
                 .iter()
                 .map(|v| {
                     let size = text(v.resolution.map(|(w, h)| format!("{w}x{h}")));
@@ -572,7 +477,7 @@ mod track_id {
                     ]);
                     format!("{VARIANT}-{id}")
                 })
-                .collect(),
+                .collect::<Vec<_>>(),
         )
     }
 
@@ -588,7 +493,7 @@ mod track_id {
     /// Every rendition's id: a hash of its kind, group, language, name, channels and playlist link.
     pub(super) fn renditions(renditions: &[hls::Rendition]) -> Vec<String> {
         numbered(
-            renditions
+            &renditions
                 .iter()
                 .map(|r| {
                     let id = hash(&[
@@ -601,7 +506,7 @@ mod track_id {
                     ]);
                     format!("{RENDITION}-{id}")
                 })
-                .collect(),
+                .collect::<Vec<_>>(),
         )
     }
 
@@ -630,7 +535,7 @@ mod track_id {
 
     /// Every representation's id: its own `id`, which the standard requires to be unique and manifests keep stable, or a hash of its attributes when a manifest leaves the id out. Manifests that repeat an id (two audio sets numbered from the same start, say) get the attributes added to tell those apart.
     pub(super) fn representations(reps: &[dash::Rep]) -> Vec<String> {
-        let ids = reps
+        let ids: Vec<String> = reps
             .iter()
             .map(|r| {
                 if r.id.is_empty() {
@@ -640,10 +545,123 @@ mod track_id {
                 }
             })
             .collect();
-        let ids = suffix_shared(ids, |i, _| {
+        let ids = suffix_shared(&ids, |i, _| {
             (!reps[i].id.is_empty()).then(|| attributes(&reps[i]))
         });
-        numbered(ids)
+        numbered(&ids)
+    }
+}
+
+/// What an HLS master playlist offers; its best quality's playlist is read
+/// for the duration and to tell whether the stream is live.
+async fn hls_master_info(fetcher: &Fetcher, url: &Url, master: &Master) -> Result<StreamInfo> {
+    let best = best_variant(master, |v| !v.audio_only())
+        .or_else(|| best_variant(master, |_| true))
+        .ok_or(Error::NothingChosen)?;
+    let media = media_playlist(fetcher, &master.variants[best].url).await?;
+    let format = hls_format(&media);
+    let variant_ids = track_id::variants(&master.variants);
+    let rendition_ids = track_id::renditions(&master.renditions);
+    Ok(StreamInfo {
+        kind: StreamKind::Hls,
+        url: url.clone(),
+        duration: seconds(media.duration),
+        live: !media.ended,
+        video: master
+            .variants
+            .iter()
+            .zip(variant_ids)
+            .filter(|(v, _)| !v.audio_only())
+            .map(|(v, id)| VideoTrack {
+                id,
+                width: v.resolution.map(|r| r.0),
+                height: v.resolution.map(|r| r.1),
+                bandwidth: v.bandwidth,
+                codecs: v.codecs.clone(),
+                frame_rate: v.frame_rate,
+                format,
+            })
+            .collect(),
+        audio: hls_audio(master, format),
+        subtitles: master
+            .renditions
+            .iter()
+            .zip(rendition_ids)
+            .filter(|(r, _)| r.kind == RenditionKind::Subtitles)
+            .map(|(r, id)| SubtitleTrack {
+                id,
+                language: r.language.clone(),
+                name: r.name.clone(),
+            })
+            .collect(),
+    })
+}
+
+/// What an HLS media playlist offers: one track.
+fn hls_media_info(url: &Url, media: &Media) -> StreamInfo {
+    StreamInfo {
+        kind: StreamKind::Hls,
+        url: url.clone(),
+        duration: seconds(media.duration),
+        live: !media.ended,
+        video: vec![VideoTrack {
+            id: track_id::SINGLE.into(),
+            width: None,
+            height: None,
+            bandwidth: None,
+            codecs: None,
+            frame_rate: None,
+            format: hls_format(media),
+        }],
+        audio: Vec::new(),
+        subtitles: Vec::new(),
+    }
+}
+
+/// What a DASH manifest offers.
+fn dash_info(url: &Url, mpd: &Mpd) -> StreamInfo {
+    let ids = track_id::representations(&mpd.reps);
+    let tracks = |kind: Kind| {
+        mpd.reps
+            .iter()
+            .zip(ids.iter().cloned())
+            .filter(move |(r, _)| r.kind == kind)
+    };
+    StreamInfo {
+        kind: StreamKind::Dash,
+        url: url.clone(),
+        duration: mpd.duration.and_then(seconds),
+        live: mpd.dynamic,
+        video: tracks(Kind::Video)
+            .map(|(r, id)| VideoTrack {
+                id,
+                width: r.width,
+                height: r.height,
+                bandwidth: r.bandwidth,
+                codecs: r.codecs.clone(),
+                frame_rate: r.frame_rate,
+                format: dash_format(r),
+            })
+            .collect(),
+        audio: tracks(Kind::Audio)
+            .map(|(r, id)| AudioTrack {
+                id,
+                language: r.language.clone(),
+                name: r.label.clone(),
+                bandwidth: r.bandwidth,
+                codecs: r.codecs.clone(),
+                channels: r.channels.clone(),
+                default: r.main,
+                format: dash_format(r),
+            })
+            .collect(),
+        subtitles: tracks(Kind::Text)
+            .map(|(r, id)| SubtitleTrack {
+                id,
+                language: r.language.clone(),
+                name: r.label.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -657,17 +675,7 @@ async fn plan_hls(
         kind: "video",
         id: id.to_string(),
     };
-    let no_audio = |id: &str| Error::NoSuchTrack {
-        kind: "audio",
-        id: id.to_string(),
-    };
     let variant_ids = track_id::variants(&master.variants);
-    let rendition_ids = track_id::renditions(&master.renditions);
-    let variant_named = |id: &str, audio_only: bool| {
-        (0..master.variants.len())
-            .find(|&i| master.variants[i].audio_only() == audio_only && variant_ids[i] == id)
-    };
-
     let variant = match video {
         Choice::Skip => None,
         Choice::Auto => Some(
@@ -675,61 +683,11 @@ async fn plan_hls(
                 .or_else(|| best_variant(master, |_| true))
                 .ok_or(Error::NothingChosen)?,
         ),
-        Choice::Track(id) => Some(variant_named(id, false).ok_or_else(|| no_video(id))?),
-    };
-
-    // The audio as a playlist to fetch; `None` when there is no separate audio.
-    let audio_url: Option<(Url, Option<String>)> = match audio {
-        Choice::Skip => None,
         Choice::Track(id) => {
-            let rendition = master
-                .renditions
-                .iter()
-                .zip(&rendition_ids)
-                .find(|(r, rid)| r.kind == RenditionKind::Audio && *rid == id);
-            if let Some((rendition, _)) = rendition {
-                Some((rendition.url.clone().ok_or_else(|| no_audio(id))?, None))
-            } else {
-                let i = variant_named(id, true).ok_or_else(|| no_audio(id))?;
-                Some((
-                    master.variants[i].url.clone(),
-                    master.variants[i].codecs.clone(),
-                ))
-            }
+            Some(variant_named(master, &variant_ids, id, false).ok_or_else(|| no_video(id))?)
         }
-        Choice::Auto => match variant {
-            // The audio the chosen video is paired with, if it comes separately.
-            Some(v) => master.variants[v].audio_group.as_ref().and_then(|group| {
-                let in_group = |r: &&hls::Rendition| {
-                    r.kind == RenditionKind::Audio && &r.group == group && r.url.is_some()
-                };
-                let renditions: Vec<_> = master.renditions.iter().filter(in_group).collect();
-                renditions
-                    .iter()
-                    .find(|r| r.default)
-                    .or_else(|| renditions.iter().find(|r| r.autoselect))
-                    .or_else(|| renditions.first())
-                    .and_then(|r| r.url.clone())
-                    .map(|url| (url, None))
-            }),
-            // Audio only: the default rendition, else the best audio-only variant.
-            None => master
-                .renditions
-                .iter()
-                .filter(|r| r.kind == RenditionKind::Audio && r.url.is_some())
-                .max_by_key(|r| (r.default, r.autoselect))
-                .and_then(|r| r.url.clone())
-                .map(|url| (url, None))
-                .or_else(|| {
-                    best_variant(master, |v| v.audio_only()).map(|i| {
-                        (
-                            master.variants[i].url.clone(),
-                            master.variants[i].codecs.clone(),
-                        )
-                    })
-                }),
-        },
     };
+    let audio_url = hls_audio_source(master, &variant_ids, audio, variant)?;
 
     let video_fetch = async {
         match variant {
@@ -761,10 +719,85 @@ async fn plan_hls(
     Ok(Plan { tracks })
 }
 
+/// The index of the variant with id `id` among the variants with video, or
+/// with `audio_only` among the audio-only ones. `ids` are the variants' ids.
+fn variant_named(master: &Master, ids: &[String], id: &str, audio_only: bool) -> Option<usize> {
+    (0..master.variants.len())
+        .find(|&i| master.variants[i].audio_only() == audio_only && ids[i] == id)
+}
+
+/// The audio `audio` chooses, as a playlist to fetch with the codecs its
+/// variant names; `None` when there is no separate audio. `variant` is the
+/// chosen video variant and `variant_ids` the variants' ids.
+fn hls_audio_source(
+    master: &Master,
+    variant_ids: &[String],
+    audio: &Choice,
+    variant: Option<usize>,
+) -> Result<Option<(Url, Option<String>)>> {
+    let no_audio = |id: &str| Error::NoSuchTrack {
+        kind: "audio",
+        id: id.to_string(),
+    };
+    let audio_url = match audio {
+        Choice::Skip => None,
+        Choice::Track(id) => {
+            let rendition_ids = track_id::renditions(&master.renditions);
+            let rendition = master
+                .renditions
+                .iter()
+                .zip(&rendition_ids)
+                .find(|(r, rid)| r.kind == RenditionKind::Audio && *rid == id);
+            if let Some((rendition, _)) = rendition {
+                Some((rendition.url.clone().ok_or_else(|| no_audio(id))?, None))
+            } else {
+                let i = variant_named(master, variant_ids, id, true).ok_or_else(|| no_audio(id))?;
+                Some((
+                    master.variants[i].url.clone(),
+                    master.variants[i].codecs.clone(),
+                ))
+            }
+        }
+        Choice::Auto => match variant {
+            // The audio the chosen video is paired with, if it comes separately.
+            Some(v) => master.variants[v].audio_group.as_ref().and_then(|group| {
+                let in_group = |r: &&hls::Rendition| {
+                    r.kind == RenditionKind::Audio && &r.group == group && r.url.is_some()
+                };
+                let renditions: Vec<_> = master.renditions.iter().filter(in_group).collect();
+                renditions
+                    .iter()
+                    .find(|r| r.default)
+                    .or_else(|| renditions.iter().find(|r| r.autoselect))
+                    .or_else(|| renditions.first())
+                    .and_then(|r| r.url.clone())
+                    .map(|url| (url, None))
+            }),
+            // Audio only: the default rendition, else the best audio-only variant.
+            None => master
+                .renditions
+                .iter()
+                .filter(|r| r.kind == RenditionKind::Audio && r.url.is_some())
+                .max_by_key(|r| (r.default, r.autoselect))
+                .and_then(|r| r.url.clone())
+                .map(|url| (url, None))
+                .or_else(|| {
+                    best_variant(master, hls::Variant::audio_only).map(|i| {
+                        (
+                            master.variants[i].url.clone(),
+                            master.variants[i].codecs.clone(),
+                        )
+                    })
+                }),
+        },
+    };
+    Ok(audio_url)
+}
+
 async fn media_playlist(fetcher: &Fetcher, url: &Url) -> Result<Media> {
-    let fetched = fetcher.get(url, None, MANIFEST_LIMIT).await?;
-    let text = String::from_utf8_lossy(&fetched.body);
-    match hls::parse(&text, &fetched.url).map_err(Error::Manifest)? {
+    let response = fetcher.get(url, None, MANIFEST_LIMIT).await?;
+    let text = String::from_utf8_lossy(&response.body);
+    match hls::parse(&text, &response.url).map_err(Error::Manifest)? {
         Playlist::Media(media) => Ok(media),
         Playlist::Master(_) => Err(Error::Manifest(
             "a quality's playlist is itself a list of qualities".into(),
@@ -856,8 +889,8 @@ async fn plan_dash(fetcher: &Fetcher, mpd: Mpd, video: &Choice, audio: &Choice) 
 /// Reads a `SegmentBase` file's index to split it into ranges that download
 /// in parallel; a file whose index cannot be used is fetched whole.
 async fn indexed_pieces(fetcher: &Fetcher, url: Url, index: Range<u64>) -> Result<Vec<Piece>> {
-    let fetched = fetcher.get(&url, Some(index.clone()), INDEX_LIMIT).await?;
-    Ok(dash::sidx_pieces(&url, &index, &fetched.body)
+    let response = fetcher.get(&url, Some(index.clone()), INDEX_LIMIT).await?;
+    Ok(dash::sidx_pieces(&url, &index, &response.body)
         .unwrap_or_else(|| vec![Piece::plain(url, None)]))
 }
 
@@ -932,6 +965,15 @@ mod tests {
     }
 
     #[test]
+    fn extensions_are_compared_in_any_case() {
+        assert!(has_extension("/live/index.M3U8", "m3u8"));
+        assert!(has_extension("/a.b/manifest.mpd", "mpd"));
+        assert!(!has_extension("/a.mpd/manifest", "mpd"));
+        assert!(!has_extension("/video.m3u8x", "m3u8"));
+        assert!(!has_extension("/m3u8", "m3u8"));
+    }
+
+    #[test]
     fn codecs_are_classified() {
         assert!(is_video_codec("avc1.64001f"));
         assert!(is_audio_codec("mp4a.40.2"));
@@ -951,11 +993,11 @@ mod tests {
                 pieces: urls.iter().map(|u| piece(u)).collect(),
             }],
         };
-        let a = plan(&[
+        let signed = plan(&[
             "https://cdn1.example/s/1.ts?token=a",
             "https://cdn1.example/s/2.ts?token=a",
         ]);
-        let b = plan(&[
+        let refreshed = plan(&[
             "https://cdn2.example/s/1.ts?token=b",
             "https://cdn2.example/s/2.ts?token=b",
         ]);
@@ -963,21 +1005,21 @@ mod tests {
             "https://cdn2.example/s/1.ts?token=a",
             "https://cdn2.example/s/2.ts?token=a",
         ]);
-        let c = plan(&["https://cdn1.example/s/1.ts", "https://cdn1.example/s/3.ts"]);
+        let other_segments = plan(&["https://cdn1.example/s/1.ts", "https://cdn1.example/s/3.ts"]);
         // Segments told apart only by their query.
-        let d = plan(&[
+        let by_query = plan(&[
             "https://cdn1.example/seg?n=1",
             "https://cdn1.example/seg?n=2",
         ]);
-        let e = plan(&[
+        let other_query = plan(&[
             "https://cdn1.example/seg?n=1",
             "https://cdn1.example/seg?n=3",
         ]);
-        assert_eq!(a.fingerprint(), same_on_another_host.fingerprint());
+        assert_eq!(signed.fingerprint(), same_on_another_host.fingerprint());
         // A refreshed signed link: same segments, new tokens.
-        assert_eq!(a.fingerprint(), b.fingerprint());
-        assert_ne!(a.fingerprint(), c.fingerprint());
-        assert_ne!(d.fingerprint(), e.fingerprint());
+        assert_eq!(signed.fingerprint(), refreshed.fingerprint());
+        assert_ne!(signed.fingerprint(), other_segments.fingerprint());
+        assert_ne!(by_query.fingerprint(), other_query.fingerprint());
     }
 
     // Manifests that repeat a representation id (two audio sets numbered from the same start) gave

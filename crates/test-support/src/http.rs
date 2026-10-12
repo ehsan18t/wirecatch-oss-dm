@@ -112,6 +112,15 @@ impl Seen {
         self.headers.get(name).and_then(|v| v.to_str().ok())
     }
 
+    /// Whether the path asked for ends in `.` and `extension`, such as `ts`
+    /// for a stream segment; compared exactly, as servers compare paths.
+    #[must_use]
+    pub fn has_extension(&self, extension: &str) -> bool {
+        std::path::Path::new(&self.path)
+            .extension()
+            .is_some_and(|ending| ending == extension)
+    }
+
     /// The range asked for in the `Range` header, `[start, end)`; `end` is
     /// `None` for an open range such as `bytes=100-`.
     #[must_use]

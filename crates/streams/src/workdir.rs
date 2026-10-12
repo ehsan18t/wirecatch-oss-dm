@@ -60,13 +60,18 @@ impl WorkDir {
         if reuse && let Ok(text) = fs::read_to_string(dir.join(LOG)) {
             for line in text.lines() {
                 let fields: Vec<&str> = line.split(' ').collect();
-                let number = |i: usize| fields.get(i).and_then(|f| f.parse::<u64>().ok());
-                match (fields.first(), number(1), number(2), number(3)) {
-                    (Some(&"S"), Some(track), Some(index), Some(size)) if fields.len() == 4 => {
-                        done.insert((track as usize, index as usize), size);
+                match fields.as_slice() {
+                    ["S", track, index, size] => {
+                        if let (Ok(track), Ok(index), Ok(size)) =
+                            (track.parse(), index.parse(), size.parse())
+                        {
+                            done.insert((track, index), size);
+                        }
                     }
-                    (Some(&"J"), Some(track), Some(size), None) if fields.len() == 3 => {
-                        joined.insert(track as usize, size);
+                    ["J", track, size] => {
+                        if let (Ok(track), Ok(size)) = (track.parse(), size.parse()) {
+                            joined.insert(track, size);
+                        }
                     }
                     // A line cut short by a crash, or garbage: ignored.
                     _ => {}
@@ -135,7 +140,10 @@ impl WorkDir {
     }
 
     fn append(&self, line: &str) -> io::Result<()> {
-        let mut log = self.log.lock().unwrap_or_else(|p| p.into_inner());
+        let mut log = self
+            .log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match log.as_mut() {
             Some(log) => log.write_all(line.as_bytes()),
             None => Err(io::Error::other(
@@ -152,7 +160,10 @@ impl WorkDir {
     /// Removes the whole folder. Blocks on the file system.
     pub fn remove(&self) -> io::Result<()> {
         // The log must be closed first: Windows cannot delete an open file.
-        self.log.lock().unwrap_or_else(|p| p.into_inner()).take();
+        self.log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         remove_dir(&self.dir)
     }
 }
@@ -201,7 +212,7 @@ mod tests {
 
         let work = WorkDir::open(&out, 1, &[3, 1]).unwrap();
         let mut done: Vec<_> = work.done.keys().copied().collect();
-        done.sort();
+        done.sort_unstable();
         assert_eq!(done, [(0, 0), (1, 0)]);
         drop(work);
 

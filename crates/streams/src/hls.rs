@@ -119,9 +119,9 @@ fn parse_master(lines: &[&str], base: &Url) -> Result<Master, String> {
                 }
                 _ => {}
             }
-        } else if line.starts_with('#') {
-            continue;
-        } else if let Some(attrs) = pending.take() {
+        } else if !line.starts_with('#')
+            && let Some(attrs) = pending.take()
+        {
             master.variants.push(Variant {
                 url: join(base, line)?,
                 bandwidth: number(&attrs, "BANDWIDTH"),
@@ -181,122 +181,171 @@ struct Map {
 }
 
 fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
-    let mut media = Media::default();
-    let mut media_sequence = 0u64;
-    let mut index = 0u64;
-    let mut keys: Vec<Key> = Vec::new();
-    let mut map: Option<Map> = None;
-    let mut emitted_map: Option<(Url, Option<Range<u64>>)> = None;
-    let mut pending_range: Option<(u64, Option<u64>)> = None;
-    let mut previous_end: Option<(Url, u64)> = None;
-    let mut pending_duration = 0.0;
-
+    let mut reader = MediaReader::new(base);
     for &line in lines {
         if let Some((name, value)) = tag(line) {
-            match name {
-                "#EXT-X-MEDIA-SEQUENCE" => {
-                    media_sequence = value.trim().parse().map_err(|_| {
-                        format!("its media sequence number {value:?} is not a number")
-                    })?;
-                }
-                "#EXTINF" => {
-                    pending_duration = value
-                        .split(',')
-                        .next()
-                        .and_then(|d| d.trim().parse::<f64>().ok())
-                        .filter(|d| (0.0..=MAX_SEGMENT_SECONDS).contains(d))
-                        .unwrap_or(0.0);
-                }
-                "#EXT-X-BYTERANGE" => pending_range = Some(byte_range(value)?),
-                "#EXT-X-KEY" => update_keys(&mut keys, &attributes(value), base)?,
-                "#EXT-X-MAP" => {
-                    let attrs = attributes(value);
-                    let url = attr(&attrs, "URI")
-                        .ok_or("an EXT-X-MAP has no URI")
-                        .and_then(|u| join(base, u).map_err(|_| "an EXT-X-MAP has a bad URI"))?;
-                    let range = attr(&attrs, "BYTERANGE")
-                        .map(byte_range)
-                        .transpose()?
-                        .map(|(len, offset)| span(offset.unwrap_or(0), len))
-                        .transpose()?;
-                    map = Some(Map {
-                        url,
-                        range,
-                        key: usable_key(&keys).cloned(),
-                    });
-                }
-                "#EXT-X-ENDLIST" => media.ended = true,
-                "#EXT-X-PLAYLIST-TYPE" if value.trim() == "VOD" => media.ended = true,
-                _ => {}
-            }
-            continue;
+            reader.tag(name, value)?;
+        } else if !line.starts_with('#') {
+            reader.segment(line)?;
         }
-        if line.starts_with('#') {
-            continue;
-        }
+    }
+    if reader.index == 0 {
+        return Err("it lists no segments".into());
+    }
+    Ok(reader.media)
+}
 
+/// A media playlist being read, line by line: what is read so far and what
+/// the tags in force say about the next segment.
+struct MediaReader<'a> {
+    base: &'a Url,
+    media: Media,
+    media_sequence: u64,
+    /// Segments read so far.
+    index: u64,
+    keys: Vec<Key>,
+    map: Option<Map>,
+    /// The last init section added, so each one is added once.
+    emitted_map: Option<(Url, Option<Range<u64>>)>,
+    /// An `EXT-X-BYTERANGE` for the next segment: its length and offset.
+    pending_range: Option<(u64, Option<u64>)>,
+    /// Where the last segment's byte range ended, in which file.
+    previous_end: Option<(Url, u64)>,
+    /// The `EXTINF` duration of the next segment.
+    pending_duration: f64,
+}
+
+impl<'a> MediaReader<'a> {
+    fn new(base: &'a Url) -> Self {
+        Self {
+            base,
+            media: Media::default(),
+            media_sequence: 0,
+            index: 0,
+            keys: Vec::new(),
+            map: None,
+            emitted_map: None,
+            pending_range: None,
+            previous_end: None,
+            pending_duration: 0.0,
+        }
+    }
+
+    fn tag(&mut self, name: &str, value: &str) -> Result<(), String> {
+        match name {
+            "#EXT-X-MEDIA-SEQUENCE" => {
+                self.media_sequence = value
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("its media sequence number {value:?} is not a number"))?;
+            }
+            "#EXTINF" => {
+                self.pending_duration = value
+                    .split(',')
+                    .next()
+                    .and_then(|d| d.trim().parse::<f64>().ok())
+                    .filter(|d| (0.0..=MAX_SEGMENT_SECONDS).contains(d))
+                    .unwrap_or(0.0);
+            }
+            "#EXT-X-BYTERANGE" => self.pending_range = Some(byte_range(value)?),
+            "#EXT-X-KEY" => update_keys(&mut self.keys, &attributes(value), self.base)?,
+            "#EXT-X-MAP" => self.map = Some(self.read_map(value)?),
+            "#EXT-X-ENDLIST" => self.media.ended = true,
+            "#EXT-X-PLAYLIST-TYPE" if value.trim() == "VOD" => self.media.ended = true,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// An `EXT-X-MAP`, encrypted with the key in force where it appears.
+    fn read_map(&self, value: &str) -> Result<Map, String> {
+        let attrs = attributes(value);
+        let url = attr(&attrs, "URI")
+            .ok_or("an EXT-X-MAP has no URI")
+            .and_then(|u| join(self.base, u).map_err(|_| "an EXT-X-MAP has a bad URI"))?;
+        let range = attr(&attrs, "BYTERANGE")
+            .map(byte_range)
+            .transpose()?
+            .map(|(len, offset)| span(offset.unwrap_or(0), len))
+            .transpose()?;
+        Ok(Map {
+            url,
+            range,
+            key: usable_key(&self.keys).cloned(),
+        })
+    }
+
+    /// A segment's address line: the segment, after its init section when it
+    /// is the first to use that one.
+    fn segment(&mut self, line: &str) -> Result<(), String> {
         // Checked before anything is resolved or stored, so a huge playlist
         // fails at once instead of filling memory first.
-        if media.pieces.len() as u64 >= MAX_SEGMENTS {
+        if self.media.pieces.len() as u64 >= MAX_SEGMENTS {
             return Err(too_many_segments());
         }
-        let url = join(base, line)?;
-        let sequence = media_sequence.saturating_add(index);
-        if let Some(map) = &map {
-            let this = (map.url.clone(), map.range.clone());
-            if emitted_map.as_ref() != Some(&this) {
-                media.pieces.push(Piece {
-                    url: map.url.clone(),
-                    range: map.range.clone(),
-                    encryption: map
-                        .key
-                        .as_ref()
-                        .map(|k| encryption(k, sequence))
-                        .transpose()?,
-                    init: true,
-                });
-                emitted_map = Some(this);
+        let url = join(self.base, line)?;
+        let sequence = self.media_sequence.saturating_add(self.index);
+        self.init_section(sequence)?;
+        let range = self.segment_range(&url)?;
+        self.previous_end = range.as_ref().map(|r| (url.clone(), r.end));
+        let encryption = if let Some(key) = usable_key(&self.keys) {
+            Some(encryption(key, sequence)?)
+        } else {
+            if let Some(key) = self.keys.first()
+                && self.media.refusal.is_none()
+            {
+                self.media.refusal = Some(refusal(key));
             }
-        }
-        let range = match pending_range.take() {
-            None => None,
-            Some((len, Some(offset))) => Some(span(offset, len)?),
-            Some((len, None)) => match &previous_end {
-                Some((previous, end)) if *previous == url => Some(span(*end, len)?),
-                _ => {
-                    return Err(
-                        "a byte range without an offset does not follow a part of the same file"
-                            .into(),
-                    );
-                }
-            },
+            None
         };
-        previous_end = range.as_ref().map(|r| (url.clone(), r.end));
-        let encryption = match usable_key(&keys) {
-            Some(key) => Some(encryption(key, sequence)?),
-            None => {
-                if let Some(key) = keys.first()
-                    && media.refusal.is_none()
-                {
-                    media.refusal = Some(refusal(key));
-                }
-                None
-            }
-        };
-        media.pieces.push(Piece {
+        self.media.pieces.push(Piece {
             url,
             range,
             encryption,
             init: false,
         });
-        media.duration += pending_duration;
-        pending_duration = 0.0;
-        index += 1;
+        self.media.duration += self.pending_duration;
+        self.pending_duration = 0.0;
+        self.index += 1;
+        Ok(())
     }
-    if index == 0 {
-        return Err("it lists no segments".into());
+
+    /// Adds the init section in force, unless the segment before used it too.
+    fn init_section(&mut self, sequence: u64) -> Result<(), String> {
+        let Some(map) = &self.map else {
+            return Ok(());
+        };
+        let this = (map.url.clone(), map.range.clone());
+        if self.emitted_map.as_ref() != Some(&this) {
+            self.media.pieces.push(Piece {
+                url: map.url.clone(),
+                range: map.range.clone(),
+                encryption: map
+                    .key
+                    .as_ref()
+                    .map(|k| encryption(k, sequence))
+                    .transpose()?,
+                init: true,
+            });
+            self.emitted_map = Some(this);
+        }
+        Ok(())
     }
-    Ok(media)
+
+    /// The byte range of the segment at `url`: the pending `EXT-X-BYTERANGE`,
+    /// which without an offset continues the previous part of the same file.
+    fn segment_range(&mut self, url: &Url) -> Result<Option<Range<u64>>, String> {
+        match self.pending_range.take() {
+            None => Ok(None),
+            Some((len, Some(offset))) => Ok(Some(span(offset, len)?)),
+            Some((len, None)) => match &self.previous_end {
+                Some((previous, end)) if previous == url => Ok(Some(span(*end, len)?)),
+                _ => Err(
+                    "a byte range without an offset does not follow a part of the same file".into(),
+                ),
+            },
+        }
+    }
 }
 
 fn update_keys(keys: &mut Vec<Key>, attrs: &[(String, String)], base: &Url) -> Result<(), String> {
@@ -475,7 +524,7 @@ mod tests {
         assert_eq!(attr(&attrs, "CODECS"), Some("avc1.4d401f,mp4a.40.2"));
         assert_eq!(attr(&attrs, "RESOLUTION"), Some("640x360"));
         assert_eq!(attr(&attrs, "NAME"), Some("a=b"));
-        assert!(attributes("").is_empty());
+        assert_eq!(attributes(""), Vec::<(String, String)>::new());
         // An unterminated quote does not panic.
         assert_eq!(attr(&attributes(r#"URI="abc"#), "URI"), Some("abc"));
     }
@@ -615,7 +664,10 @@ mod tests {
         assert_eq!(e1.iv[15], 8);
         let e2 = m.pieces[2].encryption.as_ref().unwrap();
         assert_eq!(e2.key_url.as_str(), "https://site.example/video/k2");
-        assert_eq!(e2.iv, core::array::from_fn(|i| i as u8));
+        assert_eq!(
+            e2.iv,
+            0x0001_0203_0405_0607_0809_0a0b_0c0d_0e0f_u128.to_be_bytes()
+        );
         assert!(m.pieces[3].encryption.is_none());
         assert!(m.refusal.is_none());
     }
