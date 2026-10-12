@@ -12,7 +12,7 @@ import { STATUS_GROUPS, STATUS_GROUP_LABEL } from './state/view';
 const SCORE_WHOLE_WORD = 12;
 /**
  * The typed word starts the word. Up to one more for how much of the word is typed, so "pau"
- * ranks "Pause" above "Pause all" but never above a whole word.
+ * ranks "Pause" above "Paused" but never above a whole word.
  */
 const SCORE_PREFIX = 8;
 /** The typed word is a short form of the word ("pse" for "Pause"). */

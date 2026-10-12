@@ -8,9 +8,6 @@ import TestHost from './TestHost.svelte';
 export const NOON = new Date(2026, 9, 10, 12, 0).getTime();
 
 export async function renderApp(options: MockOptions = {}) {
-  // The sample download windows load lazily; loading them first keeps `downloadWindow()` from
-  // racing that import when the machine is busy.
-  await import('$lib/window/MockWindows.svelte');
   const backend = new MockBackend({ autoTick: false, now: () => NOON, ...options });
   const app = new AppState(backend);
   // Schedules in labels follow the same fixed clock as the mock.

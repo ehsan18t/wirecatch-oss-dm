@@ -1,9 +1,4 @@
 {
-  "src/lib/addons.ts": {
-    "wirecatch/no-magic-numbers": {
-      "count": 4
-    }
-  },
   "src/lib/backend/mock/simulator.ts": {
     "wirecatch/no-magic-numbers": {
       "count": 2
@@ -18,22 +13,16 @@
     },
     "max-lines-per-function": {
       "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 5
     }
   },
   "src/lib/components/AddDialog.svelte": {
     "wirecatch/no-magic-numbers": {
-      "count": 3
+      "count": 1
     }
   },
   "src/lib/components/AddonCard.svelte": {
     "svelte/button-has-type": {
       "count": 3
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
     }
   },
   "src/lib/components/CancelDialog.svelte": {
@@ -110,7 +99,7 @@
       "count": 2
     },
     "wirecatch/no-magic-numbers": {
-      "count": 3
+      "count": 1
     }
   },
   "src/lib/components/PaletteBody.svelte": {
@@ -123,7 +112,7 @@
       "count": 1
     },
     "wirecatch/no-magic-numbers": {
-      "count": 6
+      "count": 4
     }
   },
   "src/lib/components/RefreshDialog.svelte": {
@@ -158,7 +147,7 @@
       "count": 7
     },
     "wirecatch/no-magic-numbers": {
-      "count": 12
+      "count": 11
     }
   },
   "src/lib/components/Shell.svelte": {
@@ -185,7 +174,7 @@
       "count": 12
     },
     "wirecatch/no-magic-numbers": {
-      "count": 14
+      "count": 13
     }
   },
   "src/lib/components/StorageBanner.svelte": {
@@ -221,11 +210,8 @@
     }
   },
   "src/lib/format.ts": {
-    "@typescript-eslint/non-nullable-type-assertion-style": {
-      "count": 2
-    },
     "wirecatch/no-magic-numbers": {
-      "count": 33
+      "count": 1
     }
   },
   "src/lib/media-output.ts": {
@@ -242,19 +228,11 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "wirecatch/no-magic-numbers": {
-      "count": 2
     }
   },
   "src/lib/state/view.ts": {
     "max-params": {
       "count": 1
-    }
-  },
-  "src/lib/window/AddonView.svelte": {
-    "wirecatch/no-magic-numbers": {
-      "count": 3
     }
   },
   "src/lib/window/FileQuestion.svelte": {
@@ -277,7 +255,7 @@
   },
   "src/lib/window/ProgressView.svelte": {
     "wirecatch/no-magic-numbers": {
-      "count": 5
+      "count": 1
     }
   },
   "src/lib/window/download-window.svelte.ts": {
