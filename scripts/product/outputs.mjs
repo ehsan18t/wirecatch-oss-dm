@@ -17,8 +17,8 @@ import { GENERATED_NOTE, rustSource, typescriptSource } from './sources.mjs';
 
 export const PRODUCT_FILE = 'config/product.toml';
 const TEMPLATES = 'config/templates';
-/** The folders whose packages carry the product version and license in their package.json (the `packages` globs of pnpm-workspace.yaml). */
-const PACKAGE_FOLDERS = ['apps', 'packages'];
+/** Where the workspace's package globs are listed. */
+const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 const TAURI_CONFIG = 'apps/desktop/src-tauri/tauri.conf.json';
 /** Where Tauri finds the bridge it bundles, relative to the desktop crate; `prepare-bridge.mjs` reads the name from here. */
 const SIDECAR_FOLDER = 'binaries';
@@ -72,17 +72,27 @@ function packageJson(json, product) {
   json.license = product.product.license;
 }
 
+/** The folders of the `packages` globs in pnpm-workspace.yaml (each a `folder/*`): every folder under them is a package, so one that has lost its package.json is reported missing rather than skipped. */
+function packageFolders(root) {
+  const manifest = current(root, WORKSPACE_FILE);
+  const list = /^packages:\s*\n((?:\s+-\s+.*\n)+)/m.exec(manifest);
+  if (!list) throw new ManifestError(`${WORKSPACE_FILE} has no \`packages\` list.`);
+  const globs = [...list[1].matchAll(/-\s+["']?([^"'\s]+)["']?/g)].map((m) => m[1]);
+  return globs.flatMap((glob) => {
+    if (!glob.endsWith('/*')) {
+      throw new ManifestError(`The workspace glob ${glob} is not of the form folder/*.`);
+    }
+    const parent = glob.slice(0, -2);
+    return readdirSync(join(root, parent), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `${parent}/${entry.name}`);
+  });
+}
+
 /** The workspace's package.json files: the root one, which has no version, and each package's. */
 function packageManifests(root) {
-  const folders = PACKAGE_FOLDERS.flatMap((parent) =>
-    readdirSync(join(root, parent), { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isDirectory() && existsSync(join(root, parent, entry.name, 'package.json')),
-      )
-      .map((entry) => `${parent}/${entry.name}/package.json`),
-  );
-  return ['package.json', ...folders.sort()].map((path) => ({
+  const manifests = packageFolders(root).map((folder) => `${folder}/package.json`);
+  return ['package.json', ...manifests.sort()].map((path) => ({
     path,
     json:
       path === 'package.json'

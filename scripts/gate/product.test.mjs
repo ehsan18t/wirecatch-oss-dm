@@ -9,7 +9,7 @@ import { remainingPlaceholders, staleOutputs } from './product.mjs';
 import { ROOT } from './process.mjs';
 
 /** What the generator reads besides its outputs: the identity, the templates, and the formatting settings. */
-const INPUTS = ['config', 'rustfmt.toml', '.prettierrc.json'];
+const INPUTS = ['config', 'rustfmt.toml', '.prettierrc.json', 'pnpm-workspace.yaml'];
 
 let root;
 
@@ -72,4 +72,9 @@ test('the release check finds every placeholder until the values are decided', a
   );
   await generate(root);
   assert.deepEqual(await remainingPlaceholders(root), { values: [], lines: [] });
+});
+
+test('a workspace package whose package.json was deleted is reported, not skipped', async () => {
+  rmSync(join(root, 'apps/extension/package.json'));
+  await assert.rejects(staleOutputs(root), /apps\/extension\/package\.json is missing/);
 });
