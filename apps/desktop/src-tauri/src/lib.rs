@@ -172,6 +172,10 @@ pub fn run() {
     if host::DEV_BUILD {
         dev_identity(context.config_mut());
     }
+    // The name the interface shows (`getName`), so a debug build calls itself what its window does.
+    host::CHANNEL
+        .name()
+        .clone_into(&mut context.package_info_mut().name);
 
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
