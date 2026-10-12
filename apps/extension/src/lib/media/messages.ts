@@ -47,12 +47,16 @@ export function mediaButtonOn(stored: unknown): boolean {
   return stored !== false;
 }
 /**
- * Longest media address handled (8 KiB), whether a page sends it or it is seen on the
+ * Longest media address handled (8 KB), whether a page sends it or it is seen on the
  * network. Real media addresses are far shorter; longer ones are not worth handing
  * over and would only fill the session storage the lists are saved to.
  */
 export const MAX_MEDIA_URL_LENGTH = 8 * KB;
-/** Longest title sent from a page. */
+/**
+ * Longest title a page sends, and longest answer shown on a page, in characters. Real page and
+ * media titles are far shorter (browsers show about a hundred); the cap only keeps a page from
+ * pushing long text through to the app or the notice, so its exact value matters little.
+ */
 export const MAX_TITLE_LENGTH = 1024;
 export const MEDIA_DOWNLOAD = 'wirecatch:media-download';
 

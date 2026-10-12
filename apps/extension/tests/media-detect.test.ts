@@ -150,7 +150,7 @@ describe('classifyResponse', () => {
     ).toBeNull();
   });
 
-  it('keeps direct files from 100 KiB up, and files of unknown size', () => {
+  it('keeps direct files from 100 KB up, and files of unknown size', () => {
     const file = (headers: Record<string, string>) =>
       classifyResponse(
         response({
@@ -250,7 +250,7 @@ describe('size limits', () => {
     return head + 'a'.repeat(length - head.length - tail.length) + tail;
   };
 
-  it('ignores media addresses longer than 8 KiB', () => {
+  it('ignores media addresses longer than 8 KB', () => {
     expect(MAX_MEDIA_URL_LENGTH).toBe(8192);
     const ok = urlOf(MAX_MEDIA_URL_LENGTH);
     const long = urlOf(MAX_MEDIA_URL_LENGTH + 1);

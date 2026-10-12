@@ -232,7 +232,7 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
     await flush();
-    // About 0.4 M characters, but each is 3 bytes in UTF-8: over 1 MiB.
+    // About 0.4 M characters, but each is 3 bytes in UTF-8: over 1 MB.
     const wide = '€'.repeat(400_000);
     const error = await client
       .request(

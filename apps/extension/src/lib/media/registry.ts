@@ -48,7 +48,7 @@ export const HLS_STREAM_WINDOW_MS = 10_000;
 export const MAX_ITEMS_PER_TAB = 30;
 
 /**
- * Most characters of media lists written to `storage.session` at once (1 MiB), well
+ * Most characters of media lists written to `storage.session` at once (1 MB), well
  * inside its quota (10 MB in Chromium), which the in-flight download list shares.
  * The lists of the tabs that changed last are kept first.
  */

@@ -73,7 +73,7 @@ const AUDIO_EXTENSIONS = new Set([
 const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'sub_frame', 'object']);
 
 /**
- * Direct video and audio files whose known size is below this (100 KiB) are not listed.
+ * Direct video and audio files whose known size is below this (100 KB) are not listed.
  * Pages play short interface sounds as media (YouTube's voice search sounds `open.mp3`,
  * `success.mp3`, `failure.mp3` and `no_input.mp3` are about 6 KB each); nobody wants to
  * download those, and real recordings are far larger. Files of unknown size are kept.

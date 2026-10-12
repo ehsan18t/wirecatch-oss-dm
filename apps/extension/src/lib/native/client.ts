@@ -10,9 +10,9 @@ import {
   type ProtocolError,
   type Reply,
 } from '@wirecatch/protocol';
+import { formatBytes } from '@wirecatch/units';
 import { isEvent, isOutcome } from '../protocol';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
-import { formatBytes } from '@wirecatch/units';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
 
 /** How many timed-out requests are remembered so a late answer can still be recognized. */
