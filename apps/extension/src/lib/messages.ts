@@ -53,6 +53,13 @@ export interface Notice {
   at: number;
 }
 
+/** Checks a notice read back from storage. */
+export const isNotice: Guard<Notice> = object({
+  tone: literal('warning', 'error'),
+  message: isString,
+  at: isNumber,
+});
+
 /** Everything the popup shows, pushed whenever any part of it changes. */
 export interface Snapshot {
   status: ConnectionStatus;

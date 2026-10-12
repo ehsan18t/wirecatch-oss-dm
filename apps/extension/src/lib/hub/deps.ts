@@ -3,6 +3,7 @@ import type { ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieContext } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
+import type { Notice } from '../messages';
 import type { NativeClient } from '../native/client';
 
 /** The display cache kept in browser storage (D5: the app is the only real store). */
@@ -28,6 +29,16 @@ export interface InFlightStore {
   save(ids: number[]): Promise<void>;
 }
 
+/**
+ * The notice the popup and the badge show, kept in `storage.session` next to the
+ * in-flight downloads, so one about a download left paused outlives a background
+ * script the browser stopped.
+ */
+export interface NoticeStore {
+  load(): Promise<Notice | null>;
+  save(notice: Notice | null): Promise<void>;
+}
+
 export interface BrowserDownloads extends DownloadControl {
   /** Starts a download in the browser itself (`downloads.download`), used when the app cannot take a context menu link. */
   start(url: string): Promise<void>;
@@ -47,6 +58,7 @@ export interface HubDeps {
   hasSiteAccess(url: string): Promise<boolean>;
   userAgent: string | null;
   inFlight?: InFlightStore;
+  notice?: NoticeStore;
   newHandoverId?: () => string;
   badge?: Badge;
   now?: () => number;

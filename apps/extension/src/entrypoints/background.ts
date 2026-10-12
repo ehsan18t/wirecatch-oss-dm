@@ -9,6 +9,7 @@ import {
   isFirefox,
   liveTabs,
   mediaStore,
+  noticeStore,
   tabInfo,
   toolbarBadge,
 } from '@/lib/browser/adapters';
@@ -108,6 +109,7 @@ export default defineBackground(() => {
     hasSiteAccess,
     userAgent: navigator.userAgent,
     inFlight: inFlightStore(),
+    notice: noticeStore(),
     badge: toolbarBadge(),
   });
 

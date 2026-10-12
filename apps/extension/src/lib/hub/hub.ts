@@ -115,12 +115,15 @@ export class Hub {
     this.#client.onStatus((status) => this.#onStatus(status));
     this.#client.onEvent((event) => this.#onEvent(event));
     this.#client.onLateAnswer((call, outcome) => this.#onLateAnswer(call, outcome));
-    // Both are read before `ready`, so no new download can overwrite the list of paused ones first.
-    const [cached, leftPaused] = await Promise.all([
+    // All are read before `ready`, so no new download can overwrite the list of paused ones first.
+    const [cached, leftPaused, notice] = await Promise.all([
       this.#deps.cache.load().catch(() => null),
       this.#deps.inFlight?.load().catch(() => []) ?? Promise.resolve([]),
+      this.#deps.notice?.load().catch(() => null) ?? Promise.resolve(null),
     ]);
     this.#settings.loaded(cached);
+    // A notice from before the browser stopped the background, unless a newer one came meanwhile.
+    this.#notice ??= notice;
     if (cached?.appClosed !== true) this.#client.start();
     this.#markReady();
     this.#publish();
@@ -447,6 +450,8 @@ export class Hub {
 
   #setNotice(notice: Notice | null): void {
     this.#notice = notice;
+    // Session storage unavailable: the notice then lasts as long as this background script.
+    this.#deps.notice?.save(notice).catch(() => undefined);
     this.#publish();
   }
 

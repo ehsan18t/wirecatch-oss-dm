@@ -15,6 +15,7 @@ import {
   FakeDownloads,
   MemoryCache,
   MemoryInFlight,
+  MemoryNotice,
   channelPair,
   downloadItem,
   flush,
@@ -24,6 +25,7 @@ interface Options {
   configure?: (app: FakeApp, cache: MemoryCache) => void;
   siteAccess?: boolean;
   inFlight?: MemoryInFlight;
+  notice?: MemoryNotice;
   cache?: SettingsCache;
   downloads?: FakeDownloads;
   start?: boolean;
@@ -35,6 +37,9 @@ interface Setup {
   client: NativeClient;
   hub: Hub;
   inFlight: MemoryInFlight;
+  notice: MemoryNotice;
+  /** Every text the toolbar badge was given, in order. */
+  badges: string[];
   cookieCalls: [string, string | null][];
   cookieContexts: CookieContext[];
   started: Promise<void>;
@@ -46,6 +51,8 @@ async function setup(options: Options = {}): Promise<Setup> {
   options.configure?.(app, memory);
   const downloads = options.downloads ?? new FakeDownloads();
   const inFlight = options.inFlight ?? new MemoryInFlight();
+  const notice = options.notice ?? new MemoryNotice();
+  const badges: string[] = [];
   const cookieCalls: [string, string | null][] = [];
   const cookieContexts: CookieContext[] = [];
   const client = new NativeClient({
@@ -72,6 +79,8 @@ async function setup(options: Options = {}): Promise<Setup> {
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
     userAgent: 'TestBrowser/1.0',
     inFlight,
+    notice,
+    badge: { set: (text) => void badges.push(text) },
     newHandoverId: () => `h${String((next += 1))}`,
     timing: { connectWaitMs: 3_000, requestTimeoutMs: 5_000, withdrawTimeoutMs: 3_000 },
   });
@@ -80,7 +89,18 @@ async function setup(options: Options = {}): Promise<Setup> {
     await started;
     await flush();
   }
-  return { app, downloads, client, hub, inFlight, cookieCalls, cookieContexts, started };
+  return {
+    app,
+    downloads,
+    client,
+    hub,
+    inFlight,
+    notice,
+    badges,
+    cookieCalls,
+    cookieContexts,
+    started,
+  };
 }
 
 function addDownloadCalls(app: FakeApp): NewDownload[] {
@@ -753,6 +773,31 @@ describe('downloads left paused by a restarted background', () => {
     s = await setup({ inFlight, downloads });
     expect(downloads.log).toEqual(['resume:5', 'resume:6']);
     expect(inFlight.ids).toEqual([]);
+  });
+
+  // The notice lived only in memory: when the browser stopped the background script, the next
+  // wake cleared the badge and the person never learned the download was left paused.
+  it('keeps a notice across a restart until it is dismissed', async () => {
+    s = await setup({
+      configure: (app) => {
+        app.addBehavior = { error: { code: 'internal', message: 'Disk full.' } };
+      },
+    });
+    s.downloads.failing.add('resume');
+    await s.hub.onDownload(downloadItem());
+    const shown = s.hub.snapshot().notice;
+    expect(shown).toMatchObject({ tone: 'error' });
+    s.client.stop();
+
+    s = await setup({ notice: s.notice });
+    expect(s.hub.snapshot().notice).toEqual(shown);
+    expect(s.badges.at(-1)).toBe('!');
+
+    const [popup, background] = channelPair<PopupRequest, BackgroundMessage>();
+    s.hub.addPopup(background);
+    popup.postMessage({ id: 1, command: { type: 'dismiss_notice' } });
+    await flush();
+    expect(s.notice.value).toBeNull();
   });
 
   it('leaves alone the ones that are no longer paused', async () => {

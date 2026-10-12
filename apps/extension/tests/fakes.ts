@@ -21,9 +21,10 @@ import type {
   BrowserDownloads,
   CachedSettings,
   InFlightStore,
+  NoticeStore,
   SettingsCache,
 } from '../src/lib/hub/deps';
-import type { Channel } from '../src/lib/messages';
+import type { Channel, Notice } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 import { applyPatch } from '../src/lib/protocol';
 
@@ -342,6 +343,17 @@ export class MemoryInFlight implements InFlightStore {
   save(ids: number[]): Promise<void> {
     this.ids = [...ids];
     this.saves.push([...ids]);
+    return Promise.resolve();
+  }
+}
+
+export class MemoryNotice implements NoticeStore {
+  value: Notice | null = null;
+  load(): Promise<Notice | null> {
+    return Promise.resolve(this.value);
+  }
+  save(notice: Notice | null): Promise<void> {
+    this.value = notice;
     return Promise.resolve();
   }
 }

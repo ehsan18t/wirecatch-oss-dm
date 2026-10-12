@@ -6,13 +6,15 @@ import { PROTOCOL_VERSION, type BrowserInfo, type Hello } from '@wirecatch/proto
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '../cookies';
-import type { Badge, BrowserDownloads, InFlightStore } from '../hub/deps';
+import type { Badge, BrowserDownloads, InFlightStore, NoticeStore } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
+import { isNotice } from '../messages';
 import { originPattern } from '../site-access';
 import { BADGE_COLOR } from '../theme';
 import { isNumber, itemsOf } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
+const NOTICE_KEY = 'wirecatch.notice';
 const MEDIA_KEY = 'wirecatch.media.v1';
 
 interface FirefoxRuntime {
@@ -110,6 +112,21 @@ export function inFlightStore(): InFlightStore | undefined {
     },
     async save(ids) {
       await area.set({ [IN_FLIGHT_KEY]: ids });
+    },
+  };
+}
+
+export function noticeStore(): NoticeStore | undefined {
+  const area = sessionArea();
+  if (area === undefined) return undefined;
+  return {
+    async load() {
+      const items = await area.get(NOTICE_KEY);
+      const notice: unknown = items[NOTICE_KEY];
+      return isNotice(notice) ? notice : null;
+    },
+    async save(notice) {
+      await area.set({ [NOTICE_KEY]: notice });
     },
   };
 }
