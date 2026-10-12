@@ -74,7 +74,12 @@ pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>
 pub fn private_dir(name: &str) -> TestResult<PrivateDir> {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let leaf = format!("wirecatch-test-{name}-{}-{n}", std::process::id());
+    // A run that was killed leaves its folders behind, and a later run can get
+    // the same process id: the clock keeps their names apart.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.subsec_nanos());
+    let leaf = format!("wirecatch-test-{name}-{}-{n}-{nonce}", std::process::id());
     let path = std::env::temp_dir().join(&leaf);
     #[cfg(not(unix))]
     std::fs::create_dir(&path)?;
