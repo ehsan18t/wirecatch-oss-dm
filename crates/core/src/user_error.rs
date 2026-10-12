@@ -79,7 +79,7 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             action,
             path,
             source,
-        } => disk_failure(source, folder, &format!("{action} {}", path.display())),
+        } => disk_failure(source, folder, &format!("{action} ({})", path.display())),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
             FixAction::Retry,
@@ -324,7 +324,7 @@ pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
 }
 
 /// Describes a file operation that failed while saving into `folder`; `what`
-/// says what could not be done, as in `create the folder /x`.
+/// says what could not be done, as in `create the folder (/x)`.
 fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
@@ -355,7 +355,7 @@ fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
             FixAction::ChooseFolder,
         ),
         _ => fix(
-            format!("Could not {what} ({error}). Check the drive, then try again."),
+            format!("Could not {what}: {error}. Check the drive, then try again."),
             FixAction::Retry,
         ),
     }
@@ -502,8 +502,20 @@ mod tests {
             source: io::ErrorKind::Other.into(),
         };
         let message = describe(&error, Path::new("/downloads"), true).message;
-        assert!(message.contains("flush the file to the disk"), "{message}");
-        assert!(message.contains("/downloads/f.bin.wcpart"), "{message}");
+        assert_eq!(
+            message,
+            "Could not flush the file to the disk (/downloads/f.bin.wcpart): other error. Check the drive, then try again."
+        );
+        let resize = EngineError::Io {
+            action: wirecatch_engine::IoAction::Resize,
+            path: "/downloads/f.bin.wcpart".into(),
+            source: io::ErrorKind::Other.into(),
+        };
+        let message = describe(&resize, Path::new("/downloads"), true).message;
+        assert!(
+            message.starts_with("Could not set the size of the file (/downloads/f.bin.wcpart)"),
+            "{message}"
+        );
     }
 
     #[test]
