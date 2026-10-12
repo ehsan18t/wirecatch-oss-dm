@@ -18,7 +18,7 @@ import type {
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
 import type { Backend, Question } from '../backend';
 import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
-import { errorMessage } from '../state/runner';
+import { errorMessage, Runner } from '../state/runner';
 import { changeSettings, SettingsWriter } from '../state/settings-changes.svelte';
 
 /** What the window is showing. */
@@ -54,16 +54,17 @@ export const READING_ENDED =
 export const CLOSE_AFTER_MS = 5000;
 
 export class DownloadWindowState {
-  readonly backend: Backend;
+  readonly #backend: Backend;
   readonly #host: WindowHost;
   readonly #target: Target;
+  /** A failed action says why in the window, until the next action starts. */
+  readonly #runner = new Runner(
+    (text) => (this.error = text),
+    () => (this.error = null),
+  );
   /** Settings changes go to the app one after another, in the order they were made. */
-  readonly #settingsWriter = new SettingsWriter(
-    async (patch) =>
-      (await this.#act(async () => {
-        await this.backend.changeSettings(patch);
-        return true;
-      })) === true,
+  readonly #settingsWriter = new SettingsWriter((patch) =>
+    this.#runner.succeeds(() => this.#backend.changeSettings(patch)),
   );
 
   phase = $state<Phase>('loading');
@@ -91,7 +92,7 @@ export class DownloadWindowState {
   #generation = 0;
 
   constructor(backend: Backend, target: Target, host: WindowHost) {
-    this.backend = backend;
+    this.#backend = backend;
     this.#target = target;
     this.#host = host;
   }
@@ -115,7 +116,7 @@ export class DownloadWindowState {
     const generation = ++this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
     try {
-      const unsubscribe = await this.backend.subscribe(events.receive);
+      const unsubscribe = await this.#backend.subscribe(events.receive);
       if (generation !== this.#generation) {
         // Closed (or loaded again) while subscribing: nothing would ever close this listener.
         unsubscribe();
@@ -124,13 +125,13 @@ export class DownloadWindowState {
       }
       this.#unsubscribe = unsubscribe;
       const [queues, settings] = await Promise.all([
-        this.backend.listQueues(),
-        this.backend.getSettings(),
+        this.#backend.listQueues(),
+        this.#backend.getSettings(),
       ]);
       this.queues = queues;
       this.settings = settings;
       if ('download' in this.#target) {
-        this.row = await this.backend.getDownload(this.#target.download);
+        this.row = await this.#backend.getDownload(this.#target.download);
         this.phase = 'progress';
       } else {
         await this.#loadQuestion(this.#target.question);
@@ -144,7 +145,7 @@ export class DownloadWindowState {
   }
 
   async #loadQuestion(id: number): Promise<void> {
-    const question = await this.backend.getQuestion(id);
+    const question = await this.#backend.getQuestion(id);
     if (!question) {
       // Answered (here or anywhere) or taken back before the window loaded: never asked again.
       this.#gone(ANSWERED_ELSEWHERE);
@@ -153,7 +154,7 @@ export class DownloadWindowState {
     this.question = question;
     this.phase = 'ask';
     try {
-      this.earlier = await this.backend.earlierDownload(id);
+      this.earlier = await this.#backend.earlierDownload(id);
     } catch {
       // Only a note; the question works without it.
     }
@@ -161,7 +162,7 @@ export class DownloadWindowState {
 
   async #loadAddon(): Promise<void> {
     try {
-      const addons = await this.backend.listAddons();
+      const addons = await this.#backend.listAddons();
       this.addon = addons.find((a) => a.id === MEDIA_ADDON) ?? null;
     } catch {
       // The add-on events still bring it.
@@ -241,7 +242,7 @@ export class DownloadWindowState {
   /** The quality list for the video this window reads. */
   #choiceArrived(choice: MediaChoice): void {
     this.question = { kind: 'choice', data: choice };
-    void this.backend
+    void this.#backend
       .earlierDownload(choice.id)
       .then((row) => (this.earlier = row))
       .catch(() => {
@@ -264,16 +265,6 @@ export class DownloadWindowState {
     }
   }
 
-  async #act<T>(action: () => Promise<T>): Promise<T | undefined> {
-    this.error = null;
-    try {
-      return await action();
-    } catch (err) {
-      this.error = errorMessage(err);
-      return undefined;
-    }
-  }
-
   /** Download now (or later) for a browser file. */
   async confirm(answer: Answer, later: boolean): Promise<boolean> {
     const question = this.question;
@@ -290,7 +281,9 @@ export class DownloadWindowState {
     };
     this.busy = true;
     this.#answered = true;
-    const id = await this.#act(() => this.backend.confirmCapture(proposal.id, confirmation));
+    const id = await this.#runner.run(() =>
+      this.#backend.confirmCapture(proposal.id, confirmation),
+    );
     this.busy = false;
     if (id === undefined) {
       this.#answered = false;
@@ -316,7 +309,7 @@ export class DownloadWindowState {
     this.error = null;
     let id: DownloadId;
     try {
-      id = await this.backend.chooseMedia(choice.id, selection);
+      id = await this.#backend.chooseMedia(choice.id, selection);
     } catch (err) {
       this.#answered = false;
       this.busy = false;
@@ -356,7 +349,7 @@ export class DownloadWindowState {
     this.earlier = null;
     this.phase = 'progress';
     try {
-      this.row = await this.backend.getDownload(id);
+      this.row = await this.#backend.getDownload(id);
     } catch (err) {
       this.#gone(errorMessage(err));
     }
@@ -371,22 +364,22 @@ export class DownloadWindowState {
       return;
     }
     this.#answered = true;
-    const ok = await this.#act(async () => {
-      if (question.kind === 'capture') await this.backend.rejectCapture(id);
-      else await this.backend.dismissMediaChoice(id);
-      return true;
-    });
+    const ok = await this.#runner.succeeds(() =>
+      question.kind === 'capture'
+        ? this.#backend.rejectCapture(id)
+        : this.#backend.dismissMediaChoice(id),
+    );
     if (ok) this.close();
     else this.#answered = false;
   }
 
   async installAddon(): Promise<void> {
     if (!this.addon) await this.#loadAddon();
-    await this.#act(() => this.backend.installAddon(MEDIA_ADDON));
+    await this.#runner.run(() => this.#backend.installAddon(MEDIA_ADDON));
   }
 
   async stopAddonInstall(): Promise<void> {
-    await this.#act(() => this.backend.cancelAddonOperation(MEDIA_ADDON));
+    await this.#runner.run(() => this.#backend.cancelAddonOperation(MEDIA_ADDON));
   }
 
   /** Not now on the add-on: a picked quality gets its list back; a page waiting for it goes. */
@@ -399,59 +392,55 @@ export class DownloadWindowState {
   }
 
   async changeFolder(current: string): Promise<string | null> {
-    const picked = await this.#act(() => this.backend.pickFolder(current));
+    const picked = await this.#runner.run(() => this.#backend.pickFolder(current));
     return picked ?? null;
   }
 
   // ---- Progress ----
 
+  /** Runs an action on the download shown; false when there is none or the action failed. */
   async #onRow(action: (id: DownloadId) => Promise<void>): Promise<boolean> {
     const id = this.downloadId;
-    if (id === null) return false;
-    const ok = await this.#act(async () => {
-      await action(id);
-      return true;
-    });
-    return ok === true;
+    return id !== null && (await this.#runner.succeeds(() => action(id)));
   }
 
   pause(): Promise<boolean> {
-    return this.#onRow((id) => this.backend.pause(id));
+    return this.#onRow((id) => this.#backend.pause(id));
   }
 
   resume(): Promise<boolean> {
     // A cancelled download has no partial file left; it starts over.
     return this.#onRow((id) =>
-      this.row?.status === 'cancelled' ? this.backend.retry(id) : this.backend.resume(id),
+      this.row?.status === 'cancelled' ? this.#backend.retry(id) : this.#backend.resume(id),
     );
   }
 
   retry(): Promise<boolean> {
-    return this.#onRow((id) => this.backend.retry(id));
+    return this.#onRow((id) => this.#backend.retry(id));
   }
 
   /** Cancel on a download: stops it, deletes the partial file and takes it off the list. */
   async cancelDownload(): Promise<void> {
-    if (await this.#onRow((id) => this.backend.remove([id], true))) this.close();
+    if (await this.#onRow((id) => this.#backend.remove([id], true))) this.close();
   }
 
   /** Whether opening the finished file could run code, so the window asks first. */
   async isProgram(): Promise<boolean | undefined> {
     const id = this.downloadId;
     if (id === null) return undefined;
-    return this.#act(() => this.backend.isProgram(id));
+    return this.#runner.run(() => this.#backend.isProgram(id));
   }
 
   openFile(allowProgram = false): Promise<boolean> {
-    return this.#onRow((id) => this.backend.openFile(id, allowProgram));
+    return this.#onRow((id) => this.#backend.openFile(id, allowProgram));
   }
 
   openFolder(): Promise<boolean> {
-    return this.#onRow((id) => this.backend.openFolder(id));
+    return this.#onRow((id) => this.#backend.openFolder(id));
   }
 
   refreshLink(url: string): Promise<boolean> {
-    return this.#onRow((id) => this.backend.refreshLink(id, url));
+    return this.#onRow((id) => this.#backend.refreshLink(id, url));
   }
 
   /** Runs the fix an error offers. A fresh link needs the link: `askLink` shows that form. */
@@ -468,7 +457,7 @@ export class DownloadWindowState {
         if (!row) return;
         const picked = await this.changeFolder(row.path);
         if (!picked) return;
-        if (await this.#onRow((id) => this.backend.setDownloadFolder(id, picked))) {
+        if (await this.#onRow((id) => this.#backend.setDownloadFolder(id, picked))) {
           await this.retry();
         }
         break;
@@ -477,7 +466,7 @@ export class DownloadWindowState {
         await this.openFolder();
         break;
       case 'keep_original':
-        await this.#onRow((id) => this.backend.keepOriginal(id));
+        await this.#onRow((id) => this.#backend.keepOriginal(id));
         break;
     }
   }

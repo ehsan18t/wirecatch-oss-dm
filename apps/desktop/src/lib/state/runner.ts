@@ -26,14 +26,20 @@ export function bulkFailureMessage(
 
 export class Runner {
   readonly #fail: (text: string) => void;
+  readonly #clear: () => void;
 
-  /** `fail` shows what went wrong. */
-  constructor(fail: (text: string) => void) {
+  /**
+   * `fail` shows what went wrong. `clear`, called as each action starts, takes away what the
+   * last failure showed, for a window that shows only the latest one.
+   */
+  constructor(fail: (text: string) => void, clear: () => void = () => undefined) {
     this.#fail = fail;
+    this.#clear = clear;
   }
 
   /** Runs an action; on failure says why and gives `undefined`. */
   async run<T>(action: () => Promise<T>): Promise<T | undefined> {
+    this.#clear();
     try {
       return await action();
     } catch (err) {
