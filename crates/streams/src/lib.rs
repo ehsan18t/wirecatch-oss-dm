@@ -79,10 +79,12 @@
 //! example an MPEG-TS `.ts` file); separate tracks fail with
 //! [`Error::NeedsFfmpeg`] before anything is downloaded.
 
+pub mod codec;
 mod crypto;
 mod dash;
 mod download;
 mod error;
+pub mod extension;
 mod ffmpeg;
 mod hls;
 mod model;
