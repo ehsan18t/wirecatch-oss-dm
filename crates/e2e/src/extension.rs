@@ -70,6 +70,8 @@ pub struct FakeExtension {
     stdin: Option<ChildStdin>,
     inbox: mpsc::UnboundedReceiver<Message>,
     stderr: Arc<Mutex<String>>,
+    /// Reads the bridge's standard error into `stderr` until it closes.
+    stderr_reader: Option<tokio::task::JoinHandle<()>>,
     next_id: u64,
     responses: HashMap<u64, Outcome>,
     events: VecDeque<Event>,
@@ -152,7 +154,7 @@ impl FakeExtension {
         });
         let stderr = Arc::new(Mutex::new(String::new()));
         let log = stderr.clone();
-        tokio::spawn(async move {
+        let stderr_reader = tokio::spawn(async move {
             let mut buf = [0u8; 4096];
             while let Ok(n) = stderr_pipe.read(&mut buf).await {
                 if n == 0 {
@@ -169,6 +171,7 @@ impl FakeExtension {
             stdin,
             inbox,
             stderr,
+            stderr_reader: Some(stderr_reader),
             next_id: 1,
             responses: HashMap::new(),
             events: VecDeque::new(),
@@ -176,7 +179,8 @@ impl FakeExtension {
         }
     }
 
-    /// What the bridge has logged so far.
+    /// What the bridge has logged so far; all of it once
+    /// [`wait_exit`](Self::wait_exit) has returned.
     #[must_use]
     pub fn stderr(&self) -> String {
         self.stderr.lock().expect("stderr log lock").clone()
@@ -375,12 +379,21 @@ impl FakeExtension {
         std::mem::take(&mut self.responses)
     }
 
-    /// Waits for the bridge to exit (without closing its stdin).
+    /// Waits for the bridge to exit (without closing its stdin), and for what
+    /// it logged to be read to the end: the reader may still be behind when the
+    /// bridge has exited.
     pub async fn wait_exit(&mut self) -> ExitStatus {
-        timeout(PATIENCE, self.child.wait())
+        let status = timeout(PATIENCE, self.child.wait())
             .await
             .unwrap_or_else(|_| panic!("the bridge did not exit\n{}", self.stderr()))
-            .expect("could not wait for the bridge")
+            .expect("could not wait for the bridge");
+        if let Some(reader) = self.stderr_reader.take() {
+            timeout(PATIENCE, reader)
+                .await
+                .unwrap_or_else(|_| panic!("the bridge's stderr stayed open\n{}", self.stderr()))
+                .expect("the stderr reader failed");
+        }
+        status
     }
 
     /// Closes the connection the way the browser does (closing stdin) and waits

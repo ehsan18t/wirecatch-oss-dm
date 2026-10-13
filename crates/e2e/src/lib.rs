@@ -22,7 +22,4 @@ pub mod bridge;
 pub mod extension;
 pub mod server;
 
-use std::time::Duration;
-
-/// How long any single wait in a test may take before the test fails.
-pub const PATIENCE: Duration = Duration::from_secs(10);
+pub use wirecatch_test_support::PATIENCE;
