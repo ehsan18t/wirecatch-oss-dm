@@ -40,6 +40,25 @@ describe('AppState', () => {
     expect(app.queues.status(queue)).toBe(`Idle, up to ${String(queue.max_concurrent)} at once`);
   });
 
+  it('saves a new queue by making it first, and on a retry updates the one it made', async () => {
+    const { app, backend } = await make();
+    const changes = { name: 'Night', max_concurrent: 2, speed_limit: null, schedule: null };
+    const refuse = vi
+      .spyOn(backend, 'updateQueue')
+      .mockRejectedValueOnce(new BackendError('Not now.'));
+
+    const first = await app.queues.save(undefined, changes);
+    expect(first.kind).toBe('made');
+    const made = first.kind === 'made' ? first.queue : undefined;
+    expect(app.queues.list.filter((q) => q.name === 'Night')).toHaveLength(1);
+
+    refuse.mockRestore();
+    const retried = await app.queues.save(made, { ...changes, max_concurrent: 3 });
+    expect(retried).toEqual({ kind: 'saved', queue: made });
+    expect(app.queues.list.filter((q) => q.name === 'Night')).toHaveLength(1);
+    expect(app.queues.byId(made?.id ?? queueId(0))?.max_concurrent).toBe(3);
+  });
+
   it('loads everything and applies events', async () => {
     const { app, backend } = await make();
     expect(app.ready).toBe(true);
@@ -154,8 +173,8 @@ describe('AppState', () => {
     backend.simulateConfirmation();
     expect(app.questions.pending).toHaveLength(2);
     expect(app.questions.waitingCount).toBe(2);
-    await backend.rejectCapture(app.questions.pending[0]?.id ?? questionId(-1));
-    await backend.confirmCapture(app.questions.pending[0]?.id ?? questionId(-1), {
+    await backend.rejectCapture(app.questions.pending[0]?.id ?? questionId(0));
+    await backend.confirmCapture(app.questions.pending[0]?.id ?? questionId(0), {
       folder: null,
       file_name: null,
       queue: queueId(3),

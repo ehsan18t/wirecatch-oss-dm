@@ -18,6 +18,13 @@ export interface QueuesHost {
   counts: () => Counts;
 }
 
+/** What the queue form changes in a queue. */
+export type QueueChanges = Pick<Queue, 'name' | 'max_concurrent' | 'speed_limit' | 'schedule'>;
+
+/** What saving the queue form came to (`Queues.save`). */
+export type QueueSave =
+  { kind: 'saved'; queue: Queue } | { kind: 'made'; queue: Queue } | { kind: 'failed' };
+
 export class Queues {
   list = $state<Queue[]>([]);
   readonly #host: QueuesHost;
@@ -62,6 +69,14 @@ export class Queues {
 
   update(queue: Queue): Promise<boolean> {
     return this.#host.runner.succeeds(() => this.#host.backend().updateQueue(queue));
+  }
+
+  /** Saves the queue form's `changes` to `queue`, or to a new queue made first when it is `undefined`. A failure is shown by the runner; a new queue made whose changes were then refused comes back as `made`, for a retry to save to instead of making another. */
+  async save(queue: Queue | undefined, changes: QueueChanges): Promise<QueueSave> {
+    const base = queue ?? (await this.create(changes.name));
+    if (!base) return { kind: 'failed' };
+    if (await this.update({ ...base, ...changes })) return { kind: 'saved', queue: base };
+    return queue ? { kind: 'failed' } : { kind: 'made', queue: base };
   }
 
   /** Deletes a queue; its downloads move to the default queue. */

@@ -12,6 +12,7 @@
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
   import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
+  import type { QueueChanges } from '$lib/state/queues.svelte';
   import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
@@ -80,8 +81,7 @@
   }
 
   /** What the form changes in a queue, or why it cannot. */
-  function readForm():
-    Pick<Queue, 'name' | 'max_concurrent' | 'speed_limit' | 'schedule'> | string {
+  function readForm(): QueueChanges | string {
     if (!name.trim()) return 'Give the queue a name.';
     const tooMany = queueConcurrentProblem(maxConcurrent);
     if (tooMany !== null) return tooMany;
@@ -107,15 +107,11 @@
         error = changes;
         return;
       }
-      let base = original ?? created;
-      if (!base) {
-        base = await app.queues.create(changes.name);
-        if (!base) return;
-        created = base;
-      }
-      if (await app.queues.update({ ...base, ...changes })) {
+      const saved = await app.queues.save(original ?? created, changes);
+      if (saved.kind === 'made') created = saved.queue;
+      if (saved.kind === 'saved') {
         app.closeDialog();
-        if (!original) app.show({ kind: 'queue', id: base.id });
+        if (!original) app.show({ kind: 'queue', id: saved.queue.id });
       } else if (created) {
         error = 'The queue was made, but its settings were not saved. Save again to retry.';
       }
