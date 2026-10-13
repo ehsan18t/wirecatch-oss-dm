@@ -84,6 +84,7 @@ describe('protocol helpers', () => {
       limit_reached: true,
       wrong_state: true,
       update_check_failed: true,
+      unsupported_call: true,
     };
     for (const code of Object.keys(codes)) {
       expect(isOutcome({ status: 'err', value: { code, message: 'No.' } }), code).toBe(true);

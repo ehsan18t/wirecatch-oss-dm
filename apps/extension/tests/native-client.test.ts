@@ -1,15 +1,26 @@
-import { MAX_FRAME_LEN, UNKNOWN_REQUEST_ID, type Event, type Hello } from '@wirecatch/protocol';
+import {
+  CALL_SINCE,
+  MAX_FRAME_LEN,
+  MIN_PROTOCOL_VERSION,
+  PROTOCOL_VERSION,
+  UNKNOWN_REQUEST_ID,
+  type Event,
+} from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NativeClient, RequestError, type Backoff } from '../src/lib/native/client';
+import {
+  NativeClient,
+  RequestError,
+  type Backoff,
+  type HelloIdentity,
+} from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
 import { patchOf } from '../src/lib/protocol';
 import { FakeApp, flush } from './fakes';
 
-const HELLO: Omit<Hello, 'start_app'> = {
+const HELLO: HelloIdentity = {
   client: 'extension',
   client_version: '0.1.0',
-  protocol_version: 1,
   browser: { name: 'chrome', version: '141' },
 };
 
@@ -36,14 +47,22 @@ describe('NativeClient', () => {
     vi.useRealTimers();
   });
 
-  it('sends hello first, with client kind, protocol version and browser', async () => {
+  it('sends hello first, with client kind, the protocol versions it speaks and browser', async () => {
     client = makeClient(app);
     client.start();
     await flush();
     // Starting up only reaches an app that is already running.
     expect(app.requests[0]).toEqual({
       id: 1,
-      call: { method: 'hello', params: { ...HELLO, start_app: false } },
+      call: {
+        method: 'hello',
+        params: {
+          ...HELLO,
+          protocol_version: MIN_PROTOCOL_VERSION,
+          max_protocol_version: PROTOCOL_VERSION,
+          start_app: false,
+        },
+      },
     });
     expect(client.status).toEqual({ state: 'connected', appVersion: '0.1.0' });
   });
@@ -520,22 +539,115 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
   });
 
-  it('refuses a different protocol version', async () => {
-    app.protocolVersion = 2;
+  it('connects to an app from before version ranges, in version 1', async () => {
+    app.versions = { oldest: 1, newest: 1 };
+    app.readsVersionRanges = false;
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(client.status.state).toBe('connected');
+  });
+
+  it('speaks the newest version a newer app shares with it', async () => {
+    app.versions = { oldest: MIN_PROTOCOL_VERSION, newest: PROTOCOL_VERSION + 5 };
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(client.status.state).toBe('connected');
+  });
+
+  it('refuses a version it does not speak, saying which side to update', async () => {
+    const mismatch = (): string | null => {
+      const status = client.status;
+      expect(status).toMatchObject({ state: 'unavailable', problem: { kind: 'version_mismatch' } });
+      return status.state === 'unavailable' ? status.problem.detail : null;
+    };
+    app.chosenVersion = PROTOCOL_VERSION + 1;
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(mismatch()).toContain('Update the extension');
+    app.chosenVersion = MIN_PROTOCOL_VERSION - 1;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mismatch()).toContain('Update the Wirecatch app');
+    app.chosenVersion = MIN_PROTOCOL_VERSION + 0.5;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(app.ports).toHaveLength(3);
+    expect(mismatch()).toContain('does not exist');
+  });
+
+  it('shows an app that shares no protocol version with it as a version mismatch', async () => {
+    app.versions = { oldest: PROTOCOL_VERSION + 1, newest: PROTOCOL_VERSION + 2 };
     client = makeClient(app);
     client.start();
     await flush();
     expect(client.status).toMatchObject({
       state: 'unavailable',
-      problem: { kind: 'version_mismatch' },
+      problem: { kind: 'version_mismatch', detail: 'No protocol version in common.' },
     });
-    app.protocolVersion = 1;
-    app.helloError = { code: 'unsupported_version', message: 'Protocol 1 is not supported.' };
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(client.status).toMatchObject({
-      state: 'unavailable',
-      problem: { kind: 'version_mismatch' },
+  });
+
+  it('sends no call newer than the version agreed with the app, and says so', async () => {
+    app.versions = { oldest: 1, newest: 1 };
+    app.readsVersionRanges = false;
+    client = new NativeClient({
+      transport: app,
+      hello: () => Promise.resolve(HELLO),
+      callSince: { ...CALL_SINCE, show_window: 2 },
     });
+    expect(client.supports('pause_all')).toBe(false);
+    client.start();
+    await flush();
+    expect(client.status.state).toBe('connected');
+    expect(client.supports('pause_all')).toBe(true);
+    expect(client.supports('show_window')).toBe(false);
+    const error = await client.request({ method: 'show_window' }, 1_000).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RequestError);
+    expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'unsupported_call' } });
+    expect(app.calls('show_window')).toEqual([]);
+    expect(client.status.state).toBe('connected');
+  });
+
+  it('forgets the agreed version when the connection closes', async () => {
+    client = makeClient(app);
+    client.start();
+    await flush();
+    expect(client.supports('pause_all')).toBe(true);
+
+    app.openPort?.browserDisconnect('Native host has exited.');
+    await flush();
+
+    expect(client.status.state).toBe('unavailable');
+    expect(client.supports('pause_all')).toBe(false);
+  });
+
+  it('sends a newer call to an app whose agreed version has it', async () => {
+    client = new NativeClient({
+      transport: app,
+      hello: () => Promise.resolve(HELLO),
+      callSince: { ...CALL_SINCE, show_window: PROTOCOL_VERSION },
+    });
+    client.start();
+    await flush();
+    expect(client.supports('show_window')).toBe(true);
+    await expect(client.request({ method: 'show_window' }, 1_000)).resolves.toEqual({
+      type: 'done',
+    });
+  });
+
+  it('fails only a call the app does not have, and stays connected', async () => {
+    app.unsupported.add('show_window');
+    client = makeClient(app);
+    client.start();
+    await flush();
+    const error = await client.request({ method: 'show_window' }, 1_000).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RequestError);
+    expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'unsupported_call' } });
+    expect(client.status.state).toBe('connected');
+    await expect(client.request({ method: 'pause_all' }, 1_000)).resolves.toEqual({
+      type: 'done',
+    });
+    expect(app.ports).toHaveLength(1);
   });
 
   it('gives up on a hello that never gets an answer and tries again', async () => {

@@ -430,7 +430,8 @@ export function isErrorCode(value: unknown): value is ErrorCode {
     value === 'addon_required' ||
     value === 'limit_reached' ||
     value === 'wrong_state' ||
-    value === 'update_check_failed'
+    value === 'update_check_failed' ||
+    value === 'unsupported_call'
   );
 }
 
@@ -544,6 +545,8 @@ export function isHello(value: unknown): value is Hello {
     isClientKind(value1['client']) &&
     typeof value1['client_version'] === 'string' &&
     typeof value1['protocol_version'] === 'number' &&
+    (value1['max_protocol_version'] === undefined ||
+      typeof value1['max_protocol_version'] === 'number') &&
     (isBrowserInfo(value1['browser']) || value1['browser'] === null) &&
     typeof value1['start_app'] === 'boolean')(value);
 }

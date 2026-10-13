@@ -2,7 +2,6 @@ import {
   isEvent,
   isOutcome,
   MAX_FRAME_LEN,
-  PROTOCOL_VERSION,
   UNKNOWN_REQUEST_ID,
   type Call,
   type Event,
@@ -15,6 +14,13 @@ import {
 import { formatBytes } from '@wirecatch/units';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
+import {
+  CALL_NEWER_THAN_APP,
+  hasCall,
+  SPOKEN_VERSIONS,
+  helloProblem,
+  type CallSince,
+} from './versions';
 
 /** How many timed-out requests are remembered so a late answer can still be recognized. */
 const LATE_MEMORY = 64;
@@ -34,15 +40,20 @@ export interface NativeTransport {
   disconnectReason(port: NativePort): string | null;
 }
 
+/** What the extension says about itself in `hello`; the client adds the protocol versions it speaks and whether the app may be started. */
+export type HelloIdentity = Omit<Hello, 'start_app' | 'protocol_version' | 'max_protocol_version'>;
+
 export interface ClientOptions {
   transport: NativeTransport;
-  /** Builds the `hello` call sent first on every connection; the client adds whether the app may be started. */
-  hello: () => Promise<Omit<Hello, 'start_app'>>;
+  /** Builds the `hello` call sent first on every connection. */
+  hello: () => Promise<HelloIdentity>;
   /** How long to wait for the answer to `hello`; `HELLO_TIMEOUT_MS` when missing. */
   helloTimeoutMs?: number;
   /** Delays between reconnection attempts; the last one repeats. */
   backoffMs?: Backoff;
   now?: () => number;
+  /** The protocol version that added each call; the generated `CALL_SINCE` when missing. */
+  callSince?: CallSince;
 }
 
 export type RequestErrorKind =
@@ -140,20 +151,6 @@ function problemFromHelloError(error: RequestError): Problem {
   return { kind: 'disconnected', detail: error.message };
 }
 
-/** What is wrong with the answer to `hello`, or null when the app can be talked to. */
-function helloProblem(reply: Reply): Problem | null {
-  if (reply.type !== 'hello') {
-    return { kind: 'disconnected', detail: 'Wirecatch gave an unexpected answer to hello.' };
-  }
-  if (reply.data.protocol_version !== PROTOCOL_VERSION) {
-    return {
-      kind: 'version_mismatch',
-      detail: `The app speaks protocol version ${reply.data.protocol_version}; this extension speaks version ${PROTOCOL_VERSION}.`,
-    };
-  }
-  return null;
-}
-
 /**
  * Talks to the Wirecatch app through the native messaging bridge.
  *
@@ -173,6 +170,8 @@ export class NativeClient {
   #generation = 0;
   #nextId = UNKNOWN_REQUEST_ID + 1;
   #attempt = 0;
+  /** The protocol version the open connection agreed on; null until the app answers hello. */
+  #version: number | null = null;
   /** Requests that timed out on the current port, so an answer arriving later is passed on. */
   readonly #late = new Map<number, Call>();
   readonly #lateListeners = new Set<(call: Call, outcome: Outcome | null) => void>();
@@ -197,6 +196,15 @@ export class NativeClient {
   /** How long the answer to `hello` may take, starting the app included. */
   get helloTimeoutMs(): number {
     return this.#options.helloTimeoutMs ?? HELLO_TIMEOUT_MS;
+  }
+
+  /**
+   * Whether the connected app has the call: false while there is no connection, and for a call
+   * newer than the protocol version agreed with the app (D32). Such a call is refused here
+   * without being sent, so callers can hide what it offers instead.
+   */
+  supports(method: Call['method']): boolean {
+    return this.#version !== null && hasCall(this.#options.callSince, this.#version, method);
   }
 
   get status(): ConnectionStatus {
@@ -329,11 +337,15 @@ export class NativeClient {
     return true;
   }
 
-  /** Says hello; the connection is up only once the app answers in a protocol version this extension speaks. */
+  /** Says hello; the connection is up only once the app chooses a protocol version this extension speaks. */
   async #greet(startApp: boolean, generation: number): Promise<void> {
     let reply: Reply;
     try {
-      const hello: Hello = { ...(await this.#options.hello()), start_app: startApp };
+      const hello: Hello = {
+        ...(await this.#options.hello()),
+        ...SPOKEN_VERSIONS,
+        start_app: startApp,
+      };
       if (generation !== this.#generation) return;
       reply = await this.#send({ method: 'hello', params: hello }, this.helloTimeoutMs);
     } catch (error) {
@@ -350,6 +362,7 @@ export class NativeClient {
       return;
     }
     this.#attempt = 0;
+    this.#version = reply.data.protocol_version;
     this.#setStatus({ state: 'connected', appVersion: reply.data.app_version });
     for (const waiter of this.#readyWaiters) waiter.resolve();
     this.#readyWaiters.clear();
@@ -359,6 +372,11 @@ export class NativeClient {
     const port = this.#port;
     if (port === null) {
       return Promise.reject(new RequestError('disconnected', 'Wirecatch is not connected.'));
+    }
+    if (this.#version !== null && !hasCall(this.#options.callSince, this.#version, call.method)) {
+      return Promise.reject(
+        new RequestError('app', CALL_NEWER_THAN_APP.message, CALL_NEWER_THAN_APP),
+      );
     }
     const id = this.#nextId++;
     if (this.#nextId === UNKNOWN_REQUEST_ID) this.#nextId += 1;
@@ -484,6 +502,7 @@ export class NativeClient {
 
   #dropPort(): void {
     this.#generation += 1;
+    this.#version = null;
     // Request ids belong to one connection; answers to them can no longer arrive.
     this.#late.clear();
     const port = this.#port;

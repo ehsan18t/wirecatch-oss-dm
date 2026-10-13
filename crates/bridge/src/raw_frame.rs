@@ -10,7 +10,7 @@ use std::io::{self, Read};
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use wirecatch_protocol::frame::{self, FrameError, HEADER_LEN};
-use wirecatch_protocol::wire::{self, Call, Message, MessageKind};
+use wirecatch_protocol::wire::{self, MessageKind};
 
 /// One whole frame: the 4-byte little-endian length followed by the body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,15 +32,9 @@ impl RawFrame {
         &self.0[HEADER_LEN..]
     }
 
-    /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`). Anything else, and a frame this build cannot read, allows it, as before the field existed.
+    /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`), read even when the rest of the hello is not readable. Anything else, and a hello without the field, allows it, as before the field existed.
     pub(crate) fn allows_starting_the_app(&self) -> bool {
-        match frame::decode::<Message>(self.body()) {
-            Ok(Message::Request {
-                call: Call::Hello(hello),
-                ..
-            }) => hello.start_app,
-            _ => true,
-        }
+        wire::HelloHead::read(self.body()).is_none_or(|hello| hello.start_app)
     }
 
     /// Reads the envelope fields the bridge needs.
@@ -160,6 +154,11 @@ mod tests {
         };
         assert!(!hello(r#","start_app":false"#).allows_starting_the_app());
         assert!(hello(r#","start_app":true"#).allows_starting_the_app());
+        // A hello this build cannot read whole still says whether the app may be started.
+        let unreadable = raw(
+            r#"{"kind":"request","id":1,"call":{"method":"hello","params":{"client":"phone","client_version":2,"protocol_version":1,"start_app":false}}}"#,
+        );
+        assert!(!unreadable.allows_starting_the_app());
         // Clients from before the field, and every other call, allow it as before.
         assert!(hello("").allows_starting_the_app());
         assert!(

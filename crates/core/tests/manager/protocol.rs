@@ -18,7 +18,7 @@ use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, Message, Outcome, ProtocolError, Reply,
     UNKNOWN_REQUEST_ID,
 };
-use wirecatch_protocol::{PROTOCOL_VERSION, QuestionId};
+use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, QuestionId};
 
 use crate::common::{
     Config, Harness, PATIENCE, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
@@ -51,7 +51,9 @@ impl Client {
 
     async fn connected(manager: &Manager) -> TestResult<Self> {
         let mut client = Self::connect(manager);
-        let reply = client.call(hello(PROTOCOL_VERSION)).await?;
+        let reply = client
+            .call(hello(MIN_PROTOCOL_VERSION, Some(PROTOCOL_VERSION)))
+            .await?;
         assert!(
             matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == PROTOCOL_VERSION),
             "{reply:?}"
@@ -61,6 +63,12 @@ impl Client {
 
     async fn send(&mut self, message: &Message) -> TestResult {
         frame::write_async(&mut self.stream, message).await?;
+        Ok(())
+    }
+
+    /// Sends a frame holding `body` byte for byte, for JSON no message type produces.
+    async fn send_raw(&mut self, body: &str) -> TestResult {
+        self.stream.write_all(&framed(body.as_bytes())?).await?;
         Ok(())
     }
 
@@ -127,11 +135,12 @@ impl Client {
     }
 }
 
-fn hello(protocol_version: u32) -> Call {
+fn hello(protocol_version: u32, max_protocol_version: Option<u32>) -> Call {
     Call::Hello(Hello {
         client: ClientKind::Extension,
         client_version: "0.1.0".into(),
         protocol_version,
+        max_protocol_version,
         browser: None,
         start_app: true,
     })
@@ -171,18 +180,156 @@ async fn skipping_hello_is_refused_and_closed() -> TestResult {
     Ok(())
 }
 
+/// Whatever the first request is, a call the app has or not, the client is told hello comes
+/// first; the connection then closes, which an `unsupported_call` answer would deny.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_wrong_protocol_version_is_refused_and_closed() -> TestResult {
+async fn a_first_call_the_app_lacks_is_told_hello_comes_first() -> TestResult {
+    let h = Harness::new().await?;
+    for first in [
+        r#"{"kind":"request","id":9,"call":{"method":"format_disk","params":{}}}"#,
+        r#"{"kind":"request","id":9,"call":{"method":"add_download","params":{"url":3}}}"#,
+    ] {
+        let mut client = Client::connect(&h.manager);
+        client.send_raw(first).await?;
+        let err = client.response(9).await?.unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidRequest, "{first}");
+        assert!(
+            err.message.contains("first message must be hello"),
+            "{first}: {}",
+            err.message
+        );
+        client.assert_closed().await?;
+    }
+    Ok(())
+}
+
+/// A peer that floods the connection with calls the app lacks, as large as a frame may be or
+/// nested deeper than any reader follows, gets an answer to each and leaves the connection
+/// working.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_flood_of_calls_the_app_lacks_is_answered_and_survived() -> TestResult {
+    let h = Harness::new().await?;
+    let mut client = Client::connected(&h.manager).await?;
+    let nested = format!("{}{}", "[".repeat(5000), "]".repeat(5000));
+    for id in 1..=64_u64 {
+        let prefix =
+            format!(r#"{{"kind":"request","id":{id},"call":{{"method":"format_disk","params":"#);
+        let suffix = "}}";
+        let params = if id % 8 == 0 {
+            nested.clone()
+        } else {
+            let quotes = 2;
+            let filler = "x".repeat(MAX_FRAME_LEN - prefix.len() - suffix.len() - quotes);
+            format!(r#""{filler}""#)
+        };
+        let body = format!("{prefix}{params}{suffix}");
+        assert!(body.len() <= MAX_FRAME_LEN, "{}", body.len());
+        client.send_raw(&body).await?;
+        let err = client.response(id).await?.unwrap_err();
+        assert_eq!(err.code, ErrorCode::UnsupportedCall, "{id}");
+    }
+    assert!(client.call(Call::ListQueues).await?.is_ok());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_sharing_no_protocol_version_is_refused_and_closed() -> TestResult {
+    let h = Harness::new().await?;
+    let too_new = hello(PROTOCOL_VERSION + 1, Some(PROTOCOL_VERSION + 3));
+    let too_old = hello(0, Some(MIN_PROTOCOL_VERSION - 1));
+    for (call, update) in [
+        (too_new, "the Wirecatch app"),
+        (too_old, "the browser extension"),
+    ] {
+        let mut client = Client::connect(&h.manager);
+        let err = client.call(call).await?.unwrap_err();
+        assert_eq!(err.code, ErrorCode::UnsupportedVersion);
+        assert!(
+            err.message.contains(&format!("Update {update}")),
+            "{}",
+            err.message
+        );
+        client.assert_closed().await?;
+    }
+    Ok(())
+}
+
+/// An extension from before version ranges sends only `protocol_version: 1` and accepts only
+/// 1 back. The app answers it in version 1, with version 1's error codes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_from_before_version_ranges_is_answered_in_version_1() -> TestResult {
     let h = Harness::new().await?;
     let mut client = Client::connect(&h.manager);
-    let err = client.call(hello(PROTOCOL_VERSION + 1)).await?.unwrap_err();
-    assert_eq!(err.code, ErrorCode::UnsupportedVersion);
+    client
+        .send_raw(r#"{"kind":"request","id":1,"call":{"method":"hello","params":{"client":"extension","client_version":"0.1.0","protocol_version":1,"browser":null}}}"#)
+        .await?;
+    let reply = client.response(1).await?;
     assert!(
-        err.message.contains("Update the Wirecatch app"),
-        "{}",
-        err.message
+        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == 1),
+        "{reply:?}"
     );
-    client.assert_closed().await?;
+
+    client
+        .send_raw(r#"{"kind":"request","id":2,"call":{"method":"format_disk"}}"#)
+        .await?;
+    assert_eq!(
+        client.response(2).await?.unwrap_err().code,
+        ErrorCode::InvalidRequest
+    );
+    assert!(client.call(Call::ListQueues).await?.is_ok());
+    Ok(())
+}
+
+/// A client newer than the app, still speaking a version the app has, is answered in the
+/// newest version both speak, and fields only it knows are passed over.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_newer_client_is_answered_in_the_newest_version_both_speak() -> TestResult {
+    let h = Harness::new().await?;
+    let mut client = Client::connect(&h.manager);
+    let newest = PROTOCOL_VERSION + 7;
+    client
+        .send_raw(&format!(r#"{{"kind":"request","id":1,"call":{{"method":"hello","params":{{"client":"extension","client_version":"9.0.0","protocol_version":{MIN_PROTOCOL_VERSION},"max_protocol_version":{newest},"browser":null,"start_app":false,"capabilities":["teleport"]}}}},"trace":"abc"}}"#))
+        .await?;
+    let reply = client.response(1).await?;
+    assert!(
+        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == PROTOCOL_VERSION),
+        "{reply:?}"
+    );
+    client
+        .send_raw(r#"{"kind":"request","id":2,"call":{"method":"list_queues","priority":"high"},"trace":"def"}"#)
+        .await?;
+    assert!(matches!(client.response(2).await?, Ok(Reply::Queues(_))));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hello_with_impossible_versions_is_refused_and_closed() -> TestResult {
+    let h = Harness::new().await?;
+    let versions = [
+        r#""protocol_version":2,"max_protocol_version":1"#,
+        r#""protocol_version":-1"#,
+        r#""protocol_version":4294967296"#,
+        r#""protocol_version":"2""#,
+        r#""protocol_version":1,"max_protocol_version":1e300"#,
+        r#""max_protocol_version":2"#,
+    ];
+    for version in versions {
+        let mut client = Client::connect(&h.manager);
+        client
+            .send_raw(&format!(r#"{{"kind":"request","id":1,"call":{{"method":"hello","params":{{"client":"extension","client_version":"1",{version},"browser":null}}}}}}"#))
+            .await?;
+        let err = client.response(1).await?.unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidRequest, "{version}");
+        client.assert_closed().await?;
+    }
+
+    // The widest range there is still agrees on this app's newest version.
+    let mut client = Client::connect(&h.manager);
+    let reply = client.call(hello(0, Some(u32::MAX))).await?;
+    assert!(
+        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == PROTOCOL_VERSION),
+        "{reply:?}"
+    );
     Ok(())
 }
 
@@ -191,12 +338,23 @@ async fn bad_messages_get_errors_and_the_connection_survives() -> TestResult {
     let h = Harness::new().await?;
     let mut client = Client::connected(&h.manager).await?;
 
-    // An unknown method still has a readable id.
-    let unknown = br#"{"kind":"request","id":41,"call":{"method":"format_disk"}}"#;
-    client.stream.write_all(&framed(unknown)?).await.unwrap();
+    // A method the app does not have is unsupported, not unreadable.
+    client
+        .send_raw(
+            r#"{"kind":"request","id":41,"call":{"method":"format_disk","params":{"drive":"C"}}}"#,
+        )
+        .await?;
     let err = client.response(41).await?.unwrap_err();
+    assert_eq!(err.code, ErrorCode::UnsupportedCall);
+
+    // A call the app has, with parameters it cannot read, is invalid.
+    client
+        .send_raw(
+            r#"{"kind":"request","id":42,"call":{"method":"add_download","params":{"url":3}}}"#,
+        )
+        .await?;
+    let err = client.response(42).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidRequest);
-    assert!(err.message.contains("format_disk"), "{}", err.message);
 
     // Garbage has no id at all.
     client

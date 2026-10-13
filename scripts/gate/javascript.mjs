@@ -1,10 +1,14 @@
 // The JavaScript checks: the generated protocol types are current, every package is linted the one way (js-policy.mjs), and the packages check, lint, test, build and audit.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { jsPolicy } from './js-policy.mjs';
-import { GateError, pnpm, ROOT } from './process.mjs';
+import { capture, GateError, pnpm, ROOT } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
+/** The generated types of each released protocol version, copied once when it was released (D32.8). */
+const RELEASED_SNAPSHOTS = 'crates/protocol/released';
+/** The branch whose snapshots are released: one it has can never change. */
+const RELEASED_BASE = 'origin/main';
 
 /** Every file under `dir`, with its contents, keyed by its path from the repository root. */
 function folderContents(dir) {
@@ -34,8 +38,38 @@ function protocolDrift() {
   }
 }
 
+/** The `paths` whose text in the working tree (`here`, null for a file that is gone) is not their text on the released branch (`there`). */
+export function changedSnapshots(paths, there, here) {
+  return paths.filter((path) => here(path) !== there(path));
+}
+
+/** A released protocol version is frozen (D32.8): fails when a snapshot of one that main already has was changed or removed, since peers built for it read exactly what it holds. */
+function releasedSnapshotsKept() {
+  const hint = `Fetch the main branch (\`git fetch origin main\`): the released protocol versions are read from ${RELEASED_BASE}.`;
+  const paths = capture(
+    'git',
+    ['ls-tree', '-r', '--name-only', RELEASED_BASE, '--', RELEASED_SNAPSHOTS],
+    { hint },
+  )
+    .out.split('\n')
+    .filter(Boolean);
+  const changed = changedSnapshots(
+    paths,
+    (path) => capture('git', ['show', `${RELEASED_BASE}:${path}`]).out,
+    (path) => (existsSync(join(ROOT, path)) ? readFileSync(join(ROOT, path), 'utf8') : null),
+  );
+  if (changed.length > 0) {
+    throw new GateError(
+      `A released protocol version never changes (D32.8), but these snapshots differ from ${RELEASED_BASE}; restore them, and put a change in the version being built instead:\n${changed.join('\n')}`,
+    );
+  }
+}
+
 export const JS_CHECKS = {
-  protocol: protocolDrift,
+  protocol: () => {
+    protocolDrift();
+    releasedSnapshotsKept();
+  },
   'js-policy': jsPolicy,
   'js-check': () => pnpm('check'),
   'js-lint': () => pnpm('lint'),

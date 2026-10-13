@@ -11,10 +11,10 @@
 use std::io::Write as _;
 
 use wirecatch_desktop_lib::host;
-use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 use wirecatch_protocol::frame::{read_async, write_async};
 use wirecatch_protocol::wire::{Call, ClientKind, Hello, Message};
+use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hello = Call::Hello(Hello {
         client: ClientKind::Cli,
         client_version: env!("CARGO_PKG_VERSION").into(),
-        protocol_version: PROTOCOL_VERSION,
+        protocol_version: MIN_PROTOCOL_VERSION,
+        max_protocol_version: Some(PROTOCOL_VERSION),
         browser: None,
         start_app: true,
     });

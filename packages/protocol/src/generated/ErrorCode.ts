@@ -15,4 +15,5 @@ export type ErrorCode =
   | 'addon_required'
   | 'limit_reached'
   | 'wrong_state'
-  | 'update_check_failed';
+  | 'update_check_failed'
+  | 'unsupported_call';

@@ -1,13 +1,24 @@
 // Generated from crates/protocol by `pnpm protocol:generate`. Do not edit; run it again after changing the constants there.
 
+import type { Call } from './Call';
+import type { ErrorCode } from './ErrorCode';
+import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
 
 /**
- * Bumped on any incompatible change to the wire format.
+ * The newest protocol version this build speaks. Raised by every change to the wire format
+ * that a peer may need to know about, such as a new call, event, error code or field; a
+ * change only this build can see, such as a clearer error message, leaves it (D32).
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+
+/**
+ * The oldest protocol version this build still speaks. Raised only by a change an older
+ * peer cannot read, which then cannot connect at all and is told to update (D32).
+ */
+export const MIN_PROTOCOL_VERSION = 1;
 
 /**
  * The default queue, which always exists and cannot be deleted: downloads go to it when
@@ -186,6 +197,48 @@ export const SAFE_EXTENSIONS: readonly string[] = [
   'xz',
   'zst',
 ];
+
+/**
+ * The protocol version that added each call (D32): a client sends a call only on a connection whose version has it.
+ */
+export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
+  add_download: 1,
+  get_extension_settings: 1,
+  hello: 1,
+  list_queues: 1,
+  pause_all: 1,
+  resume_all: 1,
+  show_window: 1,
+  update_extension_settings: 1,
+  withdraw_download: 1,
+};
+
+/**
+ * The protocol version that added each event (D32): the app sends an event only on a connection whose version has it.
+ */
+export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
+  extension_settings_changed: 1,
+  queues_changed: 1,
+};
+
+/**
+ * The protocol version that added each error code (D32): the app sends a connection only codes its version has.
+ */
+export const ERROR_CODE_SINCE: Readonly<Record<ErrorCode, number>> = {
+  addon_required: 1,
+  app_not_running: 1,
+  app_unavailable: 1,
+  internal: 1,
+  invalid_request: 1,
+  invalid_url: 1,
+  limit_reached: 2,
+  not_found: 1,
+  not_started: 1,
+  unsupported_call: 2,
+  unsupported_version: 1,
+  update_check_failed: 2,
+  wrong_state: 2,
+};
 
 /**
  * The audio bit rates, in kbps, a person can pick when saving as each format;

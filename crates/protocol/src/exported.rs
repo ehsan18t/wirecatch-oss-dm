@@ -365,11 +365,13 @@ mod tests {
     fn write_typescript_constants() {
         use std::fmt::Write as _;
         let constants = [
+            crate::version::exported_consts(),
             crate::exported_consts(),
             crate::wire::exported_consts(),
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
             crate::desktop::exported_consts(),
+            crate::version::since_tables(),
             audio_tables(),
             vec![Constant::json(
                 "DEFAULT_EXTENSION_SETTINGS",

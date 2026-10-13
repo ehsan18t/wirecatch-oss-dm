@@ -2,7 +2,7 @@
  * The browser APIs the background script hands to the hub and the media center, in
  * the shapes those take, so the logic behind them stays testable without a browser.
  */
-import { PROTOCOL_VERSION, type BrowserInfo, type Hello } from '@wirecatch/protocol';
+import type { BrowserInfo } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '../cookies';
@@ -15,6 +15,7 @@ import type {
 } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
 import { isNotice } from '../messages';
+import type { HelloIdentity } from '../native/client';
 import { originPattern } from '../site-access';
 import { fields, isNumber, isString, itemsOf, object } from '../validate';
 
@@ -49,11 +50,10 @@ async function browserInfo(): Promise<BrowserInfo> {
 }
 
 /** What this extension says about itself in `hello`. */
-export async function helloFromExtension(): Promise<Omit<Hello, 'start_app'>> {
+export async function helloFromExtension(): Promise<HelloIdentity> {
   return {
     client: 'extension',
     client_version: browser.runtime.getManifest().version,
-    protocol_version: PROTOCOL_VERSION,
     browser: await browserInfo(),
   };
 }

@@ -15,7 +15,6 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, timeout, timeout_at};
 use wirecatch_ipc::Endpoint;
 use wirecatch_product::{CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME};
-use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::extension::{
     AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
     WithdrawRequest,
@@ -25,6 +24,7 @@ use wirecatch_protocol::wire::{
     BrowserInfo, Call, ClientKind, Event, Hello, HelloReply, Message, Outcome, ProtocolError,
     QueueSummary, Reply,
 };
+use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
 use crate::PATIENCE;
 use crate::bridge::{self, ENDPOINT_VAR, LAUNCH_VAR};
@@ -410,7 +410,8 @@ pub fn hello_call() -> Call {
     Call::Hello(Hello {
         client: ClientKind::Extension,
         client_version: "0.1.0-e2e".into(),
-        protocol_version: PROTOCOL_VERSION,
+        protocol_version: MIN_PROTOCOL_VERSION,
+        max_protocol_version: Some(PROTOCOL_VERSION),
         browser: Some(BrowserInfo {
             name: "chrome".into(),
             version: Some("140".into()),

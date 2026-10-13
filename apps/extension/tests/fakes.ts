@@ -2,18 +2,20 @@
  * In-memory stand-ins for the browser and the Wirecatch app, so the extension's
  * flows run end to end in tests without a browser, a bridge or an app.
  */
-import type {
-  AddAction,
-  Call,
-  Event,
-  ExtensionSettings,
-  ExtensionSettingsPatch,
-  Hello,
-  Message,
-  Outcome,
-  ProtocolError,
-  QueueSummary,
-  WithdrawOutcome,
+import {
+  MIN_PROTOCOL_VERSION,
+  PROTOCOL_VERSION,
+  type AddAction,
+  type Call,
+  type Event,
+  type ExtensionSettings,
+  type ExtensionSettingsPatch,
+  type Hello,
+  type Message,
+  type Outcome,
+  type ProtocolError,
+  type QueueSummary,
+  type WithdrawOutcome,
 } from '@wirecatch/protocol';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
 import type { DownloadState } from '../src/lib/capture/handover';
@@ -110,7 +112,14 @@ function mayStartApp(hello: Partial<Pick<Hello, 'start_app'>>): boolean {
 export class FakeApp implements NativeTransport {
   settings: ExtensionSettings = { ...DEFAULT_SETTINGS };
   queues: QueueSummary[] = QUEUES;
-  protocolVersion = 1;
+  /** The protocol versions the app speaks. */
+  versions = { oldest: MIN_PROTOCOL_VERSION, newest: PROTOCOL_VERSION };
+  /** Whether the app reads `max_protocol_version`; an app from before version ranges reads only `protocol_version`. */
+  readsVersionRanges = true;
+  /** When set, `hello` is answered with this version whatever the client speaks, as a broken app might. */
+  chosenVersion: number | null = null;
+  /** Calls answered with `unsupported_call`, as an app that does not have them answers. */
+  readonly unsupported = new Set<Call['method']>();
   appVersion = '0.1.0';
   /** When set, every new connection fails like a missing native host. */
   hostMissing: string | null = null;
@@ -183,6 +192,10 @@ export class FakeApp implements NativeTransport {
   /** Answers one request the way the app would, as the behavior fields say. */
   private answer(port: FakeNativePort, id: number, call: Call): void {
     const reply = (outcome: Outcome): void => port.deliver({ kind: 'response', id, outcome });
+    if (this.unsupported.has(call.method)) {
+      reply({ status: 'err', value: { code: 'unsupported_call', message: 'Not in this app.' } });
+      return;
+    }
     switch (call.method) {
       case 'hello':
         this.greet(call.params, reply);
@@ -229,13 +242,25 @@ export class FakeApp implements NativeTransport {
       return { status: 'err', value: { code: 'app_not_running', message: 'Wirecatch is closed.' } };
     }
     if (this.helloError !== null) return { status: 'err', value: this.helloError };
+    const version = this.chosenVersion ?? this.agreedVersion(params);
+    if (version === null) {
+      return {
+        status: 'err',
+        value: { code: 'unsupported_version', message: 'No protocol version in common.' },
+      };
+    }
     return {
       status: 'ok',
-      value: {
-        type: 'hello',
-        data: { app_version: this.appVersion, protocol_version: this.protocolVersion },
-      },
+      value: { type: 'hello', data: { app_version: this.appVersion, protocol_version: version } },
     };
+  }
+
+  /** The newest version both the app and the client speak, as the app chooses it; null when they share none. */
+  private agreedVersion(params: Hello): number | null {
+    const oldest = params.protocol_version;
+    const newest = this.readsVersionRanges ? (params.max_protocol_version ?? oldest) : oldest;
+    const agreed = Math.min(newest, this.versions.newest);
+    return agreed >= Math.max(oldest, this.versions.oldest) ? agreed : null;
   }
 
   private updateSettings(patch: ExtensionSettingsPatch, reply: (outcome: Outcome) => void): void {

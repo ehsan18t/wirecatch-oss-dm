@@ -17,11 +17,11 @@ use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_product::{
     CHROMIUM_EXTENSION_ID, CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
 };
-use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
+use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use wirecatch_test_support::{PATIENCE, PrivateDir, TestResult, private_dir};
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
@@ -121,7 +121,8 @@ fn hello(id: u64) -> TestResult<Vec<u8>> {
         call: Call::Hello(Hello {
             client: ClientKind::Extension,
             client_version: "test".into(),
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: MIN_PROTOCOL_VERSION,
+            max_protocol_version: Some(PROTOCOL_VERSION),
             browser: None,
             start_app: true,
         }),

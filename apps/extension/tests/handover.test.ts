@@ -63,7 +63,6 @@ async function setup(options: Options = {}): Promise<Setup> {
       Promise.resolve({
         client: 'extension',
         client_version: '0.1.0',
-        protocol_version: 1,
         browser: null,
       }),
     backoffMs: [60_000],

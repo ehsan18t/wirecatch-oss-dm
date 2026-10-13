@@ -15,10 +15,13 @@ export type Hello = {
    */
   client_version: string;
   /**
-   * The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the client speaks; the app refuses
-   * one it does not speak with [`ErrorCode::UnsupportedVersion`].
+   * The oldest protocol version the client speaks ([`MIN_PROTOCOL_VERSION`](crate::MIN_PROTOCOL_VERSION)). Apps from version 1 read only this field and accept a client only when it is 1, so a client that still speaks version 1 must name it here (D32).
    */
   protocol_version: number;
+  /**
+   * The newest protocol version the client speaks ([`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION)). Missing means the same as `protocol_version`, as clients from version 1 send it. The app answers with the newest version both speak, or refuses with [`ErrorCode::UnsupportedVersion`] a client it shares no version with.
+   */
+  max_protocol_version?: number;
   /**
    * Set by the extension; the bridge passes it through.
    */

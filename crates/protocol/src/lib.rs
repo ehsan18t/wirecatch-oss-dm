@@ -7,6 +7,7 @@
 //! - [`app`]: downloads, queues and settings as the desktop UI sees them.
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
+//! - [`version`]: the protocol versions each end speaks, and the one a connection agrees on.
 
 mod exported;
 
@@ -14,14 +15,15 @@ pub mod app;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
+pub mod version;
 pub mod wire;
+
+pub use version::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 exported::exported_consts! {
-    /// Bumped on any incompatible change to the wire format.
-    pub const PROTOCOL_VERSION: u32 = 1;
     /// The default queue, which always exists and cannot be deleted: downloads go to it when
     /// nothing names another queue.
     pub const DEFAULT_QUEUE_ID: QueueId = QueueId(1);

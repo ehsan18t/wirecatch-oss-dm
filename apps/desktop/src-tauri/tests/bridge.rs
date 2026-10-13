@@ -16,9 +16,9 @@ use tokio::process::Command;
 use wirecatch_desktop_lib::bridge::{self, BRIDGE_FILE_NAME};
 use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_product::CHROMIUM_EXTENSION_ORIGIN;
-use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
+use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use wirecatch_test_support::{PATIENCE, TestResult, private_dir};
 
 /// The bridge's test-only overrides (`crates/bridge/src/app.rs`).
@@ -91,7 +91,8 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult
         call: Call::Hello(Hello {
             client: ClientKind::Extension,
             client_version: "test".into(),
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: MIN_PROTOCOL_VERSION,
+            max_protocol_version: Some(PROTOCOL_VERSION),
             browser: Some(BrowserInfo {
                 name: "chrome".into(),
                 version: None,

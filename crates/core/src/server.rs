@@ -1,9 +1,12 @@
 //! The protocol server (D14): serves one client connection over any byte stream.
 //!
-//! The first call must be `hello` with this app's protocol version; otherwise the
-//! client gets a clear error and the connection closes. After that every request
-//! gets a response with its id, and events are pushed as they happen. A malformed or
-//! oversized frame gets an error response and the connection carries on. An error
+//! The first call must be `hello`, naming protocol versions this app speaks too;
+//! otherwise the client gets a clear error and the connection closes. The connection
+//! then speaks the newest version both sides have (D32), and the app sends it only
+//! the events and error codes that version has. After that every request gets a
+//! response with its id, and events are pushed as they happen. A malformed or
+//! oversized frame gets an error response, a call the connection's version does not
+//! have gets `UnsupportedCall`, and either way the connection carries on. An error
 //! that cannot be tied to a request (the frame was unreadable) uses id 0.
 //!
 //! Requests are handled side by side, each in its own task, so a slow one (a
@@ -20,11 +23,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::{debug, warn};
-use wirecatch_protocol::PROTOCOL_VERSION;
+use wirecatch_protocol::MIN_PROTOCOL_VERSION;
 use wirecatch_protocol::frame::{self, FrameError, MAX_FRAME_LEN};
+use wirecatch_protocol::version::{VersionError, VersionRange};
 use wirecatch_protocol::wire::{
-    Call, ClientKind, ErrorCode, Event, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
-    UNKNOWN_REQUEST_ID,
+    Call, CallMethod, ClientKind, ErrorCode, Event, Hello, HelloReply, Message, Outcome,
+    ProtocolError, Reply, RequestHead, UNKNOWN_REQUEST_ID,
 };
 
 use crate::manager::Manager;
@@ -50,10 +54,15 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let mut frames = FrameReader::default();
-    let Some(hello) = handshake(&mut frames, &mut stream).await? else {
+    let Some((hello, version)) = handshake(&mut frames, &mut stream).await? else {
         return Ok(());
     };
-    debug!(client = ?hello.client, version = %hello.client_version, "client connected");
+    debug!(
+        client = ?hello.client,
+        client_version = %hello.client_version,
+        protocol_version = version,
+        "client connected"
+    );
 
     let mut events = manager.subscribe_events();
     // Request tasks hand their responses back here, to be written by this task.
@@ -65,23 +74,25 @@ where
                 let reply = match frame? {
                     None => break,
                     Some(Frame::TooLarge(len)) => Some(too_large(len)),
-                    Some(Frame::Body(body)) => match parse_request(&body) {
-                        Ok((id, call)) => start_request(&manager, &slots, &responder, id, call),
+                    Some(Frame::Body(body)) => match parse_request(&body, version) {
+                        Ok((id, call)) => {
+                            start_request(&manager, &slots, &responder, version, id, call)
+                        }
                         Err(reply) => Some(*reply),
                     },
                 };
                 if let Some(reply) = reply {
-                    send(&mut stream, &reply).await?;
+                    send(&mut stream, reply, version).await?;
                 }
             }
-            Some(response) = responses.recv() => send(&mut stream, &response).await?,
+            Some(response) = responses.recv() => send(&mut stream, response, version).await?,
             event = events.recv() => match event {
-                Ok(event) => send(&mut stream, &Message::Event { event }).await?,
+                Ok(event) => send(&mut stream, Message::Event { event }, version).await?,
                 Err(RecvError::Lagged(missed)) => {
                     // Events were dropped; send the current state so the client is correct again.
                     warn!(missed, "client fell behind on events; resending current state");
                     for event in snapshot(&manager) {
-                        send(&mut stream, &Message::Event { event }).await?;
+                        send(&mut stream, Message::Event { event }, version).await?;
                     }
                 }
                 // The manager is gone; nothing more will happen.
@@ -92,7 +103,7 @@ where
     // The client has stopped sending; answer what it already asked, then close.
     drop(responder);
     while let Some(response) = responses.recv().await {
-        send(&mut stream, &response).await?;
+        send(&mut stream, response, version).await?;
     }
     Ok(())
 }
@@ -104,6 +115,7 @@ fn start_request(
     manager: &Manager,
     slots: &Arc<Semaphore>,
     responder: &mpsc::UnboundedSender<Message>,
+    version: u32,
     id: u64,
     call: Call,
 ) -> Option<Message> {
@@ -120,7 +132,7 @@ fn start_request(
     // Not tied to the connection: a request the client stops waiting for still
     // finishes, so the manager is never left halfway through a change.
     tokio::spawn(async move {
-        let outcome = handle(&manager, call).await;
+        let outcome = handle(&manager, version, call).await;
         if responder.send(Message::Response { id, outcome }).is_err() {
             debug!(id, "the client left before its answer was ready");
         }
@@ -129,47 +141,68 @@ fn start_request(
     None
 }
 
-/// Reads the first frame and checks it is a `hello` this app understands. Returns
-/// `None` after telling the client why it is refused.
-async fn handshake<S>(frames: &mut FrameReader, stream: &mut S) -> io::Result<Option<Hello>>
+/// Reads the first frame and checks it is a `hello` naming protocol versions this app
+/// speaks too. Returns the hello and the version the connection speaks, or `None` after
+/// telling the client why it is refused.
+async fn handshake<S>(frames: &mut FrameReader, stream: &mut S) -> io::Result<Option<(Hello, u32)>>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let refusal = match frames.next(stream).await? {
         None => return Ok(None),
         Some(Frame::TooLarge(len)) => too_large(len),
-        Some(Frame::Body(body)) => match parse_request(&body) {
-            Ok((id, Call::Hello(hello))) if hello.protocol_version == PROTOCOL_VERSION => {
-                let reply = Reply::Hello(HelloReply {
-                    app_version: env!("CARGO_PKG_VERSION").to_string(),
-                    protocol_version: PROTOCOL_VERSION,
-                });
-                send(stream, &ok(id, reply)).await?;
-                return Ok(Some(hello));
-            }
-            Ok((id, Call::Hello(hello))) => error(
-                id,
-                ErrorCode::UnsupportedVersion,
-                version_mismatch(&hello),
-            ),
-            Ok((id, _)) => error(
-                id,
-                ErrorCode::InvalidRequest,
-                "The first message must be hello. Update the extension or the app so both use the same version.".into(),
-            ),
-            Err(reply) => *reply,
+        Some(Frame::Body(body)) => match parse_hello(&body) {
+            Ok((id, hello)) => match hello
+                .versions()
+                .and_then(|theirs| VersionRange::THIS_BUILD.agree(theirs))
+            {
+                Ok(version) => {
+                    send(stream, ok(id, hello_reply(version)), version).await?;
+                    return Ok(Some((hello, version)));
+                }
+                Err(refused) => version_refusal(id, &hello, refused),
+            },
+            Err(refusal) => *refusal,
         },
     };
-    send(stream, &refusal).await?;
+    // Until the versions are agreed, the client is sent only what the oldest version has.
+    send(stream, refusal, MIN_PROTOCOL_VERSION).await?;
     Ok(None)
 }
 
-async fn handle(manager: &Manager, call: Call) -> Outcome {
+/// The hello in the first frame body, or the refusal to send instead: any other request,
+/// whether the app has its call or not, is told that hello comes first.
+fn parse_hello(body: &[u8]) -> Result<(u64, Hello), Box<Message>> {
+    let first_must_be_hello = |id| {
+        Box::new(error(
+            id,
+            ErrorCode::InvalidRequest,
+            "The first message must be hello. Update the extension or the app so both use the same version.".into(),
+        ))
+    };
+    match frame::decode::<Message>(body) {
+        Ok(Message::Request {
+            id,
+            call: Call::Hello(hello),
+        }) => Ok((id, hello)),
+        Ok(Message::Request { id, .. }) => Err(first_must_be_hello(id)),
+        Ok(Message::Response { id, .. }) => Err(Box::new(not_a_request(id))),
+        Ok(Message::Event { .. }) => Err(Box::new(not_a_request(UNKNOWN_REQUEST_ID))),
+        Err(e) => match RequestHead::read(body) {
+            Some(head) if head.method != CallMethod::Hello => Err(first_must_be_hello(head.id)),
+            head => Err(Box::new(not_understood(
+                head.map_or_else(|| readable_id(body), |head| head.id),
+                &e,
+            ))),
+        },
+    }
+}
+
+/// Carries out a call, answering in the connection's protocol `version`.
+async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
     let result = match call {
-        Call::Hello(_) => Ok(Reply::Hello(HelloReply {
-            app_version: env!("CARGO_PKG_VERSION").to_string(),
-            protocol_version: PROTOCOL_VERSION,
-        })),
+        // A connection keeps the version its first hello agreed on.
+        Call::Hello(_) => Ok(hello_reply(version)),
         Call::AddDownload(capture) => manager.add_capture(capture).await.map(Reply::DownloadAdded),
         Call::WithdrawDownload(request) => manager
             .withdraw_capture(&request.handover_id)
@@ -192,27 +225,75 @@ async fn handle(manager: &Manager, call: Call) -> Outcome {
     }
 }
 
-/// The request in a frame body, or the error response to send instead.
-fn parse_request(body: &[u8]) -> Result<(u64, Call), Box<Message>> {
+fn hello_reply(version: u32) -> Reply {
+    Reply::Hello(HelloReply {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        protocol_version: version,
+    })
+}
+
+/// The request in a frame body, when the connection's protocol `version` has its call, or
+/// the error response to send instead.
+fn parse_request(body: &[u8], version: u32) -> Result<(u64, Call), Box<Message>> {
     match frame::decode::<Message>(body) {
-        Ok(Message::Request { id, call }) => Ok((id, call)),
+        Ok(Message::Request { id, call }) if call.method().is_in(version) => Ok((id, call)),
+        Ok(Message::Request { id, call }) => {
+            let method = call.method();
+            debug!(
+                id,
+                ?method,
+                version,
+                "refused a call newer than the connection"
+            );
+            Err(Box::new(unsupported_call(id, method)))
+        }
         Ok(Message::Response { id, .. }) => Err(Box::new(not_a_request(id))),
         Ok(Message::Event { .. }) => Err(Box::new(not_a_request(UNKNOWN_REQUEST_ID))),
-        Err(e) => {
+        Err(e) => match RequestHead::read(body) {
+            Some(head) if !head.method.is_in(version) => {
+                debug!(
+                    id = head.id,
+                    version, "refused a call this app does not have: {e}"
+                );
+                Err(Box::new(unsupported_call(head.id, head.method)))
+            }
             // Answer with the request's id if at least that much is readable.
-            let id = serde_json::from_slice::<Value>(body)
-                .ok()
-                .and_then(|v| v.get("id").and_then(Value::as_u64))
-                .unwrap_or(UNKNOWN_REQUEST_ID);
-            Err(Box::new(error(
-                id,
-                ErrorCode::InvalidRequest,
-                format!(
-                    "The app did not understand this message ({e}). Update the extension or the app so both use the same version."
-                ),
-            )))
-        }
+            head => Err(Box::new(not_understood(
+                head.map_or_else(|| readable_id(body), |head| head.id),
+                &e,
+            ))),
+        },
     }
+}
+
+fn not_understood(id: u64, e: &FrameError) -> Message {
+    error(
+        id,
+        ErrorCode::InvalidRequest,
+        format!(
+            "The app did not understand this message ({e}). Update the extension or the app so both use the same version."
+        ),
+    )
+}
+
+/// The id of a message that is not a readable request, when at least that much is readable.
+fn readable_id(body: &[u8]) -> u64 {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("id").and_then(Value::as_u64))
+        .unwrap_or(UNKNOWN_REQUEST_ID)
+}
+
+/// The answer to a call the connection does not have: one this app lacks, which a newer
+/// app may have, or one newer than the version the client agreed to, which it should not
+/// have sent.
+fn unsupported_call(id: u64, method: CallMethod) -> Message {
+    let message = if method == CallMethod::Unknown {
+        "This version of the Wirecatch app cannot do what was asked, so it did nothing. Everything else still works, and updating the Wirecatch app may add it."
+    } else {
+        "The connection to the Wirecatch app speaks an older protocol version, which cannot do what was asked, so nothing was done. Everything else still works."
+    };
+    error(id, ErrorCode::UnsupportedCall, message.into())
 }
 
 fn snapshot(manager: &Manager) -> [Event; 2] {
@@ -222,21 +303,39 @@ fn snapshot(manager: &Manager) -> [Event; 2] {
     ]
 }
 
-fn version_mismatch(hello: &Hello) -> String {
+/// The answer to a hello whose protocol versions the app cannot agree to, saying which
+/// side to update.
+fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
     let client = match hello.client {
         ClientKind::Extension => "browser extension",
         ClientKind::Bridge => "browser connector",
         ClientKind::Cli => "command-line tool",
     };
-    let outdated = if hello.protocol_version > PROTOCOL_VERSION {
-        "Wirecatch app"
-    } else {
-        client
+    let (code, message) = match refused {
+        VersionError::Empty { oldest, newest } => (
+            ErrorCode::InvalidRequest,
+            format!(
+                "The {client} named protocol versions {oldest} to {newest}, which is no range. Update the {client}."
+            ),
+        ),
+        VersionError::PeerTooOld { peer, ours } => (
+            ErrorCode::UnsupportedVersion,
+            format!(
+                "The {client} is too old for this Wirecatch app: it speaks protocol versions up to {}, and the app needs {} or newer. Update the {client}.",
+                peer.newest(),
+                ours.oldest(),
+            ),
+        ),
+        VersionError::PeerTooNew { peer, ours } => (
+            ErrorCode::UnsupportedVersion,
+            format!(
+                "The {client} is newer than this Wirecatch app: it needs protocol version {} or newer, and the app speaks up to {}. Update the Wirecatch app.",
+                peer.oldest(),
+                ours.newest(),
+            ),
+        ),
     };
-    format!(
-        "The Wirecatch app speaks protocol version {PROTOCOL_VERSION}, but the {client} speaks version {}. Update the {outdated} so both match.",
-        hello.protocol_version,
-    )
+    error(id, code, message)
 }
 
 fn too_large(len: usize) -> Message {
@@ -271,8 +370,17 @@ fn error(id: u64, code: ErrorCode, message: String) -> Message {
     }
 }
 
-async fn send<S: AsyncWrite + Unpin>(stream: &mut S, message: &Message) -> io::Result<()> {
-    frame::write_async(stream, message)
+/// Writes `message` as the connection's protocol `version` has it (D32): every message to
+/// the client passes here, so none carries an event or error code newer than the client.
+async fn send<S: AsyncWrite + Unpin>(
+    stream: &mut S,
+    message: Message,
+    version: u32,
+) -> io::Result<()> {
+    let Some(message) = message.as_of(version) else {
+        return Ok(());
+    };
+    frame::write_async(stream, &message)
         .await
         .map_err(|e| match e {
             FrameError::Io(e) => e,
@@ -424,18 +532,97 @@ mod tests {
         assert!(frames.buf.capacity() < 2 * MAX_FRAME_LEN);
     }
 
+    /// Every message to the client goes through `send`, which leaves out what the connection's
+    /// version does not have.
+    #[tokio::test]
+    async fn sending_writes_only_what_the_connections_version_has() {
+        let mut written = Vec::new();
+        let event = Message::Event {
+            event: Event::QueuesChanged(Vec::new()),
+        };
+        send(&mut written, event, 0).await.unwrap();
+        assert!(
+            written.is_empty(),
+            "an event older clients cannot read was sent"
+        );
+
+        send(&mut written, unsupported_call(3, CallMethod::Unknown), 1)
+            .await
+            .unwrap();
+        let sent: Message = frame::read_async(&mut written.as_slice())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(
+                sent,
+                Message::Response {
+                    id: 3,
+                    outcome: Outcome::Err(ProtocolError {
+                        code: ErrorCode::InvalidRequest,
+                        ..
+                    })
+                }
+            ),
+            "{sent:?}"
+        );
+    }
+
+    /// A call the app lacks may come in a newer app; one newer than the connection should not
+    /// have been sent. The answer says which.
     #[test]
-    fn version_mismatch_says_what_to_update() {
-        let hello = |v| Hello {
+    fn an_unsupported_call_says_which_side_lacks_it() {
+        let message = |method| match unsupported_call(1, method) {
+            Message::Response {
+                outcome: Outcome::Err(error),
+                ..
+            } => {
+                assert_eq!(error.code, ErrorCode::UnsupportedCall);
+                error.message
+            }
+            other => panic!("not an error: {other:?}"),
+        };
+        assert!(message(CallMethod::Unknown).contains("updating the Wirecatch app"));
+        assert!(message(CallMethod::ListQueues).contains("older protocol version"));
+    }
+
+    #[test]
+    fn a_version_refusal_says_what_to_update() {
+        let hello = Hello {
             client: ClientKind::Extension,
             client_version: "0.1.0".into(),
-            protocol_version: v,
+            protocol_version: 0,
+            max_protocol_version: None,
             browser: None,
             start_app: true,
         };
+        let refusal = |oldest, newest| {
+            let refused = VersionRange::new(oldest, newest)
+                .and_then(|theirs| VersionRange::THIS_BUILD.agree(theirs))
+                .unwrap_err();
+            match version_refusal(7, &hello, refused) {
+                Message::Response {
+                    id: 7,
+                    outcome: Outcome::Err(error),
+                } => error,
+                other => panic!("not a refusal: {other:?}"),
+            }
+        };
+        let newest = wirecatch_protocol::PROTOCOL_VERSION;
+        let too_new = refusal(newest + 1, newest + 3);
+        assert_eq!(too_new.code, ErrorCode::UnsupportedVersion);
         assert!(
-            version_mismatch(&hello(PROTOCOL_VERSION + 1)).contains("Update the Wirecatch app")
+            too_new.message.ends_with("Update the Wirecatch app."),
+            "{}",
+            too_new.message
         );
-        assert!(version_mismatch(&hello(0)).contains("Update the browser extension"));
+        let too_old = refusal(0, MIN_PROTOCOL_VERSION - 1);
+        assert_eq!(too_old.code, ErrorCode::UnsupportedVersion);
+        assert!(
+            too_old.message.ends_with("Update the browser extension."),
+            "{}",
+            too_old.message
+        );
+        assert_eq!(refusal(2, 1).code, ErrorCode::InvalidRequest);
     }
 }

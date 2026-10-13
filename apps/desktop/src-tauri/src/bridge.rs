@@ -70,30 +70,39 @@ pub async fn serve_unavailable(mut listener: Listener, reason: String) {
 }
 
 /// Answers every request on `stream` with an "app unavailable" error carrying `reason`, until
-/// the client hangs up.
+/// the client hangs up. Only a request's id is read, so a call this build cannot read whole,
+/// such as one from a newer extension, gets the same answer (D32), and a frame that is no
+/// request is passed over.
 ///
 /// # Errors
 ///
-/// Reading from `stream` failed or brought something that is not a frame, or writing the
-/// answer failed.
+/// Reading from `stream` failed or brought something that is not a frame within the size
+/// limit, or writing the answer failed.
 pub async fn answer_unavailable<S>(mut stream: S, reason: &str) -> std::io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    use wirecatch_protocol::frame;
-    use wirecatch_protocol::wire::{ErrorCode, Message, Outcome, ProtocolError};
+    use wirecatch_protocol::wire::{
+        Envelope, ErrorCode, Message, MessageKind, Outcome, ProtocolError,
+    };
+    use wirecatch_protocol::{MIN_PROTOCOL_VERSION, frame};
 
     let message = format!(
         "Wirecatch is running but could not open its download list: {reason} Restart Wirecatch; if that does not help, see its tray icon for details."
     );
     loop {
-        let request: Option<Message> = frame::read_async(&mut stream)
+        let Some(body) = frame::read_body_async(&mut stream)
             .await
-            .map_err(std::io::Error::other)?;
-        let id = match request {
-            None => return Ok(()),
-            Some(Message::Request { id, .. }) => id,
-            Some(_) => continue,
+            .map_err(std::io::Error::other)?
+        else {
+            return Ok(());
+        };
+        let Some(Envelope {
+            kind: MessageKind::Request,
+            id: Some(id),
+        }) = Envelope::read(&body)
+        else {
+            continue;
         };
         let answer = Message::Response {
             id,
@@ -101,6 +110,10 @@ where
                 code: ErrorCode::AppUnavailable,
                 message: message.clone(),
             }),
+        };
+        // No version is agreed here, so the answer is one the oldest version has.
+        let Some(answer) = answer.as_of(MIN_PROTOCOL_VERSION) else {
+            continue;
         };
         frame::write_async(&mut stream, &answer)
             .await
@@ -274,7 +287,8 @@ mod tests {
             call: Call::Hello(Hello {
                 client: ClientKind::Extension,
                 client_version: "1".into(),
-                protocol_version: wirecatch_protocol::PROTOCOL_VERSION,
+                protocol_version: wirecatch_protocol::MIN_PROTOCOL_VERSION,
+                max_protocol_version: Some(wirecatch_protocol::PROTOCOL_VERSION),
                 browser: None,
                 start_app: true,
             }),
@@ -290,6 +304,50 @@ mod tests {
                 assert!(message.contains("The disk is full."), "{message}");
             }
             other => panic!("expected an error, got {other:?}"),
+        }
+        drop(client);
+        serving.await.unwrap().unwrap();
+    }
+
+    /// A request this app cannot read whole, such as a call from a newer extension, still gets
+    /// the clear error, and the connection stays for the next one (D32.4).
+    #[tokio::test]
+    async fn without_a_manager_an_unreadable_request_does_not_end_the_connection() {
+        use tokio::io::AsyncWriteExt;
+        use wirecatch_protocol::frame;
+        use wirecatch_protocol::wire::{Call, ErrorCode, Message, Outcome};
+
+        let (mut client, server) = tokio::io::duplex(64 * wirecatch_engine::units::KIB_USIZE);
+        let serving =
+            tokio::spawn(async move { answer_unavailable(server, "The disk is full.").await });
+        for body in [
+            &br#"{"kind":"request","id":3,"call":{"method":"teleport","params":{"to":"mars"}}}"#[..],
+            br#"{"kind":"request","id":4,"call":{"method":"add_download","params":{"url":3}}}"#,
+            b"not json",
+            br#"{"kind":"event","event":{"type":"queues_changed","data":[]}}"#,
+        ] {
+            let mut framed = frame::length_prefix(body.len()).unwrap().to_vec();
+            framed.extend_from_slice(body);
+            client.write_all(&framed).await.unwrap();
+        }
+        frame::write_async(
+            &mut client,
+            &Message::Request {
+                id: 5,
+                call: Call::ListQueues,
+            },
+        )
+        .await
+        .unwrap();
+        for expected in [3, 4, 5] {
+            let answer: Option<Message> = frame::read_async(&mut client).await.unwrap();
+            match answer {
+                Some(Message::Response {
+                    id,
+                    outcome: Outcome::Err(error),
+                }) if id == expected => assert_eq!(error.code, ErrorCode::AppUnavailable),
+                other => panic!("expected an error for {expected}, got {other:?}"),
+            }
         }
         drop(client);
         serving.await.unwrap().unwrap();

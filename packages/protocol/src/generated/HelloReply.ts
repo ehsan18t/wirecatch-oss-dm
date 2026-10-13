@@ -9,7 +9,8 @@ export type HelloReply = {
    */
   app_version: string;
   /**
-   * The [`PROTOCOL_VERSION`](crate::PROTOCOL_VERSION) the app speaks.
+   * The protocol version the connection speaks from now on: the newest version both the
+   * client and the app speak. A client from version 1 accepts only 1 here, and gets it.
    */
   protocol_version: number;
 };
