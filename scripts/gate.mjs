@@ -56,6 +56,7 @@ const GROUPS = {
     'clippy-http3',
     'test-http3',
     'engine-docs',
+    'docs',
   ],
   release: ['engine-package', 'msrv'],
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],

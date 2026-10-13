@@ -139,7 +139,7 @@ pub async fn read_async<T: DeserializeOwned>(
 ///
 /// # Errors
 ///
-/// As [`write`].
+/// As [`write()`].
 #[cfg(feature = "tokio")]
 pub async fn write_async<T: Serialize>(
     writer: &mut (impl tokio::io::AsyncWrite + Unpin),

@@ -180,6 +180,23 @@ export const RUST_CHECKS = {
     run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], {
       env: { RUSTDOCFLAGS: '-D warnings' },
     }),
+  // Every other library's documentation, so a broken or private link fails here as the engine's does. The desktop app is a program, not a library to document.
+  docs: () =>
+    run(
+      'cargo',
+      [
+        'doc',
+        '--workspace',
+        '--lib',
+        '--no-deps',
+        '--locked',
+        '--exclude',
+        ENGINE_CRATE,
+        '--exclude',
+        DESKTOP_CRATE,
+      ],
+      { env: { RUSTDOCFLAGS: '-D warnings' } },
+    ),
   // Verifies the package builds as published and ships the library only; git cleanliness is not its concern, so it also runs before a change is committed.
   'engine-package': enginePackage,
   msrv,
