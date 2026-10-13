@@ -331,8 +331,13 @@ async fn rate_limits_apply() {
     let f = fetcher(&server.url("k"), &options).await.unwrap();
     let start = Instant::now();
     f.get(f.url(), None, MIB).await.unwrap();
-    // 200 kB at 400 kB/s is half a second, minus the limiter's small burst.
-    assert!(start.elapsed() >= Duration::from_millis(300));
+    // 200 kB at 400 kB/s is half a second, less what the limiter saved up
+    // while the fetcher was being made: at most a quarter of a second's worth,
+    // which a slow machine always has time to save. A millisecond is left for
+    // rounding.
+    let least = Duration::from_millis(250 - 1);
+    let took = start.elapsed();
+    assert!(took >= least, "took {took:?}");
 }
 
 async fn blocking_fetcher(url: &Url, mode: PrivateNetwork) -> wirecatch_engine::Result<Fetcher> {
