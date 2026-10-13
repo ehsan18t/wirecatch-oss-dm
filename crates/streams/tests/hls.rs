@@ -13,8 +13,8 @@ use wirecatch_engine::numeric::approx_f64;
 use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadOptions, RateLimiter};
 use wirecatch_streams::{
-    Choice, Error, Outcome, PrivateNetwork, Stage, StreamKind, StreamProgress, StreamRequest,
-    download, inspect,
+    Choice, Error, KeyProblem, Outcome, PrivateNetwork, Role, Stage, StreamKind, StreamProgress,
+    StreamRequest, download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{TestResult, private_dir, ts_segment};
@@ -185,7 +185,10 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     req.video = Choice::Track("v9".into());
     assert!(matches!(
         run(req).await,
-        Err(Error::NoSuchTrack { kind: "video", .. })
+        Err(Error::NoSuchTrack {
+            kind: Role::Video,
+            ..
+        })
     ));
     dir.remove().unwrap();
 }
@@ -270,13 +273,17 @@ async fn a_wrong_key_is_a_clear_error() {
         ),
         "{error}"
     );
-    assert!(error.to_string().contains("could not be decrypted"));
     let error = run(request(&server, "short.m3u8", &dir.join("b.ts")))
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Key { .. }), "{error}");
     assert!(
-        error.to_string().contains("5 bytes long instead of 16"),
+        matches!(
+            error,
+            Error::Key {
+                problem: KeyProblem::Length(5),
+                ..
+            }
+        ),
         "{error}"
     );
     dir.remove().unwrap();
@@ -703,11 +710,7 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, Error::Manifest(_)), "{error}");
-    assert!(
-        error.to_string().contains("more than 200000 segments"),
-        "{error}"
-    );
+    assert!(matches!(error, Error::TooManySegments), "{error}");
     let error = inspect(
         &server.url("big.m3u8"),
         &options(),

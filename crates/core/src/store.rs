@@ -1409,9 +1409,8 @@ mod tests {
                 video_key: None,
             },
             job: Some(crate::media::MediaJob::Page {
-                format: "137+140".into(),
-                video: Some("137".into()),
-                audio: Some("140".into()),
+                video: "137".to_string().try_into().ok(),
+                audio: "140".to_string().try_into().ok(),
                 output: None,
                 keep_ext: None,
             }),
@@ -1448,6 +1447,50 @@ mod tests {
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET media = '{\"broken'", [])
             .unwrap();
+        drop(conn);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let loaded = &snapshot.downloads[0];
+        assert_eq!(loaded.summary.status, DownloadStatus::Failed);
+        assert_eq!(loaded.summary.error, Some(crate::media::unreadable()));
+        assert_eq!(
+            loaded.media.as_ref().and_then(|m| m.job.clone()),
+            Some(crate::media::MediaJob::Unreadable)
+        );
+    }
+
+    /// A page download stored by a build that passed any format id to yt-dlp, with an id this build refuses (D31): it fails as unreadable rather than run with a selection yt-dlp would read as something else.
+    #[tokio::test]
+    async fn a_stored_format_id_this_build_refuses_reads_as_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let id = |id: &str| crate::media::ytdlp::FormatId::try_from(id.to_string()).unwrap();
+        let mut row = download(1);
+        row.summary.status = DownloadStatus::Paused;
+        row.summary.error = None;
+        row.media = Some(StoredMedia {
+            summary: MediaSummary {
+                quality: "1080p".into(),
+                source: MediaKind::Page,
+                video_key: None,
+            },
+            job: Some(crate::media::MediaJob::Page {
+                video: Some(id("137")),
+                audio: Some(id("140")),
+                output: None,
+                keep_ext: None,
+            }),
+        });
+        store.save_downloads(vec![row]);
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let changed = conn
+            .execute(
+                "UPDATE downloads SET media = replace(media, '\"137\"', '\"bestvideo[height<=720]\"')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
         drop(conn);
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let loaded = &snapshot.downloads[0];

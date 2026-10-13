@@ -402,7 +402,10 @@ async fn keep_the_original_saves_the_download_as_it_came() -> TestResult {
     );
     let args = ffmpeg_args(&done.path)?;
     assert!(has_pair(&args, "-c", "copy"), "{args:?}");
-    assert!(!args.iter().any(|a| a == "-progress"), "it was converted");
+    assert!(
+        !args.iter().any(|a| a == "-map_chapters"),
+        "it was converted"
+    );
     assert_eq!(format_requests(&server), requests);
     assert!(
         h.manager.keep_original(id).is_err(),

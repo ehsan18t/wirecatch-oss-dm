@@ -1,73 +1,47 @@
-//! Joining tracks into one file with ffmpeg, by stream copy only.
+//! ffmpeg's arguments for every run Wirecatch makes (streams here, conversions in `wirecatch-core`), and joining a stream's tracks into one file by stream copy.
 //!
-//! ffmpeg is started with an argument vector, never through a shell, so no
-//! character in a path has a special meaning. Every path is absolute and
-//! passed as `file:<path>`, so ffmpeg reads it as a plain file even when the
-//! name starts with `-` or contains `:` or `|` (which ffmpeg would otherwise
-//! take for an option or a protocol such as `concat:`).
+//! ffmpeg is started with an argument vector, never through a shell, so no character in a path has a special meaning. Every path is absolute and passed as `file:<path>`, so ffmpeg reads it as a plain file even when the name starts with `-` or contains `:` or `|` (which ffmpeg would otherwise take for an option or a protocol such as `concat:`).
 //!
-//! The bytes ffmpeg reads come from a website, so ffmpeg is never left to
-//! guess what they are: each input names its demuxer (see [`InputFormat`]),
-//! may only be read by that demuxer, and may only open plain files. Otherwise
-//! a "segment" that is really a DASH manifest or an ffconcat script would make
-//! ffmpeg open other files on the computer, or other addresses, and copy them
-//! into the video.
+//! The bytes ffmpeg reads come from a website, so ffmpeg is never left to guess what they are: each input names its demuxer (see [`InputFormat`]), may only be read by that demuxer, and may only open plain files. Otherwise a "segment" that is really a DASH manifest or an ffconcat script would make ffmpeg open other files on the computer, or other addresses, and copy them into the video.
+
+#![forbid(unsafe_code)]
 
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
 
-use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
-use wirecatch_engine::units::KIB_USIZE;
 
+use crate::codec::Container;
 use crate::error::{Error, Result};
-use crate::plan::Role;
+use crate::model::Role;
+use crate::process::{self, RunError, RunOptions, STALL_TIMEOUT};
 
-/// Most of ffmpeg's error output kept for the error message.
-const STDERR_KEPT: usize = 16 * KIB_USIZE;
+/// The arguments [`preamble`] returns.
+const PREAMBLE: [&str; 5] = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y"];
 
-/// The container ffmpeg writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Container {
-    Mp4,
-    Matroska,
+/// The arguments [`progress_args`] returns.
+const PROGRESS: [&str; 3] = ["-progress", "pipe:1", "-nostats"];
+
+/// Bytes read from the start of a downloaded file to recognize its format.
+const DETECT_HEAD_BYTES: usize = 512;
+
+/// What every ffmpeg run starts with: no banner, never reading the keyboard, only errors on standard error, and replacing the output (always a file of Wirecatch's own).
+#[must_use]
+pub fn preamble() -> Vec<OsString> {
+    PREAMBLE.into_iter().map(OsString::from).collect()
 }
 
-impl Container {
-    /// The file extension, `audio_only` choosing the audio flavor.
-    pub fn extension(self, audio_only: bool) -> &'static str {
-        match (self, audio_only) {
-            (Container::Mp4, false) => "mp4",
-            (Container::Mp4, true) => "m4a",
-            (Container::Matroska, false) => "mkv",
-            (Container::Matroska, true) => "mka",
-        }
-    }
-
-    /// The container's name, for messages.
-    pub fn name(self) -> &'static str {
-        match self {
-            Container::Mp4 => "MP4",
-            Container::Matroska => "Matroska",
-        }
-    }
-
-    fn format(self) -> &'static str {
-        match self {
-            Container::Mp4 => "mp4",
-            Container::Matroska => "matroska",
-        }
-    }
+/// Progress reports on standard output (by default twice a second) and no other status lines. A run that reports progress can be watched for stalls ([`STALL_TIMEOUT`]).
+#[must_use]
+pub fn progress_args() -> Vec<OsString> {
+    PROGRESS.into_iter().map(OsString::from).collect()
 }
 
-/// A format ffmpeg may read a downloaded file as, recognized from the file's
-/// first bytes with [`InputFormat::detect`].
+/// A format ffmpeg may read a downloaded file as, recognized from the file's first bytes with [`InputFormat::detect`].
 ///
-/// These are the only formats Wirecatch hands to ffmpeg. Anything else (a
-/// playlist, a manifest, a script, an image) is refused before ffmpeg starts.
+/// These are the only formats Wirecatch hands to ffmpeg. Anything else (a playlist, a manifest, a script, an image) is refused before ffmpeg starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum InputFormat {
@@ -90,8 +64,7 @@ pub enum InputFormat {
 }
 
 impl InputFormat {
-    /// Recognizes the file at `path` from its first bytes. `Ok(None)` when it
-    /// is none of the formats above (or empty).
+    /// Recognizes the file at `path` from its first bytes. `Ok(None)` when it is none of the formats above (or empty).
     ///
     /// Blocks on the file system, so call it off async threads.
     ///
@@ -100,14 +73,13 @@ impl InputFormat {
     /// When the file cannot be opened or read.
     pub fn detect(path: &Path) -> io::Result<Option<InputFormat>> {
         let mut file = File::open(path)?;
-        let mut head = [0u8; 512];
+        let mut head = [0u8; DETECT_HEAD_BYTES];
         let len = read_up_to(&mut file, &mut head)?;
         let head = &head[..len];
         if let Some(format) = Self::from_head(head) {
             return Ok(Some(format));
         }
-        // HLS packed audio starts with an ID3 tag (its timestamp); the audio
-        // frames follow it.
+        // HLS packed audio starts with an ID3 tag (its timestamp); the audio frames follow it.
         let Some(skip) = id3_len(head) else {
             return Ok(None);
         };
@@ -117,8 +89,7 @@ impl InputFormat {
         Ok(audio_frame(&frame[..len]))
     }
 
-    /// The format whose signature `head` starts with, without looking past an
-    /// ID3 tag.
+    /// The format whose signature `head` starts with, without looking past an ID3 tag.
     fn from_head(head: &[u8]) -> Option<InputFormat> {
         if head.first() == Some(&0x47) {
             Some(InputFormat::MpegTs)
@@ -138,8 +109,7 @@ impl InputFormat {
         }
     }
 
-    /// The name of the ffmpeg demuxer that reads this format (as in
-    /// `ffmpeg -demuxers`).
+    /// The name of the ffmpeg demuxer that reads this format (as in `ffmpeg -demuxers`).
     #[must_use]
     pub fn demuxer(self) -> &'static str {
         match self {
@@ -169,37 +139,45 @@ impl InputFormat {
     }
 }
 
-/// The ffmpeg arguments that open `path` as one input read as `format`, and
-/// nothing else: `-protocol_whitelist file -format_whitelist <demuxer>
-/// -f <demuxer> -i file:<path>`.
+/// The ffmpeg arguments that open `path` as one input read as `format`, and nothing else: `-protocol_whitelist file -format_whitelist <demuxer> -f <demuxer> -i file:<path>`.
 ///
-/// Use this for every input of an ffmpeg run that reads downloaded bytes,
-/// before the output options. ffmpeg then reads the file with exactly the
-/// demuxer named, refuses to read it as anything else, and may open no other
-/// address (no network, no `concat:` or `subfile:`), so a crafted file cannot
-/// make ffmpeg fetch something or copy another local file into the result.
-/// Find `format` with [`InputFormat::detect`] and refuse the file when that
-/// returns `None`. Keep the run to stream copy (`-c copy`), so no decoder ever
-/// parses the downloaded bytes.
+/// Use this for every input of an ffmpeg run that reads downloaded bytes, before the output options. ffmpeg then reads the file with exactly the demuxer named, refuses to read it as anything else, and may open no other address (no network, no `concat:` or `subfile:`), so a crafted file cannot make ffmpeg fetch something or copy another local file into the result. Find `format` with [`InputFormat::detect`] and refuse the file when that returns `None`. Keep the run to stream copy (`-c copy`), so no decoder ever parses the downloaded bytes.
 ///
-/// `path` should be absolute; a relative one is made absolute against the
-/// current folder. It is passed as one `file:` argument, so a name starting
-/// with `-` or containing `:` or `|` is never read as an option or protocol.
+/// `path` should be absolute; a relative one is made absolute against the current folder. It is passed as one `file:` argument, so a name starting with `-` or containing `:` or `|` is never read as an option or protocol.
+///
+/// # Errors
+///
+/// [`FileArgumentError`] when `path` cannot be made absolute (it is empty, say).
 ///
 /// ```
 /// use std::path::Path;
 /// use wirecatch_streams::{InputFormat, ffmpeg_input_args};
 ///
-/// let args = ffmpeg_input_args(InputFormat::Mp4, Path::new("/tmp/video.mp4"));
+/// let args = ffmpeg_input_args(InputFormat::Mp4, Path::new("/tmp/video.mp4"))?;
 /// let text: Vec<_> = args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
 /// assert_eq!(
 ///     text[..7],
 ///     ["-protocol_whitelist", "file", "-format_whitelist", "mov", "-f", "mov", "-i"]
 /// );
 /// assert!(text[7].starts_with("file:"));
+/// # Ok::<(), wirecatch_streams::ffmpeg::FileArgumentError>(())
 /// ```
-pub fn ffmpeg_input_args(format: InputFormat, path: &Path) -> Vec<OsString> {
-    let demuxer = format.demuxer();
+pub fn ffmpeg_input_args(
+    format: InputFormat,
+    path: &Path,
+) -> std::result::Result<Vec<OsString>, FileArgumentError> {
+    input_args_for(format.demuxer(), path)
+}
+
+/// The ffmpeg arguments that open the local file `path` as one input read only with the demuxer `demuxer` (as `ffmpeg -demuxers` names it), from a file only, as one absolute `file:` path. [`ffmpeg_input_args`] is this for downloaded media; other local inputs, such as subtitles, a metadata file or a picture that was checked to be what it claims, use it directly (D21.3).
+///
+/// # Errors
+///
+/// [`FileArgumentError`] when `path` cannot be made absolute.
+pub fn input_args_for(
+    demuxer: &str,
+    path: &Path,
+) -> std::result::Result<Vec<OsString>, FileArgumentError> {
     let mut args: Vec<OsString> = [
         "-protocol_whitelist",
         "file",
@@ -212,9 +190,91 @@ pub fn ffmpeg_input_args(format: InputFormat, path: &Path) -> Vec<OsString> {
     .into_iter()
     .map(OsString::from)
     .collect();
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    args.push(file_argument(&absolute));
-    args
+    args.push(file_argument(path)?);
+    Ok(args)
+}
+
+/// A path that cannot be given to ffmpeg as one absolute `file:` argument.
+#[derive(Debug, thiserror::Error)]
+#[error("{} cannot be given to ffmpeg as an absolute path", .path.display())]
+#[non_exhaustive]
+pub struct FileArgumentError {
+    /// The path.
+    pub path: PathBuf,
+    /// Why it cannot be made absolute.
+    #[source]
+    pub source: io::Error,
+}
+
+/// `path` as one `file:` argument, made absolute against the current folder when it is not, so ffmpeg reads or writes it as a plain file whatever the name: one starting with `-` or holding `:` or `|` is never taken for an option or a protocol.
+///
+/// # Errors
+///
+/// [`FileArgumentError`] when `path` cannot be made absolute (it is empty, say): a relative path would be read against whatever folder ffmpeg runs in.
+pub fn file_argument(path: &Path) -> std::result::Result<OsString, FileArgumentError> {
+    let absolute = std::path::absolute(path).map_err(|source| FileArgumentError {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut arg = OsString::from("file:");
+    arg.push(absolute.as_os_str());
+    Ok(arg)
+}
+
+/// One downloaded file to copy into a container. Made with [`CopyInput::new`].
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct CopyInput<'a> {
+    /// The file.
+    pub path: &'a Path,
+    /// What it holds. Audio inside a video input is taken only when no input is audio alone.
+    pub role: Role,
+    /// The format it was recognized as.
+    pub format: InputFormat,
+}
+
+impl<'a> CopyInput<'a> {
+    /// `path`, holding `role`, recognized as `format`.
+    #[must_use]
+    pub fn new(path: &'a Path, role: Role, format: InputFormat) -> Self {
+        Self { path, role, format }
+    }
+}
+
+/// ffmpeg's arguments to copy the video and audio streams of `inputs` (in order) into `output` as `container`, never re-encoding them, with progress reports ([`progress_args`]). The muxer is always named, so the extension never decides, and MP4 files get their index at the front so players start at once.
+///
+/// # Errors
+///
+/// [`FileArgumentError`] when an input or the output cannot be made absolute.
+pub fn copy_arguments(
+    inputs: &[CopyInput<'_>],
+    output: &Path,
+    container: Container,
+) -> std::result::Result<Vec<OsString>, FileArgumentError> {
+    let mut args = preamble();
+    for input in inputs {
+        args.extend(ffmpeg_input_args(input.format, input.path)?);
+    }
+    let separate_audio = inputs.iter().any(|i| i.role == Role::Audio);
+    for (index, input) in inputs.iter().enumerate() {
+        // Only video and audio: streams such as timed ID3 metadata in MPEG-TS cannot go into MP4 and would make the copy fail. `?` skips a kind that an input does not have.
+        if input.role == Role::Video {
+            args.push("-map".into());
+            args.push(format!("{index}:v?").into());
+        }
+        if input.role == Role::Audio || !separate_audio {
+            args.push("-map".into());
+            args.push(format!("{index}:a?").into());
+        }
+    }
+    args.extend(["-c", "copy"].map(OsString::from));
+    if container.faststart() {
+        args.extend(["-movflags", "+faststart"].map(OsString::from));
+    }
+    args.extend(progress_args());
+    args.extend(["-f", container.muxer()].map(OsString::from));
+    args.push(file_argument(output)?);
+    Ok(args)
 }
 
 /// Reads until `buf` is full or the file ends; returns how much was read.
@@ -247,8 +307,7 @@ fn audio_frame(head: &[u8]) -> Option<InputFormat> {
     match head {
         // ADTS: 12-bit sync, layer 0.
         [0xFF, b, ..] if b & 0xF6 == 0xF0 => Some(InputFormat::Aac),
-        // MPEG audio: 11-bit sync, then a version and a layer that are not
-        // the reserved values.
+        // MPEG audio: 11-bit sync, then a version and a layer that are not the reserved values.
         [0xFF, b, ..] if b & 0xE0 == 0xE0 && b & 0x18 != 0x08 && b & 0x06 != 0 => {
             Some(InputFormat::Mp3)
         }
@@ -262,131 +321,41 @@ fn audio_frame(head: &[u8]) -> Option<InputFormat> {
     }
 }
 
-/// ffmpeg's arguments to copy the video and audio streams of `inputs` (in
-/// order, each with its role and format) into `output`. Paths must be
-/// absolute.
-pub(crate) fn arguments(
-    inputs: &[(&Path, Role, InputFormat)],
-    output: &Path,
-    container: Container,
-) -> Vec<OsString> {
-    let mut args: Vec<OsString> = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
-        .into_iter()
-        .map(OsString::from)
-        .collect();
-    for (path, _, format) in inputs {
-        args.extend(ffmpeg_input_args(*format, path));
-    }
-    let separate_audio = inputs.iter().any(|(_, role, _)| *role == Role::Audio);
-    for (index, (_, role, _)) in inputs.iter().enumerate() {
-        // Only video and audio: streams such as timed ID3 metadata in MPEG-TS
-        // cannot go into MP4 and would make the copy fail. `?` skips a kind
-        // that an input does not have.
-        if *role == Role::Video {
-            args.push("-map".into());
-            args.push(format!("{index}:v?").into());
-        }
-        if *role == Role::Audio || !separate_audio {
-            args.push("-map".into());
-            args.push(format!("{index}:a?").into());
-        }
-    }
-    for arg in ["-c", "copy", "-f", container.format()] {
-        args.push(arg.into());
-    }
-    args.push(file_argument(output));
-    args
-}
-
-/// `file:<path>`: read and written as a plain file, whatever the name.
-fn file_argument(path: &Path) -> OsString {
-    debug_assert!(path.is_absolute(), "ffmpeg paths must be absolute");
-    let mut arg = OsString::from("file:");
-    arg.push(path.as_os_str());
-    arg
-}
-
-/// Runs `program` with `args`. Returns `Ok(false)` when cancelled (ffmpeg is
-/// stopped), and an error with what ffmpeg reported when it fails.
+/// Runs `program` with `args`, writing `output` in its folder. Returns `Ok(false)` when cancelled (ffmpeg and its group are stopped), and an error with what ffmpeg reported when it fails. A run that reports nothing is stuck only when `output` does not grow either.
 pub(crate) async fn run(
     program: &Path,
     args: &[OsString],
+    output: &Path,
     cancel: &CancellationToken,
 ) -> Result<bool> {
-    let mut command = tokio::process::Command::new(program);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        // No console window flashing up from a desktop app.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
+    let dir = output.parent().unwrap_or(output);
+    let options = RunOptions::lines()
+        .with_idle_timeout(STALL_TIMEOUT)
+        .watching(output.to_path_buf());
+    match process::run(program, args, dir, options, cancel, |_, _| {}).await {
+        Ok(ran) if ran.success => Ok(true),
+        Ok(ran) => Err(Error::Ffmpeg(summary(&ran.stderr))),
+        Err(RunError::Cancelled) => Ok(false),
+        Err(RunError::Start { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            Err(Error::FfmpegMissing(program.to_path_buf()))
+        }
+        Err(e) => Err(Error::FfmpegRun(e)),
     }
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Error::FfmpegMissing(program.to_path_buf()));
-        }
-        Err(e) => return Err(Error::Ffmpeg(format!("it could not be started ({e})"))),
-    };
-    let mut stderr = child.stderr.take();
-    let finished = {
-        let read = async {
-            let mut kept = Vec::new();
-            if let Some(stderr) = stderr.as_mut() {
-                let mut chunk = [0u8; 4096];
-                // Read to the end so ffmpeg never blocks on a full pipe, but
-                // keep only the last part.
-                while let Ok(n) = stderr.read(&mut chunk).await {
-                    if n == 0 {
-                        break;
-                    }
-                    kept.extend_from_slice(&chunk[..n]);
-                    if kept.len() > STDERR_KEPT {
-                        kept.drain(..kept.len() - STDERR_KEPT);
-                    }
-                }
-            }
-            kept
-        };
-        let both = async { tokio::join!(child.wait(), read) };
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => None,
-            done = both => Some(done),
-        }
-    };
-    let Some((status, output)) = finished else {
-        if let Err(e) = child.kill().await {
-            tracing::warn!(error = %e, "could not stop ffmpeg after the download was cancelled");
-        }
-        return Ok(false);
-    };
-    let status = status.map_err(|e| Error::Ffmpeg(format!("waiting for it failed ({e})")))?;
-    if status.success() {
-        return Ok(true);
-    }
-    Err(Error::Ffmpeg(summary(&output, status.code())))
 }
 
-/// The last few lines ffmpeg printed, or its exit code if it printed nothing.
-fn summary(output: &[u8], code: Option<i32>) -> String {
-    let text = String::from_utf8_lossy(output);
-    let lines: Vec<&str> = text
-        .lines()
-        .map(str::trim)
+/// Lines of ffmpeg's error output kept in its error message.
+const SUMMARY_LINES: usize = 3;
+
+/// The last few lines ffmpeg printed.
+fn summary(stderr: &[String]) -> String {
+    let lines: Vec<&str> = stderr
+        .iter()
+        .map(|l| l.trim())
         .filter(|l| !l.is_empty())
         .collect();
-    let tail = lines[lines.len().saturating_sub(3)..].join(" / ");
+    let tail = lines[lines.len().saturating_sub(SUMMARY_LINES)..].join(" / ");
     if tail.is_empty() {
-        match code {
-            Some(code) => format!("it stopped with exit code {code}"),
-            None => "it was stopped".into(),
-        }
+        process::NO_REASON.into()
     } else {
         tail
     }
@@ -415,20 +384,20 @@ mod tests {
             let video = absolute(name);
             let audio = absolute(&format!("audio {name}"));
             let out = absolute(&format!("out {name}"));
-            let args = arguments(
+            let args = copy_arguments(
                 &[
-                    (&video, Role::Video, InputFormat::MpegTs),
-                    (&audio, Role::Audio, InputFormat::Aac),
+                    CopyInput::new(&video, Role::Video, InputFormat::MpegTs),
+                    CopyInput::new(&audio, Role::Audio, InputFormat::Aac),
                 ],
                 &out,
                 Container::Mp4,
-            );
+            )
+            .unwrap();
             let as_text: Vec<String> = args
                 .iter()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
-            // Each path is exactly one argument, prefixed so it can never be read
-            // as an option or a protocol.
+            // Each path is exactly one argument, prefixed so it can never be read as an option or a protocol.
             for path in [&video, &audio, &out] {
                 let expected = format!("file:{}", path.display());
                 assert_eq!(
@@ -471,6 +440,11 @@ mod tests {
                     "1:a?",
                     "-c",
                     "copy",
+                    "-movflags",
+                    "+faststart",
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
                     "-f",
                     "mp4"
                 ]
@@ -483,11 +457,12 @@ mod tests {
     fn one_input_keeps_its_own_audio() {
         let video = absolute("v.ts");
         let out = absolute("o.mkv");
-        let args = arguments(
-            &[(&video, Role::Video, InputFormat::MpegTs)],
+        let args = copy_arguments(
+            &[CopyInput::new(&video, Role::Video, InputFormat::MpegTs)],
             &out,
-            Container::Matroska,
-        );
+            Container::Mkv,
+        )
+        .unwrap();
         let text: Vec<_> = args
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
@@ -499,6 +474,7 @@ mod tests {
             .collect();
         assert_eq!(maps, ["0:v?", "0:a?"]);
         assert!(text.contains(&"matroska".to_string()));
+        assert!(!text.contains(&"+faststart".to_string()), "MP4 only");
         assert!(
             !text.iter().any(|a| a.contains("-c:v") || a == "libx264"),
             "never re-encodes"
@@ -519,6 +495,7 @@ mod tests {
         ] {
             let path = absolute("in");
             let text: Vec<String> = ffmpeg_input_args(format, &path)
+                .unwrap()
                 .iter()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
@@ -543,10 +520,24 @@ mod tests {
 
     #[test]
     fn relative_input_paths_are_made_absolute() {
-        let text = ffmpeg_input_args(InputFormat::Mp4, Path::new("relative.mp4"));
+        let text = ffmpeg_input_args(InputFormat::Mp4, Path::new("relative.mp4")).unwrap();
         let last = text.last().unwrap().to_string_lossy().into_owned();
         let path = Path::new(last.strip_prefix("file:").unwrap());
         assert!(path.is_absolute(), "{last}");
+    }
+
+    /// A path that cannot be made absolute is refused rather than passed as it is, which ffmpeg would read against the folder it runs in.
+    #[test]
+    fn a_path_that_cannot_be_made_absolute_is_refused() {
+        let refused = file_argument(Path::new(""));
+        assert!(
+            matches!(&refused, Err(FileArgumentError { path, .. }) if path.as_os_str().is_empty()),
+            "{refused:?}"
+        );
+        assert!(ffmpeg_input_args(InputFormat::Mp4, Path::new("")).is_err());
+        let video = absolute("v.ts");
+        let input = CopyInput::new(&video, Role::Video, InputFormat::MpegTs);
+        assert!(copy_arguments(&[input], Path::new(""), Container::Mkv).is_err());
     }
 
     #[test]
@@ -598,7 +589,8 @@ mod tests {
 
     #[test]
     fn summaries_keep_the_last_lines() {
-        assert_eq!(summary(b"a\n\nb\nc\nd\n", Some(1)), "b / c / d");
-        assert_eq!(summary(b"", Some(3)), "it stopped with exit code 3");
+        let lines = ["a", "", "b", "c", "d"].map(String::from);
+        assert_eq!(summary(&lines), "b / c / d");
+        assert_eq!(summary(&[]), "it gave no reason");
     }
 }

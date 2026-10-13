@@ -23,20 +23,22 @@ use wirecatch_engine::{
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
 use wirecatch_protocol::extension::Header;
-use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
+use wirecatch_streams::{Choice, Role, StreamProgress, StreamRequest};
 
 use super::Manager;
 use super::media::{addon_missing, cookie_header, media_options};
 use super::run::{Bandwidth, MediaDone, RunEnd};
 use super::state::{Gauge, State};
-use crate::addons::MediaTools;
+use crate::addons::{Check, MediaTools};
 use crate::clock::Clock;
-use crate::media::convert::{self, ConvertError, Converted};
-use crate::media::merge::{self, Joined};
+use crate::media::convert;
+use crate::media::describe;
+use crate::media::ffmpeg::{FfmpegError, Finished};
+use crate::media::merge;
 use crate::media::output::{
-    self, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
+    self, Container, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
 };
-use crate::media::ytdlp::{self, Fetched, Format, Transport};
+use crate::media::ytdlp::{self, Fetched, Format, FormatId, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::store::Origin;
 use crate::{headers, user_error};
@@ -133,7 +135,7 @@ impl Manager {
                     && let Some(manager) = Manager::from_weak(&manager)
                 {
                     // A program that would not start: check every file closely.
-                    manager.spawn_addon_rescan(true);
+                    manager.spawn_addon_rescan(Check::Hashes);
                 }
                 RunEnd::Media(end)
             })
@@ -150,14 +152,12 @@ async fn run(
     let result = match what {
         MediaJob::Stream { video, audio } => run_stream(&job, video, audio, progress, cancel).await,
         MediaJob::Page {
-            format,
             video,
             audio,
             output,
             keep_ext,
         } => {
             let page = PageJob {
-                format,
                 video,
                 audio,
                 output: output.map(|o| *o),
@@ -208,13 +208,11 @@ async fn run_stream(
             finish(&path, job, &work, &[]).await
         }
         Ok(_) | Err(wirecatch_streams::Error::Cancelled) => Ok(MediaDone::Paused),
-        Err(e) => {
-            note_missing_ffmpeg(job, &e);
-            Err(stream_error(
-                &e,
-                job.output.parent().unwrap_or(Path::new("")),
-            ))
-        }
+        Err(e) => Err(describe::stream(
+            &e,
+            job.output.parent().unwrap_or(Path::new("")),
+            job.tools.as_ref(),
+        )),
     }
 }
 
@@ -241,10 +239,8 @@ impl From<UserError> for PageError {
 
 /// What a page's video downloads and how it is saved.
 struct PageJob {
-    /// yt-dlp's format selection, for example `137+140`.
-    format: String,
-    video: Option<String>,
-    audio: Option<String>,
+    video: Option<FormatId>,
+    audio: Option<FormatId>,
     output: Option<OutputJob>,
     keep_ext: Option<String>,
 }
@@ -305,7 +301,8 @@ async fn page_attempt(
         progress.add_done(bytes);
         return Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?);
     }
-    let (format, video, audio) = (&page.format, &page.video, &page.audio);
+    let (video, audio) = (&page.video, &page.audio);
+    let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
     let ctx = ytdlp::Context {
         tools,
@@ -316,11 +313,13 @@ async fn page_attempt(
         timeout: job.timeout,
     };
     // Format addresses expire: read the page again on every start.
-    let info = ytdlp::extract(&ctx, cancel).await?;
+    let info = ytdlp::extract(&ctx, cancel)
+        .await
+        .map_err(|e| describe::ytdlp(&e, tools))?;
     // What an earlier attempt showed goes; this one adds its own parts.
     progress.start_over();
     let formats = info.all_formats();
-    let wanted: Vec<&String> = [video, audio].into_iter().flatten().collect();
+    let wanted: Vec<&FormatId> = [video, audio].into_iter().flatten().collect();
     let found: Vec<&Format> = wanted
         .iter()
         .filter_map(|id| formats.iter().find(|f| &&f.id == id))
@@ -339,7 +338,13 @@ async fn page_attempt(
         // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
-        match ytdlp::download(&ctx, format, &work, progress, cancel).await? {
+        // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
+        let merge_into = (video.is_some() && audio.is_some())
+            .then(|| joined_container(stored_kept_ext(page), job));
+        match ytdlp::download(&ctx, format, merge_into, &work, progress, cancel)
+            .await
+            .map_err(|e| describe::ytdlp(&e, tools))?
+        {
             Fetched::Done(file) => vec![file],
             Fetched::Cancelled => return Ok(MediaDone::Paused),
         }
@@ -716,18 +721,16 @@ async fn save(
         return Ok(MediaDone::Paused);
     };
     let file = if output.needs_pass() {
-        let inputs = inputs_for(output, downloaded, &files, work).await?;
+        let inputs = inputs_for(output, downloaded, &files, work)
+            .await?
+            .map_err(|e| describe::conversion(&e, output, tools))?;
         let target = work.join(format!("output.{}", output.container.ext()));
         let result = convert::convert(tools, output, &inputs, &target, progress, cancel).await;
         progress.set_step(None);
         match result {
-            Ok(Converted::Done) => target,
-            Ok(Converted::Cancelled) => return Ok(MediaDone::Paused),
-            Err(ConvertError::Failed(reason)) => return Err(conversion_failed(output, &reason)),
-            Err(ConvertError::Start(e)) => {
-                tools.mark_broken();
-                return Err(ffmpeg_cannot_start(&e));
-            }
+            Ok(Finished::Done) => target,
+            Ok(Finished::Cancelled) => return Ok(MediaDone::Paused),
+            Err(e) => return Err(describe::conversion(&e, output, tools)),
         }
     } else {
         match join_original(
@@ -763,46 +766,60 @@ async fn join_original(
     match files {
         [single] => Ok(Some(single.clone())),
         [video, audio] => {
-            let ext = ext
-                .or_else(|| job.output.extension().and_then(|e| e.to_str()))
-                .unwrap_or("mkv");
-            let ext = safe_ext(Some(ext), Content::Unknown);
-            let joined = work.join(format!("joined.{ext}"));
+            let container = joined_container(ext, job);
+            let joined = work.join(format!("joined.{}", container.ext()));
             progress.set_step(Some(ProcessingStep::Joining));
-            let result = merge::join(tools, video, audio, &joined, cancel).await;
+            let result = merge::join(tools, (video, audio), &joined, container, cancel).await;
             progress.set_step(None);
-            match result? {
-                Joined::Done => Ok(Some(joined)),
-                Joined::Cancelled => Ok(None),
+            match result.map_err(|e| describe::join(&e, tools))? {
+                Finished::Done => Ok(Some(joined)),
+                Finished::Cancelled => Ok(None),
             }
         }
         _ => Err(addon_missing()),
     }
 }
 
+/// The container separately downloaded video and audio are joined into: the one `ext` names (the planned file's extension when `None`), always a video one.
+fn joined_container(ext: Option<&str>, job: &Job) -> Container {
+    ext.or_else(|| job.output.extension().and_then(|e| e.to_str()))
+        .and_then(Container::from_ext)
+        .filter(|c| c.is_video())
+        .unwrap_or(Container::Mkv)
+}
+
+/// The extension stored with a page job for its downloaded streams when they are not converted, as [`media::output::kept_ext`] chose it.
+fn stored_kept_ext(page: &PageJob) -> Option<&str> {
+    match &page.output {
+        Some(output) => Some(output.original_ext.as_str()),
+        None => page.keep_ext.as_deref(),
+    }
+}
+
 /// What ffmpeg reads for `output`: the downloaded media, each read only as the
 /// format it was recognised as, and the subtitles, metadata and cover picture.
+/// The outer error is the download's state, the inner one a file ffmpeg may not read.
 async fn inputs_for(
     output: &OutputJob,
     downloaded: &Downloaded,
     files: &[PathBuf],
     work: &Path,
-) -> Result<Inputs, UserError> {
+) -> Result<Result<Inputs, FfmpegError>, UserError> {
     let (video, audio) = match (files, output.video) {
         ([video, audio], _) => (Some(video), Some(audio)),
         ([single], VideoAction::None) => (None, Some(single)),
         ([single], _) => (Some(single), None),
         _ => return Err(addon_missing()),
     };
-    let video = match video {
-        Some(path) => Some((merge::input_format(path, "video").await?, path.clone())),
-        None => None,
+    let video = match merge::optional_input(video, Role::Video).await {
+        Ok(video) => video,
+        Err(e) => return Ok(Err(e)),
     };
-    let audio = match audio {
-        Some(path) => Some((merge::input_format(path, "audio").await?, path.clone())),
-        None => None,
+    let audio = match merge::optional_input(audio, Role::Audio).await {
+        Ok(audio) => audio,
+        Err(e) => return Ok(Err(e)),
     };
-    Ok(Inputs {
+    Ok(Ok(Inputs {
         video,
         audio,
         subtitles: downloaded
@@ -815,7 +832,7 @@ async fn inputs_for(
             .cover
             .as_ref()
             .map(|(f, format)| (*format, work.join(f))),
-    })
+    }))
 }
 
 /// The subtitles saved next to the file, as `SubRip` files in `work` with their
@@ -843,59 +860,16 @@ async fn subtitle_files(
         )
         .await
         {
-            Ok(Converted::Done) => made.push((target, subtitle.pick.language.clone())),
-            Ok(Converted::Cancelled) => return Ok(None),
-            Err(ConvertError::Failed(reason)) => {
-                warn!(language = %subtitle.pick.language, %reason, "could not make a subtitle file");
-            }
-            Err(ConvertError::Start(e)) => {
-                tools.mark_broken();
-                return Err(ffmpeg_cannot_start(&e));
+            Ok(Finished::Done) => made.push((target, subtitle.pick.language.clone())),
+            Ok(Finished::Cancelled) => return Ok(None),
+            Err(e @ FfmpegError::Start(_)) => return Err(describe::conversion(&e, output, tools)),
+            // One subtitle ffmpeg cannot read is left out; the video is saved without it.
+            Err(e) => {
+                warn!(language = %subtitle.pick.language, error = %e, "could not make a subtitle file");
             }
         }
     }
     Ok(Some(made))
-}
-
-/// A conversion failed: the download is kept, Try again converts again, and
-/// "Keep the original" saves it as it was downloaded.
-fn conversion_failed(output: &OutputJob, reason: &str) -> UserError {
-    let what = if output.container.is_video() || output.video != VideoAction::None {
-        "video"
-    } else {
-        "audio"
-    };
-    let message = if output.original {
-        format!(
-            "Wirecatch downloaded the {what}, but could not add the subtitles or chapters to it ({reason}). The download is kept: Try again only does this step again, and Keep the original saves it without them."
-        )
-    } else {
-        format!(
-            "Wirecatch downloaded the {what}, but could not save it as {} ({reason}). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
-            output.container.label(),
-            output.original_ext.to_ascii_uppercase()
-        )
-    };
-    UserError {
-        message,
-        fix: Some(FixAction::KeepOriginal),
-    }
-}
-
-fn ffmpeg_cannot_start(error: &std::io::Error) -> UserError {
-    UserError {
-        message: format!(
-            "The media add-on's ffmpeg could not be started ({error}). Reinstall the media add-on in Settings, Add-ons, then try again."
-        ),
-        fix: Some(FixAction::Retry),
-    }
-}
-
-/// An ffmpeg that could not be started means the add-on needs looking at again.
-fn note_missing_ffmpeg(job: &Job, error: &wirecatch_streams::Error) {
-    if let (wirecatch_streams::Error::FfmpegMissing(_), Some(tools)) = (error, &job.tools) {
-        tools.mark_broken();
-    }
 }
 
 /// Runs the part downloads side by side.
@@ -953,10 +927,7 @@ async fn fetch_part(
         match Box::pin(wirecatch_streams::download(request, stream, cancel.clone())).await {
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
-            Err(e) => {
-                note_missing_ffmpeg(job, &e);
-                return Err(stream_error(&e, work).into());
-            }
+            Err(e) => return Err(describe::stream(&e, work, job.tools.as_ref()).into()),
         }
     } else {
         let path = part;
@@ -1276,31 +1247,6 @@ fn disk(error: &std::io::Error, near: &Path) -> UserError {
     user_error::disk(error, folder)
 }
 
-/// A stream error, worded for a person with the fix to offer.
-pub(super) fn stream_error(error: &wirecatch_streams::Error, folder: &Path) -> UserError {
-    use wirecatch_streams::Error as E;
-    let with = |fix: Option<FixAction>| UserError {
-        message: error.to_string(),
-        fix,
-    };
-    match error {
-        E::Request(e) => user_error::describe(e, folder, false),
-        E::Io(e) => user_error::disk(e, folder),
-        // A track that is not a real video or audio file: the link most
-        // likely does not point at the video any more.
-        E::UnknownFormat { role } => crate::media::merge::unknown_format(role),
-        E::Live | E::Drm(_) | E::Unsupported(_) | E::PrivateNetwork | E::NothingChosen => {
-            with(None)
-        }
-        E::NotAStream
-        | E::Manifest(_)
-        | E::Key { .. }
-        | E::Decrypt { .. }
-        | E::NoSuchTrack { .. } => with(Some(FixAction::RefreshLink)),
-        _ => with(Some(FixAction::Retry)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1581,43 +1527,5 @@ mod tests {
         for ip in ["8.8.8.8", "2606:4700::1111"] {
             assert!(!is_private(ip.parse().unwrap()), "{ip}");
         }
-    }
-
-    #[test]
-    fn every_stream_error_reads_as_sentences_with_a_fix_where_one_helps() {
-        use wirecatch_streams::Error as E;
-        let folder = Path::new("/downloads");
-        let errors = [
-            (E::Live, None),
-            (E::Drm("Widevine".into()), None),
-            (E::NotAStream, Some(FixAction::RefreshLink)),
-            (
-                E::Manifest("no segments".into()),
-                Some(FixAction::RefreshLink),
-            ),
-            (E::NeedsFfmpeg, Some(FixAction::Retry)),
-            (E::Ffmpeg("bad".into()), Some(FixAction::Retry)),
-            (E::PrivateNetwork, None),
-            (E::Unsupported("several periods".into()), None),
-            (E::Cancelled, Some(FixAction::Retry)),
-            (
-                E::UnknownFormat { role: "video" },
-                Some(FixAction::RefreshLink),
-            ),
-        ];
-        for (error, fix) in errors {
-            let user = stream_error(&error, folder);
-            assert_eq!(user.fix, fix, "{error:?}");
-            assert!(user.message.ends_with('.'), "{}", user.message);
-            assert!(!user.message.contains('\u{2014}'));
-        }
-        let network = stream_error(
-            &E::Request(EngineError::HttpStatus {
-                status: 404,
-                url: "u".into(),
-            }),
-            folder,
-        );
-        assert_eq!(network.fix, Some(FixAction::RefreshLink));
     }
 }

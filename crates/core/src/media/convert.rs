@@ -1,182 +1,182 @@
-//! Running the media add-on's ffmpeg for output formats (D24): finding a video
-//! encoder that works on this computer, converting with progress, and turning
-//! subtitles into `SubRip` files.
+//! Running the media add-on's ffmpeg for output formats (D24): finding a video encoder that works on this computer, converting with progress, and turning subtitles into `SubRip` files.
 //!
-//! Which hardware encoder works is found once per ffmpeg by encoding a short
-//! generated clip, and remembered while the app runs. A hardware encoder that
-//! then fails on a real video (too large for it, say) is skipped from then on,
-//! and the conversion goes on with the next one, ending with the software
-//! encoder.
+//! Which encoders an ffmpeg has, and which hardware encoder works, is found once per [`EncoderCatalog`], which lives with the add-on's programs ([`MediaTools`]), so looking at the add-on again (after an update, or a repair) asks again. A hardware encoder that fails on a real video is skipped from then on, but only once the same video converted with a software encoder: a failure the software encoder shares is the input's, not the encoder's.
+
+#![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
-use std::time::{Duration, SystemTime};
+use std::future::Future;
+use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use tokio::sync::OnceCell;
 use tracing::{info, warn};
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::app::ProcessingStep;
+use wirecatch_streams::ffmpeg::preamble;
+use wirecatch_streams::process::{self, RunError, RunOptions};
 
 use super::MediaProgress;
-use super::output::{self, Encoder, Inputs, OutputJob, SubtitleFormat, VideoAction, VideoCodec};
-use super::process::{self, Output, RunError};
+use super::ffmpeg::{self, FfmpegError, Finished};
+use super::output::{
+    self, AudioAction, Encoder, Inputs, OutputJob, SubtitleFormat, VideoAction, VideoCodec,
+};
 use crate::addons::MediaTools;
 
 /// How long asking ffmpeg for its encoders, or one encoder test, may take.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Identifies one ffmpeg program: its path and when it last changed, so an
-/// updated add-on is asked again.
-type ProgramKey = (PathBuf, Option<SystemTime>);
-
-/// The encoders each ffmpeg lists (`None` when it could not be asked).
-type Listed = Arc<OnceCell<Option<Arc<HashSet<String>>>>>;
-
-/// What is known about the ffmpeg programs used so far.
-#[derive(Default)]
-struct Known {
-    listed: HashMap<ProgramKey, Listed>,
+/// What is known about the encoders of one ffmpeg.
+#[derive(Debug, Default)]
+pub(crate) struct EncoderCatalog {
+    /// The encoders ffmpeg lists, once it answered.
+    listed: OnceCell<Arc<HashSet<String>>>,
     /// The video encoders to use for each codec, in order.
-    video: HashMap<(ProgramKey, VideoCodec), Arc<OnceCell<Vec<&'static Encoder>>>>,
-    /// Hardware encoders that failed on a real video.
-    failed: HashSet<(ProgramKey, &'static str)>,
+    video: Mutex<HashMap<VideoCodec, Arc<OnceCell<Vec<&'static Encoder>>>>>,
+    /// Hardware encoders that failed on a real video that a software encoder then converted.
+    failed: Mutex<HashSet<&'static str>>,
 }
 
-fn known() -> std::sync::MutexGuard<'static, Known> {
-    static KNOWN: LazyLock<Mutex<Known>> = LazyLock::new(Mutex::default);
-    // A lock poisoned by a panic in another holder is taken over as it is, for
-    // the reason `Manager::lock` gives: the data is plain and still sound.
-    KNOWN.lock().unwrap_or_else(PoisonError::into_inner)
+/// Why ffmpeg could not be asked for its encoders.
+#[derive(Debug, thiserror::Error)]
+enum ListError {
+    #[error(transparent)]
+    Folder(FfmpegError),
+    #[error("ffmpeg did not run: {0}")]
+    Run(RunError),
+    #[error("it listed no encoders")]
+    NoneListed,
 }
 
-async fn program_key(ffmpeg: &Path) -> ProgramKey {
-    let modified = tokio::fs::metadata(ffmpeg)
-        .await
-        .ok()
-        .and_then(|m| m.modified().ok());
-    (ffmpeg.to_path_buf(), modified)
-}
-
-/// The encoders ffmpeg lists, asked once per ffmpeg.
-async fn listed(tools: &MediaTools, key: &ProgramKey) -> Option<Arc<HashSet<String>>> {
-    let cell = known().listed.entry(key.clone()).or_default().clone();
-    cell.get_or_init(|| async {
-        let args: Vec<OsString> = ["-hide_banner", "-nostdin", "-encoders"]
-            .into_iter()
-            .map(OsString::from)
-            .collect();
-        let dir = tools.ffmpeg.parent().unwrap_or(Path::new("."));
-        let ran = process::run(
-            &tools.ffmpeg,
-            &args,
-            dir,
-            true,
-            Some(PROBE_TIMEOUT),
-            &CancellationToken::new(),
-            |_, _| {},
-        )
-        .await;
-        match ran {
-            Ok(ran) if ran.success => {
+impl EncoderCatalog {
+    /// The encoders ffmpeg lists. A failed or cancelled answer is not kept, so the next conversion asks again (a first run of a freshly installed ffmpeg may be slow while an antivirus scans it); `None` then.
+    async fn listed(
+        &self,
+        tools: &MediaTools,
+        cancel: &CancellationToken,
+    ) -> Option<Arc<HashSet<String>>> {
+        let listed = self
+            .listed
+            .get_or_try_init(|| async {
+                let mut args = preamble();
+                args.push("-encoders".into());
+                let dir = ffmpeg::ffmpeg_dir(&tools.ffmpeg).map_err(ListError::Folder)?;
+                let options = RunOptions::collect().with_timeout(PROBE_TIMEOUT);
+                let ran = process::run(&tools.ffmpeg, &args, dir, options, cancel, |_, _| {})
+                    .await
+                    .map_err(ListError::Run)?;
                 let found = output::listed_encoders(&String::from_utf8_lossy(&ran.stdout));
-                (!found.is_empty()).then(|| Arc::new(found))
-            }
-            _ => None,
-        }
-    })
-    .await
-    .clone()
-}
-
-/// The video encoders for `codec`, in the order to use them: the first
-/// hardware encoder that encodes a test clip on this computer, then the
-/// software ones. Found once per ffmpeg; `None` when cancelled.
-async fn video_encoders(
-    tools: &MediaTools,
-    key: &ProgramKey,
-    codec: VideoCodec,
-    cancel: &CancellationToken,
-) -> Option<Vec<&'static Encoder>> {
-    let listed = listed(tools, key).await;
-    let cell = known()
-        .video
-        .entry((key.clone(), codec))
-        .or_default()
-        .clone();
-    let found = cell
-        .get_or_try_init(|| async {
-            let candidates = output::encoders_for(codec, std::env::consts::OS);
-            let order = output::encoder_order(&candidates, listed.as_deref(), &HashSet::new());
-            let mut chosen = Vec::new();
-            for encoder in order.iter().filter(|e| e.hardware) {
-                match probe(tools, encoder, cancel).await {
-                    Err(()) => return Err(()),
-                    Ok(true) => {
-                        info!(
-                            encoder = encoder.name,
-                            "a hardware video encoder works here"
-                        );
-                        chosen.push(*encoder);
-                        break;
-                    }
-                    Ok(false) => {}
+                if ran.success && !found.is_empty() {
+                    Ok(Arc::new(found))
+                } else {
+                    Err(ListError::NoneListed)
                 }
+            })
+            .await;
+        match listed {
+            Ok(listed) => Some(listed.clone()),
+            Err(error) => {
+                warn!(%error, "could not ask ffmpeg for its encoders; using the add-on's own");
+                None
             }
-            chosen.extend(order.iter().filter(|e| !e.hardware));
-            Ok(chosen)
-        })
-        .await
-        .ok()?;
-    let known = known();
-    Some(
-        found
-            .iter()
-            .filter(|e| !known.failed.contains(&(key.clone(), e.name)))
-            .copied()
-            .collect(),
-    )
+        }
+    }
+
+    /// The video encoders for `codec`, in the order to use them: the first hardware encoder that encodes a test clip on this computer, then the software ones, without those known to fail. `None` when cancelled.
+    async fn video_encoders(
+        &self,
+        tools: &MediaTools,
+        codec: VideoCodec,
+        cancel: &CancellationToken,
+    ) -> Option<Vec<&'static Encoder>> {
+        let Some(listed) = self.listed(tools, cancel).await else {
+            // Not asked: only the add-on's own software encoder, without remembering it.
+            return Some(output::encoder_order(
+                &output::encoders_for(codec, std::env::consts::OS),
+                None,
+            ));
+        };
+        let cell = lock(&self.video).entry(codec).or_default().clone();
+        let found = cell
+            .get_or_try_init(|| async {
+                let candidates = output::encoders_for(codec, std::env::consts::OS);
+                let order = output::encoder_order(&candidates, Some(&listed));
+                let mut chosen = Vec::new();
+                for encoder in order.iter().filter(|e| e.hardware) {
+                    match probe(tools, encoder, cancel).await {
+                        Probe::Cancelled => return Err(()),
+                        Probe::Works => {
+                            info!(
+                                encoder = encoder.name,
+                                "a hardware video encoder works here"
+                            );
+                            chosen.push(*encoder);
+                            break;
+                        }
+                        Probe::Fails => {}
+                    }
+                }
+                chosen.extend(order.iter().filter(|e| !e.hardware));
+                Ok(chosen)
+            })
+            .await
+            .ok()?;
+        let failed = lock(&self.failed);
+        Some(
+            found
+                .iter()
+                .filter(|e| !failed.contains(e.name))
+                .copied()
+                .collect(),
+        )
+    }
+
+    /// Skips `encoders` from now on.
+    fn mark_failed(&self, encoders: &[&'static Encoder]) {
+        let mut failed = lock(&self.failed);
+        for encoder in encoders {
+            warn!(
+                encoder = encoder.name,
+                "a hardware encoder failed on a video a software encoder converted; it is skipped from now on"
+            );
+            failed.insert(encoder.name);
+        }
+    }
 }
 
-/// Whether `encoder` encodes a short generated clip; `Err` when cancelled.
-async fn probe(
-    tools: &MediaTools,
-    encoder: &Encoder,
-    cancel: &CancellationToken,
-) -> Result<bool, ()> {
-    let dir = tools.ffmpeg.parent().unwrap_or(Path::new("."));
+/// Locks part of the catalog. A lock poisoned by a panic in another holder is taken over as it is: each entry is replaced whole, so it is never half written.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// What encoding a test clip with an encoder showed.
+enum Probe {
+    Works,
+    Fails,
+    Cancelled,
+}
+
+/// Whether `encoder` encodes a short generated clip.
+async fn probe(tools: &MediaTools, encoder: &Encoder, cancel: &CancellationToken) -> Probe {
+    let Ok(dir) = ffmpeg::ffmpeg_dir(&tools.ffmpeg) else {
+        return Probe::Fails;
+    };
+    let options = RunOptions::lines().with_timeout(PROBE_TIMEOUT);
     match process::run(
         &tools.ffmpeg,
         &output::probe_arguments(encoder),
         dir,
-        false,
-        Some(PROBE_TIMEOUT),
+        options,
         cancel,
         |_, _| {},
     )
     .await
     {
-        Ok(ran) => Ok(ran.success),
-        Err(RunError::Cancelled) => Err(()),
-        Err(_) => Ok(false),
+        Ok(ran) if ran.success => Probe::Works,
+        Err(RunError::Cancelled) => Probe::Cancelled,
+        Ok(_) | Err(_) => Probe::Fails,
     }
-}
-
-/// How a conversion ended without failing.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Converted {
-    Done,
-    Cancelled,
-}
-
-/// Why a conversion failed.
-#[derive(Debug)]
-pub(crate) enum ConvertError {
-    /// ffmpeg ran and refused or failed, for this reason.
-    Failed(String),
-    /// ffmpeg could not be started.
-    Start(std::io::Error),
 }
 
 /// The step a conversion is, as the person sees it.
@@ -190,10 +190,7 @@ pub(crate) fn step(job: &OutputJob, inputs: &Inputs) -> ProcessingStep {
     }
 }
 
-/// Saves `inputs` into `output` as `job` says, reporting into `progress`. A
-/// video to re-encode goes through the encoders that work here in order; when
-/// a hardware encoder fails on this video, the next one is tried. Whatever
-/// ends, a partial `output` is removed.
+/// Saves `inputs` into `output` as `job` says, reporting into `progress`. A video to re-encode goes through the encoders that work here in order (see [`try_encoders`]). Whatever ends, a partial `output` is removed.
 pub(crate) async fn convert(
     tools: &MediaTools,
     job: &OutputJob,
@@ -201,112 +198,98 @@ pub(crate) async fn convert(
     output: &Path,
     progress: &MediaProgress,
     cancel: &CancellationToken,
-) -> Result<Converted, ConvertError> {
+) -> Result<Finished, FfmpegError> {
     progress.set_step(Some(step(job, inputs)));
-    let key = program_key(&tools.ffmpeg).await;
+    let catalog = tools.encoders();
     let listed = if job.converts() {
-        listed(tools, &key).await
+        catalog.listed(tools, cancel).await
     } else {
         None
     };
     let audio_encoder = match job.audio {
-        output::AudioAction::Encode { codec, .. } => {
-            output::audio_encoder(codec, listed.as_deref())
-        }
-        _ => ("copy", &[][..]),
+        AudioAction::Encode { codec, .. } => output::audio_encoder(codec, listed.as_deref()),
+        _ => output::AudioEncoder::COPY,
     };
     let encoders: Vec<Option<&'static Encoder>> = match job.video {
         VideoAction::Encode { codec, .. } => {
-            match video_encoders(tools, &key, codec, cancel).await {
-                None => return Ok(Converted::Cancelled),
-                Some(list) if list.is_empty() => {
-                    return Err(ConvertError::Failed(format!(
-                        "this ffmpeg has no {} encoder",
-                        codec.name()
-                    )));
-                }
+            match catalog.video_encoders(tools, codec, cancel).await {
+                None => return Ok(Finished::Cancelled),
+                Some(list) if list.is_empty() => return Err(FfmpegError::NoEncoder(codec)),
                 Some(list) => list.into_iter().map(Some).collect(),
             }
         }
         _ => vec![None],
     };
-    let mut last = None;
-    for encoder in encoders {
-        let args = output::arguments(job, inputs, encoder, audio_encoder, output);
+    let target = match job.video {
+        VideoAction::Encode { codec, .. } => codec,
+        _ => VideoCodec::Other,
+    };
+    let (result, failed) = try_encoders(&encoders, |encoder| {
+        let args = output::VideoPlan::new(job.video, encoder)
+            .map(|video| output::arguments(job, inputs, video, audio_encoder, output));
         progress.set_per_mille(job.duration_ms.map(|_| 0));
-        let result = run_ffmpeg(tools, &args, output, job.duration_ms, progress, cancel).await;
-        match result {
-            Ok(Converted::Done) => {
+        async move {
+            let Some(args) = args else {
+                return Err(FfmpegError::NoEncoder(target));
+            };
+            let args = args?;
+            ffmpeg::run(tools, &args, output, None, cancel, |line| {
+                if let Some(ms) = output::progress_ms(line) {
+                    progress.set_per_mille(output::per_mille(ms, job.duration_ms));
+                }
+            })
+            .await
+        }
+    })
+    .await;
+    catalog.mark_failed(&failed);
+    result
+}
+
+/// Runs `attempt` with each of `encoders` in order until one converts. A hardware encoder that fails gives way to the next one; once a software encoder converts, the hardware encoders that failed before it are returned, to be skipped from then on. When a software encoder fails as well, the failure is the input's (a damaged subtitle, a full disk), so nothing is blamed on the hardware encoders and the error is returned.
+async fn try_encoders<F, Fut>(
+    encoders: &[Option<&'static Encoder>],
+    mut attempt: F,
+) -> (Result<Finished, FfmpegError>, Vec<&'static Encoder>)
+where
+    F: FnMut(Option<&'static Encoder>) -> Fut,
+    Fut: Future<Output = Result<Finished, FfmpegError>>,
+{
+    let mut failed_hardware = Vec::new();
+    let mut last = None;
+    for &encoder in encoders {
+        match attempt(encoder).await {
+            Ok(Finished::Done) => {
                 if let Some(e) = encoder {
                     info!(encoder = e.name, "converted a video");
                 }
-                return Ok(Converted::Done);
+                let blamed = if encoder.is_some_and(|e| !e.hardware) {
+                    failed_hardware
+                } else {
+                    Vec::new()
+                };
+                return (Ok(Finished::Done), blamed);
             }
-            Ok(Converted::Cancelled) => {
-                remove(output).await;
-                return Ok(Converted::Cancelled);
-            }
-            Err(ConvertError::Failed(reason)) => {
-                remove(output).await;
-                match encoder {
-                    Some(e) if e.hardware => {
-                        warn!(encoder = e.name, %reason, "a hardware encoder failed; trying the next one");
-                        known().failed.insert((key.clone(), e.name));
-                        last = Some(reason);
-                    }
-                    _ => return Err(ConvertError::Failed(reason)),
+            Ok(Finished::Cancelled) => return (Ok(Finished::Cancelled), Vec::new()),
+            // A hardware encoder that fails, hangs or runs too long is passed over for the next.
+            Err(
+                error @ (FfmpegError::Failed { .. }
+                | FfmpegError::Stalled(_)
+                | FfmpegError::TimedOut(_)),
+            ) if encoder.is_some_and(|e| e.hardware) => {
+                if let Some(e) = encoder {
+                    warn!(encoder = e.name, %error, "a hardware encoder failed; trying the next one");
+                    failed_hardware.push(e);
                 }
+                last = Some(error);
             }
-            Err(e) => {
-                remove(output).await;
-                return Err(e);
-            }
+            Err(e) => return (Err(e), Vec::new()),
         }
     }
-    Err(ConvertError::Failed(
-        last.unwrap_or_else(|| "no encoder worked".into()),
-    ))
-}
-
-/// Runs one ffmpeg conversion into `output`, turning its `-progress` reports
-/// into tenths of a percent of `duration_ms`.
-async fn run_ffmpeg(
-    tools: &MediaTools,
-    args: &[OsString],
-    output: &Path,
-    duration_ms: Option<u64>,
-    progress: &MediaProgress,
-    cancel: &CancellationToken,
-) -> Result<Converted, ConvertError> {
-    let dir = output.parent().unwrap_or(Path::new("."));
-    let ran = process::run(
-        &tools.ffmpeg,
-        args,
-        dir,
-        false,
-        None,
-        cancel,
-        |from, line| {
-            if from == Output::Stdout
-                && let Some(ms) = output::progress_ms(line)
-            {
-                progress.set_per_mille(output::per_mille(ms, duration_ms));
-            }
-        },
-    )
-    .await;
-    match ran {
-        Ok(ran) if ran.success && output.is_file() => Ok(Converted::Done),
-        Ok(ran) => Err(ConvertError::Failed(
-            ran.error_line()
-                .unwrap_or("it gave no reason")
-                .trim_end_matches('.')
-                .to_string(),
-        )),
-        Err(RunError::Cancelled) => Ok(Converted::Cancelled),
-        Err(RunError::TimedOut) => Err(ConvertError::Failed("it took too long".into())),
-        Err(RunError::Start(e)) => Err(ConvertError::Start(e)),
-    }
+    let error = last.unwrap_or(FfmpegError::Failed {
+        reason: "no encoder worked".into(),
+    });
+    (Err(error), Vec::new())
 }
 
 /// Turns subtitle file `input` (in `format`) into a `SubRip` file at `output`.
@@ -316,70 +299,20 @@ pub(crate) async fn to_srt(
     input: &Path,
     output: &Path,
     cancel: &CancellationToken,
-) -> Result<Converted, ConvertError> {
-    let args = output::srt_arguments(format, input, output);
-    let dir = output.parent().unwrap_or(Path::new("."));
-    match process::run(&tools.ffmpeg, &args, dir, false, None, cancel, |_, _| {}).await {
-        Ok(ran) if ran.success && output.is_file() => Ok(Converted::Done),
-        Ok(ran) => {
-            remove(output).await;
-            Err(ConvertError::Failed(
-                ran.error_line()
-                    .unwrap_or("it gave no reason")
-                    .trim_end_matches('.')
-                    .to_string(),
-            ))
-        }
-        Err(RunError::Cancelled) => {
-            remove(output).await;
-            Ok(Converted::Cancelled)
-        }
-        Err(RunError::TimedOut) => Err(ConvertError::Failed("it took too long".into())),
-        Err(RunError::Start(e)) => Err(ConvertError::Start(e)),
-    }
-}
-
-async fn remove(path: &Path) {
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => warn!(path = %path.display(), error = %e, "could not remove an unfinished file"),
-    }
+) -> Result<Finished, FfmpegError> {
+    let args = output::srt_arguments(format, input, output)?;
+    ffmpeg::run(tools, &args, output, None, cancel, |_| {}).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    use crate::media::ffmpeg::test_support::{make, real_ffmpeg};
     use crate::media::output::Extras;
     use crate::media::output::{AudioAction, Container, ImageFormat, SubtitlePick};
     use wirecatch_streams::InputFormat;
-
-    /// A real ffmpeg from `WIRECATCH_TEST_FFMPEG`. Without one the test is
-    /// skipped with a note, unless `WIRECATCH_REQUIRE_FFMPEG=1`.
-    fn real_ffmpeg() -> Option<PathBuf> {
-        let found = std::env::var_os("WIRECATCH_TEST_FFMPEG")
-            .map(PathBuf::from)
-            .filter(|p| p.is_file());
-        if found.is_none() {
-            let required = std::env::var("WIRECATCH_REQUIRE_FFMPEG").is_ok_and(|v| v == "1");
-            assert!(
-                !required,
-                "WIRECATCH_REQUIRE_FFMPEG=1 but WIRECATCH_TEST_FFMPEG is not a file"
-            );
-            eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
-        }
-        found
-    }
-
-    fn make(ffmpeg: &Path, args: &[&str], path: &Path) {
-        let status = std::process::Command::new(ffmpeg)
-            .args(["-hide_banner", "-loglevel", "error", "-y"])
-            .args(args)
-            .arg(path)
-            .status()
-            .unwrap();
-        assert!(status.success(), "could not make {}", path.display());
-    }
 
     /// What ffmpeg says about `path` (its streams, chapters and tags).
     fn describe(ffmpeg: &Path, path: &Path) -> String {
@@ -496,6 +429,87 @@ mod tests {
         }
     }
 
+    fn failing(reason: &str) -> Result<Finished, FfmpegError> {
+        Err(FfmpegError::Failed {
+            reason: reason.into(),
+        })
+    }
+
+    fn named(name: &str) -> Option<&'static Encoder> {
+        output::H264_ENCODERS.iter().find(|e| e.name == name)
+    }
+
+    /// A damaged input fails with every encoder: the hardware encoder tried first is not blamed for it, and the software encoder's failure is the one reported.
+    #[tokio::test]
+    async fn an_input_failure_is_not_blamed_on_the_hardware_encoder() {
+        let encoders = [named("h264_nvenc"), named("libopenh264")];
+        let mut tried = Vec::new();
+        let (result, blamed) = try_encoders(&encoders, |encoder| {
+            tried.push(encoder.map(|e| e.name));
+            async move {
+                match encoder {
+                    Some(e) if e.hardware => failing("hardware said no"),
+                    _ => failing("subtitle.vtt: Invalid data found"),
+                }
+            }
+        })
+        .await;
+        assert_eq!(blamed, Vec::<&Encoder>::new());
+        assert!(
+            matches!(result, Err(FfmpegError::Failed { reason }) if reason.contains("subtitle"))
+        );
+        assert_eq!(tried, [Some("h264_nvenc"), Some("libopenh264")]);
+    }
+
+    /// A hardware encoder that fails on a video the software encoder then converts is skipped from then on.
+    #[tokio::test]
+    async fn a_hardware_encoder_is_blamed_only_when_software_converts() {
+        let encoders = [named("h264_nvenc"), named("h264_qsv"), named("libopenh264")];
+        let (result, blamed) = try_encoders(&encoders, |encoder| async move {
+            match encoder {
+                Some(e) if e.hardware => failing("too large for it"),
+                _ => Ok(Finished::Done),
+            }
+        })
+        .await;
+        assert!(matches!(result, Ok(Finished::Done)));
+        let names: Vec<&str> = blamed.iter().map(|e| e.name).collect();
+        assert_eq!(names, ["h264_nvenc", "h264_qsv"]);
+        // Starting fails before any encoder is judged.
+        let (result, blamed) = try_encoders(&encoders, |_| async {
+            Err(FfmpegError::Start(std::io::Error::from(
+                std::io::ErrorKind::NotFound,
+            )))
+        })
+        .await;
+        assert!(matches!(result, Err(FfmpegError::Start(_))));
+        assert_eq!(blamed, Vec::<&Encoder>::new());
+    }
+
+    /// A hardware encoder that hangs (a driver stuck on a frame) or runs past the limit is passed over like one that fails.
+    #[tokio::test]
+    async fn a_hardware_encoder_that_stalls_or_times_out_is_passed_over() {
+        let encoders = [named("h264_nvenc"), named("h264_qsv"), named("libopenh264")];
+        let limit = std::time::Duration::from_secs(300);
+        let (result, blamed) = try_encoders(&encoders, |encoder| async move {
+            match encoder.map(|e| e.name) {
+                Some("h264_nvenc") => Err(FfmpegError::Stalled(limit)),
+                Some("h264_qsv") => Err(FfmpegError::TimedOut(limit)),
+                _ => Ok(Finished::Done),
+            }
+        })
+        .await;
+        assert!(matches!(result, Ok(Finished::Done)), "{result:?}");
+        let names: Vec<&str> = blamed.iter().map(|e| e.name).collect();
+        assert_eq!(names, ["h264_nvenc", "h264_qsv"]);
+        // The software encoder stalling is reported as it is.
+        let (result, _) = try_encoders(&[named("libopenh264")], |_| async move {
+            Err(FfmpegError::Stalled(limit))
+        })
+        .await;
+        assert!(matches!(result, Err(FfmpegError::Stalled(_))), "{result:?}");
+    }
+
     fn tools(ffmpeg: &Path) -> MediaTools {
         MediaTools::for_test(ffmpeg)
     }
@@ -546,7 +560,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         let text = describe(&ffmpeg, &out);
         assert!(text.contains("Video: vp9"), "{text}");
         assert!(text.contains("Audio: opus"), "{text}");
@@ -583,12 +597,11 @@ mod tests {
         j.extras.chapters = true;
         let out = f.dir.path().join("output.mp4");
         let tools = tools(&ffmpeg);
-        let key = program_key(&tools.ffmpeg).await;
-        let listed = listed(&tools, &key).await;
+        let cancel = CancellationToken::new();
+        let listed = tools.encoders().listed(&tools, &cancel).await;
         let software = output::encoder_order(
             &output::encoders_for(VideoCodec::H264, std::env::consts::OS),
             listed.as_deref(),
-            &HashSet::new(),
         )
         .into_iter()
         .find(|e| !e.hardware)
@@ -596,23 +609,21 @@ mod tests {
         let args = output::arguments(
             &j,
             &inputs(&f, true),
-            Some(software),
+            output::VideoPlan::new(j.video, Some(software)).unwrap(),
             output::audio_encoder(output::AudioCodec::Aac, listed.as_deref()),
             &out,
-        );
+        )
+        .unwrap();
         let progress = MediaProgress::default();
         progress.set_step(Some(ProcessingStep::Converting));
-        let done = run_ffmpeg(
-            &tools,
-            &args,
-            &out,
-            j.duration_ms,
-            &progress,
-            &CancellationToken::new(),
-        )
+        let done = ffmpeg::run(&tools, &args, &out, None, &cancel, |line| {
+            if let Some(ms) = output::progress_ms(line) {
+                progress.set_per_mille(output::per_mille(ms, j.duration_ms));
+            }
+        })
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         let text = describe(&ffmpeg, &out);
         assert!(text.contains("Video: h264"), "{text}");
         assert!(text.contains("Audio: aac"), "{text}");
@@ -653,7 +664,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         assert!(describe(&ffmpeg, &out).contains("Video: h264"));
         assert_eq!(
             progress.read().processing.map(|p| p.step),
@@ -711,7 +722,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         let text = describe(&ffmpeg, &out);
         assert!(text.contains("Audio: mp3"), "{text}");
         assert!(text.contains("320 kb/s"), "{text}");
@@ -741,7 +752,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         let text = describe(&ffmpeg, &out);
         assert_eq!(text.matches("Subtitle: webvtt").count(), 2, "{text}");
         assert!(text.contains("Chapter #0:1"), "{text}");
@@ -762,7 +773,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(done, Converted::Done);
+        assert_eq!(done, Finished::Done);
         let text = std::fs::read_to_string(&out).unwrap();
         assert!(
             text.starts_with("1\r\n00:00:00,000 --> 00:00:01,000")
@@ -798,7 +809,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        let ConvertError::Failed(reason) = error else {
+        let FfmpegError::Failed { reason } = error else {
             panic!("not a failure: {error:?}");
         };
         assert_ne!(reason, "");
@@ -848,9 +859,15 @@ mod tests {
             .iter()
             .find(|e| e.name == "libvpx-vp9")
             .unwrap();
-        let args = output::arguments(&j, &inputs, Some(encoder), ("copy", &[]), &out);
+        let args = output::arguments(
+            &j,
+            &inputs,
+            output::VideoPlan::new(j.video, Some(encoder)).unwrap(),
+            output::AudioEncoder::COPY,
+            &out,
+        )
+        .unwrap();
         let cancel = CancellationToken::new();
-        let progress = MediaProgress::default();
         let tools = tools(&ffmpeg);
         let started = std::time::Instant::now();
         let stopper = {
@@ -860,11 +877,11 @@ mod tests {
                 cancel.cancel();
             })
         };
-        let result = run_ffmpeg(&tools, &args, &out, j.duration_ms, &progress, &cancel).await;
+        let result = ffmpeg::run(&tools, &args, &out, None, &cancel, |_| {}).await;
         stopper.await.unwrap();
-        assert!(matches!(result, Ok(Converted::Cancelled)), "{result:?}");
+        assert!(matches!(result, Ok(Finished::Cancelled)), "{result:?}");
         assert!(started.elapsed() < Duration::from_secs(15), "ffmpeg ran on");
-        remove(&out).await;
+        ffmpeg::remove(&out).await;
         // The file can be removed (no ffmpeg holds it), and nothing writes it again.
         tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(!out.exists(), "ffmpeg kept writing after it was cancelled");

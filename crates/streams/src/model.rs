@@ -1,11 +1,17 @@
 //! What a stream offers, and what to download from it.
 
+#![forbid(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use url::Url;
 use wirecatch_engine::{DownloadOptions, PrivateNetwork};
+
+use crate::codec::{Codec, Container};
+use crate::extension;
+use crate::ffmpeg::InputFormat;
 
 /// The streaming format of a link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +45,25 @@ pub struct StreamInfo {
     /// Subtitles the stream offers. They are listed for information only; this
     /// version does not download them.
     pub subtitles: Vec<SubtitleTrack>,
+    /// What [`Choice::Auto`] picks, so the forecast follows the download.
+    pub(crate) auto: AutoPicks,
+}
+
+/// What [`Choice::Auto`] picks in a stream, by track id, decided by the same code the download uses.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct AutoPicks {
+    /// The video picked automatically.
+    pub video: Option<String>,
+    /// The audio picked automatically with each video, by the video's id.
+    pub audio_with: Vec<(String, Option<String>)>,
+    /// The audio picked automatically without video.
+    pub audio_alone: Option<String>,
+}
+
+/// One track's codecs and format, wherever it is listed.
+struct Listed<'a> {
+    codecs: Option<&'a str>,
+    format: InputFormat,
 }
 
 impl StreamInfo {
@@ -48,51 +73,64 @@ impl StreamInfo {
     /// audio only) with ffmpeg, or the stream's own format without it (such
     /// as `ts`).
     ///
-    /// It is a forecast from what the playlist says. The download decides from
-    /// what it actually receives, and never replaces another file when the two
-    /// differ (see [`StreamRequest::output`]).
+    /// It is a forecast from what the playlist says, from the same picks the
+    /// download makes. The download decides from what it actually receives, and
+    /// never replaces another file when the two differ (see
+    /// [`StreamRequest::output`]).
+    #[must_use]
     pub fn extension(&self, video: &Choice, audio: &Choice, ffmpeg: bool) -> &'static str {
-        let video = match video {
+        let video_id = match video {
             Choice::Skip => None,
-            Choice::Track(id) => self.video.iter().find(|v| &v.id == id),
-            Choice::Auto => self.video.iter().max_by_key(|v| {
-                (
-                    v.bandwidth.unwrap_or(0),
-                    u64::from(v.width.unwrap_or(0)) * u64::from(v.height.unwrap_or(0)),
-                )
-            }),
+            Choice::Track(id) => Some(id.as_str()),
+            Choice::Auto => self.auto.video.as_deref(),
         };
-        let audio = match audio {
-            Choice::Skip => None,
-            Choice::Track(id) => self.audio.iter().find(|a| &a.id == id),
-            Choice::Auto => self
-                .audio
+        let audio_id = match (audio, video_id) {
+            (Choice::Skip, _) => None,
+            (Choice::Track(id), _) => Some(id.as_str()),
+            (Choice::Auto, Some(video)) => self
+                .auto
+                .audio_with
                 .iter()
-                .max_by_key(|a| (a.default, a.bandwidth.unwrap_or(0))),
+                .find(|(v, _)| v == video)
+                .and_then(|(_, a)| a.as_deref()),
+            (Choice::Auto, None) => self.auto.audio_alone.as_deref(),
         };
-        let audio_only = video.is_none();
+        let video = video_id.and_then(|id| self.listed(id));
+        let audio = audio_id.and_then(|id| self.listed(id));
         if !ffmpeg {
             return video
-                .map(|v| v.format)
-                .or(audio.map(|a| a.format))
-                .unwrap_or("ts");
+                .or(audio)
+                .map_or(FALLBACK_FORMAT, |t| t.format)
+                .extension();
         }
-        let fits = video
-            .and_then(|v| v.codecs.as_deref())
+        let codecs = [video, audio]
             .into_iter()
-            .chain(audio.and_then(|a| a.codecs.as_deref()))
-            .flat_map(|c| c.split(','))
-            .map(str::trim)
-            .filter(|c| !c.is_empty())
-            .all(crate::plan::mp4_compatible);
-        match (fits, audio_only) {
-            (true, false) => "mp4",
-            (true, true) => "m4a",
-            (false, false) => "mkv",
-            (false, true) => "mka",
-        }
+            .flatten()
+            .filter_map(|t| t.codecs)
+            .flat_map(Codec::list);
+        Container::for_copy(codecs, video_id.is_none()).ext()
+    }
+
+    /// The track with `id`, among the videos and the audio (an audio-only HLS variant is picked as the video when there is no other).
+    fn listed(&self, id: &str) -> Option<Listed<'_>> {
+        self.video
+            .iter()
+            .find(|v| v.id == id)
+            .map(|v| Listed {
+                codecs: v.codecs.as_deref(),
+                format: v.format,
+            })
+            .or_else(|| {
+                self.audio.iter().find(|a| a.id == id).map(|a| Listed {
+                    codecs: a.codecs.as_deref(),
+                    format: a.format,
+                })
+            })
     }
 }
+
+/// The format a single track is saved as when nothing says what it is: MPEG-TS, the usual HLS segment format.
+pub(crate) const FALLBACK_FORMAT: InputFormat = InputFormat::MpegTs;
 
 /// One video quality.
 #[derive(Debug, Clone, PartialEq)]
@@ -111,8 +149,8 @@ pub struct VideoTrack {
     pub codecs: Option<String>,
     /// Frames per second, when the stream says.
     pub frame_rate: Option<f64>,
-    /// The extension of this track's segments joined as they are.
-    pub(crate) format: &'static str,
+    /// The format of this track's segments joined as they are.
+    pub(crate) format: InputFormat,
 }
 
 /// One audio track.
@@ -134,8 +172,8 @@ pub struct AudioTrack {
     pub channels: Option<String>,
     /// Whether the stream marks this track as the one to play by default.
     pub default: bool,
-    /// The extension of this track's segments joined as they are.
-    pub(crate) format: &'static str,
+    /// The format of this track's segments joined as they are.
+    pub(crate) format: InputFormat,
 }
 
 /// One subtitle track (listed, not downloaded).
@@ -148,6 +186,27 @@ pub struct SubtitleTrack {
     pub language: Option<String>,
     /// The name the stream gives the track.
     pub name: Option<String>,
+}
+
+/// What a track is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Role {
+    /// Video, possibly with its own audio inside.
+    Video,
+    /// Audio alone.
+    Audio,
+}
+
+impl Role {
+    /// `video` or `audio`, for messages.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Video => "video",
+            Role::Audio => "audio",
+        }
+    }
 }
 
 /// Which video or audio track to download.
@@ -316,19 +375,12 @@ impl StreamProgress {
     }
 }
 
-/// Media extensions that [`StreamRequest::output`] may carry and that are
-/// replaced by the container actually written.
-const MEDIA_EXTENSIONS: [&str; 14] = [
-    "mp4", "m4v", "mkv", "webm", "ts", "m2ts", "mov", "m4a", "mka", "aac", "mp3", "m3u8", "mpd",
-    "m4s",
-];
-
 /// `output` with its extension set to `ext`; see [`StreamRequest::output`].
 pub(crate) fn with_extension(output: &Path, ext: &str) -> PathBuf {
     let known = output
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| MEDIA_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()));
+        .is_some_and(extension::is_replaceable);
     if known {
         output.with_extension(ext)
     } else {
@@ -361,5 +413,53 @@ mod tests {
             with_extension(Path::new("/v/index.M3U8"), "ts"),
             Path::new("/v/index.ts")
         );
+    }
+
+    #[test]
+    fn every_media_extension_core_names_is_replaced() {
+        for (name, expected) in [
+            ("/v/clip.flac", "/v/clip.m4a"),
+            ("/v/clip.opus", "/v/clip.m4a"),
+            ("/v/clip.ogg", "/v/clip.m4a"),
+            ("/v/clip.wav", "/v/clip.m4a"),
+            ("/v/clip.3gp", "/v/clip.m4a"),
+            ("/v/clip.flv", "/v/clip.m4a"),
+            ("/v/seg.m4s", "/v/seg.m4a"),
+        ] {
+            assert_eq!(with_extension(Path::new(name), "m4a"), Path::new(expected));
+        }
+    }
+
+    fn video(codecs: &str) -> VideoTrack {
+        VideoTrack {
+            id: "v".into(),
+            width: Some(1920),
+            height: Some(1080),
+            bandwidth: Some(1),
+            codecs: Some(codecs.into()),
+            frame_rate: None,
+            format: InputFormat::Mp4,
+        }
+    }
+
+    #[test]
+    fn a_stream_in_vp9_or_av1_is_saved_as_matroska_like_a_page() {
+        let info = |codecs: &str| StreamInfo {
+            kind: StreamKind::Dash,
+            url: Url::parse("https://x.example/m.mpd").unwrap(),
+            duration: None,
+            live: false,
+            video: vec![video(codecs)],
+            audio: Vec::new(),
+            subtitles: Vec::new(),
+            auto: AutoPicks {
+                video: Some("v".into()),
+                ..AutoPicks::default()
+            },
+        };
+        let ext = |codecs: &str| info(codecs).extension(&Choice::Auto, &Choice::Auto, true);
+        assert_eq!(ext("avc1.640028,mp4a.40.2"), "mp4");
+        assert_eq!(ext("vp09.00.40.08,mp4a.40.2"), "mkv");
+        assert_eq!(ext("av01.0.08M.08,mp4a.40.2"), "mkv");
     }
 }

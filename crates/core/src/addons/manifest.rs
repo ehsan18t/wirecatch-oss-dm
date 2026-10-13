@@ -1,6 +1,8 @@
 //! Where the media add-on's parts come from: pinned releases with their SHA-256
 //! checksums (D20, A8). Nothing is run unless it matched these.
 
+#![forbid(unsafe_code)]
+
 pub use super::signature::PinnedKey;
 
 /// The add-on id used by the UI and in settings profiles.
@@ -144,10 +146,13 @@ impl MediaAddonSources {
             ytdlp_asset: ytdlp_asset().into(),
             ytdlp_checksums_asset: "SHA2-256SUMS".into(),
             ytdlp_signing_key: PinnedKey::ytdlp(),
-            ytdlp_release_downloads: "https://github.com/yt-dlp/yt-dlp/releases/download/".into(),
+            ytdlp_release_downloads: YTDLP_RELEASE_DOWNLOADS.into(),
         }
     }
 }
+
+/// Where yt-dlp's release files are, followed by a version and a file name.
+const YTDLP_RELEASE_DOWNLOADS: &str = "https://github.com/yt-dlp/yt-dlp/releases/download/";
 
 #[cfg(windows)]
 fn ytdlp_asset() -> &'static str {
@@ -177,10 +182,7 @@ fn official_ytdlp() -> AddonComponent {
     );
     ytdlp_component(
         YTDLP_VERSION,
-        format!(
-            "https://github.com/yt-dlp/yt-dlp/releases/download/{YTDLP_VERSION}/{}",
-            ytdlp_asset()
-        ),
+        format!("{YTDLP_RELEASE_DOWNLOADS}{YTDLP_VERSION}/{}", ytdlp_asset()),
         sha256,
         size,
     )

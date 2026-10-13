@@ -1,17 +1,19 @@
-//! HLS playlists (RFC 8216): master playlists with their variants and
-//! renditions, and media playlists turned into the list of pieces to fetch.
+//! HLS playlists (RFC 8216): master playlists with their variants and renditions, and media playlists turned into the list of pieces to fetch.
 //!
-//! Tags are read in order, so the rules that depend on order hold: an
-//! `EXT-X-KEY` applies to the segments and `EXT-X-MAP` sections after it, an
-//! `EXT-X-BYTERANGE` without an offset continues where the previous segment
-//! of the same file ended, and a segment without an explicit IV uses its media
-//! sequence number.
+//! Tags are read in order, so the rules that depend on order hold: an `EXT-X-KEY` applies to the segments and `EXT-X-MAP` sections after it, an `EXT-X-BYTERANGE` without an offset continues where the previous segment of the same file ended, and a segment without an explicit IV uses its media sequence number.
+
+#![forbid(unsafe_code)]
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use url::Url;
 
-use crate::plan::{Encryption, MAX_SEGMENTS, Piece, Refusal, too_many_segments};
+use crate::codec::Codec;
+use crate::error::{DrmSystem, Feature, Located, ManifestError, excerpt};
+use crate::plan::{
+    AddressBudget, Encryption, ManifestBudget, Piece, Refusal, check_room_for, check_web_address,
+};
 
 /// The longest a segment may say it lasts (`#EXTINF`): a day. No real segment comes near it; a larger value comes from a broken or hostile playlist and counts as unknown, so it never shows a video billions of years long or skews the size estimate.
 const MAX_SEGMENT_SECONDS: f64 = 24.0 * 60.0 * 60.0;
@@ -44,11 +46,7 @@ pub(crate) struct Variant {
 impl Variant {
     /// Whether the variant carries only audio, judging by its codecs.
     pub fn audio_only(&self) -> bool {
-        self.resolution.is_none()
-            && self
-                .codecs
-                .as_deref()
-                .is_some_and(|c| c.split(',').all(|c| crate::plan::is_audio_codec(c.trim())))
+        self.resolution.is_none() && self.codecs.as_deref().is_some_and(Codec::all_audio)
     }
 }
 
@@ -87,33 +85,65 @@ pub(crate) struct Media {
     pub refusal: Option<Refusal>,
 }
 
-/// Reads a playlist; relative addresses in it are resolved against `base`
-/// (the playlist's own address after redirects).
-pub(crate) fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
+/// Reads a playlist; relative addresses in it are resolved against `base` (the playlist's own address after redirects). The error says on which line, counting from 1, when one line is to blame.
+pub(crate) fn parse(text: &str, base: &Url) -> Result<Playlist, Located> {
     let mut lines = text
         .lines()
-        .map(|l| l.trim_start_matches('\u{feff}').trim())
-        .filter(|l| !l.is_empty());
-    if lines.next() != Some("#EXTM3U") {
-        return Err("it does not start with #EXTM3U".into());
+        .enumerate()
+        .map(|(n, l)| (n + 1, l.trim_start_matches('\u{feff}').trim()))
+        .filter(|(_, l)| !l.is_empty());
+    if lines.next().map(|(_, l)| l) != Some("#EXTM3U") {
+        return Err(ManifestError::NotM3u.into());
     }
-    let lines: Vec<&str> = lines.collect();
-    if lines.iter().any(|l| l.starts_with("#EXT-X-STREAM-INF")) {
+    let lines: Vec<(usize, &str)> = lines.collect();
+    if lines
+        .iter()
+        .any(|(_, l)| l.starts_with("#EXT-X-STREAM-INF"))
+    {
         parse_master(&lines, base).map(Playlist::Master)
     } else {
         parse_media(&lines, base).map(Playlist::Media)
     }
 }
 
-fn parse_master(lines: &[&str], base: &Url) -> Result<Master, String> {
-    let mut master = Master::default();
-    let mut pending: Option<Vec<(String, String)>> = None;
-    for &line in lines {
+fn parse_master(lines: &[(usize, &str)], base: &Url) -> Result<Master, Located> {
+    let mut reader = MasterReader::default();
+    for &(number, line) in lines {
+        reader.line(line, base).map_err(|cause| cause.at(number))?;
+    }
+    let master = reader.master;
+    if master.variants.is_empty() {
+        return Err(ManifestError::NoVariants.into());
+    }
+    Ok(master)
+}
+
+/// A master playlist being read, line by line.
+#[derive(Default)]
+struct MasterReader {
+    master: Master,
+    /// The attributes of a quality whose address line comes next.
+    pending: Option<Vec<(String, String)>>,
+    budget: ManifestBudget,
+}
+
+impl MasterReader {
+    /// Reads one line, counting each quality and rendition against the playlist's budget.
+    fn line(&mut self, line: &str, base: &Url) -> Result<(), ManifestError> {
+        let Self {
+            master,
+            pending,
+            budget,
+        } = self;
         if let Some((name, value)) = tag(line) {
             match name {
-                "#EXT-X-STREAM-INF" => pending = Some(attributes(value)),
+                "#EXT-X-STREAM-INF" => *pending = Some(attributes(value)),
                 "#EXT-X-MEDIA" => {
                     if let Some(rendition) = rendition(&attributes(value), base)? {
+                        match &rendition.url {
+                            Some(url) => budget.spend(url)?,
+                            None => budget.count(1)?,
+                        }
                         master.renditions.push(rendition);
                     }
                 }
@@ -122,8 +152,10 @@ fn parse_master(lines: &[&str], base: &Url) -> Result<Master, String> {
         } else if !line.starts_with('#')
             && let Some(attrs) = pending.take()
         {
+            let url = join(base, line)?;
+            budget.spend(&url)?;
             master.variants.push(Variant {
-                url: join(base, line)?,
+                url,
                 bandwidth: number(&attrs, "BANDWIDTH"),
                 codecs: attr(&attrs, "CODECS").map(str::to_string),
                 resolution: attr(&attrs, "RESOLUTION").and_then(|r| {
@@ -136,14 +168,11 @@ fn parse_master(lines: &[&str], base: &Url) -> Result<Master, String> {
                 audio_group: attr(&attrs, "AUDIO").map(str::to_string),
             });
         }
+        Ok(())
     }
-    if master.variants.is_empty() {
-        return Err("its list of qualities is empty".into());
-    }
-    Ok(master)
 }
 
-fn rendition(attrs: &[(String, String)], base: &Url) -> Result<Option<Rendition>, String> {
+fn rendition(attrs: &[(String, String)], base: &Url) -> Result<Option<Rendition>, ManifestError> {
     let kind = match attr(attrs, "TYPE") {
         Some("AUDIO") => RenditionKind::Audio,
         Some("VIDEO") => RenditionKind::Video,
@@ -163,12 +192,51 @@ fn rendition(attrs: &[(String, String)], base: &Url) -> Result<Option<Rendition>
     }))
 }
 
+/// How an `EXT-X-KEY` encrypts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyMethod {
+    /// `AES-128`: whole segments in AES-128 CBC, which this crate decrypts.
+    Aes128,
+    /// Any other method, such as `SAMPLE-AES`, as the playlist names it.
+    Other(String),
+}
+
+impl KeyMethod {
+    /// From `METHOD`; `None` for `NONE`, which ends encryption.
+    fn parse(value: &str) -> Option<KeyMethod> {
+        match value {
+            "NONE" => None,
+            "AES-128" => Some(KeyMethod::Aes128),
+            other => Some(KeyMethod::Other(other.to_string())),
+        }
+    }
+}
+
+/// The `KEYFORMAT` of an `EXT-X-KEY`: whose key it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum KeyFormat {
+    /// `identity`, the default: a plain key at the key's address.
+    Identity,
+    /// A DRM system's key format, as the playlist names it.
+    Other(String),
+}
+
+impl KeyFormat {
+    fn parse(value: Option<&str>) -> KeyFormat {
+        match value {
+            None | Some("identity") => KeyFormat::Identity,
+            Some(other) => KeyFormat::Other(other.to_string()),
+        }
+    }
+}
+
 /// One `EXT-X-KEY` in force.
 #[derive(Debug, Clone)]
 struct Key {
-    method: String,
-    format: String,
-    url: Option<Url>,
+    method: KeyMethod,
+    format: KeyFormat,
+    /// Shared by every segment the key encrypts.
+    url: Option<Arc<Url>>,
     iv: Option<[u8; 16]>,
 }
 
@@ -180,23 +248,25 @@ struct Map {
     key: Option<Key>,
 }
 
-fn parse_media(lines: &[&str], base: &Url) -> Result<Media, String> {
+fn parse_media(lines: &[(usize, &str)], base: &Url) -> Result<Media, Located> {
     let mut reader = MediaReader::new(base);
-    for &line in lines {
-        if let Some((name, value)) = tag(line) {
-            reader.tag(name, value)?;
+    for &(number, line) in lines {
+        let read = if let Some((name, value)) = tag(line) {
+            reader.tag(name, value)
         } else if !line.starts_with('#') {
-            reader.segment(line)?;
-        }
+            reader.segment(line)
+        } else {
+            Ok(())
+        };
+        read.map_err(|cause| cause.at(number))?;
     }
     if reader.index == 0 {
-        return Err("it lists no segments".into());
+        return Err(ManifestError::NoSegments.into());
     }
     Ok(reader.media)
 }
 
-/// A media playlist being read, line by line: what is read so far and what
-/// the tags in force say about the next segment.
+/// A media playlist being read, line by line: what is read so far and what the tags in force say about the next segment.
 struct MediaReader<'a> {
     base: &'a Url,
     media: Media,
@@ -204,15 +274,18 @@ struct MediaReader<'a> {
     /// Segments read so far.
     index: u64,
     keys: Vec<Key>,
-    map: Option<Map>,
-    /// The last init section added, so each one is added once.
-    emitted_map: Option<(Url, Option<Range<u64>>)>,
+    /// The init section in force, numbered: a new number for every init section that differs from the one before.
+    map: Option<(u64, Map)>,
+    /// The number of the last init section added, so each one is added once.
+    emitted_map: Option<u64>,
     /// An `EXT-X-BYTERANGE` for the next segment: its length and offset.
     pending_range: Option<(u64, Option<u64>)>,
-    /// Where the last segment's byte range ended, in which file.
-    previous_end: Option<(Url, u64)>,
+    /// Where the last segment's byte range ended, and that segment's place in the pieces (whose address it shares).
+    previous_end: Option<(usize, u64)>,
     /// The `EXTINF` duration of the next segment.
     pending_duration: f64,
+    /// The address text of the pieces so far.
+    budget: AddressBudget,
 }
 
 impl<'a> MediaReader<'a> {
@@ -228,16 +301,17 @@ impl<'a> MediaReader<'a> {
             pending_range: None,
             previous_end: None,
             pending_duration: 0.0,
+            budget: AddressBudget::default(),
         }
     }
 
-    fn tag(&mut self, name: &str, value: &str) -> Result<(), String> {
+    fn tag(&mut self, name: &str, value: &str) -> Result<(), ManifestError> {
         match name {
             "#EXT-X-MEDIA-SEQUENCE" => {
                 self.media_sequence = value
                     .trim()
                     .parse()
-                    .map_err(|_| format!("its media sequence number {value:?} is not a number"))?;
+                    .map_err(|_| ManifestError::BadMediaSequence(excerpt(value)))?;
             }
             "#EXTINF" => {
                 self.pending_duration = value
@@ -249,7 +323,17 @@ impl<'a> MediaReader<'a> {
             }
             "#EXT-X-BYTERANGE" => self.pending_range = Some(byte_range(value)?),
             "#EXT-X-KEY" => update_keys(&mut self.keys, &attributes(value), self.base)?,
-            "#EXT-X-MAP" => self.map = Some(self.read_map(value)?),
+            "#EXT-X-MAP" => {
+                let map = self.read_map(value)?;
+                let number = match &self.map {
+                    Some((n, current)) if current.url == map.url && current.range == map.range => {
+                        *n
+                    }
+                    Some((n, _)) => n.saturating_add(1),
+                    None => 0,
+                };
+                self.map = Some((number, map));
+            }
             "#EXT-X-ENDLIST" => self.media.ended = true,
             "#EXT-X-PLAYLIST-TYPE" if value.trim() == "VOD" => self.media.ended = true,
             _ => {}
@@ -258,11 +342,11 @@ impl<'a> MediaReader<'a> {
     }
 
     /// An `EXT-X-MAP`, encrypted with the key in force where it appears.
-    fn read_map(&self, value: &str) -> Result<Map, String> {
+    fn read_map(&self, value: &str) -> Result<Map, ManifestError> {
         let attrs = attributes(value);
         let url = attr(&attrs, "URI")
-            .ok_or("an EXT-X-MAP has no URI")
-            .and_then(|u| join(self.base, u).map_err(|_| "an EXT-X-MAP has a bad URI"))?;
+            .ok_or(ManifestError::MapWithoutUri)
+            .and_then(|u| join(self.base, u))?;
         let range = attr(&attrs, "BYTERANGE")
             .map(byte_range)
             .transpose()?
@@ -275,19 +359,23 @@ impl<'a> MediaReader<'a> {
         })
     }
 
-    /// A segment's address line: the segment, after its init section when it
-    /// is the first to use that one.
-    fn segment(&mut self, line: &str) -> Result<(), String> {
-        // Checked before anything is resolved or stored, so a huge playlist
-        // fails at once instead of filling memory first.
-        if self.media.pieces.len() as u64 >= MAX_SEGMENTS {
-            return Err(too_many_segments());
-        }
+    /// A segment's address line: the segment, after its init section when it is the first to use that one.
+    fn segment(&mut self, line: &str) -> Result<(), ManifestError> {
+        // Checked before anything is resolved or stored, so a huge playlist fails at once instead of filling memory first. A new init section goes in before the segment, so both need room.
+        let new_init = self
+            .map
+            .as_ref()
+            .is_some_and(|(number, _)| self.emitted_map != Some(*number));
+        check_room_for(&self.media.pieces, 1 + u64::from(new_init))?;
         let url = join(self.base, line)?;
-        let sequence = self.media_sequence.saturating_add(self.index);
+        self.budget.spend(&url)?;
+        let sequence = self
+            .media_sequence
+            .checked_add(self.index)
+            .ok_or(ManifestError::NumberTooLarge)?;
         self.init_section(sequence)?;
         let range = self.segment_range(&url)?;
-        self.previous_end = range.as_ref().map(|r| (url.clone(), r.end));
+        self.previous_end = range.as_ref().map(|r| (self.media.pieces.len(), r.end));
         let encryption = if let Some(key) = usable_key(&self.keys) {
             Some(encryption(key, sequence)?)
         } else {
@@ -311,12 +399,12 @@ impl<'a> MediaReader<'a> {
     }
 
     /// Adds the init section in force, unless the segment before used it too.
-    fn init_section(&mut self, sequence: u64) -> Result<(), String> {
-        let Some(map) = &self.map else {
+    fn init_section(&mut self, sequence: u64) -> Result<(), ManifestError> {
+        let Some((number, map)) = &self.map else {
             return Ok(());
         };
-        let this = (map.url.clone(), map.range.clone());
-        if self.emitted_map.as_ref() != Some(&this) {
+        if self.emitted_map != Some(*number) {
+            self.budget.spend(&map.url)?;
             self.media.pieces.push(Piece {
                 url: map.url.clone(),
                 range: map.range.clone(),
@@ -327,41 +415,50 @@ impl<'a> MediaReader<'a> {
                     .transpose()?,
                 init: true,
             });
-            self.emitted_map = Some(this);
+            self.emitted_map = Some(*number);
         }
         Ok(())
     }
 
-    /// The byte range of the segment at `url`: the pending `EXT-X-BYTERANGE`,
-    /// which without an offset continues the previous part of the same file.
-    fn segment_range(&mut self, url: &Url) -> Result<Option<Range<u64>>, String> {
+    /// The byte range of the segment at `url`: the pending `EXT-X-BYTERANGE`, which without an offset continues the previous part of the same file.
+    fn segment_range(&mut self, url: &Url) -> Result<Option<Range<u64>>, ManifestError> {
         match self.pending_range.take() {
             None => Ok(None),
             Some((len, Some(offset))) => Ok(Some(span(offset, len)?)),
             Some((len, None)) => match &self.previous_end {
-                Some((previous, end)) if previous == url => Ok(Some(span(*end, len)?)),
-                _ => Err(
-                    "a byte range without an offset does not follow a part of the same file".into(),
-                ),
+                Some((previous, end))
+                    if self
+                        .media
+                        .pieces
+                        .get(*previous)
+                        .is_some_and(|p| p.url == *url) =>
+                {
+                    Ok(Some(span(*end, len)?))
+                }
+                _ => Err(ManifestError::ByteRangeWithoutStart),
             },
         }
     }
 }
 
-fn update_keys(keys: &mut Vec<Key>, attrs: &[(String, String)], base: &Url) -> Result<(), String> {
-    let method = attr(attrs, "METHOD").unwrap_or("NONE");
-    if method == "NONE" {
+fn update_keys(
+    keys: &mut Vec<Key>,
+    attrs: &[(String, String)],
+    base: &Url,
+) -> Result<(), ManifestError> {
+    let Some(method) = KeyMethod::parse(attr(attrs, "METHOD").unwrap_or("NONE")) else {
         keys.clear();
         return Ok(());
-    }
-    let format = attr(attrs, "KEYFORMAT").unwrap_or("identity").to_string();
-    // A key address that is not a URL at all (such as `skd://…` for FairPlay)
-    // is kept as missing: it is never fetched, only reported.
-    let url = attr(attrs, "URI").and_then(|u| base.join(u).ok());
+    };
+    let format = KeyFormat::parse(attr(attrs, "KEYFORMAT"));
+    // A key address that is not a URL at all (such as `skd://…` for FairPlay) is kept as missing: it is never fetched, only reported.
+    let url = attr(attrs, "URI")
+        .and_then(|u| base.join(u).ok())
+        .map(Arc::new);
     let iv = attr(attrs, "IV").map(parse_iv).transpose()?;
     keys.retain(|k| k.format != format);
     keys.push(Key {
-        method: method.to_string(),
+        method,
         format,
         url,
         iv,
@@ -372,45 +469,38 @@ fn update_keys(keys: &mut Vec<Key>, attrs: &[(String, String)], base: &Url) -> R
 /// The key this crate can decrypt with: AES-128 in the plain `identity` format.
 fn usable_key(keys: &[Key]) -> Option<&Key> {
     keys.iter()
-        .find(|k| k.method == "AES-128" && k.format == "identity")
+        .find(|k| k.method == KeyMethod::Aes128 && k.format == KeyFormat::Identity)
 }
 
-fn encryption(key: &Key, sequence: u64) -> Result<Encryption, String> {
+fn encryption(key: &Key, sequence: u64) -> Result<Encryption, ManifestError> {
     let key_url = key
         .url
         .clone()
         .filter(|u| matches!(u.scheme(), "http" | "https"))
-        .ok_or("an AES-128 key has no http or https address")?;
+        .ok_or(ManifestError::KeyWithoutAddress)?;
+    check_web_address(&key_url)?;
     Ok(Encryption {
         key_url,
         iv: key.iv.unwrap_or_else(|| iv_from_sequence(sequence)),
     })
 }
 
-/// Why an encrypted segment cannot be downloaded.
+/// Why an encrypted segment cannot be downloaded: the DRM system its key format names, or the method this crate does not decrypt.
 fn refusal(key: &Key) -> Refusal {
-    let format = key.format.to_ascii_lowercase();
-    let drm = if format.contains("streamingkeydelivery") {
-        Some("Apple FairPlay")
-    } else if format.contains("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed") {
-        Some("Google Widevine")
-    } else if format.contains("playready")
-        || format.contains("9a04f079-9840-4286-ab92-e65be0885f95")
-    {
-        Some("Microsoft PlayReady")
-    } else if format != "identity" {
-        Some("an unknown key system")
-    } else {
-        None
-    };
-    match drm {
-        Some(name) => Refusal::Drm(name.to_string()),
-        None => Refusal::Unsupported(format!("{} encryption", key.method)),
+    match (&key.format, &key.method) {
+        (KeyFormat::Other(format), _) => {
+            Refusal::Drm(DrmSystem::named_by(format).unwrap_or(DrmSystem::Unknown))
+        }
+        (KeyFormat::Identity, KeyMethod::Other(method)) => {
+            Refusal::Unsupported(Feature::Encryption(method.clone()))
+        }
+        (KeyFormat::Identity, KeyMethod::Aes128) => {
+            Refusal::Unsupported(Feature::Encryption("AES-128".into()))
+        }
     }
 }
 
-/// The IV of a segment without an explicit one: its media sequence number as
-/// a 128-bit big-endian number.
+/// The IV of a segment without an explicit one: its media sequence number as a 128-bit big-endian number.
 pub(crate) fn iv_from_sequence(sequence: u64) -> [u8; 16] {
     let mut iv = [0; 16];
     iv[8..].copy_from_slice(&sequence.to_be_bytes());
@@ -418,12 +508,12 @@ pub(crate) fn iv_from_sequence(sequence: u64) -> [u8; 16] {
 }
 
 /// Reads `0x` followed by up to 32 hex digits.
-pub(crate) fn parse_iv(value: &str) -> Result<[u8; 16], String> {
+pub(crate) fn parse_iv(value: &str) -> Result<[u8; 16], ManifestError> {
     let hex = value
         .strip_prefix("0x")
         .or_else(|| value.strip_prefix("0X"))
         .filter(|h| !h.is_empty() && h.len() <= 32 && h.bytes().all(|b| b.is_ascii_hexdigit()))
-        .ok_or_else(|| format!("the IV {value:?} is not a hexadecimal number"))?;
+        .ok_or_else(|| ManifestError::BadIv(excerpt(value)))?;
     let padded = format!("{hex:0>32}");
     let mut iv = [0; 16];
     for (i, byte) in iv.iter_mut().enumerate() {
@@ -434,8 +524,8 @@ pub(crate) fn parse_iv(value: &str) -> Result<[u8; 16], String> {
 }
 
 /// `<length>[@<offset>]`.
-fn byte_range(value: &str) -> Result<(u64, Option<u64>), String> {
-    let bad = || format!("the byte range {value:?} is not valid");
+fn byte_range(value: &str) -> Result<(u64, Option<u64>), ManifestError> {
+    let bad = || ManifestError::BadByteRange(excerpt(value));
     let value = value.trim();
     let (len, offset) = match value.split_once('@') {
         Some((len, offset)) => (len, Some(offset.trim().parse().map_err(|_| bad())?)),
@@ -444,12 +534,15 @@ fn byte_range(value: &str) -> Result<(u64, Option<u64>), String> {
     Ok((len.trim().parse().map_err(|_| bad())?, offset))
 }
 
-/// `[start, start + len)`, refused when it would pass the largest offset.
-fn span(start: u64, len: u64) -> Result<Range<u64>, String> {
+/// `[start, start + len)`, refused when it is empty (no request can ask for no bytes) or would pass the largest offset.
+fn span(start: u64, len: u64) -> Result<Range<u64>, ManifestError> {
+    if len == 0 {
+        return Err(ManifestError::EmptyByteRange { start });
+    }
     start
         .checked_add(len)
         .map(|end| start..end)
-        .ok_or_else(|| format!("the byte range {len}@{start} ends past any possible file size"))
+        .ok_or(ManifestError::ByteRangeOverflow { start, length: len })
 }
 
 /// Splits `#EXT-X-NAME:value` into its name and value.
@@ -460,8 +553,7 @@ fn tag(line: &str) -> Option<(&str, &str)> {
     Some(line.split_once(':').unwrap_or((line, "")))
 }
 
-/// Reads an attribute list such as `BANDWIDTH=1280000,CODECS="avc1,mp4a"`.
-/// Quoted values may contain commas; quotes are removed.
+/// Reads an attribute list such as `BANDWIDTH=1280000,CODECS="avc1,mp4a"`. Quoted values may contain commas; quotes are removed.
 pub(crate) fn attributes(value: &str) -> Vec<(String, String)> {
     let mut list = Vec::new();
     let mut rest = value;
@@ -495,9 +587,8 @@ fn number(list: &[(String, String)], name: &str) -> Option<u64> {
     attr(list, name).and_then(|v| v.trim().parse().ok())
 }
 
-fn join(base: &Url, reference: &str) -> Result<Url, String> {
-    base.join(reference)
-        .map_err(|_| format!("it links to {reference:?}, which is not a valid address"))
+fn join(base: &Url, reference: &str) -> Result<Url, ManifestError> {
+    crate::plan::web_address(base, reference)
 }
 
 #[cfg(test)]
@@ -619,9 +710,10 @@ mod tests {
         assert!(m.pieces[0].init);
         assert!(!m.pieces[1].init);
 
-        let error =
-            parse("#EXTM3U\n#EXTINF:4,\n#EXT-X-BYTERANGE:500\na.ts\n", &base()).unwrap_err();
-        assert!(error.contains("byte range"), "{error}");
+        let error = parse("#EXTM3U\n#EXTINF:4,\n#EXT-X-BYTERANGE:500\na.ts\n", &base())
+            .unwrap_err()
+            .cause;
+        assert_eq!(error, ManifestError::ByteRangeWithoutStart);
     }
 
     #[test]
@@ -690,11 +782,24 @@ mod tests {
         let m = media(
             "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://abc\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n",
         );
-        assert!(matches!(&m.refusal, Some(Refusal::Drm(name)) if name == "Apple FairPlay"));
+        assert!(matches!(
+            &m.refusal,
+            Some(Refusal::Drm(DrmSystem::FairPlay))
+        ));
         let m = media(
             "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"k\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n",
         );
-        assert!(matches!(&m.refusal, Some(Refusal::Unsupported(_))));
+        assert!(matches!(
+            &m.refusal,
+            Some(Refusal::Unsupported(Feature::Encryption(method))) if method == "SAMPLE-AES"
+        ));
+        let m = media(
+            "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"k\",KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n",
+        );
+        assert!(matches!(
+            &m.refusal,
+            Some(Refusal::Drm(DrmSystem::Widevine))
+        ));
         // A plain AES-128 key next to a DRM one: the plain one is used.
         let m = media(
             "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://x\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n\
@@ -734,21 +839,26 @@ a.ts
                 max - 1
             ),
         ] {
-            let error = parse(&text, &base()).unwrap_err();
-            assert!(error.contains("past any possible file size"), "{error}");
+            let error = parse(&text, &base()).unwrap_err().cause;
+            assert!(
+                matches!(error, ManifestError::ByteRangeOverflow { .. }),
+                "{error}"
+            );
         }
     }
 
+    /// Refused where the limit is passed, not once the whole playlist is read.
     #[test]
-    fn huge_playlists_fail_fast() {
+    fn a_playlist_is_refused_at_the_first_segment_past_the_limit() {
         let mut text = String::from("#EXTM3U\n");
-        for _ in 0..=MAX_SEGMENTS {
+        for _ in 0..crate::plan::MAX_SEGMENTS + 10 {
             text.push_str("#EXTINF:1,\ns.ts\n");
         }
-        let start = std::time::Instant::now();
         let error = parse(&text, &base()).unwrap_err();
-        assert!(error.contains("more than 200000 segments"), "{error}");
-        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        assert_eq!(error.cause, ManifestError::TooManySegments);
+        let first_past = usize::try_from(crate::plan::MAX_SEGMENTS).unwrap() + 1;
+        // Line 1 is `#EXTM3U`; segment `n` takes lines `2n` and `2n + 1`.
+        assert_eq!(error.line, Some(2 * first_past + 1));
     }
 
     #[test]
@@ -767,20 +877,190 @@ a.ts
     }
 
     #[test]
-    fn broken_playlists_are_errors_not_panics() {
-        for text in [
-            "",
-            "hello",
-            "#EXTM3U\n",
-            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n",
-            "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:x\n#EXTINF:1,\na.ts\n",
-            "#EXTM3U\n#EXT-X-BYTERANGE:abc\na.ts\n",
-            "#EXTM3U\n#EXT-X-MAP:BYTERANGE=\"1@0\"\n#EXTINF:1,\na.ts\n",
-            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0xZZ\n#EXTINF:1,\na.ts\n",
+    fn broken_playlists_name_what_is_wrong_and_never_panic() {
+        let huge = "9".repeat(40);
+        for (text, expected) in [
+            (String::new(), ManifestError::NotM3u),
+            ("hello".into(), ManifestError::NotM3u),
+            ("#EXTM3U\n".into(), ManifestError::NoSegments),
+            // Cut off after a quality's tag, before its address.
+            (
+                "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n".into(),
+                ManifestError::NoVariants,
+            ),
+            (
+                "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:x\n#EXTINF:1,\na.ts\n".into(),
+                ManifestError::BadMediaSequence("x".into()),
+            ),
+            (
+                format!("#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:{huge}\n#EXTINF:1,\na.ts\n"),
+                ManifestError::BadMediaSequence(huge.clone()),
+            ),
+            (
+                "#EXTM3U\n#EXT-X-BYTERANGE:abc\na.ts\n".into(),
+                ManifestError::BadByteRange("abc".into()),
+            ),
+            (
+                format!("#EXTM3U\n#EXT-X-BYTERANGE:{huge}@0\na.ts\n"),
+                ManifestError::BadByteRange(format!("{huge}@0")),
+            ),
+            (
+                "#EXTM3U\n#EXT-X-MAP:BYTERANGE=\"1@0\"\n#EXTINF:1,\na.ts\n".into(),
+                ManifestError::MapWithoutUri,
+            ),
+            (
+                "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0xZZ\n#EXTINF:1,\na.ts\n".into(),
+                ManifestError::BadIv("0xZZ".into()),
+            ),
+            (
+                "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"skd://k\"\n#EXTINF:1,\na.ts\n".into(),
+                ManifestError::KeyWithoutAddress,
+            ),
+            (
+                "#EXTM3U\n#EXTINF:1,\nhttp://[::1\n".into(),
+                ManifestError::BadLink("http://[::1".into()),
+            ),
         ] {
-            assert!(parse(text, &base()).is_err(), "{text:?}");
+            assert_eq!(
+                parse(&text, &base()).unwrap_err().cause,
+                expected,
+                "{text:?}"
+            );
         }
-        // Odd but harmless input parses.
+        // Odd but harmless input parses, and an absurd duration counts as unknown.
         assert!(parse("\u{feff}#EXTM3U\n#EXTINF:abc,\na.ts\n", &base()).is_ok());
+        let m = media("#EXTM3U\n#EXTINF:1e300,\na.ts\n#EXT-X-ENDLIST\n");
+        assert!(m.duration.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn errors_name_the_line_to_blame() {
+        let error = parse(
+            "#EXTM3U\n\n#EXTINF:1,\na.ts\n#EXT-X-BYTERANGE:abc\nb.ts\n",
+            &base(),
+        )
+        .unwrap_err();
+        assert_eq!(error.line, Some(5));
+        let error = parse(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nfile:///etc/passwd\n",
+            &base(),
+        )
+        .unwrap_err();
+        assert_eq!(error.line, Some(3));
+        // Nothing on one line is to blame for a playlist with no segments.
+        assert_eq!(parse("#EXTM3U\n", &base()).unwrap_err().line, None);
+    }
+
+    #[test]
+    fn links_must_be_web_addresses_of_a_real_length() {
+        let long = format!("{}.ts", "a".repeat(crate::plan::MAX_URL_LEN));
+        for (text, expected) in [
+            (
+                "#EXTM3U\n#EXTINF:1,\nfile:///etc/passwd\n".to_string(),
+                ManifestError::NotWebAddress("file".into()),
+            ),
+            (
+                "#EXTM3U\n#EXT-X-MAP:URI=\"data:,x\"\n#EXTINF:1,\na.ts\n".into(),
+                ManifestError::NotWebAddress("data".into()),
+            ),
+            (
+                format!("#EXTM3U\n#EXTINF:1,\n{long}\n"),
+                ManifestError::LinkTooLong(long.len()),
+            ),
+        ] {
+            assert_eq!(
+                parse(&text, &base()).unwrap_err().cause,
+                expected,
+                "{text:?}"
+            );
+        }
+    }
+
+    /// Each short line becomes a whole address, base included: a long base and many lines would otherwise hold gigabytes of addresses from a small playlist.
+    #[test]
+    fn a_track_whose_addresses_are_too_long_together_is_refused() {
+        let folder = "f".repeat(crate::plan::MAX_URL_LEN - 100);
+        let base = Url::parse(&format!("https://cdn.example/{folder}/index.m3u8")).unwrap();
+        let len = u64::try_from(base.join("s.ts").unwrap().as_str().len()).unwrap();
+        let count = crate::plan::MAX_TRACK_URL_BYTES / len + 1;
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..count {
+            text.push_str("#EXTINF:1,\ns.ts\n");
+        }
+        // Not `unwrap_err`, which would print every address on failure.
+        let error = parse(&text, &base).err().map(|e| e.cause);
+        assert_eq!(error, Some(ManifestError::AddressesTooLong));
+    }
+
+    /// A master playlist served from a long address makes every short quality line a long address.
+    #[test]
+    fn a_master_playlist_whose_addresses_are_too_long_together_is_refused() {
+        let folder = "f".repeat(crate::plan::MAX_URL_LEN - 100);
+        let base = Url::parse(&format!("https://cdn.example/{folder}/master.m3u8")).unwrap();
+        let len = u64::try_from(base.join("a").unwrap().as_str().len()).unwrap();
+        let count = crate::plan::MAX_MANIFEST_URL_BYTES / len + 1;
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..count {
+            text.push_str("#EXT-X-STREAM-INF:BANDWIDTH=1\na\n");
+        }
+        let error = parse(&text, &base).err().map(|e| e.cause);
+        assert_eq!(error, Some(ManifestError::AddressesTooLong));
+    }
+
+    #[test]
+    fn a_master_playlist_holds_a_bounded_number_of_qualities() {
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..=crate::plan::MAX_MANIFEST_ENTRIES {
+            text.push_str("#EXT-X-STREAM-INF:\na\n");
+        }
+        let error = parse(&text, &base()).err().map(|e| e.cause);
+        assert_eq!(error, Some(ManifestError::TooManyEntries));
+    }
+
+    /// A new init section at the limit takes a place too, so it and its segment both have to fit.
+    #[test]
+    fn the_segment_limit_counts_a_new_init_section() {
+        let max = crate::plan::MAX_SEGMENTS;
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..max - 1 {
+            text.push_str("#EXTINF:1,\ns.ts\n");
+        }
+        // One place is left: the segment fits, but not with an init section before it.
+        let fits = format!("{text}#EXTINF:1,\nlast.ts\n");
+        assert!(parse(&fits, &base()).is_ok());
+        let too_many = format!("{text}#EXT-X-MAP:URI=\"i.mp4\"\n#EXTINF:1,\nlast.ts\n");
+        assert_eq!(
+            parse(&too_many, &base()).unwrap_err().cause,
+            ManifestError::TooManySegments
+        );
+    }
+
+    #[test]
+    fn a_media_sequence_that_overflows_is_refused() {
+        let text = format!(
+            "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:{}\n#EXTINF:1,\na.ts\n#EXTINF:1,\nb.ts\n",
+            u64::MAX
+        );
+        assert_eq!(
+            parse(&text, &base()).unwrap_err().cause,
+            ManifestError::NumberTooLarge
+        );
+    }
+
+    #[test]
+    fn empty_byte_ranges_are_refused() {
+        // No request can ask for no bytes: `bytes=5-4` is invalid, and `0..0` would fetch one byte that is not the segment's.
+        for text in [
+            "#EXTM3U\n#EXTINF:1,\n#EXT-X-BYTERANGE:0@5\na.ts\n",
+            "#EXTM3U\n#EXT-X-MAP:URI=\"i.mp4\",BYTERANGE=\"0@0\"\n#EXTINF:1,\na.ts\n",
+        ] {
+            assert!(
+                matches!(
+                    parse(text, &base()).unwrap_err().cause,
+                    ManifestError::EmptyByteRange { .. }
+                ),
+                "{text:?}"
+            );
+        }
     }
 }

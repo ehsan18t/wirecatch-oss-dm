@@ -22,7 +22,7 @@ use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
 use crate::addons::manifest::{self, AddonComponent, MEDIA_ADDON_ID};
-use crate::addons::{self, MediaTools, Record, archive, signature};
+use crate::addons::{self, Check, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
 use crate::user_error;
 use wirecatch_engine::units::{KIB, MIB};
@@ -78,9 +78,24 @@ enum Lookup {
     Unreachable(String),
     /// It was fetched, but the release does not meet the rules and is not offered.
     Refused(String),
-    /// The release's checksum list is not signed by yt-dlp's pinned key, so it
-    /// is not offered; the reason is worded for a person.
-    Unsigned(String),
+    /// The release's checksum list is not signed by yt-dlp's pinned key, so it is not offered.
+    Unsigned {
+        /// The release.
+        version: String,
+        /// What is wrong with its signature.
+        why: Unsigned,
+    },
+}
+
+/// Why a release's checksum list counts as unsigned.
+#[derive(Debug, thiserror::Error)]
+enum Unsigned {
+    #[error("the release has no signature file")]
+    NoSignature,
+    #[error("the signature file is not in yt-dlp's release folder")]
+    Elsewhere,
+    #[error(transparent)]
+    Invalid(signature::SignatureError),
 }
 
 /// The add-on as the manager tracks it.
@@ -95,6 +110,8 @@ pub(super) struct AddonSlot {
     /// yt-dlp releases newer than the installed one, found by the update check
     /// and checked (signature, checksum list, size), newest first.
     pub ytdlp_releases: Vec<NewRelease>,
+    /// The record could not be read when the files were last looked at, so what is installed is unknown.
+    pub unreadable: bool,
 }
 
 /// A yt-dlp release found by the update check.
@@ -126,12 +143,22 @@ pub(super) struct AddonOp {
 impl AddonSlot {
     /// Loads the record and checks the files. Blocks on the disk.
     pub fn load(dir: &Path) -> Self {
-        let record = Record::load(dir);
-        let tools = addons::tools(dir, &record, false);
-        Self {
-            record,
-            tools,
-            ..Self::default()
+        match Record::load(dir) {
+            Ok(record) => {
+                let tools = addons::tools(dir, &record, Check::Sizes);
+                Self {
+                    record,
+                    tools,
+                    ..Self::default()
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "could not read the media add-on record; its state is unknown until the files are looked at again");
+                Self {
+                    unreadable: true,
+                    ..Self::default()
+                }
+            }
         }
     }
 }
@@ -160,7 +187,7 @@ impl Manager {
             return Ok(());
         }
         // A repair looks closely: every file's checksum.
-        self.rescan_addon(true).await;
+        self.rescan_addon(Check::Hashes).await;
         let mut state = self.lock_open()?;
         let plan = self.addon_plan(&state.addon);
         if state.addon.op.is_some() || plan.is_empty() {
@@ -220,7 +247,7 @@ impl Manager {
             state.addon.failure = None;
         }
         // Show what is really on disk now.
-        self.rescan_addon(false).await;
+        self.rescan_addon(Check::Sizes).await;
         self.emit_addons(&self.lock().addon);
         discarded
     }
@@ -267,33 +294,41 @@ impl Manager {
             state.addon.ytdlp_releases.clear();
         }
         // Part of it may be gone: show what is really left.
-        self.rescan_addon(false).await;
+        self.rescan_addon(Check::Sizes).await;
         self.emit_addons(&self.lock().addon);
         removed
     }
 
-    /// Looks at the add-on's files again, off the async threads, and updates
-    /// what the manager believes is installed; `deep` checks every file's
-    /// checksum too. Does nothing while an install owns the folder.
-    pub(super) async fn rescan_addon(&self, deep: bool) {
+    /// Looks at the add-on's files again, off the async threads, and updates what the manager believes is installed; `check` says how closely. Does nothing while an install owns the folder.
+    pub(super) async fn rescan_addon(&self, check: Check) {
         let dir = self.inner.addon_dir.clone();
-        let Ok((record, tools)) = self
+        let scanned = self
             .blocking(move || {
-                let record = Record::load(&dir);
-                let tools = addons::tools(&dir, &record, deep);
+                let record = Record::load(&dir).map_err(|source| CoreError::File {
+                    path: dir.join(addons::RECORD_FILE).display().to_string(),
+                    source,
+                })?;
+                let tools = addons::tools(&dir, &record, check);
                 Ok((record, tools))
             })
-            .await
-        else {
-            return;
+            .await;
+        let (record, tools) = match scanned {
+            Ok(scanned) => scanned,
+            // A record that cannot be read now (held by an antivirus, say) keeps what was known.
+            Err(e) => {
+                warn!(error = %e, "could not look at the media add-on's files; keeping what was known");
+                return;
+            }
         };
         let mut state = self.lock();
         if state.addon.op.is_some() {
             return;
         }
-        let changed = state.addon.record != record || state.addon.tools != tools;
+        let changed =
+            state.addon.record != record || state.addon.tools != tools || state.addon.unreadable;
         state.addon.record = record;
         state.addon.tools = tools;
+        state.addon.unreadable = false;
         if changed {
             info!("the media add-on's files changed on disk");
             self.emit_addons(&state.addon);
@@ -301,9 +336,9 @@ impl Manager {
     }
 
     /// [`rescan_addon`](Self::rescan_addon) in the background.
-    pub(super) fn spawn_addon_rescan(&self, deep: bool) {
+    pub(super) fn spawn_addon_rescan(&self, check: Check) {
         let manager = self.clone();
-        self.spawn(async move { manager.rescan_addon(deep).await });
+        self.spawn(async move { manager.rescan_addon(check).await });
     }
 
     /// Looks for a newer yt-dlp now (sites change often, and an old yt-dlp stops
@@ -338,9 +373,11 @@ impl Manager {
                 Vec::new()
             }
             // Refused too, but a person who asked should know why nothing came.
-            Err(Lookup::Unsigned(message)) => {
-                warn!(%message, "a newer yt-dlp was refused");
-                problem = Some(message);
+            Err(Lookup::Unsigned { version, why }) => {
+                warn!(%version, reason = %why, "a newer yt-dlp was refused");
+                problem = Some(format!(
+                    "yt-dlp {version} was not installed because its checksum list does not carry a valid signature from yt-dlp's developers ({why}). The installed version keeps working; if this keeps happening, please report it."
+                ));
                 Vec::new()
             }
             Err(Lookup::Unreachable(reason)) => {
@@ -396,6 +433,10 @@ impl Manager {
         } else if let Some(message) = &slot.failure {
             AddonState::Failed {
                 message: message.clone(),
+            }
+        } else if slot.unreadable {
+            AddonState::Failed {
+                message: "The media add-on's list of installed files could not be read, so Wirecatch cannot tell whether the add-on works. Restart Wirecatch, or install the add-on again to repair it.".into(),
             }
         } else if !installed && !slot.record.components.is_empty() {
             AddonState::Failed {
@@ -512,6 +553,7 @@ impl Manager {
             Ok((record, tools)) => {
                 state.addon.record = record;
                 state.addon.tools = tools;
+                state.addon.unreadable = false;
                 state.addon.failure = None;
                 // Releases no newer than what is now installed are done with.
                 let installed = state.addon.record.version("yt-dlp").map(str::to_string);
@@ -539,7 +581,7 @@ impl Manager {
         let failed = !ready && !cancelled && !quiet;
         drop(state);
         if rescan {
-            self.spawn_addon_rescan(false);
+            self.spawn_addon_rescan(Check::Sizes);
         }
         if ready {
             self.media_addon_ready();
@@ -846,17 +888,14 @@ impl Manager {
             .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .body;
         // The checksum list counts only with yt-dlp's signature on it.
-        let unsigned = |why: &str| {
-            Lookup::Unsigned(format!(
-                "yt-dlp {version} was not installed because its checksum list does not carry a valid signature from yt-dlp's developers ({why}). The installed version keeps working; if this keeps happening, please report it."
-            ))
+        let unsigned = |why: Unsigned| Lookup::Unsigned {
+            version: version.clone(),
+            why,
         };
         let sig_name = format!("{}.sig", sources.ytdlp_checksums_asset);
-        let sig = asset(&sig_name).ok_or_else(|| unsigned("the release has no signature file"))?;
+        let sig = asset(&sig_name).ok_or_else(|| unsigned(Unsigned::NoSignature))?;
         if sig.browser_download_url != format!("{folder}{}", sig.name) {
-            return Err(unsigned(
-                "the signature file is not in yt-dlp's release folder",
-            ));
+            return Err(unsigned(Unsigned::Elsewhere));
         }
         let sig_url =
             Url::parse(&sig.browser_download_url).map_err(|e| Lookup::Refused(e.to_string()))?;
@@ -870,7 +909,7 @@ impl Manager {
         self.blocking(move || Ok(signature::verify_detached(&key, &signed, &signature)))
             .await
             .map_err(|e| Lookup::Refused(e.to_string()))?
-            .map_err(|why| unsigned(&why))?;
+            .map_err(|why| unsigned(Unsigned::Invalid(why)))?;
         let list = String::from_utf8_lossy(&list);
         let sha256 = addons::checksum_for(&list, &sources.ytdlp_asset).ok_or_else(|| {
             Lookup::Refused(format!(
@@ -1036,8 +1075,10 @@ fn verify_and_unpack(
     }
     std::fs::create_dir_all(stage)
         .map_err(|e| format!("The add-on's work folder could not be created ({e})."))?;
-    let installed =
-        archive::unpack(component, &mut file, stage).inspect_err(|_| crate::discard::dir(stage))?;
+    let installed = archive::unpack(component, &mut file, stage).map_err(|e| {
+        crate::discard::dir(stage);
+        e.to_string()
+    })?;
     Ok((stage.to_path_buf(), installed))
 }
 
@@ -1105,7 +1146,7 @@ fn swap_in(
             file_safe(&component.version)
         )));
     }
-    let tools = addons::tools(dir, &record, false);
+    let tools = addons::tools(dir, &record, Check::Sizes);
     Ok((record, tools))
 }
 
@@ -1212,7 +1253,10 @@ mod tests {
             "{reason}"
         );
         assert!(
-            !Record::load(dir.path()).components.contains_key("ffmpeg"),
+            !Record::load(dir.path())
+                .unwrap()
+                .components
+                .contains_key("ffmpeg"),
             "the record still claims the part"
         );
     }

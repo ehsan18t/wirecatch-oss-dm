@@ -808,6 +808,51 @@ async fn a_program_that_cannot_start_shows_the_add_on_as_damaged() -> TestResult
     Ok(())
 }
 
+/// A record that cannot be read at startup (held by an antivirus, say) leaves the add-on's state unknown: it is not shown as never installed, which would offer a download of what may be there. Once it can be read, the state is known again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_record_at_startup_leaves_the_state_unknown() -> TestResult {
+    let server = FileServer::start().await;
+    let mut h = harness(publish(&server, &Releases::fake()?, "unreadable")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let record = addon_dir(&h).join("installed.json");
+    let kept = addon_dir(&h).join("installed.json.kept");
+    std::fs::rename(&record, &kept)?;
+    // A folder where the record should be cannot be read as one, even by an administrator.
+    std::fs::create_dir_all(&record)?;
+    h.restart().await?;
+    let info = h.manager.list_addons().remove(0);
+    assert!(
+        matches!(&info.state, AddonState::Failed { message } if message.contains("could not be read")),
+        "{info:?}"
+    );
+    // Readable again: the next look at the files (here the one Install starts with) says so, and tells the interface.
+    std::fs::remove_dir(&record)?;
+    std::fs::rename(&kept, &record)?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    Ok(())
+}
+
+/// A record that could not be read at startup and is simply not there now: the next look at the files says so even though nothing else changed, rather than leave the add-on shown as unreadable.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_record_no_longer_unreadable_shows_the_state_on_disk() -> TestResult {
+    let server = FileServer::start().await;
+    let mut h = harness(publish(&server, &Releases::fake()?, "unreadable-gone")?).await?;
+    let record = addon_dir(&h).join("installed.json");
+    std::fs::create_dir_all(&record)?;
+    h.restart().await?;
+    std::fs::remove_dir(&record)?;
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon("media").await?;
+    // The look Install starts with comes first, before the install itself reports.
+    let first = next_event(&mut ui, "AddonsChanged", |e| match e {
+        UiEvent::AddonsChanged(list) => Some(list[0].clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(first.state, AddonState::NotInstalled);
+    Ok(())
+}
+
 /// A removal that fails half way leaves the add-on shown as it is on disk.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_removal_leaves_a_consistent_state() -> TestResult {

@@ -7487,7 +7487,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs 7.0.0",
- "libc",
  "lzma-rust2",
  "pgp",
  "rand 0.8.8",

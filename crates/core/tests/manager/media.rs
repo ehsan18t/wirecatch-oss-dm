@@ -321,6 +321,38 @@ async fn youtube_uses_the_browser_sign_in_when_the_video_needs_it() -> TestResul
     Ok(())
 }
 
+/// A failure that is not about signing in (a removed video) is not tried again with the browser's cookies: they would not help, and are kept from the add-on when they need not be shared.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn youtube_is_not_read_again_with_the_sign_in_for_other_failures() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(
+        &h,
+        "fail-without-cookies.txt",
+        "[youtube] Y_nLA7iE2Uk: Video unavailable",
+    )?;
+    h.manager
+        .add_capture(media_capture(
+            "https://youtu.be/Y_nLA7iE2Uk",
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    assert!(
+        row.error
+            .as_ref()
+            .is_some_and(|e| e.message.contains("Video unavailable")),
+        "{:?}",
+        row.error
+    );
+    assert_eq!(cookie_use(&h)?, [false]);
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_page_is_read_with_yt_dlp_and_video_and_audio_are_joined() -> TestResult {
     let server = FileServer::start().await;
@@ -712,15 +744,15 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
+/// Runs a page whose two formats only yt-dlp can fetch, the video in `vcodec`, and returns the arguments yt-dlp downloaded with.
+async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     let info = serde_json::json!({
         "title": "Dash only",
         "formats": [
-            {"format_id": "dash-v", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "height": 720,
+            {"format_id": "dash-v", "ext": "mp4", "vcodec": vcodec, "acodec": "none", "height": 720,
              "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
             {"format_id": "dash-a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a",
              "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()},
@@ -729,25 +761,48 @@ async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     tell_tool(&h, "info.json", &info.to_string())?;
     let mut ui = h.manager.subscribe();
     h.manager
-        .add_capture(media_capture(server.url("watch/4"), MediaKind::Page, None))
-        .await
-        .unwrap();
+        .add_capture(media_capture(server.url(page), MediaKind::Page, None))
+        .await?;
     let choice = choice_requested(&mut ui).await;
     assert_eq!(choice.options[0].id, "dash-v+dash-a");
     h.manager
         .choose_media(choice.id, select("dash-v+dash-a"))
-        .await
-        .unwrap();
+        .await?;
     let id = h.manager.list_downloads()[0].id;
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(
-        std::fs::read_to_string(&done.path).unwrap(),
-        "downloaded by fake yt-dlp: dash-v+dash-a"
+        std::fs::read_to_string(&done.path)?,
+        r#"downloaded by fake yt-dlp: b*[format_id="dash-v"]+b*[format_id="dash-a"]"#
     );
-    let download_call = ytdlp_calls(&h)?.pop().unwrap();
-    let argv = args(&download_call)?;
-    assert!(argv.windows(2).any(|w| w == ["-f", "dash-v+dash-a"]));
+    let download_call = ytdlp_calls(&h)?
+        .pop()
+        .ok_or("yt-dlp was not run to download")?;
+    args(&download_call)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
+    let argv = left_to_yt_dlp("avc1", "watch/4").await?;
+    let selection = r#"b*[format_id="dash-v"]+b*[format_id="dash-a"]"#;
+    assert!(argv.windows(2).any(|w| w == ["-f", selection]), "{argv:?}");
     assert!(argv.contains(&"--progress-template".to_string()));
+    assert!(
+        argv.windows(2)
+            .any(|w| w == ["--merge-output-format", "mp4"]),
+        "{argv:?}"
+    );
+    Ok(())
+}
+
+/// yt-dlp would put AV1 with AAC into MP4; the offer said MKV, as the shared container policy picks (D24, D31).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn yt_dlp_joins_formats_into_the_container_the_offer_named() -> TestResult {
+    let argv = left_to_yt_dlp("av01.0.08M.08", "watch/14").await?;
+    assert!(
+        argv.windows(2)
+            .any(|w| w == ["--merge-output-format", "mkv"]),
+        "{argv:?}"
+    );
     Ok(())
 }
 
@@ -787,6 +842,26 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() -> TestResult {
     );
     assert!(!error.message.contains("ERROR"));
     assert_eq!(error.fix, Some(FixAction::Retry));
+    Ok(())
+}
+
+/// A page description longer than Wirecatch reads is refused as such, without the advice to try again, which would only repeat it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_described_at_a_length_past_the_limit_is_refused_as_such() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let limit = usize::try_from(wirecatch_streams::process::MAX_STDOUT)?;
+    let description = format!(r#"{{"title": "{}"}}"#, "a".repeat(limit));
+    tell_tool(&h, "info.json", &description)?;
+    h.manager
+        .add_capture(media_capture(server.url("watch/15"), MediaKind::Page, None))
+        .await?;
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let error = row.error.ok_or("the failed row has no error")?;
+    assert!(error.message.contains("at a length"), "{}", error.message);
+    assert_eq!(error.fix, None);
     Ok(())
 }
 

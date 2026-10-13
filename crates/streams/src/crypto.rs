@@ -4,6 +4,8 @@
 //! not grow with the segment's size. The last block is held back until the
 //! end, because it carries the padding.
 
+#![forbid(unsafe_code)]
+
 use std::io::{self, Read, Write};
 
 use aes::Aes128;
@@ -19,13 +21,16 @@ const CHUNK: usize = 256 * KIB_USIZE;
 /// Decrypts `input` into `output` and returns the length of the plain text,
 /// or `None` when the data does not decrypt (the padding is wrong, so the key
 /// or IV does not fit, or the data is not a whole number of blocks).
+///
+/// `buffer` is the working memory, grown to its size on first use and kept by the caller for the next segment, so decrypting allocates nothing per segment.
 pub(crate) fn decrypt(
     input: &mut impl Read,
     output: &mut impl Write,
     key: &[u8; 16],
     iv: &[u8; 16],
+    buffer: &mut Vec<u8>,
 ) -> io::Result<Option<u64>> {
-    decrypt_in_chunks(input, output, key, iv, CHUNK)
+    decrypt_in_chunks(input, output, key, iv, CHUNK, buffer)
 }
 
 fn decrypt_in_chunks(
@@ -34,11 +39,13 @@ fn decrypt_in_chunks(
     key: &[u8; 16],
     iv: &[u8; 16],
     chunk: usize,
+    buffer: &mut Vec<u8>,
 ) -> io::Result<Option<u64>> {
     debug_assert!(chunk > 0 && chunk.is_multiple_of(BLOCK));
     let mut cipher = cbc::Decryptor::<Aes128>::new(key.into(), iv.into());
     // One chunk plus the block held back from the previous one.
-    let mut buf = vec![0u8; chunk + BLOCK];
+    buffer.resize(chunk + BLOCK, 0);
+    let buf = buffer.as_mut_slice();
     let mut held = 0;
     let mut written = 0u64;
     loop {
@@ -116,7 +123,8 @@ mod tests {
 
     fn run(data: &[u8], key: &[u8; 16], iv: &[u8; 16], chunk: usize) -> Option<Vec<u8>> {
         let mut out = Vec::new();
-        let n = decrypt_in_chunks(&mut &data[..], &mut out, key, iv, chunk).unwrap()?;
+        let n = decrypt_in_chunks(&mut &data[..], &mut out, key, iv, chunk, &mut Vec::new())
+            .unwrap()?;
         assert_eq!(n, out.len() as u64);
         Some(out)
     }

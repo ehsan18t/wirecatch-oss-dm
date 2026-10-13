@@ -6,6 +6,8 @@
 //! made by anyone who can publish on yt-dlp's GitHub page, but who does not
 //! hold that key, is refused.
 
+#![forbid(unsafe_code)]
+
 use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
 use pgp::packet::SignatureType;
 use pgp::types::KeyDetails;
@@ -48,16 +50,45 @@ impl PinnedKey {
     }
 }
 
+/// Why a detached signature cannot be trusted. Each message is a short phrase, spliced into a sentence by the caller.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum SignatureError {
+    /// The pinned key itself cannot be read.
+    #[error("the signing key cannot be read ({0})")]
+    UnreadableKey(String),
+    /// The key is not the pinned one.
+    #[error("the signing key's fingerprint is {actual}, not the pinned {pinned}")]
+    OtherKey {
+        /// The key's fingerprint.
+        actual: String,
+        /// The pinned fingerprint.
+        pinned: String,
+    },
+    /// The key's own bindings do not verify.
+    #[error("the signing key is not valid ({0})")]
+    InvalidKey(String),
+    /// The signature file holds no OpenPGP signature.
+    #[error("the signature file is not an OpenPGP signature")]
+    NotASignature,
+    /// No signature in it verifies the data with the key.
+    #[error("the signature does not match the checksum list and the pinned key")]
+    Mismatch,
+}
+
 /// Checks that `signature` (a detached OpenPGP signature, binary or armored)
 /// is a valid signature over `data` by `key`'s primary key, and that the key
-/// is the pinned one. `Err` says why not, as a short phrase.
+/// is the pinned one.
+///
+/// # Errors
+///
+/// Why the signature cannot be trusted.
 pub(crate) fn verify_detached(
     key: &PinnedKey,
     data: &[u8],
     signature: &[u8],
-) -> Result<(), String> {
+) -> Result<(), SignatureError> {
     let (public, _) = SignedPublicKey::from_string(&key.armored)
-        .map_err(|e| format!("the signing key cannot be read ({e})"))?;
+        .map_err(|e| SignatureError::UnreadableKey(e.to_string()))?;
     let pinned: String = key
         .fingerprint
         .chars()
@@ -66,15 +97,13 @@ pub(crate) fn verify_detached(
         .to_ascii_uppercase();
     let actual = format!("{:X}", public.fingerprint());
     if actual != pinned {
-        return Err(format!(
-            "the signing key's fingerprint is {actual}, not the pinned {pinned}"
-        ));
+        return Err(SignatureError::OtherKey { actual, pinned });
     }
     public
         .verify_bindings()
-        .map_err(|e| format!("the signing key is not valid ({e})"))?;
+        .map_err(|e| SignatureError::InvalidKey(e.to_string()))?;
     let (signatures, _) = DetachedSignature::from_reader_many(signature)
-        .map_err(|_| "the signature file is not an OpenPGP signature".to_string())?;
+        .map_err(|_| SignatureError::NotASignature)?;
     let mut seen = false;
     for parsed in signatures {
         let Ok(parsed) = parsed else {
@@ -94,9 +123,9 @@ pub(crate) fn verify_detached(
         }
     }
     if seen {
-        Err("the signature does not match the checksum list and the pinned key".into())
+        Err(SignatureError::Mismatch)
     } else {
-        Err("the signature file is not an OpenPGP signature".into())
+        Err(SignatureError::NotASignature)
     }
 }
 
@@ -187,7 +216,7 @@ mod tests {
         let (secret, key) = throwaway(2);
         let signature = sign(&secret, b"abc  yt-dlp\n");
         let error = verify_detached(&key, b"evil  yt-dlp\n", &signature).unwrap_err();
-        assert!(error.contains("does not match"), "{error}");
+        assert_eq!(error, SignatureError::Mismatch);
     }
 
     #[test]
@@ -199,7 +228,7 @@ mod tests {
             b"-----BEGIN PGP SIGNATURE-----\n",
         ] {
             let error = verify_detached(&key, b"abc", signature).unwrap_err();
-            assert!(error.contains("not an OpenPGP signature"), "{error}");
+            assert_eq!(error, SignatureError::NotASignature);
         }
     }
 
@@ -222,7 +251,7 @@ mod tests {
         // embedded key file swapped for an attacker's).
         key.fingerprint = YTDLP_FINGERPRINT.into();
         let error = verify_detached(&key, data, &signature).unwrap_err();
-        assert!(error.contains("fingerprint"), "{error}");
+        assert!(matches!(error, SignatureError::OtherKey { .. }), "{error}");
         // Spaces and lower case in a pinned fingerprint are fine.
         let (_, mut spaced) = throwaway(6);
         spaced.fingerprint = spaced

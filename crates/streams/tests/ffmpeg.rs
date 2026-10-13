@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wirecatch_engine::{CancellationToken, DownloadOptions};
-use wirecatch_streams::{Error, Outcome, StreamProgress, StreamRequest, download};
+use wirecatch_streams::{Error, Outcome, Role, StreamProgress, StreamRequest, download};
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{PrivateDir, TestResult, private_dir, ts_segment};
 
@@ -174,6 +174,12 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
             "1:a?",
             "-c",
             "copy",
+            // Players can start an MP4 before they have read all of it.
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
             "-f",
             "mp4",
             &file(work.join("joined.mp4")),
@@ -198,7 +204,7 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     let message = error.to_string();
     assert!(
         message.starts_with(
-            "ffmpeg could not join the video: as MP4: [mp4 @ 0x1] fake ffmpeg failed / Conversion failed!; as Matroska: [mp4 @ 0x1] fake ffmpeg failed"
+            "ffmpeg could not join the video: as MP4: [mp4 @ 0x1] fake ffmpeg failed / Conversion failed!; as MKV: [mp4 @ 0x1] fake ffmpeg failed"
         ),
         "{message}"
     );
@@ -278,7 +284,7 @@ fn serve_folder(server: &FileServer, dir: &Path) -> TestResult {
 }
 
 #[tokio::test]
-async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
+async fn real_ffmpeg_merges_a_codec_mp4_players_refuse_into_matroska() {
     let Some(ffmpeg) = real_ffmpeg() else { return };
     let source = private_dir("real-ffmpeg-source").unwrap();
     generate(
@@ -307,8 +313,10 @@ async fn real_ffmpeg_merges_separate_video_and_audio_into_mp4() {
         Outcome::Completed { path, .. } => path,
         other => panic!("{other:?}"),
     };
-    assert_eq!(path, dir.join("-out video.mp4"));
+    // MPEG-4 Part 2 is valid in MP4, but MP4 is kept to what its players play (D24).
+    assert_eq!(path, dir.join("-out video.mkv"));
     let report = probe(&ffmpeg, &path).unwrap();
+    assert!(report.contains("matroska"), "{report}");
     assert!(report.contains("Video: mpeg4"), "{report}");
     assert!(report.contains("Audio: aac"), "{report}");
     root.remove().unwrap();
@@ -396,7 +404,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     request.ffmpeg = Some(ffmpeg);
     let error = run(request).await.unwrap_err();
     assert!(
-        matches!(error, Error::UnknownFormat { role: "video" }),
+        matches!(error, Error::UnknownFormat { role: Role::Video }),
         "{error}"
     );
     assert!(

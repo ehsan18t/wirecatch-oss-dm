@@ -2,15 +2,17 @@
 //! add-on's yt-dlp: building the quality choice, and what a chosen download
 //! needs to run and to resume after a restart.
 
+#![forbid(unsafe_code)]
+
 pub(crate) mod choice;
 pub(crate) mod convert;
+pub(crate) mod describe;
+pub(crate) mod ffmpeg;
 pub(crate) mod merge;
 pub(crate) mod output;
-pub(crate) mod process;
 pub(crate) mod ytdlp;
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +21,7 @@ use wirecatch_protocol::app::{MediaSummary, PER_MILLE_DONE, ProcessingProgress, 
 use wirecatch_streams::{Stage, StreamProgress};
 
 use output::OutputJob;
+use ytdlp::FormatId;
 
 /// Next to a media download's file while it runs: the folder for its parts
 /// (video, audio, yt-dlp's own files) until they are joined.
@@ -43,14 +46,14 @@ pub(crate) enum MediaJob {
     /// An HLS or DASH stream, downloaded with `wirecatch-streams`.
     Stream { video: Pick, audio: Pick },
     /// A page read by yt-dlp. Its format addresses expire, so the page is read
-    /// again on every start; the chosen formats are found again by id.
+    /// again on every start; the chosen formats are found again by id. yt-dlp's
+    /// selection is made from the ids ([`ytdlp::selection`]); a `format` field
+    /// stored by earlier builds is ignored when read.
     Page {
-        /// yt-dlp's format selection, for example `137+140`.
-        format: String,
         /// The video format id, when the choice names one.
-        video: Option<String>,
+        video: Option<FormatId>,
         /// The audio format id, when separate from the video.
-        audio: Option<String>,
+        audio: Option<FormatId>,
         /// How the downloaded video or audio is saved (D24); `None` keeps it
         /// as downloaded.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -99,42 +102,21 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// The progress of a media download, made of the progress of its parts.
-#[derive(Debug)]
+/// The progress of a media download, made of the progress of its parts. Updates come a few times a second at most, so one lock over all of it costs nothing and every reading is consistent.
+#[derive(Debug, Default)]
 pub(crate) struct MediaProgress {
-    parts: Mutex<Vec<Part>>,
-    /// What ffmpeg does now: one of the `STEP_` values.
-    step: AtomicU8,
-    /// Tenths of a percent of that step done; [`UNKNOWN`] when not known.
-    per_mille: AtomicU16,
-    /// Progress reported by yt-dlp when it downloads by itself.
-    own_done: AtomicU64,
-    own_total: AtomicU64,
-    own: AtomicBool,
-    /// When the next try with fresh addresses from the page starts, in Unix
-    /// milliseconds; 0 while not waiting.
-    retry_at: AtomicI64,
+    state: Mutex<State>,
 }
 
-const STEP_NONE: u8 = 0;
-const STEP_JOINING: u8 = 1;
-const STEP_FINISHING: u8 = 2;
-const STEP_CONVERTING: u8 = 3;
-/// How far a step is, when that is not known.
-const UNKNOWN: u16 = u16::MAX;
-
-impl Default for MediaProgress {
-    fn default() -> Self {
-        Self {
-            parts: Mutex::default(),
-            step: AtomicU8::new(STEP_NONE),
-            per_mille: AtomicU16::new(UNKNOWN),
-            own_done: AtomicU64::default(),
-            own_total: AtomicU64::default(),
-            own: AtomicBool::default(),
-            retry_at: AtomicI64::default(),
-        }
-    }
+#[derive(Debug, Default)]
+struct State {
+    parts: Vec<Part>,
+    /// What ffmpeg does now, and how far it is in tenths of a percent when known.
+    step: Option<(ProcessingStep, Option<u16>)>,
+    /// yt-dlp's own report when it downloads by itself: bytes so far and the total, when known.
+    own: Option<(u64, Option<u64>)>,
+    /// When the next try with fresh addresses from the page starts, in Unix milliseconds.
+    retry_at: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -164,92 +146,68 @@ pub(crate) struct Reading {
 
 impl MediaProgress {
     pub fn add_file(&self, progress: Arc<Progress>, expected: Option<u64>) {
-        self.lock().push(Part::File(progress, expected));
+        self.lock().parts.push(Part::File(progress, expected));
     }
 
     pub fn add_stream(&self, progress: Arc<StreamProgress>) {
-        self.lock().push(Part::Stream(progress));
+        self.lock().parts.push(Part::Stream(progress));
     }
 
     pub fn add_done(&self, bytes: u64) {
-        self.lock().push(Part::Done(bytes));
+        self.lock().parts.push(Part::Done(bytes));
     }
 
     /// Marks ffmpeg as doing `step` now (with nothing of it known done yet), or,
     /// with `None`, as done.
     pub fn set_step(&self, step: Option<ProcessingStep>) {
-        let value = match step {
-            None => STEP_NONE,
-            Some(ProcessingStep::Joining) => STEP_JOINING,
-            Some(ProcessingStep::Finishing) => STEP_FINISHING,
-            Some(ProcessingStep::Converting) => STEP_CONVERTING,
-        };
-        self.per_mille.store(UNKNOWN, Ordering::Relaxed);
-        self.step.store(value, Ordering::Relaxed);
+        self.lock().step = step.map(|s| (s, None));
     }
 
     /// How far the current step is, in tenths of a percent, when known.
     pub fn set_per_mille(&self, done: Option<u16>) {
-        self.per_mille.store(
-            done.map_or(UNKNOWN, |d| d.min(PER_MILLE_DONE)),
-            Ordering::Relaxed,
-        );
-    }
-
-    fn processing(&self) -> Option<ProcessingProgress> {
-        let step = match self.step.load(Ordering::Relaxed) {
-            STEP_JOINING => ProcessingStep::Joining,
-            STEP_FINISHING => ProcessingStep::Finishing,
-            STEP_CONVERTING => ProcessingStep::Converting,
-            _ => return None,
-        };
-        let per_mille = Some(self.per_mille.load(Ordering::Relaxed)).filter(|p| *p != UNKNOWN);
-        Some(ProcessingProgress { step, per_mille })
+        if let Some((_, per_mille)) = &mut self.lock().step {
+            *per_mille = done.map(|d| d.min(PER_MILLE_DONE));
+        }
     }
 
     /// Marks the download as waiting to try again at `at` (Unix milliseconds),
     /// or, with `None`, no longer waiting.
     pub fn set_retry_at(&self, at: Option<i64>) {
-        self.retry_at
-            .store(at.filter(|t| *t > 0).unwrap_or(0), Ordering::Relaxed);
+        self.lock().retry_at = at.filter(|t| *t > 0);
     }
 
     /// Forgets the parts of an attempt that did not finish, before the next
     /// attempt adds its own (finished parts come back as such), and ends the
     /// wait. Until then the earlier attempt's progress stays visible.
     pub fn start_over(&self) {
-        self.lock().clear();
-        self.own.store(false, Ordering::Relaxed);
-        self.own_done.store(0, Ordering::Relaxed);
-        self.own_total.store(0, Ordering::Relaxed);
-        self.set_step(None);
-        self.retry_at.store(0, Ordering::Relaxed);
+        *self.lock() = State::default();
     }
 
     /// yt-dlp's own report: bytes so far and the total, if known.
     pub fn set_own(&self, done: u64, total: Option<u64>) {
-        self.own.store(true, Ordering::Relaxed);
-        self.own_done.store(done, Ordering::Relaxed);
-        self.own_total.store(total.unwrap_or(0), Ordering::Relaxed);
+        self.lock().own = Some((done, total));
     }
 
-    /// Locks the parts. A lock poisoned by a panic in another holder is taken
-    /// over as it is, for the reason `Manager::lock` gives; each part is
+    /// Locks the state. A lock poisoned by a panic in another holder is taken
+    /// over as it is, for the reason `Manager::lock` gives; each field is
     /// replaced whole, so it is never half written either.
-    fn lock(&self) -> MutexGuard<'_, Vec<Part>> {
-        self.parts.lock().unwrap_or_else(PoisonError::into_inner)
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn read(&self) -> Reading {
+        let state = self.lock();
         let mut reading = Reading {
-            processing: self.processing(),
-            retry_at: Some(self.retry_at.load(Ordering::Relaxed)).filter(|t| *t > 0),
+            processing: state
+                .step
+                .map(|(step, per_mille)| ProcessingProgress { step, per_mille }),
+            retry_at: state.retry_at,
             ..Reading::default()
         };
         let mut stream_joining = false;
         let mut total = Some(0u64);
-        let parts = self.lock();
-        for part in parts.iter() {
+        let parts = &state.parts;
+        for part in parts {
             let (done, part_total, connections, answered, joining) = match part {
                 Part::File(p, expected) => (
                     p.done(),
@@ -290,14 +248,13 @@ impl MediaProgress {
         if parts.is_empty() {
             total = None;
         }
-        if self.own.load(Ordering::Relaxed) {
+        if let Some((own_done, own_total)) = state.own {
             reading.answered = true;
-            reading.done += self.own_done.load(Ordering::Relaxed);
-            let own = self.own_total.load(Ordering::Relaxed);
-            total = match (parts.is_empty(), own) {
-                (_, 0) => None,
-                (true, own) => Some(own),
-                (false, own) => total.map(|t| t + own),
+            reading.done += own_done;
+            total = match (parts.is_empty(), own_total) {
+                (_, None) => None,
+                (true, own) => own,
+                (false, Some(own)) => total.map(|t| t + own),
             };
         }
         reading.total = total.filter(|t| *t >= reading.done || reading.processing.is_some());
@@ -305,17 +262,9 @@ impl MediaProgress {
     }
 }
 
-/// Extensions a media file may get. A site, through yt-dlp, names the extension
-/// of what it serves; taking that as is would let a page save `Invoice.exe`
-/// (yt-dlp's CVE-2024-38519), so anything else is replaced.
-const MEDIA_EXTENSIONS: [&str; 16] = [
-    "mp4", "m4a", "webm", "mkv", "mka", "mp3", "opus", "ogg", "aac", "flac", "wav", "mov", "ts",
-    "3gp", "m4v", "flv",
-];
-
-/// Whether `ext` (without the dot, any case) is a media extension.
+/// Whether `ext` (without the dot, any case) is a media extension a file may be saved with (see [`wirecatch_streams::extension`]).
 pub(crate) fn is_media_ext(ext: &str) -> bool {
-    MEDIA_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
+    wirecatch_streams::extension::is_media(ext)
 }
 
 /// What a media file holds, which decides the extension used instead of one
@@ -334,7 +283,7 @@ pub(crate) fn safe_ext(ext: Option<&str>, content: Content) -> String {
     let lower = ext
         .map(|e| e.trim().to_ascii_lowercase())
         .unwrap_or_default();
-    if MEDIA_EXTENSIONS.contains(&lower.as_str()) {
+    if is_media_ext(&lower) {
         return lower;
     }
     match content {
@@ -345,14 +294,16 @@ pub(crate) fn safe_ext(ext: Option<&str>, content: Content) -> String {
     .to_string()
 }
 
+/// The most characters of a title used in a file name, leaving room for " (1)" and the extension within common name limits.
+const MAX_TITLE_CHARS: usize = 150;
+
 /// A file name for media called `title`, with extension `ext` (replaced by
 /// `mkv` if it is not a media extension).
 pub(crate) fn file_name(title: &str, ext: &str) -> String {
     let ext = safe_ext(Some(ext), Content::Unknown);
     let title = title.trim();
     let title = if title.is_empty() { "video" } else { title };
-    // Leave room for " (1)" and the extension within common name limits.
-    let mut stem: String = title.chars().take(150).collect();
+    let mut stem: String = title.chars().take(MAX_TITLE_CHARS).collect();
     stem = wirecatch_engine::naming::sanitize(&stem);
     let stem = stem.trim_end_matches('.');
     format!("{stem}.{ext}")
@@ -428,24 +379,23 @@ mod tests {
 
     #[test]
     fn the_job_is_stored_as_plain_json() {
+        let id = |id: &str| FormatId::try_from(id.to_string()).unwrap();
         let job = MediaJob::Page {
-            format: "137+140".into(),
-            video: Some("137".into()),
-            audio: Some("140".into()),
+            video: Some(id("137")),
+            audio: Some(id("140")),
             output: None,
             keep_ext: None,
         };
         let json = serde_json::to_string(&job).unwrap();
-        // Stored as before output formats existed, and read back.
-        assert_eq!(
-            json,
-            r#"{"type":"page","format":"137+140","video":"137","audio":"140"}"#
-        );
+        // The selection is made from the ids, never stored.
+        assert_eq!(json, r#"{"type":"page","video":"137","audio":"140"}"#);
         assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), job);
+        // As earlier builds stored it: the selection is read past.
+        let stored = r#"{"type":"page","format":"137+140","video":"137","audio":"140"}"#;
+        assert_eq!(serde_json::from_str::<MediaJob>(stored).unwrap(), job);
         let converting = MediaJob::Page {
-            format: "313+140".into(),
-            video: Some("313".into()),
-            audio: Some("140".into()),
+            video: Some(id("313")),
+            audio: Some(id("140")),
             output: Some(Box::new(OutputJob {
                 container: output::Container::Mp4,
                 video: output::VideoAction::Encode {
@@ -507,5 +457,30 @@ mod tests {
         let again = progress.read();
         assert_eq!(again.retry_at, None);
         assert_eq!((again.done, again.total), (10, Some(10)));
+    }
+
+    #[test]
+    fn a_step_and_yt_dlp_progress_read_as_set_and_start_over_clears_them_together() {
+        let progress = MediaProgress::default();
+        progress.set_per_mille(Some(500));
+        assert_eq!(
+            progress.read().processing,
+            None,
+            "no step, nothing to report"
+        );
+        progress.set_step(Some(ProcessingStep::Converting));
+        progress.set_per_mille(Some(5_000));
+        assert_eq!(
+            progress.read().processing,
+            Some(ProcessingProgress {
+                step: ProcessingStep::Converting,
+                per_mille: Some(PER_MILLE_DONE),
+            })
+        );
+        progress.set_own(10, Some(20));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (10, Some(20)));
+        progress.start_over();
+        assert_eq!(progress.read(), Reading::default());
     }
 }

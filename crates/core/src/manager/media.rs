@@ -26,10 +26,10 @@ use super::captures::origin_of;
 use super::downloads::{NewEntry, parse_web_url};
 use super::handovers::{Handover, Target};
 use super::state::State;
-use crate::addons::MediaTools;
+use crate::addons::{Check, MediaTools};
 use crate::error::{CoreError, Result};
 use crate::media::choice::{self, Offer, Plan, Resolved};
-use crate::media::{self, MediaJob, Pick, StoredMedia, output, ytdlp};
+use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use crate::store::Origin;
 use crate::{headers, settings};
 
@@ -292,7 +292,7 @@ impl Manager {
             })?;
             let resolved = plan
                 .resolve(choice, &selection)
-                .map_err(CoreError::Invalid)?;
+                .map_err(|e| CoreError::Invalid(e.to_string()))?;
             if resolved.needs_ffmpeg && state.addon.tools.is_none() {
                 let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
@@ -494,7 +494,7 @@ impl Manager {
                 Some(tools) => {
                     let found = self.read_page(&source, tools, &token).await;
                     if tools.is_broken() {
-                        self.rescan_addon(true).await;
+                        self.rescan_addon(Check::Hashes).await;
                     }
                     found
                 }
@@ -595,10 +595,17 @@ impl Manager {
         options.connections = connections.max(1);
         let info = wirecatch_streams::inspect(&source.url, &options, token.clone())
             .await
-            .map_err(|e| super::media_run::stream_error(&e, &self.inner.folders.downloads))?;
+            .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None))?;
         Ok(Found {
             title: None,
-            offers: choice::from_stream(&info, ffmpeg)?,
+            offers: choice::from_stream(
+                &info,
+                if ffmpeg {
+                    choice::Ffmpeg::Installed
+                } else {
+                    choice::Ffmpeg::Missing
+                },
+            )?,
             video: None,
             subtitles: Vec::new(),
             chapters: false,
@@ -621,7 +628,9 @@ impl Manager {
             temp_dir: &self.inner.temp_dir,
             timeout: self.inner.media_timeout,
         };
-        let info = ytdlp::extract(&ctx, token).await?;
+        let info = ytdlp::extract(&ctx, token)
+            .await
+            .map_err(|e| describe::ytdlp(&e, tools))?;
         Ok(Found {
             title: info.title.clone(),
             offers: choice::from_page(&info)?,
@@ -680,7 +689,6 @@ impl Manager {
             .unwrap_or_else(|| title_from_url(&source.url));
         let job = match source.kind {
             MediaKind::Page => MediaJob::Page {
-                format: "bv*+ba/b".into(),
                 video: None,
                 audio: None,
                 output: None,

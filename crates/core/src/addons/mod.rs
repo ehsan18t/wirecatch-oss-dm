@@ -8,6 +8,8 @@
 //! - `<component>/`: the files of each part, swapped in whole.
 //! - `.work/`: release files being downloaded (resumable) and parts being unpacked.
 
+#![forbid(unsafe_code)]
+
 pub(crate) mod archive;
 pub(crate) mod manifest;
 pub(crate) mod signature;
@@ -20,6 +22,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::media::convert::EncoderCatalog;
+
 use manifest::AddonComponent;
 
 /// The add-on's folder inside the data folder.
@@ -27,7 +31,8 @@ pub(crate) fn media_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("addons").join(manifest::MEDIA_ADDON_ID)
 }
 
-const RECORD_FILE: &str = "installed.json";
+/// The record of what is installed, in the add-on folder.
+pub(crate) const RECORD_FILE: &str = "installed.json";
 
 /// What is installed, as recorded on disk.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,30 +65,50 @@ pub(crate) struct InstalledFile {
 }
 
 impl Record {
-    /// Reads the record; a missing or unreadable one means nothing is installed.
-    /// Blocks on the disk.
-    pub fn load(dir: &Path) -> Self {
+    /// Reads the record. A missing one means nothing is installed, and so does one whose content is damaged (nothing it names can be trusted).
+    ///
+    /// # Errors
+    ///
+    /// When the file is there but cannot be read, for example while an antivirus holds it: what is installed is then not known, which is not the same as nothing. Blocks on the disk.
+    pub fn load(dir: &Path) -> std::io::Result<Self> {
         match std::fs::read(dir.join(RECORD_FILE)) {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-                warn!(error = %e, "the media add-on record is unreadable; treating it as not installed");
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+                warn!(error = %e, "the media add-on record is damaged; treating it as not installed");
                 Self::default()
-            }),
-            Err(_) => Self::default(),
+            })),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(e),
         }
     }
 
-    /// Writes the record, replacing the old one in one step. Blocks on the disk.
+    /// Writes the record, replacing the old one in one step, on disk before it replaces the old one, so a power cut leaves one or the other whole. Blocks on the disk.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
         let tmp = dir.join(format!("{RECORD_FILE}.tmp"));
         let json = serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, dir.join(RECORD_FILE))
+        let mut file = std::fs::File::create(&tmp)?;
+        std::io::Write::write_all(&mut file, &json)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp, dir.join(RECORD_FILE))?;
+        // The rename reaches the disk with its folder on Unix. Windows has no handle for a folder to flush, and records the rename with the file.
+        #[cfg(unix)]
+        std::fs::File::open(dir)?.sync_all()?;
+        Ok(())
     }
 
     pub fn version(&self, name: &str) -> Option<&str> {
         self.components.get(name).map(|c| c.version.as_str())
     }
+}
+
+/// How closely the add-on's files are looked at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Check {
+    /// Each file is there with its recorded size: on every start of the app.
+    Sizes,
+    /// Each file's SHA-256 matches too: when repairing, and after a program could not be started.
+    Hashes,
 }
 
 /// The programs of an installed, intact media add-on.
@@ -96,6 +121,8 @@ pub(crate) struct MediaTools {
     /// example because an antivirus took it away: the manager then looks at the
     /// files again instead of trusting what it found earlier.
     broken: Arc<AtomicBool>,
+    /// What is known about this ffmpeg's encoders, shared by every clone and asked again when the add-on is looked at again.
+    encoders: Arc<EncoderCatalog>,
 }
 
 impl PartialEq for MediaTools {
@@ -112,6 +139,11 @@ impl MediaTools {
         self.broken.store(true, Ordering::Relaxed);
     }
 
+    /// What is known about this ffmpeg's encoders.
+    pub fn encoders(&self) -> &EncoderCatalog {
+        &self.encoders
+    }
+
     /// Whether a program could not be started since these were found.
     pub fn is_broken(&self) -> bool {
         self.broken.load(Ordering::Relaxed)
@@ -125,15 +157,15 @@ impl MediaTools {
             ffmpeg: ffmpeg.to_path_buf(),
             deno: PathBuf::from("deno"),
             broken: Arc::default(),
+            encoders: Arc::default(),
         }
     }
 }
 
 /// The add-on's programs if every recorded file is there with its recorded
-/// size, so nothing half-installed or damaged is ever run. With `deep`, each
-/// file's SHA-256 is checked too: when repairing, and after a program could not
-/// be started, not on every start of the app. Blocks on the disk.
-pub(crate) fn tools(dir: &Path, record: &Record, deep: bool) -> Option<MediaTools> {
+/// size, so nothing half-installed or damaged is ever run, and with
+/// [`Check::Hashes`] its SHA-256. Blocks on the disk.
+pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<MediaTools> {
     let program = |name: &str| -> Option<PathBuf> {
         let component = record.components.get(name)?;
         let folder = dir.join(name);
@@ -142,7 +174,8 @@ pub(crate) fn tools(dir: &Path, record: &Record, deep: bool) -> Option<MediaTool
             let meta = std::fs::metadata(&path).ok()?;
             let intact = meta.is_file()
                 && meta.len() == file.size
-                && (!deep || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
+                && (check == Check::Sizes
+                    || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
             if !intact {
                 warn!(path = %path.display(), "a media add-on file is missing or changed");
                 return None;
@@ -155,6 +188,7 @@ pub(crate) fn tools(dir: &Path, record: &Record, deep: bool) -> Option<MediaTool
         ffmpeg: program("ffmpeg")?,
         deno: program("deno")?,
         broken: Arc::default(),
+        encoders: Arc::default(),
     })
 }
 
@@ -274,8 +308,18 @@ mod tests {
             },
         );
         record.save(dir.path()).unwrap();
-        assert_eq!(Record::load(dir.path()), record);
+        assert_eq!(Record::load(dir.path()).unwrap(), record);
+        assert!(!dir.path().join(format!("{RECORD_FILE}.tmp")).exists());
         // Nothing to run: the file itself is missing.
-        assert!(tools(dir.path(), &record, false).is_none());
+        assert!(tools(dir.path(), &record, Check::Sizes).is_none());
+    }
+
+    /// Only a missing record means nothing is installed; one that cannot be read (held by an antivirus, say) is an error, so the add-on is not offered for a full reinstall over a passing lock.
+    #[test]
+    fn a_record_that_cannot_be_read_is_not_taken_for_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(Record::load(dir.path()).unwrap(), Record::default());
+        std::fs::create_dir(dir.path().join(RECORD_FILE)).unwrap();
+        assert!(Record::load(dir.path()).is_err());
     }
 }

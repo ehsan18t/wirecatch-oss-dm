@@ -16,8 +16,9 @@
 //! - `ffmpeg`: checks every `-i file:<path>` input exists, waits
 //!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
 //!   one per line, into the output (its last argument, `file:<path>`). Asked
-//!   for `-progress` (a conversion), it first reports half of a two-second
-//!   media done, and fails with the text of `ffmpeg-fail.txt` if that exists.
+//!   for `-progress`, it first reports half of a two-second media done; a
+//!   conversion (whose arguments, unlike a join's or a subtitle's, map
+//!   chapters) fails with the text of `ffmpeg-fail.txt` if that exists.
 //! - `deno`: prints a version.
 //!
 //! With `spawn-child` present, the `-J` call first starts a copy of itself that
@@ -216,7 +217,7 @@ async fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
         say("progress=continue")?;
     }
     wait(&dir.join("ffmpeg-delay-ms")).await;
-    let converting = args.iter().any(|a| a == "-progress");
+    let converting = args.iter().any(|a| a == "-map_chapters");
     if converting && let Ok(reason) = std::fs::read_to_string(dir.join("ffmpeg-fail.txt")) {
         eprintln!("{}", reason.trim());
         return Ok(ExitCode::from(1));

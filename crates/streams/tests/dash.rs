@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use wirecatch_engine::{CancellationToken, DownloadOptions};
 use wirecatch_streams::{
-    Choice, Error, Outcome, PrivateNetwork, StreamKind, StreamProgress, StreamRequest, download,
-    inspect,
+    Choice, DrmSystem, Error, Feature, ManifestError, Outcome, PrivateNetwork, StreamKind,
+    StreamProgress, StreamRequest, download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{TestResult, private_dir, ts_segment};
@@ -268,14 +268,16 @@ async fn live_drm_and_several_periods_are_refused() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, Error::Drm(name) if name == "Microsoft PlayReady"),
+        matches!(&error, Error::Drm(DrmSystem::PlayReady)),
         "{error}"
     );
-    assert!(error.to_string().contains("cannot download it"), "{error}");
     let error = run(request(&server, "periods.mpd", &dir.join("c.mp4")))
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Unsupported(_)), "{error}");
+    assert!(
+        matches!(error, Error::Unsupported(Feature::SeveralPeriods)),
+        "{error}"
+    );
     assert!(
         !server.seen().iter().any(|s| s.has_extension("m4s")),
         "nothing fetched"
@@ -320,4 +322,85 @@ async fn an_absurd_presentation_duration_is_not_a_crash() {
     .await
     .unwrap();
     assert_eq!(info.duration, None, "too long to be real, so unknown");
+}
+
+/// A track with no media segments must fail like an HLS playlist without segments, not "complete" as an empty file.
+#[tokio::test]
+async fn a_track_without_segments_is_refused_not_saved_empty() -> TestResult {
+    let server = FileServer::start().await;
+    server.put("dash/init.mp4", init(1));
+    let manifest = |duration: &str, segments: &str| {
+        format!(
+            r#"<MPD type="static" mediaPresentationDuration="{duration}"><Period><AdaptationSet mimeType="video/mp4" codecs="avc1.64001f"><Representation id="v" bandwidth="1">{segments}</Representation></AdaptationSet></Period></MPD>"#
+        )
+    };
+    server.put_typed(
+        "empty-list.mpd",
+        manifest(
+            "PT4S",
+            r#"<SegmentList><Initialization sourceURL="dash/init.mp4"/></SegmentList>"#,
+        ),
+        DASH,
+    );
+    server.put_typed(
+        "no-length.mpd",
+        manifest(
+            "PT0S",
+            r#"<SegmentTemplate initialization="dash/init.mp4" media="dash/$Number$.m4s" duration="1"/>"#,
+        ),
+        DASH,
+    );
+    let dir = private_dir("dash-empty")?;
+    for (manifest, name) in [("empty-list.mpd", "a.mp4"), ("no-length.mpd", "b.mp4")] {
+        let output = dir.join(name);
+        let error = run(request(&server, manifest, &output)).await.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                Error::Manifest {
+                    host: Some(_),
+                    line: None,
+                    cause: ManifestError::NoSegments
+                }
+            ),
+            "{manifest}: {error}"
+        );
+        assert!(!output.exists(), "{manifest}");
+    }
+    dir.remove()?;
+    Ok(())
+}
+
+/// The file name forecast before the download follows the picks the download makes: here the main representation, not the one with the highest bandwidth.
+#[tokio::test]
+async fn the_forecast_extension_follows_the_automatic_pick() -> TestResult {
+    let server = FileServer::start().await;
+    server.put_typed(
+        "main.mpd",
+        r#"<MPD type="static" mediaPresentationDuration="PT4S"><Period>
+          <AdaptationSet mimeType="video/mp4" codecs="avc1.64001f"><Role schemeIdUri="urn:mpeg:dash:role:2011" value="main"/>
+            <Representation id="h264" bandwidth="1000"><SegmentTemplate media="v/$Number$.m4s" duration="2"/></Representation>
+          </AdaptationSet>
+          <AdaptationSet mimeType="video/mp4" codecs="vp09.00.40.08">
+            <Representation id="vp9" bandwidth="9000"><SegmentTemplate media="w/$Number$.m4s" duration="2"/></Representation>
+          </AdaptationSet></Period></MPD>"#,
+        DASH,
+    );
+    let info = inspect(
+        &server.url("main.mpd"),
+        &options(),
+        CancellationToken::new(),
+    )
+    .await?;
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, true), "mp4");
+    let vp9 = info
+        .video
+        .iter()
+        .find(|v| v.codecs.as_deref() == Some("vp09.00.40.08"))
+        .ok_or("no VP9 track")?;
+    assert_eq!(
+        info.extension(&Choice::Track(vp9.id.clone()), &Choice::Auto, true),
+        "mkv"
+    );
+    Ok(())
 }

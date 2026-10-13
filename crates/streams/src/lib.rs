@@ -85,18 +85,22 @@ mod dash;
 mod download;
 mod error;
 pub mod extension;
-mod ffmpeg;
+pub mod ffmpeg;
 mod hls;
 mod model;
 mod plan;
+pub mod process;
+mod select;
+mod source;
+mod track_id;
 mod workdir;
 
 pub use download::download;
-pub use error::{Error, Result};
+pub use error::{DrmSystem, Error, Feature, KeyProblem, ManifestError, Result};
 pub use ffmpeg::{InputFormat, ffmpeg_input_args};
 pub use model::{
-    AudioTrack, Choice, Outcome, Stage, StreamInfo, StreamKind, StreamProgress, StreamRequest,
-    SubtitleTrack, VideoTrack,
+    AudioTrack, Choice, Outcome, Role, Stage, StreamInfo, StreamKind, StreamProgress,
+    StreamRequest, SubtitleTrack, VideoTrack,
 };
 pub use wirecatch_engine::PrivateNetwork;
 pub use workdir::DIR_SUFFIX;
@@ -134,6 +138,6 @@ pub async fn inspect(
     cancel: CancellationToken,
 ) -> Result<StreamInfo> {
     let fetcher = Fetcher::new(url, options, cancel).await?;
-    let source = plan::Source::load(&fetcher).await?;
+    let source = source::Source::load(&fetcher).await?;
     source.info(&fetcher).await
 }
