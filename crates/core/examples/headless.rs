@@ -8,7 +8,8 @@
 //! Each URL is added to the default queue. Without `--data-dir` a new temporary
 //! folder is used (and kept, so a second run can reuse it). Press Ctrl+C to stop:
 //! running downloads are saved and continue on the next run with the same folder.
-//! Set `WIRECATCH_LOG=debug` for more detail.
+//! Logs go to stderr and to `logs/` in the data folder; set `WIRECATCH_LOG=debug` for more detail
+//! (`wirecatch-logging`).
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -22,15 +23,9 @@ use wirecatch_protocol::app::AddRequest;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("WIRECATCH_LOG")
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
-
+    let logging = wirecatch_logging::start("headless", "info");
     let (data_dir, urls) = parse_args()?;
+    logging.write_to(Some(&wirecatch_logging::folder_in(&data_dir)));
     let folders = KnownFolders::detect().context("could not find your home folder")?;
     eprintln!("Data folder: {}", data_dir.display());
     eprintln!("Downloads go to: {}", folders.downloads.display());

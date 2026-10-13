@@ -18,7 +18,6 @@ mod media;
 mod naming;
 mod owner_only;
 mod profile;
-mod redact;
 mod schedule;
 mod server;
 mod settings;

@@ -34,13 +34,13 @@ wirecatch-core.workspace = true
 # Its checked conversions between whole numbers and floating point (`numeric`).
 wirecatch-engine.workspace = true
 wirecatch-ipc.workspace = true
+wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 # The same version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state.

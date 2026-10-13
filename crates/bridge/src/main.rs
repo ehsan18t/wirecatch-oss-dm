@@ -4,7 +4,8 @@
 //! - Started by the browser (native messaging mode): checks the caller, then
 //!   relays length-prefixed JSON frames between stdin/stdout and the app's
 //!   per-user local socket, starting the app with `--background` when needed. In
-//!   this mode stdout carries only frames; every log line goes to stderr.
+//!   this mode stdout carries only frames; every log line goes to stderr and to the release app's
+//!   log folder (`wirecatch-logging`), since a browser keeps what the bridge writes to stderr in its own output at best.
 //! - `wirecatch-bridge install` / `uninstall`: register or remove the host in every supported browser, for the current user or, with `--all-users` (Windows, administrator rights), for every user of the computer.
 
 // Stdout belongs to the browser in native messaging mode, so nothing here prints
@@ -19,24 +20,8 @@ use std::thread;
 use tokio::sync::mpsc;
 use wirecatch_product::BRIDGE_EXECUTABLE;
 
-/// Writes one line to stderr, never stdout; see [`log_line`].
-macro_rules! log {
-    ($($arg:tt)*) => {
-        $crate::log_line(format_args!($($arg)*))
-    };
-}
-pub(crate) use log;
-
-/// Writes one log line to stderr, without the panic of `eprintln!` when that fails.
-fn log_line(line: std::fmt::Arguments<'_>) {
-    stderr_may_be_closed(&writeln!(io::stderr(), "{BRIDGE_EXECUTABLE}: {line}"));
-}
-
-/// Takes the outcome of writing a log line. The browser may have closed stderr, and then
-/// nowhere is left to report that.
-fn stderr_may_be_closed(written: &io::Result<()>) {
-    let (Ok(()) | Err(_)) = written;
-}
+/// Which lines are logged unless the log filter variable chooses others (`wirecatch-logging`).
+const LOG_FILTER: &str = "info";
 
 mod app;
 mod caller;
@@ -75,6 +60,8 @@ administrator rights). The installer does this.
 }
 
 fn main() -> ExitCode {
+    let logging = wirecatch_logging::start(BRIDGE_EXECUTABLE, LOG_FILTER);
+    logging.write_to(wirecatch_logging::release_folder().as_deref());
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let first = args.first().and_then(|arg| arg.to_str());
     let scope = match args.get(1).and_then(|arg| arg.to_str()) {
@@ -87,7 +74,7 @@ fn main() -> ExitCode {
         (Some("uninstall"), 1..=2, Some(scope)) => install::run(install::Command::Uninstall, scope),
         (Some("--help" | "-h" | "help"), 1, _) => {
             if let Err(e) = io::stdout().write_all(usage().as_bytes()) {
-                log!("could not print the usage: {e}");
+                tracing::error!("could not print the usage: {e}");
                 return ExitCode::FAILURE;
             }
             ExitCode::SUCCESS
@@ -99,7 +86,7 @@ fn main() -> ExitCode {
 fn native_messaging_host(args: &[OsString]) -> ExitCode {
     let config = config::Config::embedded();
     if let Err(reason) = caller::identify(args, &config) {
-        log!(
+        tracing::error!(
             "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `{BRIDGE_EXECUTABLE} --help` for the commands you can use."
         );
         return ExitCode::FAILURE;
@@ -115,7 +102,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     {
         Ok(runtime) => runtime,
         Err(e) => {
-            log!("could not start: {e}");
+            tracing::error!("could not start: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -128,7 +115,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
         .name("stdin".into())
         .spawn(move || read_browser(&to_relay))
     {
-        log!("could not start: {e}");
+        tracing::error!("could not start: {e}");
         return ExitCode::FAILURE;
     }
     let writer = match thread::Builder::new()
@@ -137,7 +124,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     {
         Ok(writer) => writer,
         Err(e) => {
-            log!("could not start: {e}");
+            tracing::error!("could not start: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -150,11 +137,11 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
         };
         async move {
             let endpoint = app::endpoint().map_err(|e| {
-                log!("{e}");
+                tracing::error!("{e}");
                 app::Unavailable::from_ipc(&e)
             })?;
             let launcher = app::launcher().map_err(|e| {
-                log!("{e:#}");
+                tracing::error!("{e:#}");
                 app::Unavailable::cannot_start(&format!("{e:#}"))
             })?;
             app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET, start).await
@@ -162,14 +149,14 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     }));
     if ended == relay::Ended::AppClosed {
         // Exiting closes stdout, so the browser reports the port as disconnected. The extension then only checks whether Wirecatch is running; it starts it again only for a download.
-        log!("Wirecatch went away; closing so the extension can reconnect");
+        tracing::info!("Wirecatch went away; closing so the extension can reconnect");
     }
     // Dropping the runtime drops the app reader task and with it the last sender
     // to the stdout thread, which then finishes what is queued and stops. The
     // stdin thread may still be blocked reading; returning from main ends it.
     drop(runtime);
     if writer.join().is_err() {
-        log!(
+        tracing::error!(
             "the thread writing to the browser stopped with a panic; the last messages may be lost"
         );
     }
@@ -190,7 +177,7 @@ fn read_browser(to_relay: &mpsc::Sender<RawFrame>) {
             Ok(Some(raw_frame::Incoming::Oversized { len })) => {
                 // Its id is unknown (the body was not kept), so there is nobody to
                 // answer; the session goes on with the next message.
-                log!(
+                tracing::warn!(
                     "skipped a {len} byte message from the extension: messages are limited to {} bytes",
                     wirecatch_protocol::frame::MAX_FRAME_LEN
                 );
@@ -198,7 +185,7 @@ fn read_browser(to_relay: &mpsc::Sender<RawFrame>) {
             Ok(None) => return,
             Err(e) => {
                 // A frame cut short or a broken pipe: nothing more can be read.
-                log!("stopped reading from the browser: {e}");
+                tracing::warn!("stopped reading from the browser: {e}");
                 return;
             }
         }
@@ -214,7 +201,7 @@ fn write_browser(mut to_browser: mpsc::Receiver<RawFrame>) {
             .write_all(frame.as_bytes())
             .and_then(|()| stdout.flush())
         {
-            log!("stopped writing to the browser: {e}");
+            tracing::warn!("stopped writing to the browser: {e}");
             return;
         }
     }
@@ -244,7 +231,7 @@ fn keep_browser_pipes_private() {
         }
         // SAFETY: `handle` is one of this process's standard handles.
         if unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0 {
-            log!(
+            tracing::warn!(
                 "could not keep a browser pipe private: {}",
                 io::Error::last_os_error()
             );

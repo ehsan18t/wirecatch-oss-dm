@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 wirecatch-engine.workspace = true
+wirecatch-logging.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-streams.workspace = true
@@ -49,7 +50,8 @@ lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", 
 rand = "0.8.6"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
-tracing-subscriber.workspace = true
+# Logging for the headless example.
+wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-test-support = { path = "../test-support", features = ["servers"] }
 
 [lints]

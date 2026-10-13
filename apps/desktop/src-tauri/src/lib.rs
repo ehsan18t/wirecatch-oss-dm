@@ -77,24 +77,14 @@ pub fn autostart_name() -> &'static str {
     host::CHANNEL.name()
 }
 
-fn init_logging() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    if let Err(e) = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .try_init()
-    {
-        // Reaches only a logger set up before this one, if there is any.
-        tracing::warn!(
-            "Wirecatch's logger was not installed, so its lines do not reach stderr: {e}"
-        );
-    }
-}
+/// Which lines the app logs unless the log filter variable chooses others (`wirecatch-logging`).
+const LOG_FILTER: &str = "info";
 
 /// Starts the app.
 pub fn run() {
-    init_logging();
+    // A release build on Windows has no stderr, so the file is where lines are read: it is known before anything can fail, so a start that fails early leaves its reason there.
+    let logging = wirecatch_logging::start(wirecatch_product::APP_EXECUTABLE, LOG_FILTER);
+    logging.write_to(host::log_folder(std::env::var_os(host::DATA_DIR_VAR)).as_deref());
     if elevation::decide(wirecatch_ipc::elevation()) == elevation::Start::Refuse {
         // Developers often work in an elevated terminal, and a debug build has its own endpoint, still labelled at its integrity level.
         if host::DEV_BUILD {

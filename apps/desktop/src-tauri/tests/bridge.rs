@@ -15,7 +15,7 @@ use common::Sandbox;
 use tokio::process::Command;
 use wirecatch_desktop_lib::bridge::{self, BRIDGE_FILE_NAME};
 use wirecatch_ipc::{Endpoint, Listener};
-use wirecatch_product::CHROMIUM_EXTENSION_ORIGIN;
+use wirecatch_product::{CHROMIUM_EXTENSION_ORIGIN, LOG_FOLDER_VARIABLE};
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
@@ -78,6 +78,8 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult
         .env(ENDPOINT_VAR, endpoint.as_os_str())
         // Whatever happens, the bridge must not start a real app.
         .env(LAUNCH_VAR, r#"["wirecatch-desktop-test-no-such-program"]"#)
+        // Its log file goes in the test's folder, not the person's.
+        .env(LOG_FOLDER_VARIABLE, dir.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())

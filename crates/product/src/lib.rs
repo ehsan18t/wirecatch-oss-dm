@@ -22,6 +22,12 @@ pub const CLI_EXECUTABLE: &str = "wirecatch";
 /// The download list, in the data folder.
 pub const DATABASE_FILE: &str = "wirecatch.db";
 
+/// The environment variable that chooses which lines every binary logs, in `tracing` filter syntax (`debug`, `wirecatch_core=trace`).
+pub const LOG_FILTER_VARIABLE: &str = "WIRECATCH_LOG";
+
+/// The environment variable that names another folder for every binary's log files.
+pub const LOG_FOLDER_VARIABLE: &str = "WIRECATCH_LOG_DIR";
+
 /// The native messaging host name the bridge registers and the extension connects to.
 pub const NATIVE_HOST_NAME: &str = "app.wirecatch.bridge";
 

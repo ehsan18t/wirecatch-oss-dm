@@ -3,6 +3,7 @@
 //! The manager opens in the background while the window appears, so the window never waits on
 //! the database. Commands that arrive first simply wait for it.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use tokio::sync::OnceCell;
@@ -103,6 +104,15 @@ pub fn data_dir(local_base: &Path, roaming_base: &Path) -> PathBuf {
         ),
     }
     used
+}
+
+/// Where the app logs: `logs/` in the data folder [`DATA_DIR_VAR`] names (`data_dir_var`), or else in this channel's local data folder, where [`data_dir`] moves the data folder. Known before the app does anything, so a start that fails early is logged too. `None` when the system names no local data folder.
+#[must_use]
+pub fn log_folder(data_dir_var: Option<OsString>) -> Option<PathBuf> {
+    match data_dir_var.filter(|dir| !dir.is_empty()) {
+        Some(dir) => Some(wirecatch_logging::folder_in(Path::new(&dir))),
+        None => wirecatch_logging::channel_folder(CHANNEL),
+    }
 }
 
 /// What happened to a data folder left in the roaming folder.
@@ -234,6 +244,29 @@ mod tests {
     fn a_debug_build_is_the_dev_channel() {
         assert_eq!(CHANNEL == Channel::Dev, cfg!(debug_assertions));
         assert_ne!(Channel::Dev.name(), Channel::Release.name());
+    }
+
+    /// The log folder is known before the app does anything, so a start that fails (no WebView2, a second copy, a refused elevation) still leaves its reason in the file.
+    #[test]
+    fn the_log_folder_is_known_before_the_app_starts() {
+        let chosen = Path::new("try").join("data");
+        assert_eq!(
+            log_folder(Some(chosen.clone().into())),
+            Some(wirecatch_logging::folder_in(&chosen))
+        );
+        assert_eq!(log_folder(Some("".into())), log_folder(None));
+        assert_eq!(log_folder(None), wirecatch_logging::channel_folder(CHANNEL));
+        if std::env::var_os(wirecatch_logging::LOG_FOLDER_VARIABLE).is_none()
+            && let Some(folder) = log_folder(None)
+        {
+            assert!(
+                folder.ends_with(
+                    Path::new(CHANNEL.data_folder()).join(wirecatch_logging::LOGS_FOLDER)
+                ),
+                "{}",
+                folder.display()
+            );
+        }
     }
 
     #[test]

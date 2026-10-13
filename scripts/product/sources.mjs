@@ -10,6 +10,9 @@ const RUST = { rust: true, ts: false };
 const TS = { rust: false, ts: true };
 const BOTH = { rust: true, ts: true };
 
+/** The product slug as the start of an environment variable's name: `wirecatch` gives `WIRECATCH`. */
+const environmentName = (slug) => slug.toUpperCase().replaceAll('-', '_');
+
 /** The constants generated: their name, what they mean, their value, and which languages use them. */
 const CONSTANTS = [
   ['PRODUCT_NAME', 'The product name people see.', (p) => p.product.name, BOTH],
@@ -35,6 +38,18 @@ const CONSTANTS = [
     RUST,
   ],
   ['DATABASE_FILE', 'The download list, in the data folder.', (p) => p.files.database, RUST],
+  [
+    'LOG_FILTER_VARIABLE',
+    'The environment variable that chooses which lines every binary logs, in `tracing` filter syntax (`debug`, `wirecatch_core=trace`).',
+    (p) => `${environmentName(p.product.slug)}_LOG`,
+    RUST,
+  ],
+  [
+    'LOG_FOLDER_VARIABLE',
+    "The environment variable that names another folder for every binary's log files.",
+    (p) => `${environmentName(p.product.slug)}_LOG_DIR`,
+    RUST,
+  ],
   [
     'NATIVE_HOST_NAME',
     'The native messaging host name the bridge registers and the extension connects to.',

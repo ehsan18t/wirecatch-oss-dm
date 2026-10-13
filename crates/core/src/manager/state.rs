@@ -391,10 +391,10 @@ impl Entry {
     /// a password in its link is hidden. `row` keeps the real link.
     pub fn summary(&self) -> DownloadSummary {
         let mut row = self.row.clone();
-        row.url = crate::redact::url_for_display(&row.url);
+        row.url = wirecatch_logging::redact::url_for_display(&row.url);
         // Some failures name the link they were about.
         if let Some(error) = &mut row.error {
-            error.message = crate::redact::text_for_display(&error.message);
+            error.message = wirecatch_logging::redact::text_for_display(&error.message);
         }
         row
     }

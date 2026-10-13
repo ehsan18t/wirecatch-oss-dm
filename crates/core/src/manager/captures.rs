@@ -530,8 +530,8 @@ fn direct_category(capture: &NewDownload) -> Option<Category> {
 /// links. The manager keeps the real ones.
 fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
     PendingCapture {
-        url: crate::redact::url_for_display(&capture.url),
-        page_url: crate::redact::optional_url_for_display(capture.page_url.as_deref()),
+        url: wirecatch_logging::redact::url_for_display(&capture.url),
+        page_url: wirecatch_logging::redact::optional_url_for_display(capture.page_url.as_deref()),
         ..capture.clone()
     }
 }

@@ -14,7 +14,9 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, timeout, timeout_at};
 use wirecatch_ipc::Endpoint;
-use wirecatch_product::{CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME};
+use wirecatch_product::{
+    CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, LOG_FOLDER_VARIABLE, NATIVE_HOST_NAME,
+};
 use wirecatch_protocol::extension::{
     AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
     WithdrawRequest,
@@ -38,6 +40,12 @@ pub enum Caller {
     Firefox,
     /// Chrome with this origin, for example an extension that is not ours.
     ChromeOrigin(String),
+}
+
+/// Where the bridges the tests start write their log files: the temporary folder, not the person's
+/// log folder.
+fn log_folder() -> std::path::PathBuf {
+    std::env::temp_dir().join("wirecatch-e2e-logs")
 }
 
 impl Caller {
@@ -122,6 +130,7 @@ impl FakeExtension {
                 LAUNCH_VAR,
                 serde_json::to_string(&launch).expect("text is JSON"),
             )
+            .env(LOG_FOLDER_VARIABLE, log_folder())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

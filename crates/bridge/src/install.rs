@@ -612,7 +612,7 @@ pub(crate) mod files {
         if result.is_err()
             && let Err(e) = fs::remove_file(&temp)
         {
-            crate::log!(
+            tracing::warn!(
                 "could not remove the temporary file {}: {e}",
                 temp.display()
             );
@@ -1121,7 +1121,7 @@ pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
     let report = match planned_report(command, scope) {
         Ok(report) => report,
         Err(e) => {
-            crate::log!("{e:#}");
+            tracing::error!("{e:#}");
             return ExitCode::FAILURE;
         }
     };
@@ -1136,7 +1136,7 @@ pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
     // The registration is done either way, so a report nobody can read (stdout
     // closed) is logged and does not change the exit code.
     if let Err(e) = print_report(&report.lines, summary) {
-        crate::log!("could not write the report: {e}");
+        tracing::warn!("could not write the report: {e}");
     }
     if succeeded {
         ExitCode::SUCCESS

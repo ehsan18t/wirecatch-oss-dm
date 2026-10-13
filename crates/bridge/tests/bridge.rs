@@ -15,7 +15,8 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::{sleep, timeout};
 use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_product::{
-    CHROMIUM_EXTENSION_ID, CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, NATIVE_HOST_NAME,
+    BRIDGE_EXECUTABLE, CHROMIUM_EXTENSION_ID, CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID,
+    LOG_FOLDER_VARIABLE, NATIVE_HOST_NAME,
 };
 use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
@@ -71,6 +72,8 @@ fn bridge(args: &[&str], test: &TestEndpoint) -> Command {
         .args(args)
         .env(ENDPOINT_VAR, test.endpoint.as_os_str())
         .env(LAUNCH_VAR, launch)
+        // Its log file goes in the test's folder, not the person's.
+        .env(LOG_FOLDER_VARIABLE, test.dir.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -646,10 +649,12 @@ async fn a_broken_launch_override_still_answers() -> TestResult {
 
 #[test]
 fn help_fails_when_the_usage_cannot_be_printed() -> TestResult {
+    let logs = private_dir("bridge-help-logs")?;
     let (reader, writer) = std::io::pipe()?;
     drop(reader);
     let output = std::process::Command::new(BRIDGE)
         .arg("--help")
+        .env(LOG_FOLDER_VARIABLE, logs.path())
         .stdout(writer)
         .stderr(Stdio::piped())
         .output()?;
@@ -658,5 +663,30 @@ fn help_fails_when_the_usage_cannot_be_printed() -> TestResult {
         "a usage nobody could read must not report success"
     );
     assert!(String::from_utf8_lossy(&output.stderr).contains("could not print the usage"));
+    Ok(())
+}
+
+/// What the bridge logs reaches its log file as well as stderr, since a browser keeps its stderr
+/// nowhere a person can find it.
+#[test]
+fn the_bridge_logs_to_its_file() -> TestResult {
+    let logs = private_dir("bridge-logs")?;
+    let output = std::process::Command::new(BRIDGE)
+        .env(LOG_FOLDER_VARIABLE, logs.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()?;
+    assert!(
+        !output.status.success(),
+        "a bridge nobody started must refuse"
+    );
+    let file = logs.path().join(format!("{BRIDGE_EXECUTABLE}.log"));
+    let logged = std::fs::read_to_string(&file)?;
+    assert!(
+        logged.contains("ERROR") && logged.contains("refused to start"),
+        "{logged}"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("refused to start"));
     Ok(())
 }

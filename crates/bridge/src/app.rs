@@ -141,7 +141,7 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
         let dir = program.parent().filter(|d| !d.as_os_str().is_empty());
         match crate::shell_parent::spawn(program, args, dir) {
             Ok(_) => return Ok(()),
-            Err(e) => log!(
+            Err(e) => tracing::warn!(
                 "could not start Wirecatch from the desktop shell ({e}); starting it from here instead, so Task Manager may list it inside the browser"
             ),
         }
@@ -168,7 +168,7 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
         match command.spawn() {
             Ok(_child) => return Ok(()),
             Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED.cast_signed()) => {
-                log!(
+                tracing::warn!(
                     "the browser does not let the programs it starts leave its job, so Wirecatch is being started inside it. The browser may close Wirecatch when it closes the extension's connection; if that happens, open Wirecatch yourself (or let it start with the computer) so it keeps running"
                 );
                 command.creation_flags(base);
@@ -300,7 +300,7 @@ pub(crate) async fn connect_or_launch(
     }
 
     if let Err(e) = launcher.launch() {
-        log!("could not start Wirecatch ({}): {e}", launcher.describe());
+        tracing::error!("could not start Wirecatch ({}): {e}", launcher.describe());
         return Err(Unavailable::launch_failed(&e));
     }
 
@@ -308,7 +308,7 @@ pub(crate) async fn connect_or_launch(
     let mut pause = FIRST_RETRY;
     loop {
         if Instant::now() >= deadline {
-            log!("Wirecatch did not start listening within {budget:?}");
+            tracing::error!("Wirecatch did not start listening within {budget:?}");
             return Err(Unavailable::timed_out(budget));
         }
         sleep_until((Instant::now() + pause).min(deadline)).await;
@@ -332,7 +332,7 @@ async fn attempt(endpoint: &Endpoint, deadline: Instant, budget: Duration) -> At
         Ok(Ok(conn)) => Attempt::Connected(conn),
         Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotRunning,
         Ok(Err(e)) => {
-            log!("could not connect to Wirecatch: {e}");
+            tracing::warn!("could not connect to Wirecatch: {e}");
             Attempt::Failed(Unavailable::from_ipc(&e))
         }
         Err(_) => Attempt::Failed(Unavailable::timed_out(budget)),

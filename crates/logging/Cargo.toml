@@ -1,0 +1,39 @@
+[package]
+name = "wirecatch-logging"
+description = "Where Wirecatch's binaries log (a size-capped file in the app's log folder, and stderr), and how secrets are kept out of every log line"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Only the engine is published to crates.io.
+publish = false
+
+[features]
+default = ["setup"]
+# Setting up a binary's logging. Libraries that only redact text (core, streams) turn default features off and build no subscriber.
+setup = ["dep:dirs", "dep:tracing", "dep:tracing-subscriber", "dep:wirecatch-product"]
+
+[dependencies]
+# What a secret is, shared with the extension's redaction (D40.10).
+wirecatch-protocol.workspace = true
+wirecatch-product = { workspace = true, optional = true }
+# The version core uses, for the per-user local data folder.
+dirs = { version = "7.0.0", optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+# `url::Url`'s `Debug`, which `reqwest` errors carry, in the secrets test.
+url.workspace = true
+wirecatch-test-support = { path = "../test-support", features = ["redaction"] }
+
+[lints]
+workspace = true
+
+# Runs itself as the process that panics, so it needs no harness of its own.
+[[test]]
+name = "panics"
+harness = false

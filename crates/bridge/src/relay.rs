@@ -82,7 +82,7 @@ where
             result = &mut connecting => break result,
             frame = incoming.recv(), if held.len() < MAX_HELD_WHILE_CONNECTING => {
                 let Some(frame) = frame else {
-                    log!("the browser closed the connection while Wirecatch was starting");
+                    tracing::info!("the browser closed the connection while Wirecatch was starting");
                     return Ended::BrowserClosed;
                 };
                 held.push_back(frame);
@@ -109,7 +109,7 @@ async fn refuse(frame: &RawFrame, outgoing: &mpsc::Sender<RawFrame>, why: &Unava
     if let Envelope::Request(Some(id)) = frame.envelope() {
         answer_error(outgoing, id, why.code, &why.message).await;
     } else {
-        log!("dropped a message from the extension because Wirecatch is unavailable");
+        tracing::warn!("dropped a message from the extension because Wirecatch is unavailable");
     }
 }
 
@@ -151,7 +151,7 @@ where
             // Remember the id before sending, so a fast response always finds it.
             let fresh = lock(&pending).insert(id);
             if !fresh {
-                log!("refused a request whose id {id} is already waiting for an answer");
+                tracing::warn!("refused a request whose id {id} is already waiting for an answer");
                 answer_error(
                     &outgoing,
                     id,
@@ -165,7 +165,7 @@ where
             }
         }
         if let Err(e) = send(&mut to_app, &frame).await {
-            log!("lost the connection to Wirecatch while sending: {e}");
+            tracing::warn!("lost the connection to Wirecatch while sending: {e}");
             drop(to_app);
             finish_reading(from_app).await;
             answer_pending(&pending, &outgoing).await;
@@ -211,11 +211,11 @@ where
                     }
                 }
                 Ok(None) => {
-                    log!("Wirecatch closed the connection");
+                    tracing::info!("Wirecatch closed the connection");
                     return;
                 }
                 Err(e) => {
-                    log!("could not read from Wirecatch: {e}");
+                    tracing::warn!("could not read from Wirecatch: {e}");
                     return;
                 }
             }
@@ -229,7 +229,7 @@ async fn finish_reading(from_app: JoinHandle<()>) {
     if let Err(e) = reader_end(from_app).await
         && e.is_panic()
     {
-        log!("the reader of Wirecatch's messages stopped with a panic: {e}");
+        tracing::error!("the reader of Wirecatch's messages stopped with a panic: {e}");
     }
 }
 
@@ -263,7 +263,7 @@ async fn answer_error(outgoing: &mpsc::Sender<RawFrame>, id: u64, code: ErrorCod
     };
     match RawFrame::encode(&response) {
         Ok(frame) => browser_may_be_gone(&outgoing.send(frame).await),
-        Err(e) => log!("could not encode an error response: {e}"),
+        Err(e) => tracing::error!("could not encode an error response: {e}"),
     }
 }
 

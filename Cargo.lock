@@ -7460,8 +7460,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "windows-sys 0.59.0",
  "wirecatch-ipc",
+ "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
@@ -7475,8 +7477,8 @@ dependencies = [
  "clap",
  "indicatif",
  "tokio",
- "tracing-subscriber",
  "wirecatch-engine",
+ "wirecatch-logging",
  "wirecatch-product",
 ]
 
@@ -7499,9 +7501,9 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "windows-sys 0.59.0",
  "wirecatch-engine",
+ "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-streams",
@@ -7527,7 +7529,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "webview2-com",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",
@@ -7535,6 +7536,7 @@ dependencies = [
  "wirecatch-core",
  "wirecatch-engine",
  "wirecatch-ipc",
+ "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
@@ -7592,6 +7594,20 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows-sys 0.59.0",
+ "wirecatch-product",
+ "wirecatch-protocol",
+ "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-logging"
+version = "0.1.0"
+dependencies = [
+ "dirs 7.0.0",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "url",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",

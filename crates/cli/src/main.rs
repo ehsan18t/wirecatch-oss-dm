@@ -16,10 +16,8 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Outcome, Progress, Url, download,
 };
 
-/// Environment variable that sets the log filter, in `tracing` filter syntax.
-const LOG_ENV: &str = "WIRECATCH_LOG";
-/// Log filter used when [`LOG_ENV`] is not set: only problems.
-const DEFAULT_LOG_FILTER: &str = "warn";
+/// Which lines are logged unless the log filter variable chooses others (`wirecatch-logging`): only problems.
+const LOG_FILTER: &str = "warn";
 /// Upper bound for `--connections`: the engine's limit, in the type the flag is read as.
 const MAX_CONNECTIONS: u16 = 64;
 const _: () = assert!(
@@ -90,13 +88,8 @@ fn default_connections() -> u16 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env(LOG_ENV)
-                .unwrap_or_else(|_| DEFAULT_LOG_FILTER.into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+    let logging = wirecatch_logging::start(wirecatch_product::CLI_EXECUTABLE, LOG_FILTER);
+    logging.write_to(wirecatch_logging::release_folder().as_deref());
 
     let args = Args::parse();
     let quiet = args.quiet;

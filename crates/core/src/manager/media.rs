@@ -182,7 +182,7 @@ impl Manager {
             let addon = self.addon_info(&state.addon);
             self.emit(UiEvent::AddonRequired {
                 addon,
-                url: crate::redact::url_for_display(url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(url.as_str()),
                 id,
             });
         } else {
@@ -218,7 +218,7 @@ impl Manager {
             .filter(|(_, m)| matches!(m.stage, MediaStage::Analysing(_)))
             .map(|(id, m)| MediaReading {
                 id: *id,
-                url: crate::redact::url_for_display(m.source.url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(m.source.url.as_str()),
             })
             .collect()
     }
@@ -274,7 +274,7 @@ impl Manager {
                 let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
                     addon,
-                    url: crate::redact::url_for_display(&choice_url),
+                    url: wirecatch_logging::redact::url_for_display(&choice_url),
                     id,
                 });
                 return Err(CoreError::AddonRequired);
@@ -401,7 +401,7 @@ impl Manager {
             .map(|(id, m)| AddonRequestItem {
                 id: *id,
                 addon: addon.clone(),
-                url: crate::redact::url_for_display(m.source.url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(m.source.url.as_str()),
             })
             .collect()
     }
@@ -469,7 +469,7 @@ impl Manager {
         };
         self.emit(UiEvent::MediaAnalysing {
             id,
-            url: crate::redact::url_for_display(source.url.as_str()),
+            url: wirecatch_logging::redact::url_for_display(source.url.as_str()),
         });
         let found = match source.kind {
             MediaKind::Page => match &tools {
@@ -855,7 +855,7 @@ impl Manager {
 /// A quality choice as the UI shows it: no password in the page's link.
 fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
     MediaChoice {
-        page_url: crate::redact::optional_url_for_display(choice.page_url.as_deref()),
+        page_url: wirecatch_logging::redact::optional_url_for_display(choice.page_url.as_deref()),
         ..choice.clone()
     }
 }
