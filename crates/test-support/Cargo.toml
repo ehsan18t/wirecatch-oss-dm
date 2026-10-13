@@ -25,6 +25,10 @@ tokio = { workspace = true, features = ["io-util"], optional = true }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"], optional = true }
 url = { workspace = true, optional = true }
 
+# Capturing what code logs, only with the `logs` feature.
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["registry", "std"], optional = true }
+
 # The HTTP/3 test servers, only with the `http3` feature.
 h3 = { version = "0.0.8", optional = true }
 h3-quinn = { version = "0.0.10", optional = true }
@@ -47,6 +51,8 @@ servers = [
     "dep:tokio-rustls",
     "dep:url",
 ]
+# Capturing logs as structured events.
+logs = ["dep:tracing", "dep:tracing-subscriber"]
 # HTTPS servers that advertise and speak HTTP/3, for the engine's `http3` feature.
 http3 = ["servers", "dep:h3", "dep:h3-quinn", "dep:http", "dep:hyper", "dep:hyper-util", "dep:quinn"]
 

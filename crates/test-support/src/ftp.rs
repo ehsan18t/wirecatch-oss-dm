@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rustls::HandshakeKind;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use url::Url;
@@ -88,6 +88,14 @@ pub struct FtpConfig {
     pub hold_abort_reply: Option<Duration>,
     /// Sessions after the first `n` are accepted but never greeted.
     pub silent_after: Option<usize>,
+    /// Transfer `n` (0 is the first the server started, as
+    /// [`FtpStats::transfers`] counts them), if it is from byte 0, opens its
+    /// data connection and then sends nothing until the client closes it: the
+    /// probe a resuming client breaks off sends no byte of the file, however
+    /// long the client takes, and a client that reads it on waits forever.
+    /// Only that transfer is held, so a resumed range that starts at byte 0 is
+    /// sent as usual.
+    pub hold_probe: Option<usize>,
     /// Ways the server misbehaves.
     pub quirks: Vec<Quirk>,
 }
@@ -119,6 +127,7 @@ impl Default for FtpConfig {
             drop_first: None,
             hold_abort_reply: None,
             silent_after: None,
+            hold_probe: None,
             quirks: Vec::new(),
         }
     }
@@ -148,6 +157,8 @@ pub struct FtpStats {
     pub bytes_sent: AtomicU64,
     /// `REST` offsets the transfers started from.
     pub rest_offsets: Mutex<Vec<u64>>,
+    /// Each transfer's offset and the file bytes it has sent so far.
+    sent_by_transfer: Mutex<Vec<(u64, Arc<AtomicU64>)>>,
     /// `426` replies currently held back (see `hold_abort_reply`).
     pub held_replies: AtomicUsize,
     /// Transfers started on a control connection whose previous transfer
@@ -162,6 +173,19 @@ impl FtpStats {
     #[must_use]
     pub fn commands(&self) -> Vec<String> {
         self.commands.lock().unwrap().clone()
+    }
+
+    /// Every transfer started so far, in order: the offset it started from,
+    /// and the file bytes it has sent. A transfer the client broke off still
+    /// counts what went out before it did.
+    #[must_use]
+    pub fn transfers_sent(&self) -> Vec<(u64, u64)> {
+        self.sent_by_transfer
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(from, sent)| (*from, sent.load(Ordering::SeqCst)))
+            .collect()
     }
 
     /// How many commands started with `prefix`.
@@ -549,6 +573,12 @@ impl Session<'_> {
                 .await;
         };
         self.stats.rest_offsets.lock().unwrap().push(offset);
+        let sent_here = Arc::new(AtomicU64::new(0));
+        self.stats
+            .sent_by_transfer
+            .lock()
+            .unwrap()
+            .push((offset, sent_here.clone()));
         let transfer = self.stats.transfers.fetch_add(1, Ordering::SeqCst);
         let (_transfer, _) = Gauge::up(&self.stats.current_transfers, &self.stats.max_transfers);
         self.reply(&format!(
@@ -565,7 +595,13 @@ impl Session<'_> {
             .filter(|&(n, _)| transfer < n)
             .map(|(_, after)| after);
         let throttle = self.config.data_bps;
-        match send_file(&mut data, &file, offset, throttle, cut, self.stats).await {
+        let counts = (self.stats, &*sent_here);
+        let sent = if offset == 0 && self.config.hold_probe == Some(transfer) {
+            held(&mut data).await
+        } else {
+            send_file(&mut data, &file, offset, throttle, cut, counts).await
+        };
+        match sent {
             Ok(Sent::All) => {
                 // The client has all of it; a failed close changes nothing for the test.
                 if let Err(error) = data.shutdown().await {
@@ -621,15 +657,23 @@ enum Sent {
     Cut,
 }
 
+/// Sends nothing on `data` until the client closes it.
+async fn held(data: &mut Box<dyn Io>) -> std::io::Result<Sent> {
+    let mut byte = [0];
+    while data.read(&mut byte).await? > 0 {}
+    Ok(Sent::Cut)
+}
+
 /// Sends `file` from `offset`, at `bps` bytes per second if given, stopping
-/// after `cut` bytes if given.
+/// after `cut` bytes if given, counting what it sends in the server's stats
+/// and in the transfer's own count.
 async fn send_file(
     data: &mut Box<dyn Io>,
     file: &[u8],
     offset: u64,
     bps: Option<u64>,
     cut: Option<u64>,
-    stats: &FtpStats,
+    (stats, sent_here): (&FtpStats, &AtomicU64),
 ) -> std::io::Result<Sent> {
     let start = Instant::now();
     let len = file.len() as u64;
@@ -652,6 +696,7 @@ async fn send_file(
         position = end;
         sent += n;
         stats.bytes_sent.fetch_add(n, Ordering::Relaxed);
+        sent_here.fetch_add(n, Ordering::SeqCst);
         if let Some(bps) = bps
             && let Some(wait) = time_to_send(sent, bps).checked_sub(start.elapsed())
         {

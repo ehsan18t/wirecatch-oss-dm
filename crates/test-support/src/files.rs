@@ -2,10 +2,10 @@
 //! of a manifest, a playlist or a page with several parts downloads from.
 //!
 //! Each file is served with byte ranges and an optional `Content-Type`. A
-//! file can be made to fail a set number of times, to answer slowly or to be
-//! sent at a limited speed, and every request is logged with its headers, so
-//! a test can check what was asked for, how often and how many requests ran
-//! at once.
+//! file can be made to fail a set number of times, to answer slowly, never to
+//! answer, or to be sent at a limited speed, and every request answered is
+//! logged with its headers, so a test can check what was asked for, how often
+//! and how many requests ran at once.
 //!
 //! ```no_run
 //! # async fn example() {
@@ -52,6 +52,8 @@ struct File {
     delay: Duration,
     /// Bytes per second the body is sent at, if limited.
     bps: Option<u64>,
+    /// Requests are taken and never answered.
+    hangs: bool,
 }
 
 #[derive(Default)]
@@ -138,6 +140,18 @@ impl FileServer {
     /// If no file was put at `path`.
     pub fn delay(&self, path: &str, delay: Duration) {
         self.change(path, |file| file.delay = delay);
+    }
+
+    /// With `hangs`, every request for the file at `path` from now on is
+    /// taken and never answered, as by a server that hangs, so a test can act
+    /// while a client waits for it for as long as it likes; such a request is
+    /// not logged. Without, the next requests are answered again.
+    ///
+    /// # Panics
+    ///
+    /// If no file was put at `path`.
+    pub fn hang(&self, path: &str, hangs: bool) {
+        self.change(path, |file| file.hangs = hangs);
     }
 
     /// The file at `path` is sent at `bps` bytes per second from the next
@@ -249,6 +263,9 @@ async fn serve(
                 .body(Body::empty()),
         ),
         Some((file, failing)) => {
+            if file.hangs {
+                std::future::pending::<()>().await;
+            }
             if !file.delay.is_zero() {
                 tokio::time::sleep(file.delay).await;
             }
@@ -270,6 +287,7 @@ async fn serve(
         headers,
         status: status.as_u16(),
         peer,
+        sent: Arc::default(),
     });
     response.unwrap()
 }

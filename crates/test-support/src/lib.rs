@@ -16,9 +16,13 @@
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
 //!
+//! With the `logs` feature, `logs::Logs`: what the code under test logs, as
+//! structured events.
+//!
 //! Always, and without an HTTP or TLS stack:
 //!
 //! - [`TestResult`]: what a fallible test or helper returns.
+//! - [`PATIENCE`]: how long any wait in a test may take before the test fails.
 //! - [`test_data`], [`seeded_data`] and [`ts_segment`]: deterministic bytes to
 //!   serve, and [`files_in`] to list what a test downloaded.
 //! - [`private_dir`]: a new folder for one test, removed when the test ends
@@ -42,6 +46,8 @@ pub mod ftp;
 pub mod http;
 #[cfg(feature = "http3")]
 pub mod http3;
+#[cfg(feature = "logs")]
+pub mod logs;
 #[cfg(feature = "servers")]
 pub mod silent;
 #[cfg(feature = "servers")]
@@ -53,10 +59,14 @@ pub use tls::TestCertificate;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 /// What a test helper returns when it can fail, so the test that calls it
 /// decides how to report the failure.
 pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// How long any wait in a test may take before the test fails: a bound on a hang, never a measure of the work. A test that finishes in a second alone can take many times that on a machine busy with other builds, and must still pass there, so this is far above any honest wait. A limit the code under test enforces (an idle limit, a time limit) is not a wait: a test that expects such a limit not to run out drives a paused clock rather than racing the machine (docs/ENGINEERING.md, section 7).
+pub const PATIENCE: Duration = Duration::from_secs(120);
 
 /// A new, empty folder for one test that only its owner can enter, removed on
 /// drop, so a test that fails leaves nothing behind. It dereferences to its

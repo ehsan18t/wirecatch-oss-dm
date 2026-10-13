@@ -74,6 +74,12 @@ pub struct Config {
     /// How long a request for the file waits before it is answered, like a
     /// server that is slow to start.
     pub answer_delay: Option<Duration>,
+    /// An answer to a request from this byte sends its headers and then holds
+    /// its body until the client breaks it off. With `Some(0)`, the probe a
+    /// resuming client reads only the headers of sends no byte of the file,
+    /// however long the client takes, and a client that reads it on waits
+    /// forever.
+    pub hold_bodies_from: Option<u64>,
 }
 
 /// Answers a range of requests with a busy status instead of the file.
@@ -112,9 +118,19 @@ pub struct Seen {
     /// The client's end of the TCP connection the request came on: requests
     /// with the same one shared a connection.
     pub peer: SocketAddr,
+    /// Body bytes sent in answer so far, shared with the answer being sent.
+    pub(crate) sent: Arc<AtomicU64>,
 }
 
 impl Seen {
+    /// How many body bytes a [`TestServer`] has sent in answer so far; a
+    /// client that breaks an answer off still counts what went out before it
+    /// did. A [`FileServer`](crate::files::FileServer) does not count them.
+    #[must_use]
+    pub fn sent(&self) -> u64 {
+        self.sent.load(Ordering::SeqCst)
+    }
+
     /// The value of header `name`, if it was sent and is text.
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -326,8 +342,10 @@ struct Request<'a> {
 }
 
 impl Request<'_> {
-    fn log(&self, status: StatusCode) {
+    /// Logs the request with the status of its answer, and returns the count of the answer's body bytes sent.
+    fn log(&self, status: StatusCode) -> Arc<AtomicU64> {
         let (at, wall) = self.arrived;
+        let sent = Arc::new(AtomicU64::new(0));
         self.inner.stats.log.lock().unwrap().push(Seen {
             at,
             wall,
@@ -335,7 +353,9 @@ impl Request<'_> {
             headers: self.headers.clone(),
             status: status.as_u16(),
             peer: self.peer,
+            sent: sent.clone(),
         });
+        sent
     }
 
     fn len(&self) -> u64 {
@@ -470,9 +490,9 @@ fn serve_file(request: &Request<'_>) -> Response {
     };
     counters.max_concurrent.fetch_max(now, Ordering::SeqCst);
     let live = Live(counters);
-    request.log(status);
+    let sent = request.log(status);
     builder
-        .body(Body::from_stream(body(request, start..end, live)))
+        .body(Body::from_stream(body(request, start..end, live, sent)))
         .unwrap()
 }
 
@@ -523,6 +543,7 @@ fn body(
     request: &Request<'_>,
     range: Range<u64>,
     live: Live,
+    sent_here: Arc<AtomicU64>,
 ) -> impl futures_util::Stream<Item = std::io::Result<Bytes>> + use<> {
     let config = &request.config;
     let abort_after = config
@@ -536,13 +557,18 @@ fn body(
         .map(|bps| time_to_send(chunk as u64, bps));
     let data = request.inner.data.clone();
     let stats = request.inner.stats.clone();
+    let held = config.hold_bodies_from == Some(range.start);
     let end = range.end;
     futures_util::stream::unfold((range.start, 0u64, live), move |(pos, sent, live)| {
         let data = data.clone();
         let stats = stats.clone();
+        let sent_here = sent_here.clone();
         async move {
             if pos >= end {
                 return None;
+            }
+            if held {
+                std::future::pending::<()>().await;
             }
             if let Some(after) = abort_after
                 && sent >= after
@@ -559,6 +585,7 @@ fn body(
             stats
                 .bytes_sent
                 .fetch_add(bytes.len() as u64, Ordering::SeqCst);
+            sent_here.fetch_add(bytes.len() as u64, Ordering::SeqCst);
             Some((Ok(bytes), (next, sent + (next - pos), live)))
         }
     })
