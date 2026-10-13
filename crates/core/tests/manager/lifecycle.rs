@@ -8,7 +8,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
 
 use crate::common::{
-    Harness, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
+    Harness, Seen, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
     wait_until,
 };
 use wirecatch_engine::units::KIB;
@@ -34,7 +34,11 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     assert!(error.message.contains("expired"), "{}", error.message);
     assert_eq!(failed.done, paused.done, "progress was lost");
 
-    let sent_before = server.bytes_sent();
+    // The first answer checks the new link: the server holds its body, so it
+    // sends no byte whatever the machine's load, and a download that read it
+    // on to fetch the file again would wait on it and fail.
+    server.configure(|c| c.hold_bodies_from = Some(0));
+    let asked_before = server.stats.seen().len();
     h.manager
         .refresh_link(row.id, server.url("new/file.bin").as_str())
         .unwrap();
@@ -42,11 +46,22 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     assert_eq!(done.path, row.path, "the file moved");
     assert_eq!(done.url, server.url("new/file.bin").as_str());
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
-    let sent_after_refresh = server.bytes_sent() - sent_before;
-    // Only the missing part came again (plus at most a little of the first answer).
+    // Only the missing part came again.
+    let asked = server.stats.seen().split_off(asked_before);
+    let answers: Vec<_> = asked.iter().map(|s| (s.range(), s.sent())).collect();
+    let sent: u64 = asked.iter().map(Seen::sent).sum();
+    assert_eq!(
+        sent,
+        len - paused.done,
+        "{answers:?}, {} were here",
+        paused.done
+    );
     assert!(
-        sent_after_refresh <= len - paused.done + 32 * KIB,
-        "sent {sent_after_refresh} bytes after refreshing; {} were already here",
+        asked
+            .iter()
+            .filter(|s| s.sent() > 0)
+            .all(|s| s.range().is_some_and(|(start, _)| start >= paused.done)),
+        "asked again for bytes already here: {answers:?}, {} were here",
         paused.done
     );
     Ok(())

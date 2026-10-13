@@ -146,10 +146,8 @@ async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::path::Path::new(&done.path), path);
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
-    assert!(
-        !part.exists() && !state.exists(),
-        "partial files left behind"
-    );
+    let left: Vec<_> = [&part, &state].into_iter().filter(|p| p.exists()).collect();
+    assert!(left.is_empty(), "partial files left behind: {left:?}");
     let names: Vec<_> = std::fs::read_dir(&documents)
         .unwrap()
         .map(|e| e.unwrap().file_name())

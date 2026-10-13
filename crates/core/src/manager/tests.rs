@@ -12,6 +12,7 @@ use wirecatch_engine::{Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_test_support::PATIENCE;
 
 use super::Manager;
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
@@ -37,9 +38,6 @@ fn media_requests_name_the_app_or_the_browser() {
         "TestBrowser/1"
     );
 }
-
-/// How long any wait in these tests may take before it fails.
-const PATIENCE: Duration = Duration::from_secs(20);
 
 /// A manager in a temporary folder whose runs are played by `engine`.
 async fn manager_with(
@@ -293,7 +291,8 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     let (checks, under_lock) = (AtomicUsize::new(0), AtomicUsize::new(0));
     let free_on_disk = |path: &Path| {
         checks.fetch_add(1, Ordering::SeqCst);
-        if manager.inner.state.try_lock().is_err() {
+        // One check under the lock is the failure; looking again would only wait out another `PATIENCE`.
+        if under_lock.load(Ordering::SeqCst) == 0 && !lock_is_free_to_others(&manager) {
             under_lock.fetch_add(1, Ordering::SeqCst);
         }
         // Someone else's file already has the server's name.
@@ -313,6 +312,22 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     assert!(state.claimed.contains(&path));
     assert_eq!(Path::new(&state.downloads[&id].row.path), path);
     state.assert_consistent();
+}
+
+/// Whether another thread can take the manager's lock while the caller waits. A download's own task takes it for a moment now and then, so a bare `try_lock` fails at times without the caller holding it; a lock the caller holds keeps the other thread out until [`PATIENCE`] has passed.
+fn lock_is_free_to_others(manager: &Manager) -> bool {
+    let (taken, took) = std::sync::mpsc::channel();
+    let inner = Arc::clone(&manager.inner);
+    std::thread::spawn(move || {
+        drop(inner.state.lock());
+        checker_may_have_given_up(taken.send(()));
+    });
+    took.recv_timeout(PATIENCE).is_ok()
+}
+
+/// Takes the outcome of telling the check the lock was taken: after [`PATIENCE`] the check has given up and is no longer listening, which changes nothing.
+fn checker_may_have_given_up(told: Result<(), std::sync::mpsc::SendError<()>>) {
+    let (Ok(()) | Err(_)) = told;
 }
 
 /// A path held for a moment does not upset the consistency check, but a claim

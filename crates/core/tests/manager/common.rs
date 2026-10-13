@@ -14,12 +14,9 @@ use wirecatch_core::{
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, AppSettings, DownloadStatus, DownloadSummary};
-pub use wirecatch_test_support::http::{Config, TestServer};
+pub use wirecatch_test_support::http::{Config, Seen, TestServer};
 pub use wirecatch_test_support::silent::SilentServer;
-pub use wirecatch_test_support::{TestResult, test_data};
-
-/// How long any wait in a test may take before it fails.
-pub const PATIENCE: Duration = Duration::from_secs(20);
+pub use wirecatch_test_support::{PATIENCE, TestResult, test_data};
 
 /// A ranged server with an `ETag` for `len` bytes of [`test_data`], sending
 /// `bps` bytes per second per connection.

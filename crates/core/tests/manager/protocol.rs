@@ -21,7 +21,7 @@ use wirecatch_protocol::wire::{
 };
 
 use crate::common::{
-    Config, Harness, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
+    Config, Harness, PATIENCE, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
 };
 use wirecatch_engine::units::KIB_USIZE;
 
@@ -786,24 +786,30 @@ async fn a_different_file_than_the_browser_saw_is_not_taken_over() -> TestResult
     Ok(())
 }
 
+/// The server holds its answers until the test lets them go, so the duplicate and the withdrawal both arrive while the capture waits for it, however slow the machine.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() -> TestResult {
-    let delay = Duration::from_millis(500);
-    let server = capture_server(1024, |c| c.answer_delay = Some(delay)).await;
+    let server = capture_server(1024, |_| {}).await;
     let h = Harness::new().await?;
 
+    server.hold();
     let first = capture(server.url("a.pdf").to_string());
     let (a, b) = tokio::join!(h.manager.add_capture(first.clone()), async {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        h.manager.add_capture(first.clone()).await
+        server.wait_for_request("a.pdf", PATIENCE).await;
+        // The duplicate asks first, while the server still holds its answer.
+        tokio::join!(biased; h.manager.add_capture(first.clone()), async {
+            server.release();
+        })
+        .0
     });
     let (a, b) = (a.unwrap(), b.unwrap());
     assert_eq!(a, b);
     assert_eq!(a.action, AddAction::Started);
 
+    server.hold();
     let second = capture(server.url("b.pdf").to_string());
     let (added, withdrawn) = tokio::join!(h.manager.add_capture(second.clone()), async {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        server.wait_for_request("b.pdf", PATIENCE).await;
         h.manager.withdraw_capture(&second.handover_id)
     });
     assert_eq!(withdrawn.unwrap(), WithdrawOutcome::Withdrawn);
