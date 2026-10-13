@@ -1,6 +1,6 @@
 //! A stand-in for the media add-on's programs, used by the tests of `wirecatch_streams::process` (`cargo test` builds it). Its first argument says what it does:
 //!
-//! - `hang`: writes `ready` to standard output, then waits until it is killed.
+//! - `hang [<line>]`: writes `<line>`, when given, to standard error and `ready` to standard output, then waits until it is killed.
 //! - `ticks <address>`: connects to the TCP listener at `address` and takes one step for each byte it reads there, answering each with a byte once done: a step writes the line `tick <n>`. It exits when the listener closes the connection. The test sets the pace, so how slow the machine is does not change what the run sees.
 //! - `write-quietly <path> <address>`: creates the file `path`, then steps as `ticks` does, each step appending 1 KiB to the file and writing nothing to its outputs.
 //! - `rewrite-quietly <path> <address>`: writes 1 KiB into the file `path`, then steps as `ticks` does, each step writing the same 1 KiB over it and moving its write time on by a second, so the file changes without growing (as ffmpeg's `+faststart` pass moves the data within the file) and every step shows, however close together the steps are; it writes nothing to its outputs.
@@ -11,6 +11,7 @@
 //! - `hold <address>`: connects to the TCP listener at `address`, writes `holding`, and keeps the connection open until the listener closes it, so the listener learns when this process ends, and it never ends by itself while a test waits for that.
 //! - `linger`: does nothing for a minute, then exits.
 //! - `fail`: writes `ERROR: it went wrong` to standard error and exits with failure.
+//! - `fail-after <count> <bytes> <code> <line>`: writes `count` lines of `bytes` bytes of `x`, then `<line>`, to standard error, and exits with `code`.
 
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::TcpStream;
@@ -32,7 +33,10 @@ fn main() -> ExitCode {
     let number = |i: usize| args.get(i).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
     let mut out = std::io::stdout();
     let done = match args.first().map(String::as_str) {
-        Some("hang") => writeln!(out, "ready")
+        Some("hang") => args
+            .get(1)
+            .map_or(Ok(()), |line| writeln!(std::io::stderr(), "{line}"))
+            .and_then(|()| writeln!(out, "ready"))
             .and_then(|()| out.flush())
             .and_then(|()| hang()),
         Some("ticks") => steps(args.get(1), |n| {
@@ -66,6 +70,17 @@ fn main() -> ExitCode {
         Some("linger") => {
             linger();
             Ok(())
+        }
+        Some("fail-after") => {
+            let line = "x".repeat(usize::try_from(number(2)).unwrap_or(0));
+            let mut err = std::io::stderr();
+            for _ in 0..number(1) {
+                if writeln!(err, "{line}").is_err() {
+                    break;
+                }
+            }
+            let (Ok(()) | Err(_)) = writeln!(err, "{}", args.get(4).map_or("", String::as_str));
+            return ExitCode::from(u8::try_from(number(3)).unwrap_or(1));
         }
         Some("fail") => {
             eprintln!("ERROR: it went wrong");

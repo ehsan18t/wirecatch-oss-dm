@@ -8,7 +8,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use wirecatch_engine::CancellationToken;
-use wirecatch_streams::process::{self, Output, RunError, RunOptions};
+use wirecatch_streams::process::{
+    self, MAX_REASON_CHARS, Output, RunError, RunOptions, STDERR_TAIL_BYTES,
+};
 use wirecatch_test_support::logs::Logs;
 use wirecatch_test_support::{PATIENCE, TestResult};
 
@@ -66,7 +68,7 @@ async fn a_program_that_stops_writing_is_stopped_as_stalled() -> TestResult {
     let options = RunOptions::lines().with_idle_timeout(SHORT);
     let ran = run(&["hang"], options, &CancellationToken::new(), |_, _| {}).await?;
     assert!(
-        matches!(ran, Err(RunError::Stalled(d)) if d == SHORT),
+        matches!(ran, Err(RunError::Stalled { quiet, .. }) if quiet == SHORT),
         "{ran:?}"
     );
     Ok(())
@@ -82,7 +84,7 @@ async fn a_program_that_keeps_writing_is_not_stalled() -> TestResult {
         assert_eq!(run.line().await?, format!("tick {n}"));
     }
     let ran = run.end().await??;
-    assert!(ran.success);
+    assert!(ran.success());
     Ok(())
 }
 
@@ -91,7 +93,7 @@ async fn a_program_past_its_time_limit_is_stopped() -> TestResult {
     let options = RunOptions::collect().with_timeout(SHORT);
     let ran = run(&["hang"], options, &CancellationToken::new(), |_, _| {}).await?;
     assert!(
-        matches!(ran, Err(RunError::TimedOut(d)) if d == SHORT),
+        matches!(ran, Err(RunError::TimedOut { limit, .. }) if limit == SHORT),
         "{ran:?}"
     );
     Ok(())
@@ -124,7 +126,7 @@ async fn long_lines_are_cut_at_a_character_boundary() -> TestResult {
         },
     )
     .await??;
-    assert!(ran.success);
+    assert!(ran.success());
     // The three bytes of `€` would pass the limit, so the line ends before it.
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].len(), limit - 1);
@@ -141,8 +143,104 @@ async fn a_failure_keeps_its_error_line() -> TestResult {
         |_, _| {},
     )
     .await??;
-    assert!(!ran.success);
-    assert_eq!(ran.error_line(), Some("ERROR: it went wrong"));
+    assert!(!ran.success());
+    assert_eq!(ran.error_line().as_deref(), Some("ERROR: it went wrong"));
+    assert_eq!(ran.status.and_then(|s| s.code()), Some(1));
+    Ok(())
+}
+
+/// A site controls what yt-dlp and ffmpeg print, and they print the links they read: what a failed run keeps of standard error is bounded and holds no secret, and its reason for a person is short.
+#[tokio::test]
+async fn a_failure_keeps_a_short_reason_without_secrets() -> TestResult {
+    // Long, but within what the tail keeps of a line, so only the cut for a person can make the reason short.
+    let said = format!(
+        "ERROR: 403 for https://ada:pa55@cdn.example.com/v.mp4?token=T0KEN {}, sent Cookie: SID=C00KIE",
+        "and more ".repeat(250)
+    );
+    let ran = run(
+        &["fail-after", "1000", "100", "3", &said],
+        RunOptions::collect(),
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await??;
+    assert!(!ran.success());
+    let kept = ran.stderr.len_bytes();
+    assert!(
+        kept <= STDERR_TAIL_BYTES,
+        "{kept} bytes of standard error kept"
+    );
+    assert_eq!(ran.status.and_then(|s| s.code()), Some(3));
+    let reason = ran.error_line().ok_or("no error line")?;
+    assert!(
+        reason.chars().count() <= MAX_REASON_CHARS,
+        "{} characters",
+        reason.chars().count()
+    );
+    let tail = ran.stderr.to_string();
+    for secret in ["pa55", "T0KEN", "C00KIE"] {
+        assert!(!reason.contains(secret), "{reason}");
+        assert!(!tail.contains(secret), "{tail}");
+    }
+    Ok(())
+}
+
+/// A failed run is logged with the end of what the program wrote, its secrets hidden, so the log carries the reason even when a person's message is short.
+#[tokio::test]
+async fn a_failure_is_logged_with_what_the_program_wrote() -> TestResult {
+    let (logs, _capturing) = Logs::capture();
+    let ran = run(
+        &[
+            "fail-after",
+            "2",
+            "10",
+            "4",
+            "ERROR: no video at https://h/v?sig=S1G",
+        ],
+        RunOptions::collect(),
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await??;
+    assert!(!ran.success());
+    let failed = logs
+        .events()
+        .into_iter()
+        .find(|e| e.level == tracing::Level::WARN && e.message == "a program failed")
+        .ok_or("the failure was not logged")?;
+    let stderr = failed.field("stderr").ok_or("no stderr field")?;
+    assert!(
+        stderr.contains("ERROR: no video at https://h/v?sig=***"),
+        "{stderr}"
+    );
+    assert!(!logs.text().contains("S1G"), "{}", logs.text());
+    Ok(())
+}
+
+/// A program stopped for writing nothing still says what it last wrote, in the error and in the log.
+#[tokio::test]
+async fn a_stalled_program_keeps_what_it_wrote() -> TestResult {
+    let (logs, _capturing) = Logs::capture();
+    let options = RunOptions::lines().with_idle_timeout(SHORT);
+    let ran = run(
+        &["hang", "Opening input https://h/live.m3u8?token=T0K"],
+        options,
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await?;
+    let Err(RunError::Stalled { stderr, .. }) = ran else {
+        return Err(format!("{ran:?}").into());
+    };
+    assert_eq!(
+        stderr.error_line(),
+        Some("Opening input https://h/live.m3u8?token=***")
+    );
+    assert!(
+        logs.text().contains("live.m3u8?token=***"),
+        "{}",
+        logs.text()
+    );
     Ok(())
 }
 
@@ -211,7 +309,7 @@ async fn a_silent_program_is_watched_through(
         assert!(run.step().await?, "the run ended at step {n}");
     }
     let ran = run.end().await?;
-    assert!(matches!(ran, Ok(ref ran) if ran.success), "{ran:?}");
+    assert!(matches!(ran, Ok(ref ran) if ran.success()), "{ran:?}");
 
     let unwatched = RunOptions::lines().with_idle_timeout(SHORT);
     let mut run = Stepped::start(&words, unwatched).await?;
@@ -225,7 +323,7 @@ async fn a_silent_program_is_watched_through(
     }
     let ran = run.end().await?;
     assert!(
-        matches!(ran, Err(RunError::Stalled(d)) if d == SHORT),
+        matches!(ran, Err(RunError::Stalled { quiet, .. }) if quiet == SHORT),
         "{ran:?}"
     );
     Ok(())
@@ -443,7 +541,7 @@ async fn a_run_past_its_time_limit_ends_what_the_program_started() -> TestResult
         .await
         .map_err(|_| format!("the run did not end within {PATIENCE:?}"))??;
     assert!(
-        matches!(ran, Err(RunError::TimedOut(d)) if d == SHORT),
+        matches!(ran, Err(RunError::TimedOut { limit, .. }) if limit == SHORT),
         "{ran:?}"
     );
     // Still on the held clock: the holder's end is an event, not a time.
@@ -465,7 +563,7 @@ async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
         |_, line| holding |= line == "holding",
     )
     .await??;
-    assert!(ran.success, "{:?}", ran.stderr);
+    assert!(ran.success(), "{:?}", ran.stderr);
     assert!(holding, "the holder did not start");
     let logged = logs.text();
     assert!(
@@ -486,6 +584,6 @@ async fn a_child_that_left_the_group_does_not_hold_the_run() -> TestResult {
         |_, _| {},
     )
     .await??;
-    assert!(ran.success);
+    assert!(ran.success());
     Ok(())
 }

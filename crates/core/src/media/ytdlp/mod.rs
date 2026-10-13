@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
-use wirecatch_streams::process::{self, NO_REASON, Ran, RunError, RunOptions};
+use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
 use crate::addons::MediaTools;
 use cookies::CookiesFile;
@@ -138,8 +138,8 @@ impl YtDlpError {
     fn from_run(error: RunError) -> Self {
         match error {
             RunError::Start { source, .. } => YtDlpError::Start(source),
-            RunError::TimedOut(limit) => YtDlpError::TimedOut(limit),
-            RunError::Stalled(quiet) => YtDlpError::Stalled(quiet),
+            RunError::TimedOut { limit, .. } => YtDlpError::TimedOut(limit),
+            RunError::Stalled { quiet, .. } => YtDlpError::Stalled(quiet),
             RunError::Cancelled => YtDlpError::Cancelled,
             other => YtDlpError::Refused {
                 reason: other.to_string(),
@@ -179,15 +179,18 @@ fn needs_sign_in(error_line: Option<&str>) -> bool {
 
 /// A run that yt-dlp refused: worth a signed-in try only when it says so.
 fn refused(ran: &Ran) -> Attempt {
+    refusal(ran.stderr.error_line(), || ran.reason())
+}
+
+/// The refusal yt-dlp's most telling line `said` describes, its reason cut for a person (whether it asks for a sign-in is read from the whole line); `otherwise` gives the reason when it said nothing.
+fn refusal(said: Option<&str>, otherwise: impl FnOnce() -> String) -> Attempt {
     let error = YtDlpError::Refused {
-        reason: ran
-            .error_line()
+        reason: said
             .map(|l| l.trim_start_matches("ERROR:").trim().trim_end_matches('.'))
             .filter(|l| !l.is_empty())
-            .unwrap_or(NO_REASON)
-            .to_string(),
+            .map_or_else(otherwise, process::for_a_person),
     };
-    if needs_sign_in(ran.error_line()) {
+    if needs_sign_in(said) {
         Attempt::NeedsSignIn(error)
     } else {
         Attempt::Failed(error)
@@ -226,7 +229,7 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
     .await;
     CookiesFile::delete(cookies).await;
     let ran = result.map_err(YtDlpError::from_run)?;
-    if !ran.success {
+    if !ran.success() {
         return Err(refused(&ran));
     }
     if ran.stdout_truncated {
@@ -299,6 +302,29 @@ mod tests {
         ] {
             assert!(cookies_first(&Url::parse(page).unwrap()), "{page}");
         }
+    }
+
+    /// A site controls how long yt-dlp's error line is: the reason a person reads is cut, and a sign-in asked for past the cut is still seen.
+    #[test]
+    fn a_long_refusal_gives_a_short_reason_and_still_asks_for_a_sign_in() {
+        let said = format!(
+            "ERROR: [youtube] abc: {}. Sign in to confirm your age",
+            "the site explains at length ".repeat(100)
+        );
+        let attempt = refusal(Some(&said), String::new);
+        assert!(matches!(attempt, Attempt::NeedsSignIn(_)));
+        let YtDlpError::Refused { reason } = attempt.into_error() else {
+            panic!("not a refusal");
+        };
+        assert!(
+            reason.chars().count() <= process::MAX_REASON_CHARS,
+            "{} characters",
+            reason.chars().count()
+        );
+        assert!(
+            reason.starts_with("[youtube] abc: the site explains"),
+            "{reason}"
+        );
     }
 
     #[test]

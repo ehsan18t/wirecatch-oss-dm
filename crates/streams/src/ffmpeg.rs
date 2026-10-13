@@ -333,8 +333,8 @@ pub(crate) async fn run(
         .with_idle_timeout(STALL_TIMEOUT)
         .watching(output.to_path_buf());
     match process::run(program, args, dir, options, cancel, |_, _| {}).await {
-        Ok(ran) if ran.success => Ok(true),
-        Ok(ran) => Err(Error::Ffmpeg(summary(&ran.stderr))),
+        Ok(ran) if ran.success() => Ok(true),
+        Ok(ran) => Err(Error::Ffmpeg(ran.stderr.summary(SUMMARY_LINES))),
         Err(RunError::Cancelled) => Ok(false),
         Err(RunError::Start { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
             Err(Error::FfmpegMissing(program.to_path_buf()))
@@ -345,21 +345,6 @@ pub(crate) async fn run(
 
 /// Lines of ffmpeg's error output kept in its error message.
 const SUMMARY_LINES: usize = 3;
-
-/// The last few lines ffmpeg printed.
-fn summary(stderr: &[String]) -> String {
-    let lines: Vec<&str> = stderr
-        .iter()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty())
-        .collect();
-    let tail = lines[lines.len().saturating_sub(SUMMARY_LINES)..].join(" / ");
-    if tail.is_empty() {
-        process::NO_REASON.into()
-    } else {
-        tail
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -585,12 +570,5 @@ mod tests {
             assert_eq!(InputFormat::detect(&path).unwrap(), expected, "{bytes:?}");
         }
         dir.remove().unwrap();
-    }
-
-    #[test]
-    fn summaries_keep_the_last_lines() {
-        let lines = ["a", "", "b", "c", "d"].map(String::from);
-        assert_eq!(summary(&lines), "b / c / d");
-        assert_eq!(summary(&[]), "it gave no reason");
     }
 }

@@ -99,7 +99,7 @@ async fn download_once(
         Err(RunError::Cancelled) => return Ok(Fetched::Cancelled),
         Err(e) => return Err(YtDlpError::from_run(e).into()),
     };
-    if !ran.success {
+    if !ran.success() {
         return Err(refused(&ran));
     }
     let work = work.to_path_buf();

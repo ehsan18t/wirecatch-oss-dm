@@ -165,6 +165,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use wirecatch_engine::Error as EngineError;
+    use wirecatch_streams::process::StderrTail;
 
     fn tools() -> MediaTools {
         MediaTools::for_test(Path::new("ffmpeg"))
@@ -321,7 +322,10 @@ mod tests {
         // ffmpeg that started and then stalled is not a broken add-on.
         let tools = tools();
         stream(
-            &StreamError::FfmpegRun(RunError::Stalled(Duration::from_secs(300))),
+            &StreamError::FfmpegRun(RunError::Stalled {
+                quiet: Duration::from_secs(300),
+                stderr: StderrTail::default(),
+            }),
             folder,
             Some(&tools),
         );

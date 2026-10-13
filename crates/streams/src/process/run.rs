@@ -2,13 +2,13 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MAX_STDOUT, tree};
+use super::{MAX_STDOUT, StderrTail, tail, tree};
 
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::time::{Duration, SystemTime};
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
@@ -19,8 +19,6 @@ use tokio::time::{Instant, Sleep};
 use tokio_util::sync::CancellationToken;
 use wirecatch_engine::units::KIB_USIZE;
 
-/// Lines of standard error kept for an error message.
-const STDERR_TAIL: usize = 20;
 /// Longest line passed on; longer ones are cut at a character boundary, and the rest of the line is read past without being kept.
 const MAX_LINE: usize = 16 * KIB_USIZE;
 /// Lines that may wait for the caller before the readers wait in turn.
@@ -104,26 +102,38 @@ impl RunOptions {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Ran {
-    /// It exited with success.
-    pub success: bool,
+    /// How it exited; `None` when waiting for it failed (logged), which counts as a failure.
+    pub status: Option<ExitStatus>,
     /// Standard output, in [`StdoutMode::Collect`].
     pub stdout: Vec<u8>,
     /// Standard output was longer than the most collected and is cut short.
     pub stdout_truncated: bool,
-    /// The last lines it wrote to standard error.
-    pub stderr: Vec<String>,
+    /// The end of what it wrote to standard error.
+    pub stderr: StderrTail,
 }
 
 impl Ran {
-    /// The most telling line of standard error: the last one naming an error, else the last line.
+    /// It exited with success.
     #[must_use]
-    pub fn error_line(&self) -> Option<&str> {
-        self.stderr
-            .iter()
-            .rev()
-            .find(|l| l.contains("ERROR"))
-            .or_else(|| self.stderr.last())
-            .map(|l| l.trim())
+    pub fn success(&self) -> bool {
+        self.status.is_some_and(|s| s.success())
+    }
+
+    /// The most telling line of standard error ([`StderrTail::error_line`]), cut for a person.
+    #[must_use]
+    pub fn error_line(&self) -> Option<String> {
+        self.stderr.error_line().map(tail::for_a_person)
+    }
+
+    /// Why it failed, for a person: [`Ran::error_line`], else how it exited.
+    #[must_use]
+    pub fn reason(&self) -> String {
+        self.error_line()
+            .filter(|line| !line.is_empty())
+            .unwrap_or_else(|| match self.status {
+                Some(status) => format!("it gave no reason ({status})"),
+                None => super::NO_REASON.into(),
+            })
     }
 }
 
@@ -153,11 +163,21 @@ pub enum RunError {
     #[error("the program was stopped")]
     Cancelled,
     /// It ran longer than [`RunOptions::timeout`].
-    #[error("the program took longer than {} seconds", .0.as_secs())]
-    TimedOut(Duration),
+    #[error("the program took longer than {} seconds", .limit.as_secs())]
+    TimedOut {
+        /// The limit.
+        limit: Duration,
+        /// What it had written to standard error.
+        stderr: StderrTail,
+    },
     /// It wrote nothing, and its result did not change, for [`RunOptions::idle_timeout`].
-    #[error("the program wrote nothing for {} seconds", .0.as_secs())]
-    Stalled(Duration),
+    #[error("the program wrote nothing for {} seconds", .quiet.as_secs())]
+    Stalled {
+        /// How long it was quiet.
+        quiet: Duration,
+        /// What it had written to standard error.
+        stderr: StderrTail,
+    },
 }
 
 /// Runs `program` with `args` in the folder `dir`. Standard output is returned whole or passed to `on_line` line by line, as `options` says; every line of standard error goes to `on_line` too, each with the output it came from.
@@ -167,6 +187,8 @@ pub enum RunError {
 /// # Errors
 ///
 /// [`RunError::Start`] when it cannot be started, and the reason it was stopped otherwise. A program that runs and fails is `Ok` with [`Ran::success`] false.
+///
+/// A run that fails or is stopped is logged as a warning with the end of what the program wrote to standard error ([`StderrTail`], secrets hidden); its arguments are never logged, since they may carry a page's sign-in.
 pub async fn run(
     program: &Path,
     args: &[OsString],
@@ -185,7 +207,7 @@ pub async fn run(
     tokio::pin!(deadline);
     let mut idle = Idle::new(&options).await;
     let mut grace: Option<Pin<Box<Sleep>>> = None;
-    let mut tail = Vec::new();
+    let mut tail = StderrTail::default();
     let mut leader_done = false;
     let mut reading = true;
     let stopped = loop {
@@ -195,10 +217,7 @@ pub async fn run(
                     idle.heard();
                     on_line(from, &line);
                     if from == Output::Stderr {
-                        tail.push(line);
-                        if tail.len() > STDERR_TAIL {
-                            tail.remove(0);
-                        }
+                        tail.push(&line);
                     }
                 }
                 None if leader_done => break None,
@@ -219,10 +238,10 @@ pub async fn run(
                 break None;
             }
             () = cancel.cancelled() => break Some(RunError::Cancelled),
-            () = &mut deadline => break options.timeout.map(RunError::TimedOut),
+            () = &mut deadline => break options.timeout.map(|limit| RunError::TimedOut { limit, stderr: std::mem::take(&mut tail) }),
             () = idle.expired(), if idle.armed() => {
                 if !idle.output_changed().await {
-                    break options.idle_timeout.map(RunError::Stalled);
+                    break options.idle_timeout.map(|quiet| RunError::Stalled { quiet, stderr: std::mem::take(&mut tail) });
                 }
             }
         }
@@ -231,9 +250,29 @@ pub async fn run(
         tree.kill();
         kill(&mut child).await;
         readers.abort();
+        if let RunError::TimedOut { stderr, .. } | RunError::Stalled { stderr, .. } = &why {
+            tracing::warn!(program = %program.display(), %stderr, "stopped a program: {why}");
+        }
         return Err(why);
     }
-    let status = child.wait().await;
+    Ok(finish(program, &mut child, &mut tree, readers, tail).await)
+}
+
+/// How a program that ran to its end ended: waits for it, takes what it wrote, and logs a failure.
+async fn finish(
+    program: &Path,
+    child: &mut Child,
+    tree: &mut tree::Tree,
+    readers: Readers,
+    stderr: StderrTail,
+) -> Ran {
+    let status = match child.wait().await {
+        Ok(status) => Some(status),
+        Err(e) => {
+            tracing::warn!(error = %e, program = %program.display(), "could not learn how a program ended; it counts as failed");
+            None
+        }
+    };
     tree.disarm();
     let (stdout, stdout_truncated) = match readers.collected.await {
         Ok(collected) => collected,
@@ -242,12 +281,16 @@ pub async fn run(
             (Vec::new(), false)
         }
     };
-    Ok(Ran {
-        success: status.is_ok_and(|s| s.success()),
+    let ran = Ran {
+        status,
         stdout,
         stdout_truncated,
-        stderr: tail,
-    })
+        stderr,
+    };
+    if let Some(status) = ran.status.filter(|s| !s.success()) {
+        tracing::warn!(program = %program.display(), %status, stderr = %ran.stderr, "a program failed");
+    }
+    ran
 }
 
 /// The idle limit of a run: a deadline moved on by every line, and at which the watched result is looked at before the run counts as stuck.

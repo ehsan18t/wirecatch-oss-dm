@@ -7649,6 +7649,7 @@ dependencies = [
  "url",
  "windows-sys 0.59.0",
  "wirecatch-engine",
+ "wirecatch-logging",
  "wirecatch-test-support",
 ]
 

@@ -11,8 +11,8 @@ use tracing::warn;
 use wirecatch_engine::CancellationToken;
 use wirecatch_streams::Role;
 use wirecatch_streams::codec::VideoCodec;
+use wirecatch_streams::process::STALL_TIMEOUT;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions};
-use wirecatch_streams::process::{NO_REASON, STALL_TIMEOUT};
 
 use crate::addons::MediaTools;
 
@@ -108,18 +108,14 @@ pub(crate) async fn run(
     })
     .await;
     let result = match ran {
-        Ok(ran) if ran.success && is_file(output).await => return Ok(Finished::Done),
+        Ok(ran) if ran.success() && is_file(output).await => return Ok(Finished::Done),
         Ok(ran) => Err(FfmpegError::Failed {
-            reason: ran
-                .error_line()
-                .unwrap_or(NO_REASON)
-                .trim_end_matches('.')
-                .to_string(),
+            reason: ran.reason().trim_end_matches('.').to_string(),
         }),
         Err(RunError::Cancelled) => Ok(Finished::Cancelled),
         Err(RunError::Start { source, .. }) => Err(FfmpegError::Start(source)),
-        Err(RunError::Stalled(quiet)) => Err(FfmpegError::Stalled(quiet)),
-        Err(RunError::TimedOut(limit)) => Err(FfmpegError::TimedOut(limit)),
+        Err(RunError::Stalled { quiet, .. }) => Err(FfmpegError::Stalled(quiet)),
+        Err(RunError::TimedOut { limit, .. }) => Err(FfmpegError::TimedOut(limit)),
         Err(other) => Err(FfmpegError::Failed {
             reason: other.to_string(),
         }),

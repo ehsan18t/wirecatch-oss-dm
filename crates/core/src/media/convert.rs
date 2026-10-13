@@ -67,7 +67,7 @@ impl EncoderCatalog {
                     .await
                     .map_err(ListError::Run)?;
                 let found = output::listed_encoders(&String::from_utf8_lossy(&ran.stdout));
-                if ran.success && !found.is_empty() {
+                if ran.success() && !found.is_empty() {
                     Ok(Arc::new(found))
                 } else {
                     Err(ListError::NoneListed)
@@ -173,7 +173,7 @@ async fn probe(tools: &MediaTools, encoder: &Encoder, cancel: &CancellationToken
     )
     .await
     {
-        Ok(ran) if ran.success => Probe::Works,
+        Ok(ran) if ran.success() => Probe::Works,
         Err(RunError::Cancelled) => Probe::Cancelled,
         Ok(_) | Err(_) => Probe::Fails,
     }
