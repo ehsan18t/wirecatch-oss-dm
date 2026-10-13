@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
-    AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
-    UiEvent, WaitReason,
+    AddonId, AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection,
+    OutputFormat, UiEvent, WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind};
 
@@ -727,14 +727,14 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
     // The id is the waiting page's, so the prompt can drop exactly that page.
     assert_eq!(h.manager.pending_addon_requests()[0].id, id);
 
-    assert_eq!((addon.id.as_str(), url.as_str()), ("media", page.as_str()));
+    assert_eq!((addon.id, url.as_str()), (AddonId::Media, page.as_str()));
     assert!(addon.size.is_some_and(|s| s > 0));
     assert_eq!(
         h.manager.pending_media_choices(),
         [] as [wirecatch_protocol::app::MediaChoice; 0]
     );
 
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     let choice = choice_requested(&mut ui).await;
     assert_eq!(
         choice.page_url.as_deref(),
@@ -1139,13 +1139,13 @@ async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() -> TestR
     let waiting = h.manager.pending_addon_requests();
     assert_eq!(waiting.len(), 1);
     assert_eq!(
-        (waiting[0].url.as_str(), waiting[0].addon.id.as_str()),
-        (page.as_str(), "media")
+        (waiting[0].url.as_str(), waiting[0].addon.id),
+        (page.as_str(), AddonId::Media)
     );
     h.manager.dismiss_media_choice(waiting[0].id).unwrap();
     assert_eq!(
         h.manager.pending_addon_requests(),
-        [] as [wirecatch_core::AddonRequestItem; 0]
+        [] as [wirecatch_protocol::app::AddonRequestItem; 0]
     );
     Ok(())
 }
@@ -1181,7 +1181,7 @@ async fn a_failed_install_turns_waiting_pages_into_failed_downloads() -> TestRes
     assert_eq!(error.fix, Some(FixAction::Retry));
     assert_eq!(
         h.manager.pending_addon_requests(),
-        [] as [wirecatch_core::AddonRequestItem; 0]
+        [] as [wirecatch_protocol::app::AddonRequestItem; 0]
     );
     Ok(())
 }

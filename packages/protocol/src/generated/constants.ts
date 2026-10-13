@@ -84,6 +84,37 @@ export const MAX_QUESTION_WINDOWS = 5;
 export const DOWNLOAD_WINDOW_CASCADE_STEP = 28;
 
 /**
+ * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.
+ */
+export const UI_EVENT = 'wirecatch://event';
+
+/**
+ * The Tauri event, with no payload, that says events were missed: reload everything.
+ */
+export const RESYNC_EVENT = 'wirecatch://resync';
+
+/**
+ * The Tauri event, with no payload, that says links arrived from a second launch: fetch
+ * them with `take_launch_links`.
+ */
+export const LINKS_EVENT = 'wirecatch://links';
+
+/**
+ * The page a download window shows, relative to the app's address.
+ */
+export const DOWNLOAD_WINDOW_PAGE = 'window/download';
+
+/**
+ * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.
+ */
+export const QUESTION_PARAMETER = 'question';
+
+/**
+ * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the download a window shows.
+ */
+export const DOWNLOAD_PARAMETER = 'download';
+
+/**
  * The audio bit rates, in kbps, a person can pick when saving as each format;
  * formats without a choice are left out (`OutputFormat::kbps_choices`).
  */

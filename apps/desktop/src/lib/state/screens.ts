@@ -1,6 +1,6 @@
 // The main window's screens and dialogs, as data: which one is open and what it was opened for.
 
-import type { DownloadId, QueueId } from '@wirecatch/protocol';
+import type { AddonId, DownloadId, QueueId } from '@wirecatch/protocol';
 
 export type Screen = 'downloads' | 'settings';
 
@@ -14,4 +14,4 @@ export type Dialog =
   | { kind: 'import' }
   | { kind: 'shortcuts' }
   | { kind: 'open-program'; id: DownloadId }
-  | { kind: 'remove-addon'; id: string };
+  | { kind: 'remove-addon'; id: AddonId };

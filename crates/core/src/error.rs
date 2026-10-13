@@ -3,7 +3,7 @@
 use std::io;
 
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
 use crate::folders::PathError;
 
@@ -21,7 +21,7 @@ pub enum CoreError {
 
     /// The confirmation was already answered or never existed.
     #[error("That download was already confirmed or dismissed, or the browser took it back.")]
-    ConfirmationNotFound(u64),
+    ConfirmationNotFound(QuestionId),
 
     /// A link that is not an http, https, ftp, ftps or ftpes URL.
     #[error(
@@ -203,7 +203,7 @@ mod tests {
         let errors = [
             CoreError::DownloadNotFound(DownloadId(1)),
             CoreError::QueueNotFound(QueueId(1)),
-            CoreError::ConfirmationNotFound(1),
+            CoreError::ConfirmationNotFound(QuestionId(1)),
             CoreError::InvalidUrl("ftp://x".into()),
             CoreError::DefaultQueue,
             CoreError::Path(PathError::Special(r"\\.\C:".into())),

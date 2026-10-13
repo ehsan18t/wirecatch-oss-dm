@@ -2,7 +2,9 @@
 // `TauriBackend` talks to the Rust side; `MockBackend` simulates it in memory.
 
 import type {
+  AddonId,
   AddonInfo,
+  AddonRequestItem,
   AddRequest,
   AppSettings,
   AppSettingsPatch,
@@ -14,6 +16,8 @@ import type {
   MediaChoice,
   MediaSelection,
   PendingCapture,
+  Question,
+  QuestionId,
   Queue,
   QueueId,
   UiEvent,
@@ -23,35 +27,7 @@ import type { WindowRegistry } from '../sample-windows';
 export type Unsubscribe = () => void;
 
 /** A capture that needs an add-on, as `UiEvent::AddonRequired` carries it. */
-export interface AddonRequest {
-  addon: AddonInfo;
-  url: string;
-}
-
-/**
- * A page waiting for an add-on, as the core lists it. `dismissMediaChoice(id)` drops it; the
- * id is the one its quality choice gets once the add-on is in.
- */
-export interface AddonRequestItem extends AddonRequest {
-  id: number;
-}
-
-/** A stream or video page still being read for its qualities. */
-export interface MediaReading {
-  id: number;
-  url: string;
-}
-
-/**
- * One open question, as its download window shows it (D23). Mirrors `questions::Question` in
- * `src-tauri`: a browser file to confirm, a video being read, a quality to pick, or a video page
- * waiting for the media add-on.
- */
-export type Question =
-  | { kind: 'capture'; data: PendingCapture }
-  | { kind: 'reading'; data: MediaReading }
-  | { kind: 'choice'; data: MediaChoice }
-  | { kind: 'addon'; data: AddonRequestItem };
+export type AddonRequest = Omit<AddonRequestItem, 'id'>;
 
 /**
  * Signals from the desktop shell that are not core events. `resync`: some events were missed,
@@ -113,15 +89,15 @@ export interface Backend {
 
   pendingConfirmations(): Promise<PendingCapture[]>;
   /** Starts (or with `later`, adds paused) a confirmed capture; the new download's id. */
-  confirmCapture(id: number, confirmation: CaptureConfirmation): Promise<DownloadId>;
-  rejectCapture(id: number): Promise<void>;
+  confirmCapture(id: QuestionId, confirmation: CaptureConfirmation): Promise<DownloadId>;
+  rejectCapture(id: QuestionId): Promise<void>;
 
   /** The open question `id`, or `null` once it is answered, dismissed or taken back. */
-  getQuestion(id: number): Promise<Question | null>;
+  getQuestion(id: QuestionId): Promise<Question | null>;
   /** One download, for its progress window. */
   getDownload(id: DownloadId): Promise<DownloadSummary>;
   /** The download in the list that question `id` is about again, if any. */
-  earlierDownload(id: number): Promise<DownloadSummary | null>;
+  earlierDownload(id: QuestionId): Promise<DownloadSummary | null>;
   /** Brings every open question's window to the front, opening closed ones again. */
   showQuestionWindows(): Promise<void>;
   /** Opens (or brings forward) the progress window of a download. */
@@ -144,9 +120,9 @@ export interface Backend {
   takeLaunchLinks(): Promise<string[]>;
 
   /** Downloads (or with `later`, adds paused) the chosen quality; the new download's id. */
-  chooseMedia(id: number, selection: MediaSelection): Promise<DownloadId>;
+  chooseMedia(id: QuestionId, selection: MediaSelection): Promise<DownloadId>;
   /** Drops a media choice the person did not want. */
-  dismissMediaChoice(id: number): Promise<void>;
+  dismissMediaChoice(id: QuestionId): Promise<void>;
   /** Media choices still open, so a new or reloaded window asks them again. */
   pendingMediaChoices(): Promise<MediaChoice[]>;
   /** Pages waiting for an add-on, oldest first, so a new or reloaded window offers it again. */
@@ -154,11 +130,11 @@ export interface Backend {
 
   /** Optional components (D2, D20): one media add-on with yt-dlp, ffmpeg and Deno. */
   listAddons(): Promise<AddonInfo[]>;
-  installAddon(id: string): Promise<void>;
-  updateAddon(id: string): Promise<void>;
-  removeAddon(id: string): Promise<void>;
+  installAddon(id: AddonId): Promise<void>;
+  updateAddon(id: AddonId): Promise<void>;
+  removeAddon(id: AddonId): Promise<void>;
   /** Stops an install or update; an update keeps the installed version working. */
-  cancelAddonOperation(id: string): Promise<void>;
+  cancelAddonOperation(id: AddonId): Promise<void>;
   /** Looks for a newer media add-on now; the add-ons as they stand afterwards. */
   checkAddonUpdates(): Promise<AddonInfo[]>;
 
@@ -180,72 +156,6 @@ export interface DownloadWindowBackend extends Backend {
   /** Makes the download window this page runs in as tall as its content (logical pixels). */
   fitDownloadWindow(height: number): Promise<void>;
 }
-
-/**
- * Tauri command names, exactly as the core registers them. The Rust side in `src-tauri`
- * registers the same names; a test checks both lists agree.
- */
-export const COMMANDS = {
-  listDownloads: 'list_downloads',
-  addDownload: 'add_download',
-  pause: 'pause',
-  resume: 'resume',
-  cancel: 'cancel',
-  remove: 'remove',
-  retry: 'retry',
-  refreshLink: 'refresh_link',
-  keepOriginal: 'keep_original',
-  moveToQueue: 'move_to_queue',
-  reorder: 'reorder',
-  pauseAll: 'pause_all',
-  resumeAll: 'resume_all',
-  listQueues: 'list_queues',
-  createQueue: 'create_queue',
-  updateQueue: 'update_queue',
-  deleteQueue: 'delete_queue',
-  setQueuePaused: 'set_queue_paused',
-  startQueueNow: 'start_queue_now',
-  getSettings: 'get_settings',
-  changeSettings: 'change_settings',
-  exportSettings: 'export_settings',
-  previewImport: 'preview_import',
-  importSettings: 'import_settings',
-  pendingConfirmations: 'pending_confirmations',
-  confirmCapture: 'confirm_capture',
-  rejectCapture: 'reject_capture',
-  openFile: 'open_file',
-  isProgram: 'is_program',
-  openFolder: 'open_folder',
-  setDownloadFolder: 'set_download_folder',
-  takeLaunchLinks: 'take_launch_links',
-  chooseMedia: 'choose_media',
-  dismissMediaChoice: 'dismiss_media_choice',
-  pendingMediaChoices: 'pending_media_choices',
-  pendingAddonRequests: 'pending_addon_requests',
-  listAddons: 'list_addons',
-  installAddon: 'install_addon',
-  updateAddon: 'update_addon',
-  removeAddon: 'remove_addon',
-  cancelAddonOperation: 'cancel_addon_operation',
-  checkAddonUpdates: 'check_addon_updates',
-  getQuestion: 'get_question',
-  getDownload: 'get_download',
-  earlierDownload: 'earlier_download',
-  showQuestionWindows: 'show_question_windows',
-  showProgressWindow: 'show_progress_window',
-  closeDownloadWindow: 'close_download_window',
-  fitDownloadWindow: 'fit_download_window',
-  mainWindowReady: 'main_window_ready',
-} as const;
-
-/** The single Tauri event that carries every `UiEvent`. */
-export const EVENT_NAME = 'wirecatch://event';
-
-/** Shell signals, as Tauri events with no payload. */
-export const SIGNAL_EVENTS: Record<ShellSignal, string> = {
-  resync: 'wirecatch://resync',
-  links: 'wirecatch://links',
-};
 
 /**
  * An error from the backend, with a message written for a person and, when the core or the shell

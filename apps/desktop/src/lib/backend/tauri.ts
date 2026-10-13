@@ -1,44 +1,53 @@
-// Talks to the Rust side through Tauri commands and the single `wirecatch://event` stream.
-// Argument keys are camelCase here; Tauri maps them to the snake_case Rust parameter names.
+// Talks to the Rust side through the commands of the generated contract (`CommandMap`, from
+// `crates/protocol/src/desktop.rs`) and the single `UI_EVENT` stream. Each command takes its
+// arguments as one `args` object keyed by the Rust names.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { getName } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import type {
-  AddonInfo,
-  AddRequest,
-  AppSettings,
-  AppSettingsPatch,
-  CaptureConfirmation,
-  DownloadId,
-  DownloadSummary,
-  ErrorCode,
-  ImportPreview,
-  MediaChoice,
-  MediaSelection,
-  PendingCapture,
-  Queue,
-  QueueId,
-  UiEvent,
+import {
+  LINKS_EVENT,
+  RESYNC_EVENT,
+  UI_EVENT,
+  type AddonId,
+  type AddRequest,
+  type AppSettingsPatch,
+  type CaptureConfirmation,
+  type CommandMap,
+  type DownloadId,
+  type ErrorCode,
+  type MediaSelection,
+  type QuestionId,
+  type Queue,
+  type QueueId,
+  type UiEvent,
 } from '@wirecatch/protocol';
 import {
   BackendError,
-  COMMANDS,
-  EVENT_NAME,
-  SIGNAL_EVENTS,
-  type AddonRequestItem,
   type DownloadWindowBackend,
-  type Question,
   type ShellSignal,
   type Unsubscribe,
 } from './types';
+
+/** Shell signals, as the Tauri events with no payload that carry them. */
+export const SIGNAL_EVENTS: Readonly<Record<ShellSignal, string>> = {
+  resync: RESYNC_EVENT,
+  links: LINKS_EVENT,
+};
 
 /** What the file dialogs offer for settings exports. */
 const SETTINGS_FILES = { name: `${PRODUCT_NAME} settings`, extensions: ['json'] };
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+
+/** A command's name in the contract. */
+type Command = keyof CommandMap;
+/** What a command takes: nothing for one whose `args` is `null`, else its `args` object. */
+type ArgsOf<C extends Command> = CommandMap[C]['args'] extends null ? [] : [CommandMap[C]['args']];
+/** What a command answers with. */
+type OutputOf<C extends Command> = CommandMap[C]['output'];
 /** Tauri's `listen`; tests pass their own. */
 type Listen = typeof listen;
 
@@ -85,173 +94,177 @@ export class TauriBackend implements DownloadWindowBackend {
     this.#listen = listener;
   }
 
-  async #call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  /** Calls `command` with its contract arguments; the answer has the contract's type. */
+  async #call<C extends Command>(command: C, ...args: ArgsOf<C>): Promise<OutputOf<C>> {
     try {
-      return await this.#invoke<T>(command, args);
+      return await this.#invoke<OutputOf<C>>(
+        command,
+        args.length === 0 ? undefined : { args: args[0] },
+      );
     } catch (err) {
       throw toBackendError(err);
     }
   }
 
   /** For commands that answer with nothing. */
-  async #exec(command: string, args?: Record<string, unknown>): Promise<void> {
-    await this.#call<unknown>(command, args);
+  async #exec<C extends Command>(command: C, ...args: ArgsOf<C>): Promise<void> {
+    await this.#call(command, ...args);
   }
 
   listDownloads() {
-    return this.#call<DownloadSummary[]>(COMMANDS.listDownloads);
+    return this.#call('list_downloads');
   }
   addDownload(request: AddRequest) {
-    return this.#call<DownloadId>(COMMANDS.addDownload, { request });
+    return this.#call('add_download', { request });
   }
   pause(id: DownloadId) {
-    return this.#exec(COMMANDS.pause, { id });
+    return this.#exec('pause', { id });
   }
   resume(id: DownloadId) {
-    return this.#exec(COMMANDS.resume, { id });
+    return this.#exec('resume', { id });
   }
   cancel(id: DownloadId) {
-    return this.#exec(COMMANDS.cancel, { id });
+    return this.#exec('cancel', { id });
   }
   remove(ids: DownloadId[], deleteFile: boolean) {
-    return this.#exec(COMMANDS.remove, { ids, deleteFile });
+    return this.#exec('remove', { ids, delete_file: deleteFile });
   }
   retry(id: DownloadId) {
-    return this.#exec(COMMANDS.retry, { id });
+    return this.#exec('retry', { id });
   }
   refreshLink(id: DownloadId, url: string) {
-    return this.#exec(COMMANDS.refreshLink, { id, url });
+    return this.#exec('refresh_link', { id, url });
   }
   keepOriginal(id: DownloadId) {
-    return this.#exec(COMMANDS.keepOriginal, { id });
+    return this.#exec('keep_original', { id });
   }
   moveToQueue(ids: DownloadId[], queue: QueueId) {
-    return this.#exec(COMMANDS.moveToQueue, { ids, queue });
+    return this.#exec('move_to_queue', { ids, queue });
   }
   reorder(queue: QueueId, idsInOrder: DownloadId[]) {
-    return this.#exec(COMMANDS.reorder, { queue, idsInOrder });
+    return this.#exec('reorder', { queue, ids_in_order: idsInOrder });
   }
   pauseAll() {
-    return this.#exec(COMMANDS.pauseAll);
+    return this.#exec('pause_all');
   }
   resumeAll() {
-    return this.#exec(COMMANDS.resumeAll);
+    return this.#exec('resume_all');
   }
   listQueues() {
-    return this.#call<Queue[]>(COMMANDS.listQueues);
+    return this.#call('list_queues');
   }
   createQueue(name: string) {
-    return this.#call<Queue>(COMMANDS.createQueue, { name });
+    return this.#call('create_queue', { name });
   }
   updateQueue(queue: Queue) {
-    return this.#exec(COMMANDS.updateQueue, { queue });
+    return this.#exec('update_queue', { queue });
   }
   setQueuePaused(id: QueueId, paused: boolean) {
-    return this.#exec(COMMANDS.setQueuePaused, { id, paused });
+    return this.#exec('set_queue_paused', { id, paused });
   }
   startQueueNow(id: QueueId) {
-    return this.#exec(COMMANDS.startQueueNow, { id });
+    return this.#exec('start_queue_now', { id });
   }
   deleteQueue(id: QueueId) {
-    return this.#exec(COMMANDS.deleteQueue, { id });
+    return this.#exec('delete_queue', { id });
   }
   getSettings() {
-    return this.#call<AppSettings>(COMMANDS.getSettings);
+    return this.#call('get_settings');
   }
   changeSettings(patch: AppSettingsPatch) {
-    return this.#exec(COMMANDS.changeSettings, { patch });
+    return this.#exec('change_settings', { patch });
   }
   exportSettings(path: string) {
-    return this.#exec(COMMANDS.exportSettings, { path });
+    return this.#exec('export_settings', { path });
   }
   previewImport(path: string) {
-    return this.#call<ImportPreview>(COMMANDS.previewImport, { path });
+    return this.#call('preview_import', { path });
   }
   importSettings(path: string) {
-    return this.#exec(COMMANDS.importSettings, { path });
+    return this.#exec('import_settings', { path });
   }
   pendingConfirmations() {
-    return this.#call<PendingCapture[]>(COMMANDS.pendingConfirmations);
+    return this.#call('pending_confirmations');
   }
-  confirmCapture(id: number, confirmation: CaptureConfirmation) {
-    return this.#call<DownloadId>(COMMANDS.confirmCapture, { id, confirmation });
+  confirmCapture(id: QuestionId, confirmation: CaptureConfirmation) {
+    return this.#call('confirm_capture', { id, confirmation });
   }
-  rejectCapture(id: number) {
-    return this.#exec(COMMANDS.rejectCapture, { id });
+  rejectCapture(id: QuestionId) {
+    return this.#exec('reject_capture', { id });
   }
-  getQuestion(id: number) {
-    return this.#call<Question | null>(COMMANDS.getQuestion, { id });
+  getQuestion(id: QuestionId) {
+    return this.#call('get_question', { id });
   }
   getDownload(id: DownloadId) {
-    return this.#call<DownloadSummary>(COMMANDS.getDownload, { id });
+    return this.#call('get_download', { id });
   }
-  earlierDownload(id: number) {
-    return this.#call<DownloadSummary | null>(COMMANDS.earlierDownload, { id });
+  earlierDownload(id: QuestionId) {
+    return this.#call('earlier_download', { id });
   }
   showQuestionWindows() {
-    return this.#exec(COMMANDS.showQuestionWindows);
+    return this.#exec('show_question_windows');
   }
   showProgressWindow(id: DownloadId) {
-    return this.#exec(COMMANDS.showProgressWindow, { id });
+    return this.#exec('show_progress_window', { id });
   }
   closeDownloadWindow() {
-    return this.#exec(COMMANDS.closeDownloadWindow);
+    return this.#exec('close_download_window');
   }
   mainWindowReady() {
-    return this.#exec(COMMANDS.mainWindowReady);
+    return this.#exec('main_window_ready');
   }
   fitDownloadWindow(height: number) {
-    return this.#exec(COMMANDS.fitDownloadWindow, { height });
+    return this.#exec('fit_download_window', { height });
   }
   openFile(id: DownloadId, allowProgram = false) {
-    return this.#exec(COMMANDS.openFile, { id, allowProgram });
+    return this.#exec('open_file', { id, allow_program: allowProgram });
   }
   isProgram(id: DownloadId) {
-    return this.#call<boolean>(COMMANDS.isProgram, { id });
+    return this.#call('is_program', { id });
   }
   openFolder(id: DownloadId) {
-    return this.#exec(COMMANDS.openFolder, { id });
+    return this.#exec('open_folder', { id });
   }
   setDownloadFolder(id: DownloadId, folder: string) {
-    return this.#exec(COMMANDS.setDownloadFolder, { id, folder });
+    return this.#exec('set_download_folder', { id, folder });
   }
 
   takeLaunchLinks() {
-    return this.#call<string[]>(COMMANDS.takeLaunchLinks);
+    return this.#call('take_launch_links');
   }
-  chooseMedia(id: number, selection: MediaSelection) {
-    return this.#call<DownloadId>(COMMANDS.chooseMedia, { id, selection });
+  chooseMedia(id: QuestionId, selection: MediaSelection) {
+    return this.#call('choose_media', { id, selection });
   }
-  dismissMediaChoice(id: number) {
-    return this.#exec(COMMANDS.dismissMediaChoice, { id });
+  dismissMediaChoice(id: QuestionId) {
+    return this.#exec('dismiss_media_choice', { id });
   }
   pendingMediaChoices() {
-    return this.#call<MediaChoice[]>(COMMANDS.pendingMediaChoices);
+    return this.#call('pending_media_choices');
   }
   pendingAddonRequests() {
-    return this.#call<AddonRequestItem[]>(COMMANDS.pendingAddonRequests);
+    return this.#call('pending_addon_requests');
   }
   listAddons() {
-    return this.#call<AddonInfo[]>(COMMANDS.listAddons);
+    return this.#call('list_addons');
   }
-  installAddon(id: string) {
-    return this.#exec(COMMANDS.installAddon, { id });
+  installAddon(id: AddonId) {
+    return this.#exec('install_addon', { id });
   }
-  updateAddon(id: string) {
-    return this.#exec(COMMANDS.updateAddon, { id });
+  updateAddon(id: AddonId) {
+    return this.#exec('update_addon', { id });
   }
-  removeAddon(id: string) {
-    return this.#exec(COMMANDS.removeAddon, { id });
+  removeAddon(id: AddonId) {
+    return this.#exec('remove_addon', { id });
   }
-  cancelAddonOperation(id: string) {
-    return this.#exec(COMMANDS.cancelAddonOperation, { id });
+  cancelAddonOperation(id: AddonId) {
+    return this.#exec('cancel_addon_operation', { id });
   }
   checkAddonUpdates() {
-    return this.#call<AddonInfo[]>(COMMANDS.checkAddonUpdates);
+    return this.#call('check_addon_updates');
   }
 
   async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {
-    return this.#listen<UiEvent>(EVENT_NAME, (e) => listener(e.payload));
+    return this.#listen<UiEvent>(UI_EVENT, (e) => listener(e.payload));
   }
 
   async onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe> {

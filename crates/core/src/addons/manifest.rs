@@ -5,8 +5,9 @@
 
 pub use super::signature::PinnedKey;
 
-/// The add-on id used by the UI and in settings profiles.
-pub const MEDIA_ADDON_ID: &str = "media";
+/// The media add-on's folder in the data folder's `addons` folder; the add-on itself is
+/// `AddonId::Media`. Written out so a rename of the id never moves anyone's install.
+pub const MEDIA_ADDON_FOLDER: &str = "media";
 
 /// One part of the media add-on (yt-dlp, ffmpeg or Deno) as published by its
 /// project: where to get it, its checksum, and which files to take from it.

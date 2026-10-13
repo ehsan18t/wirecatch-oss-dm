@@ -5,11 +5,13 @@
 //! - [`wire`]: messages exchanged between the extension, the bridge and the app.
 //! - [`extension`]: what the extension sends and the settings it can change.
 //! - [`app`]: downloads, queues and settings as the desktop UI sees them.
+//! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
 
 mod exported;
 
 pub mod app;
+pub mod desktop;
 pub mod extension;
 pub mod frame;
 pub mod wire;
@@ -34,3 +36,12 @@ pub struct DownloadId(#[ts(type = "number")] pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct QueueId(#[ts(type = "number")] pub i64);
+
+/// Identifies one question the app asks the person about a browser download: a file to
+/// confirm ([`app::PendingCapture`]), media being read ([`app::MediaReading`]), a quality to pick
+/// ([`app::MediaChoice`]) or a page waiting for the media add-on ([`app::AddonRequestItem`]).
+/// They share one id space, and a question keeps its id from one step to the next. Never a
+/// download id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct QuestionId(#[ts(type = "number")] pub u64);

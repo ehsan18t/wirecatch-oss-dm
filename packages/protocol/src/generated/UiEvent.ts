@@ -6,6 +6,7 @@ import type { DownloadSummary } from './DownloadSummary';
 import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
 import type { PendingCapture } from './PendingCapture';
+import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
 import type { UserError } from './UserError';
 
@@ -29,7 +30,7 @@ export type UiEvent =
         /**
          * The id the question will have.
          */
-        id: number;
+        id: QuestionId;
         /**
          * The page or stream being read, with any password removed.
          */
@@ -51,9 +52,9 @@ export type UiEvent =
         /**
          * The media that waits: a page waiting for the add-on (dismiss it with
          * `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
-         * needs it. Shares the id space of [`ConfirmationClosed`](Self::ConfirmationClosed).
+         * needs it.
          */
-        id: number;
+        id: QuestionId;
       };
     }
   | {
@@ -62,7 +63,7 @@ export type UiEvent =
         /**
          * The id of the question that closed.
          */
-        id: number;
+        id: QuestionId;
       };
     }
   | { type: 'window_requested' };

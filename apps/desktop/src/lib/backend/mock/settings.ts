@@ -2,6 +2,7 @@
 
 import {
   PROFILE_FORMAT_VERSION,
+  type AddonId,
   type AppSettingsPatch,
   type ImportedFolder,
   type ImportPreview,
@@ -58,7 +59,7 @@ function importedFolder(profile: SettingsProfile): ImportedFolder {
   };
 }
 
-function addonsToOffer(state: MockState, profile: SettingsProfile): string[] {
+function addonsToOffer(state: MockState, profile: SettingsProfile): AddonId[] {
   // Like the core: offered, never installed by the import itself.
   return profile.addons.filter(
     (id) => state.addons.find((a) => a.id === id)?.state.type === 'not_installed',

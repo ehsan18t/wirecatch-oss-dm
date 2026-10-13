@@ -28,7 +28,7 @@ use manifest::AddonComponent;
 
 /// The add-on's folder inside the data folder.
 pub(crate) fn media_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("addons").join(manifest::MEDIA_ADDON_ID)
+    data_dir.join("addons").join(manifest::MEDIA_ADDON_FOLDER)
 }
 
 /// The record of what is installed, in the add-on folder.

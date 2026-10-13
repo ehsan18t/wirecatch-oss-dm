@@ -1,6 +1,6 @@
 // The add-ons as the main window shows them, and what the person can do with them.
 
-import type { AddonInfo } from '@wirecatch/protocol';
+import type { AddonId, AddonInfo } from '@wirecatch/protocol';
 import { MEDIA_ADDON } from '../addons';
 import type { Backend } from '../backend';
 import { errorMessage, type Runner } from './runner';
@@ -62,20 +62,20 @@ export class Addons {
     this.error = null;
   }
 
-  install(id: string): Promise<boolean> {
+  install(id: AddonId): Promise<boolean> {
     return this.#host.runner.succeeds(() => this.#host.backend().installAddon(id));
   }
 
-  async update(id: string): Promise<void> {
+  async update(id: AddonId): Promise<void> {
     await this.#host.runner.run(() => this.#host.backend().updateAddon(id));
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: AddonId): Promise<void> {
     await this.#host.runner.run(() => this.#host.backend().removeAddon(id));
   }
 
   /** Stops an install or update in progress; an update keeps the installed version. */
-  async cancel(id: string): Promise<void> {
+  async cancel(id: AddonId): Promise<void> {
     await this.#host.runner.run(() => this.#host.backend().cancelAddonOperation(id));
   }
 

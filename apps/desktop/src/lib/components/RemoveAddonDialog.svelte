@@ -1,9 +1,10 @@
 <script lang="ts">
+  import type { AddonId } from '@wirecatch/protocol';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import Dialog from './Dialog.svelte';
 
-  let { id }: { id: string } = $props();
+  let { id }: { id: AddonId } = $props();
   const app = getApp();
 
   const addon = $derived(app.addons.list?.find((a) => a.id === id));

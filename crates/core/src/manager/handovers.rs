@@ -4,8 +4,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use wirecatch_engine::CancellationToken;
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::extension::AddedDownload;
+use wirecatch_protocol::{DownloadId, QuestionId};
 
 use crate::error::{CoreError, Result};
 
@@ -19,7 +19,7 @@ const MAX_ID_LEN: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Target {
     /// Waiting for the user's confirmation (a pending capture id).
-    Pending(u64),
+    Pending(QuestionId),
     /// A download in the list.
     Download(DownloadId),
     /// The user confirmed it, so it is the app's from then on.
@@ -179,7 +179,7 @@ mod tests {
         log.insert(
             "asking",
             Handover {
-                target: Target::Pending(7),
+                target: Target::Pending(QuestionId(7)),
                 ..handover(0)
             },
         );

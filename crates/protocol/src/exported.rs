@@ -363,11 +363,13 @@ mod tests {
 
     #[test]
     fn write_typescript_constants() {
+        use std::fmt::Write as _;
         let constants = [
             crate::exported_consts(),
             crate::wire::exported_consts(),
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
+            crate::desktop::exported_consts(),
             audio_tables(),
             vec![Constant::json(
                 "DEFAULT_EXTENSION_SETTINGS",
@@ -389,7 +391,7 @@ mod tests {
             .flat_map(|c| c.written.imports.iter().copied())
             .collect();
         for name in imports {
-            out.push_str(&format!("import type {{ {name} }} from \"./{name}\";\n"));
+            writeln!(out, "import type {{ {name} }} from \"./{name}\";").unwrap();
         }
         for constant in constants {
             constant.write(&mut out);

@@ -2,7 +2,9 @@
 //! different home folder) come back with folders resolved for the new machine.
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
-use wirecatch_protocol::app::{Category, PortablePath, Queue, Schedule, TimeOfDay, UiEvent};
+use wirecatch_protocol::app::{
+    AddonId, Category, PortablePath, Queue, Schedule, TimeOfDay, UiEvent,
+};
 
 use crate::common::{Harness, TestResult, tune};
 
@@ -219,7 +221,7 @@ async fn an_import_is_previewed_without_changing_anything() -> TestResult {
     assert_eq!(std::path::Path::new(&video.resolved), outside);
     assert_eq!(preview.queues_added, vec!["Night".to_string()]);
     assert_eq!(preview.queues_updated.len(), 1);
-    assert_eq!(preview.addons_to_offer, vec!["media".to_string()]);
+    assert_eq!(preview.addons_to_offer, vec![AddonId::Media]);
 
     // Importing does what the preview said.
     there.manager.import_settings(&file).await.unwrap();

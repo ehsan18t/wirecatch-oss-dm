@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
-use crate::{DownloadId, QueueId};
+use crate::{DownloadId, QuestionId, QueueId};
 
 /// One row of the download list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -202,8 +202,7 @@ pub struct MediaSummary {
 #[ts(export)]
 pub struct MediaChoice {
     /// Identifies this choice; not a download id yet.
-    #[ts(type = "number")]
-    pub id: u64,
+    pub id: QuestionId,
     /// The video's title, which names the file.
     pub title: String,
     /// The page the media was found on, with any password in the address removed.
@@ -448,13 +447,53 @@ pub struct OutputDefaults {
     pub chapters: bool,
 }
 
-/// An optional component (D2): ffmpeg, the yt-dlp media add-on.
+/// Identifies an optional component (D2). Since D20 there is one: the media add-on, which
+/// installs yt-dlp, ffmpeg and Deno together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AddonId {
+    /// The media add-on (D20).
+    Media,
+    /// An add-on this build does not know, named by a newer Wirecatch (in a settings profile,
+    /// say), read so the rest of the message still works. The app never offers or lists one.
+    Unknown,
+}
+
+impl AddonId {
+    /// Every add-on this build knows, which reading an id looks for by name.
+    pub const KNOWN: &[AddonId] = &[AddonId::Media];
+
+    /// The name the add-on is written as.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            AddonId::Media => "media",
+            AddonId::Unknown => "unknown",
+        }
+    }
+}
+
+/// Reads any name, so a profile or message naming an add-on from a newer Wirecatch still reads;
+/// `#[serde(other)]` would do the same, but the TypeScript generator cannot read it.
+impl<'de> Deserialize<'de> for AddonId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = std::borrow::Cow::<str>::deserialize(deserializer)?;
+        Ok(AddonId::KNOWN
+            .iter()
+            .copied()
+            .find(|id| id.name() == name)
+            .unwrap_or(AddonId::Unknown))
+    }
+}
+
+/// An optional component (D2), as the add-ons settings show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AddonInfo {
-    /// Stable id, for example `ffmpeg` or `yt-dlp`.
-    pub id: String,
-    /// The name shown, for example `yt-dlp`.
+    /// Which add-on it is.
+    pub id: AddonId,
+    /// The name shown, for example "Media add-on".
     pub name: String,
     /// One plain-language line on what it adds.
     pub description: String,
@@ -918,8 +957,8 @@ pub struct SettingsProfile {
     pub settings: AppSettings,
     /// Every queue, with its limits and schedule.
     pub queues: Vec<Queue>,
-    /// Ids of installed add-ons, reinstalled on import.
-    pub addons: Vec<String>,
+    /// The installed add-ons, offered for installing on import.
+    pub addons: Vec<AddonId>,
 }
 
 /// A download added from the app itself (paste, Add dialog, command palette).
@@ -943,8 +982,7 @@ pub struct AddRequest {
 #[ts(export)]
 pub struct PendingCapture {
     /// Identifies this confirmation; not a download id yet.
-    #[ts(type = "number")]
-    pub id: u64,
+    pub id: QuestionId,
     /// The address to download, with any password removed.
     pub url: String,
     /// The name it will be saved as if the user just confirms.
@@ -1009,8 +1047,7 @@ pub enum UiEvent {
     /// download says why).
     MediaAnalysing {
         /// The id the question will have.
-        #[ts(type = "number")]
-        id: u64,
+        id: QuestionId,
         /// The page or stream being read, with any password removed.
         url: String,
     },
@@ -1024,20 +1061,17 @@ pub enum UiEvent {
         url: String,
         /// The media that waits: a page waiting for the add-on (dismiss it with
         /// `dismiss_media_choice`), or the [`MediaChoice`] whose picked quality
-        /// needs it. Shares the id space of [`ConfirmationClosed`](Self::ConfirmationClosed).
-        #[serde(default)]
-        #[ts(type = "number")]
-        id: u64,
+        /// needs it.
+        id: QuestionId,
     },
     /// A question the UI may be showing is no longer open, so its dialog should close:
     /// a [`PendingCapture`] or [`MediaChoice`] with this id was answered (perhaps in
     /// another window), withdrawn by the browser, or replaced by another question (for
-    /// example a [`MediaChoice`] that follows an add-on install). Pending captures and
-    /// media choices share one id space, so the id is never ambiguous.
+    /// example a [`MediaChoice`] that follows an add-on install). Questions share one id space,
+    /// so the id is never ambiguous.
     ConfirmationClosed {
         /// The id of the question that closed.
-        #[ts(type = "number")]
-        id: u64,
+        id: QuestionId,
     },
     /// A client asked to see Wirecatch (the extension's "Open Wirecatch"): the desktop shows its main window.
     WindowRequested,
@@ -1054,10 +1088,10 @@ pub struct ImportSummary {
     /// Existing queues that took the profile's name, limits and schedule: the default queue,
     /// and every queue whose name matches one in the profile, ignoring case.
     pub queues_updated: u32,
-    /// Ids of add-ons the profile lists that are not installed here. Nothing is
+    /// Add-ons the profile lists that are not installed here. Nothing is
     /// downloaded on import; the UI may offer to install them.
     #[serde(default)]
-    pub addons_to_offer: Vec<String>,
+    pub addons_to_offer: Vec<AddonId>,
 }
 
 /// One folder setting from an imported profile.
@@ -1098,14 +1132,92 @@ pub struct ImportPreview {
     /// Names of the queues here the import would change (the default queue is
     /// always matched with the profile's).
     pub queues_updated: Vec<String>,
-    /// Ids of add-ons the profile lists that are not installed here, to offer
+    /// Add-ons the profile lists that are not installed here, to offer
     /// after the import. Nothing is downloaded on import.
-    pub addons_to_offer: Vec<String>,
+    pub addons_to_offer: Vec<AddonId>,
+}
+
+/// A captured stream or page still being read for its qualities.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MediaReading {
+    /// The id its quality choice will have; dismissing the question with it stops the reading.
+    pub id: QuestionId,
+    /// The stream or page, without any password in it.
+    pub url: String,
+}
+
+/// A video page waiting for an add-on that is not installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AddonRequestItem {
+    /// The question; dismissing it drops the page, and the quality choice that follows the
+    /// install keeps it.
+    pub id: QuestionId,
+    /// The add-on it needs.
+    pub addon: AddonInfo,
+    /// The page, without any password in it.
+    pub url: String,
+}
+
+/// One open question, as a download window shows it (D23): a browser file to confirm, media
+/// being read, a quality to pick, or a video page waiting for the media add-on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Question {
+    /// A browser file waiting for Download now, Download later or Cancel.
+    Capture(PendingCapture),
+    /// A stream or video page being read for its qualities.
+    Reading(MediaReading),
+    /// A video waiting for the person to pick a quality.
+    Choice(MediaChoice),
+    /// A video page waiting for the media add-on.
+    Addon(AddonRequestItem),
+}
+
+impl Question {
+    /// The question's id, which stays the same from one step to the next.
+    #[must_use]
+    pub fn id(&self) -> QuestionId {
+        match self {
+            Question::Capture(capture) => capture.id,
+            Question::Reading(reading) => reading.id,
+            Question::Choice(choice) => choice.id,
+            Question::Addon(page) => page.id,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A profile from a newer Wirecatch may name an add-on this build does not know; the rest
+    /// of it still reads.
+    #[test]
+    fn an_unknown_add_on_id_still_reads() {
+        let ids: Vec<AddonId> = serde_json::from_str(r#"["media", "from_the_future"]"#).unwrap();
+        assert_eq!(ids, [AddonId::Media, AddonId::Unknown]);
+        assert_eq!(
+            serde_json::to_string(&AddonId::Media).unwrap(),
+            r#""media""#
+        );
+    }
+
+    /// The desktop interface reads this shape (`Question` in `@wirecatch/protocol`).
+    #[test]
+    fn a_question_is_sent_with_its_kind() {
+        let reading = Question::Reading(MediaReading {
+            id: QuestionId(7),
+            url: "https://videos.example/a".into(),
+        });
+        assert_eq!(
+            serde_json::to_value(&reading).unwrap(),
+            serde_json::json!({"kind": "reading", "data": {"id": 7, "url": "https://videos.example/a"}})
+        );
+        assert_eq!(reading.id(), QuestionId(7));
+    }
 
     // A patch tells "unchanged" (missing) from "set to nothing" (null), and refuses a name it
     // does not know instead of ignoring it, which a misspelt setting would otherwise be.

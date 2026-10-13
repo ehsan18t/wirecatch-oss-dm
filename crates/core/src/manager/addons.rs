@@ -18,10 +18,10 @@ use wirecatch_engine::{
     Url,
     header::{ACCEPT, HeaderValue},
 };
-use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
+use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
-use crate::addons::manifest::{self, AddonComponent, MEDIA_ADDON_ID};
+use crate::addons::manifest::{self, AddonComponent};
 use crate::addons::{self, Check, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
 use crate::user_error;
@@ -181,7 +181,7 @@ impl Manager {
     /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, and
     /// [`CoreError::Closed`] once the manager has shut down. A failed install is not an
     /// error here: it arrives as `AddonsChanged`.
-    pub async fn install_addon(&self, id: &str) -> Result<()> {
+    pub async fn install_addon(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         if self.lock_open()?.addon.op.is_some() {
             return Ok(());
@@ -204,7 +204,7 @@ impl Manager {
     /// # Errors
     ///
     /// The errors of [`install_addon`](Self::install_addon).
-    pub async fn update_addon(&self, id: &str) -> Result<()> {
+    pub async fn update_addon(&self, id: AddonId) -> Result<()> {
         self.install_addon(id).await
     }
 
@@ -219,7 +219,7 @@ impl Manager {
     /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, or when the
     /// install stopped but some of its files could not be deleted; and
     /// [`CoreError::Closed`] once the manager has shut down.
-    pub async fn cancel_addon_operation(&self, id: &str) -> Result<()> {
+    pub async fn cancel_addon_operation(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         let (ended, had_tools) = {
             let state = self.lock_open()?;
@@ -261,7 +261,7 @@ impl Manager {
     /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows or its files
     /// could not all be deleted, [`CoreError::WrongState`] while a video is read or
     /// downloaded with it, and [`CoreError::Closed`] once the manager has shut down.
-    pub async fn remove_addon(&self, id: &str) -> Result<()> {
+    pub async fn remove_addon(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         let ended = {
             let state = self.lock_open()?;
@@ -451,7 +451,7 @@ impl Manager {
         };
         let wanted = self.wanted_components(slot);
         AddonInfo {
-            id: MEDIA_ADDON_ID.into(),
+            id: AddonId::Media,
             name: "Media add-on".into(),
             description: "Downloads video and audio from sites such as YouTube (yt-dlp), and joins separate video and audio into one file (ffmpeg).".into(),
             state,
@@ -974,13 +974,12 @@ fn addon_in_use(state: &super::state::State) -> bool {
     reading || downloading
 }
 
-fn check_id(id: &str) -> Result<()> {
-    if id == MEDIA_ADDON_ID {
-        Ok(())
-    } else {
-        Err(CoreError::Invalid(format!(
-            "There is no add-on called \"{id}\". Update Wirecatch if this add-on is new."
-        )))
+fn check_id(id: AddonId) -> Result<()> {
+    match id {
+        AddonId::Media => Ok(()),
+        AddonId::Unknown => Err(CoreError::Invalid(
+            "There is no such add-on in this version of Wirecatch. Update Wirecatch if this add-on is new.".into(),
+        )),
     }
 }
 

@@ -1,8 +1,10 @@
 <script lang="ts">
-  // A download window (D23), opened by the desktop shell as `window/download?question=<id>` or
-  // `window/download?download=<id>`. It loads only its own question or download, never the
-  // whole list, because every window is a webview of its own.
+  // A download window (D23), opened by the desktop shell at `DOWNLOAD_WINDOW_PAGE` with the id of
+  // its question (`QUESTION_PARAMETER`) or of its download (`DOWNLOAD_PARAMETER`). It loads only
+  // its own question or download, never the whole list, because every window is a webview of its
+  // own.
   import { PRODUCT_NAME } from '@wirecatch/product';
+  import { DOWNLOAD_PARAMETER, QUESTION_PARAMETER } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
   import { followTheme } from '$lib/theme.svelte';
@@ -17,9 +19,9 @@
       const value = params.get(key);
       return value !== null && /^\d+$/.test(value) ? Number(value) : null;
     };
-    const question = number('question');
+    const question = number(QUESTION_PARAMETER);
     if (question !== null) return { question };
-    const download = number('download');
+    const download = number(DOWNLOAD_PARAMETER);
     return download === null ? null : { download };
   }
 

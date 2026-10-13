@@ -12,11 +12,12 @@ import type {
   DownloadSummary,
   MediaChoice,
   MediaSelection,
+  Question,
   Queue,
   UiEvent,
 } from '@wirecatch/protocol';
 import { isAddonRequired, isInstalled, MEDIA_ADDON } from '../addons';
-import type { Backend, Question } from '../backend';
+import type { Backend } from '../backend';
 import { Clock } from '../state/clock.svelte';
 import { dispatch, HeldEvents, ignore, type UiEventHandlers } from '../state/events';
 import { errorMessage, Runner } from '../state/runner';

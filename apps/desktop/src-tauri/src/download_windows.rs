@@ -31,8 +31,9 @@ use std::sync::{Mutex, PoisonError};
 use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
 use wirecatch_core::Manager;
 use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS};
+use wirecatch_protocol::desktop::{DOWNLOAD_PARAMETER, DOWNLOAD_WINDOW_PAGE, QUESTION_PARAMETER};
+use wirecatch_protocol::{DownloadId, QuestionId};
 
 use crate::host::Core;
 use crate::questions::open_question_ids;
@@ -116,7 +117,7 @@ pub fn is_download_window(label: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shows {
     /// An open question, by its id in the core.
-    Question(u64),
+    Question(QuestionId),
     /// A download's progress.
     Download(DownloadId),
 }
@@ -126,7 +127,7 @@ impl Shows {
     #[must_use]
     pub fn label(self) -> String {
         match self {
-            Self::Question(id) => format!("{LABEL_PREFIX}q{id}"),
+            Self::Question(id) => format!("{LABEL_PREFIX}q{}", id.0),
             Self::Download(id) => format!("{LABEL_PREFIX}d{}", id.0),
         }
     }
@@ -135,8 +136,8 @@ impl Shows {
     #[must_use]
     pub fn route(self) -> String {
         match self {
-            Self::Question(id) => format!("window/download?question={id}"),
-            Self::Download(id) => format!("window/download?download={}", id.0),
+            Self::Question(id) => format!("{DOWNLOAD_WINDOW_PAGE}?{QUESTION_PARAMETER}={}", id.0),
+            Self::Download(id) => format!("{DOWNLOAD_WINDOW_PAGE}?{DOWNLOAD_PARAMETER}={}", id.0),
         }
     }
 }
@@ -166,8 +167,8 @@ pub enum Step {
 #[derive(Debug, Default)]
 pub struct Registry {
     windows: Vec<OpenWindow>,
-    waiting: VecDeque<u64>,
-    put_aside: BTreeSet<u64>,
+    waiting: VecDeque<QuestionId>,
+    put_aside: BTreeSet<QuestionId>,
 }
 
 impl Registry {
@@ -178,7 +179,7 @@ impl Registry {
     }
 
     /// Questions waiting for room to open their window, oldest first.
-    pub fn waiting(&self) -> impl Iterator<Item = u64> + '_ {
+    pub fn waiting(&self) -> impl Iterator<Item = QuestionId> + '_ {
         self.waiting.iter().copied()
     }
 
@@ -201,7 +202,7 @@ impl Registry {
         self.windows.iter().find(|w| w.shows == shows)
     }
 
-    fn place_question(&mut self, id: u64) -> Option<Step> {
+    fn place_question(&mut self, id: QuestionId) -> Option<Step> {
         if self.window_showing(Shows::Question(id)).is_some() || self.waiting.contains(&id) {
             return None;
         }
@@ -221,14 +222,14 @@ impl Registry {
 
     /// The core asked question `id`, or moved it on (the video was read, the add-on is
     /// needed): its window opens, or waits for room, unless it is already open or waiting.
-    pub fn ask(&mut self, id: u64) -> Option<Step> {
+    pub fn ask(&mut self, id: QuestionId) -> Option<Step> {
         self.put_aside.remove(&id);
         self.place_question(id)
     }
 
     /// Questions found open in the core (`open`, oldest first) at start or after missed
     /// events: windows for those that have none, except the ones the person put aside.
-    pub fn restore(&mut self, open: &[u64]) -> Vec<Step> {
+    pub fn restore(&mut self, open: &[QuestionId]) -> Vec<Step> {
         self.put_aside.retain(|id| open.contains(id));
         self.waiting.retain(|id| open.contains(id));
         let mut steps = Vec::new();
@@ -242,7 +243,7 @@ impl Registry {
 
     /// The person asked to see every open question (`open`, oldest first): open windows come
     /// to the front, closed ones open again.
-    pub fn show_all(&mut self, open: &[u64]) -> Vec<Step> {
+    pub fn show_all(&mut self, open: &[QuestionId]) -> Vec<Step> {
         self.waiting.retain(|id| open.contains(id));
         let mut steps = Vec::new();
         for id in open {
@@ -256,7 +257,7 @@ impl Registry {
     }
 
     /// Question `id` is no longer open in the core. Its window, if any, says so itself.
-    pub fn closed(&mut self, id: u64) {
+    pub fn closed(&mut self, id: QuestionId) {
         self.waiting.retain(|w| *w != id);
         self.put_aside.remove(&id);
     }
@@ -379,7 +380,7 @@ impl DownloadWindows {
     }
 
     /// The questions waiting for room to open their window, oldest first, for tests.
-    pub fn waiting(&self) -> Vec<u64> {
+    pub fn waiting(&self) -> Vec<QuestionId> {
         self.with(|r| r.waiting().collect())
     }
 }
@@ -395,12 +396,12 @@ fn update<R: Runtime>(app: &AppHandle<R>, change: impl FnOnce(&mut Registry) -> 
 }
 
 /// The core asked question `id` (or moved it on): its window opens if it is not open.
-pub fn ask<R: Runtime>(app: &AppHandle<R>, id: u64) {
+pub fn ask<R: Runtime>(app: &AppHandle<R>, id: QuestionId) {
     update(app, |r| r.ask(id).into_iter().collect());
 }
 
 /// Question `id` closed in the core.
-pub fn question_closed<R: Runtime>(app: &AppHandle<R>, id: u64) {
+pub fn question_closed<R: Runtime>(app: &AppHandle<R>, id: QuestionId) {
     update(app, |r| {
         r.closed(id);
         Vec::new()
@@ -409,7 +410,7 @@ pub fn question_closed<R: Runtime>(app: &AppHandle<R>, id: u64) {
 
 /// Every question open in the core right now, oldest first.
 #[must_use]
-pub fn open_questions(manager: &Manager) -> Vec<u64> {
+pub fn open_questions(manager: &Manager) -> Vec<QuestionId> {
     open_question_ids(
         &manager.pending_confirmations(),
         &manager.pending_media_choices(),
@@ -610,6 +611,10 @@ const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
 mod tests {
     use super::*;
 
+    fn q(id: u64) -> QuestionId {
+        QuestionId(id)
+    }
+
     #[test]
     fn a_window_takes_the_height_its_content_needs_within_the_screen() {
         // A short progress view: smaller than the opening size, rounded up to whole pixels.
@@ -641,11 +646,11 @@ mod tests {
 
     #[test]
     fn labels_never_mix_questions_and_downloads() {
-        assert_eq!(Shows::Question(7).label(), "download-q7");
+        assert_eq!(Shows::Question(q(7)).label(), "download-q7");
         assert_eq!(Shows::Download(DownloadId(7)).label(), "download-d7");
         assert!(is_download_window("download-q7"));
         assert!(!is_download_window("main"));
-        assert_eq!(Shows::Question(7).route(), "window/download?question=7");
+        assert_eq!(Shows::Question(q(7)).route(), "window/download?question=7");
         assert_eq!(
             Shows::Download(DownloadId(3)).route(),
             "window/download?download=3"
@@ -668,21 +673,21 @@ mod tests {
     #[test]
     fn at_most_five_questions_ask_at_once_and_the_rest_wait_their_turn() {
         let mut r = Registry::default();
-        let slots: Vec<usize> = (1..=5).map(|id| opened(r.ask(id)).slot).collect();
+        let slots: Vec<usize> = (1..=5).map(|id| opened(r.ask(q(id))).slot).collect();
         assert_eq!(slots, [0, 1, 2, 3, 4]);
-        assert_eq!(r.ask(6), None);
-        assert_eq!(r.ask(7), None);
-        assert_eq!(r.waiting().collect::<Vec<_>>(), [6, 7]);
+        assert_eq!(r.ask(q(6)), None);
+        assert_eq!(r.ask(q(7)), None);
+        assert_eq!(r.waiting().collect::<Vec<_>>(), [q(6), q(7)]);
         // Asking again (the video was read) opens nothing twice.
-        assert_eq!(r.ask(3), None);
-        assert_eq!(r.ask(6), None);
+        assert_eq!(r.ask(q(3)), None);
+        assert_eq!(r.ask(q(6)), None);
 
         // A window that starts showing its download makes room; it keeps its place.
         let steps = r.became_download("download-q2", DownloadId(40));
         let [Step::Open(next)] = steps.as_slice() else {
             panic!("{steps:?}")
         };
-        assert_eq!((next.shows, next.slot), (Shows::Question(6), 5));
+        assert_eq!((next.shows, next.slot), (Shows::Question(q(6)), 5));
         assert!(r.windows().iter().any(|w| w.label == "download-q2"
             && w.shows == Shows::Download(DownloadId(40))
             && w.slot == 1));
@@ -692,48 +697,48 @@ mod tests {
         let [Step::Open(next)] = steps.as_slice() else {
             panic!("{steps:?}")
         };
-        assert_eq!((next.shows, next.slot), (Shows::Question(7), 0));
+        assert_eq!((next.shows, next.slot), (Shows::Question(q(7)), 0));
     }
 
     #[test]
     fn a_question_closed_while_waiting_never_opens() {
         let mut r = Registry::default();
         for id in 1..=6 {
-            r.ask(id);
+            r.ask(q(id));
         }
-        r.closed(6);
+        r.closed(q(6));
         assert_eq!(r.gone("download-q1"), []);
     }
 
     #[test]
     fn a_window_closed_by_the_person_stays_closed_until_asked_for() {
         let mut r = Registry::default();
-        opened(r.ask(1));
-        opened(r.ask(2));
+        opened(r.ask(q(1)));
+        opened(r.ask(q(2)));
         assert_eq!(r.gone("download-q1"), []);
         // At start or after missed events, a put-aside question does not pop up again, and
         // one still open is not opened twice.
-        assert_eq!(r.restore(&[1, 2]), []);
+        assert_eq!(r.restore(&[q(1), q(2)]), []);
         // The person asks for the waiting questions: the open one comes forward, the closed
         // one opens again.
-        let steps = r.show_all(&[1, 2]);
+        let steps = r.show_all(&[q(1), q(2)]);
         assert_eq!(steps.len(), 2);
         assert!(steps.contains(&Step::Focus("download-q2".into())));
         assert!(
             steps
                 .iter()
-                .any(|s| matches!(s, Step::Open(w) if w.shows == Shows::Question(1)))
+                .any(|s| matches!(s, Step::Open(w) if w.shows == Shows::Question(q(1))))
         );
         // The core moving a put-aside question on (its quality list is ready) opens it.
         assert_eq!(r.gone("download-q1"), []);
-        opened(r.ask(1));
+        opened(r.ask(q(1)));
     }
 
     #[test]
     fn restore_opens_only_what_is_open_in_the_core_and_has_no_window() {
         let mut r = Registry::default();
-        opened(r.ask(3));
-        let steps = r.restore(&[2, 3, 4]);
+        opened(r.ask(q(3)));
+        let steps = r.restore(&[q(2), q(3), q(4)]);
         let shown: Vec<Shows> = steps
             .iter()
             .map(|s| match s {
@@ -741,16 +746,16 @@ mod tests {
                 Step::Focus(l) => panic!("focused {l}"),
             })
             .collect();
-        assert_eq!(shown, [Shows::Question(2), Shows::Question(4)]);
+        assert_eq!(shown, [Shows::Question(q(2)), Shows::Question(q(4))]);
         // Answered questions are not in the core's lists, so nothing opens for them.
-        assert_eq!(r.restore(&[2, 3, 4]), []);
+        assert_eq!(r.restore(&[q(2), q(3), q(4)]), []);
     }
 
     #[test]
     fn a_progress_window_is_opened_once_and_is_not_limited() {
         let mut r = Registry::default();
         for id in 1..=5 {
-            r.ask(id);
+            r.ask(q(id));
         }
         let Step::Open(window) = r.show_download(DownloadId(9)) else {
             panic!("expected a new window")
@@ -769,7 +774,7 @@ mod tests {
         );
         // A window that could not be made is forgotten without being put aside.
         r.failed("download-q2");
-        assert_eq!(r.restore(&[2]).len(), 1);
+        assert_eq!(r.restore(&[q(2)]).len(), 1);
     }
 
     const SCREEN: Area = Area {

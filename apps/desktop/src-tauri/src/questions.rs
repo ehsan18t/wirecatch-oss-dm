@@ -9,11 +9,12 @@
 //!
 //! The core keeps every open question (`pending_confirmations`, `pending_media_choices`,
 //! `pending_addon_requests`, `media_being_read`), so a window opened or reloaded later loads its
-//! question from there with [`Question`].
+//! question from there as a [`Question`](wirecatch_protocol::app::Question).
 
-use serde::Serialize;
-use wirecatch_core::{AddonRequestItem, MediaReading};
-use wirecatch_protocol::app::{MediaChoice, PendingCapture, UiEvent};
+use wirecatch_protocol::QuestionId;
+use wirecatch_protocol::app::{
+    AddonRequestItem, MediaChoice, MediaReading, PendingCapture, UiEvent,
+};
 
 /// What a core event needs from the desktop besides reaching the open windows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,9 +23,9 @@ pub enum Attention {
     None,
     /// A question with this id is asked (or moves on to its next step): its window opens if it
     /// is not open yet.
-    Ask(u64),
+    Ask(QuestionId),
     /// The question with this id is no longer open; it no longer waits for a window.
-    Closed(u64),
+    Closed(QuestionId),
     /// A client asked to see Wirecatch: the main window comes to the front.
     ShowMain,
     /// Something went wrong that the person must know about: a system notification when no
@@ -59,21 +60,6 @@ pub fn attention(event: &UiEvent) -> Attention {
     }
 }
 
-/// One open question, as a download window shows it (`get_question`). The interface mirrors
-/// this as `Question` in `apps/desktop/src/lib/backend/types.ts`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
-pub enum Question {
-    /// A browser file waiting for Download now, Download later or Cancel.
-    Capture(PendingCapture),
-    /// A stream or video page being read for its qualities.
-    Reading(MediaReading),
-    /// A video waiting for the person to pick a quality.
-    Choice(MediaChoice),
-    /// A video page waiting for the media add-on.
-    Addon(AddonRequestItem),
-}
-
 /// Every open question's id, oldest first (ids only grow), each once.
 #[must_use]
 pub fn open_question_ids(
@@ -81,8 +67,8 @@ pub fn open_question_ids(
     choices: &[MediaChoice],
     addon_pages: &[AddonRequestItem],
     reading: &[MediaReading],
-) -> Vec<u64> {
-    let mut ids: Vec<u64> = captures
+) -> Vec<QuestionId> {
+    let mut ids: Vec<QuestionId> = captures
         .iter()
         .map(|c| c.id)
         .chain(choices.iter().map(|c| c.id))
@@ -98,11 +84,11 @@ pub fn open_question_ids(
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{AddonInfo, AddonState, Category, UserError};
+    use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, Category, UserError};
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {
-            id,
+            id: QuestionId(id),
             title: "Talk".into(),
             page_url: None,
             options: vec![],
@@ -116,7 +102,7 @@ mod tests {
 
     fn addon(state: AddonState) -> AddonInfo {
         AddonInfo {
-            id: "media".into(),
+            id: AddonId::Media,
             name: "Media add-on".into(),
             description: "Downloads video".into(),
             state,
@@ -129,7 +115,7 @@ mod tests {
 
     fn capture(id: u64) -> PendingCapture {
         PendingCapture {
-            id,
+            id: QuestionId(id),
             url: "https://example.com/a.zip".into(),
             file_name: "a.zip".into(),
             folder: "C:/Downloads".into(),
@@ -144,34 +130,34 @@ mod tests {
     fn every_step_of_a_question_asks_for_its_window() {
         assert_eq!(
             attention(&UiEvent::ConfirmationRequested(capture(1))),
-            Attention::Ask(1)
+            Attention::Ask(QuestionId(1))
         );
         assert_eq!(
             attention(&UiEvent::MediaAnalysing {
-                id: 2,
+                id: QuestionId(2),
                 url: "https://videos.example/watch".into()
             }),
-            Attention::Ask(2)
+            Attention::Ask(QuestionId(2))
         );
         assert_eq!(
             attention(&UiEvent::MediaChoiceRequested(choice(2))),
-            Attention::Ask(2)
+            Attention::Ask(QuestionId(2))
         );
         assert_eq!(
             attention(&UiEvent::AddonRequired {
                 addon: addon(AddonState::NotInstalled),
                 url: "https://youtube.com/x".into(),
-                id: 3,
+                id: QuestionId(3),
             }),
-            Attention::Ask(3)
+            Attention::Ask(QuestionId(3))
         );
     }
 
     #[test]
     fn a_closed_question_and_a_storage_failure_are_told_apart() {
         assert_eq!(
-            attention(&UiEvent::ConfirmationClosed { id: 4 }),
-            Attention::Closed(4)
+            attention(&UiEvent::ConfirmationClosed { id: QuestionId(4) }),
+            Attention::Closed(QuestionId(4))
         );
         let failed = attention(&UiEvent::StorageFailed(UserError {
             message: "The disk is full.".into(),
@@ -194,32 +180,15 @@ mod tests {
     #[test]
     fn open_questions_are_listed_oldest_first_once() {
         let reading = [MediaReading {
-            id: 5,
+            id: QuestionId(5),
             url: "https://videos.example/a".into(),
         }];
         let pages = [AddonRequestItem {
-            id: 3,
+            id: QuestionId(3),
             addon: addon(AddonState::NotInstalled),
             url: "https://youtube.com/x".into(),
         }];
         let ids = open_question_ids(&[capture(4), capture(1)], &[choice(2)], &pages, &reading);
-        assert_eq!(ids, [1, 2, 3, 4, 5]);
-    }
-
-    /// The interface reads this shape (`Question` in `src/lib/backend/types.ts`).
-    #[test]
-    fn a_question_is_sent_with_its_kind() {
-        let json = serde_json::to_value(Question::Reading(MediaReading {
-            id: 7,
-            url: "https://videos.example/a".into(),
-        }))
-        .unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({"kind": "reading", "data": {"id": 7, "url": "https://videos.example/a"}})
-        );
-        let json = serde_json::to_value(Question::Capture(capture(1))).unwrap();
-        assert_eq!(json["kind"], "capture");
-        assert_eq!(json["data"]["file_name"], "a.zip");
+        assert_eq!(ids, [1, 2, 3, 4, 5].map(QuestionId));
     }
 }

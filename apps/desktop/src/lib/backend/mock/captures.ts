@@ -5,10 +5,11 @@ import type {
   DownloadId,
   DownloadSummary,
   PendingCapture,
+  Question,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
-import { BackendError, type Question } from '../types';
+import { BackendError } from '../types';
 import { categoryFor, folderFor } from './data';
 import type { MockState } from './state';
 

@@ -7,6 +7,7 @@ import type {
   DownloadId,
   DownloadSummary,
   MediaChoice,
+  MediaReading,
   PendingCapture,
   ProcessingStep,
   Queue,
@@ -18,7 +19,7 @@ import type {
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
 import type { WindowRegistry } from '../../sample-windows';
-import { BackendError, type MediaReading } from '../types';
+import { BackendError } from '../types';
 import {
   categoryFor,
   defaultQueues,

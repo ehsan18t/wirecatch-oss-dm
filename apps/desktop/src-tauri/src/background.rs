@@ -16,7 +16,7 @@ use crate::activity::{Activity, Finished, notification_text};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
-use crate::{EVENT_NAME, RESYNC_EVENT, download_windows, sleep, tray};
+use crate::{RESYNC_EVENT, UI_EVENT, download_windows, sleep, tray};
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
@@ -25,7 +25,7 @@ pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
 pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
 /// Sends every core event to every open window (the main window and the download windows) on
-/// [`EVENT_NAME`], and opens a download window for each question the core asks (see
+/// [`UI_EVENT`], and opens a download window for each question the core asks (see
 /// [`crate::questions`] and [`crate::download_windows`]), whatever the main window is doing. A
 /// storage failure with no main window to show it becomes a system notification. With no
 /// window open at all, events are not sent: a window loads everything fresh when it opens. If
@@ -60,11 +60,11 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                 // when it wakes.
                 let asleep = sleep::skips_events(&app, crate::window::MAIN_WINDOW);
                 let sent = if asleep {
-                    app.emit_filter(EVENT_NAME, &event, |target| {
+                    app.emit_filter(UI_EVENT, &event, |target| {
                         !matches!(target, EventTarget::WebviewWindow { label } if label == crate::window::MAIN_WINDOW)
                     })
                 } else {
-                    app.emit(EVENT_NAME, &event)
+                    app.emit(UI_EVENT, &event)
                 };
                 if let Err(e) = sent {
                     tracing::warn!("could not send an event to the windows: {e}");

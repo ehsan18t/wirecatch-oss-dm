@@ -1,78 +1,22 @@
 //! The Wirecatch desktop app: one process that hosts the download manager (`wirecatch-core`),
 //! serves the browser bridge, sits in the tray, and shows the interface when asked (D13).
 //!
-//! # Command contract
+//! # Commands and events
 //!
-//! The interface (`apps/desktop/src/lib/backend/tauri.ts`) calls exactly these commands with
-//! these parameter names (the webview sends the camelCase form, for example `deleteFile` for
-//! `delete_file`; Tauri maps it). A test on the TypeScript side checks that both lists agree.
-//! Every command fails with a `ProtocolError`: a code the interface acts on (never the wording)
-//! and a plain-language message, the core's own error text or the shell's.
+//! The interface calls the commands declared in `wirecatch_protocol::desktop`, each with its
+//! arguments in one `args` parameter; `commands.rs` registers exactly those, and the interface
+//! calls them through the `CommandMap` generated from the same declarations. Every command fails
+//! with a `ProtocolError`: a code the interface acts on (never the wording) and a plain-language
+//! message, the core's own error text or the shell's. Every command reaches the real core; none
+//! is pending. The core checks for add-on updates by itself (once a day, while
+//! `auto_update_addons` is on), so the desktop never schedules it.
 //!
-//! | Command | Parameters | Returns |
-//! |---|---|---|
-//! | `list_downloads` | none | `Vec<DownloadSummary>`, in queue order |
-//! | `add_download` | `request: AddRequest` | `DownloadId` |
-//! | `pause` | `id: DownloadId` | nothing |
-//! | `resume` | `id: DownloadId` | nothing |
-//! | `cancel` | `id: DownloadId` | nothing |
-//! | `remove` | `ids: Vec<DownloadId>`, `delete_file: bool` | nothing |
-//! | `retry` | `id: DownloadId` | nothing |
-//! | `refresh_link` | `id: DownloadId`, `url: String` | nothing |
-//! | `keep_original` | `id: DownloadId` | nothing; a video whose conversion failed is saved as it was downloaded (D24) |
-//! | `move_to_queue` | `ids: Vec<DownloadId>`, `queue: QueueId` | nothing |
-//! | `reorder` | `queue: QueueId`, `ids_in_order: Vec<DownloadId>` | nothing |
-//! | `pause_all` | none | nothing |
-//! | `resume_all` | none | nothing |
-//! | `list_queues` | none | `Vec<Queue>` |
-//! | `create_queue` | `name: String` | `Queue` |
-//! | `update_queue` | `queue: Queue` | nothing |
-//! | `delete_queue` | `id: QueueId` | nothing |
-//! | `set_queue_paused` | `id: QueueId`, `paused: bool` | nothing |
-//! | `start_queue_now` | `id: QueueId` | nothing |
-//! | `get_settings` | none | `AppSettings` |
-//! | `change_settings` | `patch: AppSettingsPatch` | nothing; only the settings in the patch change |
-//! | `export_settings` | `path: String` | nothing |
-//! | `preview_import` | `path: String` | `ImportPreview`: what importing would change |
-//! | `import_settings` | `path: String` | nothing |
-//! | `pending_confirmations` | none | `Vec<PendingCapture>` |
-//! | `confirm_capture` | `id: u64`, `confirmation: CaptureConfirmation` | `DownloadId` of the new download; a download window that asked becomes its progress window |
-//! | `reject_capture` | `id: u64` | nothing |
-//! | `open_file` | `id: DownloadId`, `allow_program: Option<bool>` | nothing; a program is refused unless `allow_program` |
-//! | `is_program` | `id: DownloadId` | `bool`: opening it would run code, so ask first |
-//! | `open_folder` | `id: DownloadId` | nothing |
-//! | `set_download_folder` | `id: DownloadId`, `folder: String` | nothing |
-//! | `take_launch_links` | none | `Vec<String>`: links passed on the command line, handed over once |
-//! | `choose_media` | `id: u64`, `selection: MediaSelection` | `DownloadId`, like `confirm_capture`; fails while an option that needs the media add-on lacks it (the core then sends `AddonRequired` and keeps the choice) |
-//! | `dismiss_media_choice` | `id: u64` | nothing |
-//! | `pending_media_choices` | none | `Vec<MediaChoice>`: choices still open |
-//! | `pending_addon_requests` | none | `Vec<{ id: u64, addon: AddonInfo, url: String }>`: pages waiting for the add-on, oldest first; `dismiss_media_choice(id)` drops one |
-//! | `list_addons` | none | `Vec<AddonInfo>` |
-//! | `install_addon` | `id: String` | nothing; progress and the result arrive as `AddonsChanged` |
-//! | `update_addon` | `id: String` | nothing; like `install_addon` |
-//! | `remove_addon` | `id: String` | nothing |
-//! | `cancel_addon_operation` | `id: String` | nothing; stops an install or update, keeping an installed version working |
-//! | `check_addon_updates` | none | `Vec<AddonInfo>` after looking for a newer media add-on now; fails when the releases cannot be reached |
-//! | `get_question` | `id: u64` | `Option<Question>` (see [`questions::Question`]): the open question a download window shows |
-//! | `get_download` | `id: DownloadId` | `DownloadSummary` of one download, for its progress window |
-//! | `earlier_download` | `id: u64` | `Option<DownloadSummary>`: the download in the list that question `id` is about again |
-//! | `show_question_windows` | none | nothing; every open question's window comes to the front or opens again |
-//! | `show_progress_window` | `id: DownloadId` | nothing; opens (or brings forward) that download's window |
-//! | `close_download_window` | none | nothing; closes the download window that calls it |
-//! | `main_window_ready` | none | nothing; shows the main window once its first view is drawn (it opens hidden, so it never flashes blank) |
-//! | `fit_download_window` | `height: f64` | nothing; makes the download window that calls it as tall as its content (`height`, logical pixels), within its screen |
-//!
-//! Every command reaches the real core; none is pending. The core checks for add-on updates
-//! by itself (once a day, while `auto_update_addons` is on), so the desktop never schedules it.
-//!
-//! # Events
-//!
-//! - [`EVENT_NAME`] carries every core `UiEvent`, in order.
+//! - [`UI_EVENT`] carries every core `UiEvent`, in order.
 //! - [`RESYNC_EVENT`] (no payload): events were missed; reload everything.
-//! - [`window::LINKS_EVENT`] (no payload): links arrived from a second launch; fetch them with
+//! - [`LINKS_EVENT`] (no payload): links arrived from a second launch; fetch them with
 //!   `take_launch_links`.
 //!
-//! Both events reach every window: the main window and the download windows (D23, see
+//! Every event reaches every window: the main window and the download windows (D23, see
 //! [`download_windows`]), which each keep only what concerns their download.
 //!
 //! # Starting
@@ -117,13 +61,11 @@ use wirecatch_ipc::IpcError;
 use wirecatch_product::Channel;
 
 pub use window::{BACKGROUND_FLAG, wants_background};
+pub use wirecatch_protocol::desktop::{LINKS_EVENT, RESYNC_EVENT, UI_EVENT};
 
 use crate::host::Core;
 use crate::lifecycle::Lifecycle;
 use crate::window::{Launch, LaunchLinks};
-
-/// The one Tauri event that carries every `UiEvent` to the webview.
-pub const EVENT_NAME: &str = "wirecatch://event";
 
 /// Shown by a copy of Wirecatch that finds another one already serving this user.
 pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
@@ -134,9 +76,6 @@ pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this
 pub fn autostart_name() -> &'static str {
     host::CHANNEL.name()
 }
-
-/// Tells the webview it missed events and must reload everything.
-pub const RESYNC_EVENT: &str = "wirecatch://resync";
 
 fn init_logging() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()

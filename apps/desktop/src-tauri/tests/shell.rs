@@ -23,9 +23,9 @@ use wirecatch_desktop_lib::download_windows::DownloadWindows;
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
-use wirecatch_desktop_lib::{EVENT_NAME, RESYNC_EVENT, tray};
+use wirecatch_desktop_lib::{RESYNC_EVENT, UI_EVENT, tray};
 use wirecatch_protocol::app::{Category, PendingCapture, UiEvent, UserError};
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_test_support::{PATIENCE, TestResult};
 
 fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
@@ -65,7 +65,7 @@ fn wait_until(what: &str, done: impl Fn() -> bool) {
 fn passed_on(handle: &tauri::AppHandle<MockRuntime>, name: &'static str) -> Arc<AtomicBool> {
     let seen = Arc::new(AtomicBool::new(false));
     let flag = seen.clone();
-    handle.listen_any(EVENT_NAME, move |e| {
+    handle.listen_any(UI_EVENT, move |e| {
         if e.payload().contains(name) {
             flag.store(true, Ordering::SeqCst);
         }
@@ -116,7 +116,7 @@ fn quit_before_the_download_list_opened_still_stops_it_cleanly() -> TestResult {
 
 fn capture() -> PendingCapture {
     PendingCapture {
-        id: 1,
+        id: QuestionId(1),
         url: "https://example.com/a.zip".into(),
         file_name: "a.zip".into(),
         folder: "C:/Downloads".into(),
@@ -174,7 +174,9 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
             fix: None,
         }))
         .unwrap();
-    sender.send(UiEvent::ConfirmationClosed { id: 1 }).unwrap();
+    sender
+        .send(UiEvent::ConfirmationClosed { id: QuestionId(1) })
+        .unwrap();
     wait_until("the events to be handled", || closed.load(Ordering::SeqCst));
     assert_eq!(
         handle.state::<ShownNotifications>().0.lock().unwrap().len(),
@@ -194,7 +196,7 @@ fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() -> Tes
     for id in 1..=6 {
         sender
             .send(UiEvent::ConfirmationRequested(PendingCapture {
-                id,
+                id: QuestionId(id),
                 ..capture()
             }))
             .unwrap();
@@ -207,7 +209,7 @@ fn five_questions_ask_at_once_and_the_sixth_waits_for_a_window_to_close() -> Tes
         })
     });
     wait_until("the sixth question to wait", || {
-        handle.state::<DownloadWindows>().waiting() == [6]
+        handle.state::<DownloadWindows>().waiting() == [QuestionId(6)]
     });
     assert!(handle.get_webview_window("download-q6").is_none());
 
@@ -239,7 +241,7 @@ fn with_a_window_events_reach_it_and_missed_events_ask_for_a_reload() -> TestRes
 
     let events = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let seen = events.clone();
-    handle.listen_any(EVENT_NAME, move |e| {
+    handle.listen_any(UI_EVENT, move |e| {
         seen.lock().unwrap().push(e.payload().to_owned());
     });
     let resyncs = Arc::new(AtomicBool::new(false));

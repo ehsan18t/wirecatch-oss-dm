@@ -12,15 +12,15 @@ use wirecatch_core::Manager;
 use wirecatch_desktop_lib::api::{self, Reveal};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
-use wirecatch_desktop_lib::questions::Question;
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AddRequest, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    MediaSelection, Queue, Theme,
+    AddRequest, AddonId, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
+    DownloadSummary, MediaSelection, Question, Queue, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_protocol::wire::ErrorCode;
+use wirecatch_protocol::{DownloadId, QuestionId};
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::{PATIENCE, TestResult, test_data};
 
@@ -332,7 +332,7 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
 
     let addons = api::list_addons(&manager);
     assert_eq!(addons.len(), 1);
-    assert_eq!(addons[0].id, "media");
+    assert_eq!(addons[0].id, AddonId::Media);
     assert_eq!(addons[0].state, AddonState::NotInstalled);
     assert!(
         addons[0].size.is_some(),
@@ -353,29 +353,27 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
         subtitle_files: false,
         chapters: false,
     };
-    let gone = api::choose_media(&manager, 99, selection)
+    let gone = api::choose_media(&manager, QuestionId(99), selection)
         .await
         .unwrap_err();
-    assert!(
-        gone.message.contains("already confirmed or dismissed"),
-        "{gone}"
-    );
-    let gone = api::dismiss_media_choice(&manager, 99).unwrap_err();
-    assert!(
-        gone.message.contains("already confirmed or dismissed"),
-        "{gone}"
-    );
+    assert_eq!(gone.code, ErrorCode::NotFound, "{gone}");
+    let gone = api::dismiss_media_choice(&manager, QuestionId(99)).unwrap_err();
+    assert_eq!(gone.code, ErrorCode::NotFound, "{gone}");
 
-    let unknown = api::install_addon(&manager, "flash").await.unwrap_err();
-    assert!(unknown.message.contains("no add-on called"), "{unknown}");
-    let unknown = api::update_addon(&manager, "flash").await.unwrap_err();
-    assert!(unknown.message.contains("no add-on called"), "{unknown}");
+    let unknown = api::install_addon(&manager, AddonId::Unknown)
+        .await
+        .unwrap_err();
+    assert!(unknown.message.contains("no such add-on"), "{unknown}");
+    let unknown = api::update_addon(&manager, AddonId::Unknown)
+        .await
+        .unwrap_err();
+    assert!(unknown.message.contains("no such add-on"), "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
-    api::remove_addon(&manager, "media").await?;
+    api::remove_addon(&manager, AddonId::Media).await?;
     // Stopping with nothing in progress is fine; an unknown add-on is refused.
-    api::cancel_addon_operation(&manager, "media").await?;
+    api::cancel_addon_operation(&manager, AddonId::Media).await?;
     assert!(
-        api::cancel_addon_operation(&manager, "flash")
+        api::cancel_addon_operation(&manager, AddonId::Unknown)
             .await
             .is_err()
     );
@@ -429,7 +427,7 @@ async fn a_download_window_finds_its_question_and_its_download() -> TestResult {
     };
     assert_eq!(found, asked);
     assert!(api::earlier_download(&manager, asked.id).is_none());
-    assert!(api::question(&manager, 4242).is_none());
+    assert!(api::question(&manager, QuestionId(4242)).is_none());
 
     let later = CaptureConfirmation {
         later: true,

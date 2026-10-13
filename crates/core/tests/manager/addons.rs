@@ -1,7 +1,7 @@
 //! The media add-on: install from a local server, checksum refusal, safe
 //! unpacking, progress, idempotence, updates and removal.
 
-use wirecatch_protocol::app::{AddonState, UiEvent};
+use wirecatch_protocol::app::{AddonId, AddonState, UiEvent};
 
 use crate::common::TestResult;
 use crate::media_support::{
@@ -17,7 +17,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
     let h = harness(sources).await?;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     // Progress is reported while it downloads.
     let installing = wait_addon(&mut ui, "installing", |a| {
         matches!(a.state, AddonState::Installing { .. })
@@ -84,7 +84,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
 
     // Installing again does nothing: no request, no change.
     let before = server.requests("r1/yt-dlp");
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(server.requests("r1/yt-dlp"), before);
@@ -94,7 +94,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
     h.restart().await?;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 
-    assert!(h.manager.install_addon("something-else").await.is_err());
+    assert!(h.manager.install_addon(AddonId::Unknown).await.is_err());
     Ok(())
 }
 
@@ -152,7 +152,7 @@ async fn remove_deletes_the_add_on() -> TestResult {
     let h = harness(publish(&server, &Releases::fake()?, "rm")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     let mut ui = h.manager.subscribe();
-    h.manager.remove_addon("media").await.unwrap();
+    h.manager.remove_addon(AddonId::Media).await.unwrap();
     let info = next_event(&mut ui, "AddonsChanged", |e| match e {
         UiEvent::AddonsChanged(list) => Some(list[0].clone()),
         _ => None,
@@ -161,7 +161,7 @@ async fn remove_deletes_the_add_on() -> TestResult {
     assert_eq!(info.state, AddonState::NotInstalled);
     assert!(!addon_dir(&h).exists());
     // Removing what is not there is fine.
-    h.manager.remove_addon("media").await.unwrap();
+    h.manager.remove_addon(AddonId::Media).await.unwrap();
     Ok(())
 }
 
@@ -172,17 +172,28 @@ async fn stopping_a_first_install_leaves_nothing_behind() -> TestResult {
     // Slow enough to still be running when it is stopped.
     server.throttle("cx/yt-dlp", Some(32 * KIB));
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     wait_addon(&mut ui, "installing", |a| {
         matches!(a.state, AddonState::Installing { .. })
     })
     .await;
-    h.manager.cancel_addon_operation("media").await.unwrap();
+    h.manager
+        .cancel_addon_operation(AddonId::Media)
+        .await
+        .unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
     assert!(!path_exists(addon_dir(&h)), "the partial files are gone");
     // Nothing in progress: stopping again is fine.
-    h.manager.cancel_addon_operation("media").await.unwrap();
-    assert!(h.manager.cancel_addon_operation("flash").await.is_err());
+    h.manager
+        .cancel_addon_operation(AddonId::Media)
+        .await
+        .unwrap();
+    assert!(
+        h.manager
+            .cancel_addon_operation(AddonId::Unknown)
+            .await
+            .is_err()
+    );
     Ok(())
 }
 
@@ -207,7 +218,10 @@ async fn stopping_an_update_keeps_the_installed_version_working() -> TestResult 
         matches!(a.state, AddonState::Installing { .. })
     })
     .await;
-    h.manager.cancel_addon_operation("media").await.unwrap();
+    h.manager
+        .cancel_addon_operation(AddonId::Media)
+        .await
+        .unwrap();
 
     let info = h.manager.list_addons().remove(0);
     assert!(
@@ -483,7 +497,7 @@ async fn an_update_whose_checksum_list_is_not_signed_by_yt_dlp_is_refused() -> T
         assert_eq!(info.state, AddonState::Installed, "{sig:?}");
         assert!(info.latest_version.unwrap().contains("2026.08.19"));
         // Not even offered to the Update button.
-        h.manager.update_addon("media").await.unwrap();
+        h.manager.update_addon(AddonId::Media).await.unwrap();
         assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     }
     assert_eq!(server.requests(&program), 0, "the program was fetched");
@@ -589,13 +603,13 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
     assert_eq!(info.note.as_deref(), Some(waiting));
     assert!(info.latest_version.unwrap().contains("2026.08.19"));
     // The Update button does not install it either.
-    h.manager.update_addon("media").await.unwrap();
+    h.manager.update_addon(AddonId::Media).await.unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     // Nor does a repair (the path a reinstall takes too).
     let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
     std::fs::remove_file(&ytdlp).unwrap();
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
     assert!(
         info.installed_version.unwrap().contains("2026.08.19"),
@@ -696,7 +710,7 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() -> TestResult {
     let info = h.manager.list_addons().remove(0);
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_eq!(info.size, Some(new_zip.len() as u64));
-    h.manager.update_addon("media").await.unwrap();
+    h.manager.update_addon(AddonId::Media).await.unwrap();
     crate::common::wait_until("ffmpeg updated", || {
         let info = h.manager.list_addons().remove(0);
         (info.state == AddonState::Installed).then_some(())
@@ -740,7 +754,7 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
         _ => None,
     })
     .await;
-    assert_eq!(summary.addons_to_offer, vec!["media".to_string()]);
+    assert_eq!(summary.addons_to_offer, vec![AddonId::Media]);
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert_eq!(
         second.manager.list_addons()[0].state,
@@ -760,7 +774,7 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
         _ => None,
     })
     .await;
-    assert_eq!(summary.addons_to_offer, [] as [std::string::String; 0]);
+    assert_eq!(summary.addons_to_offer, [] as [AddonId; 0]);
     Ok(())
 }
 
@@ -774,9 +788,9 @@ async fn a_program_taken_away_is_reinstalled() -> TestResult {
     let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
     std::fs::remove_file(&ytdlp).unwrap();
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
-    assert_eq!(info.id, "media");
+    assert_eq!(info.id, AddonId::Media);
     assert!(ytdlp.is_file(), "yt-dlp was not put back");
     Ok(())
 }
@@ -842,7 +856,7 @@ async fn a_record_no_longer_unreadable_shows_the_state_on_disk() -> TestResult {
     h.restart().await?;
     std::fs::remove_dir(&record)?;
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await?;
+    h.manager.install_addon(AddonId::Media).await?;
     // The look Install starts with comes first, before the install itself reports.
     let first = next_event(&mut ui, "AddonsChanged", |e| match e {
         UiEvent::AddonsChanged(list) => Some(list[0].clone()),
@@ -863,7 +877,7 @@ async fn a_failed_removal_leaves_a_consistent_state() -> TestResult {
     // Part of it is already gone, and another part cannot be deleted.
     std::fs::remove_file(dir.join("yt-dlp").join(exe("yt-dlp"))).unwrap();
     let lock = Lock::hold(&dir.join("deno"), &exe("deno"))?;
-    let removed = h.manager.remove_addon("media").await;
+    let removed = h.manager.remove_addon(AddonId::Media).await;
     assert!(removed.is_err(), "the removal should have failed");
     let shown = h.manager.list_addons().remove(0).state;
     drop(lock);
@@ -969,7 +983,7 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
         .unwrap();
     let id = h.manager.list_downloads()[0].id;
     h.wait_for(id, "downloading", |r| r.done > 0).await;
-    let refused = h.manager.remove_addon("media").await;
+    let refused = h.manager.remove_addon(AddonId::Media).await;
     assert!(
         matches!(refused, Err(wirecatch_core::CoreError::WrongState(_))),
         "{refused:?}"
@@ -1018,7 +1032,7 @@ async fn a_half_finished_update_is_recorded_and_repaired() -> TestResult {
     let dir = addon_dir(&h);
     let lock = Lock::hold(&dir.join("ffmpeg"), &format!("bin/{}", exe("ffmpeg")))?;
     let mut ui = h.manager.subscribe();
-    h.manager.update_addon("media").await.unwrap();
+    h.manager.update_addon(AddonId::Media).await.unwrap();
     wait_addon(&mut ui, "the update failed", |a| {
         matches!(a.state, AddonState::Failed { .. })
     })
@@ -1041,7 +1055,7 @@ async fn a_half_finished_update_is_recorded_and_repaired() -> TestResult {
     assert!(shown.contains("ffmpeg 9.0.2"), "{shown}");
 
     drop(lock);
-    h.manager.update_addon("media").await.unwrap();
+    h.manager.update_addon(AddonId::Media).await.unwrap();
     wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
     assert_eq!(
         std::fs::read(dir.join("ffmpeg").join("bin").join(exe("ffmpeg"))).unwrap(),
@@ -1074,7 +1088,7 @@ async fn a_repair_finds_a_file_changed_in_place() -> TestResult {
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
 
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await.unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
     wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
     assert_eq!(std::fs::read(&ytdlp).unwrap(), releases.ytdlp);
     Ok(())

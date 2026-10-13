@@ -146,7 +146,7 @@ async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
     assert_eq!(h.manager.pending_media_choices(), vec![choice.clone()]);
     assert_eq!(
         h.manager.media_being_read(),
-        [] as [wirecatch_core::MediaReading; 0]
+        [] as [wirecatch_protocol::app::MediaReading; 0]
     );
 
     // One answer covers both browser captures.
@@ -207,7 +207,7 @@ async fn a_page_being_read_is_listed_until_its_choice_comes() -> TestResult {
     assert_eq!(choice.id, reading.0);
     assert_eq!(
         h.manager.media_being_read(),
-        [] as [wirecatch_core::MediaReading; 0]
+        [] as [wirecatch_protocol::app::MediaReading; 0]
     );
     Ok(())
 }

@@ -12,9 +12,6 @@ pub const MAIN_WINDOW: &str = "main";
 /// The flag the bridge (and the start-with-system entry) passes: run with no window.
 pub const BACKGROUND_FLAG: &str = "--background";
 
-/// Tells the webview that links are waiting; it fetches them with `take_launch_links`.
-pub const LINKS_EVENT: &str = "wirecatch://links";
-
 /// True when the command line asks to start without a window. `args` includes the program name.
 pub fn wants_background<I, S>(args: I) -> bool
 where
@@ -194,7 +191,7 @@ pub fn handle_launch<R: Runtime>(app: &AppHandle<R>, launch: &Launch) {
         // An open interface picks them up now; a new one asks for them when it loads.
         warn_if_failed(
             "tell the interface that links arrived",
-            app.emit(LINKS_EVENT, ()),
+            app.emit(crate::LINKS_EVENT, ()),
         );
     }
     if launch.shows_window() {

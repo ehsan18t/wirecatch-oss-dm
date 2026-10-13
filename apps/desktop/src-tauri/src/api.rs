@@ -6,15 +6,14 @@
 
 use std::path::{Path, PathBuf};
 
-use wirecatch_core::{AddonRequestItem, Manager};
+use wirecatch_core::Manager;
 use wirecatch_protocol::app::{
-    AddRequest, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
-    DownloadSummary, ImportPreview, MediaChoice, MediaSelection, PendingCapture, Queue,
+    AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
+    CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
+    MediaSelection, PendingCapture, Question, Queue,
 };
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
-use wirecatch_protocol::{DownloadId, QueueId};
-
-use crate::questions::Question;
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
 /// What a command answers: a value, or an error with a code for the interface to act on and a
 /// message worded for a person. It is the protocol's error, so the interface reads one shape
@@ -281,7 +280,7 @@ pub fn pending_confirmations(m: &Manager) -> Vec<PendingCapture> {
 /// ([`Manager::confirm_capture`]).
 pub async fn confirm_capture(
     m: &Manager,
-    id: u64,
+    id: QuestionId,
     confirmation: CaptureConfirmation,
 ) -> CommandResult<DownloadId> {
     plain(m.confirm_capture(id, confirmation).await)
@@ -293,7 +292,7 @@ pub async fn confirm_capture(
 ///
 /// The question was already answered or withdrawn, or the manager has shut down
 /// ([`Manager::reject_capture`]).
-pub fn reject_capture(m: &Manager, id: u64) -> CommandResult<()> {
+pub fn reject_capture(m: &Manager, id: QuestionId) -> CommandResult<()> {
     plain(m.reject_capture(id))
 }
 
@@ -470,7 +469,7 @@ pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
 /// the manager has shut down ([`Manager::choose_media`]).
 pub async fn choose_media(
     m: &Manager,
-    id: u64,
+    id: QuestionId,
     selection: MediaSelection,
 ) -> CommandResult<DownloadId> {
     plain(m.choose_media(id, selection).await)
@@ -479,7 +478,7 @@ pub async fn choose_media(
 /// The open question `id`, for its download window; `None` once it is answered, dismissed or
 /// withdrawn by the browser.
 #[must_use]
-pub fn question(m: &Manager, id: u64) -> Option<Question> {
+pub fn question(m: &Manager, id: QuestionId) -> Option<Question> {
     if let Some(capture) = m.pending_confirmations().into_iter().find(|c| c.id == id) {
         return Some(Question::Capture(capture));
     }
@@ -507,7 +506,7 @@ pub fn get_download(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummar
 /// The newest download in the list that question `id` is about again, so its window can say
 /// so without blocking anything.
 #[must_use]
-pub fn earlier_download(m: &Manager, id: u64) -> Option<DownloadSummary> {
+pub fn earlier_download(m: &Manager, id: QuestionId) -> Option<DownloadSummary> {
     m.earlier_download(id)
 }
 
@@ -516,7 +515,7 @@ pub fn earlier_download(m: &Manager, id: u64) -> Option<DownloadSummary> {
 /// # Errors
 ///
 /// There is no such choice, or the manager has shut down ([`Manager::dismiss_media_choice`]).
-pub fn dismiss_media_choice(m: &Manager, id: u64) -> CommandResult<()> {
+pub fn dismiss_media_choice(m: &Manager, id: QuestionId) -> CommandResult<()> {
     plain(m.dismiss_media_choice(id))
 }
 
@@ -547,7 +546,7 @@ pub fn list_addons(m: &Manager) -> Vec<AddonInfo> {
 /// `id` names no add-on Wirecatch knows, or the manager has shut down
 /// ([`Manager::install_addon`]). A failed install is not an error here: it arrives as
 /// `AddonsChanged`.
-pub async fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
+pub async fn install_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
     plain(m.install_addon(id).await)
 }
 
@@ -556,7 +555,7 @@ pub async fn install_addon(m: &Manager, id: &str) -> CommandResult<()> {
 /// # Errors
 ///
 /// The errors of [`install_addon`].
-pub async fn update_addon(m: &Manager, id: &str) -> CommandResult<()> {
+pub async fn update_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
     plain(m.update_addon(id).await)
 }
 
@@ -579,7 +578,7 @@ pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
 ///
 /// `id` names no add-on Wirecatch knows, the install stopped but some of its files could not
 /// be deleted, or the manager has shut down ([`Manager::cancel_addon_operation`]).
-pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> {
+pub async fn cancel_addon_operation(m: &Manager, id: AddonId) -> CommandResult<()> {
     plain(m.cancel_addon_operation(id).await)
 }
 
@@ -589,7 +588,7 @@ pub async fn cancel_addon_operation(m: &Manager, id: &str) -> CommandResult<()> 
 ///
 /// `id` names no add-on Wirecatch knows, its files could not all be deleted, a video is being
 /// read or downloaded with it, or the manager has shut down ([`Manager::remove_addon`]).
-pub async fn remove_addon(m: &Manager, id: &str) -> CommandResult<()> {
+pub async fn remove_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
     plain(m.remove_addon(id).await)
 }
 

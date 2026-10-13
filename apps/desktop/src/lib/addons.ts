@@ -1,6 +1,6 @@
 // Add-ons in plain words: what state one is in and what the person can do about it.
 
-import type { AddonInfo, AddonState } from '@wirecatch/protocol';
+import type { AddonId, AddonInfo, AddonState } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
 import { BackendError } from './backend';
 import { PERCENT_MAX, percentOf, roundDownTo } from './format';
@@ -9,7 +9,7 @@ import { PERCENT_MAX, percentOf, roundDownTo } from './format';
 const ANNOUNCE_STEP = 25;
 
 /** The id of the one add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
-export const MEDIA_ADDON = 'media';
+export const MEDIA_ADDON: AddonId = 'media';
 
 /**
  * Whether an error is the core's "this needs the media add-on" (`CoreError::AddonRequired`),

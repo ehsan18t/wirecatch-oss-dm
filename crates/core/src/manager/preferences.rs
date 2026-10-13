@@ -4,14 +4,13 @@
 use std::path::Path;
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
+use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use wirecatch_protocol::wire::Event;
 
 use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
-use crate::addons::manifest::MEDIA_ADDON_ID;
 use crate::error::{CoreError, Result};
 use crate::{profile, settings};
 
@@ -103,7 +102,7 @@ impl Manager {
                 self.inner.clock.unix_millis(),
             );
             if state.addon.tools.is_some() {
-                profile.addons.push(MEDIA_ADDON_ID.to_string());
+                profile.addons.push(AddonId::Media);
             }
             profile
         };
@@ -135,7 +134,7 @@ impl Manager {
     /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let localized = self.read_profile(path).await?;
-        let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);
+        let wants_media = localized.profile.addons.contains(&AddonId::Media);
 
         {
             let mut state = self.lock_open()?;
@@ -157,10 +156,7 @@ impl Manager {
             self.queues_changed(&mut state);
             self.apply_settings(&mut state, imported.settings);
             if wants_media && state.addon.tools.is_none() {
-                imported
-                    .summary
-                    .addons_to_offer
-                    .push(MEDIA_ADDON_ID.to_string());
+                imported.summary.addons_to_offer.push(AddonId::Media);
             }
             self.emit(UiEvent::SettingsImported(imported.summary));
         }
@@ -179,7 +175,7 @@ impl Manager {
     /// The errors of [`import_settings`](Self::import_settings).
     pub async fn preview_import(&self, path: &Path) -> Result<ImportPreview> {
         let localized = self.read_profile(path).await?;
-        let wants_media = localized.profile.addons.iter().any(|a| a == MEDIA_ADDON_ID);
+        let wants_media = localized.profile.addons.contains(&AddonId::Media);
         let state = self.lock_open()?;
         let current = state.queue_list();
         // Ids for queues that would be added; they are never used.
@@ -190,7 +186,7 @@ impl Manager {
         })?;
         let mut addons_to_offer = Vec::new();
         if wants_media && state.addon.tools.is_none() {
-            addons_to_offer.push(MEDIA_ADDON_ID.to_string());
+            addons_to_offer.push(AddonId::Media);
         }
         Ok(ImportPreview {
             folders: imported.summary.folders,

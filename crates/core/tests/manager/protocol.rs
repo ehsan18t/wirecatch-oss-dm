@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
 use wirecatch_core::{Manager, serve_connection};
-use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
     AddAction, CaptureSource, ExtensionSettingsPatch, Header, NewDownload, WithdrawOutcome,
@@ -19,6 +18,7 @@ use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Event, Hello, Message, Outcome, ProtocolError, Reply,
     UNKNOWN_REQUEST_ID,
 };
+use wirecatch_protocol::{PROTOCOL_VERSION, QuestionId};
 
 use crate::common::{
     Config, Harness, PATIENCE, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
@@ -1016,7 +1016,7 @@ fn framed(body: &[u8]) -> TestResult<Vec<u8>> {
 }
 
 /// Waits for the next confirmation dialog to close and returns its id.
-async fn closed(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> TestResult<u64> {
+async fn closed(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> TestResult<QuestionId> {
     loop {
         if let UiEvent::ConfirmationClosed { id } = ui.recv().await? {
             return Ok(id);

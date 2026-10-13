@@ -714,7 +714,7 @@ mod tests {
 
     fn choice_for(offers: &[Offer]) -> MediaChoice {
         MediaChoice {
-            id: 1,
+            id: wirecatch_protocol::QuestionId(1),
             title: "T".into(),
             page_url: None,
             options: offers.iter().map(|(o, _)| o.clone()).collect(),

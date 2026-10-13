@@ -13,7 +13,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::wire::QueueSummary;
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
@@ -36,11 +36,11 @@ pub(super) struct State {
     pub claimed: Claimed,
     /// Downloads with a run, so the ticker visits only those.
     pub running: BTreeSet<DownloadId>,
-    pub pending: BTreeMap<u64, Pending>,
+    pub pending: BTreeMap<QuestionId, Pending>,
     /// Media captures being looked at, waiting for the media add-on, or waiting
     /// for the user's choice of quality. Their ids come from the same counter as
     /// `pending`, so the two never share one.
-    pub media: BTreeMap<u64, MediaPending>,
+    pub media: BTreeMap<QuestionId, MediaPending>,
     /// The media add-on.
     pub addon: AddonSlot,
     pub handovers: Handovers,
@@ -74,9 +74,10 @@ impl Counters {
         QueueId(self.queue)
     }
 
-    pub fn pending(&mut self) -> u64 {
+    /// A fresh question id, shared by pending captures and media.
+    pub fn pending(&mut self) -> QuestionId {
         self.pending += 1;
-        self.pending
+        QuestionId(self.pending)
     }
 
     pub fn run(&mut self) -> u64 {

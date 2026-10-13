@@ -14,7 +14,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
 use super::Manager;
 use super::downloads::{NewEntry, capture_action, parse_url};
@@ -287,7 +287,7 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down.
     pub async fn confirm_capture(
         &self,
-        id: u64,
+        id: QuestionId,
         answer: CaptureConfirmation,
     ) -> Result<DownloadId> {
         let pending = self
@@ -322,7 +322,7 @@ impl Manager {
     ///
     /// [`CoreError::ConfirmationNotFound`] when the question was already answered or
     /// withdrawn, and [`CoreError::Closed`] once the manager has shut down.
-    pub fn reject_capture(&self, id: u64) -> Result<()> {
+    pub fn reject_capture(&self, id: QuestionId) -> Result<()> {
         let mut state = self.lock_open()?;
         let pending = state
             .pending
@@ -340,7 +340,7 @@ impl Manager {
     /// same address, or for a video the same page, or the same video read from
     /// another link to it. `None` when there is none, or no such question.
     #[must_use]
-    pub fn earlier_download(&self, id: u64) -> Option<DownloadSummary> {
+    pub fn earlier_download(&self, id: QuestionId) -> Option<DownloadSummary> {
         let state = self.lock();
         let (links, video) = if let Some(waiting) = state.pending.get(&id) {
             (vec![waiting.capture.url.clone()], None)

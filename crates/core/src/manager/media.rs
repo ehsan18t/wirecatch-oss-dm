@@ -14,12 +14,12 @@ use std::path::PathBuf;
 
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, DownloadOptions, Url};
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    Category, MediaChoice, MediaSelection, MediaSubtitle, MediaSummary, OutputFormat, PortablePath,
-    UiEvent, UserError,
+    AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
+    MediaSummary, OutputFormat, PortablePath, UiEvent, UserError,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
+use wirecatch_protocol::{QuestionId, QueueId};
 
 use super::Manager;
 use super::captures::origin_of;
@@ -40,29 +40,6 @@ const ADDON_WAIT_MILLIS: i64 = 30 * 60 * 1000;
 const MAX_PENDING_MEDIA: usize = 100;
 /// Most captures of one link that can share one choice.
 const MAX_HANDOVERS: usize = 32;
-
-/// A page waiting for an add-on, as [`Manager::pending_addon_requests`] lists it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct AddonRequestItem {
-    /// Drops it when passed to [`Manager::dismiss_media_choice`]; the same id
-    /// as a later media choice for it would have.
-    pub id: u64,
-    /// The add-on it needs.
-    pub addon: wirecatch_protocol::app::AddonInfo,
-    /// The page.
-    pub url: String,
-}
-
-/// A captured stream or page still being read for its qualities, as
-/// [`Manager::media_being_read`] lists it.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct MediaReading {
-    /// The id its quality choice will have; [`Manager::dismiss_media_choice`]
-    /// with it stops the reading.
-    pub id: u64,
-    /// The stream or page, without any password in it.
-    pub url: String,
-}
 
 /// Where a media capture came from.
 #[derive(Debug, Clone)]
@@ -271,7 +248,7 @@ impl Manager {
     /// shut down.
     pub async fn choose_media(
         &self,
-        id: u64,
+        id: QuestionId,
         selection: MediaSelection,
     ) -> Result<wirecatch_protocol::DownloadId> {
         let (pending, plan, choice, resolved) = {
@@ -347,7 +324,7 @@ impl Manager {
     ///
     /// [`CoreError::ConfirmationNotFound`] when there is no such choice, and
     /// [`CoreError::Closed`] once the manager has shut down.
-    pub fn dismiss_media_choice(&self, id: u64) -> Result<()> {
+    pub fn dismiss_media_choice(&self, id: QuestionId) -> Result<()> {
         let mut state = self.lock_open()?;
         let pending = state
             .media
@@ -365,7 +342,12 @@ impl Manager {
 
     /// The browser took back one capture of media `id`; when none is left, the
     /// media is dropped.
-    pub(super) fn withdraw_media_handover(&self, state: &mut State, id: u64, handover: &str) {
+    pub(super) fn withdraw_media_handover(
+        &self,
+        state: &mut State,
+        id: QuestionId,
+        handover: &str,
+    ) {
         let Some(pending) = state.media.get_mut(&id) else {
             return;
         };
@@ -444,9 +426,9 @@ impl Manager {
     }
 
     fn fail_addon_waits(&self, which: impl Fn(&MediaPending) -> bool, message: &str) {
-        let failed: Vec<(u64, MediaPending)> = {
+        let failed: Vec<(QuestionId, MediaPending)> = {
             let mut state = self.lock();
-            let ids: Vec<u64> = state
+            let ids: Vec<QuestionId> = state
                 .media
                 .iter()
                 .filter(|(_, m)| matches!(m.stage, MediaStage::NeedsAddon) && which(m))
@@ -467,13 +449,13 @@ impl Manager {
         }
     }
 
-    fn spawn_analysis(&self, id: u64, token: CancellationToken) {
+    fn spawn_analysis(&self, id: QuestionId, token: CancellationToken) {
         let manager = self.clone();
         self.spawn(async move { manager.analyse(id, token).await });
     }
 
     /// Reads a stream or page and offers its qualities.
-    async fn analyse(&self, id: u64, token: CancellationToken) {
+    async fn analyse(&self, id: QuestionId, token: CancellationToken) {
         let (source, tools, connections) = {
             let state = self.lock();
             let Some(pending) = state.media.get(&id) else {
@@ -520,7 +502,7 @@ impl Manager {
     /// pending media, taken out, and why.
     fn offer(
         &self,
-        id: u64,
+        id: QuestionId,
         found: std::result::Result<Found, UserError>,
     ) -> Option<(MediaPending, UserError)> {
         let mut state = self.lock();
@@ -649,7 +631,7 @@ impl Manager {
     /// (two links to one video, say `watch?v=ID` and `watch?v=ID&t=30s`). Its
     /// browser captures join the other question and `id` closes. Returns
     /// whether it was folded.
-    fn join_same_video(&self, state: &mut State, id: u64, video: &str) -> bool {
+    fn join_same_video(&self, state: &mut State, id: QuestionId, video: &str) -> bool {
         let Some(&other) = state
             .media
             .iter()

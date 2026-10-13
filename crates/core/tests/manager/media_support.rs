@@ -19,7 +19,7 @@ use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 use wirecatch_core::{AddonComponent, AddonFile, ArchiveKind, MediaAddonSources, PinnedKey};
-use wirecatch_protocol::app::{AddonInfo, AddonState, UiEvent};
+use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 
 pub use wirecatch_test_support::files::FileServer;
@@ -364,7 +364,7 @@ pub async fn next_event<T>(
 /// Installs the add-on and waits until it is installed.
 pub async fn install(h: &Harness) -> TestResult<AddonInfo> {
     let mut ui = h.manager.subscribe();
-    h.manager.install_addon("media").await?;
+    h.manager.install_addon(AddonId::Media).await?;
     Ok(wait_addon(&mut ui, "the add-on installed", |a| {
         matches!(a.state, AddonState::Installed | AddonState::Failed { .. })
     })

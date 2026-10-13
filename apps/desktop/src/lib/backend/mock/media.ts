@@ -1,6 +1,7 @@
 // Media pages: the qualities the browser finds, the choice the person makes, and the add-on that choice may need.
 
 import type {
+  AddonRequestItem,
   DownloadId,
   MediaChoice,
   MediaOption,
@@ -9,7 +10,7 @@ import type {
   ProcessingStep,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
-import { BackendError, type AddonRequestItem } from '../types';
+import { BackendError } from '../types';
 import { ALREADY_ANSWERED } from './captures';
 import { folderFor } from './data';
 import {
