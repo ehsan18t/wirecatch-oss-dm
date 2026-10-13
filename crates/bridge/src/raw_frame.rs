@@ -9,7 +9,7 @@ use std::io::{self, Read};
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt};
-use wirecatch_protocol::frame::{self, FrameError};
+use wirecatch_protocol::frame::{self, FrameError, HEADER_LEN};
 
 /// One whole frame: the 4-byte little-endian length followed by the body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,7 +28,7 @@ impl RawFrame {
 
     /// The JSON body.
     pub(crate) fn body(&self) -> &[u8] {
-        &self.0[4..]
+        &self.0[HEADER_LEN..]
     }
 
     /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`). Anything else, and a `hello` from a client that does not say, allows it, as before the field existed.
@@ -84,10 +84,10 @@ impl RawFrame {
         Self(bytes)
     }
 
-    fn with_header(header: [u8; 4]) -> Result<Self, FrameError> {
+    fn with_header(header: [u8; HEADER_LEN]) -> Result<Self, FrameError> {
         let len = frame::body_len(header)?;
-        let mut bytes = vec![0u8; 4 + len];
-        bytes[..4].copy_from_slice(&header);
+        let mut bytes = vec![0u8; HEADER_LEN + len];
+        bytes[..HEADER_LEN].copy_from_slice(&header);
         Ok(Self(bytes))
     }
 }
@@ -123,12 +123,9 @@ pub(crate) enum Incoming {
 /// [`Incoming::Oversized`], which keeps the stream in step so the session can go
 /// on.
 pub(crate) fn read_blocking(reader: &mut impl Read) -> Result<Option<Incoming>, FrameError> {
-    let mut header = [0u8; 4];
-    match reader.read_exact(&mut header) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
-    }
+    let Some(header) = frame::read_header(reader)? else {
+        return Ok(None);
+    };
     let mut frame = match RawFrame::with_header(header) {
         Ok(frame) => frame,
         Err(FrameError::TooLarge(len)) => {
@@ -140,7 +137,7 @@ pub(crate) fn read_blocking(reader: &mut impl Read) -> Result<Option<Incoming>, 
         }
         Err(e) => return Err(e),
     };
-    reader.read_exact(&mut frame.0[4..])?;
+    reader.read_exact(&mut frame.0[HEADER_LEN..])?;
     Ok(Some(Incoming::Frame(frame)))
 }
 
@@ -148,14 +145,11 @@ pub(crate) fn read_blocking(reader: &mut impl Read) -> Result<Option<Incoming>, 
 pub(crate) async fn read_async(
     reader: &mut (impl AsyncRead + Unpin),
 ) -> Result<Option<RawFrame>, FrameError> {
-    let mut header = [0u8; 4];
-    match reader.read_exact(&mut header).await {
-        Ok(_) => {}
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
-    }
+    let Some(header) = frame::read_header_async(reader).await? else {
+        return Ok(None);
+    };
     let mut frame = RawFrame::with_header(header)?;
-    reader.read_exact(&mut frame.0[4..]).await?;
+    reader.read_exact(&mut frame.0[HEADER_LEN..]).await?;
     Ok(Some(frame))
 }
 
@@ -253,6 +247,14 @@ mod tests {
             read_async(&mut slice).await,
             Err(FrameError::TooLarge(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_header_cut_short_is_an_error_on_both_sides() {
+        let bytes = frame_of(b"{}");
+        let cut = &bytes[..2];
+        assert!(read_blocking(&mut io::Cursor::new(cut.to_vec())).is_err());
+        assert!(read_async(&mut &cut[..]).await.is_err());
     }
 
     #[test]

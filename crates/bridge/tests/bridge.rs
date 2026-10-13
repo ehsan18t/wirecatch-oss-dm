@@ -138,16 +138,11 @@ fn raw(body: &str) -> TestResult<Vec<u8>> {
 /// Reads one whole frame (length prefix included), or `None` at end of stream.
 async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> TestResult<Option<Vec<u8>>> {
     timeout(PATIENCE, async {
-        let mut header = [0u8; 4];
-        match reader.read_exact(&mut header).await {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(e) => return Err(e.into()),
-        }
-        let len = frame::body_len(header)?;
-        let mut bytes = header.to_vec();
-        bytes.resize(4 + len, 0);
-        reader.read_exact(&mut bytes[4..]).await?;
+        let Some(body) = frame::read_body_async(reader).await? else {
+            return Ok(None);
+        };
+        let mut bytes = frame::length_prefix(body.len())?.to_vec();
+        bytes.extend_from_slice(&body);
         Ok(Some(bytes))
     })
     .await
@@ -155,7 +150,7 @@ async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> TestResult<Option<
 }
 
 fn decode(bytes: &[u8]) -> TestResult<Message> {
-    Ok(frame::decode(&bytes[4..])?)
+    Ok(frame::decode(&bytes[frame::HEADER_LEN..])?)
 }
 
 fn assert_unavailable(bytes: &[u8], expected_id: u64) -> TestResult<String> {

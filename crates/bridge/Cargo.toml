@@ -29,7 +29,7 @@ test-overrides = []
 
 [dependencies]
 wirecatch-ipc.workspace = true
-wirecatch-protocol.workspace = true
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-product.workspace = true
 anyhow.workspace = true
 serde.workspace = true
@@ -50,7 +50,6 @@ libc.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process"] }
-wirecatch-protocol = { workspace = true, features = ["tokio"] }
 # The plain helpers only, without the test servers' TLS stack.
 wirecatch-test-support = { path = "../test-support" }
 
