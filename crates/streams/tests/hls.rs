@@ -17,7 +17,7 @@ use wirecatch_streams::{
     StreamRequest, download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{TestResult, private_dir, ts_segment};
+use wirecatch_test_support::{PATIENCE, TestResult, private_dir, ts_segment};
 
 /// The bytes of a playlist's segments, in order.
 type Segments = Vec<Vec<u8>>;
@@ -50,6 +50,28 @@ fn completed(outcome: Outcome) -> (std::path::PathBuf, u64) {
     match outcome {
         Outcome::Completed { path, bytes, .. } => (path, bytes),
         other => panic!("expected completion, got {other:?}"),
+    }
+}
+
+/// Waits until `count` segments of the download `task` runs are done; fails if it ends first or takes longer than [`PATIENCE`].
+async fn segments_done(
+    progress: &StreamProgress,
+    task: &tokio::task::JoinHandle<Result<Outcome, Error>>,
+    count: usize,
+) {
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    while progress.segments_done() < count {
+        assert!(
+            !task.is_finished(),
+            "the download ended with {} of {count} segments done",
+            progress.segments_done()
+        );
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{} of {count} segments done after {PATIENCE:?}",
+            progress.segments_done()
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
 
@@ -383,9 +405,7 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     let progress = Arc::new(StreamProgress::default());
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
-    while progress.segments_done() < 10 {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    segments_done(&progress, &task, 10).await;
     cancel.cancel();
     let left = match task.await.unwrap().unwrap() {
         Outcome::Paused { segments_left, .. } => segments_left,
@@ -442,9 +462,7 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
     let progress = Arc::new(StreamProgress::default());
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
-    while progress.segments_done() < 10 {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    segments_done(&progress, &task, 10).await;
     cancel.cancel();
     let left = match task.await.unwrap().unwrap() {
         Outcome::Paused { segments_left, .. } => segments_left,
@@ -477,15 +495,13 @@ async fn resuming_checks_segment_sizes() {
     let segments = media_playlist(&server, "s", 4, 5).unwrap();
     let dir = private_dir("hls-sizes").unwrap();
     let output = dir.join("v.ts");
-    // Pause while the last segment is still on its way, leaving three finished.
+    // Pause while the server holds the last segment, leaving three finished.
     let req = request(&server, "s/index.m3u8", &output);
     let progress = Arc::new(StreamProgress::default());
     let cancel = CancellationToken::new();
-    server.delay("s/seg3.ts", Duration::from_millis(400));
+    server.hang("s/seg3.ts", true);
     let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
-    while progress.segments_done() < 3 {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    segments_done(&progress, &task, 3).await;
     cancel.cancel();
     assert!(matches!(
         task.await.unwrap().unwrap(),
@@ -494,6 +510,8 @@ async fn resuming_checks_segment_sizes() {
             ..
         }
     ));
+
+    server.hang("s/seg3.ts", false);
 
     // Damage one finished segment: it must be fetched again.
     let work = dir.join("v.ts.wcstream").join("t0");
