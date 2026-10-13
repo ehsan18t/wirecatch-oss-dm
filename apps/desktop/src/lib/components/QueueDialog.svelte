@@ -69,8 +69,8 @@
     if (!scheduleOn) return { schedule: null };
     const s = parseTime(start);
     const e = stopOn ? parseTime(stop) : null;
-    if (!s) return 'Enter a start time like 01:00.';
-    if (stopOn && !e) return 'Enter a stop time like 07:00.';
+    if (!s) return `Enter a start time like ${formatTime(FIRST_START)}.`;
+    if (stopOn && !e) return `Enter a stop time like ${formatTime(FIRST_STOP)}.`;
     if (e?.hour === s.hour && e.minute === s.minute)
       return 'The start and stop times are the same. Pick a different stop time.';
     // Seven ticked days is the same as every day.
@@ -80,7 +80,9 @@
     };
   }
 
-  function build(base: Queue): Queue | string {
+  /** What the form changes in a queue, or why it cannot. */
+  function readForm():
+    Pick<Queue, 'name' | 'max_concurrent' | 'speed_limit' | 'schedule'> | string {
     if (!name.trim()) return 'Give the queue a name.';
     const tooMany = queueConcurrentProblem(maxConcurrent);
     if (tooMany !== null) return tooMany;
@@ -89,7 +91,6 @@
     const schedule = readSchedule();
     if (typeof schedule === 'string') return schedule;
     return {
-      ...base,
       name: name.trim(),
       max_concurrent: Math.round(maxConcurrent),
       speed_limit: limit.limit,
@@ -102,34 +103,20 @@
     error = '';
     busy = true;
     try {
+      const changes = readForm();
+      if (typeof changes === 'string') {
+        error = changes;
+        return;
+      }
       let base = original ?? created;
       if (!base) {
-        const check = build({
-          id: 0,
-          name: '',
-          max_concurrent: 1,
-          speed_limit: null,
-          schedule: null,
-          is_default: false,
-          paused: false,
-          running_outside_schedule: false,
-        });
-        if (typeof check === 'string') {
-          error = check;
-          return;
-        }
-        base = await app.queues.create(name.trim());
+        base = await app.queues.create(changes.name);
         if (!base) return;
         created = base;
       }
-      const next = build(base);
-      if (typeof next === 'string') {
-        error = next;
-        return;
-      }
-      if (await app.queues.update(next)) {
+      if (await app.queues.update({ ...base, ...changes })) {
         app.closeDialog();
-        if (!original) app.show({ kind: 'queue', id: next.id });
+        if (!original) app.show({ kind: 'queue', id: base.id });
       } else if (created) {
         error = 'The queue was made, but its settings were not saved. Save again to retry.';
       }

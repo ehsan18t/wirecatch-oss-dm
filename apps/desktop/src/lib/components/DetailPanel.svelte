@@ -1,11 +1,7 @@
 <script lang="ts">
   import Copy from '@lucide/svelte/icons/copy';
   import X from '@lucide/svelte/icons/x';
-  import {
-    DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    type FixAction,
-    type QueueId,
-  } from '@wirecatch/protocol';
+  import type { FixAction } from '@wirecatch/protocol';
   import {
     folderOf,
     formatDate,
@@ -17,6 +13,7 @@
     statusShort,
   } from '$lib/format';
   import { formatBytes } from '@wirecatch/units';
+  import { offeredValue } from '$lib/select-value';
   import { getApp } from '$lib/state/app.svelte';
   import Button from './Button.svelte';
   import CategoryIcon from './CategoryIcon.svelte';
@@ -33,15 +30,16 @@
   const rows = $derived(app.selection.rows);
   const one = $derived(rows.length === 1 ? rows[0] : undefined);
 
-  /** Connections each download may open: the setting, or the core's default before it loads. */
-  const connectionsLimit = $derived(
-    app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-  );
+  /** Connections each download may open, once the settings are known. */
+  const connectionsLimit = $derived(app.settings?.connections_per_download ?? null);
   const totalSize = $derived(rows.reduce((sum, r) => sum + (r.total ?? 0), 0));
 
   function move(e: Event & { currentTarget: HTMLSelectElement }) {
-    const queue: QueueId = Number(e.currentTarget.value);
-    void app.actions.moveToQueue(app.selection.list, queue);
+    const queue = offeredValue(
+      app.queues.list.map((q) => q.id),
+      e.currentTarget.value,
+    );
+    if (queue !== undefined) void app.actions.moveToQueue(app.selection.list, queue);
   }
 
   const sharedQueue = $derived(
@@ -109,8 +107,8 @@
         <dt>Connections</dt>
         <dd class="num">
           {#if one.connections > 0}
-            {one.connections} open now, up to {connectionsLimit}
-          {:else}
+            {one.connections} open now{#if connectionsLimit !== null}, up to {connectionsLimit}{/if}
+          {:else if connectionsLimit !== null}
             Up to {connectionsLimit}
           {/if}
         </dd>

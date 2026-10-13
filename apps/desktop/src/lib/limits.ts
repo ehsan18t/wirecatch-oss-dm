@@ -1,27 +1,21 @@
-// How many connections and downloads may run at once. The core owns these limits and their
-// defaults (crates/protocol generates them); this only applies them to what a person typed, so
-// the settings screen and the queue dialog accept exactly what the core accepts.
+// How many connections and downloads may run at once. The core owns these limits (crates/protocol generates them); this only applies them to what a person typed, so the settings screen and the queue dialog accept exactly what the core accepts.
 
-import {
-  DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-  DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-  MAX_CONCURRENT_DOWNLOADS,
-  MAX_CONNECTIONS_PER_DOWNLOAD,
-} from '@wirecatch/protocol';
+import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
 
-/** `typed` as a whole number from 1 to `max`, or `fallback` when it is not a number. */
-function wholeUpTo(typed: number, max: number, fallback: number): number {
-  return Number.isFinite(typed) ? Math.min(max, Math.max(1, Math.round(typed))) : fallback;
+/** The number in `typed` as a whole number from 1 to `max`, or `null` when it holds no number. */
+function wholeUpTo(typed: string, max: number): number | null {
+  const value = typed.trim() === '' ? Number.NaN : Number(typed);
+  return Number.isFinite(value) ? Math.min(max, Math.max(1, Math.round(value))) : null;
 }
 
-/** Connections per download from a typed value; the default when it is not a number. */
-export function connectionsPerDownload(typed: number): number {
-  return wholeUpTo(typed, MAX_CONNECTIONS_PER_DOWNLOAD, DEFAULT_CONNECTIONS_PER_DOWNLOAD);
+/** Connections per download from what a person typed; `null` when it is not a number. */
+export function connectionsPerDownload(typed: string): number | null {
+  return wholeUpTo(typed, MAX_CONNECTIONS_PER_DOWNLOAD);
 }
 
-/** Downloads running at once across all queues from a typed value; the default when it is not a number. */
-export function concurrentDownloads(typed: number): number {
-  return wholeUpTo(typed, MAX_CONCURRENT_DOWNLOADS, DEFAULT_MAX_CONCURRENT_DOWNLOADS);
+/** Downloads running at once across all queues from what a person typed; `null` when it is not a number. */
+export function concurrentDownloads(typed: string): number | null {
+  return wholeUpTo(typed, MAX_CONCURRENT_DOWNLOADS);
 }
 
 /** Why `typed` cannot be a queue's downloads at the same time, or `null` when it can. */

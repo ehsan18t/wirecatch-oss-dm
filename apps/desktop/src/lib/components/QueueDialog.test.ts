@@ -58,6 +58,19 @@ describe('the queue dialog', () => {
     expect(app.queues.list.some((q) => q.name === 'Too many')).toBe(false);
   });
 
+  it('makes no queue when the form it would get is refused', async () => {
+    const { app, dialog } = await openQueueDialog(null);
+    await fireEvent.input(dialog.getByLabelText('Name'), { target: { value: 'Never runs' } });
+    await fireEvent.click(dialog.getByLabelText('Only run at certain times'));
+    await settle();
+    const start = dialog.getByLabelText('From');
+    if (!(start instanceof HTMLInputElement)) throw new Error('no start time field');
+    await fireEvent.input(dialog.getByLabelText('Stop time'), { target: { value: start.value } });
+    await save();
+    expect(dialog.getByRole('alert')).toHaveTextContent('The start and stop times are the same');
+    expect(app.queues.list.some((q) => q.name === 'Never runs')).toBe(false);
+  });
+
   it('shows a queue speed limit in megabytes from 1 MB on', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
     const limit = app.queues.list.find((q) => q.name === 'Overnight')?.speed_limit;

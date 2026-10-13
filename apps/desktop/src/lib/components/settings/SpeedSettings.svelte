@@ -2,6 +2,7 @@
   // Speed: a limit on all downloads together.
   import { inUnit, MB, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
+  import { commitNumber } from '$lib/number-field';
   import type { SettingIn } from '$lib/settings-schema';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
@@ -11,6 +12,12 @@
 
   /** The total speed limit a person starts from when turning it on; a suggestion, not a default of the core. */
   const FIRST_SPEED_LIMIT = 5 * MB;
+
+  /** A total speed limit typed in megabytes per second, or `null` when it is not above zero. */
+  function typedLimit(typed: string): number | null {
+    const bytes = toBytes(typed, 'MB');
+    return bytes !== null && bytes > 0 ? bytes : null;
+  }
 
   const controls: Record<SettingIn<'speed'>, Snippet<[Row]>> = {
     global_speed_limit: speedLimit,
@@ -28,6 +35,7 @@
       save((d) => void (d.global_speed_limit = v ? FIRST_SPEED_LIMIT : null))}
   />
   {#if s.global_speed_limit !== null}
+    {@const limit = s.global_speed_limit}
     <input
       class="field narrow"
       type="number"
@@ -35,10 +43,13 @@
       step="0.5"
       aria-label="Speed limit in megabytes per second"
       value={inUnit(s.global_speed_limit, 'MB')}
-      onchange={(e) => {
-        const bytes = toBytes(e.currentTarget.value, 'MB');
-        if (bytes !== null && bytes > 0) save((d) => void (d.global_speed_limit = bytes));
-      }}
+      onchange={(e) =>
+        commitNumber(e.currentTarget, {
+          read: typedLimit,
+          current: limit,
+          show: (bytes) => String(inUnit(bytes, 'MB')),
+          save: (bytes) => save((d) => void (d.global_speed_limit = bytes)),
+        })}
     />
     <span class="unit">MB/s</span>
   {/if}

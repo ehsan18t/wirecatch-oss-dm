@@ -15,6 +15,7 @@
     kbpsFor,
     qualityNotes,
   } from '$lib/media-output';
+  import { offeredKbps } from '$lib/select-value';
   import type { OutputChoiceState } from './output-choice.svelte';
 
   let {
@@ -66,8 +67,10 @@
               class="field"
               value={output.kbps === null ? '' : String(output.kbps)}
               onchange={(e) => {
-                const v = e.currentTarget.value;
-                output.kbps = v === '' ? null : Number(v);
+                const kbps = offeredKbps(kbpsChoices, e.currentTarget.value, {
+                  usual: fit.audio !== 'encode',
+                });
+                if (kbps !== undefined) output.kbps = kbps;
               }}
             >
               {#if fit.audio !== 'encode'}

@@ -35,6 +35,30 @@ describe('the settings screen', () => {
     expect(app.settings?.max_concurrent_downloads).toBe(MANY_AT_ONCE);
     await change(field, String(MAX_CONCURRENT_DOWNLOADS + 1));
     expect(app.settings?.max_concurrent_downloads).toBe(MAX_CONCURRENT_DOWNLOADS);
+    expect(field).toHaveValue(MAX_CONCURRENT_DOWNLOADS);
+  });
+
+  it('shows the downloads at once it kept when what was typed reads as the same', async () => {
+    const { app } = await openSettings();
+    const field = screen.getByLabelText('Downloads at the same time');
+    await change(field, '1');
+    for (const typed of ['0', '-3', '1.2']) {
+      await change(field, typed);
+      expect(app.settings?.max_concurrent_downloads).toBe(1);
+      expect(field).toHaveValue(1);
+    }
+    await change(field, String(MAX_CONCURRENT_DOWNLOADS));
+    await change(field, String(MAX_CONCURRENT_DOWNLOADS + 500));
+    expect(field).toHaveValue(MAX_CONCURRENT_DOWNLOADS);
+  });
+
+  it('keeps the downloads at once when the field is emptied', async () => {
+    const { app } = await openSettings();
+    const field = screen.getByLabelText('Downloads at the same time');
+    await change(field, String(MANY_AT_ONCE));
+    await change(field, '');
+    expect(app.settings?.max_concurrent_downloads).toBe(MANY_AT_ONCE);
+    expect(field).toHaveValue(MANY_AT_ONCE);
   });
 
   it('reads the smallest file to catch in the unit shown', async () => {
@@ -46,6 +70,15 @@ describe('the settings screen', () => {
     expect(screen.getByLabelText('Skip files smaller than')).toHaveValue(1.5);
   });
 
+  it('shows the smallest file to catch it kept when what was typed reads as the same', async () => {
+    const { app } = await openSettings();
+    const field = screen.getByLabelText('Skip files smaller than');
+    await change(field, '0');
+    await change(field, '-5');
+    expect(app.settings?.extension.min_capture_size).toBe(0);
+    expect(field).toHaveValue(0);
+  });
+
   it('reads the total speed limit in megabytes per second', async () => {
     const { app } = await openSettings();
     await fireEvent.click(screen.getByRole('switch', { name: 'Limit total speed' }));
@@ -53,8 +86,11 @@ describe('the settings screen', () => {
     const field = screen.getByLabelText('Speed limit in megabytes per second');
     await change(field, '2.5');
     expect(app.settings?.global_speed_limit).toBe(2.5 * MB);
-    await change(field, '0');
-    expect(app.settings?.global_speed_limit).toBe(2.5 * MB);
+    for (const typed of ['0', '', 'fast']) {
+      await change(field, typed);
+      expect(app.settings?.global_speed_limit).toBe(2.5 * MB);
+      expect(field).toHaveValue(2.5);
+    }
   });
 
   it('says when no setting matches the search, and clears it', async () => {

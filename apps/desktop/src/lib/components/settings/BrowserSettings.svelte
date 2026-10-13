@@ -3,6 +3,8 @@
   // popup changes these same settings.
   import { splitKbOrMb, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
+  import { commitNumber } from '$lib/number-field';
+  import { offeredValue } from '$lib/select-value';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import ListEditor from '../ListEditor.svelte';
@@ -16,9 +18,22 @@
 
   const minSize = $derived(splitKbOrMb(settings.extension.min_capture_size));
 
-  /** Saves the smallest file the extension catches; anything but a size of zero or more is 0. */
-  function setMinSize(value: string | number, unit: 'KB' | 'MB') {
-    const bytes = toBytes(value, unit) ?? 0;
+  /** The units the smallest file to catch can be typed in. */
+  const MIN_SIZE_UNITS = ['KB', 'MB'] as const;
+
+  /** Saves the smallest file the extension catches, in `unit`; anything but a size of zero or more is 0. */
+  function setMinSize(field: HTMLInputElement, unit: 'KB' | 'MB') {
+    commitNumber(field, {
+      read: (typed) => toBytes(typed, unit) ?? 0,
+      current: settings.extension.min_capture_size,
+      show: (bytes) => String(splitKbOrMb(bytes).value),
+      save: (bytes) => save((d) => void (d.extension.min_capture_size = bytes)),
+    });
+  }
+
+  /** Saves the smallest file the extension catches as the number shown, in a new unit. */
+  function setMinSizeUnit(unit: 'KB' | 'MB') {
+    const bytes = toBytes(minSize.value, unit) ?? 0;
     save((d) => void (d.extension.min_capture_size = bytes));
   }
 
@@ -112,16 +127,18 @@
     aria-labelledby={labelId}
     aria-describedby={helpId}
     value={minSize.value}
-    onchange={(e) => setMinSize(e.currentTarget.value, minSize.unit)}
+    onchange={(e) => setMinSize(e.currentTarget, minSize.unit)}
   />
   <select
     class="field"
     aria-label="Unit"
     value={minSize.unit}
-    onchange={(e) => setMinSize(minSize.value, e.currentTarget.value === 'MB' ? 'MB' : 'KB')}
+    onchange={(e) => {
+      const unit = offeredValue(MIN_SIZE_UNITS, e.currentTarget.value);
+      if (unit !== undefined) setMinSizeUnit(unit);
+    }}
   >
-    <option value="KB">KB</option>
-    <option value="MB">MB</option>
+    {#each MIN_SIZE_UNITS as unit (unit)}<option value={unit}>{unit}</option>{/each}
   </select>
 {/snippet}
 
@@ -132,8 +149,11 @@
     aria-describedby={helpId}
     value={s.extension.default_queue}
     onchange={(e) => {
-      const q = Number(e.currentTarget.value);
-      save((d) => void (d.extension.default_queue = q));
+      const q = offeredValue(
+        app.queues.list.map((queue) => queue.id),
+        e.currentTarget.value,
+      );
+      if (q !== undefined) save((d) => void (d.extension.default_queue = q));
     }}
   >
     {#each app.queues.list as q (q.id)}

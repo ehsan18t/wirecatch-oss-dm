@@ -3,6 +3,7 @@
   import { AUDIO_KBPS_CHOICES, type OutputFormat } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
+  import { offeredKbps, offeredValue } from '$lib/select-value';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
   import ListEditor from '../ListEditor.svelte';
   import Toggle from '../Toggle.svelte';
@@ -30,11 +31,6 @@
 
   function formatName(f: OutputFormat): string {
     return f === 'original' ? 'Original' : FORMAT_LABEL[f];
-  }
-
-  /** The format a menu's value names, from the formats it offers. */
-  function pick(formats: readonly OutputFormat[], value: string): OutputFormat | undefined {
-    return formats.find((f) => f === value);
   }
 
   /** A new audio format keeps the bit rate nearest the one chosen, if the format has a choice. */
@@ -77,7 +73,7 @@
     aria-describedby={helpId}
     value={s.media.video.format}
     onchange={(e) => {
-      const format = pick(VIDEO_FORMATS, e.currentTarget.value);
+      const format = offeredValue(VIDEO_FORMATS, e.currentTarget.value);
       if (format) save((d) => void (d.media.video.format = format));
     }}
   >
@@ -94,7 +90,7 @@
     aria-describedby={helpId}
     value={audio.format}
     onchange={(e) => {
-      const format = pick(AUDIO_FORMATS, e.currentTarget.value);
+      const format = offeredValue(AUDIO_FORMATS, e.currentTarget.value);
       if (format) setAudioFormat(format);
     }}
   >
@@ -106,8 +102,8 @@
       aria-label="Audio quality"
       value={audio.audio_kbps === null ? '' : String(audio.audio_kbps)}
       onchange={(e) => {
-        const v = e.currentTarget.value;
-        save((d) => void (d.media.audio.audio_kbps = v === '' ? null : Number(v)));
+        const kbps = offeredKbps(kbpsList, e.currentTarget.value, { usual: true });
+        if (kbps !== undefined) save((d) => void (d.media.audio.audio_kbps = kbps));
       }}
     >
       <option value="">Usual quality</option>
