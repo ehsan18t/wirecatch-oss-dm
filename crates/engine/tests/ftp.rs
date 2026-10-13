@@ -12,7 +12,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
-use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
 
 fn serving(data: &[u8]) -> FtpConfig {
     FtpConfig {
@@ -133,34 +133,41 @@ async fn resumes_after_cancel_without_downloading_again() {
         state.contains("20260102030405"),
         "MDTM is the validator: {state}"
     );
-    let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
+    let transfers_before = server.stats.transfers_sent().len();
 
     // Keep the server throttled: unthrottled, a local server fills megabytes of
     // socket buffers (several per connection with Linux autotuning) before an
     // early-closed data connection is dropped, which counts as sent but is never
     // read and would hide real waste.
-    server.configure(|c| c.data_bps = Some(8 * MIB));
-    let (path, bytes, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
+    // The probe, the resumed run's first transfer, from byte 0, is held by the
+    // server, so it sends nothing however long the download takes to prepare
+    // its files, and a download that read it on to fetch the file again would
+    // wait on it and fail.
+    server.configure(|c| {
+        c.data_bps = Some(8 * MIB);
+        c.hold_probe = Some(transfers_before);
+    });
+    let resumed = tokio::time::timeout(PATIENCE, run(request(&url, &dir, 2)))
+        .await
+        .expect("the resumed download did not end: it waits on the held probe");
+    let (path, bytes, resumed_from) = completed(resumed.unwrap());
     assert_eq!(bytes, data.len() as u64);
     assert!(resumed_from >= 2 * MIB, "kept {resumed_from} bytes");
     assert!(
         std::fs::read(&path).unwrap() == data,
         "downloaded bytes differ"
     );
-    let sent_after = server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before;
+    let second = server.stats.transfers_sent().split_off(transfers_before);
+    assert_eq!(
+        second.first(),
+        Some(&(0, 0)),
+        "the resumed run's first transfer is its probe, held: {second:?}"
+    );
+    let sent: u64 = second.iter().map(|&(_, sent)| sent).sum();
     let needed = data.len() as u64 - resumed_from;
     assert!(
-        sent_after < needed + data.len() as u64 / 4,
-        "the second run fetched {sent_after} bytes to fill {needed}"
-    );
-    assert!(
-        server
-            .stats
-            .rest_offsets
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|&o| o >= 2 * MIB)
+        sent < needed + data.len() as u64 / 4,
+        "the second run fetched {sent} bytes to fill {needed}: {second:?}"
     );
     dir.remove().unwrap();
 }
