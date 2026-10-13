@@ -22,6 +22,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/ipc` | Local app endpoint (named pipe on Windows, Unix socket on Linux). |
 | `crates/bridge` | Native messaging host between the extension and the app. |
 | `crates/cli` | The `wirecatch` command-line downloader. |
+| `crates/logging` | Every binary's logging (stderr and a capped file in the log folder) and the redaction that keeps secrets out of log lines (D40). |
 | `crates/e2e` | End-to-end tests across extension, bridge and app. |
 | `crates/product` | Product identity constants, generated from `config/product.toml`. Never edit `src` by hand. |
 | `crates/test-support` | Unpublished test servers and helpers every crate's tests share (D26). |
