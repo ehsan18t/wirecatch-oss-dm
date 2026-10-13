@@ -119,6 +119,7 @@ pub fn exe(stem: &str) -> String {
 }
 
 /// What a test add-on release is made of.
+#[derive(Clone)]
 pub struct Releases {
     /// The yt-dlp program, as published.
     pub ytdlp: Vec<u8>,
@@ -132,18 +133,26 @@ impl Releases {
     /// Fake tools: yt-dlp as a plain program, ffmpeg in a zip, Deno in a
     /// `.tar.xz`. Both archives carry entries that must never be installed: a
     /// path that climbs out, an unlisted program and a symbolic link.
+    ///
+    /// Packing them takes seconds in a debug build, so they are packed once per
+    /// test binary.
     pub fn fake() -> TestResult<Self> {
-        Self::with_ffmpeg(&fake_tool()?)
+        static PACKED: OnceLock<Releases> = OnceLock::new();
+        if let Some(packed) = PACKED.get() {
+            return Ok(packed.clone());
+        }
+        // Two tests may both pack them; the archives are the same either way.
+        let packed = Self::pack()?;
+        Ok(PACKED.get_or_init(|| packed).clone())
     }
 
-    /// The same with `ffmpeg_exe` as ffmpeg.
-    pub fn with_ffmpeg(ffmpeg_exe: &[u8]) -> TestResult<Self> {
+    fn pack() -> TestResult<Self> {
         let tool = fake_tool()?;
         Ok(Self {
             ytdlp: tool.clone(),
             ffmpeg: zip(&[
                 ("../escape.txt", Some(b"escaped".as_slice())),
-                (&format!("ff/bin/{}", exe("ffmpeg")), Some(ffmpeg_exe)),
+                (&format!("ff/bin/{}", exe("ffmpeg")), Some(&tool)),
                 ("ff/bin/avcodec-63.dll", Some(b"library".as_slice())),
                 ("ff/bin/extra.exe", Some(b"not listed".as_slice())),
                 ("ff/bin/link", None),
@@ -424,6 +433,16 @@ pub fn args(call: &serde_json::Value) -> TestResult<Vec<String>> {
 pub fn tell_tool(h: &Harness, file: &str, text: &str) -> TestResult {
     std::fs::write(tool_dir(h)?.join(file), text)?;
     Ok(())
+}
+
+/// Has the installed fake ffmpeg hand every call to the real `ffmpeg`: a real
+/// one is hundreds of megabytes, too large to install in every test that uses
+/// it within [`PATIENCE`] on a loaded machine. The install itself is still
+/// tested with the fake; what no test does any more is extract a full-size
+/// binary and run that installed copy (the archive's size cap has unit tests
+/// in `addons/archive.rs`).
+pub fn use_real_ffmpeg(h: &Harness, ffmpeg: &Path) -> TestResult {
+    tell_tool(h, "real-ffmpeg", &ffmpeg.to_string_lossy())
 }
 
 /// Whether `path` exists.

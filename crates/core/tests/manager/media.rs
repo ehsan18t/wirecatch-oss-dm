@@ -15,7 +15,7 @@ use wirecatch_protocol::extension::{AddAction, MediaKind};
 use crate::common::{Harness, TestResult, extension, test_data, wait_until};
 use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
-    publish, real_ffmpeg, tell_tool, ytdlp_calls,
+    publish, real_ffmpeg, tell_tool, use_real_ffmpeg, ytdlp_calls,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 
@@ -939,9 +939,9 @@ async fn real_ffmpeg_joins_real_video_and_audio() -> TestResult {
         "a.m4a",
     );
     let server = FileServer::start().await;
-    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap())?;
-    let h = harness(publish(&server, &releases, "r")?).await?;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
+    use_real_ffmpeg(&h, &ffmpeg)?;
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
     let mut ui = h.manager.subscribe();
     h.manager

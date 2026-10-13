@@ -15,7 +15,7 @@ use wirecatch_protocol::extension::MediaKind;
 use crate::common::{Harness, TestResult, extension, test_data};
 use crate::media_support::{
     FileServer, Releases, harness, install, media_capture, next_event, publish, real_ffmpeg,
-    tell_tool, ytdlp_calls,
+    tell_tool, use_real_ffmpeg, ytdlp_calls,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 
@@ -508,9 +508,9 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
     let scratch = tempfile::tempdir()?;
     let (video, audio) = sample_streams(&ffmpeg, scratch.path())?;
     let server = FileServer::start().await;
-    let releases = Releases::with_ffmpeg(&std::fs::read(&ffmpeg).unwrap())?;
-    let h = harness(publish(&server, &releases, "r")?).await?;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
+    use_real_ffmpeg(&h, &ffmpeg)?;
     server.put("fmt/v.webm", video);
     server.put("fmt/a.webm", audio);
     server.put(

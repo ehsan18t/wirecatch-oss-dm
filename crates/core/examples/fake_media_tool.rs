@@ -13,7 +13,10 @@
 //!   writes a file at its `-o` template (extension `mp4`, or the text of
 //!   `download-ext`), prints two progress
 //!   lines in the format Wirecatch asks for, and prints the file's path.
-//! - `ffmpeg`: checks every `-i file:<path>` input exists, waits
+//! - `ffmpeg`: with `real-ffmpeg`, runs the program whose path that file
+//!   holds with the same arguments, sharing the outputs, and ends as it does,
+//!   so a test can use a real ffmpeg without installing a copy of it. Otherwise
+//!   it checks every `-i file:<path>` input exists, waits
 //!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
 //!   one per line, into the output (its last argument, `file:<path>`). Asked
 //!   for `-progress`, it first reports half of a two-second media done; a
@@ -198,6 +201,9 @@ async fn ytdlp(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
 }
 
 async fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
+    if let Ok(real) = std::fs::read_to_string(dir.join("real-ffmpeg")) {
+        return run_real(Path::new(real.trim()), args).await;
+    }
     let Some(output) = args.last().and_then(|a| a.strip_prefix("file:")) else {
         eprintln!("fake ffmpeg: the last argument is not a file: output");
         return Ok(ExitCode::from(2));
@@ -229,4 +235,17 @@ async fn ffmpeg(dir: &Path, args: &[String]) -> io::Result<ExitCode> {
             Ok(ExitCode::from(1))
         }
     }
+}
+
+/// Runs the program at `real` with `args`, sharing the outputs, and ends as it
+/// does.
+async fn run_real(real: &Path, args: &[String]) -> io::Result<ExitCode> {
+    let status = tokio::process::Command::new(real)
+        .args(args)
+        .status()
+        .await?;
+    Ok(status
+        .code()
+        .and_then(|code| u8::try_from(code).ok())
+        .map_or(ExitCode::FAILURE, ExitCode::from))
 }
