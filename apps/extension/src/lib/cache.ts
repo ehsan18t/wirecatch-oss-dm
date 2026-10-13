@@ -1,5 +1,5 @@
+import { isExtensionSettings, isQueueSummary } from '@wirecatch/protocol';
 import type { CachedSettings, SettingsCache } from './hub/deps';
-import { isExtensionSettings, isQueueSummary } from './protocol';
 import { isNumber, isUnknown, itemsOf, object } from './validate';
 
 /** Key of the display cache in `storage.local`. */

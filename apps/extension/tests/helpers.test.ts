@@ -1,5 +1,5 @@
 import { NATIVE_HOST_NAME } from '@wirecatch/product';
-import type { ErrorCode } from '@wirecatch/protocol';
+import { isOutcome, type ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
@@ -20,7 +20,7 @@ import {
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { applyPatch, isOutcome, patchOf } from '../src/lib/protocol';
+import { applyPatch, patchOf } from '../src/lib/protocol';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';

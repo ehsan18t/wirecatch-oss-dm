@@ -5,9 +5,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { SIGNAL_EVENTS, TauriBackend, toBackendError } from './tauri';
 import { BackendError } from './types';
 
+/** What the shell answers each command with in these tests: a new download's id, or nothing. */
+const NEW_DOWNLOAD = 40;
+const ANSWERS: Readonly<Record<string, unknown>> = {
+  add_download: NEW_DOWNLOAD,
+  confirm_capture: NEW_DOWNLOAD,
+  choose_media: NEW_DOWNLOAD,
+};
+
 describe('TauriBackend', () => {
   it('calls each command with its contract arguments in one args object', async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
+    const invoke = vi.fn((command: string) => Promise.resolve(ANSWERS[command] ?? null));
     const b = new TauriBackend(invoke);
     await b.remove([1, 2], true);
     await b.reorder(3, [2, 1]);
@@ -36,7 +44,6 @@ describe('TauriBackend', () => {
     await b.installAddon('media');
     await b.getQuestion(5);
     await b.earlierDownload(5);
-    await b.getDownload(6);
     await b.showQuestionWindows();
     await b.showProgressWindow(6);
     await b.closeDownloadWindow();
@@ -84,13 +91,21 @@ describe('TauriBackend', () => {
       ['install_addon', { args: { id: 'media' } }],
       ['get_question', { args: { id: 5 } }],
       ['earlier_download', { args: { id: 5 } }],
-      ['get_download', { args: { id: 6 } }],
       ['show_question_windows', undefined],
       ['show_progress_window', { args: { id: 6 } }],
       ['close_download_window', undefined],
       ['fit_download_window', { args: { height: 432 } }],
       ['main_window_ready', undefined],
     ]);
+  });
+
+  it("refuses an answer that does not have the contract's shape", async () => {
+    const b = new TauriBackend(vi.fn().mockResolvedValue({ id: 'not a number' }));
+    await expect(
+      b.addDownload({ url: 'https://x', queue: null, folder: null, file_name: null, start: true }),
+    ).rejects.toThrow(/cannot read/);
+    const empty = new TauriBackend(vi.fn().mockResolvedValue(undefined));
+    await expect(empty.listDownloads()).rejects.toBeInstanceOf(BackendError);
   });
 
   it('turns rejections into readable errors', async () => {

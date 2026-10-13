@@ -1,4 +1,6 @@
 import {
+  isEvent,
+  isOutcome,
   MAX_FRAME_LEN,
   PROTOCOL_VERSION,
   UNKNOWN_REQUEST_ID,
@@ -11,7 +13,6 @@ import {
   type Reply,
 } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
-import { isEvent, isOutcome } from '../protocol';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
 import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
 
@@ -124,23 +125,10 @@ function utf8Length(text: string): number {
 
 /** The connection problem an error from the bridge stands for, or null when it is about one request only. The bridge answers every request on a port it could not connect with the same error, so such a port is done. */
 function connectionProblem(error: ProtocolError): Problem | null {
-  switch (error.code) {
-    case 'app_not_running':
-      return { kind: 'app_closed', detail: null };
-    case 'app_unavailable':
-      return { kind: 'app_unavailable', detail: error.message };
-    case 'unsupported_version':
-    case 'invalid_request':
-    case 'invalid_url':
-    case 'not_found':
-    case 'internal':
-    case 'not_started':
-    case 'addon_required':
-    case 'limit_reached':
-    case 'wrong_state':
-    case 'update_check_failed':
-      return null;
-  }
+  if (error.code === 'app_not_running') return { kind: 'app_closed', detail: null };
+  if (error.code === 'app_unavailable') return { kind: 'app_unavailable', detail: error.message };
+  // Every other code is the app's answer to one request.
+  return null;
 }
 
 function problemFromHelloError(error: RequestError): Problem {

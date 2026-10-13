@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import {
+  COMMAND_OUTPUTS,
+  isErrorCode,
   LINKS_EVENT,
   RESYNC_EVENT,
   UI_EVENT,
@@ -17,7 +19,6 @@ import {
   type CaptureConfirmation,
   type CommandMap,
   type DownloadId,
-  type ErrorCode,
   type MediaSelection,
   type QuestionId,
   type Queue,
@@ -40,7 +41,8 @@ export const SIGNAL_EVENTS: Readonly<Record<ShellSignal, string>> = {
 /** What the file dialogs offer for settings exports. */
 const SETTINGS_FILES = { name: `${PRODUCT_NAME} settings`, extensions: ['json'] };
 
-type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+/** Tauri's `invoke`; tests pass their own. Its answer is checked before use, so it is `unknown` here. */
+type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 
 /** A command's name in the contract. */
 type Command = keyof CommandMap;
@@ -51,24 +53,9 @@ type OutputOf<C extends Command> = CommandMap[C]['output'];
 /** Tauri's `listen`; tests pass their own. */
 type Listen = typeof listen;
 
-/** Every error code, so a code read from the Rust side can be checked; a code left out fails the type check. */
-const ERROR_CODES: Readonly<Record<ErrorCode, true>> = {
-  unsupported_version: true,
-  invalid_request: true,
-  invalid_url: true,
-  not_found: true,
-  app_unavailable: true,
-  app_not_running: true,
-  internal: true,
-  not_started: true,
-  addon_required: true,
-  limit_reached: true,
-  wrong_state: true,
-  update_check_failed: true,
-};
-
-function isErrorCode(value: unknown): value is ErrorCode {
-  return typeof value === 'string' && Object.hasOwn(ERROR_CODES, value);
+/** Why a command failed when the shell's answer does not have the contract's shape: a bug, never the person's doing. */
+export function unreadableAnswer(command: string): string {
+  return `${PRODUCT_NAME} sent an answer to ${command} that this window cannot read. Restart ${PRODUCT_NAME}, and please report it if it keeps happening.`;
 }
 
 /**
@@ -97,16 +84,17 @@ export class TauriBackend implements DownloadWindowBackend {
     this.#listen = listener;
   }
 
-  /** Calls `command` with its contract arguments; the answer has the contract's type. */
+  /** Calls `command` with its contract arguments, and checks the answer has the contract's shape. */
   async #call<C extends Command>(command: C, ...args: ArgsOf<C>): Promise<OutputOf<C>> {
+    let answer: unknown;
     try {
-      return await this.#invoke<OutputOf<C>>(
-        command,
-        args.length === 0 ? undefined : { args: args[0] },
-      );
+      answer = await this.#invoke(command, args.length === 0 ? undefined : { args: args[0] });
     } catch (err) {
       throw toBackendError(err);
     }
+    const fits: (value: unknown) => value is OutputOf<C> = COMMAND_OUTPUTS[command];
+    if (!fits(answer)) throw new BackendError(unreadableAnswer(command));
+    return answer;
   }
 
   /** For commands that answer with nothing. */

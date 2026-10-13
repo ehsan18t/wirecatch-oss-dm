@@ -1,6 +1,6 @@
 // Regenerates src/generated and src/index.ts from crates/protocol (`pnpm protocol:generate`).
 //
-// The types are exported to a temporary folder, formatted into a folder next to src/generated, and that folder is renamed into place only once the whole generation succeeded, so a build, test or format failure leaves the committed types in place. Replacing the folder as a whole means a type removed from crates/protocol does not leave its file behind (ts-rs only ever writes files). Every file is formatted with the repository's Prettier settings on the way, so the generated files pass the same format check as the rest of the package.
+// The types are exported to a temporary folder, formatted into a folder next to src/generated, and that folder is renamed into place only once the whole generation succeeded, so a build, test or format failure leaves the committed types in place. Replacing the folder as a whole means a type removed from crates/protocol does not leave its file behind (ts-rs only ever writes files). Next to the types it writes validators.ts, a guard for each of them (validators.mjs). Every file is formatted with the repository's Prettier settings on the way, so the generated files pass the same format check as the rest of the package.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as prettier from 'prettier';
 import { indexSource } from './index-source.mjs';
+import { VALIDATORS, validatorsSource } from './validators.mjs';
 import { nextFolder, recoverInterruptedSwap, removePrevious, swapIn } from './swap-folder.mjs';
 
 const PACKAGE = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,6 +55,7 @@ const staging = mkdtempSync(join(tmpdir(), 'wirecatch-protocol-'));
 try {
   recoverInterruptedSwap(GENERATED);
   exportTypes(staging);
+  writeFileSync(join(staging, `${VALIDATORS}.ts`), validatorsSource(staging));
   const index = await formatted(indexSource(staging), INDEX);
   await writeNext(staging);
   swapIn(GENERATED);

@@ -2,10 +2,16 @@
  * Messages between the popup and the background script (inside the extension only;
  * everything that reaches the app uses `@wirecatch/protocol`).
  */
-import type { ExtensionSettings, ExtensionSettingsPatch, QueueSummary } from '@wirecatch/protocol';
+import {
+  isExtensionSettings,
+  isMediaKind,
+  isQueueSummary,
+  type ExtensionSettings,
+  type ExtensionSettingsPatch,
+  type QueueSummary,
+} from '@wirecatch/protocol';
 import type { MediaEntry, MediaView } from './media/center';
 import { isConnectionStatus, type ConnectionStatus } from './native/status';
-import { isExtensionSettings, isMediaKind, isQueueSummary } from './protocol';
 import {
   arrayOf,
   fields,
