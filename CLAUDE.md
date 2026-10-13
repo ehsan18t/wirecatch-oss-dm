@@ -52,6 +52,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 ## How to work here
 
 - Fix the cause, not the symptom. When the same problem shows up in several places, fix it once at its source (docs/ENGINEERING.md, sections 1 and 3).
+- Data two languages or two packages need, test data included, lives in one file both load (docs/ENGINEERING.md, section 1). Before writing a list of values, samples or expected outputs, look for the file that already holds them; a reviewer flags any second copy.
 - Leave every file you touch better. No lint suppressions: fix the cause. The only exceptions are a single `#[expect(..., reason = "...")]`, an ESLint disable comment with a `--` reason, or a `svelte-ignore` with its reason in parentheses (`<!-- svelte-ignore code (reason) -->`), where the rule is wrong for that code, each listed in docs/AUDIT.md W14 and in `LINT_EXCEPTIONS` in `scripts/gate/exceptions.mjs` (the `exceptions` check fails on any other).
 - A bug fix starts with a failing test that proves the bug.
 - When a rule or gate is too weak to catch a problem you found, say so and propose the check, rather than only fixing the one instance.
