@@ -287,6 +287,53 @@ mod tests {
         }
     }
 
+    /// A TypeScript list of the formats `keep` keeps, in the order the menus list them.
+    fn format_list(
+        name: &'static str,
+        docs: &[&'static str],
+        keep: impl Fn(OutputFormat) -> bool,
+    ) -> Constant {
+        let kept: Vec<OutputFormat> = output_formats().into_iter().filter(|f| keep(*f)).collect();
+        Constant {
+            name,
+            docs: docs.to_vec(),
+            written: super::Written {
+                value: serde_json::to_string(&kept).unwrap(),
+                annotation: Some("readonly OutputFormat[]"),
+                imports: &["OutputFormat"],
+            },
+        }
+    }
+
+    fn format_tables() -> Vec<Constant> {
+        vec![
+            format_list(
+                "VIDEO_OUTPUT_FORMATS",
+                &[
+                    " The formats a video can be saved as, the original first, in the order a menu lists",
+                    " them (`OutputFormat::saves_video`).",
+                ],
+                OutputFormat::saves_video,
+            ),
+            format_list(
+                "AUDIO_OUTPUT_FORMATS",
+                &[
+                    " The formats audio alone can be saved as, the original first, in the order a menu",
+                    " lists them (`OutputFormat::saves_audio`).",
+                ],
+                OutputFormat::saves_audio,
+            ),
+            format_list(
+                "LOSSLESS_OUTPUT_FORMATS",
+                &[
+                    " The formats that keep audio without loss, so a lossy source gains nothing from",
+                    " them (`OutputFormat::is_lossless`).",
+                ],
+                OutputFormat::is_lossless,
+            ),
+        ]
+    }
+
     fn audio_tables() -> Vec<Constant> {
         let list = |values: &[u32]| {
             let values: Vec<String> = values.iter().map(u32::to_string).collect();
@@ -372,6 +419,7 @@ mod tests {
             crate::app::exported_consts(),
             crate::desktop::exported_consts(),
             crate::version::since_tables(),
+            format_tables(),
             audio_tables(),
             vec![Constant::json(
                 "DEFAULT_EXTENSION_SETTINGS",

@@ -828,10 +828,7 @@ impl Manager {
             &mut new.media.video
         };
         defaults.format = selection.output;
-        if !matches!(
-            selection.output,
-            OutputFormat::Original | OutputFormat::Flac | OutputFormat::Wav
-        ) {
+        if selection.output != OutputFormat::Original && !selection.output.is_lossless() {
             defaults.audio_kbps = selection.audio_kbps;
         }
         if let Some((languages, auto)) =

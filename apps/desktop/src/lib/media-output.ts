@@ -5,6 +5,7 @@
 import {
   AUDIO_DEFAULT_KBPS,
   AUDIO_KBPS_CHOICES,
+  LOSSLESS_OUTPUT_FORMATS,
   type MediaChoice,
   type MediaOption,
   type MediaSelection,
@@ -27,9 +28,6 @@ export const FORMAT_LABEL: Record<OutputFormat, string> = {
   flac: 'FLAC',
   wav: 'WAV',
 };
-
-/** Formats that keep every bit of the sound. */
-const LOSSLESS: ReadonlySet<OutputFormat> = new Set(['flac', 'wav']);
 
 /** What a quality means when saved as `format`, if it offers that format. */
 export function fitFor(option: MediaOption | undefined, format: OutputFormat): OutputFit | null {
@@ -187,7 +185,7 @@ export function qualityNotes(
       `${kbps} kbps is more than the ${fit.audio_kbps} kbps of the download, so it does not add quality; the file only gets bigger.`,
     );
   }
-  if (LOSSLESS.has(format) && !fit.lossless_source) {
+  if (LOSSLESS_OUTPUT_FORMATS.includes(format) && !fit.lossless_source) {
     const codec = fit.audio_codec ?? 'compressed audio';
     notes.push(
       `The download's audio is ${codec}, which already left out some detail. ${FORMAT_LABEL[format]} keeps all that is there but cannot bring that back, so the file only gets bigger.`,

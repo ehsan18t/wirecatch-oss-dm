@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use wirecatch_protocol::app::{
     AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
-    MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, OutputFormat, PortablePath, Queue,
-    Theme,
+    MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, PortablePath, Queue, Theme,
 };
 use wirecatch_protocol::extension::ExtensionSettings;
 
@@ -194,11 +193,10 @@ const MAX_LANGUAGE_CHARS: usize = 35;
 /// right kind, an audio quality in a sensible range and plain language codes
 /// (lower case, without duplicates).
 fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()> {
-    use OutputFormat as F;
-    let fits = match defaults.format {
-        F::Original => true,
-        F::Mp4 | F::Mkv | F::Webm => !audio,
-        F::Mp3 | F::M4a | F::Opus | F::Flac | F::Wav => audio,
+    let fits = if audio {
+        defaults.format.saves_audio()
+    } else {
+        defaults.format.saves_video()
     };
     if !fits {
         return Err(CoreError::Invalid(if audio {
@@ -450,7 +448,7 @@ fn clean_list(
 mod tests {
     use super::*;
     use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{Schedule, TimeOfDay};
+    use wirecatch_protocol::app::{OutputFormat, Schedule, TimeOfDay};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-home"))

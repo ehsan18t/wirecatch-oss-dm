@@ -280,6 +280,45 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
+    /// Whether a video can be saved as this format: the original and the video formats. The
+    /// app refuses any other as the starting format for videos.
+    #[must_use]
+    pub const fn saves_video(self) -> bool {
+        match self {
+            OutputFormat::Original | OutputFormat::Mp4 | OutputFormat::Mkv | OutputFormat::Webm => {
+                true
+            }
+            OutputFormat::Mp3
+            | OutputFormat::M4a
+            | OutputFormat::Opus
+            | OutputFormat::Flac
+            | OutputFormat::Wav => false,
+        }
+    }
+
+    /// Whether audio alone can be saved as this format: the original and the audio formats.
+    /// The app refuses any other as the starting format for audio downloads.
+    #[must_use]
+    pub const fn saves_audio(self) -> bool {
+        matches!(self, OutputFormat::Original) || !self.saves_video()
+    }
+
+    /// Whether this format keeps audio without loss (FLAC and WAV), so a lossy source gains
+    /// nothing from it.
+    #[must_use]
+    pub const fn is_lossless(self) -> bool {
+        match self {
+            OutputFormat::Flac | OutputFormat::Wav => true,
+            OutputFormat::Original
+            | OutputFormat::Mp4
+            | OutputFormat::Mkv
+            | OutputFormat::Webm
+            | OutputFormat::Mp3
+            | OutputFormat::M4a
+            | OutputFormat::Opus => false,
+        }
+    }
+
     /// The audio bit rates, in kbps, a person can pick when saving as this format; for such a
     /// format the app refuses any other [`MediaSelection::audio_kbps`]. Empty when there is no
     /// choice, and then the app ignores `audio_kbps`: the original and the video formats keep
@@ -1287,5 +1326,22 @@ mod tests {
             MediaDefaults::default().video.format,
             OutputFormat::Original
         );
+    }
+
+    #[test]
+    fn each_format_is_for_videos_or_for_audio_and_only_the_original_for_both() {
+        use OutputFormat as F;
+        let video = [F::Original, F::Mp4, F::Mkv, F::Webm];
+        let audio = [F::Original, F::Mp3, F::M4a, F::Opus, F::Flac, F::Wav];
+        for format in video.into_iter().chain(audio).filter(|f| *f != F::Original) {
+            assert_eq!(format.saves_video(), video.contains(&format), "{format:?}");
+            assert_eq!(format.saves_audio(), audio.contains(&format), "{format:?}");
+        }
+        assert!(F::Original.saves_video() && F::Original.saves_audio());
+        let lossless: Vec<F> = audio.into_iter().filter(|f| f.is_lossless()).collect();
+        assert_eq!(lossless, [F::Flac, F::Wav]);
+        assert!(video.iter().all(|f| !f.is_lossless()));
+        // A lossless format has no bit rate to pick.
+        assert!(lossless.iter().all(|f| f.kbps_choices().is_empty()));
     }
 }

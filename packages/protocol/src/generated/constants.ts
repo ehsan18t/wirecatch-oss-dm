@@ -241,6 +241,31 @@ export const ERROR_CODE_SINCE: Readonly<Record<ErrorCode, number>> = {
 };
 
 /**
+ * The formats a video can be saved as, the original first, in the order a menu lists
+ * them (`OutputFormat::saves_video`).
+ */
+export const VIDEO_OUTPUT_FORMATS: readonly OutputFormat[] = ['original', 'mp4', 'mkv', 'webm'];
+
+/**
+ * The formats audio alone can be saved as, the original first, in the order a menu
+ * lists them (`OutputFormat::saves_audio`).
+ */
+export const AUDIO_OUTPUT_FORMATS: readonly OutputFormat[] = [
+  'original',
+  'mp3',
+  'm4a',
+  'opus',
+  'flac',
+  'wav',
+];
+
+/**
+ * The formats that keep audio without loss, so a lossy source gains nothing from
+ * them (`OutputFormat::is_lossless`).
+ */
+export const LOSSLESS_OUTPUT_FORMATS: readonly OutputFormat[] = ['flac', 'wav'];
+
+/**
  * The audio bit rates, in kbps, a person can pick when saving as each format;
  * formats without a choice are left out (`OutputFormat::kbps_choices`).
  */

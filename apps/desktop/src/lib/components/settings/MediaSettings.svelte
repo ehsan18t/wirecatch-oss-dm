@@ -1,6 +1,11 @@
 <script lang="ts">
   // Media: what the quality window starts with, separately for videos and for audio only.
-  import { AUDIO_KBPS_CHOICES, type OutputFormat } from '@wirecatch/protocol';
+  import {
+    AUDIO_KBPS_CHOICES,
+    AUDIO_OUTPUT_FORMATS,
+    VIDEO_OUTPUT_FORMATS,
+    type OutputFormat,
+  } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
   import { offeredKbps, offeredValue } from '$lib/select-value';
@@ -11,9 +16,6 @@
   import SettingRows from './SettingRows.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
-
-  const VIDEO_FORMATS: OutputFormat[] = ['original', 'mp4', 'mkv', 'webm'];
-  const AUDIO_FORMATS: OutputFormat[] = ['original', 'mp3', 'm4a', 'opus', 'flac', 'wav'];
 
   /** Videos, or audio only: each keeps its own choices. */
   type Kind = 'video' | 'audio';
@@ -73,11 +75,11 @@
     aria-describedby={helpId}
     value={s.media.video.format}
     onchange={(e) => {
-      const format = offeredValue(VIDEO_FORMATS, e.currentTarget.value);
+      const format = offeredValue(VIDEO_OUTPUT_FORMATS, e.currentTarget.value);
       if (format) save((d) => void (d.media.video.format = format));
     }}
   >
-    {#each VIDEO_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
+    {#each VIDEO_OUTPUT_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
   </select>
 {/snippet}
 
@@ -90,11 +92,11 @@
     aria-describedby={helpId}
     value={audio.format}
     onchange={(e) => {
-      const format = offeredValue(AUDIO_FORMATS, e.currentTarget.value);
+      const format = offeredValue(AUDIO_OUTPUT_FORMATS, e.currentTarget.value);
       if (format) setAudioFormat(format);
     }}
   >
-    {#each AUDIO_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
+    {#each AUDIO_OUTPUT_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
   </select>
   {#if kbpsList}
     <select
