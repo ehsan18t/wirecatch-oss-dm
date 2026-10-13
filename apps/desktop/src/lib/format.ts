@@ -33,10 +33,6 @@ import {
 /** What ends the scheme of a link, before the user name, host and path. */
 const SCHEME_END = '://';
 
-/** How `formatDate` starts a date of today and of yesterday. */
-const TODAY_PREFIX = 'Today, ';
-const YESTERDAY_PREFIX = 'Yesterday, ';
-
 /** Up to two days, time left is said in hours and minutes; beyond that, in days. */
 const ETA_IN_HOURS_BELOW = 2 * HOURS_PER_DAY;
 
@@ -202,17 +198,41 @@ export function parseTime(text: string): TimeOfDay | null {
   return isTimeOfDay(t) ? t : null;
 }
 
-/** Day list as words: `Every day`, `Weekdays`, `Weekends`, or `Mon, Wed, Fri`. */
-export function formatDays(days: readonly Weekday[]): string {
+/** Which days a schedule runs on, as a kind: every day (none picked means every day), Monday to Friday, the weekend, or any other set. */
+export type DayPattern = 'every' | 'weekdays' | 'weekends' | 'custom';
+
+/** The pattern of `days`, for logic that depends on it; `formatDays` says it in words. */
+export function dayPattern(days: readonly Weekday[]): DayPattern {
   const set = new Set(days);
-  if (set.size === 0 || set.size === DAYS_PER_WEEK) return 'Every day';
+  if (set.size === 0 || set.size === DAYS_PER_WEEK) return 'every';
   const exactly = (group: readonly Weekday[]) =>
     set.size === group.length && group.every((d) => set.has(d));
-  if (exactly(WORKDAYS)) return 'Weekdays';
-  if (exactly(WEEKEND)) return 'Weekends';
+  if (exactly(WORKDAYS)) return 'weekdays';
+  if (exactly(WEEKEND)) return 'weekends';
+  return 'custom';
+}
+
+/** How each pattern but `custom` is said at the start of a phrase. */
+const DAY_PATTERN_WORDS: Record<Exclude<DayPattern, 'custom'>, string> = {
+  every: 'Every day',
+  weekdays: 'Weekdays',
+  weekends: 'Weekends',
+};
+
+/** Day list as words: `Every day`, `Weekdays`, `Weekends`, or `Mon, Wed, Fri`. */
+export function formatDays(days: readonly Weekday[]): string {
+  const pattern = dayPattern(days);
+  if (pattern !== 'custom') return DAY_PATTERN_WORDS[pattern];
+  const set = new Set(days);
   return WEEKDAYS.filter((d) => set.has(d))
     .map((d) => WEEKDAY_SHORT[d])
     .join(', ');
+}
+
+/** The days inside a sentence: `weekdays`, `weekends`, or `Mon, Wed, Fri` as `formatDays` says them. */
+export function daysInPhrase(days: readonly Weekday[]): string {
+  const words = formatDays(days);
+  return dayPattern(days) === 'custom' ? words : words.toLowerCase();
 }
 
 /** A schedule in one short phrase, for example `01:00 to 07:00, weekdays`. */
@@ -221,8 +241,8 @@ export function formatSchedule(schedule: Schedule | null): string {
   const window = schedule.stop
     ? `${formatTime(schedule.start)} to ${formatTime(schedule.stop)}`
     : `From ${formatTime(schedule.start)} until empty`;
-  const days = formatDays(schedule.days);
-  return days === 'Every day' ? window : `${window}, ${days.toLowerCase()}`;
+  if (dayPattern(schedule.days) === 'every') return window;
+  return `${window}, ${daysInPhrase(schedule.days)}`;
 }
 
 /** Whether a schedule allows running at `now` (local time). No schedule means always. */
@@ -269,18 +289,38 @@ export function hostOf(url: string): string {
   }
 }
 
-/** A date for the detail panel, for example `Today, 14:05` or `3 Oct 2026, 09:12`. */
-export function formatDate(ms: number, now: Date): string {
+/** A moment placed on today, yesterday or an earlier day, with its time as `HH:MM`. */
+export interface RelativeDay {
+  day: 'today' | 'yesterday' | 'earlier';
+  time: string;
+}
+
+/** Where `ms` falls, seen from `now` (local time). */
+export function relativeDay(ms: number, now: Date): RelativeDay {
   const d = new Date(ms);
   const time = formatTime(timeOfDay(d));
   const sameDay = (a: Date, b: Date) =>
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
-  if (sameDay(d, now)) return `${TODAY_PREFIX}${time}`;
-  if (sameDay(d, dayBefore(now))) return `${YESTERDAY_PREFIX}${time}`;
+  if (sameDay(d, now)) return { day: 'today', time };
+  if (sameDay(d, dayBefore(now))) return { day: 'yesterday', time };
+  return { day: 'earlier', time };
+}
+
+/** An earlier day, for example `3 Oct 2026`. */
+function calendarDay(ms: number): string {
+  const d = new Date(ms);
   const month = d.toLocaleString('en-GB', { month: 'short' });
-  return `${d.getDate()} ${month} ${d.getFullYear()}, ${time}`;
+  return `${d.getDate()} ${month} ${d.getFullYear()}`;
+}
+
+/** A date for the detail panel, for example `Today, 14:05` or `3 Oct 2026, 09:12`. */
+export function formatDate(ms: number, now: Date): string {
+  const { day, time } = relativeDay(ms, now);
+  if (day === 'today') return `Today, ${time}`;
+  if (day === 'yesterday') return `Yesterday, ${time}`;
+  return `${calendarDay(ms)}, ${time}`;
 }
 
 /** Pulls every http, https or ftp link out of pasted text, without duplicates. */
@@ -417,12 +457,10 @@ export function statusDetail(row: DownloadSummary, queueName: string): string | 
 
 /** "today at 18:38", "yesterday at 09:05" or "on 3 Oct 2026". */
 function whenSaid(ms: number, now: Date): string {
-  const date = formatDate(ms, now);
-  if (date.startsWith(TODAY_PREFIX)) return `today at ${date.slice(TODAY_PREFIX.length)}`;
-  if (date.startsWith(YESTERDAY_PREFIX)) {
-    return `yesterday at ${date.slice(YESTERDAY_PREFIX.length)}`;
-  }
-  return `on ${date.slice(0, date.lastIndexOf(','))}`;
+  const { day, time } = relativeDay(ms, now);
+  if (day === 'today') return `today at ${time}`;
+  if (day === 'yesterday') return `yesterday at ${time}`;
+  return `on ${calendarDay(ms)}`;
 }
 
 /**

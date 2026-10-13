@@ -5,16 +5,17 @@
 
   const app = getApp();
 
-  /** A phrase in the readout longer than this does not fit the column at the size of a speed. */
-  const HEADLINE_FITS = 8;
+  /** What the readout says when nothing is moving bytes, by what is going on. */
+  const HEADLINE = { idle: 'Idle', finishing: 'Finishing videos', starting: 'Starting' } as const;
+  /** Headlines that do not fit the column at the size of a speed, so they are shown smaller. */
+  const LONG_HEADLINES: ReadonlySet<keyof typeof HEADLINE> = new Set(['finishing']);
 
   const speed = $derived(formatSpeed(app.downloads.totalSpeed));
   const active = $derived(app.counts.status.active);
   const waiting = $derived(app.counts.status.waiting);
   const joining = $derived(app.counts.joining);
-  /** What the readout says when nothing is moving bytes. */
-  const headline = $derived(
-    active === 0 ? 'Idle' : joining === active ? 'Finishing videos' : 'Starting',
+  const headline = $derived<keyof typeof HEADLINE>(
+    active === 0 ? 'idle' : joining === active ? 'finishing' : 'starting',
   );
 </script>
 
@@ -34,10 +35,10 @@
   </p>
   <p
     class="speed num"
-    class:word={!speed && headline.length > HEADLINE_FITS}
+    class:word={!speed && LONG_HEADLINES.has(headline)}
     title="Total download speed"
   >
-    {speed || headline}
+    {speed || HEADLINE[headline]}
   </p>
   <p class="sub num">
     {#if active + waiting === 0}

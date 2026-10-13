@@ -31,6 +31,15 @@ describe('AppState', () => {
     expect(app.name).toBe('Wirecatch Dev');
   });
 
+  it('says what an idle queue may run in its phrase, so nothing reads the phrase back', async () => {
+    const backend = mockBackend({ empty: true });
+    const app = appState(backend);
+    await app.init();
+    const queue = app.queues.defaultQueue;
+    if (!queue) throw new Error('The sample has no default queue.');
+    expect(app.queues.status(queue)).toBe(`Idle, up to ${String(queue.max_concurrent)} at once`);
+  });
+
   it('loads everything and applies events', async () => {
     const { app, backend } = await make();
     expect(app.ready).toBe(true);

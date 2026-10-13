@@ -42,7 +42,7 @@ export class Queues {
     );
   }
 
-  /** A short phrase for the sidebar: what this queue is doing right now. */
+  /** A short phrase for the sidebar: what this queue is doing right now, and when idle how many it may run at once. */
   status(queue: Queue): string {
     const c = this.#host.counts().queue.get(queue.id);
     if (queue.paused) return 'Paused';
@@ -53,7 +53,7 @@ export class Queues {
     if (c && c.running > 0) return `${c.running} of ${queue.max_concurrent} running`;
     if (c && c.waiting > 0) return `${c.waiting} waiting`;
     if (c && c.paused > 0) return `${c.paused} paused`;
-    return 'Idle';
+    return `Idle, up to ${String(queue.max_concurrent)} at once`;
   }
 
   async create(name: string): Promise<Queue | undefined> {

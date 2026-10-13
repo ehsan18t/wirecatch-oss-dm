@@ -67,7 +67,7 @@
         </span>
         <span class="qstate num">
           {#if q.paused}<Icon icon={Pause} size="xs" />{/if}
-          {status}{status === 'Idle' ? `, up to ${q.max_concurrent} at once` : ''}
+          {status}
         </span>
         <span class="qmeta">
           <span

@@ -8,7 +8,7 @@
     type Weekday,
   } from '@wirecatch/protocol';
   import { MB, splitKbOrMb, toBytes } from '@wirecatch/units';
-  import { formatDays, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
+  import { daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
   import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
@@ -51,8 +51,7 @@
   const daysHelp = $derived.by(() => {
     if (days.length === 0 || days.length === DAYS_PER_WEEK)
       return 'No days picked, so it runs every day.';
-    const words = formatDays(days);
-    return `Runs only on ${words === 'Weekdays' || words === 'Weekends' ? words.toLowerCase() : words}.`;
+    return `Runs only on ${daysInPhrase(days)}.`;
   });
 
   /** The speed limit the form describes, or why it is not one. */

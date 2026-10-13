@@ -1,6 +1,7 @@
 import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  dayPattern,
   earlierNote,
   FIX_LABEL,
   extractUrls,
@@ -16,6 +17,7 @@ import {
   percentOf,
   processingFraction,
   progressbarValue,
+  relativeDay,
   wireFraction,
   roundDownTo,
   shownWait,
@@ -98,6 +100,7 @@ describe('schedules', () => {
     expect(formatSchedule(null)).toBe('Runs any time');
     expect(formatSchedule(night)).toBe('01:00 to 07:00');
     expect(formatSchedule({ ...night, days: ['sat', 'sun'] })).toBe('01:00 to 07:00, weekends');
+    expect(formatSchedule({ ...night, days: ['fri', 'mon'] })).toBe('01:00 to 07:00, Mon, Fri');
     expect(formatSchedule({ start: { hour: 9, minute: 30 }, stop: null, days: [] })).toBe(
       'From 09:30 until empty',
     );
@@ -271,5 +274,32 @@ describe('a video whose server refused it for now', () => {
     expect(shownWait({ status: 'downloading', waiting })).toBeNull();
     expect(statusShort({ status: 'downloading', waiting })).toBe('Downloading');
     expect(shownWait({ status: 'connecting', waiting: null })).toBeNull();
+  });
+});
+
+describe('the parts of a phrase that logic reads', () => {
+  it('names the pattern of the days a schedule runs on, whatever the words for it', () => {
+    expect(dayPattern([])).toBe('every');
+    expect(dayPattern(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).toBe('every');
+    expect(dayPattern(['fri', 'thu', 'wed', 'tue', 'mon'])).toBe('weekdays');
+    expect(dayPattern(['sun', 'sat'])).toBe('weekends');
+    expect(dayPattern(['fri', 'mon'])).toBe('custom');
+    expect(dayPattern(['sat'])).toBe('custom');
+  });
+
+  it('places a moment on today, yesterday or an earlier day, with its time', () => {
+    const now = new Date(2026, 9, 3, 18, 40);
+    expect(relativeDay(new Date(2026, 9, 3, 9, 5).getTime(), now)).toEqual({
+      day: 'today',
+      time: '09:05',
+    });
+    expect(relativeDay(new Date(2026, 9, 2, 23, 59).getTime(), now)).toEqual({
+      day: 'yesterday',
+      time: '23:59',
+    });
+    expect(relativeDay(new Date(2026, 8, 30, 7, 0).getTime(), now)).toEqual({
+      day: 'earlier',
+      time: '07:00',
+    });
   });
 });
