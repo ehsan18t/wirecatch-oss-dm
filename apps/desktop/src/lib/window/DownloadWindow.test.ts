@@ -1,6 +1,7 @@
 // A download window with the keyboard (D23): Enter is Download now, Escape closes without
 // answering, and a finished download's window closes by itself unless the person is using it.
 
+import { questionId } from '@wirecatch/protocol';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -23,7 +24,7 @@ describe('a download window with the keyboard', () => {
     const b = mockBackend({ empty: true });
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win, host } = await show(b, { question: asked?.id ?? -1 });
+    const { win, host } = await show(b, { question: asked?.id ?? questionId(0) });
     expect(screen.getByRole('button', { name: 'Download now' })).toHaveFocus();
     // Every control has a name a screen reader can say.
     expect(screen.getByRole('textbox', { name: 'File name' })).toBeInTheDocument();
@@ -46,7 +47,7 @@ describe('a download window with the keyboard', () => {
     const b = mockBackend({ empty: true });
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
-    const { host } = await show(b, { question: choice?.id ?? -1 });
+    const { host } = await show(b, { question: choice?.id ?? questionId(0) });
     expect(screen.getByRole('heading', { name: 'Pick a quality' })).toBeInTheDocument();
     // The best quality needs the media add-on, and the main button says so.
     const main = screen.getByRole('button', { name: 'Install add-on and download' });
@@ -136,7 +137,7 @@ describe('a download window and the clock', () => {
     const b = mockBackend({ empty: true });
     b.simulateConfirmation();
     const [first] = await b.pendingConfirmations();
-    const id = await b.confirmCapture(first?.id ?? -1, {
+    const id = await b.confirmCapture(first?.id ?? questionId(0), {
       file_name: null,
       folder: null,
       queue: null,
@@ -146,7 +147,7 @@ describe('a download window and the clock', () => {
     // The mock sends four sample files in turn; the fifth is the first one again.
     for (let i = 0; i < 4; i++) b.simulateConfirmation();
     const again = (await b.pendingConfirmations()).at(-1);
-    await show(b, { question: again?.id ?? -1 });
+    await show(b, { question: again?.id ?? questionId(0) });
     expect(screen.getByRole('note')).toHaveTextContent(/^You downloaded this today at /);
   });
 });

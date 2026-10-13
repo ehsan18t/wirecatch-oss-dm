@@ -106,14 +106,20 @@ impl Exported for &[&str] {
     }
 }
 
+/// A branded id: its number, given its type with `as`, since a plain number is not one.
+#[cfg(test)]
+fn branded(number: i64, name: &'static str, import: &'static [&'static str]) -> Written {
+    Written {
+        value: format!("{} as {name}", whole_number(number).value),
+        annotation: None,
+        imports: import,
+    }
+}
+
 #[cfg(test)]
 impl Exported for crate::QueueId {
     fn written(&self) -> Written {
-        Written {
-            annotation: Some("QueueId"),
-            imports: &["QueueId"],
-            ..whole_number(self.0)
-        }
+        branded(self.0, "QueueId", &["QueueId"])
     }
 }
 
@@ -158,11 +164,59 @@ impl Constant {
         imports: &'static [&'static str],
         value: &impl serde::Serialize,
     ) -> Constant {
+        Constant::json_naming(name, docs, annotation, imports, value, &[])
+    }
+
+    /// [`Constant::json`], with each of `named` a field of the object written as another
+    /// generated constant instead: for a value JSON cannot give its type, such as a branded id.
+    /// The field must hold that constant's value.
+    pub(crate) fn json_naming(
+        name: &'static str,
+        docs: &[&'static str],
+        annotation: &'static str,
+        imports: &'static [&'static str],
+        value: &impl serde::Serialize,
+        named: &[(&str, &str, serde_json::Value)],
+    ) -> Constant {
+        let value = serde_json::to_value(value).unwrap();
+        let text = if named.is_empty() {
+            serde_json::to_string_pretty(&value).unwrap()
+        } else {
+            let serde_json::Value::Object(fields) = &value else {
+                panic!("{name} is not an object, so none of its fields can name a constant");
+            };
+            for (field, constant, held) in named {
+                assert_eq!(
+                    fields.get(*field),
+                    Some(held),
+                    "{name}.{field} does not hold {constant}"
+                );
+            }
+            let entries: Vec<String> = fields
+                .iter()
+                .map(|(field, held)| {
+                    let written = named
+                        .iter()
+                        .find(|(f, _, _)| f == field)
+                        .map_or_else(|| serde_json::to_string(held).unwrap(), |n| n.1.to_owned());
+                    format!("  {}: {written},", serde_json::to_string(field).unwrap())
+                })
+                .collect();
+            format!(
+                "{{
+{}
+}}",
+                entries.join(
+                    "
+"
+                )
+            )
+        };
         Constant {
             name,
             docs: docs.to_vec(),
             written: Written {
-                value: serde_json::to_string_pretty(value).unwrap(),
+                value: text,
                 annotation: Some(annotation),
                 imports,
             },
@@ -402,6 +456,38 @@ mod tests {
     }
 
     #[test]
+    fn a_branded_id_is_written_with_its_type() {
+        let out = written(&Constant::of("Q", &[" Queue."], &crate::QueueId(7)));
+        assert!(out.ends_with("export const Q = 7 as QueueId;\n"), "{out}");
+    }
+
+    #[test]
+    fn a_field_naming_a_constant_is_written_as_that_constant_only_when_it_holds_it() {
+        let value = serde_json::json!({ "queue": 1, "on": true });
+        let out = written(&Constant::json_naming(
+            "S",
+            &[" Settings."],
+            "Settings",
+            &[],
+            &value,
+            &[("queue", "ONE", serde_json::json!(1))],
+        ));
+        assert!(out.contains("\"queue\": ONE,"), "{out}");
+        assert!(out.contains("\"on\": true,"), "{out}");
+        let wrong = std::panic::catch_unwind(|| {
+            Constant::json_naming(
+                "S",
+                &[" S."],
+                "S",
+                &[],
+                &value,
+                &[("queue", "TWO", 2.into())],
+            )
+        });
+        assert!(wrong.is_err());
+    }
+
+    #[test]
     fn negative_numbers_are_written_and_inexact_ones_refused() {
         assert!(written(&Constant::number("D", &[" Negative."], -5i64)).ends_with("= -5;\n"));
         let too_big = std::panic::catch_unwind(|| Constant::number("E", &[" Big."], u64::MAX));
@@ -421,7 +507,7 @@ mod tests {
             crate::version::since_tables(),
             format_tables(),
             audio_tables(),
-            vec![Constant::json(
+            vec![Constant::json_naming(
                 "DEFAULT_EXTENSION_SETTINGS",
                 &[
                     " The extension's settings on a fresh install (`ExtensionSettings::default`), which",
@@ -430,6 +516,11 @@ mod tests {
                 "ExtensionSettings",
                 &["ExtensionSettings"],
                 &ExtensionSettings::default(),
+                &[(
+                    "default_queue",
+                    "DEFAULT_QUEUE_ID",
+                    serde_json::to_value(crate::DEFAULT_QUEUE_ID).unwrap(),
+                )],
             )],
         ];
         let constants: Vec<&Constant> = constants.iter().flatten().collect();

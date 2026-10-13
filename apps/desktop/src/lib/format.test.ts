@@ -1,4 +1,4 @@
-import type { DownloadSummary } from '@wirecatch/protocol';
+import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   earlierNote,
@@ -158,11 +158,11 @@ describe('links', () => {
 describe('a download already in the list (D23)', () => {
   const now = new Date(2026, 9, 10, 20, 0);
   const row = (change: Partial<DownloadSummary>): DownloadSummary => ({
-    id: 1,
+    id: downloadId(1),
     url: 'https://example.com/a.zip',
     file_name: 'a.zip',
     path: 'C:/Downloads/a.zip',
-    queue: 1,
+    queue: queueId(1),
     category: 'archive',
     status: 'completed',
     total: 10,
@@ -243,11 +243,11 @@ describe('a video whose server refused it for now', () => {
     expect(shownWait(row)).toEqual(waiting);
     expect(statusShort(row)).toBe('Retrying at 20:51');
     const full: DownloadSummary = {
-      id: 1,
+      id: downloadId(1),
       url: 'https://www.youtube.com/watch?v=x',
       file_name: 'Talk.mp4',
       path: 'C:/Downloads/Video/Talk.mp4',
-      queue: 1,
+      queue: queueId(1),
       category: 'video',
       status: 'connecting',
       total: null,

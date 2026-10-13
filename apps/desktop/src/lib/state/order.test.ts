@@ -1,26 +1,29 @@
+import { downloadId } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import { nudged, placed } from './order';
 
+const ids = (...values: number[]) => values.map(downloadId);
+
 describe('placed', () => {
-  const queue = [1, 2, 3, 4, 5];
+  const queue = ids(1, 2, 3, 4, 5);
 
   it('moves rows before another, keeping their own order', () => {
-    expect(placed(queue, [4, 2], 1)).toEqual([2, 4, 1, 3, 5]);
+    expect(placed(queue, ids(4, 2), downloadId(1))).toEqual([2, 4, 1, 3, 5]);
   });
 
   it('moves rows to the end without a row to go before, or one not in the queue', () => {
-    expect(placed(queue, [1], null)).toEqual([2, 3, 4, 5, 1]);
-    expect(placed(queue, [1], 99)).toEqual([2, 3, 4, 5, 1]);
+    expect(placed(queue, ids(1), null)).toEqual([2, 3, 4, 5, 1]);
+    expect(placed(queue, ids(1), downloadId(99))).toEqual([2, 3, 4, 5, 1]);
   });
 
   it('says nothing changes when the rows are already there, or none is in the queue', () => {
-    expect(placed(queue, [2], 3)).toBeNull();
-    expect(placed(queue, [99], 1)).toBeNull();
+    expect(placed(queue, ids(2), downloadId(3))).toBeNull();
+    expect(placed(queue, ids(99), downloadId(1))).toBeNull();
   });
 });
 
 describe('nudged', () => {
-  const queue = [1, 2, 3, 4, 5];
+  const queue = ids(1, 2, 3, 4, 5);
   const selected = (ids: number[]) => (id: number) => ids.includes(id);
 
   it('goes up one place, before the row above', () => {

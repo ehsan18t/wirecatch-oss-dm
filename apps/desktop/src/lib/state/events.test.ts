@@ -1,4 +1,4 @@
-import type { UiEvent } from '@wirecatch/protocol';
+import { questionId, type UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend, windowState } from '$lib/testing/setup';
 import { dispatch, HeldEvents, type UiEventHandlers } from './events';
@@ -72,12 +72,15 @@ describe('event handler tables', () => {
     const backend = mockBackend({ empty: true });
     backend.simulateConfirmation();
     const [asked] = await backend.pendingConfirmations();
-    const id = asked?.id ?? -1;
+    const id = asked?.id ?? questionId(0);
     const { win } = windowState(backend, { question: id });
     await win.init();
     expect(win.question?.kind).toBe('capture');
-    win.handle({ type: 'media_analysing', data: { id: id + 1, url: 'https://example.com/v' } });
-    win.handle({ type: 'confirmation_closed', data: { id: id + 1 } });
+    win.handle({
+      type: 'media_analysing',
+      data: { id: questionId(id + 1), url: 'https://example.com/v' },
+    });
+    win.handle({ type: 'confirmation_closed', data: { id: questionId(id + 1) } });
     win.handle(STORAGE);
     expect(win.phase).toBe('ask');
     expect(win.question?.kind).toBe('capture');

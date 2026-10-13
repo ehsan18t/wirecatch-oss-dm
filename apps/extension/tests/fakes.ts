@@ -3,8 +3,10 @@
  * flows run end to end in tests without a browser, a bridge or an app.
  */
 import {
+  downloadId,
   MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
+  queueId,
   type AddAction,
   type Call,
   type Event,
@@ -38,12 +40,12 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   ignored_sites: [],
   capture_extensions: [],
   min_capture_size: 0,
-  default_queue: 1,
+  default_queue: queueId(1),
 };
 
 export const QUEUES: QueueSummary[] = [
-  { id: 1, name: 'Main', is_default: true },
-  { id: 2, name: 'Night', is_default: false },
+  { id: queueId(1), name: 'Main', is_default: true },
+  { id: queueId(2), name: 'Night', is_default: false },
 ];
 
 /** Lets pending promise callbacks run (they are queued as microtasks). */
@@ -315,7 +317,7 @@ export class FakeApp implements NativeTransport {
       status: 'ok',
       value: {
         type: 'download_added',
-        data: { id: behavior === 'awaiting_confirmation' ? null : 7, action: behavior },
+        data: { id: behavior === 'awaiting_confirmation' ? null : downloadId(7), action: behavior },
       },
     });
   }

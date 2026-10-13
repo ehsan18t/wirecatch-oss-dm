@@ -6,9 +6,10 @@
   import Plus from '@lucide/svelte/icons/plus';
   import Search from '@lucide/svelte/icons/search';
   import { CATEGORY_LABEL } from '$lib/format';
+  import { keysOf } from '$lib/keys';
   import { ariaShortcut } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
-  import { SORT_LABEL, STATUS_GROUP_LABEL, type SortKey } from '$lib/state/view';
+  import { SORT_LABEL, STATUS_GROUP_LABEL } from '$lib/state/view';
   import Button from './Button.svelte';
   import Icon from './Icon.svelte';
 
@@ -30,7 +31,7 @@
     }
   });
 
-  const sorts = Object.keys(SORT_LABEL) as SortKey[];
+  const sorts = keysOf(SORT_LABEL);
   const count = $derived(app.visible.length);
   // Nothing to pause or resume means the button would do nothing; say so by disabling it.
   const canPauseAll = $derived(app.counts.status.active + app.counts.status.waiting > 0);

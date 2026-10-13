@@ -6,7 +6,9 @@ import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import ts from 'typescript-eslint';
 import { noAssertionOnInput } from './rules/no-assertion-on-input.js';
+import { noBrandAssertion } from './rules/no-brand-assertion.js';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
+import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
 
@@ -15,7 +17,9 @@ const plugin = {
   meta: { name: '@wirecatch/eslint-config' },
   rules: {
     'no-assertion-on-input': noAssertionOnInput,
+    'no-brand-assertion': noBrandAssertion,
     'no-magic-numbers': noMagicNumbers,
+    'no-type-argument-assertion': noTypeArgumentAssertion,
     'no-value-of-type': noValueOfType,
     'use-ui-primitives': useUiPrimitives,
   },
@@ -53,6 +57,17 @@ const BASELINE_RULES = {
   '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
   // Outside data (`any` or `unknown`) gets its type from a guard that checks it, never from `as` or `!`.
   'wirecatch/no-assertion-on-input': 'error',
+  // An assertion that narrows a type claims what nothing checked, and so does a type argument that only says what a call returns (`listen<UiEvent>`); outside data gets its type from a generated guard.
+  '@typescript-eslint/no-unsafe-type-assertion': 'error',
+  'wirecatch/no-type-argument-assertion': 'error',
+  // A branded id comes from the app, a generated guard or its constructor, never from an assertion or a guard written by hand; a protocol type is checked by its generated guard.
+  'wirecatch/no-brand-assertion': [
+    'error',
+    {
+      constructors: ['packages/protocol/src/ids.ts'],
+      generated: ['packages/protocol/src/generated/'],
+    },
+  ],
   // Every number that is not obvious gets a name that says what it means; the value of a module constant may be written the way it reads (`8 * 1024`).
   'no-magic-numbers': 'off',
   'wirecatch/no-magic-numbers': [
@@ -147,6 +162,8 @@ export function wirecatch({
       rules: {
         'wirecatch/no-magic-numbers': 'off',
         'wirecatch/no-assertion-on-input': 'off',
+        '@typescript-eslint/no-unsafe-type-assertion': 'off',
+        'wirecatch/no-type-argument-assertion': 'off',
         '@typescript-eslint/no-non-null-assertion': 'off',
         'max-lines-per-function': 'off',
         'max-lines': 'off',
@@ -158,7 +175,14 @@ export function wirecatch({
       rules: { 'no-console': 'off', 'wirecatch/no-magic-numbers': 'off' },
     },
     { files: untypedFiles, ...ts.configs.disableTypeChecked },
-    { files: untypedFiles, rules: { 'wirecatch/no-assertion-on-input': 'off' } },
+    {
+      files: untypedFiles,
+      rules: {
+        'wirecatch/no-assertion-on-input': 'off',
+        'wirecatch/no-brand-assertion': 'off',
+        'wirecatch/no-type-argument-assertion': 'off',
+      },
+    },
     ...layers,
   );
 }

@@ -1,6 +1,7 @@
 // A video's quality window with output formats (D24): Save as, audio quality, subtitles and
 // chapters, the notes that say whether a choice converts, and the last choices as the start.
 
+import { questionId } from '@wirecatch/protocol';
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +17,7 @@ async function asking(change?: (b: MockBackend) => Promise<void>) {
   await change?.(b);
   b.simulateMediaChoice();
   const [choice] = await b.pendingMediaChoices();
-  const { win, host } = windowState(b, { question: choice?.id ?? -1 });
+  const { win, host } = windowState(b, { question: choice?.id ?? questionId(0) });
   await win.init();
   render(DownloadWindow, { props: { win } });
   await settle();

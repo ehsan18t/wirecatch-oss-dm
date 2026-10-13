@@ -24,7 +24,7 @@ export const MIN_PROTOCOL_VERSION = 1;
  * The default queue, which always exists and cannot be deleted: downloads go to it when
  * nothing names another queue.
  */
-export const DEFAULT_QUEUE_ID: QueueId = 1;
+export const DEFAULT_QUEUE_ID = 1 as QueueId;
 
 /**
  * Request id the app uses for an error it cannot tie to a request (for example an
@@ -297,11 +297,11 @@ export const AUDIO_DEFAULT_KBPS: Readonly<Partial<Record<OutputFormat, number>>>
  * the extension judges browser downloads by until it first hears from the app.
  */
 export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
-  capture_enabled: true,
   ask_before_download: true,
-  show_media_button: true,
-  ignored_sites: [],
+  capture_enabled: true,
   capture_extensions: [],
+  default_queue: DEFAULT_QUEUE_ID,
+  ignored_sites: [],
   min_capture_size: 0,
-  default_queue: 1,
+  show_media_button: true,
 };

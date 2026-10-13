@@ -7,6 +7,7 @@
 // the filtered list rebuilt.
 
 import type { DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
+import { keysOf } from '../keys';
 import { track } from './reactivity';
 import { QueueDeltas, RowIndex } from './row-index';
 import { LIST_FIELDS } from './view';
@@ -41,7 +42,7 @@ const ROW_FIELDS: Readonly<Record<RowField, true>> = {
   completed_at: true,
 };
 
-const FIELDS = Object.keys(ROW_FIELDS) as readonly RowField[];
+const FIELDS: readonly RowField[] = keysOf(ROW_FIELDS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

@@ -11,11 +11,13 @@ import type {
   PendingCapture,
   ProcessingStep,
   Queue,
+  QuestionId,
   QueueId,
   SettingsProfile,
   UiEvent,
   UserError,
 } from '@wirecatch/protocol';
+import { downloadId, questionId, queueId } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
 import type { WindowRegistry } from '../../sample-windows';
@@ -46,7 +48,7 @@ export interface Sim {
 
 /** A page that asked for the media add-on; it continues under the same id once it is installed. */
 export interface AddonPage {
-  id: number;
+  id: QuestionId;
   url: string;
 }
 
@@ -115,16 +117,31 @@ export class MockState {
   /** What each add-on was before its install or update started, for Stop. */
   readonly beforeInstall = new Map<string, AddonInfo['state']>();
   readonly listeners = new Set<(e: UiEvent) => void>();
-  nextId = 1;
-  nextQueueId = Math.max(...this.queues.map((q) => q.id)) + 1;
+  #nextDownload = 1;
+  #nextQueue = Math.max(...this.queues.map((q) => q.id)) + 1;
   /** Confirmations and media choices share one id space, as in the core. */
-  nextPendingId = 1;
+  #nextQuestion = 1;
 
   constructor(
     readonly windows: WindowRegistry,
     readonly random: Random,
     readonly now: () => number,
   ) {}
+
+  /** The id of the next download added. */
+  newDownloadId(): DownloadId {
+    return downloadId(this.#nextDownload++);
+  }
+
+  /** The id of the next queue made. */
+  newQueueId(): QueueId {
+    return queueId(this.#nextQueue++);
+  }
+
+  /** The id of the next question asked: a file to confirm, a page being read or a quality to pick. */
+  newQuestionId(): QuestionId {
+    return questionId(this.#nextQuestion++);
+  }
 
   emit(event: UiEvent): void {
     for (const l of this.listeners) l(event);
@@ -187,7 +204,7 @@ export class MockState {
   }
 
   /** Every open question, oldest first, as the desktop lists them. */
-  openQuestions(): number[] {
+  openQuestions(): QuestionId[] {
     const ids = [
       ...this.pending.map((p) => p.id),
       ...this.mediaChoices.map((c) => c.id),
@@ -202,7 +219,7 @@ export class MockState {
     const category = categoryFor(fields.file_name, this.settings.categories);
     const folder = fields.folder ?? folderFor(category, this.settings);
     const row: DownloadSummary = {
-      id: this.nextId++,
+      id: this.newDownloadId(),
       url: fields.url,
       file_name: fields.file_name,
       path: `${folder}\\${fields.file_name}`,

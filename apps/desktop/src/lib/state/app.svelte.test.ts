@@ -1,3 +1,4 @@
+import { questionId, queueId } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
@@ -76,14 +77,14 @@ describe('AppState', () => {
   it('places downloads inside their queue and tells the backend the new order', async () => {
     const { app, backend } = await make();
     const spy = vi.spyOn(backend, 'reorder');
-    const q = app.downloads.idsInQueue(1);
-    await app.actions.placeInQueue(1, [q[3]!], q[0]!);
+    const q = app.downloads.idsInQueue(queueId(1));
+    await app.actions.placeInQueue(queueId(1), [q[3]!], q[0]!);
     const expected = [q[3], q[0], q[1], q[2], ...q.slice(4)];
-    expect(app.downloads.idsInQueue(1)).toEqual(expected);
+    expect(app.downloads.idsInQueue(queueId(1))).toEqual(expected);
     expect(spy).toHaveBeenCalledWith(1, expected);
     // Dropping at the end.
-    await app.actions.placeInQueue(1, [q[3]!], null);
-    expect(app.downloads.idsInQueue(1).at(-1)).toBe(q[3]);
+    await app.actions.placeInQueue(queueId(1), [q[3]!], null);
+    expect(app.downloads.idsInQueue(queueId(1)).at(-1)).toBe(q[3]);
   });
 
   it('only nudges inside a queue view', async () => {
@@ -144,11 +145,11 @@ describe('AppState', () => {
     backend.simulateConfirmation();
     expect(app.questions.pending).toHaveLength(2);
     expect(app.questions.waitingCount).toBe(2);
-    await backend.rejectCapture(app.questions.pending[0]?.id ?? -1);
-    await backend.confirmCapture(app.questions.pending[0]?.id ?? -1, {
+    await backend.rejectCapture(app.questions.pending[0]?.id ?? questionId(-1));
+    await backend.confirmCapture(app.questions.pending[0]?.id ?? questionId(-1), {
       folder: null,
       file_name: null,
-      queue: 3,
+      queue: queueId(3),
       later: false,
     });
     expect(app.questions.pending).toHaveLength(0);

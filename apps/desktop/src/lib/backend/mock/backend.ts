@@ -9,6 +9,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
+  QuestionId,
   Queue,
   QueueId,
   SettingsProfile,
@@ -288,19 +289,19 @@ export class MockBackend implements Backend {
     return this.#call(() => this.#state.pending.map((p) => ({ ...p })));
   }
 
-  confirmCapture(id: number, confirmation: CaptureConfirmation) {
+  confirmCapture(id: QuestionId, confirmation: CaptureConfirmation) {
     return this.#call(() => captures.confirmCapture(this.#state, id, confirmation));
   }
 
-  rejectCapture(id: number) {
+  rejectCapture(id: QuestionId) {
     return this.#call(() => captures.rejectCapture(this.#state, id));
   }
 
-  getQuestion(id: number) {
+  getQuestion(id: QuestionId) {
     return this.#call(() => captures.getQuestion(this.#state, id));
   }
 
-  earlierDownload(id: number) {
+  earlierDownload(id: QuestionId) {
     return this.#call(() => captures.earlierDownload(this.#state, id));
   }
 
@@ -342,7 +343,7 @@ export class MockBackend implements Backend {
   // ---- Media and add-ons ----
 
   /** Sample data only: the browser found media with several qualities. */
-  simulateMediaChoice(page?: string, id?: number): void {
+  simulateMediaChoice(page?: string, id?: QuestionId): void {
     media.simulateMediaChoice(this.#state, this.#mediaIndex++, page, id);
   }
 
@@ -366,11 +367,11 @@ export class MockBackend implements Backend {
     return this.#call(() => media.pendingAddonRequests(this.#state));
   }
 
-  chooseMedia(id: number, selection: MediaSelection) {
+  chooseMedia(id: QuestionId, selection: MediaSelection) {
     return this.#call(() => media.chooseMedia(this.#state, id, selection));
   }
 
-  dismissMediaChoice(id: number) {
+  dismissMediaChoice(id: QuestionId) {
     return this.#call(() => media.dismissMediaChoice(this.#state, id));
   }
 

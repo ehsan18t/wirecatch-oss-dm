@@ -2,6 +2,7 @@
  * The popup, rendered in jsdom and wired to the real background hub and native
  * client, which talk to a fake app through a fake native port.
  */
+import { queueId } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -97,7 +98,7 @@ describe('popup', () => {
           ignored_sites: ['ads.example.org'],
           capture_extensions: ['zip', 'iso'],
           min_capture_size: 5 * 1024 ** 2,
-          default_queue: 2,
+          default_queue: queueId(2),
         };
       },
     });
@@ -265,7 +266,7 @@ describe('popup', () => {
   it('marks the queues and shows clearly when the default queue no longer exists', async () => {
     const { app } = await openPopup({
       configure: (app) => {
-        app.settings = { ...app.settings, default_queue: 9 };
+        app.settings = { ...app.settings, default_queue: queueId(9) };
       },
     });
     const select = screen.getByRole('combobox', { name: 'Default queue' });
@@ -354,7 +355,7 @@ describe('popup', () => {
       configure: (app, cache) => {
         cache.value = {
           settings: { ...app.settings, capture_extensions: ['iso'] },
-          queues: [{ id: 1, name: 'Main', is_default: true }],
+          queues: [{ id: queueId(1), name: 'Main', is_default: true }],
           savedAt: Date.UTC(2026, 9, 1),
           appClosed: false,
         };
@@ -513,7 +514,7 @@ describe('popup accessibility', () => {
     const { container } = await openPopup({
       siteAccess: false,
       configure: (app) => {
-        app.settings = { ...app.settings, default_queue: 9 };
+        app.settings = { ...app.settings, default_queue: queueId(9) };
       },
     });
     expect(await axeViolations(container)).toEqual([]);

@@ -1,5 +1,5 @@
 import { NATIVE_HOST_NAME } from '@wirecatch/product';
-import { isOutcome, type ErrorCode } from '@wirecatch/protocol';
+import { isOutcome, queueId, type ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
@@ -315,7 +315,7 @@ describe('settings cache', () => {
     expect(await cache.load()).toBeNull();
     const value = {
       settings: DEFAULT_SETTINGS,
-      queues: [{ id: 1, name: 'Main', is_default: true }],
+      queues: [{ id: queueId(1), name: 'Main', is_default: true }],
       savedAt: 5,
       appClosed: true,
     };

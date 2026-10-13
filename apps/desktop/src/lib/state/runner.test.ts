@@ -1,6 +1,7 @@
 // Running an action for a window: a failure is said once, in words, and a window that shows only
 // the latest failure takes the last one away as the next action starts.
 
+import { downloadId } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { Runner } from './runner';
 
@@ -28,7 +29,7 @@ describe('Runner', () => {
   it('clears the last failure as a bulk action starts', async () => {
     const clear = vi.fn();
     const runner = new Runner(() => undefined, clear);
-    await runner.bulk([1, 2], 'pause', () => Promise.resolve());
+    await runner.bulk([downloadId(1), downloadId(2)], 'pause', () => Promise.resolve());
     expect(clear).toHaveBeenCalledOnce();
   });
 

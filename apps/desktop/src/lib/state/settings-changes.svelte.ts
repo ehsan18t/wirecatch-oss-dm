@@ -26,8 +26,8 @@ function same(a: unknown, b: unknown): boolean {
 /** The fields of `after` that differ from `before`, each whole. */
 function changedFields<T extends object>(before: T, after: T): Partial<T> {
   const changed: Partial<T> = {};
-  for (const key of Object.keys(after) as (keyof T)[]) {
-    if (!same(before[key], after[key])) changed[key] = after[key];
+  for (const key in after) {
+    if (Object.hasOwn(after, key) && !same(before[key], after[key])) changed[key] = after[key];
   }
   return changed;
 }
@@ -57,8 +57,10 @@ function restoreFields<T extends object>(
   patch: { [K in keyof T]?: unknown },
   before: T,
 ): void {
-  for (const key of Object.keys(patch) as (keyof T)[]) {
-    if (same(current[key], patch[key])) current[key] = structuredClone(before[key]);
+  for (const key in patch) {
+    if (Object.hasOwn(patch, key) && same(current[key], patch[key])) {
+      current[key] = structuredClone(before[key]);
+    }
   }
 }
 
@@ -127,9 +129,9 @@ export async function changeSettings(
 
 /** Sets each field the patch has a value for; `null` is a value (it clears a setting that can be empty). */
 function assignFields<T extends object>(target: T, patch: Partial<T>): void {
-  for (const key of Object.keys(patch) as (keyof T)[]) {
+  for (const key in patch) {
     const value = patch[key];
-    if (value !== undefined) target[key] = structuredClone(value);
+    if (Object.hasOwn(patch, key) && value !== undefined) target[key] = structuredClone(value);
   }
 }
 

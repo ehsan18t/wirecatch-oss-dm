@@ -32,12 +32,12 @@ exported::exported_consts! {
 /// Identifies one download for its whole life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct DownloadId(#[ts(type = "number")] pub i64);
+pub struct DownloadId(#[ts(type = "number & { readonly __brand: \"DownloadId\" }")] pub i64);
 
 /// Identifies one queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct QueueId(#[ts(type = "number")] pub i64);
+pub struct QueueId(#[ts(type = "number & { readonly __brand: \"QueueId\" }")] pub i64);
 
 /// Identifies one question the app asks the person about a browser download: a file to
 /// confirm ([`app::PendingCapture`]), media being read ([`app::MediaReading`]), a quality to pick
@@ -46,4 +46,4 @@ pub struct QueueId(#[ts(type = "number")] pub i64);
 /// download id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct QuestionId(#[ts(type = "number")] pub u64);
+pub struct QuestionId(#[ts(type = "number & { readonly __brand: \"QuestionId\" }")] pub u64);

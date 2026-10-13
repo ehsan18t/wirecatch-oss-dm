@@ -1,6 +1,6 @@
 <script lang="ts">
   import { PRODUCT_NAME } from '@wirecatch/product';
-  import type { ExtensionSettings } from '@wirecatch/protocol';
+  import { DEFAULT_QUEUE_ID, type ExtensionSettings } from '@wirecatch/protocol';
   import { describeProblem } from '../lib/native/status';
   import type { PopupModel } from '../lib/popup/model.svelte';
   import MediaSection from './MediaSection.svelte';
@@ -43,7 +43,7 @@
     ignored_sites: [],
     capture_extensions: [],
     min_capture_size: 0,
-    default_queue: 0,
+    default_queue: DEFAULT_QUEUE_ID,
   };
 
   const snapshot = $derived(model.snapshot);

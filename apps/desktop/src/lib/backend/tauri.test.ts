@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DOWNLOAD_WINDOW_PAGE } from '@wirecatch/protocol';
+import { DOWNLOAD_WINDOW_PAGE, downloadId, questionId, queueId } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { SIGNAL_EVENTS, TauriBackend, toBackendError } from './tauri';
 import { BackendError } from './types';
@@ -17,8 +17,8 @@ describe('TauriBackend', () => {
   it('calls each command with its contract arguments in one args object', async () => {
     const invoke = vi.fn((command: string) => Promise.resolve(ANSWERS[command] ?? null));
     const b = new TauriBackend(invoke);
-    await b.remove([1, 2], true);
-    await b.reorder(3, [2, 1]);
+    await b.remove([downloadId(1), downloadId(2)], true);
+    await b.reorder(queueId(3), [downloadId(2), downloadId(1)]);
     await b.addDownload({
       url: 'https://x',
       queue: null,
@@ -26,9 +26,14 @@ describe('TauriBackend', () => {
       file_name: null,
       start: true,
     });
-    await b.confirmCapture(9, { folder: null, file_name: 'a', queue: null, later: true });
+    await b.confirmCapture(questionId(9), {
+      folder: null,
+      file_name: 'a',
+      queue: null,
+      later: true,
+    });
     await b.pauseAll();
-    await b.chooseMedia(4, {
+    await b.chooseMedia(questionId(4), {
       option_id: 'hd',
       folder: null,
       file_name: null,
@@ -40,12 +45,12 @@ describe('TauriBackend', () => {
       subtitle_files: false,
       chapters: true,
     });
-    await b.keepOriginal(7);
+    await b.keepOriginal(downloadId(7));
     await b.installAddon('media');
-    await b.getQuestion(5);
-    await b.earlierDownload(5);
+    await b.getQuestion(questionId(5));
+    await b.earlierDownload(questionId(5));
     await b.showQuestionWindows();
-    await b.showProgressWindow(6);
+    await b.showProgressWindow(downloadId(6));
     await b.closeDownloadWindow();
     await b.fitDownloadWindow(432);
     await b.mainWindowReady();

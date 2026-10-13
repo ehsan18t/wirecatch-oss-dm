@@ -4,10 +4,10 @@
 // each window takes the lowest free place in the cascade, and a question whose window the person
 // closed does not open again by itself.
 
-import { MAX_QUESTION_WINDOWS, type DownloadId } from '@wirecatch/protocol';
+import { MAX_QUESTION_WINDOWS, type DownloadId, type QuestionId } from '@wirecatch/protocol';
 
 /** What a download window shows. */
-export type Shows = { kind: 'question'; id: number } | { kind: 'download'; id: DownloadId };
+export type Shows = { kind: 'question'; id: QuestionId } | { kind: 'download'; id: DownloadId };
 
 export interface OpenWindow {
   /** Stable for the window's life, like a Tauri label. */
@@ -27,8 +27,8 @@ function same(a: Shows, b: Shows): boolean {
 
 export class WindowRegistry {
   #windows: OpenWindow[] = [];
-  #waiting: number[] = [];
-  readonly #putAside = new Set<number>();
+  #waiting: QuestionId[] = [];
+  readonly #putAside = new Set<QuestionId>();
   readonly #listeners = new Set<(windows: readonly OpenWindow[]) => void>();
   /** The label of the window brought to the front last. */
   front: string | null = null;
@@ -67,7 +67,7 @@ export class WindowRegistry {
     return this.#windows.find((w) => same(w.shows, shows));
   }
 
-  #place(id: number): boolean {
+  #place(id: QuestionId): boolean {
     const shows: Shows = { kind: 'question', id };
     if (this.#find(shows) || this.#waiting.includes(id)) return false;
     if (this.#asking() >= MAX_QUESTION_WINDOWS) {
@@ -89,19 +89,19 @@ export class WindowRegistry {
   }
 
   /** The core asked question `id`, or moved it on. */
-  ask(id: number): void {
+  ask(id: QuestionId): void {
     this.#putAside.delete(id);
     if (this.#place(id)) this.#changed();
   }
 
   /** Question `id` closed in the core. Its window, if any, says so itself. */
-  closed(id: number): void {
+  closed(id: QuestionId): void {
     this.#waiting = this.#waiting.filter((w) => w !== id);
     this.#putAside.delete(id);
   }
 
   /** The person asked to see every open question (`open`, oldest first). */
-  showAll(open: readonly number[]): void {
+  showAll(open: readonly QuestionId[]): void {
     this.#waiting = this.#waiting.filter((id) => open.includes(id));
     for (const id of open) {
       this.#putAside.delete(id);

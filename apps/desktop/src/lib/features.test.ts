@@ -2,7 +2,7 @@
 // the command palette. Each case below performs the visible path for real and checks the
 // outcome, then checks that the palette offers the same action.
 
-import { PROFILE_FORMAT_VERSION } from '@wirecatch/protocol';
+import { downloadId, PROFILE_FORMAT_VERSION } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -69,11 +69,11 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
 
     const nightly = rowByName('nightly-build');
     await click(within(nightly).getByRole('button', { name: 'Try again' }));
-    expect(app.downloads.get(Number(nightly.dataset.id))?.status).toBe('queued');
+    expect(app.downloads.get(downloadId(Number(nightly.dataset.id)))?.status).toBe('queued');
 
     const climate = rowByName('climate-dataset');
     await click(within(climate).getByRole('button', { name: 'Change folder' }));
-    const climateRow = app.downloads.get(Number(climate.dataset.id));
+    const climateRow = app.downloads.get(downloadId(Number(climate.dataset.id)));
     expect(climateRow?.path.startsWith('E:')).toBe(false);
     expect(climateRow?.status).toBe('queued');
     expect(palette('sel.choosefolder')).toBe(true);

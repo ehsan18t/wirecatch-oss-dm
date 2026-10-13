@@ -1,6 +1,6 @@
 // The hand-written sample downloads: believable files in every status, with every kind of fix.
 
-import type { DownloadStatus, UserError } from '@wirecatch/protocol';
+import type { DownloadStatus, QueueId, UserError } from '@wirecatch/protocol';
 import { GB, KB, MB } from '@wirecatch/units';
 import { MAIN_QUEUE_ID, OVERNIGHT_QUEUE_ID, WORK_QUEUE_ID } from './data';
 
@@ -11,7 +11,7 @@ export interface Seed {
   total: number | null;
   fraction: number;
   status: DownloadStatus;
-  queue: number;
+  queue: QueueId;
   rate: number;
   error?: UserError;
   /** Hours ago it was added. */

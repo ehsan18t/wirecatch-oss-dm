@@ -2,6 +2,7 @@
 // detectable accessibility problems. (Color contrast is checked from the tokens in
 // contrast.test.ts and in a real browser by e2e/a11y.spec.ts; jsdom has no layout.)
 
+import { downloadId, queueId } from '@wirecatch/protocol';
 import { screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
@@ -58,17 +59,17 @@ describe('keyboard only', () => {
 
   it('reorders inside a queue with Alt and the arrow keys', async () => {
     const { app, press } = await setup();
-    app.show({ kind: 'queue', id: 1 });
+    app.show({ kind: 'queue', id: queueId(1) });
     await settle();
     const list = screen.getByRole('grid', { name: 'Downloads' });
     list.focus();
     await press('{ArrowDown}{ArrowDown}');
     const moving = app.selection.active;
-    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(1);
+    expect(app.downloads.idsInQueue(queueId(1)).indexOf(moving!)).toBe(1);
     await press('{Alt>}{ArrowUp}{/Alt}');
-    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(0);
+    expect(app.downloads.idsInQueue(queueId(1)).indexOf(moving!)).toBe(0);
     await press('{Alt>}{ArrowDown}{ArrowDown}{/Alt}');
-    expect(app.downloads.idsInQueue(1).indexOf(moving!)).toBe(2);
+    expect(app.downloads.idsInQueue(queueId(1)).indexOf(moving!)).toBe(2);
   });
 
   it('runs any action from the command palette', async () => {
@@ -144,7 +145,7 @@ describe('keyboard only', () => {
 
   it('Escape lets go of the keyboard row when nothing is selected', async () => {
     const { app, press } = await setup();
-    const first = app.visible[0] ?? -1;
+    const first = app.visible[0] ?? downloadId(0);
     app.selection.only(first);
     app.selection.toggle(first);
     await settle();
@@ -156,7 +157,7 @@ describe('keyboard only', () => {
 
   it('has one command at most for each key, on either screen', async () => {
     const { app } = await setup();
-    app.selection.only(app.visible[0] ?? -1);
+    app.selection.only(app.visible[0] ?? downloadId(0));
     for (const screenShown of ['downloads', 'settings'] as const) {
       app.screen = screenShown;
       const keys = buildCommands(app).flatMap((c) => (c.key === undefined ? [] : [c.key]));
@@ -200,7 +201,7 @@ describe('automated accessibility checks (axe)', { timeout: 60_000 }, () => {
     app.paletteOpen = false;
     for (const d of [
       { kind: 'add', urls: ['https://example.com/a.zip'] },
-      { kind: 'queue', id: 2 },
+      { kind: 'queue', id: queueId(2) },
       { kind: 'export' },
       { kind: 'shortcuts' },
     ] as const) {

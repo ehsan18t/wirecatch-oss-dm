@@ -1,4 +1,4 @@
-import type { DownloadSummary } from '@wirecatch/protocol';
+import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { flushSync, untrack } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { DownloadStore } from './downloads.svelte';
@@ -7,11 +7,11 @@ import { visibleIds } from './view';
 
 function row(id: number, patch: Partial<DownloadSummary> = {}): DownloadSummary {
   return {
-    id,
+    id: downloadId(id),
     url: `https://example.com/f${id}.bin`,
     file_name: `f${id}.bin`,
     path: `C:\\d\\f${id}.bin`,
-    queue: 1,
+    queue: queueId(1),
     category: 'other',
     status: 'completed',
     total: 1000,
@@ -41,7 +41,7 @@ describe('DownloadStore', () => {
     const seen: [number, string | undefined][] = [];
     const cleanup = $effect.root(() => {
       $effect(() => {
-        seen.push([store.size, store.get(2)?.file_name]);
+        seen.push([store.size, store.get(downloadId(2))?.file_name]);
       });
     });
     flushSync();
@@ -49,7 +49,7 @@ describe('DownloadStore', () => {
     flushSync();
     store.apply([row(2)]);
     flushSync();
-    store.remove([2]);
+    store.remove([downloadId(2)]);
     flushSync();
     expect(seen).toEqual([
       [0, undefined],
@@ -64,29 +64,29 @@ describe('DownloadStore', () => {
     const store = new DownloadStore();
     store.load([
       row(1, { status: 'downloading', speed: 100 }),
-      row(2, { queue: 2, status: 'downloading', speed: 50 }),
+      row(2, { queue: queueId(2), status: 'downloading', speed: 50 }),
     ]);
     expect(store.totalSpeed).toBe(150);
     store.apply([row(1, { status: 'downloading', speed: 300 })]);
     expect(store.totalSpeed).toBe(350);
-    expect(store.queueSpeed[1]).toBe(300);
-    store.apply([row(1, { status: 'downloading', speed: 300, queue: 2 })]);
-    expect(store.queueSpeed[1]).toBe(0);
-    expect(store.queueSpeed[2]).toBe(350);
-    store.remove([2]);
+    expect(store.queueSpeed[queueId(1)]).toBe(300);
+    store.apply([row(1, { status: 'downloading', speed: 300, queue: queueId(2) })]);
+    expect(store.queueSpeed[queueId(1)]).toBe(0);
+    expect(store.queueSpeed[queueId(2)]).toBe(350);
+    store.remove([downloadId(2)]);
     expect(store.totalSpeed).toBe(300);
     expect(store.size).toBe(1);
   });
 
   it('appends new rows and reorders inside one queue only', () => {
     const store = new DownloadStore();
-    store.load([row(1), row(2, { queue: 2 }), row(3), row(4)]);
+    store.load([row(1), row(2, { queue: queueId(2) }), row(3), row(4)]);
     store.apply([row(5)]);
     expect(store.order).toEqual([1, 2, 3, 4, 5]);
-    store.reorder(1, [4, 1]);
+    store.reorder(queueId(1), [downloadId(4), downloadId(1)]);
     // Queue 1 had 1, 3, 4, 5; now 4, 1, then the rest in their old order. Queue 2 keeps its slot.
     expect(store.order).toEqual([4, 2, 1, 3, 5]);
-    expect(store.idsInQueue(1)).toEqual([4, 1, 3, 5]);
+    expect(store.idsInQueue(queueId(1))).toEqual([4, 1, 3, 5]);
   });
 
   it('bumps the version only for changes that affect what the list shows', () => {
@@ -106,7 +106,7 @@ describe('DownloadStore', () => {
     const cleanup = $effect.root(() => {
       for (const id of [1, 2, 3]) {
         $effect(() => {
-          track(store.get(id)?.done);
+          track(store.get(downloadId(id))?.done);
           untrack(() => runs.set(id, (runs.get(id) ?? 0) + 1));
         });
       }
@@ -179,11 +179,11 @@ describe('DownloadStore', () => {
     const store = new DownloadStore();
     store.load([row(1, { status: 'downloading', done: 0, speed: 5 })]);
     const update: DownloadSummary = {
-      id: 1,
+      id: downloadId(1),
       url: 'https://example.com/other.mp4',
       file_name: 'other.mp4',
       path: 'D:\\v\\other.mp4',
-      queue: 2,
+      queue: queueId(2),
       category: 'video',
       status: 'processing',
       total: 2000,
@@ -199,6 +199,6 @@ describe('DownloadStore', () => {
       completed_at: 9,
     };
     store.apply([update]);
-    expect({ ...store.get(1) }).toEqual(update);
+    expect({ ...store.get(downloadId(1)) }).toEqual(update);
   });
 });

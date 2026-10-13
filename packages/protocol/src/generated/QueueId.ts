@@ -3,4 +3,4 @@
 /**
  * Identifies one queue.
  */
-export type QueueId = number;
+export type QueueId = number & { readonly __brand: 'QueueId' };

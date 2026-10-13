@@ -6,7 +6,7 @@
 
 import { PRODUCT_NAME } from '@wirecatch/product';
 import type { AppSettings, DownloadId, UiEvent } from '@wirecatch/protocol';
-import { getContext, setContext, untrack } from 'svelte';
+import { createContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
@@ -33,16 +33,16 @@ import { countRows, visibleIds, type SortKey, type View } from './view';
 export type { Dialog, Screen } from './screens';
 export type { Toast } from './toasts.svelte';
 
-const CONTEXT = Symbol('wirecatch-app');
+const [appContext, setAppContext, hasAppContext] = createContext<AppState>();
 
 export function setApp(app: AppState): void {
-  setContext(CONTEXT, app);
+  setAppContext(app);
 }
 
 export function getApp(): AppState {
-  const app = getContext<AppState | undefined>(CONTEXT);
-  if (!app) throw new Error('AppState is missing; wrap the component in the app shell.');
-  return app;
+  if (!hasAppContext())
+    throw new Error('AppState is missing; wrap the component in the app shell.');
+  return appContext();
 }
 
 export class AppState {

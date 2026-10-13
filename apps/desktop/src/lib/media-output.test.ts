@@ -1,4 +1,11 @@
-import type { MediaChoice, MediaOption, OutputFit, OutputFormat } from '@wirecatch/protocol';
+import {
+  questionId,
+  queueId,
+  type MediaChoice,
+  type MediaOption,
+  type OutputFit,
+  type OutputFormat,
+} from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   conversionNote,
@@ -84,12 +91,12 @@ function out(option: MediaOption, format: OutputFormat): OutputFit {
 }
 
 const choice: MediaChoice = {
-  id: 1,
+  id: questionId(1),
   title: 'Cats',
   page_url: null,
   options: [uhd, audio],
   folder: 'C:/Videos',
-  queue: 1,
+  queue: queueId(1),
   subtitles: [
     { id: 'sub:en-GB', language: 'en-GB', name: 'English', auto: false },
     { id: 'sub:fr', language: 'fr', name: 'French', auto: false },

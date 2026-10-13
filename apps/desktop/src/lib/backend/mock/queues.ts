@@ -20,7 +20,7 @@ export function createQueue(state: MockState, name: string): Queue {
   const trimmed = name.trim();
   if (!trimmed) throw new BackendError(NO_QUEUE_NAME);
   const q: Queue = {
-    id: state.nextQueueId++,
+    id: state.newQueueId(),
     name: trimmed,
     max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
     speed_limit: null,

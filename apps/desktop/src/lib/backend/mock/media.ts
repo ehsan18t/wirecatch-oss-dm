@@ -8,6 +8,7 @@ import type {
   MediaSelection,
   OutputFit,
   ProcessingStep,
+  QuestionId,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { BackendError } from '../types';
@@ -44,13 +45,13 @@ export function simulateMediaChoice(
   state: MockState,
   index: number,
   page?: string,
-  id?: number,
+  id?: QuestionId,
 ): void {
   const sample = MEDIA_SAMPLES[index % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
   if (!sample) return;
   const isPage = sample.source === 'page';
   const choice: MediaChoice = {
-    id: id ?? state.nextPendingId++,
+    id: id ?? state.newQuestionId(),
     title: sample.title,
     page_url: page ?? sample.page,
     options: sampleMediaOptions(isPage),
@@ -68,8 +69,8 @@ export function simulateMediaChoice(
 }
 
 /** Sample data only: a page starts being read; returns its id. */
-export function startReading(state: MockState, page: string): number {
-  const id = state.nextPendingId++;
+export function startReading(state: MockState, page: string): QuestionId {
+  const id = state.newQuestionId();
   state.reading.push({ id, url: page });
   state.emit({ type: 'media_analysing', data: { id, url: page } });
   return id;
@@ -77,7 +78,7 @@ export function startReading(state: MockState, page: string): number {
 
 /** Sample data only: a page needs the media add-on, which is missing. */
 export function askForAddon(state: MockState, page: string): void {
-  const id = state.nextPendingId++;
+  const id = state.newQuestionId();
   state.waitingForAddon.push({ id, url: page });
   const addon = structuredClone(state.addon('media'));
   state.emit({ type: 'addon_required', data: { addon, url: page, id } });
@@ -88,7 +89,7 @@ export function pendingAddonRequests(state: MockState): AddonRequestItem[] {
   return state.waitingForAddon.map((w) => ({ ...w, addon: structuredClone(addon) }));
 }
 
-function openChoice(state: MockState, id: number): MediaChoice {
+function openChoice(state: MockState, id: QuestionId): MediaChoice {
   const choice = state.mediaChoices.find((c) => c.id === id);
   if (!choice) throw new BackendError(ALREADY_ANSWERED);
   return choice;
@@ -143,7 +144,11 @@ interface Picked {
   selection: MediaSelection;
 }
 
-export function chooseMedia(state: MockState, id: number, selection: MediaSelection): DownloadId {
+export function chooseMedia(
+  state: MockState,
+  id: QuestionId,
+  selection: MediaSelection,
+): DownloadId {
   const choice = openChoice(state, id);
   const option = offeredOption(choice, selection);
   const picked: Picked = { choice, option, fit: offeredFit(option, selection), selection };
@@ -200,7 +205,7 @@ function rememberMediaChoice(state: MockState, { choice, option, selection }: Pi
   state.settingsChanged();
 }
 
-export function dismissMediaChoice(state: MockState, id: number): void {
+export function dismissMediaChoice(state: MockState, id: QuestionId): void {
   // Like the core, this drops a quality choice or a page still waiting for the add-on.
   const known =
     state.mediaChoices.some((c) => c.id === id) ||

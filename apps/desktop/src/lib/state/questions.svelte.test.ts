@@ -3,7 +3,7 @@
 // reloads. Also the media add-on list, joining video and audio, and shell signals, against the
 // mock backend.
 
-import type { UiEvent } from '@wirecatch/protocol';
+import { questionId, type UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
 import type { ShellSignal } from '../backend';
@@ -52,7 +52,7 @@ describe('media and add-ons', () => {
     backend.simulateMediaChoice();
     const choice = app.questions.mediaChoices[0];
     const joined = choice?.options.find((o) => o.needs_ffmpeg);
-    const id = await backend.chooseMedia(choice?.id ?? 0, select(joined?.id ?? ''));
+    const id = await backend.chooseMedia(choice?.id ?? questionId(0), select(joined?.id ?? ''));
     for (let i = 0; i < 400 && app.downloads.get(id)?.status !== 'processing'; i++) {
       backend.tick(250);
     }
@@ -83,11 +83,13 @@ describe('the main window only counts questions', () => {
     // A quality picked that needs the add-on is still the one question.
     backend.simulateMediaChoice();
     const choice = app.questions.mediaChoices[1];
-    await expect(backend.chooseMedia(choice?.id ?? 0, select('2160'))).rejects.toThrow();
+    await expect(
+      backend.chooseMedia(choice?.id ?? questionId(0), select('2160')),
+    ).rejects.toThrow();
     expect(app.questions.waitingCount).toBe(4);
 
     // Answered or taken back anywhere: no longer counted.
-    await backend.rejectCapture(app.questions.pending[0]?.id ?? -1);
+    await backend.rejectCapture(app.questions.pending[0]?.id ?? questionId(0));
     backend.simulateAnsweredElsewhere();
     expect(app.questions.waitingCount).toBe(2);
   });
@@ -128,7 +130,7 @@ describe('a question answered anywhere never comes back', () => {
     const first = await make(b);
     b.simulateMediaChoice();
     const choice = first.app.questions.mediaChoices[0];
-    await b.chooseMedia(choice?.id ?? 0, select('720'));
+    await b.chooseMedia(choice?.id ?? questionId(0), select('720'));
     first.app.dispose();
 
     // The main window is closed and opened again: a fresh state loads from the core.
@@ -138,14 +140,14 @@ describe('a question answered anywhere never comes back', () => {
     expect(again.app.questions.mediaChoices).toEqual([]);
     expect(again.app.questions.waitingCount).toBe(0);
     expect(again.app.dialog).toBeNull();
-    expect(await b.getQuestion(choice?.id ?? 0)).toBeNull();
+    expect(await b.getQuestion(choice?.id ?? questionId(0))).toBeNull();
   });
 
   it('a confirmed file is not asked again by a window opened later', async () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    await b.confirmCapture(asked?.id ?? -1, {
+    await b.confirmCapture(asked?.id ?? questionId(0), {
       folder: null,
       file_name: null,
       queue: null,

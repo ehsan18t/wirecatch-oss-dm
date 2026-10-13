@@ -156,14 +156,14 @@ export class MediaButton {
     this.#listen(doc, 'ended', (e) => this.#onStop(e), CAPTURE);
     this.#listen(doc, 'loadedmetadata', (e) => this.#track(e.target), CAPTURE);
     this.#listen(doc, 'pointerover', (e) => this.#discover(e), CAPTURE);
-    this.#listen(doc, 'pointermove', (e) => this.#onPointer(e as PointerEvent), CAPTURE);
+    this.#listen(doc, 'pointermove', (e) => this.#onPointer(e), CAPTURE);
     this.#listen(doc, 'pointerout', (e) => {
-      if ((e as PointerEvent).relatedTarget === null) this.#onPointerGone();
+      if (e instanceof PointerEvent && e.relatedTarget === null) this.#onPointerGone();
     });
     // `composedPath()[0]` is the element itself, also inside a page's open shadow root.
     this.#listen(doc, 'focusin', (e) => this.#onFocus(e.composedPath()[0] ?? e.target), CAPTURE);
     // Not passive: it may cancel Tab to move focus to the button.
-    this.#listen(doc, 'keydown', (e) => this.#onKey(e as KeyboardEvent), {
+    this.#listen(doc, 'keydown', (e) => e instanceof KeyboardEvent && this.#onKey(e), {
       capture: true,
       passive: false,
     });
@@ -286,7 +286,8 @@ export class MediaButton {
     }
   }
 
-  #onPointer(event: PointerEvent): void {
+  #onPointer(event: Event): void {
+    if (!(event instanceof PointerEvent)) return;
     this.#pointer = { x: event.clientX, y: event.clientY };
     this.#overButton = event.target === this.host;
     if (this.#overButton) this.#lastActive = this.#now();

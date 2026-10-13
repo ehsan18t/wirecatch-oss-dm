@@ -7,4 +7,4 @@
  * They share one id space, and a question keeps its id from one step to the next. Never a
  * download id.
  */
-export type QuestionId = number;
+export type QuestionId = number & { readonly __brand: 'QuestionId' };

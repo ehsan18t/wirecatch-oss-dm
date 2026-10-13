@@ -1,3 +1,4 @@
+import type { DownloadId } from '@wirecatch/protocol';
 import { render, screen } from '@testing-library/svelte';
 import { flushSync, tick } from 'svelte';
 import { onTestFinished, vi } from 'vitest';
@@ -36,7 +37,7 @@ export function appState(backend: Backend | (() => Promise<Backend>) = mockBacke
 
 /** A download window's state, not yet loaded, disposed after the test; `host` records its calls. */
 export function windowState(backend: Backend, target: Target) {
-  const host = { close: vi.fn(), becameDownload: vi.fn() };
+  const host = { close: vi.fn(), becameDownload: vi.fn<(id: DownloadId) => void>() };
   const win = new DownloadWindowState({ ...host, backend: () => backend }, target);
   onTestFinished(() => win.dispose());
   return { win, host };

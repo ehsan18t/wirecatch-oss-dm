@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
   DEFAULT_QUEUE_ID,
   DEFAULT_QUEUE_MAX_CONCURRENT,
+  queueId,
   type AddonInfo,
   type AppSettings,
   type Category,
@@ -36,8 +37,8 @@ export function mediaAddon(): AddonInfo {
 
 /** The sample queues' ids. */
 export const MAIN_QUEUE_ID = DEFAULT_QUEUE_ID;
-export const OVERNIGHT_QUEUE_ID = 2;
-export const WORK_QUEUE_ID = 3;
+export const OVERNIGHT_QUEUE_ID = queueId(2);
+export const WORK_QUEUE_ID = queueId(OVERNIGHT_QUEUE_ID + 1);
 
 export function defaultCategoryRules(): CategoryRule[] {
   return [

@@ -1,21 +1,21 @@
 // A download window is only as tall as what it shows (D23): its frame measures the height its
 // content needs and reports it to the page, which asks the desktop shell to resize the window.
 // Without a reporter (the sample app's windows inside the page, tests) nothing is resized.
-import { getContext, setContext } from 'svelte';
-
-const CONTEXT = Symbol('wirecatch.fit-window');
+import { createContext } from 'svelte';
 
 /** Receives the height, in CSS pixels, the window's content needs. */
 export type FitWindow = (height: number) => void;
 
+const [fitContext, setFitContext, hasFitContext] = createContext<FitWindow>();
+
 /** Lets every window frame below this component report the height it needs. */
 export function setFitWindow(fit: FitWindow): void {
-  setContext(CONTEXT, fit);
+  setFitContext(fit);
 }
 
 /** The reporter set by the page, or null when the window is not resized to fit. */
 export function getFitWindow(): FitWindow | null {
-  return getContext<FitWindow | undefined>(CONTEXT) ?? null;
+  return hasFitContext() ? fitContext() : null;
 }
 
 /** The parts of a window frame that add up to the height it needs. */

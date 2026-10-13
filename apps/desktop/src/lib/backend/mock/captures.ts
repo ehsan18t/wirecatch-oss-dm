@@ -6,6 +6,7 @@ import type {
   DownloadSummary,
   PendingCapture,
   Question,
+  QuestionId,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
@@ -29,13 +30,13 @@ const CAPTURE_SAMPLES = [
 ] as const;
 
 /** Closes question `id` everywhere it is shown. */
-function closeQuestion(state: MockState, id: number) {
+function closeQuestion(state: MockState, id: QuestionId) {
   state.emit({ type: 'confirmation_closed', data: { id } });
 }
 
 export function confirmCapture(
   state: MockState,
-  id: number,
+  id: QuestionId,
   confirmation: CaptureConfirmation,
 ): DownloadId {
   const p = state.pending.find((x) => x.id === id);
@@ -53,13 +54,13 @@ export function confirmCapture(
   return row.id;
 }
 
-export function rejectCapture(state: MockState, id: number): void {
+export function rejectCapture(state: MockState, id: QuestionId): void {
   if (!state.pending.some((x) => x.id === id)) throw new BackendError(ALREADY_ANSWERED);
   state.pending = state.pending.filter((x) => x.id !== id);
   closeQuestion(state, id);
 }
 
-export function getQuestion(state: MockState, id: number): Question | null {
+export function getQuestion(state: MockState, id: QuestionId): Question | null {
   const capture = state.pending.find((p) => p.id === id);
   if (capture) return { kind: 'capture', data: { ...capture } };
   const choice = state.mediaChoices.find((c) => c.id === id);
@@ -74,7 +75,7 @@ export function getQuestion(state: MockState, id: number): Question | null {
 }
 
 /** The newest download of the link question `id` asks about, if it was downloaded before. */
-export function earlierDownload(state: MockState, id: number): DownloadSummary | null {
+export function earlierDownload(state: MockState, id: QuestionId): DownloadSummary | null {
   const link =
     state.pending.find((p) => p.id === id)?.url ??
     state.mediaChoices.find((c) => c.id === id)?.page_url;
@@ -108,7 +109,7 @@ export function simulateCapture(state: MockState, index: number): void {
     const name = fileNameFromUrl(url);
     const category = categoryFor(name, state.settings.categories);
     const pending: PendingCapture = {
-      id: state.nextPendingId++,
+      id: state.newQuestionId(),
       url,
       file_name: name,
       folder: folderFor(category, state.settings),

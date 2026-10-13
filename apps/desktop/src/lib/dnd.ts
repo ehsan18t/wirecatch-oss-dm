@@ -1,6 +1,6 @@
 // Dragging downloads between queues and within a queue.
 
-import type { DownloadId } from '@wirecatch/protocol';
+import { isDownloadId, type DownloadId } from '@wirecatch/protocol';
 
 export const DRAG_TYPE = 'application/x-wirecatch-downloads';
 
@@ -20,7 +20,7 @@ export function getDragIds(e: DragEvent): DownloadId[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x): x is number => typeof x === 'number') : [];
+    return Array.isArray(parsed) ? parsed.filter(isDownloadId) : [];
   } catch {
     return [];
   }

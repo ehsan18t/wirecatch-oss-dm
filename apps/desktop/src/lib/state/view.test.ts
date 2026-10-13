@@ -1,4 +1,4 @@
-import type { DownloadSummary } from '@wirecatch/protocol';
+import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   countRows,
@@ -17,11 +17,11 @@ const rows: DownloadSummary[] = [
   ['c-app.exe', 'program', 'failed', 2, 900, 2],
   ['d-song.mp3', 'audio', 'queued', 2, null, 4],
 ].map(([file_name, category, status, queue, total, added_at], i) => ({
-  id: i + 1,
+  id: downloadId(i + 1),
   url: `https://example.com/${file_name}`,
   file_name: file_name as string,
   path: '',
-  queue: queue as number,
+  queue: queueId(queue as number),
   category: category as DownloadSummary['category'],
   status: status as DownloadSummary['status'],
   total: total as number | null,
@@ -60,7 +60,7 @@ describe('LIST_FIELDS', () => {
     const views: View[] = [
       { kind: 'all' },
       { kind: 'status', group: 'failed' },
-      { kind: 'queue', id: 2 },
+      { kind: 'queue', id: queueId(2) },
       { kind: 'category', category: 'video' },
     ];
     const sorts = Object.keys(SORT_LABEL) as SortKey[];
@@ -82,7 +82,11 @@ describe('visibleIds', () => {
       1, 2, 3, 4,
     ]);
     expect(
-      visibleIds(order, get, { view: { kind: 'queue', id: 2 }, search: '', sort: 'queue' }),
+      visibleIds(order, get, {
+        view: { kind: 'queue', id: queueId(2) },
+        search: '',
+        sort: 'queue',
+      }),
     ).toEqual([3, 4]);
     expect(
       visibleIds(order, get, {
@@ -135,8 +139,8 @@ describe('countRows', () => {
       cancelled: 0,
     });
     expect(c.category.video).toBe(1);
-    expect(c.queue.get(1)).toEqual({ total: 1, running: 1, waiting: 0, paused: 0 });
-    expect(c.queue.get(2)).toEqual({ total: 2, running: 0, waiting: 1, paused: 0 });
+    expect(c.queue.get(queueId(1))).toEqual({ total: 1, running: 1, waiting: 0, paused: 0 });
+    expect(c.queue.get(queueId(2))).toEqual({ total: 2, running: 0, waiting: 1, paused: 0 });
   });
 });
 
@@ -144,8 +148,12 @@ describe('helpers', () => {
   it('groups statuses and compares views', () => {
     expect(groupOf('connecting')).toBe('active');
     expect(groupOf('queued')).toBe('waiting');
-    expect(sameView({ kind: 'queue', id: 1 }, { kind: 'queue', id: 1 })).toBe(true);
-    expect(sameView({ kind: 'queue', id: 1 }, { kind: 'queue', id: 2 })).toBe(false);
+    expect(sameView({ kind: 'queue', id: queueId(1) }, { kind: 'queue', id: queueId(1) })).toBe(
+      true,
+    );
+    expect(sameView({ kind: 'queue', id: queueId(1) }, { kind: 'queue', id: queueId(2) })).toBe(
+      false,
+    );
     expect(sameView({ kind: 'all' }, { kind: 'status', group: 'active' })).toBe(false);
   });
 });

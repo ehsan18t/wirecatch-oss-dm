@@ -370,7 +370,7 @@ export function isDismissMediaChoiceArgs(value: unknown): value is DismissMediaC
 
 /** Whether `value` has the shape of a {@link DownloadId}; fields it does not name are not checked. */
 export function isDownloadId(value: unknown): value is DownloadId {
-  return typeof value === 'number';
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 /** Whether `value` has the shape of a {@link DownloadStatus}; fields it does not name are not checked. */
@@ -909,7 +909,7 @@ export function isQuestion(value: unknown): value is Question {
 
 /** Whether `value` has the shape of a {@link QuestionId}; fields it does not name are not checked. */
 export function isQuestionId(value: unknown): value is QuestionId {
-  return typeof value === 'number';
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 /** Whether `value` has the shape of a {@link Queue}; fields it does not name are not checked. */
@@ -928,7 +928,7 @@ export function isQueue(value: unknown): value is Queue {
 
 /** Whether `value` has the shape of a {@link QueueId}; fields it does not name are not checked. */
 export function isQueueId(value: unknown): value is QueueId {
-  return typeof value === 'number';
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 /** Whether `value` has the shape of a {@link QueueSummary}; fields it does not name are not checked. */

@@ -13,6 +13,7 @@ import type {
   MediaChoice,
   MediaSelection,
   Question,
+  QuestionId,
   Queue,
   UiEvent,
 } from '@wirecatch/protocol';
@@ -38,7 +39,7 @@ export interface DownloadWindowHost {
 }
 
 /** What the window was opened for. */
-export type Target = { question: number } | { download: DownloadId };
+export type Target = { question: QuestionId } | { download: DownloadId };
 
 /** Makes a download window's state over a backend the caller does not hand out. */
 export type OpenDownloadWindow = (
@@ -118,7 +119,7 @@ export class DownloadWindowState {
   }
 
   /** The question's id, while the window was opened for one. */
-  get questionId(): number | null {
+  get questionId(): QuestionId | null {
     return 'question' in this.#target ? this.#target.question : null;
   }
 
@@ -169,7 +170,7 @@ export class DownloadWindowState {
     void this.#loadAddon();
   }
 
-  async #loadQuestion(id: number): Promise<void> {
+  async #loadQuestion(id: QuestionId): Promise<void> {
     const question = await this.#host.backend().getQuestion(id);
     if (!question) {
       // Answered (here or anywhere) or taken back before the window loaded: never asked again.
@@ -211,7 +212,7 @@ export class DownloadWindowState {
   }
 
   /** Whether this window is asking question `id` right now. */
-  #asking(id: number): boolean {
+  #asking(id: QuestionId): boolean {
     return id === this.questionId && this.phase === 'ask';
   }
 

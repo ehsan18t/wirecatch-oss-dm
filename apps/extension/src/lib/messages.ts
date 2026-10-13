@@ -5,6 +5,7 @@
 import {
   isExtensionSettings,
   isMediaKind,
+  isQueueId,
   isQueueSummary,
   type ExtensionSettings,
   type ExtensionSettingsPatch,
@@ -190,7 +191,7 @@ const isPatch = fields<ExtensionSettingsPatch>({
   remove_ignored_sites: isListChange,
   capture_extensions: isListChange,
   min_capture_size: optional(nullable(isNumber)),
-  default_queue: optional(nullable(isNumber)),
+  default_queue: optional(nullable(isQueueId)),
 });
 
 type Command<T extends PopupCommand['type']> = Variant<PopupCommand, T>;

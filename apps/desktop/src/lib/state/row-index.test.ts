@@ -1,4 +1,4 @@
-import type { DownloadSummary } from '@wirecatch/protocol';
+import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import { MockBackend } from '$lib/backend/mock';
 import { QueueDeltas, RowIndex } from './row-index';
@@ -21,7 +21,7 @@ describe('RowIndex', () => {
     const index = new RowIndex();
     const list = rows();
     for (const row of list) index.add(row);
-    const removed = index.remove([list[1]!.id, -1]);
+    const removed = index.remove([list[1]!.id, downloadId(999_999)]);
     expect(removed).toEqual([list[1]]);
     expect(index.order).toEqual(list.filter((_, i) => i !== 1).map((r) => r.id));
     expect(index.size).toBe(list.length - 1);
@@ -29,8 +29,8 @@ describe('RowIndex', () => {
 
   it('reorders one queue and leaves the other rows where they are', () => {
     const index = new RowIndex();
-    const queue = 1;
-    const list = rows().map((row, i) => ({ ...row, queue: i % 2 === 0 ? 1 : 2 }));
+    const queue = queueId(1);
+    const list = rows().map((row, i) => ({ ...row, queue: i % 2 === 0 ? queueId(1) : queueId(2) }));
     for (const row of list) index.add(row);
     const inQueue = list.filter((r) => r.queue === queue).map((r) => r.id);
     index.reorder(queue, [inQueue[2]!, inQueue[0]!]);
@@ -44,9 +44,9 @@ describe('RowIndex', () => {
 describe('QueueDeltas', () => {
   it('sums per queue and skips zero changes', () => {
     const deltas = new QueueDeltas();
-    deltas.add(1, 5);
-    deltas.add(2, 0);
-    deltas.add(1, -2);
+    deltas.add(queueId(1), 5);
+    deltas.add(queueId(2), 0);
+    deltas.add(queueId(1), -2);
     expect([...deltas.entries()]).toEqual([[1, 3]]);
   });
 });

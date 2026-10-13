@@ -3,4 +3,4 @@
 /**
  * Identifies one download for its whole life.
  */
-export type DownloadId = number;
+export type DownloadId = number & { readonly __brand: 'DownloadId' };

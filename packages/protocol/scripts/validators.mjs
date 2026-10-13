@@ -99,6 +99,32 @@ function objectCheck(node, subject, context) {
   return `((${inner}: unknown): boolean => ${body})(${subject})`;
 }
 
+/** The property a branded id carries only in its type (`number & { readonly __brand: "DownloadId" }`), never at run time. */
+const BRAND = '__brand';
+
+/** Whether `node` is the brand part of a branded type, which exists only for the compiler. */
+function isBrand(node) {
+  return (
+    ts.isTypeLiteralNode(node) &&
+    node.members.length > 0 &&
+    node.members.every((m) => ts.isPropertySignature(m) && m.name.getText() === BRAND)
+  );
+}
+
+/** The check that `subject` is every member of the intersection `node` but its brand. A branded number is an id, which the app counts from 0 up, so it is a whole number no smaller than 0 that JavaScript holds exactly. */
+function intersectionCheck(node, subject, context) {
+  const checked = node.types.filter((member) => !isBrand(member));
+  if (checked.length === 0) throw new Unsupported(`type ${node.getText()}`);
+  const branded = checked.length < node.types.length;
+  return checked
+    .map((member) =>
+      branded && member.kind === ts.SyntaxKind.NumberKeyword
+        ? `(typeof ${subject} === "number" && Number.isSafeInteger(${subject}) && ${subject} >= 0)`
+        : `(${check(member, subject, context)})`,
+    )
+    .join(' && ');
+}
+
 /** The boolean expression that checks `subject` against the type `node`. */
 function check(node, subject, context) {
   switch (node.kind) {
@@ -118,6 +144,7 @@ function check(node, subject, context) {
   if (ts.isUnionTypeNode(node)) {
     return node.types.map((member) => `(${check(member, subject, context)})`).join(' || ');
   }
+  if (ts.isIntersectionTypeNode(node)) return intersectionCheck(node, subject, context);
   if (ts.isTypeReferenceNode(node)) return referenceCheck(node, subject, context);
   if (ts.isTypeLiteralNode(node)) return objectCheck(node, subject, context);
   throw new Unsupported(`type ${node.getText()}`);
@@ -173,10 +200,21 @@ function commandOutputs(found, known) {
   ];
 }
 
-/** The text of validators.ts for the generated types in `folder`. */
-export function validatorsSource(folder) {
+/** The generated types that have no guard on purpose: the command map, checked one answer at a time by `COMMAND_OUTPUTS`, and the generic it wraps each command in. */
+const WITHOUT_GUARD = [COMMAND, COMMAND_MAP];
+
+/** The text of validators.ts for the generated types in `folder`. Fails when a type other than those in `withoutGuard` gets no guard, so a type the generator cannot check (a map, a generic) is never left unchecked without anyone noticing. */
+export function validatorsSource(folder, { withoutGuard = WITHOUT_GUARD } = {}) {
   const found = declarations(folder);
   const written = guards(found);
+  const unguarded = [...found.keys()].filter(
+    (name) => !written.has(name) && !withoutGuard.includes(name),
+  );
+  if (unguarded.length > 0) {
+    throw new Error(
+      `No guard could be generated for ${unguarded.sort().join(', ')}: give each a shape the generator can check, or list it in WITHOUT_GUARD with the reason.`,
+    );
+  }
   const outputs = commandOutputs(found, new Set(written.keys()));
   const names = [...written.keys()].sort();
   const lines = [

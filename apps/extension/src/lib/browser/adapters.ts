@@ -34,11 +34,12 @@ interface NavigatorClues {
 
 /** True in Firefox, which alone has `runtime.getBrowserInfo`. */
 export function isFirefox(): boolean {
-  return typeof (browser.runtime as FirefoxRuntime).getBrowserInfo === 'function';
+  const runtime: typeof browser.runtime & FirefoxRuntime = browser.runtime;
+  return typeof runtime.getBrowserInfo === 'function';
 }
 
 async function browserInfo(): Promise<BrowserInfo> {
-  const runtime = browser.runtime as typeof browser.runtime & FirefoxRuntime;
+  const runtime: typeof browser.runtime & FirefoxRuntime = browser.runtime;
   const firefox = runtime.getBrowserInfo ? await runtime.getBrowserInfo().catch(() => null) : null;
   const nav: Navigator & NavigatorClues = navigator;
   return detectBrowser({

@@ -132,7 +132,10 @@
       aria-describedby={queueMissing ? 'default-queue-missing' : 'default-queue-help'}
       aria-invalid={queueMissing}
       value={settings.default_queue}
-      onchange={(event) => model.update({ default_queue: Number(event.currentTarget.value) })}
+      onchange={(event) => {
+        const chosen = queues.find((queue) => String(queue.id) === event.currentTarget.value);
+        if (chosen) void model.update({ default_queue: chosen.id });
+      }}
     >
       {#if queueMissing}
         <option value={settings.default_queue}>Missing queue (choose another)</option>

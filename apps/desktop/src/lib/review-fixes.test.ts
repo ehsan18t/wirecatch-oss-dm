@@ -1,5 +1,6 @@
 // Regression tests for the WP4 review findings. Each test fails without its fix.
 
+import { queueId } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -112,10 +113,10 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     const setPaused = vi.spyOn(backend, 'setQueuePaused');
     await click(button('Pause the Main queue'));
     expect(setPaused).toHaveBeenCalledWith(1, true);
-    expect(app.queues.byId(1)?.paused).toBe(true);
+    expect(app.queues.byId(queueId(1))?.paused).toBe(true);
     const main = screen.getByRole('button', { name: /^Main/ });
     expect(main).toHaveTextContent('Paused');
-    const inMain = app.downloads.idsInQueue(1).map((id) => app.downloads.get(id));
+    const inMain = app.downloads.idsInQueue(queueId(1)).map((id) => app.downloads.get(id));
     expect(inMain.some((r) => r?.status === 'downloading' || r?.status === 'connecting')).toBe(
       false,
     );
@@ -125,20 +126,22 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
       'android-studio-2026.1.1-windows.exe',
     ]);
     await click(button('Resume the Main queue'));
-    expect(app.queues.byId(1)?.paused).toBe(false);
+    expect(app.queues.byId(queueId(1))?.paused).toBe(false);
   });
 
   it('starts a scheduled queue now and shows it runs outside its hours', async () => {
     const { app, backend, click } = await setup();
-    expect(app.queues.isOutsideSchedule(app.queues.byId(2) as never)).toBe(true);
+    expect(app.queues.isOutsideSchedule(app.queues.byId(queueId(2)) as never)).toBe(true);
     await click(button('Start now'));
-    expect(app.queues.byId(2)?.running_outside_schedule).toBe(true);
+    expect(app.queues.byId(queueId(2))?.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
       'Started by hand, outside its hours',
     );
     backend.tick(250);
     await settle();
-    const overnight = app.downloads.idsInQueue(2).map((id) => app.downloads.get(id)?.status);
+    const overnight = app.downloads
+      .idsInQueue(queueId(2))
+      .map((id) => app.downloads.get(id)?.status);
     expect(overnight).toContain('connecting');
   });
 
@@ -147,12 +150,12 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     const q = (await backend.listQueues()).find((x) => x.id === 2);
     await backend.addDownload({
       url: 'https://x.org/a.zip',
-      queue: 2,
+      queue: queueId(2),
       folder: null,
       file_name: null,
       start: true,
     });
-    await backend.startQueueNow(2);
+    await backend.startQueueNow(queueId(2));
     expect((await backend.listQueues()).find((x) => x.id === 2)?.running_outside_schedule).toBe(
       true,
     );
@@ -193,7 +196,7 @@ describe('7. Try again does not double the listeners', () => {
 describe('8. the days picker says what it does', () => {
   it('nothing picked means every day; picking limits to those days', async () => {
     const { app, click } = await setup();
-    app.openDialog({ kind: 'queue', id: 2 });
+    app.openDialog({ kind: 'queue', id: queueId(2) });
     await settle();
     const days = screen.getByRole('group', { name: 'Only on these days' });
     expect(within(days).queryAllByRole('button', { pressed: true })).toHaveLength(0);

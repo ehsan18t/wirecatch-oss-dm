@@ -1,4 +1,10 @@
-import type { DownloadSummary, UiEvent } from '@wirecatch/protocol';
+import {
+  downloadId,
+  questionId,
+  queueId,
+  type DownloadSummary,
+  type UiEvent,
+} from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { mockBackend, NOON } from '$lib/testing/setup';
 import { BackendError } from '../types';
@@ -133,10 +139,10 @@ describe('MockBackend', () => {
     expect(rows[0]?.path).toBe('C:\\Users\\you\\Downloads\\Archives\\a.zip');
     expect(rows[1]?.path).toBe('D:\\Media\\clip.mp4');
     expect(rows[1]?.status).toBe('paused');
-    await mock.reorder(1, [b, a]);
+    await mock.reorder(queueId(1), [b, a]);
     rows = await mock.listDownloads();
     expect(rows.map((r) => r.id)).toEqual([b, a]);
-    await mock.moveToQueue([a], 3);
+    await mock.moveToQueue([a], queueId(3));
     expect((await mock.listDownloads()).find((r) => r.id === a)?.queue).toBe(3);
     await mock.remove([a, b], false);
     expect(await mock.listDownloads()).toHaveLength(0);
@@ -148,7 +154,7 @@ describe('MockBackend', () => {
     const q = await mock.createQueue('Weekend');
     await mock.updateQueue({ ...q, max_concurrent: 5 });
     expect((await mock.listQueues()).find((x) => x.id === q.id)?.max_concurrent).toBe(5);
-    await expect(mock.deleteQueue(1)).rejects.toThrow(/default queue cannot be deleted/);
+    await expect(mock.deleteQueue(queueId(1))).rejects.toThrow(/default queue cannot be deleted/);
     await expect(mock.createQueue('  ')).rejects.toThrow(/name/);
     await mock.deleteQueue(q.id);
     expect((await mock.listQueues()).some((x) => x.id === q.id)).toBe(false);
@@ -181,7 +187,7 @@ describe('MockBackend', () => {
     expect(asked?.type).toBe('confirmation_requested');
     const pending = await mock.pendingConfirmations();
     expect(pending).toHaveLength(1);
-    const id = pending[0]?.id ?? -1;
+    const id = pending[0]?.id ?? questionId(0);
     expect(mock.windows.windows.map((w) => w.shows)).toEqual([{ kind: 'question', id }]);
     expect(await mock.getQuestion(id)).toEqual({ kind: 'capture', data: pending[0] });
     const confirmed = await mock.confirmCapture(id, {
@@ -228,7 +234,7 @@ describe('MockBackend', () => {
     vi.useFakeTimers();
     const { mock } = make({ empty: true, latencyMs: 50 });
     let error: unknown = null;
-    void mock.pause(42).catch((e: unknown) => (error = e));
+    void mock.pause(downloadId(42)).catch((e: unknown) => (error = e));
     await vi.advanceTimersByTimeAsync(49);
     expect(error).toBeNull();
     await vi.advanceTimersByTimeAsync(1);
@@ -240,7 +246,7 @@ describe('MockBackend', () => {
     let answered = false;
     let failed = false;
     void mock.listDownloads().then(() => (answered = true));
-    void mock.pause(42).catch(() => (failed = true));
+    void mock.pause(downloadId(42)).catch(() => (failed = true));
     await Promise.resolve();
     expect(answered).toBe(true);
     expect(failed).toBe(true);

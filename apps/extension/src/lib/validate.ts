@@ -8,7 +8,8 @@
  */
 
 declare const exactly: unique symbol;
-declare const loose: unique symbol;
+/** Marks a guard built on `object`, at run time too, so it is made without an assertion. */
+const loose: unique symbol = Symbol('loose');
 
 /**
  * True when `value` has the shape `T`. The phantom field makes `Guard<T>` invariant in `T`, so a
@@ -129,8 +130,7 @@ export function object<S extends Shape>(shape: S): LooseGuard<ObjectOf<S>> {
   const fields = Object.entries(shape);
   const check = (value: unknown): value is ObjectOf<S> =>
     isRecord(value) && fields.every(([key, guard]) => guard(value[key]));
-  // The mark exists only in the type; this is the one place a guard gets it.
-  return check as LooseGuard<ObjectOf<S>>;
+  return Object.assign(check, { [loose]: true as const });
 }
 
 /** A value that passes any one of the guards: a union, usually told apart by a `type` field. */

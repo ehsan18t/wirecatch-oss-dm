@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DownloadId } from '@wirecatch/protocol';
+  import { isDownloadId, type DownloadId } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
   import { dataIdAt } from '$lib/dom';
@@ -70,7 +70,8 @@
   });
 
   function idFrom(e: Event): DownloadId | null {
-    return dataIdAt(e.target);
+    const id = dataIdAt(e.target);
+    return id !== null && isDownloadId(id) ? id : null;
   }
 
   function onclick(e: MouseEvent) {

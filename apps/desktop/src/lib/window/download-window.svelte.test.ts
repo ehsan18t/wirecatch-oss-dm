@@ -2,6 +2,7 @@
 // Cancel, the media add-on for a picked quality, questions closed elsewhere, and the progress
 // that follows.
 
+import { downloadId, questionId } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { mockBackend, windowState } from '$lib/testing/setup';
@@ -37,13 +38,13 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win, host } = await open(b, { question: asked?.id ?? -1 });
+    const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
     expect(win.phase).toBe('ask');
     expect(win.question?.kind).toBe('capture');
     expect(win.earlier).toBeNull();
 
     expect(await win.confirm({ ...keep, fileName: 'renamed.exe' }, false)).toBe(true);
-    const id = host.becameDownload.mock.calls[0]?.[0] as number;
+    const id = host.becameDownload.mock.calls[0]?.[0] ?? downloadId(0);
     expect(win.phase).toBe('progress');
     expect(win.row?.id).toBe(id);
     expect(win.row?.file_name).toBe('renamed.exe');
@@ -62,10 +63,10 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win, host } = await open(b, { question: asked?.id ?? -1 });
+    const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
     await win.confirm(keep, true);
     expect(host.close).toHaveBeenCalledTimes(1);
-    const id = host.becameDownload.mock.calls[0]?.[0] as number;
+    const id = host.becameDownload.mock.calls[0]?.[0] ?? downloadId(0);
     expect((await b.getDownload(id)).status).toBe('paused');
   });
 
@@ -73,7 +74,7 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win, host } = await open(b, { question: asked?.id ?? -1 });
+    const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
     await win.setCloseWhenStarted(true);
     expect((await b.getSettings()).show_progress_windows).toBe(false);
     await win.confirm(keep, false);
@@ -85,7 +86,7 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win } = await open(b, { question: asked?.id ?? -1 });
+    const { win } = await open(b, { question: asked?.id ?? questionId(0) });
     await win.setStartWithoutAsking(true);
     expect((await b.getSettings()).extension.ask_before_download).toBe(false);
   });
@@ -94,7 +95,7 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win, host } = await open(b, { question: asked?.id ?? -1 });
+    const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
     const reject = vi.spyOn(b, 'rejectCapture');
     win.close();
     expect(host.close).toHaveBeenCalledTimes(1);
@@ -109,12 +110,12 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [first] = await b.pendingConfirmations();
-    await b.confirmCapture(first?.id ?? -1, { ...keepAnswer, later: true });
+    await b.confirmCapture(first?.id ?? questionId(0), { ...keepAnswer, later: true });
     // The mock sends four sample files in turn; the fifth is the first one again.
     for (let i = 0; i < 4; i++) b.simulateConfirmation();
     const again = (await b.pendingConfirmations()).at(-1);
     expect(again?.url).toBe(first?.url);
-    const { win } = await open(b, { question: again?.id ?? -1 });
+    const { win } = await open(b, { question: again?.id ?? questionId(0) });
     expect(win.earlier?.status).toBe('paused');
   });
 
@@ -122,8 +123,8 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    await b.rejectCapture(asked?.id ?? -1);
-    const { win } = await open(b, { question: asked?.id ?? -1 });
+    await b.rejectCapture(asked?.id ?? questionId(0));
+    const { win } = await open(b, { question: asked?.id ?? questionId(0) });
     expect(win.phase).toBe('gone');
     expect(win.goneReason).toBe(ANSWERED_ELSEWHERE);
   });
@@ -132,7 +133,7 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win } = await open(b, { question: asked?.id ?? -1 });
+    const { win } = await open(b, { question: asked?.id ?? questionId(0) });
     b.simulateAnsweredElsewhere();
     expect(win.phase).toBe('gone');
     expect(win.goneReason).toBe(ANSWERED_ELSEWHERE);
@@ -142,7 +143,7 @@ describe('a browser file', () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
-    const { win } = await open(b, { question: asked?.id ?? -1 });
+    const { win } = await open(b, { question: asked?.id ?? questionId(0) });
     vi.spyOn(b, 'confirmCapture').mockRejectedValueOnce(new Error('The folder is read-only.'));
     expect(await win.confirm(keep, false)).toBe(false);
     expect(win.error).toBe('The folder is read-only.');
@@ -158,7 +159,8 @@ describe('a video', () => {
     const b = backend();
     vi.useFakeTimers();
     b.simulateSlowReading();
-    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const shown = b.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
     const { win } = windowState(b, { question: id });
     await win.init();
     expect(win.question?.kind).toBe('reading');
@@ -181,7 +183,8 @@ describe('a video', () => {
       .mockRejectedValueOnce(new Error('The list could not be read.'));
     vi.useFakeTimers();
     b.simulateSlowReading();
-    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const shown = b.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
     const { win } = windowState(b, { question: id });
     await win.init();
     expect(win.earlier?.id).toBe(earlierId);
@@ -195,7 +198,8 @@ describe('a video', () => {
     const b = backend();
     vi.useFakeTimers();
     b.simulateSlowReading();
-    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const shown = b.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
     const { win } = windowState(b, { question: id });
     await win.init();
     win.handle({ type: 'confirmation_closed', data: { id } });
@@ -207,7 +211,7 @@ describe('a video', () => {
     const b = backend();
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
-    const { win, host } = await open(b, { question: choice?.id ?? -1 });
+    const { win, host } = await open(b, { question: choice?.id ?? questionId(0) });
     const best = choice?.options.find((o) => o.needs_ffmpeg);
     expect(await win.choose({ ...keepMedia, option_id: best?.id ?? '', later: false })).toBe(true);
     expect(win.awaitingAddon).not.toBeNull();
@@ -227,7 +231,7 @@ describe('a video', () => {
     vi.spyOn(b, 'chooseMedia').mockRejectedValue(
       new BackendError('This needs the media add-on to join video and audio.', 'addon_required'),
     );
-    const { win } = windowState(b, { question: choice?.id ?? -1 });
+    const { win } = windowState(b, { question: choice?.id ?? questionId(0) });
     await win.init();
     expect(win.addon).toBeNull();
     const best = choice?.options.find((o) => o.needs_ffmpeg);
@@ -240,7 +244,7 @@ describe('a video', () => {
     const b = backend();
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
-    const { win } = await open(b, { question: choice?.id ?? -1 });
+    const { win } = await open(b, { question: choice?.id ?? questionId(0) });
     await win.choose({ ...keepMedia, option_id: '1080', later: false });
     await win.stopAddonInstall();
     expect(win.awaitingAddon).toBeNull();
@@ -256,7 +260,7 @@ describe('a video', () => {
     const b = backend();
     b.simulateAddonRequired();
     const [page] = await b.pendingAddonRequests();
-    const { win } = await open(b, { question: page?.id ?? -1 });
+    const { win } = await open(b, { question: page?.id ?? questionId(0) });
     expect(win.question?.kind).toBe('addon');
     await win.installAddon();
     b.tick(4500);
@@ -267,10 +271,10 @@ describe('a video', () => {
     const b = backend();
     b.simulateMediaChoice();
     const [choice] = await b.pendingMediaChoices();
-    const { win, host } = await open(b, { question: choice?.id ?? -1 });
+    const { win, host } = await open(b, { question: choice?.id ?? questionId(0) });
     await win.choose({ ...keepMedia, option_id: '720', later: true });
     expect(host.close).toHaveBeenCalledTimes(1);
-    const id = host.becameDownload.mock.calls[0]?.[0] as number;
+    const id = host.becameDownload.mock.calls[0]?.[0] ?? downloadId(0);
     expect((await b.getDownload(id)).status).toBe('paused');
   });
 });
@@ -290,7 +294,7 @@ describe('a progress window', () => {
   it('keeps only its own row from each batch', async () => {
     const b = backend();
     const { win } = await running(b);
-    const other = { ...win.row!, id: 999, done: 12345 };
+    const other = { ...win.row!, id: downloadId(999), done: 12345 };
     const mine = { ...win.row!, done: 42 };
     win.handle({ type: 'downloads_changed', data: [other] });
     expect(win.row?.done).not.toBe(12345);
@@ -315,7 +319,7 @@ describe('a progress window', () => {
   it('says so when its download leaves the list', async () => {
     const b = backend();
     const { win } = await running(b);
-    await b.remove([win.downloadId ?? -1], false);
+    await b.remove([win.downloadId ?? downloadId(0)], false);
     expect(win.phase).toBe('gone');
   });
 });
@@ -326,7 +330,7 @@ describe('closing a window', () => {
     const first = vi.fn();
     const second = vi.fn();
     vi.spyOn(b, 'subscribe').mockResolvedValueOnce(first).mockResolvedValueOnce(second);
-    const { win } = windowState(b, { question: 1 });
+    const { win } = windowState(b, { question: questionId(1) });
     await win.init();
     await win.init();
     expect(first).toHaveBeenCalledOnce();
@@ -337,7 +341,7 @@ describe('closing a window', () => {
     const b = backend();
     const stop = vi.fn();
     vi.spyOn(b, 'subscribe').mockResolvedValue(stop);
-    const { win } = windowState(b, { question: 1 });
+    const { win } = windowState(b, { question: questionId(1) });
     const loading = win.init();
     win.dispose();
     await loading;
@@ -350,7 +354,8 @@ describe('the window title', () => {
     const b = backend();
     b.simulateSlowReading();
     vi.spyOn(b, 'appName').mockRejectedValue(new Error('core:app:allow-name not allowed'));
-    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const shown = b.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
     const { win } = windowState(b, { question: id });
     await win.init();
     expect(win.phase).not.toBe('gone');
@@ -362,7 +367,8 @@ describe('the window title', () => {
     const b = backend();
     b.simulateSlowReading();
     vi.spyOn(b, 'appName').mockResolvedValue('Wirecatch Dev');
-    const id = b.windows.windows[0]?.shows.id ?? -1;
+    const shown = b.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
     const { win } = windowState(b, { question: id });
     await win.init();
     expect(win.name).toBe('Wirecatch Dev');
