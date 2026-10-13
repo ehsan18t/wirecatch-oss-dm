@@ -1,4 +1,4 @@
-// Rules about the text of every file: no em dashes, and a reason on every comment that switches a warning off where no linter reads it.
+// Rules about the text of every file: no em dashes, no string a secret scanner takes for a provider's credential, and a reason on every comment that switches a warning off where no linter reads it.
 import { disableComments } from './comments.mjs';
 import { GateError, grepRepository } from './process.mjs';
 
@@ -29,6 +29,33 @@ function emDashes() {
   if (hits.length > 0) {
     throw new GateError(
       `Em dashes are not used in this repository; use a comma, colon, parentheses or a new sentence:\n${hits.join('\n')}`,
+    );
+  }
+}
+
+/**
+ * Credentials as providers shape them, which secret scanners (GitHub's push protection among them) refuse in a push: Stripe, Anthropic and OpenAI keys, GitHub, GitLab and npm tokens, Slack tokens, AWS access key ids, Google API keys, JWTs and private key blocks. A sample a test needs is stored in pieces in a data file (`crates/test-support/data/redaction.json`) and joined by its loader. The thresholds sit below the providers' own lengths, so a sample a little short of the real shape is caught too. No pattern matches its own source line.
+ */
+export const CREDENTIAL_PATTERN = [
+  String.raw`\b[prs]k_(?:live|test)_[0-9A-Za-z]{16,}`,
+  String.raw`\bsk-(?:live|test|ant|proj)-[0-9A-Za-z_-]{16,}`,
+  String.raw`\bgh[oprsu]_[0-9A-Za-z]{16,}`,
+  String.raw`\bgithub_pat_[0-9A-Za-z_]{16,}`,
+  String.raw`\bglpat-[0-9A-Za-z_-]{16,}`,
+  String.raw`\bnpm_[0-9A-Za-z]{16,}`,
+  String.raw`\bxox[abprs]-[0-9A-Za-z-]{10,}`,
+  String.raw`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`,
+  String.raw`\bAIza[0-9A-Za-z_-]{20,}`,
+  String.raw`\beyJ[0-9A-Za-z_-]{8,}\.eyJ[0-9A-Za-z_-]{4,}\.[0-9A-Za-z_-]{6,}`,
+  String.raw`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----`,
+].join('|');
+const CREDENTIAL_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml'];
+
+function credentialShapes() {
+  const hits = grepRepository(CREDENTIAL_PATTERN, CREDENTIAL_SCOPE);
+  if (hits.length > 0) {
+    throw new GateError(
+      `A string shaped like a provider's credential is refused by secret scanners, and a real one must never be committed. Store a test sample in pieces (["AKIA", "..."]) in a data file and join it in its loader:\n${hits.join('\n')}`,
     );
   }
 }
@@ -73,7 +100,7 @@ function unsupportedMarkupComments() {
 /** Runs every text rule and reports all that fail, not only the first. */
 function textRules() {
   const failures = [];
-  for (const rule of [emDashes, unreasonedComments, unsupportedMarkupComments]) {
+  for (const rule of [emDashes, credentialShapes, unreasonedComments, unsupportedMarkupComments]) {
     try {
       rule();
     } catch (error) {
