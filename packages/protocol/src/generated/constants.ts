@@ -1,11 +1,19 @@
 // Generated from crates/protocol by `pnpm protocol:generate`. Do not edit; run it again after changing the constants there.
 
+import type { ExtensionSettings } from './ExtensionSettings';
 import type { OutputFormat } from './OutputFormat';
+import type { QueueId } from './QueueId';
 
 /**
  * Bumped on any incompatible change to the wire format.
  */
 export const PROTOCOL_VERSION = 1;
+
+/**
+ * The default queue, which always exists and cannot be deleted: downloads go to it when
+ * nothing names another queue.
+ */
+export const DEFAULT_QUEUE_ID: QueueId = 1;
 
 /**
  * Request id the app uses for an error it cannot tie to a request (for example an
@@ -93,4 +101,18 @@ export const AUDIO_DEFAULT_KBPS: Readonly<Partial<Record<OutputFormat, number>>>
   mp3: 192,
   m4a: 192,
   opus: 128,
+};
+
+/**
+ * The extension's settings on a fresh install (`ExtensionSettings::default`), which
+ * the extension judges browser downloads by until it first hears from the app.
+ */
+export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
+  capture_enabled: true,
+  ask_before_download: true,
+  show_media_button: true,
+  ignored_sites: [],
+  capture_extensions: [],
+  min_capture_size: 0,
+  default_queue: 1,
 };

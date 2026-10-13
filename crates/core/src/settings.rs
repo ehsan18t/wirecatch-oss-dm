@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
@@ -16,8 +15,7 @@ use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use crate::schedule;
 
-/// The queue that always exists and receives downloads by default.
-pub const DEFAULT_QUEUE_ID: QueueId = QueueId(1);
+pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 
 const MAX_QUEUE_NAME_CHARS: usize = 60;
 /// Speed limits are stored as signed 64-bit integers.
@@ -97,10 +95,8 @@ pub fn default_settings() -> AppSettings {
         connections_per_download: DEFAULT_CONNECTIONS_PER_DOWNLOAD,
         max_concurrent_downloads: DEFAULT_MAX_CONCURRENT_DOWNLOADS,
         global_speed_limit: None,
-        extension: ExtensionSettings {
-            default_queue: DEFAULT_QUEUE_ID,
-            ..ExtensionSettings::default()
-        },
+        // The extension judges downloads by the same defaults until it first hears from the app.
+        extension: ExtensionSettings::default(),
         theme: Theme::System,
         start_with_system: false,
         close_to_tray: true,
@@ -453,10 +449,20 @@ fn clean_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_protocol::QueueId;
     use wirecatch_protocol::app::{Schedule, TimeOfDay};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-home"))
+    }
+
+    /// The extension judges browser downloads by the protocol's defaults until it first hears
+    /// from the app (`DEFAULT_EXTENSION_SETTINGS` in `@wirecatch/protocol`), so they must be the
+    /// app's own.
+    #[test]
+    fn a_fresh_install_has_the_extension_defaults_the_extension_assumes() {
+        assert_eq!(default_settings().extension, ExtensionSettings::default());
+        assert_eq!(default_queue().id, DEFAULT_QUEUE_ID);
     }
 
     #[test]

@@ -20,6 +20,9 @@ use ts_rs::TS;
 exported::exported_consts! {
     /// Bumped on any incompatible change to the wire format.
     pub const PROTOCOL_VERSION: u32 = 1;
+    /// The default queue, which always exists and cannot be deleted: downloads go to it when
+    /// nothing names another queue.
+    pub const DEFAULT_QUEUE_ID: QueueId = QueueId(1);
 }
 
 /// Identifies one download for its whole life.

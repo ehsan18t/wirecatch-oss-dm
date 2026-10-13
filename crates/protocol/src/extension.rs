@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::{DownloadId, QueueId};
+use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
 
 /// A download captured in the browser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -168,6 +168,8 @@ pub struct ExtensionSettings {
     pub default_queue: QueueId,
 }
 
+/// The settings of a fresh install, which the extension also judges by until it first hears
+/// from the app.
 impl Default for ExtensionSettings {
     fn default() -> Self {
         Self {
@@ -177,7 +179,7 @@ impl Default for ExtensionSettings {
             ignored_sites: Vec::new(),
             capture_extensions: Vec::new(),
             min_capture_size: 0,
-            default_queue: QueueId(1),
+            default_queue: DEFAULT_QUEUE_ID,
         }
     }
 }

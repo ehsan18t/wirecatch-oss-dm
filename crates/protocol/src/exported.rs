@@ -11,9 +11,9 @@
 
 /// Declares public constants that are also written into the generated TypeScript.
 ///
-/// Each constant needs a doc comment; it becomes the TypeScript doc comment too. A module
-/// using this macro gets a test-only `exported_consts()` function, which the generator in
-/// [`crate::exported`] lists.
+/// Each constant needs a doc comment; it becomes the TypeScript doc comment too. Its type must
+/// implement [`Exported`], which says how it is written. A module using this macro gets a
+/// test-only `exported_consts()` function, which the generator in [`crate::exported`] lists.
 macro_rules! exported_consts {
     ($( $(#[doc = $doc:literal])+ pub const $name:ident: $ty:ty = $value:expr; )+) => {
         $(
@@ -24,46 +24,148 @@ macro_rules! exported_consts {
         /// This module's constants for the TypeScript generator.
         #[cfg(test)]
         pub(crate) fn exported_consts() -> Vec<crate::exported::Constant> {
-            vec![$(crate::exported::Constant::number(stringify!($name), &[$($doc),+], $name)),+]
+            vec![$(crate::exported::Constant::of(stringify!($name), &[$($doc),+], &$name)),+]
         }
     };
 }
 
 pub(crate) use exported_consts;
 
+/// A value as it is written into TypeScript.
+#[cfg(test)]
+pub(crate) struct Written {
+    /// The TypeScript expression.
+    value: String,
+    /// The TypeScript type annotation, when the value's inferred type is not the one wanted.
+    annotation: Option<&'static str>,
+    /// Generated types the annotation names, imported into the file.
+    imports: &'static [&'static str],
+}
+
+/// A Rust value the generator can write as a TypeScript constant.
+#[cfg(test)]
+pub(crate) trait Exported {
+    /// The value written as TypeScript.
+    fn written(&self) -> Written;
+}
+
+/// Whole numbers. TypeScript numbers are exact only between -(2^53 - 1) and 2^53 - 1, so a
+/// value outside that range fails the generator instead of being written wrong.
+#[cfg(test)]
+fn whole_number(value: impl TryInto<i128>) -> Written {
+    /// `Number.MAX_SAFE_INTEGER` in JavaScript.
+    const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
+    let value: i128 = value
+        .try_into()
+        .ok()
+        .filter(|v| v.abs() <= MAX_SAFE_INTEGER)
+        .unwrap_or_else(|| {
+            panic!("a constant is outside the range a TypeScript number holds exactly (2^53 - 1 either way)")
+        });
+    Written {
+        value: value.to_string(),
+        annotation: None,
+        imports: &[],
+    }
+}
+
+macro_rules! exported_numbers {
+    ($($ty:ty),+) => {
+        $(
+            #[cfg(test)]
+            impl Exported for $ty {
+                fn written(&self) -> Written {
+                    whole_number(*self)
+                }
+            }
+        )+
+    };
+}
+
+exported_numbers!(u8, u16, u32, u64, usize, i64);
+
+#[cfg(test)]
+impl Exported for &str {
+    fn written(&self) -> Written {
+        Written {
+            value: serde_json::to_string(self).unwrap(),
+            annotation: None,
+            imports: &[],
+        }
+    }
+}
+
+#[cfg(test)]
+impl Exported for &[&str] {
+    fn written(&self) -> Written {
+        Written {
+            value: serde_json::to_string(self).unwrap(),
+            annotation: Some("readonly string[]"),
+            imports: &[],
+        }
+    }
+}
+
+#[cfg(test)]
+impl Exported for crate::QueueId {
+    fn written(&self) -> Written {
+        Written {
+            annotation: Some("QueueId"),
+            imports: &["QueueId"],
+            ..whole_number(self.0)
+        }
+    }
+}
+
 /// One constant as it is written into TypeScript.
 #[cfg(test)]
 pub(crate) struct Constant {
     name: &'static str,
     docs: Vec<&'static str>,
-    /// The TypeScript type annotation, when the value's inferred type is not the one wanted.
-    annotation: Option<&'static str>,
-    value: String,
+    written: Written,
 }
 
 #[cfg(test)]
 impl Constant {
-    /// A whole number. TypeScript numbers are exact only between -(2^53 - 1) and 2^53 - 1,
-    /// so a value outside that range fails the generator instead of being written wrong.
+    /// The constant `name`, documented by `docs`, holding `value`.
+    pub(crate) fn of(name: &'static str, docs: &[&'static str], value: &impl Exported) -> Constant {
+        Constant {
+            name,
+            docs: docs.to_vec(),
+            written: value.written(),
+        }
+    }
+
+    /// A whole number.
     pub(crate) fn number(
         name: &'static str,
         docs: &[&'static str],
         value: impl TryInto<i128>,
     ) -> Constant {
-        /// `Number.MAX_SAFE_INTEGER` in JavaScript.
-        const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
-        let value: i128 = value
-            .try_into()
-            .ok()
-            .filter(|v| v.abs() <= MAX_SAFE_INTEGER)
-            .unwrap_or_else(|| {
-                panic!("{name} is outside the range a TypeScript number holds exactly (2^53 - 1 either way)")
-            });
         Constant {
             name,
             docs: docs.to_vec(),
-            annotation: None,
-            value: value.to_string(),
+            written: whole_number(value),
+        }
+    }
+
+    /// A value written as its JSON, of the generated type `annotation`, for a default the apps
+    /// start from before the app tells them better.
+    pub(crate) fn json(
+        name: &'static str,
+        docs: &[&'static str],
+        annotation: &'static str,
+        imports: &'static [&'static str],
+        value: &impl serde::Serialize,
+    ) -> Constant {
+        Constant {
+            name,
+            docs: docs.to_vec(),
+            written: Written {
+                value: serde_json::to_string_pretty(value).unwrap(),
+                annotation: Some(annotation),
+                imports,
+            },
         }
     }
 
@@ -81,13 +183,14 @@ impl Constant {
         }
         out.push_str(" */\n");
         let annotation = self
+            .written
             .annotation
             .map(|a| format!(": {a}"))
             .unwrap_or_default();
         writeln!(
             out,
             "export const {}{annotation} = {};",
-            self.name, self.value
+            self.name, self.written.value
         )
         .unwrap();
     }
@@ -128,6 +231,7 @@ mod tests {
 
     use super::Constant;
     use crate::app::OutputFormat;
+    use crate::extension::ExtensionSettings;
 
     /// The file written into the generated folder. `packages/protocol/scripts/index-source.mjs`
     /// re-exports it from the package by this name.
@@ -175,8 +279,11 @@ mod tests {
         Constant {
             name,
             docs: docs.to_vec(),
-            annotation: Some(annotation),
-            value: format!("{{\n{}\n}}", entries.join("\n")),
+            written: super::Written {
+                value: format!("{{\n{}\n}}", entries.join("\n")),
+                annotation: Some(annotation),
+                imports: &["OutputFormat"],
+            },
         }
     }
 
@@ -262,11 +369,29 @@ mod tests {
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
             audio_tables(),
+            vec![Constant::json(
+                "DEFAULT_EXTENSION_SETTINGS",
+                &[
+                    " The extension's settings on a fresh install (`ExtensionSettings::default`), which",
+                    " the extension judges browser downloads by until it first hears from the app.",
+                ],
+                "ExtensionSettings",
+                &["ExtensionSettings"],
+                &ExtensionSettings::default(),
+            )],
         ];
+        let constants: Vec<&Constant> = constants.iter().flatten().collect();
         let mut out = String::from(
-            "// Generated from crates/protocol by `pnpm protocol:generate`. Do not edit; run it again after changing the constants there.\n\nimport type { OutputFormat } from \"./OutputFormat\";\n",
+            "// Generated from crates/protocol by `pnpm protocol:generate`. Do not edit; run it again after changing the constants there.\n\n",
         );
-        for constant in constants.iter().flatten() {
+        let imports: std::collections::BTreeSet<&str> = constants
+            .iter()
+            .flat_map(|c| c.written.imports.iter().copied())
+            .collect();
+        for name in imports {
+            out.push_str(&format!("import type {{ {name} }} from \"./{name}\";\n"));
+        }
+        for constant in constants {
             constant.write(&mut out);
         }
         let dir = export_dir();

@@ -3,6 +3,7 @@
 import {
   DEFAULT_CONNECTIONS_PER_DOWNLOAD,
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+  DEFAULT_QUEUE_ID,
   DEFAULT_QUEUE_MAX_CONCURRENT,
   type AddonInfo,
   type AppSettings,
@@ -34,7 +35,7 @@ export function mediaAddon(): AddonInfo {
 }
 
 /** The sample queues' ids. */
-export const MAIN_QUEUE_ID = 1;
+export const MAIN_QUEUE_ID = DEFAULT_QUEUE_ID;
 export const OVERNIGHT_QUEUE_ID = 2;
 export const WORK_QUEUE_ID = 3;
 

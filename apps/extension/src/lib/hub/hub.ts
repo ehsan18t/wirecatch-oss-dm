@@ -1,4 +1,10 @@
-import type { Call, Event, ExtensionSettings, Outcome } from '@wirecatch/protocol';
+import {
+  DEFAULT_EXTENSION_SETTINGS,
+  type Call,
+  type Event,
+  type ExtensionSettings,
+  type Outcome,
+} from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
 import {
   handOver,
@@ -29,17 +35,6 @@ import {
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
 import { KnownSettings } from './settings';
-
-/** Used to rule out blob, data and internal addresses before anything is known about the settings. */
-const CAPTURE_EVERYTHING: ExtensionSettings = {
-  capture_enabled: true,
-  ask_before_download: false,
-  show_media_button: true,
-  ignored_sites: [],
-  capture_extensions: [],
-  min_capture_size: 0,
-  default_queue: 1,
-};
 
 /**
  * The waits used unless `HubDeps.timing` says otherwise. A paused download waits less
@@ -162,7 +157,7 @@ export class Hub {
     try {
       await this.#ready;
       const candidate = candidateFromItem(item);
-      const known = this.#settings.known() ?? CAPTURE_EVERYTHING;
+      const known = this.#settings.known() ?? DEFAULT_EXTENSION_SETTINGS;
       if (!shouldCapture(candidate, known).capture) return null;
       const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
 
