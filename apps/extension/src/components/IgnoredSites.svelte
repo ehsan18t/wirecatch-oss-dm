@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { normalizeSite } from '../lib/sites';
+  import { normalizeSite } from '@wirecatch/protocol';
 
   interface Props {
     sites: readonly string[];

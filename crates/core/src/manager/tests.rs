@@ -314,6 +314,44 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     state.assert_consistent();
 }
 
+/// A client sending a list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
+    use wirecatch_protocol::app::AppSettingsPatch;
+    use wirecatch_protocol::extension::{ExtensionSettingsPatch, MAX_IGNORED_SITES};
+
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let too_long = || ExtensionSettingsPatch {
+        add_ignored_sites: Some(
+            (0..=MAX_IGNORED_SITES)
+                .map(|i| format!("s{i}.example"))
+                .collect(),
+        ),
+        ..ExtensionSettingsPatch::default()
+    };
+    let held = manager.lock();
+    let (answered, answers) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let from_browser = manager.update_extension_settings(too_long()).is_err();
+            let from_window = manager
+                .change_settings(AppSettingsPatch {
+                    extension: Some(too_long()),
+                    ..AppSettingsPatch::default()
+                })
+                .is_err();
+            answered.send((from_browser, from_window)).unwrap();
+        });
+        let refused = answers.recv_timeout(PATIENCE);
+        drop(held);
+        assert_eq!(
+            refused,
+            Ok((true, true)),
+            "the list was not refused while the lock was held elsewhere"
+        );
+    });
+}
+
 /// Whether another thread can take the manager's lock while the caller waits. A download's own task takes it for a moment now and then, so a bare `try_lock` fails at times without the caller holding it; a lock the caller holds keeps the other thread out until [`PATIENCE`] has passed.
 fn lock_is_free_to_others(manager: &Manager) -> bool {
     let (taken, took) = std::sync::mpsc::channel();

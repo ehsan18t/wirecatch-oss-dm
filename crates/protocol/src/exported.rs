@@ -291,6 +291,9 @@ mod tests {
     /// re-exports it from the package by this name.
     const FILE_NAME: &str = "constants.ts";
 
+    /// The fixtures file written into the generated folder; not exported from the package.
+    const FIXTURES: &str = "fixtures.json";
+
     /// Every output format, in the order the tables list them. Each format names the one
     /// after it, so a new format does not compile until it is given a place in the chain.
     fn output_formats() -> Vec<OutputFormat> {
@@ -494,6 +497,41 @@ mod tests {
         assert!(too_big.is_err());
     }
 
+    /// Cases for the TypeScript ports of protocol functions, written next to the types as
+    /// [`FIXTURES`] and read by the tests of `packages/protocol`, so both languages agree.
+    #[test]
+    fn write_typescript_fixtures() {
+        use crate::extension::{apply_cases, file_type_cases, site_cases};
+        let sites: Vec<Value> = site_cases()
+            .into_iter()
+            .map(|(typed, site)| serde_json::json!({ "typed": typed, "site": site }))
+            .collect();
+        let file_types: Vec<Value> = file_type_cases()
+            .into_iter()
+            .map(|(typed, kind)| serde_json::json!({ "typed": typed, "type": kind }))
+            .collect();
+        let applied: Vec<Value> = apply_cases()
+            .into_iter()
+            .map(|(before, patch)| {
+                let mut after = before.clone();
+                after.apply(patch.clone());
+                serde_json::json!({ "before": before, "patch": patch, "after": after })
+            })
+            .collect();
+        let fixtures = serde_json::json!({
+            "normalize_site": sites,
+            "normalize_file_type": file_types,
+            "apply_extension_settings": applied,
+        });
+        let dir = export_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(FIXTURES),
+            serde_json::to_string_pretty(&fixtures).unwrap(),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn write_typescript_constants() {
         use std::fmt::Write as _;
@@ -504,6 +542,7 @@ mod tests {
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
             crate::desktop::exported_consts(),
+            crate::extension::exported_consts(),
             crate::version::since_tables(),
             format_tables(),
             audio_tables(),

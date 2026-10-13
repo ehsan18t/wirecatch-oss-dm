@@ -3,28 +3,9 @@
  *
  * A site entry such as `example.com` covers that host and every subdomain of it
  * (`www.example.com`, `cdn.example.com`), but not look-alikes such as `badexample.com`.
+ * The app keeps each entry the way `normalizeSite` from `@wirecatch/protocol` does.
  */
-
-/**
- * Turns what a person typed (or a page address) into a bare, lower-case host name.
- * Accepts `Example.com`, `https://example.com/page`, `*.example.com` and `www.example.com.`.
- * Returns null when nothing usable is left.
- */
-export function normalizeSite(input: string): string | null {
-  let value = input.trim().toLowerCase();
-  if (value === '') return null;
-  if (value.includes('://')) {
-    const host = hostOf(value);
-    if (host === null) return null;
-    value = host;
-  }
-  value = value.replace(/^\*\./, '');
-  // Drop any path, query or port the person may have pasted.
-  value = value.split(/[/?#]/, 1)[0] ?? '';
-  value = value.replace(/:\d+$/, '').replace(/\.+$/, '');
-  if (value === '' || /\s/.test(value)) return null;
-  return value;
-}
+import { normalizeSite } from '@wirecatch/protocol';
 
 /** The host name of a URL in lower case, or null if the URL has none. */
 export function hostOf(url: string): string | null {

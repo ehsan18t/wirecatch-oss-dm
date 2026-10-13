@@ -1,0 +1,552 @@
+{
+  "apply_extension_settings": [
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": null,
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": null,
+        "min_capture_size": null,
+        "remove_ignored_sites": null,
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": false,
+        "capture_enabled": false,
+        "capture_extensions": ["iso", "exe"],
+        "default_queue": 3,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 1024,
+        "show_media_button": false
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": null,
+        "ask_before_download": false,
+        "capture_enabled": false,
+        "capture_extensions": ["iso", "exe"],
+        "default_queue": 3,
+        "ignored_sites": null,
+        "min_capture_size": 1024,
+        "remove_ignored_sites": null,
+        "show_media_button": false
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "www.c.com", "c.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": ["https://WWW.C.com/page", "*.a.com", "c.com", ""],
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": null,
+        "min_capture_size": null,
+        "remove_ignored_sites": ["B.com."],
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["d.com", "f.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": ["f.com"],
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": ["D.com/", "d.com", " ", "e.com:80"],
+        "min_capture_size": null,
+        "remove_ignored_sites": ["e.com", "a.com"],
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": [],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": null,
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": [],
+        "min_capture_size": null,
+        "remove_ignored_sites": ["a.com"],
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": null,
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": null,
+        "min_capture_size": null,
+        "remove_ignored_sites": null,
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com", "a.com", "b.com", "c.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": ["b.com", "c.com"],
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": null,
+        "min_capture_size": null,
+        "remove_ignored_sites": null,
+        "show_media_button": null
+      }
+    },
+    {
+      "after": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "a.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "before": {
+        "ask_before_download": true,
+        "capture_enabled": true,
+        "capture_extensions": ["zip"],
+        "default_queue": 1,
+        "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
+        "min_capture_size": 0,
+        "show_media_button": true
+      },
+      "patch": {
+        "add_ignored_sites": null,
+        "ask_before_download": null,
+        "capture_enabled": null,
+        "capture_extensions": null,
+        "default_queue": null,
+        "ignored_sites": null,
+        "min_capture_size": null,
+        "remove_ignored_sites": ["b.com"],
+        "show_media_button": null
+      }
+    }
+  ],
+  "normalize_file_type": [
+    {
+      "type": "zip",
+      "typed": "zip"
+    },
+    {
+      "type": "zip",
+      "typed": " ZIP "
+    },
+    {
+      "type": "zip",
+      "typed": ".zip"
+    },
+    {
+      "type": "zip",
+      "typed": "..Zip"
+    },
+    {
+      "type": "mp4",
+      "typed": "*.MP4"
+    },
+    {
+      "type": "mp4",
+      "typed": "*..mp4"
+    },
+    {
+      "type": "tar.gz",
+      "typed": ".tar.GZ"
+    },
+    {
+      "type": "7z",
+      "typed": "7z　"
+    },
+    {
+      "type": null,
+      "typed": ""
+    },
+    {
+      "type": null,
+      "typed": "  "
+    },
+    {
+      "type": null,
+      "typed": "*."
+    },
+    {
+      "type": null,
+      "typed": "."
+    },
+    {
+      "type": "äpk",
+      "typed": "ÄPK"
+    }
+  ],
+  "normalize_site": [
+    {
+      "site": "example.com",
+      "typed": "example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "  Example.COM  "
+    },
+    {
+      "site": "example.com",
+      "typed": "https://Example.com/page?q=1#top"
+    },
+    {
+      "site": "example.com",
+      "typed": "http://user@example.com:8080/"
+    },
+    {
+      "site": "example.com",
+      "typed": "*.example.com"
+    },
+    {
+      "site": "www.example.com",
+      "typed": "www.example.com."
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com:443"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com:"
+    },
+    {
+      "site": "example.com",
+      "typed": "user@example.com"
+    },
+    {
+      "site": "exa_mple.com",
+      "typed": "exa_mple.com"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "bücher.de"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "BÜCHER.de"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "xn--bcher-kva.de"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "XN--BCHER-KVA.DE."
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "https://bücher.de/p"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "*.Bücher.de:8080"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "http://user:pw@bücher.de:443/x"
+    },
+    {
+      "site": "xn--bcher-kva.de",
+      "typed": "bücher。de"
+    },
+    {
+      "site": "xn--r8jz45g.xn--zckzah",
+      "typed": "例え.テスト"
+    },
+    {
+      "site": "[::1]",
+      "typed": "[::1]"
+    },
+    {
+      "site": "[::1]",
+      "typed": "http://[::1]:8080/x"
+    },
+    {
+      "site": "[::1]",
+      "typed": "[0:0::1]"
+    },
+    {
+      "site": "[2001:db8::1]",
+      "typed": "[2001:DB8::1]:443"
+    },
+    {
+      "site": "127.0.0.1",
+      "typed": "0x7f.1"
+    },
+    {
+      "site": "127.0.0.1",
+      "typed": "１２７.０.０.１"
+    },
+    {
+      "site": null,
+      "typed": "a<b.com"
+    },
+    {
+      "site": null,
+      "typed": "xn--zz"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com\\path"
+    },
+    {
+      "site": "a.com",
+      "typed": "x@a.com\\@b.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com/"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com/path/"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com?x=1"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com#x"
+    },
+    {
+      "site": "sub.example.co.uk",
+      "typed": "sub.example.co.uk"
+    },
+    {
+      "site": "192.168.1.10",
+      "typed": "192.168.1.10:8000"
+    },
+    {
+      "site": null,
+      "typed": ""
+    },
+    {
+      "site": null,
+      "typed": "   "
+    },
+    {
+      "site": null,
+      "typed": "/"
+    },
+    {
+      "site": null,
+      "typed": "https://"
+    },
+    {
+      "site": null,
+      "typed": "*."
+    },
+    {
+      "site": null,
+      "typed": "exa mple.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com/a://b.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com/out?to=https://other.com"
+    },
+    {
+      "site": "x.com",
+      "typed": "x.com#http://y.com"
+    },
+    {
+      "site": "google.com",
+      "typed": "google.com/url?q=https://videos.example/a"
+    },
+    {
+      "site": "example.com",
+      "typed": "user@example.com/x://y.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "git+ssh://example.com/repo"
+    },
+    {
+      "site": "example.com",
+      "typed": ".example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "..example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "*.*.example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "*..example.com"
+    },
+    {
+      "site": null,
+      "typed": "*"
+    },
+    {
+      "site": null,
+      "typed": "*example.com"
+    },
+    {
+      "site": null,
+      "typed": "a.*.example.com"
+    },
+    {
+      "site": null,
+      "typed": "**.example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "exa﻿mple.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "﻿example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com"
+    },
+    {
+      "site": null,
+      "typed": "example.com"
+    },
+    {
+      "site": "example.com",
+      "typed": "example.com　"
+    },
+    {
+      "site": null,
+      "typed": "exa mple.com"
+    }
+  ]
+}

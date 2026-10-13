@@ -1,4 +1,5 @@
 /** Helpers for the "file types to capture" setting (lower case, no dot, empty list means all). */
+import { normalizeFileType } from '@wirecatch/protocol';
 
 /**
  * Splits what a person typed into a clean list of file types.
@@ -11,15 +12,6 @@ export function parseFileTypes(input: string): string[] {
     if (type !== null) seen.add(type);
   }
   return [...seen];
-}
-
-/** `".Tar.GZ"` becomes `"tar.gz"`; returns null when nothing is left. */
-export function normalizeFileType(raw: string): string | null {
-  const type = raw
-    .trim()
-    .toLowerCase()
-    .replace(/^\*?\.+/, '');
-  return type === '' ? null : type;
 }
 
 /** Shows a list of file types the way a person would type it. */

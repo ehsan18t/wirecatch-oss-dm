@@ -20,28 +20,3 @@ export function patchOf(changes: SettingsChange): ExtensionSettingsPatch {
     default_queue: changes.default_queue ?? null,
   };
 }
-
-/**
- * Applies a patch the same way the app does (`ExtensionSettings::apply`): the
- * whole list first, then additions (skipping ones already there), then removals.
- */
-export function applyPatch(
-  settings: ExtensionSettings,
-  patch: ExtensionSettingsPatch,
-): ExtensionSettings {
-  let sites = patch.ignored_sites ?? settings.ignored_sites;
-  for (const host of patch.add_ignored_sites ?? []) {
-    if (!sites.includes(host)) sites = [...sites, host];
-  }
-  const removed = patch.remove_ignored_sites ?? [];
-  sites = sites.filter((host) => !removed.includes(host));
-  return {
-    capture_enabled: patch.capture_enabled ?? settings.capture_enabled,
-    ask_before_download: patch.ask_before_download ?? settings.ask_before_download,
-    show_media_button: patch.show_media_button ?? settings.show_media_button,
-    ignored_sites: sites,
-    capture_extensions: patch.capture_extensions ?? settings.capture_extensions,
-    min_capture_size: patch.min_capture_size ?? settings.min_capture_size,
-    default_queue: patch.default_queue ?? settings.default_queue,
-  };
-}

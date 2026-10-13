@@ -3,6 +3,7 @@
  * flows run end to end in tests without a browser, a bridge or an app.
  */
 import {
+  applyExtensionSettingsPatch,
   downloadId,
   MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
@@ -31,7 +32,6 @@ import type {
 } from '../src/lib/hub/deps';
 import type { Channel, Notice } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
-import { applyPatch } from '../src/lib/protocol';
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   capture_enabled: true,
@@ -270,7 +270,7 @@ export class FakeApp implements NativeTransport {
       reply({ status: 'err', value: this.updateError });
       return;
     }
-    this.settings = applyPatch(this.settings, patch);
+    this.settings = applyExtensionSettingsPatch(this.settings, patch);
     reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
     this.broadcast({ type: 'extension_settings_changed', data: this.settings });
   }

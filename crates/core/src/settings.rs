@@ -8,7 +8,10 @@ use wirecatch_protocol::app::{
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, PortablePath, Queue, Theme,
 };
-use wirecatch_protocol::extension::ExtensionSettings;
+use wirecatch_protocol::extension::{
+    ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, NotASite,
+    SitesRefused, normalize_file_type, read_site,
+};
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
@@ -24,14 +27,10 @@ const MAX_SPEED_LIMIT: u64 = i64::MAX as u64;
 // and the stored settings small, whatever a client or a profile file sends.
 /// Most queues there can be.
 pub const MAX_QUEUES: usize = 100;
-/// Most sites in the ignored-sites list.
-pub const MAX_IGNORED_SITES: usize = 1000;
 /// Most file types in one list (capture filter or a category rule).
 pub const MAX_FILE_TYPES: usize = 256;
 /// Most category rules.
 pub const MAX_CATEGORY_RULES: usize = 64;
-/// Longest host name (the DNS limit).
-const MAX_SITE_CHARS: usize = 253;
 const MAX_FILE_TYPE_CHARS: usize = 32;
 const MAX_FOLDER_CHARS: usize = 1024;
 
@@ -121,7 +120,7 @@ pub(crate) fn default_queue() -> Queue {
     }
 }
 
-/// Brings the numbers downloads depend on into the range [`validate`] keeps them in. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
+/// Brings the numbers downloads depend on into the range [`validate`] keeps them in, and keeps the ignored sites the way the list keeps them. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
 pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
     settings.connections_per_download = settings
         .connections_per_download
@@ -130,7 +129,59 @@ pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
         .max_concurrent_downloads
         .clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
+    settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
     settings
+}
+
+/// The stored ignored sites the way the list keeps them, without the ones a change would refuse. None of those can match a host the browser reports, so nothing that was ignored stops being ignored; each one changed or dropped is logged by its place in the list, since an entry may hold a password (`user:password@host`).
+pub(crate) fn stored_sites(stored: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::with_capacity(stored.len());
+    let mut kept = Vec::with_capacity(stored.len());
+    for (entry, site) in stored.into_iter().enumerate() {
+        match read_site(&site) {
+            Ok(Some(host)) if host.chars().count() <= MAX_SITE_CHARS => {
+                if host != site {
+                    tracing::info!(entry, kept_as = %host, "a stored site to ignore is kept as its host");
+                }
+                if seen.insert(host.clone()) {
+                    kept.push(host);
+                }
+            }
+            Ok(Some(_)) => tracing::info!(
+                entry,
+                "a stored site to ignore is longer than a host name can be, so it is dropped"
+            ),
+            Ok(None) | Err(_) => tracing::info!(
+                entry,
+                "a stored site to ignore names no host, so it is dropped"
+            ),
+        }
+    }
+    kept
+}
+
+/// Checks the sites a patch from the browser or a window names, before the manager's lock is taken (see [`ExtensionSettingsPatch::check_sites`]).
+pub(crate) fn check_site_patch(patch: &ExtensionSettingsPatch) -> Result<()> {
+    patch.check_sites().map_err(|refused| match refused {
+        SitesRefused::TooMany => too_many(&IGNORED_SITES),
+        SitesRefused::NotASite(not) => not_a_site(&not),
+    })
+}
+
+fn not_a_site(NotASite(entry): &NotASite) -> CoreError {
+    CoreError::Invalid(format!(
+        "\"{}\" is not a site. Type a host name such as example.com, or a web address.",
+        entry.trim()
+    ))
+}
+
+fn too_many(rules: &ListRules) -> CoreError {
+    let ListRules {
+        what, max_items, ..
+    } = rules;
+    CoreError::Invalid(format!(
+        "The list of {what} can hold at most {max_items} entries. Remove some first."
+    ))
 }
 
 /// [`within_limits`] for a queue.
@@ -179,7 +230,15 @@ pub(crate) fn validate(
         ));
     }
     ext.capture_extensions = clean_extensions(&ext.capture_extensions)?;
-    ext.ignored_sites = clean_list(&ext.ignored_sites, normalize_site, &IGNORED_SITES)?;
+    ext.ignored_sites = clean_list(
+        &ext.ignored_sites,
+        |site| {
+            read_site(site)
+                .map(Option::unwrap_or_default)
+                .map_err(|not| not_a_site(&not))
+        },
+        &IGNORED_SITES,
+    )?;
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
     Ok(settings)
@@ -402,21 +461,15 @@ const FILE_TYPES: ListRules = ListRules {
 fn clean_extensions(list: &[String]) -> Result<Vec<String>> {
     clean_list(
         list,
-        |e| e.trim().trim_start_matches('.').to_lowercase(),
+        |kind| Ok(normalize_file_type(kind).unwrap_or_default()),
         &FILE_TYPES,
     )
 }
 
-/// A host name the way the ignored-sites list stores it.
-pub(crate) fn normalize_site(site: &str) -> String {
-    site.trim().trim_end_matches('/').to_lowercase()
-}
-
-/// Applies `normalize`, drops empty entries and duplicates, keeps the order, and
-/// enforces the list's limits. Linear in the length of the list.
+/// Applies `normalize`, drops empty entries and duplicates, keeps the order, and enforces the list's limits, the number of entries before any is read. Linear in the length of the list.
 fn clean_list(
     list: &[String],
-    normalize: impl Fn(&str) -> String,
+    normalize: impl Fn(&str) -> Result<String>,
     rules: &ListRules,
 ) -> Result<Vec<String>> {
     let ListRules {
@@ -425,13 +478,12 @@ fn clean_list(
         max_chars,
     } = rules;
     if list.len() > *max_items {
-        return Err(CoreError::Invalid(format!(
-            "The list of {what} can hold at most {max_items} entries. Remove some first."
-        )));
+        return Err(too_many(rules));
     }
     let mut seen = HashSet::with_capacity(list.len());
     let mut out = Vec::with_capacity(list.len());
     for item in list.iter().map(|s| normalize(s)) {
+        let item = item?;
         if item.chars().count() > *max_chars {
             return Err(CoreError::Invalid(format!(
                 "An entry in the list of {what} is longer than {max_chars} characters. Shorten or remove it."
@@ -515,13 +567,27 @@ mod tests {
     #[test]
     fn validation_cleans_lists() {
         let mut s = default_settings();
-        s.extension.capture_extensions =
-            vec![".ZIP".into(), "zip".into(), " ".into(), "Mp4".into()];
-        s.extension.ignored_sites = vec!["Example.com/".into(), "example.com".into()];
+        s.extension.capture_extensions = vec![
+            ".ZIP".into(),
+            "zip".into(),
+            " ".into(),
+            "Mp4".into(),
+            "*.MP4".into(),
+            "*.7Z".into(),
+        ];
+        s.extension.ignored_sites = vec![
+            "Example.com/".into(),
+            "example.com".into(),
+            "https://www.Example.org/page".into(),
+            "*.cdn.net:8080".into(),
+        ];
         s.categories[0].extensions = vec![".MKV".into()];
         let s = validate(s, &[default_queue()], &folders()).unwrap();
-        assert_eq!(s.extension.capture_extensions, vec!["zip", "mp4"]);
-        assert_eq!(s.extension.ignored_sites, vec!["example.com"]);
+        assert_eq!(s.extension.capture_extensions, vec!["zip", "mp4", "7z"]);
+        assert_eq!(
+            s.extension.ignored_sites,
+            vec!["example.com", "www.example.org", "cdn.net"]
+        );
         assert_eq!(s.categories[0].extensions, vec!["mkv"]);
     }
 
@@ -584,6 +650,26 @@ mod tests {
                 .to_string()
                 .contains("at most 100")
         );
+    }
+
+    #[test]
+    fn validation_names_a_site_that_names_no_host() {
+        let mut s = default_settings();
+        s.extension.ignored_sites = vec!["example.com".into(), "  ".into(), "not a site".into()];
+        let refused = validate(s, &[default_queue()], &folders())
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("\"not a site\""), "{refused}");
+    }
+
+    /// A stored list is read back without the checks a change goes through, so an entry a change would refuse must not stay in it: every later change of any setting would be refused.
+    #[test]
+    fn stored_sites_that_could_never_be_saved_are_dropped_on_load() {
+        let mut s = default_settings();
+        s.extension.ignored_sites = vec!["a".repeat(300), "x.example".into(), "not a site".into()];
+        let s = within_limits(s);
+        assert_eq!(s.extension.ignored_sites, ["x.example"]);
+        assert!(validate(s, &[default_queue()], &folders()).is_ok());
     }
 
     #[test]

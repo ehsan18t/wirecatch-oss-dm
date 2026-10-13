@@ -1,4 +1,8 @@
-import type { ExtensionSettings, ExtensionSettingsPatch } from '@wirecatch/protocol';
+import {
+  applyExtensionSettingsPatch,
+  type ExtensionSettings,
+  type ExtensionSettingsPatch,
+} from '@wirecatch/protocol';
 import type { MediaView } from '../media/center';
 import {
   isBackgroundMessage,
@@ -8,7 +12,7 @@ import {
   type PopupRequest,
   type Snapshot,
 } from '../messages';
-import { applyPatch, patchOf, type SettingsChange } from '../protocol';
+import { patchOf, type SettingsChange } from '../protocol';
 import { Requests } from './requests';
 
 export interface Feedback {
@@ -47,7 +51,7 @@ export class PopupModel {
   settings = $derived.by((): ExtensionSettings | null => {
     const base = this.snapshot?.settings ?? null;
     if (base === null) return null;
-    return this.#pending.reduce((acc, p) => applyPatch(acc, p.patch), base);
+    return this.#pending.reduce((acc, p) => applyExtensionSettingsPatch(acc, p.patch), base);
   });
 
   connected = $derived(this.snapshot?.status.state === 'connected');

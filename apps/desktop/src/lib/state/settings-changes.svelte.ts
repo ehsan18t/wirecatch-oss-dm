@@ -1,12 +1,11 @@
 // Settings changes as a patch of the settings that changed, never the whole document. Each window holds its own copy of the settings, and a copy can be behind a change made in another window or in the extension; sending only what changed means a window never undoes what it did not touch.
 
-import type {
-  AppSettings,
-  AppSettingsPatch,
-  ExtensionSettings,
-  ExtensionSettingsPatch,
-  MediaDefaults,
-  MediaDefaultsPatch,
+import {
+  applyExtensionSettingsPatch,
+  type AppSettings,
+  type AppSettingsPatch,
+  type MediaDefaults,
+  type MediaDefaultsPatch,
 } from '@wirecatch/protocol';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -135,28 +134,13 @@ function assignFields<T extends object>(target: T, patch: Partial<T>): void {
   }
 }
 
-/** The extension's settings with a patch applied the way the app applies it (`ExtensionSettings::apply`): the whole list of ignored sites first, then additions, then removals; \`null\` leaves a setting as it is. */
-function applyExtensionPatch(settings: ExtensionSettings, patch: ExtensionSettingsPatch): void {
-  let sites = patch.ignored_sites ?? settings.ignored_sites;
-  for (const host of patch.add_ignored_sites ?? []) {
-    if (!sites.includes(host)) sites = [...sites, host];
-  }
-  const removed = patch.remove_ignored_sites ?? [];
-  settings.ignored_sites = sites.filter((host) => !removed.includes(host));
-  settings.capture_enabled = patch.capture_enabled ?? settings.capture_enabled;
-  settings.ask_before_download = patch.ask_before_download ?? settings.ask_before_download;
-  settings.show_media_button = patch.show_media_button ?? settings.show_media_button;
-  settings.capture_extensions = patch.capture_extensions ?? settings.capture_extensions;
-  settings.min_capture_size = patch.min_capture_size ?? settings.min_capture_size;
-  settings.default_queue = patch.default_queue ?? settings.default_queue;
-}
-
 /** `settings` with `patch` applied the way the app applies it (`AppSettings::apply`). Used by the stand-in backend. */
 export function applyPatch(settings: AppSettings, patch: AppSettingsPatch): AppSettings {
   const next = structuredClone(settings);
   const { extension, media, ...rest } = patch;
   assignFields(next, rest);
-  if (extension !== undefined) applyExtensionPatch(next.extension, extension);
+  if (extension !== undefined)
+    next.extension = applyExtensionSettingsPatch(next.extension, extension);
   if (media?.video !== undefined) assignFields(next.media.video, media.video);
   if (media?.audio !== undefined) assignFields(next.media.audio, media.audio);
   return next;

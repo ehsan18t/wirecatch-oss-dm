@@ -1,6 +1,7 @@
 <script lang="ts">
   // Browser: what the extension catches and how a caught download is asked about. The extension's
   // popup changes these same settings.
+  import { normalizeSite } from '@wirecatch/protocol';
   import { splitKbOrMb, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import { commitNumber } from '$lib/number-field';
@@ -37,13 +38,9 @@
     save((d) => void (d.extension.min_capture_size = bytes));
   }
 
-  /** A site as typed or pasted, down to its host name. */
+  /** A site as typed or pasted, down to its host name the way the app keeps it; empty when it names none. */
   function siteHost(typed: string): string {
-    return typed
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/.*$/, '');
+    return normalizeSite(typed) ?? '';
   }
 
   const controls: Record<SettingIn<'browser'>, Snippet<[Row]>> = {

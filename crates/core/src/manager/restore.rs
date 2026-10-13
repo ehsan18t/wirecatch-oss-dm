@@ -267,6 +267,32 @@ mod tests {
         assert_eq!((queue.max_concurrent, queue.speed_limit), (1, None));
     }
 
+    // An older version kept sites as typed, so a Unicode host never matched the punycode host
+    // the browser reports for the same site.
+    #[test]
+    fn stored_ignored_sites_are_kept_the_way_the_list_keeps_them() {
+        let mut stored_settings = settings::default_settings();
+        stored_settings.extension.ignored_sites = vec![
+            "bücher.de".into(),
+            "https://Example.com/page".into(),
+            "example.com".into(),
+            "xn--bcher-kva.de".into(),
+            "not a site".into(),
+        ];
+        let snapshot = Snapshot {
+            settings: Some(stored_settings),
+            queues: vec![settings::default_queue()],
+            ..Snapshot::default()
+        };
+
+        let restored = restore(snapshot, &nowhere(&|_| None));
+
+        assert_eq!(
+            restored.state.settings.extension.ignored_sites,
+            vec!["xn--bcher-kva.de", "example.com"]
+        );
+    }
+
     #[test]
     fn running_downloads_go_first_and_orphans_join_the_default_queue() {
         let snapshot = Snapshot {

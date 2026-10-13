@@ -47,9 +47,9 @@ impl Manager {
     /// # Errors
     ///
     /// The errors of [`update_settings`](Self::update_settings).
-    pub fn change_settings(&self, mut patch: AppSettingsPatch) -> Result<()> {
-        if let Some(extension) = &mut patch.extension {
-            normalize_site_edits(extension);
+    pub fn change_settings(&self, patch: AppSettingsPatch) -> Result<()> {
+        if let Some(extension) = &patch.extension {
+            settings::check_site_patch(extension)?;
         }
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
@@ -65,17 +65,16 @@ impl Manager {
         self.lock().settings.extension.clone()
     }
 
-    /// Changes some of the extension's settings, as asked by a socket client. Sites
-    /// to add or remove are matched the way the list stores them (lower case).
+    /// Changes some of the extension's settings, as asked by a socket client. Sites to add or remove are matched the way the list stores them ([`normalize_site`](wirecatch_protocol::extension::normalize_site)); the lists are checked before the manager's lock is taken, so a client sending a huge one holds nobody up.
     ///
     /// # Errors
     ///
-    /// The errors of [`update_settings`](Self::update_settings).
+    /// The errors of [`update_settings`](Self::update_settings), and [`CoreError::Invalid`] for a site to keep that names no host.
     pub fn update_extension_settings(
         &self,
-        mut patch: ExtensionSettingsPatch,
+        patch: ExtensionSettingsPatch,
     ) -> Result<ExtensionSettings> {
-        normalize_site_edits(&mut patch);
+        settings::check_site_patch(&patch)?;
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.extension.apply(patch);
@@ -225,20 +224,5 @@ impl Manager {
         }
         self.emit(UiEvent::SettingsChanged(new.clone()));
         self.reconcile(state);
-    }
-}
-
-/// Writes the sites a patch adds or removes the way the list stores them (lower case), so they match.
-fn normalize_site_edits(patch: &mut ExtensionSettingsPatch) {
-    for list in [
-        &mut patch.add_ignored_sites,
-        &mut patch.remove_ignored_sites,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        for site in list.iter_mut() {
-            *site = settings::normalize_site(site);
-        }
     }
 }

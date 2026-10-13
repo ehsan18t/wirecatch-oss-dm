@@ -1,9 +1,19 @@
 //! What the browser extension hands over, and the settings it can change (D5).
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use ts_rs::TS;
 
 use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
+
+crate::exported::exported_consts! {
+    /// Most sites the list of sites to ignore holds. A patch naming more than this in one of its lists is refused before any site in it is read (D37.1).
+    pub const MAX_IGNORED_SITES: usize = 1000;
+    /// Longest site in the list of sites to ignore, in characters: the longest host name DNS allows.
+    pub const MAX_SITE_CHARS: usize = 253;
+}
 
 /// A download captured in the browser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -211,7 +221,7 @@ pub struct ExtensionSettingsPatch {
 }
 
 impl ExtensionSettings {
-    /// Applies a partial update; see [`ExtensionSettingsPatch`] for the order.
+    /// Applies a partial update; see [`ExtensionSettingsPatch`] for the order. Every site the patch names is taken the way [`normalize_site`] keeps it, so an edit matches the list whatever form it was typed in, and one that names no host is left out. Linear in the length of the lists, which [`ExtensionSettingsPatch::check_sites`] keeps short.
     pub fn apply(&mut self, patch: ExtensionSettingsPatch) {
         let ExtensionSettingsPatch {
             capture_enabled,
@@ -234,14 +244,18 @@ impl ExtensionSettings {
             self.show_media_button = v;
         }
         if let Some(v) = ignored_sites {
-            self.ignored_sites = v;
+            self.ignored_sites = normalize_sites(v);
         }
-        for host in add_ignored_sites.into_iter().flatten() {
-            if !self.ignored_sites.contains(&host) {
-                self.ignored_sites.push(host);
+        if let Some(add) = add_ignored_sites {
+            let mut kept: HashSet<String> = self.ignored_sites.iter().cloned().collect();
+            for host in normalize_sites(add) {
+                if kept.insert(host.clone()) {
+                    self.ignored_sites.push(host);
+                }
             }
         }
         if let Some(remove) = remove_ignored_sites {
+            let remove: HashSet<String> = remove.iter().filter_map(|s| normalize_site(s)).collect();
             self.ignored_sites.retain(|h| !remove.contains(h));
         }
         if let Some(v) = capture_extensions {
@@ -254,6 +268,297 @@ impl ExtensionSettings {
             self.default_queue = v;
         }
     }
+}
+
+/// The host name an ignored site stands for, the way the list keeps it: the host as a browser reports it (lower case, ASCII, a Unicode name in its punycode form, an IP address in its usual form), without a scheme, user, port, path, query, leading `*.` or `.`, or trailing dot. So `https://Bücher.de/page`, `*.bücher.de`, `.bücher.de` and `xn--bcher-kva.de.` are all `xn--bcher-kva.de`, the host the browser gives for a download from that site. `None` when no host is left, or what is left is not a host name; that includes a `*` anywhere else, which no host a browser reports holds.
+///
+/// An entry covers its host and every subdomain of it. The extension and the desktop interface use a port of this function in `@wirecatch/protocol`, tested against the cases in this module, so a site typed anywhere is kept the same way.
+#[must_use]
+pub fn normalize_site(input: &str) -> Option<String> {
+    read_site(input).ok().flatten()
+}
+
+/// The host [`normalize_site`] keeps for a site as a person typed it, or `None` for an entry holding nothing but white space, which names nothing.
+///
+/// # Errors
+///
+/// [`NotASite`] for an entry that names no host.
+pub fn read_site(input: &str) -> Result<Option<String>, NotASite> {
+    let site = input.trim();
+    if site.is_empty() {
+        return Ok(None);
+    }
+    host_of(site)
+        .map(Some)
+        .ok_or_else(|| NotASite(input.to_owned()))
+}
+
+/// The host in a trimmed site that is not empty (see [`normalize_site`]).
+fn host_of(site: &str) -> Option<String> {
+    let site = match site.split_once("://") {
+        Some((scheme, rest)) if is_scheme(scheme) => rest,
+        _ => site,
+    };
+    let site = site.split(['/', '\\', '?', '#']).next().unwrap_or_default();
+    let mut site = site.rsplit_once('@').map_or(site, |(_, host)| host);
+    while let Some(rest) = site.strip_prefix("*.").or_else(|| site.strip_prefix('.')) {
+        site = rest;
+    }
+    let site = match site.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => site,
+    };
+    if site.is_empty() || site.contains(char::is_whitespace) || site.contains('*') {
+        return None;
+    }
+    // The host parser of the URL standard, which browsers use: IDNA, IPv4 and IPv6 forms, and
+    // the characters no host may hold.
+    let host = url::Host::parse(site).ok()?.to_string();
+    let host = host.trim_end_matches('.');
+    (!host.is_empty()).then(|| host.to_owned())
+}
+
+/// Whether `text` is a URL scheme (an ASCII letter, then letters, digits, `+`, `-` or `.`), so that the `://` after it ends a scheme, not a path or query that holds another address.
+fn is_scheme(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// `list` with each entry kept the way [`normalize_site`] keeps it, in order, without the ones that name no host or name one already in the list. Linear in the length of the list.
+#[must_use]
+pub fn normalize_sites(list: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    list.into_iter()
+        .filter_map(|s| normalize_site(&s))
+        .filter(|site| seen.insert(site.clone()))
+        .collect()
+}
+
+/// A file type the way the lists of file types keep it (the extension's capture filter and the category rules): lower case, without white space around it or the leading `*.` or `.` a person may type, so `*.ZIP`, `.zip` and `zip` are all `zip`. `None` when nothing is left. The extension and the desktop interface use a port of this function in `@wirecatch/protocol`, tested against the cases in this module.
+#[must_use]
+pub fn normalize_file_type(input: &str) -> Option<String> {
+    let mut kind = input.trim();
+    while let Some(rest) = kind.strip_prefix("*.").or_else(|| kind.strip_prefix('.')) {
+        kind = rest;
+    }
+    (!kind.is_empty()).then(|| kind.to_lowercase())
+}
+
+/// What a person may type as a file type, and the type each one stands for; `pnpm protocol:generate` writes them for the TypeScript port of [`normalize_file_type`] to be tested against.
+#[cfg(test)]
+pub(crate) fn file_type_cases() -> Vec<(&'static str, Option<&'static str>)> {
+    vec![
+        ("zip", Some("zip")),
+        (" ZIP ", Some("zip")),
+        (".zip", Some("zip")),
+        ("..Zip", Some("zip")),
+        ("*.MP4", Some("mp4")),
+        ("*..mp4", Some("mp4")),
+        (".tar.GZ", Some("tar.gz")),
+        ("\u{85}7z\u{3000}", Some("7z")),
+        ("", None),
+        ("  ", None),
+        ("*.", None),
+        (".", None),
+        ("ÄPK", Some("äpk")),
+    ]
+}
+
+/// A site that names no host, as it was typed.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{0:?} names no site")]
+pub struct NotASite(pub String);
+
+/// Why the sites an [`ExtensionSettingsPatch`] names are refused.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum SitesRefused {
+    /// One of its lists names more sites than the list may hold.
+    #[error("a list of sites names more than {MAX_IGNORED_SITES}")]
+    TooMany,
+    /// A site to keep names no host.
+    #[error(transparent)]
+    NotASite(#[from] NotASite),
+}
+
+impl ExtensionSettingsPatch {
+    /// Checks the sites the patch names before it is applied, and reads none of them when a list is longer than [`MAX_IGNORED_SITES`], so the work [`ExtensionSettings::apply`] does stays small whatever a client sends. A site to keep must name a host or be blank (a blank one is left out); a site to remove that names no host removes nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`SitesRefused::TooMany`] for a list longer than [`MAX_IGNORED_SITES`], and [`SitesRefused::NotASite`] for the first site to keep that names no host.
+    pub fn check_sites(&self) -> Result<(), SitesRefused> {
+        let lists = [
+            &self.ignored_sites,
+            &self.add_ignored_sites,
+            &self.remove_ignored_sites,
+        ];
+        if lists
+            .into_iter()
+            .flatten()
+            .any(|list| list.len() > MAX_IGNORED_SITES)
+        {
+            return Err(SitesRefused::TooMany);
+        }
+        for site in [&self.ignored_sites, &self.add_ignored_sites]
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            read_site(site)?;
+        }
+        Ok(())
+    }
+}
+
+/// What a person may type as a site to ignore, and the host each one stands for; `pnpm
+/// protocol:generate` writes them for the TypeScript port of [`normalize_site`] to be tested
+/// against.
+#[cfg(test)]
+pub(crate) fn site_cases() -> Vec<(&'static str, Option<&'static str>)> {
+    vec![
+        ("example.com", Some("example.com")),
+        ("  Example.COM  ", Some("example.com")),
+        ("https://Example.com/page?q=1#top", Some("example.com")),
+        ("http://user@example.com:8080/", Some("example.com")),
+        ("*.example.com", Some("example.com")),
+        ("www.example.com.", Some("www.example.com")),
+        ("example.com:443", Some("example.com")),
+        ("example.com:", Some("example.com")),
+        ("user@example.com", Some("example.com")),
+        ("exa_mple.com", Some("exa_mple.com")),
+        ("bücher.de", Some("xn--bcher-kva.de")),
+        ("BÜCHER.de", Some("xn--bcher-kva.de")),
+        ("xn--bcher-kva.de", Some("xn--bcher-kva.de")),
+        ("XN--BCHER-KVA.DE.", Some("xn--bcher-kva.de")),
+        ("https://bücher.de/p", Some("xn--bcher-kva.de")),
+        ("*.Bücher.de:8080", Some("xn--bcher-kva.de")),
+        ("http://user:pw@bücher.de:443/x", Some("xn--bcher-kva.de")),
+        ("bücher。de", Some("xn--bcher-kva.de")),
+        ("例え.テスト", Some("xn--r8jz45g.xn--zckzah")),
+        ("[::1]", Some("[::1]")),
+        ("http://[::1]:8080/x", Some("[::1]")),
+        ("[0:0::1]", Some("[::1]")),
+        ("[2001:DB8::1]:443", Some("[2001:db8::1]")),
+        ("0x7f.1", Some("127.0.0.1")),
+        ("１２７.０.０.１", Some("127.0.0.1")),
+        ("a<b.com", None),
+        ("xn--zz", None),
+        (r"example.com\path", Some("example.com")),
+        (r"x@a.com\@b.com", Some("a.com")),
+        ("example.com/", Some("example.com")),
+        ("example.com/path/", Some("example.com")),
+        ("example.com?x=1", Some("example.com")),
+        ("example.com#x", Some("example.com")),
+        ("sub.example.co.uk", Some("sub.example.co.uk")),
+        ("192.168.1.10:8000", Some("192.168.1.10")),
+        ("", None),
+        ("   ", None),
+        ("/", None),
+        ("https://", None),
+        ("*.", None),
+        ("exa mple.com", None),
+        ("example.com/a://b.com", Some("example.com")),
+        ("example.com/out?to=https://other.com", Some("example.com")),
+        ("x.com#http://y.com", Some("x.com")),
+        (
+            "google.com/url?q=https://videos.example/a",
+            Some("google.com"),
+        ),
+        ("user@example.com/x://y.com", Some("example.com")),
+        ("git+ssh://example.com/repo", Some("example.com")),
+        (".example.com", Some("example.com")),
+        ("..example.com", Some("example.com")),
+        ("*.*.example.com", Some("example.com")),
+        ("*..example.com", Some("example.com")),
+        ("*", None),
+        ("*example.com", None),
+        ("a.*.example.com", None),
+        ("**.example.com", None),
+        ("exa\u{FEFF}mple.com", Some("example.com")),
+        ("\u{FEFF}example.com", Some("example.com")),
+        ("\u{85}example.com", Some("example.com")),
+        ("exa\u{85}mple.com", None),
+        ("example.com\u{3000}", Some("example.com")),
+        ("exa\u{A0}mple.com", None),
+    ]
+}
+
+/// Settings and the patches applied to them; `pnpm protocol:generate` writes each with what
+/// [`ExtensionSettings::apply`] makes of it, for the TypeScript port to be tested against.
+#[cfg(test)]
+pub(crate) fn apply_cases() -> Vec<(ExtensionSettings, ExtensionSettingsPatch)> {
+    let sites = |list: &[&str]| Some(list.iter().map(|s| (*s).to_owned()).collect());
+    let before = ExtensionSettings {
+        ignored_sites: vec!["a.com".into(), "b.com".into()],
+        capture_extensions: vec!["zip".into()],
+        ..ExtensionSettings::default()
+    };
+    let doubled = ExtensionSettings {
+        ignored_sites: vec![
+            "a.com".into(),
+            "b.com".into(),
+            "a.com".into(),
+            "b.com".into(),
+        ],
+        ..before.clone()
+    };
+    vec![
+        (before.clone(), ExtensionSettingsPatch::default()),
+        (
+            before.clone(),
+            ExtensionSettingsPatch {
+                capture_enabled: Some(false),
+                ask_before_download: Some(false),
+                show_media_button: Some(false),
+                capture_extensions: sites(&["iso", "exe"]),
+                min_capture_size: Some(1024),
+                default_queue: Some(QueueId(3)),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+        (
+            before.clone(),
+            ExtensionSettingsPatch {
+                add_ignored_sites: sites(&["https://WWW.C.com/page", "*.a.com", "c.com", ""]),
+                remove_ignored_sites: sites(&["B.com."]),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+        (
+            before.clone(),
+            ExtensionSettingsPatch {
+                ignored_sites: sites(&["D.com/", "d.com", " ", "e.com:80"]),
+                add_ignored_sites: sites(&["f.com"]),
+                remove_ignored_sites: sites(&["e.com", "a.com"]),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+        (
+            before,
+            ExtensionSettingsPatch {
+                ignored_sites: sites(&[]),
+                remove_ignored_sites: sites(&["a.com"]),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+        // A list holding the same site twice is kept as it is unless the patch replaces it.
+        (doubled.clone(), ExtensionSettingsPatch::default()),
+        (
+            doubled.clone(),
+            ExtensionSettingsPatch {
+                add_ignored_sites: sites(&["b.com", "c.com"]),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+        (
+            doubled,
+            ExtensionSettingsPatch {
+                remove_ignored_sites: sites(&["b.com"]),
+                ..ExtensionSettingsPatch::default()
+            },
+        ),
+    ]
 }
 
 #[cfg(test)]
@@ -287,5 +592,122 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(s.ignored_sites, vec!["a.com", "c.com"]);
+    }
+
+    #[test]
+    fn a_file_type_is_kept_lower_case_without_its_leading_dot() {
+        for (typed, kind) in file_type_cases() {
+            assert_eq!(normalize_file_type(typed).as_deref(), kind, "{typed:?}");
+        }
+    }
+
+    #[test]
+    fn a_site_is_kept_as_its_bare_lower_case_host() {
+        let wrong: Vec<String> = site_cases()
+            .into_iter()
+            .filter_map(|(typed, site)| {
+                let kept = normalize_site(typed);
+                (kept.as_deref() != site)
+                    .then(|| format!("{typed:?} kept as {kept:?}, not {site:?}"))
+            })
+            .collect();
+        assert!(wrong.is_empty(), "{wrong:#?}");
+    }
+
+    #[test]
+    fn site_edits_are_matched_the_way_the_list_keeps_them() {
+        for (before, patch) in apply_cases() {
+            let mut applied = before.clone();
+            applied.apply(patch.clone());
+            let kept: Vec<Option<String>> = applied
+                .ignored_sites
+                .iter()
+                .map(|s| normalize_site(s))
+                .collect();
+            assert!(
+                applied
+                    .ignored_sites
+                    .iter()
+                    .map(|s| Some(s.clone()))
+                    .eq(kept),
+                "{before:?} with {patch:?} kept {:?}",
+                applied.ignored_sites
+            );
+        }
+        let mut s = ExtensionSettings {
+            ignored_sites: vec!["a.com".into(), "b.com".into()],
+            ..Default::default()
+        };
+        s.apply(ExtensionSettingsPatch {
+            add_ignored_sites: Some(vec!["https://WWW.C.com/page".into(), "*.a.com".into()]),
+            remove_ignored_sites: Some(vec!["B.com.".into()]),
+            ..Default::default()
+        });
+        assert_eq!(s.ignored_sites, vec!["a.com", "www.c.com"]);
+        s.apply(ExtensionSettingsPatch {
+            ignored_sites: Some(vec!["D.com/".into(), "d.com".into(), " ".into()]),
+            ..Default::default()
+        });
+        assert_eq!(s.ignored_sites, vec!["d.com"]);
+    }
+
+    fn sites(list: &[&str]) -> Vec<String> {
+        list.iter().map(|&s| s.to_owned()).collect()
+    }
+
+    #[test]
+    fn a_site_to_keep_must_name_a_host_and_a_blank_one_names_nothing() {
+        assert_eq!(read_site("  "), Ok(None));
+        assert_eq!(read_site("Example.com/"), Ok(Some("example.com".into())));
+        assert_eq!(read_site("not a site"), Err(NotASite("not a site".into())));
+
+        let keep = ExtensionSettingsPatch {
+            ignored_sites: Some(sites(&["a.com", ""])),
+            add_ignored_sites: Some(sites(&["b.com", "exa mple.com"])),
+            ..ExtensionSettingsPatch::default()
+        };
+        assert_eq!(
+            keep.check_sites(),
+            Err(SitesRefused::NotASite(NotASite("exa mple.com".into())))
+        );
+        let remove = ExtensionSettingsPatch {
+            ignored_sites: Some(sites(&["a.com", " "])),
+            remove_ignored_sites: Some(sites(&["*", "/"])),
+            ..ExtensionSettingsPatch::default()
+        };
+        assert_eq!(remove.check_sites(), Ok(()));
+    }
+
+    /// A frame's worth of sites, about 80,000, is refused for its length before any is read: its first entry names no host, and the refusal is the one for the length. Lists as long as they may be are applied.
+    #[test]
+    fn a_frame_full_of_sites_is_refused_unread_and_full_lists_apply() {
+        let many = |n: usize| -> Vec<String> { (0..n).map(|i| format!("s{i}.example")).collect() };
+        let mut flood = vec!["exa mple.com".to_owned()];
+        let mut written = 0;
+        while written < crate::frame::MAX_FRAME_LEN {
+            let site = format!("s{}.example", flood.len());
+            written += serde_json::to_string(&site).unwrap().len() + ",".len();
+            flood.push(site);
+        }
+        assert!(flood.len() > 50 * MAX_IGNORED_SITES, "{}", flood.len());
+        let patch = ExtensionSettingsPatch {
+            add_ignored_sites: Some(flood),
+            ..ExtensionSettingsPatch::default()
+        };
+        assert_eq!(patch.check_sites(), Err(SitesRefused::TooMany));
+
+        let mut settings = ExtensionSettings {
+            ignored_sites: many(MAX_IGNORED_SITES),
+            ..ExtensionSettings::default()
+        };
+        let full = ExtensionSettingsPatch {
+            ignored_sites: Some(many(MAX_IGNORED_SITES)),
+            add_ignored_sites: Some(many(MAX_IGNORED_SITES)),
+            remove_ignored_sites: Some(many(MAX_IGNORED_SITES)),
+            ..ExtensionSettingsPatch::default()
+        };
+        assert_eq!(full.check_sites(), Ok(()));
+        settings.apply(full);
+        assert_eq!(settings.ignored_sites, [] as [String; 0]);
     }
 }

@@ -206,6 +206,16 @@ export const SAFE_EXTENSIONS: readonly string[] = [
 ];
 
 /**
+ * Most sites the list of sites to ignore holds. A patch naming more than this in one of its lists is refused before any site in it is read (D37.1).
+ */
+export const MAX_IGNORED_SITES = 1000;
+
+/**
+ * Longest site in the list of sites to ignore, in characters: the longest host name DNS allows.
+ */
+export const MAX_SITE_CHARS = 253;
+
+/**
  * The protocol version that added each call (D32): a client sends a call only on a connection whose version has it.
  */
 export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {

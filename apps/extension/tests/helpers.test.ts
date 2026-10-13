@@ -20,24 +20,13 @@ import {
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { applyPatch, patchOf } from '../src/lib/protocol';
+import { patchOf } from '../src/lib/protocol';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
-import { hostMatchesSite, normalizeSite, siteForPage } from '../src/lib/sites';
+import { hostMatchesSite, matchingSite, siteForPage } from '../src/lib/sites';
 import { DEFAULT_SETTINGS } from './fakes';
 
 describe('sites', () => {
-  it('normalizes what a person types', () => {
-    expect(normalizeSite('  Example.COM ')).toBe('example.com');
-    expect(normalizeSite('https://www.example.com/path?q=1')).toBe('www.example.com');
-    expect(normalizeSite('example.com/path')).toBe('example.com');
-    expect(normalizeSite('*.example.com')).toBe('example.com');
-    expect(normalizeSite('example.com:8080')).toBe('example.com');
-    expect(normalizeSite('')).toBeNull();
-    expect(normalizeSite('exa mple.com')).toBeNull();
-    expect(normalizeSite('https://')).toBeNull();
-  });
-
   it('gives the site for "Ignore this site" without www', () => {
     expect(siteForPage('https://www.example.com/a')).toBe('example.com');
     expect(siteForPage('http://sub.example.com/')).toBe('sub.example.com');
@@ -49,6 +38,15 @@ describe('sites', () => {
     expect(hostMatchesSite('example.com', 'example.com')).toBe(true);
     expect(hostMatchesSite('a.example.com', 'example.com')).toBe(true);
     expect(hostMatchesSite('badexample.com', 'example.com')).toBe(false);
+  });
+
+  // The browser reports a host outside ASCII in punycode, whatever form the site was typed in.
+  it('matches a site typed in Unicode, in punycode or as an address to the host the browser reports', () => {
+    for (const entry of ['bücher.de', 'XN--BCHER-KVA.DE.', 'https://Bücher.de/page']) {
+      expect(matchingSite('https://www.bücher.de/a.zip', [entry]), entry).toBe(entry);
+      expect(matchingSite('https://shop.xn--bcher-kva.de/a.zip', [entry]), entry).toBe(entry);
+    }
+    expect(matchingSite('https://bucher.de/a.zip', ['bücher.de'])).toBeNull();
   });
 });
 
@@ -106,30 +104,6 @@ describe('protocol helpers', () => {
     expect(patchOf({ capture_enabled: false, min_capture_size: 0 }).capture_enabled).toBe(false);
     expect(patchOf({ min_capture_size: 0 }).min_capture_size).toBe(0);
     expect(patchOf({ add_ignored_sites: ['a.com'] }).add_ignored_sites).toEqual(['a.com']);
-  });
-
-  it('applies a patch like the app does', () => {
-    const next = applyPatch(DEFAULT_SETTINGS, patchOf({ ignored_sites: ['a.com'] }));
-    expect(next).toEqual({ ...DEFAULT_SETTINGS, ignored_sites: ['a.com'] });
-  });
-
-  it('applies site edits in the app order: whole list, then additions, then removals', () => {
-    // Mirrors `site_list_edits_merge_instead_of_overwriting` in crates/protocol.
-    const start = { ...DEFAULT_SETTINGS, ignored_sites: ['a.com', 'b.com'] };
-    const next = applyPatch(
-      start,
-      patchOf({ add_ignored_sites: ['c.com', 'a.com'], remove_ignored_sites: ['b.com'] }),
-    );
-    expect(next.ignored_sites).toEqual(['a.com', 'c.com']);
-    const replaced = applyPatch(
-      start,
-      patchOf({
-        ignored_sites: ['x.com'],
-        add_ignored_sites: ['y.com'],
-        remove_ignored_sites: ['x.com'],
-      }),
-    );
-    expect(replaced.ignored_sites).toEqual(['y.com']);
   });
 
   it('turns an address into the site permission pattern', () => {

@@ -9,7 +9,6 @@ import type {
 } from '@wirecatch/protocol';
 import { submit, type SubmitResult } from '../capture/handover';
 import type { NativeClient } from '../native/client';
-import { applyPatch } from '../protocol';
 import type { HubTiming } from './deps';
 import type { KnownSettings } from './settings';
 
@@ -128,13 +127,7 @@ export class AppCalls {
 
   async updateSettings(patch: ExtensionSettingsPatch): Promise<void> {
     const reply = await this.call({ method: 'update_extension_settings', params: patch });
-    const { live } = this.#settings;
-    if (reply.type === 'extension_settings') {
-      this.#settings.adopt(reply.data);
-    } else if (live !== null) {
-      // The app only said "done"; its `extension_settings_changed` event confirms the values.
-      this.#settings.adopt(applyPatch(live, patch));
-    }
+    if (reply.type === 'extension_settings') this.#settings.adopt(reply.data);
   }
 
   /** A popup call: only to a connected app, since none of them is worth starting a closed one for. */

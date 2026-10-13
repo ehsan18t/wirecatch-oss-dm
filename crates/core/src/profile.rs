@@ -187,6 +187,8 @@ pub(crate) fn merge_localized(
     }
 
     let mut settings = profile.settings;
+    // A profile is stored data, possibly from an older version: its sites are read as a stored list is.
+    settings.extension.ignored_sites = settings::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
         .get(&settings.extension.default_queue)
         .copied()
@@ -429,6 +431,27 @@ mod tests {
     /// A settings file may come from anywhere: it must not point downloads at a
     /// device, or quietly at a network share. Those fall back like a missing
     /// folder, and the import summary says so.
+    /// Versions before sites were read as hosts kept them as typed, so their profiles may hold sites no host matches; they are read the way a stored list is, not refused with the whole file.
+    #[test]
+    fn a_profile_from_an_older_version_imports_without_its_sites_that_name_no_host() {
+        let mut settings = default_settings();
+        settings.extension.ignored_sites = vec![
+            "Example.com".into(),
+            "my intranet".into(),
+            "localhost:abc".into(),
+        ];
+        let profile = SettingsProfile {
+            format_version: 1,
+            app_version: "0.1.0".into(),
+            exported_at: 0,
+            settings,
+            queues: vec![],
+            addons: vec![],
+        };
+        let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
+        assert_eq!(imported.settings.extension.ignored_sites, ["example.com"]);
+    }
+
     #[test]
     fn device_and_network_folders_from_a_file_fall_back() {
         let mut settings = default_settings();
