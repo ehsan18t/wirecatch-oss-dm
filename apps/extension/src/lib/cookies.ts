@@ -1,3 +1,5 @@
+import { parseUrl } from './url';
+
 /** The fields of a `cookies.Cookie` needed to build a `Cookie` header. */
 export interface CookieLike {
   name: string;
@@ -126,14 +128,11 @@ function suffixLabels(labels: readonly string[]): number {
 
 /** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */
 export function siteOf(url: string | null): string | null {
-  if (url === null) return null;
-  try {
-    const u = new URL(url);
-    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.hostname === '') return null;
-    return `${u.protocol}//${registrableDomain(u.hostname)}`;
-  } catch {
+  const u = url === null ? null : parseUrl(url);
+  if (u === null || (u.protocol !== 'http:' && u.protocol !== 'https:') || u.hostname === '') {
     return null;
   }
+  return `${u.protocol}//${registrableDomain(u.hostname)}`;
 }
 
 /**

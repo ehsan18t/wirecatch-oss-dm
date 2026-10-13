@@ -1,4 +1,5 @@
 import { MB } from '@wirecatch/units';
+import { parseUrl } from '../url';
 import type { DetectedKind, Detection } from './detect';
 import {
   arrayOf,
@@ -61,12 +62,8 @@ const KEY_PREFIX_ROOM = 16;
 const SAVED_ITEM_OVERHEAD = 16;
 
 function parts(url: string): { origin: string; path: string } | null {
-  try {
-    const u = new URL(url);
-    return { origin: u.origin, path: u.pathname };
-  } catch {
-    return null;
-  }
+  const u = parseUrl(url);
+  return u === null ? null : { origin: u.origin, path: u.pathname };
 }
 
 /** A page's address without its fragment: a change of the fragment alone is not a new page. */

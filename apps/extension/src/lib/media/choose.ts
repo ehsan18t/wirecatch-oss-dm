@@ -1,5 +1,6 @@
 import type { MediaKind } from '@wirecatch/protocol';
 import { fileNameFromUrl } from '../file-types';
+import { parseUrl } from '../url';
 import { pageSiteFor } from './page-sites';
 import type { MediaItem } from './registry';
 
@@ -123,9 +124,5 @@ export function describeTarget(target: MediaTarget): { title: string; detail: st
 }
 
 function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
+  return parseUrl(url)?.hostname ?? url;
 }

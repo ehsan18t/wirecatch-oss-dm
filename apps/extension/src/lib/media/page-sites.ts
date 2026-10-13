@@ -1,3 +1,5 @@
+import { parseUrl } from '../url';
+
 /**
  * Well-known video and audio sites whose pages need an extractor (the media add-on
  * in the Wirecatch app) to find the media, because the player streams it in pieces
@@ -56,13 +58,8 @@ export const PAGE_SITES: readonly PageSite[] = [
 
 /** The site's name when `url` is a page the media add-on may be able to read, otherwise null. */
 export function pageSiteFor(url: string | null): string | null {
-  if (url === null) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
+  const parsed = url === null ? null : parseUrl(url);
+  if (parsed === null) return null;
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
   const host = parsed.hostname.toLowerCase();
   const path = parsed.pathname;

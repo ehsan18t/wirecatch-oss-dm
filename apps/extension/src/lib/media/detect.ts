@@ -4,6 +4,7 @@
  */
 
 import { KB } from '@wirecatch/units';
+import { parseUrl } from '../url';
 import { MAX_MEDIA_URL_LENGTH } from './messages';
 
 /** How detected media is delivered (the page kind is never detected from traffic). */
@@ -100,12 +101,8 @@ export function isWebUrl(url: string): boolean {
 
 /** The lower-case extension of the last path segment, or null. */
 export function extensionOf(url: string): string | null {
-  let path: string;
-  try {
-    path = new URL(url).pathname;
-  } catch {
-    return null;
-  }
+  const path = parseUrl(url)?.pathname;
+  if (path === undefined) return null;
   const last = path.slice(path.lastIndexOf('/') + 1);
   const dot = last.lastIndexOf('.');
   if (dot <= 0 || dot === last.length - 1) return null;

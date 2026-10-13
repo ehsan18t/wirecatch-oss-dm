@@ -1,5 +1,6 @@
 /** Helpers for the "file types to capture" setting (lower case, no dot, empty list means all). */
 import { normalizeFileType } from '@wirecatch/protocol';
+import { parseUrl } from './url';
 
 /**
  * Splits what a person typed into a clean list of file types.
@@ -21,17 +22,13 @@ export function formatFileTypes(types: readonly string[]): string {
 
 /** The last path segment of a URL, decoded, or null if there is none. */
 export function fileNameFromUrl(url: string): string | null {
+  const last = parseUrl(url)?.pathname.split('/').pop() ?? '';
+  if (last === '') return null;
   try {
-    const { pathname } = new URL(url);
-    const last = pathname.split('/').pop() ?? '';
-    if (last === '') return null;
-    try {
-      return decodeURIComponent(last);
-    } catch {
-      return last;
-    }
+    return decodeURIComponent(last);
   } catch {
-    return null;
+    // A `%` that starts no escape: the name is shown as the address spells it.
+    return last;
   }
 }
 

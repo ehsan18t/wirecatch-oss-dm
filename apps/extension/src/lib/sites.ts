@@ -6,15 +6,12 @@
  * The app keeps each entry the way `normalizeSite` from `@wirecatch/protocol` does.
  */
 import { normalizeSite } from '@wirecatch/protocol';
+import { parseUrl } from './url';
 
 /** The host name of a URL in lower case, or null if the URL has none. */
 export function hostOf(url: string): string | null {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host === '' ? null : host;
-  } catch {
-    return null;
-  }
+  const host = parseUrl(url)?.hostname.toLowerCase() ?? '';
+  return host === '' ? null : host;
 }
 
 /** The site to ignore when the person clicks "Ignore this site" on a page: its host without `www.`. */
