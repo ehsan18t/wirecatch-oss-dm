@@ -1,13 +1,17 @@
 /** The hub's pure parts, tested on their own: timing defaults, menu planning, duplicate matching and its sentences. */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DownloadState, HandoverResult } from '../src/lib/capture/handover';
 import { DuplicateWatch } from '../src/lib/hub/duplicates';
+import { AppCalls } from '../src/lib/hub/app';
 import { hubTiming } from '../src/lib/hub/hub';
 import { planMenuClick } from '../src/lib/hub/menu';
 import { MAX_NOTICES, NoticeBoard } from '../src/lib/hub/notice-board';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
 import type { Notice } from '../src/lib/messages';
-import { UNREADABLE_ANSWER } from '../src/lib/native/client';
+import { KnownSettings } from '../src/lib/hub/settings';
+import { NativeClient, UNREADABLE_ANSWER } from '../src/lib/native/client';
+import { MemoryCache, FakeApp } from './fakes';
+import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../src/lib/native/timing';
 
 type Kept = Extract<HandoverResult, { kind: 'kept' }>;
 
@@ -27,14 +31,55 @@ describe('hubTiming', () => {
   it('fills in every wait that is not given, also one given as undefined', () => {
     const defaults = hubTiming();
     expect(defaults).toEqual({
-      connectWaitMs: 6_000,
-      requestTimeoutMs: 10_000,
-      withdrawTimeoutMs: 3_000,
+      connectWaitMs: START_WAIT_MS,
+      requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
     });
     expect(hubTiming({ connectWaitMs: undefined, requestTimeoutMs: 50 })).toEqual({
       ...defaults,
       requestTimeoutMs: 50,
     });
+  });
+});
+
+describe('the waits', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('let a capture start a closed app that answers hello and the capture as late as each may', async () => {
+    vi.useFakeTimers();
+    const app = new FakeApp();
+    app.running = false;
+    app.startDelayMs = START_WAIT_MS - 1;
+    app.addLateMs = REQUEST_TIMEOUT_MS - 1;
+    const client = new NativeClient({
+      transport: app,
+      hello: () => Promise.resolve({ client: 'extension', client_version: '0.1.0', browser: null }),
+    });
+    const settings = new KnownSettings({ cache: new MemoryCache() }, Date.now, () => undefined);
+    const calls = new AppCalls(client, hubTiming(), settings, null);
+
+    const added = calls.addDownload({
+      handover_id: 'h1',
+      url: 'https://files.example.com/big.zip',
+      referrer: null,
+      page_url: null,
+      suggested_name: null,
+      mime: null,
+      size_hint: null,
+      cookies: null,
+      user_agent: null,
+      extra_headers: [],
+      source: 'browser_download',
+      queue: null,
+    });
+    added.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(START_WAIT_MS + REQUEST_TIMEOUT_MS);
+
+    expect(app.starts).toBe(1);
+    await expect(added).resolves.toMatchObject({ action: 'started' });
+    client.stop();
   });
 });
 

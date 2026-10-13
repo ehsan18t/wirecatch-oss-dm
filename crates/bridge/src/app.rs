@@ -9,11 +9,12 @@ use std::time::Duration;
 
 use tokio::time::{Instant, sleep_until, timeout_at};
 use wirecatch_ipc::{Connection, Endpoint, IpcError};
-use wirecatch_protocol::wire::ErrorCode;
+use wirecatch_protocol::wire::{BRIDGE_START_BUDGET_MS, ErrorCode};
 
 /// How long the bridge waits for the app, from the first connection attempt to
-/// giving up, including the time the app needs to start.
-pub(crate) const START_BUDGET: Duration = Duration::from_secs(5);
+/// giving up, including the time the app needs to start. The extension's waits are
+/// derived from the same constant.
+pub(crate) const START_BUDGET: Duration = Duration::from_millis(BRIDGE_START_BUDGET_MS);
 
 /// First and largest pause between connection attempts while the app starts.
 const FIRST_RETRY: Duration = Duration::from_millis(20);

@@ -13,7 +13,13 @@ import {
 } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
-import { classifyDisconnect, type ConnectionStatus, type Problem } from './status';
+import {
+  classifyDisconnect,
+  connectionProblem,
+  type ConnectionStatus,
+  type Problem,
+} from './status';
+import { RECONNECT_BACKOFF_MS, START_WAIT_MS } from './timing';
 import {
   CALL_NEWER_THAN_APP,
   hasCall,
@@ -47,7 +53,7 @@ export interface ClientOptions {
   transport: NativeTransport;
   /** Builds the `hello` call sent first on every connection. */
   hello: () => Promise<HelloIdentity>;
-  /** How long to wait for the answer to `hello`; `HELLO_TIMEOUT_MS` when missing. */
+  /** How long to wait for the answer to `hello`, starting the app included; `START_WAIT_MS` when missing. */
   helloTimeoutMs?: number;
   /** Delays between reconnection attempts; the last one repeats. */
   backoffMs?: Backoff;
@@ -92,12 +98,6 @@ interface Pending {
 /** Delays between reconnection attempts, in milliseconds; never empty, so there is always one to repeat. */
 export type Backoff = readonly [number, ...number[]];
 
-/** Retries come quickly at first (the app may be starting) and then settle at one every 30 seconds. */
-const DEFAULT_BACKOFF: Backoff = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
-
-/** How long the first answer, to `hello`, may take: the bridge may have to start the app first. */
-const HELLO_TIMEOUT_MS = 10_000;
-
 /**
  * The outer shape of a frame from the bridge: an answer to a request, or an event. Only
  * the envelope is checked here; what it carries is checked by `isOutcome` and `isEvent`,
@@ -132,14 +132,6 @@ const encoder = new TextEncoder();
 
 function utf8Length(text: string): number {
   return encoder.encode(text).length;
-}
-
-/** The connection problem an error from the bridge stands for, or null when it is about one request only. The bridge answers every request on a port it could not connect with the same error, so such a port is done. */
-function connectionProblem(error: ProtocolError): Problem | null {
-  if (error.code === 'app_not_running') return { kind: 'app_closed', detail: null };
-  if (error.code === 'app_unavailable') return { kind: 'app_unavailable', detail: error.message };
-  // Every other code is the app's answer to one request.
-  return null;
 }
 
 function problemFromHelloError(error: RequestError): Problem {
@@ -189,19 +181,17 @@ export class NativeClient {
 
   constructor(options: ClientOptions) {
     this.#options = options;
-    this.#backoff = options.backoffMs ?? DEFAULT_BACKOFF;
+    this.#backoff = options.backoffMs ?? RECONNECT_BACKOFF_MS;
     this.#now = options.now ?? Date.now;
   }
 
   /** How long the answer to `hello` may take, starting the app included. */
   get helloTimeoutMs(): number {
-    return this.#options.helloTimeoutMs ?? HELLO_TIMEOUT_MS;
+    return this.#options.helloTimeoutMs ?? START_WAIT_MS;
   }
 
   /**
-   * Whether the connected app has the call: false while there is no connection, and for a call
-   * newer than the protocol version agreed with the app (D32). Such a call is refused here
-   * without being sent, so callers can hide what it offers instead.
+   * Whether the connected app has the call: false while there is no connection, and for a call newer than the protocol version agreed with the app (D32). Such a call is refused here without being sent, so callers can hide what it offers instead.
    */
   supports(method: Call['method']): boolean {
     return this.#version !== null && hasCall(this.#options.callSince, this.#version, method);

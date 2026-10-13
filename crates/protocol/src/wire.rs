@@ -20,6 +20,11 @@ crate::exported::exported_consts! {
     /// Request id the app uses for an error it cannot tie to a request (for example an
     /// unreadable frame). Clients start their ids at 1.
     pub const UNKNOWN_REQUEST_ID: u64 = 0;
+
+    /// How long the bridge waits for the app, in milliseconds, from its first connection
+    /// attempt to giving up, starting the app included. A client that may make the bridge
+    /// start the app waits longer than this for the answer to `hello`.
+    pub const BRIDGE_START_BUDGET_MS: u64 = 5_000;
 }
 
 /// One frame on a local connection.

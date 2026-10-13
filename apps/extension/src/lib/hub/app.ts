@@ -42,10 +42,15 @@ export class AppCalls {
     return this.#client.status.state === 'connected';
   }
 
+  /** The wait for a call that connects first when the app is not connected, which may start it: as long as a hello may take, then `answerMs` for the answer. */
+  #mayConnect(answerMs: number): number {
+    return this.connected ? answerMs : this.#client.helloTimeoutMs + answerMs;
+  }
+
   async addDownload(download: NewDownload): Promise<AddedDownload> {
     const reply = await this.#client.request(
       { method: 'add_download', params: download },
-      this.#timing.requestTimeoutMs,
+      this.#mayConnect(this.#timing.requestTimeoutMs),
     );
     if (reply.type !== 'download_added') {
       throw new Error('Wirecatch gave an unexpected answer.');
@@ -53,16 +58,12 @@ export class AppCalls {
     return reply.data;
   }
 
-  /**
-   * Asks the app to forget a handover. `connecting`: the app may not be connected, or even
-   * running, so the wait also covers a full hello, which may start it; a shorter one would
-   * end a slow start as "no answer" and warn of two copies for nothing.
-   */
+  /** Asks the app to forget a handover. `connecting`: the app may not be connected, or even running, so the wait also covers a full hello, which may start it; a shorter one would end a slow start as "no answer" and warn of two copies for nothing. */
   async withdraw(handoverId: string, connecting = false): Promise<WithdrawOutcome> {
     const { withdrawTimeoutMs } = this.#timing;
     const reply = await this.#client.request(
       { method: 'withdraw_download', params: { handover_id: handoverId } },
-      connecting ? this.#client.helloTimeoutMs + withdrawTimeoutMs : withdrawTimeoutMs,
+      connecting ? this.#mayConnect(withdrawTimeoutMs) : withdrawTimeoutMs,
     );
     if (reply.type !== 'withdrawn') throw new Error('Wirecatch gave an unexpected answer.');
     return reply.data;
@@ -119,7 +120,10 @@ export class AppCalls {
 
   /** Shows the app's window. Sent even when the app is closed: a request starts it, and the app then shows its window. */
   async showWindow(): Promise<void> {
-    await this.#client.request({ method: 'show_window' }, this.#timing.requestTimeoutMs);
+    await this.#client.request(
+      { method: 'show_window' },
+      this.#mayConnect(this.#timing.requestTimeoutMs),
+    );
   }
 
   async updateSettings(patch: ExtensionSettingsPatch): Promise<void> {

@@ -18,6 +18,7 @@ import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
+import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 import { refererFor } from '../referrer';
 import { AppCalls } from './app';
 import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
@@ -42,9 +43,9 @@ import { KnownSettings } from './settings';
  * withdraw only runs after a call already took too long, so it waits the least.
  */
 const DEFAULT_TIMING: HubTiming = {
-  connectWaitMs: 6_000,
-  requestTimeoutMs: 10_000,
-  withdrawTimeoutMs: 3_000,
+  connectWaitMs: START_WAIT_MS,
+  requestTimeoutMs: REQUEST_TIMEOUT_MS,
+  withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
 };
 
 /**

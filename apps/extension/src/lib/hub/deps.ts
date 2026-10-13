@@ -103,7 +103,7 @@ export type MenuResult = 'handed_over' | 'browser' | 'failed' | 'private_window'
 export interface HubTiming {
   /** How long a paused download, or media about to be sent, waits for the app to connect. */
   connectWaitMs: number;
-  /** How long a call waits for the app's answer. */
+  /** How long a call waits for the app's answer once connected; one that may start the app waits as long as a hello may take on top of it. */
   requestTimeoutMs: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs: number;

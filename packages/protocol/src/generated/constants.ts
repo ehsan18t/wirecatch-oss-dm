@@ -33,6 +33,13 @@ export const DEFAULT_QUEUE_ID: QueueId = 1;
 export const UNKNOWN_REQUEST_ID = 0;
 
 /**
+ * How long the bridge waits for the app, in milliseconds, from its first connection
+ * attempt to giving up, starting the app included. A client that may make the bridge
+ * start the app waits longer than this for the answer to `hello`.
+ */
+export const BRIDGE_START_BUDGET_MS = 5000;
+
+/**
  * Largest message body in bytes. Browsers refuse messages from a native host larger
  * than 1 MiB; the same cap applies to every local connection so no side can be made to
  * allocate more.
