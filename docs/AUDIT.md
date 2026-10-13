@@ -16,6 +16,8 @@ On 2026-10-11 nine independent reviewers read the whole repository and reported 
 
 Many findings are one root cause seen from several packages, so they are fixed together. Every finding belongs to exactly one workstream below, and workstreams are done in this order.
 
+The maintainer set the scope of the current round on 2026-10-13: it finishes W4, lands W5 and finishes phase 1 of the interface revamp ([REVAMP](REVAMP.md)). Everything else waits: the rest of W6, W9, W10, W11, W12, W13 and W15, and phase 2 of the revamp. The status table says which is which.
+
 ## How a finding gets fixed
 
 1. A bug starts with a test that fails because of it. The failing test is the proof the finding is real; a finding that cannot be shown is closed as not reproduced.
@@ -52,6 +54,8 @@ XC-8, XC-9, XC-10, XC-11, IPB-4, IPB-5, IPB-12, IPB-13, IPB-14, IPB-15, DRS-1, D
 
 CORE-2, CORE-3, CORE-22, ENG-6, ENG-9, ENG-11, CMD-11, CMD-17, CMD-18, IPB-8, IPB-9, IPB-10, IPB-11, DRS-4, DRS-5, DRS-18, DRS-19, EXT-3, EXT-15
 
+Planned inside W4 (maintainer, 2026-10-13): the Public Suffix List is kept up to date at run time, and the app owns it. The app bundles a snapshot and refreshes it weekly while idle from publicsuffix.org; settings show the date it was last updated and a "Check now" button, and a setting turns the refresh off, with a privacy note saying what the request tells publicsuffix.org. A downloaded list is validated (complete, within a size cap, parses, not suspiciously smaller than the current one) and saved atomically, and any failure keeps the current list. The app decides cookie scope and the extension passes the cookies the browser would send. D35 stays as the floor: the list bundled at a release is current when the release is made. The protocol gains the setting and the call, which is possible now that W3 is done, and its settings page belongs to the revamp ([REVAMP](REVAMP.md)).
+
 ### W5. Logging and diagnostics
 
 XC-15, DRS-3, EXT-7, CMD-14
@@ -63,6 +67,28 @@ One unpublished test-support crate replaces the copied local servers and helpers
 XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-20, CORE-29, DUI-17, DUI-18, DUI-27, IPB-16
 
 IPB-16 moved here from W2: a test-only bridge binary only helps once the overrides are chosen by the binary rather than by a package feature, and its variable names belong with XC-13's shared test support.
+
+#### Proposed gate checks
+
+Every check proposed during the audit run, so none lives only in a reviewer's notes. Each is cheap to run and would have caught a defect found by hand; none is built yet. Proposals already written in the carried lists below (fixed sleeps in tests, `Result<_, String>`, a bare `vi.waitFor`, the `RuleTester` check, `cargo doc` of private items, a log line that formats an error with `%` alone, and history words in comments, W15) are not repeated here.
+
+- A `cargo check` of every commit in `origin/main..HEAD`, and generated files (protocol, product) current at every commit, so each commit compiles and bisects.
+- A test run elevated on Windows: the endpoint key ownership bug (IPB-10) showed only when tests ran as administrator, as GitHub's Windows runners do.
+- The desktop's `a11y.spec.ts` and `layout.spec.ts` Playwright specs in the gate (DUI-18); they found three real bugs in the main window rebuild.
+- `e2e-gallery` on Linux CI: it needs a Chromium install and `PW_CHANNEL=chromium`.
+- Control characters other than tab, carriage return and line feed rejected by the `text` check.
+- `eslint-plugin-regexp` with `no-super-linear-backtracking`, for patterns that can backtrack catastrophically.
+- Prettier over `docs/` and `docs/audit/`: `DECISIONS.md` and the audit reports fail `prettier --check` today and no lint script covers them.
+- An exemption from pnpm's release-age rule written into `pnpm-workspace.yaml` is refused.
+- The `exceptions` check reads the string literals in rule test fixtures (`packages/eslint-config/rules/*.test.js`) as real disable comments: skip string literals.
+- Unsafe code: deny `unsafe_code` workspace-wide, and allow it only in listed wrapper modules, with `#![forbid(unsafe_code)]` in every module outside them.
+- No `tracing_subscriber` setup (`fmt()`, `EnvFilter`) outside `crates/logging` and tests.
+- No wall-clock assertion and no hand-installed log subscriber in a test (use the shared log capture in `crates/test-support`).
+- `cargo test -p wirecatch-bridge` without `--features test-overrides` silently skips its integration test and passes: make the skip explicit or fail.
+- The add-on tests run the `fake_media_tool` example from `<target>/<profile>/examples`, which a targeted `cargo test --test` does not rebuild, so a stale build fails the wrong tests. Make the tool a test-only bin target, so cargo builds it for the test.
+- CI caches are actually saved (a cache hit on the second run) and runner disk use is watched, so the disk exhaustion that failed the Linux job (D33) is seen before it fails.
+- `wirecatch/no-silent-catch` for every package, not the extension only (the desktop has 14 sites and protocol one to handle first).
+- `no-magic-numbers` applied to object property values, which it skips today.
 
 ### W7. Engine
 
@@ -91,6 +117,8 @@ DRS-8, DRS-9, DRS-10, DRS-12, DRS-13, DRS-15, DRS-16, DRS-17, DRS-20, DRS-21, DR
 ### W12. Desktop interface
 
 DUI-5, DUI-6, DUI-7, DUI-8, DUI-9, DUI-10, DUI-12, DUI-13, DUI-14, DUI-15, DUI-16, DUI-20, DUI-22, DUI-23, DUI-25, DUI-26, XC-12
+
+The revamp ([REVAMP](REVAMP.md)) replaces the interface the component, layout and focus findings were written against, so it absorbs them. What stays W12's: DUI-8 and DUI-16, DUI-3, DUI-5, DUI-6, DUI-12, DUI-14, DUI-25 and XC-12 (state, backend, tests and tokens, which a redesign does not remove), and DUI-9 and DUI-10, which stay as requirements the new components are reviewed against.
 
 ### W13. Extension
 
@@ -133,8 +161,16 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 | W7 | done (2026-10-12) and independently reviewed in four rounds, whose defects were fixed with tests, each test shown to fail without its fix: every ENG finding of W7 and the engine half of XC-14, plus `NO_PROXY` for HTTP/3 and FTP, data flushed before a resume file counts it (D30), and no file touched after a download is dropped. The published API changed on purpose (D30, commits marked breaking). What is left moved to later workstreams, listed below |
 | W8 | done (2026-10-13) and independently reviewed in four rounds (round 1 by two verifiers, then a streams and a core reviewer), whose defects were fixed with tests, each test shown to fail without its fix: one media layer in `wirecatch-streams` shared by core and streams (D31), with the codec and container policy (D24), the one list of media extensions, the ffmpeg argument layer and the only runner of the add-on's programs (process groups on Unix, job objects on Windows, time limits, and an idle watchdog that also watches the result being written); HLS and DASH readers bounded against hostile playlists (memory measured with a counting allocator, reading linear in the manifest) with typed errors; every media error worded in `media::describe`; and the gate's `docs` check. What is left moved to later workstreams, listed below |
 | W3 | done (2026-10-13) and independently reviewed in three rounds by two verifiers (the Rust contract and the TypeScript side), after reviews of its versioning and desktop units, whose defects were fixed with tests, each test shown to fail without its fix: every type, command and event name, limit, default and error code that crosses a process boundary is declared once in `crates/protocol` and generated for TypeScript, with a generated validator for every type and branded ids; the desktop's 50 commands are one contract the shell and the interface are held to; errors cross a boundary as typed codes, never wording; one frame header reader; `hello` agrees on a protocol version from a range, a call one end lacks gets `unsupported_call`, and version 1 is frozen against snapshots of what it shipped (D32); one rule for ignored sites and for file types, in Rust with a TypeScript port tested against fixtures Rust writes, and site lists bounded before the manager's lock; and the lint rules `wirecatch/no-brand-assertion` and `wirecatch/no-type-argument-assertion`. D37 records what the contract carries beyond types. What is left moved to later workstreams, listed below |
-| W4 to W13, except W7 and W8 | not started |
-| W15 | planned last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
+| W4 | this round. In progress on `ws/w4-security`: the engine's checks of answers and starting hosts (D34), the extension's cookie scope and Public Suffix List (D35), the media add-on's trust (D38), the private-network guard for captured links (D39) and the local endpoint, secrets and one manager per list (D41: IPB-8, IPB-9, IPB-11, and IPB-10's endpoint key, built but not switched on) are in, each reviewed. Left: ENG-11, DRS-4, DRS-5, DRS-18, DRS-19, switching on the endpoint key (IPB-10) once W5 has landed, and the suffix list's update at run time (planned above); then a review of the whole workstream, regrouping and landing |
+| W5 | this round. Done on `ws/w5-logging` (XC-15, DRS-3, CMD-14) and `ws/w5-extension` (EXT-7), both reviewed and gated (D40). Landing next: combine the two, review the whole, regroup, gate, push |
+| W6 | later, except what is done. In part done on main: the load-flaky tests (27eb0f83). The rest is open, with the proposed gate checks under W6 |
+| W9 | later, after W4 is on main |
+| W10 | later |
+| W11 | later |
+| W12 | later. Most of it folds into the interface revamp; the findings that survive a redesign are listed under W12 |
+| W13 | later |
+| Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 this round: main window, add-download flow, download window, extension popup and options. Phase 2 later: settings pages, add-ons, dialogs, command palette, in-page media button, tray, installer, and the additions from other workstreams |
+| W15 | later, last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
 Parts of W0 findings carried into later workstreams:
 
@@ -199,7 +235,7 @@ Parts of W8 carried into later workstreams:
 - `crates/core/src/manager/media_run.rs` is about 1530 lines (about 1250 before its tests) and wants splitting along its seams (W9). With it, the messages the page run still words itself (`refresh`, `refused_after_refreshing`, `network_rule`, the internal failure in `finish`, and `addon_missing` in `manager/media.rs`) move into `media::describe`, where D31 puts every media message (W9).
 - Flaky on Windows, seen once in W8's runs and passing alone: `settle::a_part_file_left_by_a_crash_is_picked_up_again` (`crates/core/tests/manager/settle.rs`, "partial files left behind" after the download completed). Not reproduced in ten runs of the `settle` tests and six of the whole `manager` binary under 16 CPU burners; its assertion now names the file left, for the next time (W6).
 - On Linux, yt-dlp and ffmpeg keep running after the app crashes: their process group is killed only by a live app. `PR_SET_PDEATHSIG` is not the answer: it fires when the thread that started the program exits, and the runtime's threads come and go. It needs another mechanism, such as a small supervisor process (W4).
-- Proposed gate checks: every `src/**` module outside named unsafe wrappers (and the modules above them) carries `#![forbid(unsafe_code)]`; `Result<_, String>` in library crates; tests that match on an error's text (W6).
+- Proposed gate checks: `Result<_, String>` in library crates; tests that match on an error's text; and the unsafe-code check listed under Proposed gate checks in W6 (W6).
 - CMD-19: yt-dlp's failures are still told apart by the text of its error line, since yt-dlp has no error codes; a new yt-dlp wording falls back to the plain refusal (W9, if yt-dlp ever gives codes).
 - Memory tests like `crates/streams/tests/manifest_memory.rs` (a counting allocator over `inspect`) for HLS master and media playlists, and one for DASH's worst case by design, 4,096 representations each with its own long base address (up to 64 MiB, bounded by `MAX_REPRESENTATIONS`) (W6).
 - roxmltree's parsed form takes about twenty bytes per byte of a manifest of small elements (a 1 MB timeline of 100,000 entries held 23 MB), so an 8 MiB DASH manifest can hold close to 200 MB while it is read; a lower DASH size limit or a streaming reader would cut it (W6).
