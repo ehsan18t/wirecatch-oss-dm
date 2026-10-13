@@ -22,7 +22,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::{TestResult, test_data};
+use wirecatch_test_support::{PATIENCE, TestResult, test_data};
 
 /// A file big and slow enough to still be running while the test pauses and moves it.
 const SLOW_LEN: usize = 4 * MIB_USIZE;
@@ -30,8 +30,6 @@ const SLOW_BPS: u64 = 64 * KIB;
 /// A file that downloads at once.
 const FAST_LEN: usize = 300 * KIB_USIZE;
 
-/// How long any wait may take before the test fails.
-const PATIENCE: Duration = Duration::from_secs(30);
 /// How often a wait looks at the download list again.
 const POLL: Duration = Duration::from_millis(20);
 

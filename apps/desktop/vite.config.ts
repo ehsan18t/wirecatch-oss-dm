@@ -55,6 +55,12 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     setupFiles: ['./vitest-setup.ts'],
     restoreMocks: true,
+    // A test's time limit bounds a hang, not the work: a full-app test that takes a second
+    // alone takes many times that on a machine busy with other builds, and Vitest's default
+    // of five seconds failed it there. The same two minutes as `PATIENCE` in
+    // crates/test-support (docs/ENGINEERING.md, section 7).
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
     // Compiled modules are kept on disk between runs, so a run does not compile the same Svelte
     // modules again; moduleCacheKey above keys that cache on what changes their output.
     fsModuleCache: true,

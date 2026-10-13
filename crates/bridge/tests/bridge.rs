@@ -22,7 +22,7 @@ use wirecatch_protocol::frame::{self, read_async, write_async};
 use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
-use wirecatch_test_support::{PrivateDir, TestResult, private_dir};
+use wirecatch_test_support::{PATIENCE, PrivateDir, TestResult, private_dir};
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
@@ -34,7 +34,8 @@ const FIREFOX_ID: &str = FIREFOX_EXTENSION_ID;
 const FAKE_APP_ENDPOINT: &str = "WIRECATCH_TEST_FAKE_APP_ENDPOINT";
 const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 
-const PATIENCE: Duration = Duration::from_secs(10);
+/// How long the fake app stays after the bridge has left, for the test's last check, which may never come; a helper process must not outlive its test by long.
+const LINGER: Duration = Duration::from_secs(10);
 
 /// The most memory an idle bridge may hold, resident or private.
 const IDLE_MEMORY_LIMIT: usize = 10 * 1024 * 1024;
@@ -334,7 +335,7 @@ fn fake_app_process() {
         }
         // Like the real app, keep running after the bridge leaves, until the test
         // has checked that (by connecting once more), then exit.
-        test_may_not_check(&timeout(PATIENCE, listener.accept()).await);
+        test_may_not_check(&timeout(LINGER, listener.accept()).await);
     });
 }
 

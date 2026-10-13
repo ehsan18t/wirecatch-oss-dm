@@ -10,7 +10,6 @@ mod common;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Duration;
 
 use common::Sandbox;
 use tokio::process::Command;
@@ -20,14 +19,11 @@ use wirecatch_product::CHROMIUM_EXTENSION_ORIGIN;
 use wirecatch_protocol::PROTOCOL_VERSION;
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
-use wirecatch_test_support::{TestResult, private_dir};
+use wirecatch_test_support::{PATIENCE, TestResult, private_dir};
 
 /// The bridge's test-only overrides (`crates/bridge/src/app.rs`).
 const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-
-/// How long the bridge may take to answer, and to exit once its stdin closes.
-const PATIENCE: Duration = Duration::from_secs(10);
 
 /// The bridge executable of this workspace, built with its test-only overrides (as the
 /// workspace's own test command builds it). It lands in the same target folder as this test.

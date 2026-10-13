@@ -26,7 +26,7 @@ use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{EVENT_NAME, RESYNC_EVENT, tray};
 use wirecatch_protocol::app::{Category, PendingCapture, UiEvent, UserError};
 use wirecatch_protocol::{DownloadId, QueueId};
-use wirecatch_test_support::TestResult;
+use wirecatch_test_support::{PATIENCE, TestResult};
 
 fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
     let mut context = mock_context(noop_assets());
@@ -46,8 +46,6 @@ fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
     Ok(builder.build(context)?)
 }
 
-/// How long a wait may take before the test fails.
-const PATIENCE: Duration = Duration::from_secs(30);
 /// How often a wait looks again: the mock runtime's windows and notifications offer nothing
 /// to wait on.
 const POLL: Duration = Duration::from_millis(20);
