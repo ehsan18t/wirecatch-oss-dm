@@ -170,17 +170,11 @@ impl Manager {
         vec![self.addon_info(&self.lock().addon)]
     }
 
-    /// Installs an add-on in the background; progress and the result arrive as
-    /// `AddonsChanged`. Installing one that is installed and up to date, or
-    /// already being installed, does nothing. The files are looked at again
-    /// first, so a damaged install (a program an antivirus took away, say) is
-    /// repaired.
+    /// Installs an add-on in the background; progress and the result arrive as `AddonsChanged`. Installing one that is installed and up to date, or already being installed, does nothing. The files are looked at again first, so a damaged install (a program an antivirus took away, say) is repaired.
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, and
-    /// [`CoreError::Closed`] once the manager has shut down. A failed install is not an
-    /// error here: it arrives as `AddonsChanged`.
+    /// [`CoreError::UnknownAddon`] when `id` names no add-on Wirecatch knows, and [`CoreError::Closed`] once the manager has shut down. A failed install is not an error here: it arrives as `AddonsChanged`.
     pub async fn install_addon(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         if self.lock_open()?.addon.op.is_some() {
@@ -208,17 +202,11 @@ impl Manager {
         self.install_addon(id).await
     }
 
-    /// Stops an install or update in progress, the person's or a quiet one.
-    /// Nothing in progress is fine. An update leaves the version that was
-    /// installed before in place and working, and discards what it had
-    /// downloaded; a first install (or a repair of a damaged add-on) removes
-    /// everything it put down, so the add-on is not installed afterwards.
+    /// Stops an install or update in progress, the person's or a quiet one. Nothing in progress is fine. An update leaves the version that was installed before in place and working, and discards what it had downloaded; a first install (or a repair of a damaged add-on) removes everything it put down, so the add-on is not installed afterwards.
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows, or when the
-    /// install stopped but some of its files could not be deleted; and
-    /// [`CoreError::Closed`] once the manager has shut down.
+    /// [`CoreError::UnknownAddon`] when `id` names no add-on Wirecatch knows, [`CoreError::AddonFilesLeft`] when the install stopped but some of its files could not be deleted, and [`CoreError::Closed`] once the manager has shut down.
     pub async fn cancel_addon_operation(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         let (ended, had_tools) = {
@@ -237,9 +225,7 @@ impl Manager {
             .blocking(move || match std::fs::remove_dir_all(&target) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(CoreError::Invalid(format!(
-                    "The install was stopped, but some of its files could not be deleted ({e}). Remove the media add-on in Settings, Add-ons to clean up."
-                ))),
+                Err(source) => Err(CoreError::AddonFilesLeft { source }),
             })
             .await;
         {
@@ -252,15 +238,11 @@ impl Manager {
         discarded
     }
 
-    /// Removes an add-on and its files, stopping an install in progress first.
-    /// Refused while a video is being read or downloaded with it. Whatever
-    /// happens, the add-on's state afterwards is what is on disk.
+    /// Removes an add-on and its files, stopping an install in progress first. Refused while a video is being read or downloaded with it. Whatever happens, the add-on's state afterwards is what is on disk.
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`] when `id` names no add-on Wirecatch knows or its files
-    /// could not all be deleted, [`CoreError::WrongState`] while a video is read or
-    /// downloaded with it, and [`CoreError::Closed`] once the manager has shut down.
+    /// [`CoreError::UnknownAddon`] when `id` names no add-on Wirecatch knows, [`CoreError::AddonNotRemoved`] when its files could not all be deleted, [`CoreError::WrongState`] while a video is read or downloaded with it, and [`CoreError::Closed`] once the manager has shut down.
     pub async fn remove_addon(&self, id: AddonId) -> Result<()> {
         check_id(id)?;
         let ended = {
@@ -283,9 +265,7 @@ impl Manager {
             .blocking(move || match std::fs::remove_dir_all(&dir) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(CoreError::Invalid(format!(
-                    "The media add-on could not be removed completely ({e}). Close any program that may be using its files, then remove it again."
-                ))),
+                Err(source) => Err(CoreError::AddonNotRemoved { source }),
             })
             .await;
         {
@@ -352,7 +332,7 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`], with a message for the person who asked, when the
+    /// [`CoreError::UpdateCheckFailed`], with a message for the person who asked, when the
     /// releases could not be looked up or a newer release's checksum list is not signed
     /// by yt-dlp's developers; and [`CoreError::Closed`] once the manager has shut
     /// down.
@@ -417,7 +397,7 @@ impl Manager {
         }
         match problem {
             None => Ok(()),
-            Some(message) => Err(CoreError::Invalid(message)),
+            Some(message) => Err(CoreError::UpdateCheckFailed(message)),
         }
     }
 
@@ -977,9 +957,7 @@ fn addon_in_use(state: &super::state::State) -> bool {
 fn check_id(id: AddonId) -> Result<()> {
     match id {
         AddonId::Media => Ok(()),
-        AddonId::Unknown => Err(CoreError::Invalid(
-            "There is no such add-on in this version of Wirecatch. Update Wirecatch if this add-on is new.".into(),
-        )),
+        AddonId::Unknown => Err(CoreError::UnknownAddon),
     }
 }
 

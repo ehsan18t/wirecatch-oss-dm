@@ -12,4 +12,7 @@ export type ErrorCode =
   | 'app_not_running'
   | 'internal'
   | 'not_started'
-  | 'addon_required';
+  | 'addon_required'
+  | 'limit_reached'
+  | 'wrong_state'
+  | 'update_check_failed';

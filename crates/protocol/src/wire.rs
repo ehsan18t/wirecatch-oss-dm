@@ -283,6 +283,16 @@ pub enum ErrorCode {
     /// already offered it ([`UiEvent::AddonRequired`](crate::app::UiEvent::AddonRequired)); the client keeps the
     /// choice open and goes on once the add-on is in.
     AddonRequired,
+    /// The app already holds as many of something as it may (downloads waiting for an answer,
+    /// queues, requests from one connection); the message says which. Trying again after some
+    /// are answered or removed works.
+    LimitReached,
+    /// The download, queue or add-on the call names is not in a state the call applies to (a
+    /// finished download cannot be cancelled, say); the message says what to do instead.
+    WrongState,
+    /// Looking for a newer add-on failed: its releases could not be reached, or a newer
+    /// release is not signed by its developers. Nothing changed; trying again later may work.
+    UpdateCheckFailed,
 }
 
 #[cfg(test)]

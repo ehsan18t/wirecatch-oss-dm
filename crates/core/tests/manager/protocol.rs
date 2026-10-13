@@ -887,7 +887,7 @@ async fn requests_beyond_the_limit_are_refused() -> TestResult {
     }
     let last = ids.pop().unwrap();
     let err = client.response(last).await?.unwrap_err();
-    assert_eq!(err.code, ErrorCode::InvalidRequest);
+    assert_eq!(err.code, ErrorCode::LimitReached);
     assert!(err.message.contains("at once"), "{}", err.message);
     // Withdrawing ends the waiting requests; the connection works afterwards.
     crate::common::wait_until("the capture to connect", || {

@@ -110,7 +110,7 @@ fn start_request(
     let Ok(slot) = slots.clone().try_acquire_owned() else {
         return Some(error(
             id,
-            ErrorCode::InvalidRequest,
+            ErrorCode::LimitReached,
             format!(
                 "The app is already working on {MAX_REQUESTS_IN_FLIGHT} requests from this connection at once. Wait for some answers, then send this again."
             ),

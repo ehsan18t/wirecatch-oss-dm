@@ -384,7 +384,7 @@ impl Manager {
             .find(|p| p.capture.url == url_text)
         {
             if existing.handovers.len() >= MAX_HANDOVERS_PER_CONFIRMATION {
-                return Err(CoreError::Invalid(
+                return Err(CoreError::LimitReached(
                     "This link was captured many times and is already waiting for your confirmation. Answer that first.".into(),
                 ));
             }
@@ -398,7 +398,7 @@ impl Manager {
             return Ok(reply);
         }
         if state.pending.len() >= MAX_PENDING {
-            return Err(CoreError::Invalid(format!(
+            return Err(CoreError::LimitReached(format!(
                 "{MAX_PENDING} downloads are already waiting for your confirmation. Answer some of them first."
             )));
         }

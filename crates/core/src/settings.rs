@@ -246,7 +246,7 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
 /// Checks that `count` queues are allowed.
 pub(crate) fn check_queue_count(count: usize) -> Result<()> {
     if count > MAX_QUEUES {
-        return Err(CoreError::Invalid(format!(
+        return Err(CoreError::LimitReached(format!(
             "There can be at most {MAX_QUEUES} queues. Delete one first."
         )));
     }

@@ -126,7 +126,7 @@ impl Manager {
             .find(|(_, m)| m.source.url == url && m.source.kind == kind)
         {
             if existing.handovers.len() >= MAX_HANDOVERS {
-                return Err(CoreError::Invalid(
+                return Err(CoreError::LimitReached(
                     "This video was sent many times and is already waiting for your choice. Answer that first.".into(),
                 ));
             }
@@ -140,7 +140,7 @@ impl Manager {
             return Ok(reply);
         }
         if state.media.len() >= MAX_PENDING_MEDIA {
-            return Err(CoreError::Invalid(format!(
+            return Err(CoreError::LimitReached(format!(
                 "{MAX_PENDING_MEDIA} videos are already waiting for your choice. Answer some of them first."
             )));
         }

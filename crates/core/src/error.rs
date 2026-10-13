@@ -36,13 +36,47 @@ pub enum CoreError {
     )]
     AddonRequired,
 
-    /// A value the user entered is out of range or inconsistent.
+    /// A value the user or a client sent is out of range or inconsistent.
     #[error("{0}")]
     Invalid(String),
 
-    /// The operation does not apply to the download in its current state.
+    /// The app already holds as many of something as it may (downloads waiting for an answer,
+    /// queues); the text says which and what to do.
+    #[error("{0}")]
+    LimitReached(String),
+
+    /// The operation does not apply to the download or add-on in its current state.
     #[error("{0}")]
     WrongState(&'static str),
+
+    /// An add-on this build of Wirecatch does not know.
+    #[error(
+        "There is no such add-on in this version of Wirecatch. Update Wirecatch if this add-on is new."
+    )]
+    UnknownAddon,
+
+    /// Looking for a newer add-on failed: its releases could not be reached, or a newer
+    /// release's checksum list is not signed by its developers. The text says which.
+    #[error("{0}")]
+    UpdateCheckFailed(String),
+
+    /// An add-on install was stopped, but its files could not all be deleted.
+    #[error(
+        "The install was stopped, but some of its files could not be deleted ({source}). Remove the media add-on in Settings, Add-ons to clean up."
+    )]
+    AddonFilesLeft {
+        /// What the operating system reported.
+        source: io::Error,
+    },
+
+    /// An add-on's files could not all be deleted when it was removed.
+    #[error(
+        "The media add-on could not be removed completely ({source}). Close any program that may be using its files, then remove it again."
+    )]
+    AddonNotRemoved {
+        /// What the operating system reported.
+        source: io::Error,
+    },
 
     /// The default queue is permanent.
     #[error("The default queue cannot be deleted. You can rename it or change its limits instead.")]
@@ -150,11 +184,14 @@ impl CoreError {
         let code = match self {
             CoreError::DownloadNotFound(_)
             | CoreError::QueueNotFound(_)
-            | CoreError::ConfirmationNotFound(_) => ErrorCode::NotFound,
+            | CoreError::ConfirmationNotFound(_)
+            | CoreError::UnknownAddon => ErrorCode::NotFound,
             CoreError::InvalidUrl(_) => ErrorCode::InvalidUrl,
             CoreError::NotStarted(_) => ErrorCode::NotStarted,
+            CoreError::LimitReached(_) => ErrorCode::LimitReached,
+            CoreError::WrongState(_) => ErrorCode::WrongState,
+            CoreError::UpdateCheckFailed(_) => ErrorCode::UpdateCheckFailed,
             CoreError::Invalid(_)
-            | CoreError::WrongState(_)
             | CoreError::DefaultQueue
             | CoreError::Path(_)
             | CoreError::ProfileTooNew { .. }
@@ -164,6 +201,8 @@ impl CoreError {
             | CoreError::Database(_)
             | CoreError::File { .. }
             | CoreError::FilesSplit { .. }
+            | CoreError::AddonFilesLeft { .. }
+            | CoreError::AddonNotRemoved { .. }
             | CoreError::Closed
             | CoreError::Internal(_) => ErrorCode::Internal,
         };
@@ -194,6 +233,36 @@ mod tests {
         assert_eq!(
             CoreError::AddonRequired.to_protocol().code,
             ErrorCode::AddonRequired
+        );
+    }
+
+    /// A client acts on what went wrong by the code, so a request it got wrong, a limit, a
+    /// state the call does not apply to and a failed update check each have their own.
+    #[test]
+    fn each_cause_a_client_acts_on_has_its_own_code() {
+        let code = |error: CoreError| error.to_protocol().code;
+        assert_eq!(
+            code(CoreError::Invalid("x".into())),
+            ErrorCode::InvalidRequest
+        );
+        assert_eq!(
+            code(CoreError::LimitReached("x".into())),
+            ErrorCode::LimitReached
+        );
+        assert_eq!(code(CoreError::WrongState("x")), ErrorCode::WrongState);
+        assert_eq!(
+            code(CoreError::UpdateCheckFailed("x".into())),
+            ErrorCode::UpdateCheckFailed
+        );
+        assert_eq!(code(CoreError::UnknownAddon), ErrorCode::NotFound);
+        let disk = || io::Error::from(io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            code(CoreError::AddonNotRemoved { source: disk() }),
+            ErrorCode::Internal
+        );
+        assert_eq!(
+            code(CoreError::AddonFilesLeft { source: disk() }),
+            ErrorCode::Internal
         );
     }
 
@@ -228,6 +297,11 @@ mod tests {
             },
             CoreError::NotStarted("It was removed.".into()),
             CoreError::AddonRequired,
+            CoreError::LimitReached("There can be at most 100 queues. Delete one first.".into()),
+            CoreError::UnknownAddon,
+            CoreError::UpdateCheckFailed("The releases could not be reached.".into()),
+            CoreError::AddonFilesLeft { source: io() },
+            CoreError::AddonNotRemoved { source: io() },
             CoreError::Closed,
             CoreError::Internal("a bug".into()),
         ];

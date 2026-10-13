@@ -6,6 +6,7 @@ use std::time::Duration;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
+use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
     Harness, Seen, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
@@ -91,10 +92,10 @@ async fn cancel_discards_progress_and_retry_starts_over() -> TestResult {
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
     // Retry started over: the whole file came again.
     assert_eq!(server.bytes_sent() - sent_before, server.data.len() as u64);
-    assert!(matches!(
-        h.manager.cancel(row.id),
-        Err(CoreError::WrongState(_))
-    ));
+    let finished = h.manager.cancel(row.id).unwrap_err();
+    assert!(matches!(finished, CoreError::WrongState(_)), "{finished}");
+    // A client tells a finished download from a request it got wrong by the code.
+    assert_eq!(finished.to_protocol().code, ErrorCode::WrongState);
     Ok(())
 }
 

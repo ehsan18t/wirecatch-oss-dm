@@ -363,20 +363,19 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
     let unknown = api::install_addon(&manager, AddonId::Unknown)
         .await
         .unwrap_err();
-    assert!(unknown.message.contains("no such add-on"), "{unknown}");
+    assert_eq!(unknown.code, ErrorCode::NotFound, "{unknown}");
     let unknown = api::update_addon(&manager, AddonId::Unknown)
         .await
         .unwrap_err();
-    assert!(unknown.message.contains("no such add-on"), "{unknown}");
+    assert_eq!(unknown.code, ErrorCode::NotFound, "{unknown}");
     // Removing one that is not installed is fine and leaves it not installed.
     api::remove_addon(&manager, AddonId::Media).await?;
     // Stopping with nothing in progress is fine; an unknown add-on is refused.
     api::cancel_addon_operation(&manager, AddonId::Media).await?;
-    assert!(
-        api::cancel_addon_operation(&manager, AddonId::Unknown)
-            .await
-            .is_err()
-    );
+    let unknown = api::cancel_addon_operation(&manager, AddonId::Unknown)
+        .await
+        .unwrap_err();
+    assert_eq!(unknown.code, ErrorCode::NotFound, "{unknown}");
     // Nothing installed: the check has nothing to look at and says the add-on is not installed.
     let checked = api::check_addon_updates(&manager).await?;
     assert_eq!(checked[0].state, AddonState::NotInstalled);

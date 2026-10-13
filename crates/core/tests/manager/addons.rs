@@ -2,6 +2,7 @@
 //! unpacking, progress, idempotence, updates and removal.
 
 use wirecatch_protocol::app::{AddonId, AddonState, UiEvent};
+use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::TestResult;
 use crate::media_support::{
@@ -415,6 +416,8 @@ async fn a_check_that_cannot_reach_the_releases_says_so() -> TestResult {
             .starts_with("Wirecatch could not check for a newer media add-on"),
         "{error}"
     );
+    // A client tells this from a request it got wrong by the code, never by the words.
+    assert_eq!(error.to_protocol().code, ErrorCode::UpdateCheckFailed);
     // The add-on itself is fine.
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
     Ok(())

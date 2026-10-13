@@ -62,6 +62,9 @@ const ERROR_CODES: Readonly<Record<ErrorCode, true>> = {
   internal: true,
   not_started: true,
   addon_required: true,
+  limit_reached: true,
+  wrong_state: true,
+  update_check_failed: true,
 };
 
 function isErrorCode(value: unknown): value is ErrorCode {
