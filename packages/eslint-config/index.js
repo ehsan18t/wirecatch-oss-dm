@@ -8,6 +8,7 @@ import ts from 'typescript-eslint';
 import { noAssertionOnInput } from './rules/no-assertion-on-input.js';
 import { noBrandAssertion } from './rules/no-brand-assertion.js';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
+import { noSilentCatch } from './rules/no-silent-catch.js';
 import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
@@ -19,6 +20,7 @@ const plugin = {
     'no-assertion-on-input': noAssertionOnInput,
     'no-brand-assertion': noBrandAssertion,
     'no-magic-numbers': noMagicNumbers,
+    'no-silent-catch': noSilentCatch,
     'no-type-argument-assertion': noTypeArgumentAssertion,
     'no-value-of-type': noValueOfType,
     'use-ui-primitives': useUiPrimitives,
@@ -37,6 +39,8 @@ const MAX_PARAMS = 4;
 
 const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/**/testing/**'];
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
+/** The development console writer of a package's logger: the one source file that may call `console` (docs/ENGINEERING.md, section 6). */
+const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts'];
 /** What an `untyped` pattern must end with: a JavaScript extension, so it can never match TypeScript or Svelte. */
 const UNTYPED_PATTERN = /\.[mc]?js$/;
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
@@ -174,6 +178,7 @@ export function wirecatch({
       languageOptions: { globals: globals.node },
       rules: { 'no-console': 'off', 'wirecatch/no-magic-numbers': 'off' },
     },
+    { files: CONSOLE_SINK_FILES, rules: { 'no-console': 'off' } },
     { files: untypedFiles, ...ts.configs.disableTypeChecked },
     {
       files: untypedFiles,
