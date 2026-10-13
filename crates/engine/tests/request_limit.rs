@@ -14,6 +14,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, Outcome, Progress, RateLimiter, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
+use wirecatch_test_support::logs::Logs;
 use wirecatch_test_support::{private_dir, test_data};
 
 mod common;
@@ -117,16 +118,21 @@ async fn without_the_limit_the_strict_server_refuses() {
     dir.remove().unwrap();
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connection() {
+/// One connection's requests go out one after another, each as soon as the last
+/// one ends (the end of a request is not a failure to retry), and on a kept
+/// TCP connection. The HTTP client's pool takes a connection back in a task of
+/// its own and may lose that race to the next request, which then opens
+/// another, so the test asks for reuse, not for a single connection. A single
+/// thread runs the download, so the events the test reads are its own.
+#[tokio::test]
+async fn one_connection_sends_its_requests_one_after_another() {
+    let (logs, _capturing) = Logs::capture();
     let limit = 256 * KIB;
     let len = 3 * MIB_USIZE + 5;
     let server = strict_server(len, limit, None).await;
     let dir = private_dir("keepalive").unwrap();
 
-    let start = Instant::now();
     let (path, _) = completed(run(request(&server, &dir, 1, Some(limit))).await.unwrap());
-    let took = start.elapsed();
 
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
     assert_all_within(&server, limit);
@@ -143,11 +149,19 @@ async fn one_connection_sends_its_requests_one_after_another_on_one_tcp_connecti
         .map(|n| (n * limit, ((n + 1) * limit).min(len as u64)))
         .collect();
     assert_eq!(ranges, expected);
+    assert_eq!(server.stats.max_concurrent.load(Ordering::SeqCst), 1);
     let connections: HashSet<_> = seen.iter().map(|s| s.peer).collect();
-    assert_eq!(connections.len(), 1, "a new TCP connection per request");
-    // The end of one request is not a failure: the next one goes out at once,
-    // with no pause for a retry (13 retries would take over 6 s).
-    assert!(took < Duration::from_secs(3), "took {took:?}");
+    assert!(
+        connections.len() < seen.len(),
+        "a new TCP connection for each of {} requests",
+        seen.len()
+    );
+    let retried: Vec<_> = logs
+        .events()
+        .into_iter()
+        .filter(|e| e.field("retry_in").is_some())
+        .collect();
+    assert!(retried.is_empty(), "requests were retried: {retried:?}");
     dir.remove().unwrap();
 }
 
