@@ -1,18 +1,8 @@
-// File types as the desktop reads them. The decision whether a file may open without asking is
-// made in Rust (`is_program` in `src-tauri/src/api.rs`); this is the same list and the same
-// reading, for wording and for the sample backend. `filetypes.test.ts` checks the list against
-// the Rust one, so they cannot drift apart.
+// File types as the desktop reads them. The decision whether a file may open without asking is made in Rust (`is_program` in `src-tauri/src/api.rs`) from `SAFE_EXTENSIONS`, generated from `crates/protocol`; this is the same list and the same reading, for wording and for the sample backend.
 
-/** Copy of `SAFE_EXTENSIONS`: the only types that open without asking. */
-export const SAFE_FILE_TYPES: readonly string[] = [
-  ...['mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'ts', 'm2ts'],
-  ...['3gp', 'ogv', 'mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'oga', 'opus', 'wma', 'aiff'],
-  ...['mka', 'srt', 'vtt', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic'],
-  ...['heif', 'avif', 'pdf', 'txt', 'md', 'docx', 'xlsx', 'pptx', 'epub', 'zip', '7z', 'rar'],
-  ...['tar', 'gz', 'tgz', 'bz2', 'xz', 'zst'],
-];
+import { SAFE_EXTENSIONS } from '@wirecatch/protocol';
 
-const SAFE = new Set(SAFE_FILE_TYPES);
+const SAFE = new Set(SAFE_EXTENSIONS);
 
 /**
  * The type of `name` the way Windows reads it: trailing dots and spaces dropped, lower case,

@@ -115,6 +115,79 @@ export const QUESTION_PARAMETER = 'question';
 export const DOWNLOAD_PARAMETER = 'download';
 
 /**
+ * File types that open directly, without asking first: common video, audio, image, document
+ * and archive types that do not run code when opened. Every other type, and a file with no
+ * extension, could run code (programs, installers, scripts, shortcuts, disk images, Office
+ * files with macros and many more), so opening it needs the person's confirmation. An
+ * allowlist fails safe: a type nobody thought of asks first.
+ *
+ * In order: video, audio, subtitles, images, documents, archives. Left out on purpose among
+ * documents: Office files with macros (`docm` and friends), `rtf` (embedded objects), the
+ * OpenDocument formats (macros) and `csv` (formulas that run when a spreadsheet opens it).
+ * `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
+ * which carry the mark of the web, in Protected View.
+ *
+ * The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`); the interface
+ * reads it for wording and the sample backend.
+ */
+export const SAFE_EXTENSIONS: readonly string[] = [
+  'mp4',
+  'm4v',
+  'mkv',
+  'webm',
+  'mov',
+  'avi',
+  'wmv',
+  'flv',
+  'mpg',
+  'mpeg',
+  'ts',
+  'm2ts',
+  '3gp',
+  'ogv',
+  'mp3',
+  'm4a',
+  'aac',
+  'flac',
+  'wav',
+  'ogg',
+  'oga',
+  'opus',
+  'wma',
+  'aiff',
+  'mka',
+  'srt',
+  'vtt',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'bmp',
+  'tif',
+  'tiff',
+  'heic',
+  'heif',
+  'avif',
+  'pdf',
+  'txt',
+  'md',
+  'docx',
+  'xlsx',
+  'pptx',
+  'epub',
+  'zip',
+  '7z',
+  'rar',
+  'tar',
+  'gz',
+  'tgz',
+  'bz2',
+  'xz',
+  'zst',
+];
+
+/**
  * The audio bit rates, in kbps, a person can pick when saving as each format;
  * formats without a choice are left out (`OutputFormat::kbps_choices`).
  */

@@ -12,6 +12,7 @@ use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
     MediaSelection, PendingCapture, Question, Queue,
 };
+use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
@@ -310,28 +311,6 @@ pub async fn set_download_folder(m: &Manager, id: DownloadId, folder: &str) -> C
 fn find(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
     plain(m.get_download(id))
 }
-
-/// File types that open directly, without asking first: common video, audio, image, document
-/// and archive types that do not run code when opened. Every other type, and a file with no
-/// extension, could run code (programs, installers, scripts, shortcuts, disk images, Office
-/// files with macros and many more), so opening it needs the person's confirmation. An
-/// allowlist fails safe: a type nobody thought of asks first.
-///
-/// In order: video, audio, subtitles, images, documents, archives. Left out on purpose among
-/// documents: Office files with macros (`docm` and friends), `rtf` (embedded objects), the
-/// OpenDocument formats (macros) and `csv` (formulas that run when a spreadsheet opens it).
-/// `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
-/// which carry the mark of the web, in Protected View.
-///
-/// The interface keeps a copy (`apps/desktop/src/lib/filetypes.ts`) for wording and the sample
-/// backend; a test checks the two lists are the same.
-pub const SAFE_EXTENSIONS: &[&str] = &[
-    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "3gp",
-    "ogv", "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "mka", "srt",
-    "vtt", "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif",
-    "pdf", "txt", "md", "docx", "xlsx", "pptx", "epub", "zip", "7z", "rar", "tar", "gz", "tgz",
-    "bz2", "xz", "zst",
-];
 
 /// The type of `name` as the system sees it: lower case, the last extension only (so
 /// `report.pdf.exe` is `exe`). `None` when the name has no extension.
