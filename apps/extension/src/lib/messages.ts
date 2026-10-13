@@ -4,8 +4,8 @@
  */
 import {
   isExtensionSettings,
+  isExtensionSettingsPatch,
   isMediaKind,
-  isQueueId,
   isQueueSummary,
   type ExtensionSettings,
   type ExtensionSettingsPatch,
@@ -179,27 +179,12 @@ export interface Channel<Out, In> {
 }
 
 const isTabId = refine(isNumber, (id) => Number.isInteger(id) && id >= 0);
-/** A list field of a patch: a new list, null for no change, or left out. */
-const isListChange = optional(nullable(arrayOf(isString)));
-
-const isPatch = fields<ExtensionSettingsPatch>({
-  capture_enabled: optional(nullable(isBoolean)),
-  ask_before_download: optional(nullable(isBoolean)),
-  show_media_button: optional(nullable(isBoolean)),
-  ignored_sites: isListChange,
-  add_ignored_sites: isListChange,
-  remove_ignored_sites: isListChange,
-  capture_extensions: isListChange,
-  min_capture_size: optional(nullable(isNumber)),
-  default_queue: optional(nullable(isQueueId)),
-});
-
 type Command<T extends PopupCommand['type']> = Variant<PopupCommand, T>;
 
 const isCommand = variants<PopupCommand>({
   update_settings: fields<Command<'update_settings'>>({
     type: literal('update_settings'),
-    patch: isPatch,
+    patch: isExtensionSettingsPatch,
   }),
   pause_all: fields<Command<'pause_all'>>({ type: literal('pause_all') }),
   resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),

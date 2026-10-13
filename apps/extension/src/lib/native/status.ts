@@ -1,4 +1,5 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
+import type { ErrorCode, ProtocolError } from '@wirecatch/protocol';
 import {
   fields,
   isNumber,
@@ -169,4 +170,27 @@ export function describeProblem(kind: ProblemKind): ProblemText {
         fix: 'Wirecatch reconnects by itself. If this keeps happening, restart the Wirecatch app.',
       };
   }
+}
+
+/** The connection problem each code from the bridge stands for, or null for the app's answer to one request. The bridge answers every request on a port it could not connect with the same error, so such a port is done. Typed over every code, so a new one cannot be added without deciding which it is. */
+const CONNECTION_PROBLEMS: Readonly<Record<ErrorCode, ((error: ProtocolError) => Problem) | null>> =
+  {
+    app_not_running: () => ({ kind: 'app_closed', detail: null }),
+    app_unavailable: (error) => ({ kind: 'app_unavailable', detail: error.message }),
+    unsupported_version: null,
+    invalid_request: null,
+    invalid_url: null,
+    not_found: null,
+    internal: null,
+    not_started: null,
+    addon_required: null,
+    limit_reached: null,
+    wrong_state: null,
+    update_check_failed: null,
+    unsupported_call: null,
+  };
+
+/** The connection problem `error` stands for, or null when it is about one request only. */
+export function connectionProblem(error: ProtocolError): Problem | null {
+  return CONNECTION_PROBLEMS[error.code]?.(error) ?? null;
 }
