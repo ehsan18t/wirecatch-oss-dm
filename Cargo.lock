@@ -7629,7 +7629,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
  "url",
  "windows-sys 0.59.0",
  "wirecatch-engine",

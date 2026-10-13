@@ -43,8 +43,7 @@ bytes.workspace = true
 cbc = { version = "0.1.2", features = ["alloc"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-tracing-subscriber.workspace = true
-wirecatch-test-support = { path = "../test-support", features = ["servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["servers", "logs"] }
 
 [lints]
 workspace = true

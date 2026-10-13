@@ -3,21 +3,17 @@
 use std::ffi::OsString;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use wirecatch_engine::CancellationToken;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions};
-use wirecatch_test_support::TestResult;
+use wirecatch_test_support::logs::Logs;
+use wirecatch_test_support::{PATIENCE, TestResult};
 
-/// How long a run that should end promptly may take before the test fails, generous for a loaded runner.
-const PATIENCE: Duration = Duration::from_secs(20);
-/// A time limit short enough for a test.
+/// A time limit short enough for a test. The tests that expect a run to go on past it move a paused clock themselves ([`Stepped`]); a run expected to stop at it may take longer on a loaded machine and still pass.
 const SHORT: Duration = Duration::from_millis(300);
-/// A time limit long enough for the fake program to start the child that holds a connection, even on a loaded runner.
-const HOLDER_LIMIT: Duration = Duration::from_secs(5);
 
 /// The stand-in program `cargo test` builds from `examples/fake_program.rs`. Missing only when the tests are built alone, which skips the examples; that fails loudly.
 fn fake_program() -> TestResult<PathBuf> {
@@ -52,10 +48,14 @@ async fn run(
 ) -> TestResult<Result<process::Ran, RunError>> {
     let program = fake_program()?;
     let dir = std::env::temp_dir();
-    let ran = tokio::time::timeout(
-        PATIENCE,
-        process::run(&program, &args(words), &dir, options, cancel, on_line),
-    )
+    let ran = within_patience(process::run(
+        &program,
+        &args(words),
+        &dir,
+        options,
+        cancel,
+        on_line,
+    ))
     .await
     .map_err(|_| format!("the run of {words:?} did not end within {PATIENCE:?}"))?;
     Ok(ran)
@@ -72,22 +72,17 @@ async fn a_program_that_stops_writing_is_stopped_as_stalled() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
+/// Lines [`STEP`] apart, past the idle limit in all, so each line must reset it.
+#[tokio::test(start_paused = true)]
 async fn a_program_that_keeps_writing_is_not_stalled() -> TestResult {
-    // Eight lines 100 ms apart: longer than the idle limit, so each line must reset it.
     let options = RunOptions::lines().with_idle_timeout(SHORT);
-    let mut lines = 0;
-    let ran = run(
-        &["ticks", "8"],
-        options,
-        &CancellationToken::new(),
-        |from, _| {
-            lines += usize::from(from == Output::Stdout);
-        },
-    )
-    .await??;
+    let mut run = Stepped::start(&["ticks"], options).await?;
+    for n in 0..STEPS {
+        assert!(run.step().await?, "the run ended at step {n}");
+        assert_eq!(run.line().await?, format!("tick {n}"));
+    }
+    let ran = run.end().await??;
     assert!(ran.success);
-    assert_eq!(lines, 8);
     Ok(())
 }
 
@@ -172,61 +167,204 @@ async fn a_missing_program_is_a_start_error() -> TestResult {
 }
 
 /// A program that has reported progress and then only writes its output (ffmpeg's `+faststart` pass, yt-dlp's merge) is not stuck while the output grows.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_silent_program_whose_output_grows_is_not_stalled() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let output = dir.path().join("out.bin");
-    let path = output.to_string_lossy().into_owned();
-    let words = ["write-quietly", path.as_str(), "8"];
-    let watched = RunOptions::lines()
-        .with_idle_timeout(SHORT)
-        .watching(output.clone());
-    let ran = run(&words, watched, &CancellationToken::new(), |_, _| {}).await??;
-    assert!(ran.success);
-    // The same run without the output to watch is stopped as stuck.
-    let unwatched = RunOptions::lines().with_idle_timeout(SHORT);
-    let ran = run(&words, unwatched, &CancellationToken::new(), |_, _| {}).await?;
-    assert!(matches!(ran, Err(RunError::Stalled(_))), "{ran:?}");
-    Ok(())
+    a_silent_program_is_watched_through("write-quietly", |output| output).await
 }
 
 /// ffmpeg's `+faststart` pass moves the data within the finished file, so the file changes for a long time without growing and without a line; the run is not stuck meanwhile.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_silent_program_rewriting_its_output_in_place_is_not_stalled() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let output = dir.path().join("out.bin");
-    let path = output.to_string_lossy().into_owned();
-    let words = ["rewrite-quietly", path.as_str(), "8"];
-    let watched = RunOptions::lines()
-        .with_idle_timeout(SHORT)
-        .watching(output.clone());
-    let ran = run(&words, watched, &CancellationToken::new(), |_, _| {}).await??;
-    assert!(ran.success);
-    // The same run without the output to watch is stopped as stuck.
-    let unwatched = RunOptions::lines().with_idle_timeout(SHORT);
-    let ran = run(&words, unwatched, &CancellationToken::new(), |_, _| {}).await?;
-    assert!(matches!(ran, Err(RunError::Stalled(_))), "{ran:?}");
-    Ok(())
+    a_silent_program_is_watched_through("rewrite-quietly", |output| output).await
 }
 
 /// yt-dlp's runs watch their work folder, where ffmpeg writes the joined file for minutes without a line. On Windows a folder's listing shows a file's size and write time as they were when it was last closed, so the files in it are looked at one by one.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_silent_program_writing_into_a_watched_folder_is_not_stalled() -> TestResult {
     for command in ["write-quietly", "rewrite-quietly"] {
-        let dir = tempfile::tempdir()?;
-        let output = dir.path().join("video.temp.mp4");
-        let path = output.to_string_lossy().into_owned();
-        let words = [command, path.as_str(), "8"];
-        let watched = RunOptions::lines()
-            .with_idle_timeout(SHORT)
-            .watching(dir.path().to_path_buf());
-        let ran = run(&words, watched, &CancellationToken::new(), |_, _| {}).await?;
-        assert!(
-            matches!(ran, Ok(ref ran) if ran.success),
-            "{command}: {ran:?}"
-        );
+        a_silent_program_is_watched_through(command, |output| {
+            output.parent().map(Path::to_path_buf).unwrap_or_default()
+        })
+        .await
+        .map_err(|e| format!("{command}: {e}"))?;
     }
     Ok(())
+}
+
+/// How many steps a stepped run takes: [`STEP`] apart, four times the idle limit in all, so the limit must be reset to get through them.
+const STEPS: u32 = 8;
+
+/// Runs `command`, which writes `video.temp.mp4` and nothing to its outputs, for [`STEPS`] steps while watching what `watched` makes of the file's path: the run is not stuck. The same run without the output to watch is stopped as stuck.
+async fn a_silent_program_is_watched_through(
+    command: &str,
+    watched: impl Fn(PathBuf) -> PathBuf,
+) -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let output = dir.path().join("video.temp.mp4");
+    let path = output.to_string_lossy().into_owned();
+    let words = [command, path.as_str()];
+    let options = RunOptions::lines()
+        .with_idle_timeout(SHORT)
+        .watching(watched(output));
+    let mut run = Stepped::start(&words, options).await?;
+    for n in 0..STEPS {
+        assert!(run.step().await?, "the run ended at step {n}");
+    }
+    let ran = run.end().await?;
+    assert!(matches!(ran, Ok(ref ran) if ran.success), "{ran:?}");
+
+    let unwatched = RunOptions::lines().with_idle_timeout(SHORT);
+    let mut run = Stepped::start(&words, unwatched).await?;
+    let mut took = 0;
+    while run.step().await? {
+        took += 1;
+        assert!(
+            took < STEPS,
+            "the run without a watched output was not stopped"
+        );
+    }
+    let ran = run.end().await?;
+    assert!(
+        matches!(ran, Err(RunError::Stalled(d)) if d == SHORT),
+        "{ran:?}"
+    );
+    Ok(())
+}
+
+/// Holds a paused clock still until thawed or dropped. Tokio moves a paused clock on by itself whenever nothing is ready to run, which a run waiting on its program always is, unless a blocking task is running: this is one. Reading a program's outputs runs blocking tasks too, which a program that hangs never lets end, so the waits of a test on a paused clock are bounded by [`within_patience`], in real time, not by the paused clock.
+struct Frozen(std::sync::mpsc::Sender<()>);
+
+impl Frozen {
+    fn clock() -> Self {
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        tokio::task::spawn_blocking(move || thawed(released.recv()));
+        Self(release)
+    }
+
+    /// Lets the clock move on by itself again.
+    fn thaw(self) {
+        drop(self.0);
+    }
+}
+
+/// Takes the outcome of holding the clock: the test thawed it or ended; either way the clock may move on by itself again.
+fn thawed(held: Result<(), std::sync::mpsc::RecvError>) {
+    let (Ok(()) | Err(_)) = held;
+}
+
+/// [`PATIENCE`] of real time ran out.
+#[derive(Debug)]
+struct PatienceRanOut;
+
+/// Waits for `future` for at most [`PATIENCE`] of real time, which neither a paused clock nor a blocking task that never ends holds back.
+async fn within_patience<T>(future: impl Future<Output = T>) -> Result<T, PatienceRanOut> {
+    let (expired, expiry) = tokio::sync::oneshot::channel::<()>();
+    let (_done, done_rx) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        if let Err(std::sync::mpsc::RecvTimeoutError::Timeout) = done_rx.recv_timeout(PATIENCE) {
+            waiter_may_have_ended(expired.send(()));
+        }
+    });
+    tokio::select! {
+        value = future => Ok(value),
+        _ = expiry => Err(PatienceRanOut),
+    }
+}
+
+/// Takes the outcome of telling a wait that [`PATIENCE`] ran out: a wait that already ended no longer listens, which changes nothing.
+fn waiter_may_have_ended(told: Result<(), ()>) {
+    let (Ok(()) | Err(())) = told;
+}
+
+/// Takes the outcome of passing a line to the test: a test that has ended no longer reads them, which changes nothing.
+fn test_may_have_ended(passed: &Result<(), tokio::sync::mpsc::error::SendError<String>>) {
+    let (Ok(()) | Err(_)) = passed;
+}
+
+/// How much of the run's clock passes before each step of a stepped run: half the idle limit. The limit cannot run out between two steps, and it runs out only after two, so whenever the run looks at its watched output the program has taken a step since it last looked.
+const STEP: Duration = SHORT.checked_div(2).expect("the idle limit halves");
+
+/// A run of a fake program command that takes a step only when the test says (see `examples/fake_program.rs`), on a paused clock only the test moves: how slow the machine is changes nothing the run sees.
+struct Stepped {
+    connection: TcpStream,
+    lines: tokio::sync::mpsc::UnboundedReceiver<String>,
+    ran: tokio::task::JoinHandle<Result<process::Ran, RunError>>,
+    frozen: Frozen,
+}
+
+impl Stepped {
+    /// Starts the fake program with `words` and the address it steps on; the test must be on a paused clock.
+    async fn start(words: &[&str], options: RunOptions) -> TestResult<Self> {
+        let frozen = Frozen::clock();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let mut words = args(words);
+        words.push(listener.local_addr()?.to_string().into());
+        let program = fake_program()?;
+        let (heard, lines) = tokio::sync::mpsc::unbounded_channel();
+        let ran = tokio::spawn(async move {
+            let on_line = |from, line: &str| {
+                if from == Output::Stdout {
+                    test_may_have_ended(&heard.send(line.to_owned()));
+                }
+            };
+            let dir = std::env::temp_dir();
+            let cancel = CancellationToken::new();
+            process::run(&program, &words, &dir, options, &cancel, on_line).await
+        });
+        let mut ran = ran;
+        let connected = within_patience(async {
+            tokio::select! {
+                accepted = listener.accept() => Ok(accepted),
+                ended = &mut ran => Err(format!("the run ended before the program connected: {ended:?}")),
+            }
+        });
+        let (connection, _) = connected
+            .await
+            .map_err(|_| format!("the program did not connect within {PATIENCE:?}"))???;
+        Ok(Self {
+            connection,
+            lines,
+            ran,
+            frozen,
+        })
+    }
+
+    /// Lets [`STEP`] pass on the run's clock, then has the program take a step and waits until it has; false once the program has been stopped.
+    async fn step(&mut self) -> TestResult<bool> {
+        tokio::time::advance(STEP).await;
+        if self.connection.write_all(&[1]).await.is_err() {
+            return Ok(false);
+        }
+        let mut done = [0];
+        let answered = within_patience(self.connection.read(&mut done))
+            .await
+            .map_err(|_| format!("the program did not take its step within {PATIENCE:?}"))?;
+        Ok(matches!(answered, Ok(1)))
+    }
+
+    /// The next line the program wrote to its standard output, once the run has read it.
+    async fn line(&mut self) -> TestResult<String> {
+        let line = within_patience(self.lines.recv())
+            .await
+            .map_err(|_| format!("no line within {PATIENCE:?}"))?;
+        Ok(line.ok_or("the program's output ended")?)
+    }
+
+    /// Has the program end, by closing its connection, and returns how the run ended.
+    async fn end(self) -> TestResult<Result<process::Ran, RunError>> {
+        let Self {
+            connection,
+            ran,
+            frozen,
+            ..
+        } = self;
+        drop(connection);
+        let ran = within_patience(ran)
+            .await
+            .map_err(|_| format!("the run did not end within {PATIENCE:?}"))??;
+        frozen.thaw();
+        Ok(ran)
+    }
 }
 
 /// Listens for the connection the fake program's `hold` keeps open while it runs, returning the address to pass to `start-holder` and the connection once made.
@@ -241,7 +379,7 @@ async fn holder_listener()
 /// Waits until the process holding `connection` has ended, which closes its end; fails if it is still running after [`PATIENCE`].
 async fn holder_ended(mut connection: TcpStream) -> TestResult {
     let mut byte = [0];
-    match tokio::time::timeout(PATIENCE, connection.read(&mut byte)).await {
+    match within_patience(connection.read(&mut byte)).await {
         Ok(Ok(0) | Err(_)) => Ok(()),
         Ok(Ok(_)) => Err("the holder wrote to its connection".into()),
         Err(_) => Err(format!(
@@ -271,64 +409,53 @@ async fn cancelling_a_run_ends_what_the_program_started() -> TestResult {
     holder_ended(accepted.await??).await
 }
 
-#[tokio::test]
+/// The time limit runs out only once the holder has started, on a paused clock the test moves, however slow the machine is to start programs.
+#[tokio::test(start_paused = true)]
 async fn a_run_past_its_time_limit_ends_what_the_program_started() -> TestResult {
+    let frozen = Frozen::clock();
     let (address, accepted) = holder_listener().await?;
-    let mut holding = false;
-    let ran = run(
-        &["start-holder", &address],
-        RunOptions::lines().with_timeout(HOLDER_LIMIT),
-        &CancellationToken::new(),
-        |_, line| holding |= line == "holding",
-    )
-    .await?;
-    assert!(matches!(ran, Err(RunError::TimedOut(_))), "{ran:?}");
-    assert!(holding, "the holder did not start within {HOLDER_LIMIT:?}");
-    holder_ended(accepted.await??).await
-}
-
-/// What the run logs, kept for a test to read.
-#[derive(Clone, Default)]
-struct Log(Arc<Mutex<Vec<u8>>>);
-
-impl Log {
-    fn text(&self) -> String {
-        let bytes = self.0.lock().map(|b| b.clone()).unwrap_or_default();
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-}
-
-impl std::io::Write for Log {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|_| std::io::Error::other("the log lock is poisoned"))?
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Log {
-    type Writer = Log;
-
-    fn make_writer(&'a self) -> Log {
-        self.clone()
-    }
+    let program = fake_program()?;
+    let (heard, mut lines) = tokio::sync::mpsc::unbounded_channel();
+    let ran = tokio::spawn(async move {
+        let dir = std::env::temp_dir();
+        let words = args(&["start-holder", &address]);
+        let options = RunOptions::lines().with_timeout(SHORT);
+        let on_line = |_, line: &str| test_may_have_ended(&heard.send(line.to_owned()));
+        process::run(
+            &program,
+            &words,
+            &dir,
+            options,
+            &CancellationToken::new(),
+            on_line,
+        )
+        .await
+    });
+    let connection = within_patience(accepted)
+        .await
+        .map_err(|_| format!("the holder did not connect within {PATIENCE:?}"))???;
+    let said = within_patience(lines.recv())
+        .await
+        .map_err(|_| format!("the holder said nothing within {PATIENCE:?}"))?;
+    assert_eq!(said.as_deref(), Some("holding"));
+    tokio::time::advance(SHORT).await;
+    let ran = within_patience(ran)
+        .await
+        .map_err(|_| format!("the run did not end within {PATIENCE:?}"))??;
+    assert!(
+        matches!(ran, Err(RunError::TimedOut(d)) if d == SHORT),
+        "{ran:?}"
+    );
+    // Still on the held clock: the holder's end is an event, not a time.
+    holder_ended(connection).await?;
+    frozen.thaw();
+    Ok(())
 }
 
 /// A program that exits and leaves a child running: the run ends the child as soon as the program has ended. The child shares standard error, so if it were left running the run would read on until its grace ran out and say so in the log; it would still end the child afterwards, which is why the log is what tells.
 #[tokio::test]
 async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
-    let log = Log::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(log.clone())
-        .with_ansi(false)
-        .finish();
-    let _logging = tracing::subscriber::set_default(subscriber);
+    let (logs, _capturing) = Logs::capture();
     let (address, accepted) = holder_listener().await?;
     let mut holding = false;
     let ran = run(
@@ -340,7 +467,7 @@ async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
     .await??;
     assert!(ran.success, "{:?}", ran.stderr);
     assert!(holding, "the holder did not start");
-    let logged = log.text();
+    let logged = logs.text();
     assert!(
         !logged.contains("outputs stayed open"),
         "the child was not ended with the program: {logged}"
