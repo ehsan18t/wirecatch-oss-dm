@@ -86,10 +86,9 @@ impl Client {
 
     /// The next message, or `None` once the server closed the connection.
     async fn recv(&mut self) -> TestResult<Option<Message>> {
-        let read =
-            tokio::time::timeout(Duration::from_secs(10), frame::read_async(&mut self.stream))
-                .await
-                .map_err(|_| "no answer from the server")?;
+        let read = tokio::time::timeout(PATIENCE, frame::read_async(&mut self.stream))
+            .await
+            .map_err(|_| "no answer from the server")?;
         Ok(read?)
     }
 
@@ -139,7 +138,7 @@ impl Client {
     /// Checks the server closed the connection cleanly, without panicking.
     async fn assert_closed(mut self) -> TestResult {
         assert_eq!(self.recv().await?, None, "connection still open");
-        let served = tokio::time::timeout(Duration::from_secs(5), self.server)
+        let served = tokio::time::timeout(PATIENCE, self.server)
             .await
             .map_err(|_| "server task still running")?;
         served??;
