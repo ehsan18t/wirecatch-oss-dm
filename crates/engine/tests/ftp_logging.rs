@@ -1,43 +1,18 @@
 //! FTP credentials never reach the logs. A test binary of its own: it installs
 //! a process-wide log subscriber, which would also catch other tests' logs.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
+use wirecatch_test_support::logs::Logs;
 use wirecatch_test_support::{private_dir, test_data};
-
-/// Collects everything the engine logs, at every level.
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl std::io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|_| std::io::Error::other("the log buffer's lock is poisoned"))?
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
 
 #[tokio::test]
 async fn credentials_are_never_logged() {
-    let captured = Captured::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
-        .with_ansi(false)
-        .with_writer({
-            let captured = captured.clone();
-            move || captured.clone()
-        })
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+    let logs = Logs::default();
+    tracing::subscriber::set_global_default(logs.subscriber()).unwrap();
 
     let data = test_data(2 * MIB_USIZE);
     let server = FtpServer::start(FtpConfig {
@@ -67,7 +42,7 @@ async fn credentials_are_never_logged() {
         server.stats.count("PASS hunter2-secret") >= 1,
         "the server got the password"
     );
-    let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    let logs = logs.text();
     assert!(
         logs.contains("PASS <hidden>"),
         "commands are logged: {logs}"

@@ -76,7 +76,6 @@ wirecatch-test-support = { path = "../test-support", features = ["servers", "log
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }
-tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 # Process CPU time in the HTTP/3 benchmark.
