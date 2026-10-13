@@ -7,9 +7,10 @@
 
 use std::io::{self, Read};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use wirecatch_protocol::frame::{self, FrameError, HEADER_LEN};
+use wirecatch_protocol::wire::{self, Call, Message, MessageKind};
 
 /// One whole frame: the 4-byte little-endian length followed by the body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,45 +32,33 @@ impl RawFrame {
         &self.0[HEADER_LEN..]
     }
 
-    /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`). Anything else, and a `hello` from a client that does not say, allows it, as before the field existed.
+    /// Whether a `hello` in this frame allows the bridge to start the app (`Hello::start_app`). Anything else, and a frame this build cannot read, allows it, as before the field existed.
     pub(crate) fn allows_starting_the_app(&self) -> bool {
-        #[derive(Deserialize)]
-        struct Frame {
-            call: Option<Call>,
-        }
-        #[derive(Deserialize)]
-        struct Call {
-            method: String,
-            #[serde(default)]
-            params: Option<Params>,
-        }
-        #[derive(Deserialize)]
-        struct Params {
-            start_app: Option<bool>,
-        }
-        match serde_json::from_slice::<Frame>(self.body()) {
-            Ok(Frame {
-                call: Some(Call { method, params }),
-            }) if method == "hello" => params.and_then(|p| p.start_app).unwrap_or(true),
+        match frame::decode::<Message>(self.body()) {
+            Ok(Message::Request {
+                call: Call::Hello(hello),
+                ..
+            }) => hello.start_app,
             _ => true,
         }
     }
 
     /// Reads the envelope fields the bridge needs.
     pub(crate) fn envelope(&self) -> Envelope {
-        #[derive(Deserialize)]
-        struct Fields {
-            kind: String,
-            #[serde(default)]
-            id: Option<u64>,
-        }
-        match serde_json::from_slice::<Fields>(self.body()) {
-            Ok(fields) => match fields.kind.as_str() {
-                "request" => Envelope::Request(fields.id),
-                "response" => Envelope::Response(fields.id),
-                _ => Envelope::Other,
-            },
-            Err(_) => Envelope::Other,
+        match wire::Envelope::read(self.body()) {
+            Some(wire::Envelope {
+                kind: MessageKind::Request,
+                id,
+            }) => Envelope::Request(id),
+            Some(wire::Envelope {
+                kind: MessageKind::Response,
+                id,
+            }) => Envelope::Response(id),
+            Some(wire::Envelope {
+                kind: MessageKind::Event,
+                ..
+            })
+            | None => Envelope::Other,
         }
     }
 
@@ -164,15 +153,15 @@ mod tests {
 
     #[test]
     fn a_hello_says_whether_the_app_may_be_started() {
-        let hello = |params: &str| {
+        let hello = |start_app: &str| {
             raw(&format!(
-                r#"{{"kind":"request","id":1,"call":{{"method":"hello","params":{params}}}}}"#
+                r#"{{"kind":"request","id":1,"call":{{"method":"hello","params":{{"client":"extension","client_version":"1","protocol_version":1,"browser":null{start_app}}}}}}}"#
             ))
         };
-        assert!(!hello(r#"{"start_app":false}"#).allows_starting_the_app());
-        assert!(hello(r#"{"start_app":true}"#).allows_starting_the_app());
+        assert!(!hello(r#","start_app":false"#).allows_starting_the_app());
+        assert!(hello(r#","start_app":true"#).allows_starting_the_app());
         // Clients from before the field, and every other call, allow it as before.
-        assert!(hello(r#"{"client":"cli"}"#).allows_starting_the_app());
+        assert!(hello("").allows_starting_the_app());
         assert!(
             raw(r#"{"kind":"request","id":2,"call":{"method":"pause_all"}}"#)
                 .allows_starting_the_app()

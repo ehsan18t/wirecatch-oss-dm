@@ -194,8 +194,10 @@ where
         loop {
             match raw_frame::read_async(&mut reader).await {
                 Ok(Some(frame)) => {
-                    let answered = match frame.envelope() {
-                        Envelope::Response(Some(id)) => Some(id),
+                    // With no request waiting, no frame can answer one, so none needs reading.
+                    let waiting = !lock(&pending).is_empty();
+                    let answered = match waiting.then(|| frame.envelope()) {
+                        Some(Envelope::Response(Some(id))) => Some(id),
                         _ => None,
                     };
                     if outgoing.send(frame).await.is_err() {

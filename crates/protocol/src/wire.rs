@@ -53,6 +53,50 @@ pub enum Message {
     },
 }
 
+impl Message {
+    /// Which kind of message this is, as its `kind` field names it on the wire.
+    #[must_use]
+    pub fn kind(&self) -> MessageKind {
+        match self {
+            Message::Request { .. } => MessageKind::Request,
+            Message::Response { .. } => MessageKind::Response,
+            Message::Event { .. } => MessageKind::Event,
+        }
+    }
+}
+
+/// The kinds of [`Message`], named on the wire exactly as its variants are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageKind {
+    /// A [`Message::Request`].
+    Request,
+    /// A [`Message::Response`].
+    Response,
+    /// A [`Message::Event`].
+    Event,
+}
+
+/// The fields every [`Message`] is told apart by, read without decoding what it carries, for a
+/// relay that passes frames on as they are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct Envelope {
+    /// What kind of message it is.
+    pub kind: MessageKind,
+    /// The request id of a request or a response; `None` for an event.
+    #[serde(default)]
+    pub id: Option<u64>,
+}
+
+impl Envelope {
+    /// The envelope of a frame body, or `None` when the body is not a message this build
+    /// knows the kind of, or its id is not a request id.
+    #[must_use]
+    pub fn read(body: &[u8]) -> Option<Envelope> {
+        serde_json::from_slice(body).ok()
+    }
+}
+
 /// What a client asks the app to do.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
@@ -245,6 +289,43 @@ pub enum ErrorCode {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The envelope reads the same `kind` and `id` that a whole message is written with, for
+    /// every kind of message.
+    #[test]
+    fn the_envelope_of_every_message_matches_the_message() {
+        let messages = [
+            Message::Request {
+                id: 3,
+                call: Call::PauseAll,
+            },
+            Message::Response {
+                id: 4,
+                outcome: Outcome::Ok(Reply::Done),
+            },
+            Message::Event {
+                event: Event::QueuesChanged(Vec::new()),
+            },
+        ];
+        for message in messages {
+            let body = serde_json::to_vec(&message).unwrap();
+            let id = match &message {
+                Message::Request { id, .. } | Message::Response { id, .. } => Some(*id),
+                Message::Event { .. } => None,
+            };
+            assert_eq!(
+                Envelope::read(&body),
+                Some(Envelope {
+                    kind: message.kind(),
+                    id
+                }),
+                "{message:?}"
+            );
+        }
+        assert_eq!(Envelope::read(br#"{"kind":"request","id":-1}"#), None);
+        assert_eq!(Envelope::read(br#"{"kind":"future","id":1}"#), None);
+        assert_eq!(Envelope::read(b"not json"), None);
+    }
 
     #[test]
     fn wire_shape_is_stable() {
