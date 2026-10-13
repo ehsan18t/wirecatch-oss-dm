@@ -1,0 +1,1853 @@
+{
+  "about": [
+    "Every sample the redaction tests of the log (wirecatch-logging) and of the extension (apps/extension/src/lib/diag) read, in one file both load: wirecatch_test_support::redaction in Rust, @wirecatch/protocol/testing/redaction in TypeScript (D40.10).",
+    "A text, secret or input may be a list of pieces, joined by the loaders, so no file holds a string shaped like a real credential whole (the text gate check refuses one).",
+    "Sides: log is text_for_log, display is text_for_display, diagnostics is the extension's redact. secrets must not survive log or diagnostics in any of the wrappings; private must not survive diagnostics; log, display and diagnostics are exact outputs of the bare text; kept_by lists the sides that leave the text as it is; skipped_by names the redaction that does not read a form on purpose, and why says why."
+  ],
+  "wrappings": [
+    "{}",
+    "before {} after",
+    "({})",
+    "line one\n{}\nline three"
+  ],
+  "rules": {
+    "is_secret_name": [
+      {
+        "input": "token",
+        "answer": true
+      },
+      {
+        "input": "Set-Cookie",
+        "answer": true
+      },
+      {
+        "input": "Proxy-Authorization",
+        "answer": true
+      },
+      {
+        "input": "x-amz-security-token",
+        "answer": true
+      },
+      {
+        "input": "X-Amz-Signature",
+        "answer": true
+      },
+      {
+        "input": "apiKey",
+        "answer": true
+      },
+      {
+        "input": "api_key",
+        "answer": true
+      },
+      {
+        "input": "client_secret",
+        "answer": true
+      },
+      {
+        "input": "PHPSESSID",
+        "answer": true
+      },
+      {
+        "input": "JSESSIONID",
+        "answer": true
+      },
+      {
+        "input": "sessionId",
+        "answer": true
+      },
+      {
+        "input": "userKey",
+        "answer": true
+      },
+      {
+        "input": "streamKey",
+        "answer": true
+      },
+      {
+        "input": "authHeader",
+        "answer": true
+      },
+      {
+        "input": "accesstoken",
+        "answer": true
+      },
+      {
+        "input": "clientsecret",
+        "answer": true
+      },
+      {
+        "input": "oauth",
+        "answer": true
+      },
+      {
+        "input": "OAuth",
+        "answer": true
+      },
+      {
+        "input": "proxyauthorization",
+        "answer": true
+      },
+      {
+        "input": "xapikey",
+        "answer": true
+      },
+      {
+        "input": "hdnts",
+        "answer": true
+      },
+      {
+        "input": "Bearer",
+        "answer": true
+      },
+      {
+        "input": "--password",
+        "answer": true
+      },
+      {
+        "input": "--ap-password",
+        "answer": true
+      },
+      {
+        "input": "22token",
+        "answer": true
+      },
+      {
+        "input": "private_key",
+        "answer": true
+      },
+      {
+        "input": "author",
+        "answer": false
+      },
+      {
+        "input": "tokens",
+        "answer": false
+      },
+      {
+        "input": "monkey",
+        "answer": false
+      },
+      {
+        "input": "keyframes",
+        "answer": false
+      },
+      {
+        "input": "design",
+        "answer": false
+      },
+      {
+        "input": "passed",
+        "answer": false
+      },
+      {
+        "input": "sign-in",
+        "answer": false
+      },
+      {
+        "input": "user-agent",
+        "answer": false
+      },
+      {
+        "input": "value",
+        "answer": false
+      },
+      {
+        "input": "name",
+        "answer": false
+      },
+      {
+        "input": "",
+        "answer": false
+      },
+      {
+        "input": "--",
+        "answer": false
+      },
+      {
+        "input": "Grüße",
+        "answer": false
+      },
+      {
+        "input": "v2Token",
+        "answer": true
+      },
+      {
+        "input": "ÄToken",
+        "answer": true
+      },
+      {
+        "input": "-token-",
+        "answer": true
+      },
+      {
+        "input": "XMLHttpRequest",
+        "answer": false
+      },
+      {
+        "input": "_",
+        "answer": false
+      }
+    ],
+    "names_a_password": [
+      {
+        "input": "password",
+        "answer": true
+      },
+      {
+        "input": "db_password",
+        "answer": true
+      },
+      {
+        "input": "userPwd",
+        "answer": true
+      },
+      {
+        "input": "passcode",
+        "answer": true
+      },
+      {
+        "input": "api_key",
+        "answer": false
+      },
+      {
+        "input": "passed",
+        "answer": false
+      }
+    ],
+    "looks_like_a_credential": [
+      {
+        "input": "dXNlcjpwYXNz",
+        "answer": true
+      },
+      {
+        "input": "LEAK12xyz=",
+        "answer": true
+      },
+      {
+        "input": "abcdefgH",
+        "answer": true
+      },
+      {
+        "input": "abc/defgh",
+        "answer": true
+      },
+      {
+        "input": "abcdefg1",
+        "answer": true
+      },
+      {
+        "input": "Authentication",
+        "answer": false
+      },
+      {
+        "input": "settings",
+        "answer": false
+      },
+      {
+        "input": "abc123",
+        "answer": false
+      },
+      {
+        "input": "check",
+        "answer": false
+      },
+      {
+        "input": "Abcdefgh",
+        "answer": false
+      },
+      {
+        "input": "",
+        "answer": false
+      }
+    ],
+    "is_service_key": [
+      {
+        "input": [
+          "AKIA",
+          "IOSFODNN7EXAMPLE"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "sk-live-",
+          "abcDEF123ghiJKL456"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "sk_test_",
+          "4eC39HqLyjWDarjtT1zdp7dc"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "glpat-",
+          "AbCdEfGhIjKlMnOpQrSt"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "ghp_",
+          "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "AIza",
+          "SyA1b2C3d4E5f6G7h8I9j0"
+        ],
+        "answer": true
+      },
+      {
+        "input": "AKIA",
+        "answer": false
+      },
+      {
+        "input": "AKIAIOSFODNN7",
+        "answer": false
+      },
+      {
+        "input": "npm_config_user_agent",
+        "answer": false
+      },
+      {
+        "input": "akiaiosfodnn7example1",
+        "answer": false
+      },
+      {
+        "input": "plain-word-of-some-length",
+        "answer": false
+      },
+      {
+        "input": [
+          "ghp_",
+          "a1B2c3D4e5F6g7H8"
+        ],
+        "answer": true
+      },
+      {
+        "input": [
+          "ghp_",
+          "a1B2c3D4e5F6g7H"
+        ],
+        "answer": false
+      }
+    ]
+  },
+  "cases": [
+    {
+      "text": "token: abc123",
+      "secrets": [
+        "abc123"
+      ],
+      "diagnostics": "token: [redacted]"
+    },
+    {
+      "text": "pass=hunter2",
+      "secrets": [
+        "hunter2"
+      ]
+    },
+    {
+      "text": [
+        "x-api-key: AKIA",
+        "IOSFODNN7EXAMPLE"
+      ],
+      "secrets": [
+        "IOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "text": "x-amz-security-token: FQoGZXIvYXdzEJr",
+      "secrets": [
+        "FQoGZXIvYXdzEJr"
+      ]
+    },
+    {
+      "text": "client_secret=s3cr3t&grant=x",
+      "secrets": [
+        "s3cr3t"
+      ]
+    },
+    {
+      "text": "client_secret = s3cr3t;",
+      "secrets": [
+        "s3cr3t"
+      ],
+      "log": "client_secret = ***;"
+    },
+    {
+      "text": "access_token=abc&refresh_token=def",
+      "secrets": [
+        "abc",
+        "def"
+      ],
+      "log": "access_token=***&refresh_token=***"
+    },
+    {
+      "text": "signing in with password=hunter2 for ada",
+      "secrets": [
+        "hunter2"
+      ],
+      "log": "signing in with password=*** for ada"
+    },
+    {
+      "text": "apikey=LEAK14 key=LEAK15 sig=LEAK16 hdnts=LEAK17",
+      "secrets": [
+        "LEAK"
+      ]
+    },
+    {
+      "text": "passphrase=LEAK18 pwd=LEAK19 private_key=LEAK20 sessionid=LEAK21",
+      "secrets": [
+        "LEAK"
+      ]
+    },
+    {
+      "text": "authToken=LEAK44&next=1",
+      "secrets": [
+        "LEAK44"
+      ]
+    },
+    {
+      "text": "X-Api-Key: LEAK45",
+      "secrets": [
+        "LEAK45"
+      ]
+    },
+    {
+      "text": "refresh_token = 'LEAK42'",
+      "secrets": [
+        "LEAK42"
+      ]
+    },
+    {
+      "text": "password=a&LEAK24",
+      "secrets": [
+        "LEAK24"
+      ]
+    },
+    {
+      "text": "PHPSESSID=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "sessid=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "csrf=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "otp=123456",
+      "secrets": [
+        "123456"
+      ]
+    },
+    {
+      "text": "passcode=1234",
+      "secrets": [
+        "1234"
+      ]
+    },
+    {
+      "text": "Authentication: abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "userKey=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "sessionKey=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "streamKey=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "authHeader=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "accesstoken: abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "refreshtoken: abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "a=token=xyz789",
+      "secrets": [
+        "xyz789"
+      ]
+    },
+    {
+      "text": "(token=abc123) failed",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "Bearer: LEAK56",
+      "secrets": [
+        "LEAK56"
+      ]
+    },
+    {
+      "text": "password => 'LEAK54'",
+      "secrets": [
+        "LEAK54"
+      ]
+    },
+    {
+      "text": "<password>LEAK55</password>",
+      "secrets": [
+        "LEAK55"
+      ]
+    },
+    {
+      "text": "{\"Cookie\":\"foo=bar; theme=x\"}",
+      "secrets": [
+        "foo=bar"
+      ]
+    },
+    {
+      "text": "{\"authorization\":\"abc123xyz\"}",
+      "secrets": [
+        "abc123xyz"
+      ]
+    },
+    {
+      "text": "{\"set-cookie\": \"sid=777\"}",
+      "secrets": [
+        "sid=777"
+      ]
+    },
+    {
+      "text": "\"password\":\"hunter2\"",
+      "secrets": [
+        "hunter2"
+      ]
+    },
+    {
+      "text": "{'token': 'abc123'}",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "{\"private\": \"PRIV1\"}",
+      "secrets": [
+        "PRIV1"
+      ]
+    },
+    {
+      "text": "headers={\"cookie\": \"a=b\", \"user-agent\": \"x\"}",
+      "secrets": [
+        "a=b"
+      ],
+      "log": "headers={\"cookie\": \"***\", \"user-agent\": \"x\"}"
+    },
+    {
+      "text": "{\n  \"password\":\n    \"LEAK32\"\n}",
+      "secrets": [
+        "LEAK32"
+      ]
+    },
+    {
+      "text": "Cookie: SID=abc; HSID=def",
+      "secrets": [
+        "abc",
+        "def"
+      ],
+      "log": "Cookie: ***"
+    },
+    {
+      "text": "request headers\nset-cookie: a=1; Path=/\nAccept: */*",
+      "secrets": [
+        "a=1"
+      ],
+      "log": "request headers\nset-cookie: ***\nAccept: */*"
+    },
+    {
+      "text": "Cookie: a=1; b=LEAK43 / ERROR: real cause",
+      "secrets": [
+        "LEAK43"
+      ]
+    },
+    {
+      "text": "Cookie: 'a=b' trailing=x",
+      "secrets": [
+        "a=b"
+      ],
+      "diagnostics": "Cookie: [redacted]"
+    },
+    {
+      "text": "Cookie: a=b\"c=d",
+      "secrets": [
+        "a=b",
+        "c=d"
+      ]
+    },
+    {
+      "text": "Cookie: a=b\nc=d secret",
+      "secrets": [
+        "c=d",
+        "secret"
+      ]
+    },
+    {
+      "text": "Cookie: a=b\n  c=d",
+      "secrets": [
+        "c=d"
+      ]
+    },
+    {
+      "text": "Authorization: Bearer\nabc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "Authorization: Bearer eyJhbGciOi.payload.sig",
+      "secrets": [
+        "payload"
+      ],
+      "log": "Authorization: ***"
+    },
+    {
+      "text": "proxy-authorization=Basic dXNlcjpwYXNz next=1",
+      "secrets": [
+        "dXNlcjpwYXNz"
+      ],
+      "log": "proxy-authorization=***"
+    },
+    {
+      "text": "Authorization: Digest username=\"alice\", response=\"6629fae49393a053\"",
+      "secrets": [
+        "alice",
+        "6629fae49393a053"
+      ]
+    },
+    {
+      "text": "authorization: Digest username=\"ada\", response=\"LEAK53\"",
+      "secrets": [
+        "LEAK53"
+      ]
+    },
+    {
+      "text": "password: correct horse battery staple",
+      "secrets": [
+        "horse",
+        "staple"
+      ]
+    },
+    {
+      "text": "password: correct horse LEAK23",
+      "secrets": [
+        "LEAK23"
+      ]
+    },
+    {
+      "text": "[{\"name\":\"Cookie\",\"value\":\"sessid=abc; pref=private\"}]",
+      "secrets": [
+        "sessid=abc",
+        "private"
+      ]
+    },
+    {
+      "text": "[{\"value\":\"sessid=abc; pref=private\",\"name\":\"Cookie\"}]",
+      "secrets": [
+        "sessid=abc",
+        "private"
+      ]
+    },
+    {
+      "text": "{\"name\":\"Cookie\",\"value\":\"sid=XYZ1\"}",
+      "secrets": [
+        "XYZ1"
+      ]
+    },
+    {
+      "text": "Header { name: \"Cookie\", value: \"sid=XYZ2\" }",
+      "secrets": [
+        "XYZ2"
+      ]
+    },
+    {
+      "text": "{name: \"Authorization\", value: \"xyz789\"}",
+      "secrets": [
+        "xyz789"
+      ]
+    },
+    {
+      "text": "name: Cookie, value: abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "name=Cookie&value=abc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "{\"cookies\":[{\"name\":\"theme\",\"value\":\"dark\"}]}",
+      "secrets": [
+        "dark"
+      ]
+    },
+    {
+      "text": "[[\"Cookie\",\"a=b\"],[\"X-Token\",\"t0k\"]]",
+      "secrets": [
+        "a=b",
+        "t0k"
+      ]
+    },
+    {
+      "text": "[['Cookie', 'a=b']]",
+      "secrets": [
+        "a=b"
+      ]
+    },
+    {
+      "text": "{\\\"headers\\\":{\\\"Cookie\\\":\\\"a=b; c=d\\\"}}",
+      "secrets": [
+        "a=b",
+        "c=d"
+      ]
+    },
+    {
+      "text": "{\\\"Authorization\\\":\\\"Digest username=\\\\\\\"alice\\\\\\\"\\\"}",
+      "secrets": [
+        "alice"
+      ]
+    },
+    {
+      "text": "{\"Authorization\":\"Digest username=\\\"alice\\\", nc=1\"}",
+      "secrets": [
+        "alice",
+        "nc=1"
+      ]
+    },
+    {
+      "text": "{\"data\":\"{\\\\\\\"token\\\\\\\":\\\\\\\"abc\\\\\\\"}\"}",
+      "secrets": [
+        "abc"
+      ]
+    },
+    {
+      "text": "{\"data\":\"{\\\\\\\"cookie\\\\\\\":\\\\\\\"a=b; c=d\\\\\\\"}\"}",
+      "secrets": [
+        "a=b",
+        "c=d"
+      ]
+    },
+    {
+      "text": "\\\\\\\"password\\\\\\\": \\\\\\\"hunter2\\\\\\\"",
+      "secrets": [
+        "hunter2"
+      ]
+    },
+    {
+      "text": "body=\"{\\\"password\\\":\\\"LEAK01\\\",\\\"user\\\":\\\"ada\\\"}\"",
+      "secrets": [
+        "LEAK01"
+      ]
+    },
+    {
+      "text": "body=\"{\\\"access_token\\\":\\\"LEAK41\\\"}\"",
+      "secrets": [
+        "LEAK41"
+      ]
+    },
+    {
+      "text": "body=\"{\\\\\\\"password\\\\\\\":\\\\\\\"LEAK52\\\\\\\"}\"",
+      "secrets": [
+        "LEAK52"
+      ]
+    },
+    {
+      "text": "cookie=\\'LEAK47\\'",
+      "secrets": [
+        "LEAK47"
+      ]
+    },
+    {
+      "text": "%22token%22%3A%22abc123%22",
+      "secrets": [
+        "abc123"
+      ],
+      "diagnostics": "\"token\":\"[redacted]\""
+    },
+    {
+      "text": "https%3A%2F%2Fexample.com%2Fp%3Ftoken%3Dabc123",
+      "secrets": [
+        "abc123"
+      ]
+    },
+    {
+      "text": "password%3DLEAK33",
+      "secrets": [
+        "LEAK33"
+      ]
+    },
+    {
+      "text": "%7B%22password%22%3A%22LEAK34%22%7D",
+      "secrets": [
+        "LEAK34"
+      ]
+    },
+    {
+      "text": "sent Bearer abc.def-ghi",
+      "secrets": [
+        "abc.def-ghi"
+      ],
+      "diagnostics": "sent Bearer [redacted]"
+    },
+    {
+      "text": "sent Bearer LEAK11 to the server",
+      "secrets": [
+        "LEAK11"
+      ]
+    },
+    {
+      "text": "sent Basic LEAK12xyz= to the server",
+      "secrets": [
+        "LEAK12"
+      ]
+    },
+    {
+      "text": "sent bearer LEAK57abcdefgh1",
+      "secrets": [
+        "LEAK57"
+      ]
+    },
+    {
+      "text": "authorization=Basic dXNlcjpwYXNz",
+      "secrets": [
+        "dXNlcjpwYXNz"
+      ],
+      "diagnostics": "authorization=[redacted]"
+    },
+    {
+      "text": "X-Auth-Token: Bearer LEAK09",
+      "secrets": [
+        "LEAK09"
+      ]
+    },
+    {
+      "text": "token: Bearer LEAK10",
+      "secrets": [
+        "LEAK10"
+      ]
+    },
+    {
+      "text": "X-Auth-Token: Bearer abc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ],
+      "diagnostics": "X-Auth-Token: [redacted]"
+    },
+    {
+      "text": "x-authorization: Bearer abc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "X-Access-Token: Basic dXNlcjpwYXNz",
+      "secrets": [
+        "dXNlcjpwYXNz"
+      ]
+    },
+    {
+      "text": "api_key: Bearer abc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "X-Auth-Token=Bearer abc123def456ghi next=1",
+      "secrets": [
+        "abc123def456ghi"
+      ],
+      "log": "X-Auth-Token=*** next=1"
+    },
+    {
+      "text": "token=Bearer abc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "token=Basic dXNlcjpwYXNz",
+      "secrets": [
+        "dXNlcjpwYXNz"
+      ]
+    },
+    {
+      "text": "api_key=NTLM TlRMTVNTUAABAAAA",
+      "secrets": [
+        "TlRMTVNTUAABAAAA"
+      ]
+    },
+    {
+      "text": "X-Api-Key: Negotiate YIIGhgYGKwYBBQUC",
+      "secrets": [
+        "YIIGhgYGKwYBBQUC"
+      ]
+    },
+    {
+      "text": "X-Auth-Token: Bearer\nabc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "X-Auth-Token=Bearer\nabc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "X-Auth-Token: Bearer\r\nabc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "token: basic\ndXNlcjpwYXNz",
+      "secrets": [
+        "dXNlcjpwYXNz"
+      ]
+    },
+    {
+      "text": "sent Bearer\nabc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "X-Auth-Token: Token abc123def456ghi",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": "api_key: my long phrase",
+      "secrets": [
+        "long",
+        "phrase"
+      ]
+    },
+    {
+      "text": "X-Auth-Token: Token abc123def456ghi / ERROR: real cause",
+      "secrets": [
+        "abc123def456ghi"
+      ]
+    },
+    {
+      "text": [
+        "reply eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0",
+        ".dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+      ],
+      "secrets": [
+        "eyJhbGciOiJIUzI1NiJ9",
+        "dozjgNryP4J3jVmNHl0w5N"
+      ]
+    },
+    {
+      "text": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjF9",
+        ".LEAK13xyz"
+      ],
+      "secrets": [
+        "LEAK13"
+      ]
+    },
+    {
+      "text": [
+        "key id AKIA",
+        "IOSFODNN7EXAMPLE"
+      ],
+      "secrets": [
+        "IOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "text": [
+        "sk-live-",
+        "abcDEF123ghiJKL456"
+      ],
+      "secrets": [
+        "abcDEF123ghiJKL456"
+      ]
+    },
+    {
+      "text": [
+        "token glpat-",
+        "AbCdEfGhIjKlMnOpQrSt sent"
+      ],
+      "secrets": [
+        "AbCdEfGhIjKlMnOpQrSt"
+      ]
+    },
+    {
+      "text": [
+        "npm_",
+        "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8 rejected"
+      ],
+      "secrets": [
+        "a1B2c3D4e5F6g7H8i9J0"
+      ]
+    },
+    {
+      "text": "https://proxy.example/https://ada:LEAK35@h/x",
+      "secrets": [
+        "LEAK35"
+      ]
+    },
+    {
+      "text": "https://user:pa/LEAK36@host/f",
+      "secrets": [
+        "LEAK36"
+      ]
+    },
+    {
+      "text": "https://user:pa#LEAK37@host/f",
+      "secrets": [
+        "LEAK37"
+      ]
+    },
+    {
+      "text": "https://proxy.example/?u=https://ada:LEAK38@h/x",
+      "secrets": [
+        "LEAK38"
+      ]
+    },
+    {
+      "text": "GET https://cdn.example.com/v.mp4?X-Amz-Signature=abc123&Expires=99 failed",
+      "secrets": [
+        "abc123"
+      ],
+      "log": "GET https://cdn.example.com/v.mp4?X-Amz-Signature=***&Expires=*** failed"
+    },
+    {
+      "text": "GET /v.m3u8?st=LEAK22&e=1 HTTP/1.1",
+      "secrets": [
+        "LEAK22"
+      ]
+    },
+    {
+      "text": "fetch ftp://alice:s3cret@files.example.com:2121/x failed",
+      "secrets": [
+        "s3cret"
+      ],
+      "diagnostics": "fetch ftp://files.example.com:2121/… failed",
+      "private": [
+        "alice"
+      ]
+    },
+    {
+      "text": "Url { scheme: \"https\", cannot_be_a_base: false, username: \"LEAK02\", password: Some(\"LEAK03\"), host: Some(Domain(\"h\")), port: None, path: \"/\", query: Some(\"sig=LEAK04&st=1\"), fragment: Some(\"LEAK05\") }",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "Creds { api_key: Some(\"LEAK06\"), token: Some(Secret(\"LEAK07\")) }",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "Login { user: \"ada\", password: \"hun\\\"LEAK08\" }",
+      "secrets": [
+        "LEAK08"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "error=Error { url: Some(Url { password: Some(\"LEAK39\") }) }",
+      "secrets": [
+        "LEAK39"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "[(\"Set-Cookie\", \"LEAK40\"), (\"Accept\", \"*/*\")]",
+      "secrets": [
+        "LEAK40"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "query: Some(\"a=1&b=LEAK46\")",
+      "secrets": [
+        "LEAK46"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "Creds {\n    api_key: Some(\n        \"LEAK48\",\n    ),\n    password: \"LEAK49\",\n}",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "Url {\n    username: \"ada\",\n    password: Some(\n        \"LEAK50\",\n    ),\n    query: Some(\n        \"sig=LEAK51\",\n    ),\n}",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "token:\n    \"LEAK58\"",
+      "secrets": [
+        "LEAK58"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "api_key: Some(Some(\n    \"LEAK59\",\n))",
+      "secrets": [
+        "LEAK59"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "yt-dlp --password LEAK25 --ap-password LEAK26 -p LEAK27",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "\"yt-dlp\" \"--password\" \"LEAK28\" \"--video-password\" \"LEAK29\"",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "--add-header \"Cookie: LEAK30\" -headers \"Authorization: x LEAK31\"",
+      "secrets": [
+        "LEAK"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "yt-dlp --password -dashPW1",
+      "secrets": [
+        "dashPW1"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "yt-dlp --password --verbose",
+      "secrets": [
+        "--verbose"
+      ],
+      "skipped_by": "diagnostics",
+      "why": "Rust's `Debug` output and the command lines of the add-on's programs never reach the extension."
+    },
+    {
+      "text": "acc%65ss_t%6Fken=abc123",
+      "secrets": [
+        "abc123"
+      ],
+      "skipped_by": "log",
+      "why": "The log keeps text as it was written and reads only `%22`, `%3A` and `%3D`; every query value of a link is hidden anyway."
+    },
+    {
+      "text": "%2522token%2522%253A%2522abc123%2522",
+      "secrets": [
+        "abc123"
+      ],
+      "skipped_by": "log",
+      "why": "The log keeps text as it was written and reads only `%22`, `%3A` and `%3D`; every query value of a link is hidden anyway."
+    },
+    {
+      "text": "opaque 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "secrets": [
+        "9f86d081884c7d659a2feaa0"
+      ],
+      "skipped_by": "log",
+      "why": "The log keeps hashes, ids and other opaque runs nothing names: checksums, segment and chunk names are what place a download's failure."
+    },
+    {
+      "text": [
+        "aws wJalrXUtnFEMI/K7MDENG",
+        "/bPxRfiCYEXAMPLEKEY"
+      ],
+      "secrets": [
+        "K7MDENG"
+      ],
+      "skipped_by": "log",
+      "why": "The log keeps hashes, ids and other opaque runs nothing names: checksums, segment and chunk names are what place a download's failure."
+    },
+    {
+      "text": "creds YWxpY2U6aHVudGVyMg== sent",
+      "secrets": [
+        "YWxpY2U6aHVudGVyMg"
+      ],
+      "skipped_by": "log",
+      "why": "The log keeps hashes, ids and other opaque runs nothing names: checksums, segment and chunk names are what place a download's failure."
+    },
+    {
+      "text": "a basic check failed, bearer of bad news, Basic Authentication",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "Failed to load basic settings",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "author=Ada tokens=5 keyframes=3",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "design: blue",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "author: bob",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "monkey=1",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "passed: 3 of 4",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "the page needs a sign-in: retrying with the browser's cookies",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "AKIA is the prefix of an AWS key",
+      "kept_by": [
+        "log",
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "https://ada:secret@example.com/file.zip",
+      "display": "https://ada:***@example.com/file.zip"
+    },
+    {
+      "text": "ftp://ada:p%40ss:word@files.example.com:21/a?b=c@d",
+      "display": "ftp://ada:***@files.example.com:21/a?b=c@d"
+    },
+    {
+      "text": "https://token123@example.com/x",
+      "display": "https://***@example.com/x"
+    },
+    {
+      "text": "https://ada:@example.com",
+      "display": "https://ada:***@example.com"
+    },
+    {
+      "text": "server answered 403 for https://ada:secret@example.com/f and ftp://u:p@h:21.",
+      "display": "server answered 403 for https://ada:***@example.com/f and ftp://u:***@h:21."
+    },
+    {
+      "text": "https://proxy.example/?u=https://ada:NESTEDPW@h/x",
+      "display": "https://proxy.example/?u=https://ada:***@h/x"
+    },
+    {
+      "text": "https://proxy.example/https://ada:NESTEDPW@h/x",
+      "display": "https://proxy.example/https://ada:***@h/x"
+    },
+    {
+      "text": "https://user:pa/ss@host/f",
+      "display": "https://user:***@host/f"
+    },
+    {
+      "text": "https://user:pa#ss@host/f",
+      "display": "https://user:***@host/f"
+    },
+    {
+      "text": "https://user:pa?ss@host/f",
+      "display": "https://user:***@host/f"
+    },
+    {
+      "text": "https://example.com/a@b/c?mail=x@y",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "https://example.com",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "not a link",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "mail ada@example.com about http://example.com/x",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "http://[::1]:8080/a@b",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "https://example.com:8443/a@b/c",
+      "kept_by": [
+        "display"
+      ]
+    },
+    {
+      "text": "url=\"https://ada:pw@example.com/a?token=t0k#access_token=f00\"",
+      "log": "url=\"https://ada:***@example.com/a?token=***\""
+    },
+    {
+      "text": "Opening 'https://example.com/live.m3u8?abcdef' for reading",
+      "log": "Opening 'https://example.com/live.m3u8?***' for reading"
+    },
+    {
+      "text": "https://example.com/a?id=7#t=10",
+      "log": "https://example.com/a?id=***#***"
+    },
+    {
+      "text": "https://example.com/a?empty=&x",
+      "log": "https://example.com/a?empty=&***"
+    },
+    {
+      "text": "[(\"Cookie\", \"a=b\"), (\"Accept\", \"*/*\")]",
+      "log": "[(\"Cookie\", \"***\"), (\"Accept\", \"*/*\")]"
+    },
+    {
+      "text": "Login { user: \"ada\", password: \"hunter2\" }",
+      "log": "Login { user: \"ada\", password: \"***\" }"
+    },
+    {
+      "text": "X-Auth-Token: 1234",
+      "log": "X-Auth-Token: ***"
+    },
+    {
+      "text": "{\"name\":\"Cookie\",\"value\":\"x\"}",
+      "log": "{\"name\":\"Cookie\",\"value\":\"***\"}"
+    },
+    {
+      "text": "{\"value\":\"x\",\"name\":\"Cookie\"}",
+      "log": "{\"value\":\"***\",\"name\":\"Cookie\"}"
+    },
+    {
+      "text": "Header { name: \"Cookie\", value: \"x\" }",
+      "log": "Header { name: \"Cookie\", value: \"***\" }"
+    },
+    {
+      "text": "{\"cookies\":[{\"name\":\"theme\",\"value\":\"dark\"}],\"site\":\"a\"}",
+      "log": "{\"cookies\":***,\"site\":\"a\"}"
+    },
+    {
+      "text": "X-Auth-Token: Bearer\nabc123 next=1",
+      "log": "X-Auth-Token: *** next=1"
+    },
+    {
+      "text": "yt-dlp --password -dashPW1 -v",
+      "log": "yt-dlp --password *** -v"
+    },
+    {
+      "text": "stderr=a / Cookie: x=1; y=2 / ERROR: real cause",
+      "log": "stderr=a / Cookie: *** / ERROR: real cause"
+    },
+    {
+      "text": "cookies=3 site=example.com error=boom",
+      "log": "cookies=*** site=example.com error=boom"
+    },
+    {
+      "text": "https://example.com/plain/path.mp4 stays",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "2026-10-13T10:00:00Z  INFO wirecatch_core: download 12 finished in 3.2s",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "error=the server answered 404 path=C:\\Users\\ada\\Downloads\\a.zip",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "ratio: 0.5, speed=1.2 MB/s",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "ffmpeg: Stream #0:0: Video: h264, 1920x1080",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "שלום https://example.com/דף",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "ERROR: [youtube] abc: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication.",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "http://[::1]:8080/x and https://example.com:8443/a@b",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "INFO wirecatch_core::cookies: read 3 cookies from the browser",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "Options { api_key: None, timeout: 5 }",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "Url { scheme: \"https\", username: \"\", host: Some(Domain(\"h\")), path: \"/p\", query: None }",
+      "kept_by": [
+        "log"
+      ]
+    },
+    {
+      "text": "https://u:S3CR3T@h/",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "https://S3CR3T@h/",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "https://h/?a=S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "https://h/#S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "Cookie: x=S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "cookie=S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "authorization: Basic S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "\"password\":\"S3CR3T\"",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "password='S3CR3T'",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "token: S3CR3T",
+      "secrets": [
+        "S3CR3T"
+      ]
+    },
+    {
+      "text": "GET https://cdn.example.com/a/b.mp4?sig=abc#t=3 failed",
+      "diagnostics": "GET https://cdn.example.com/… failed"
+    },
+    {
+      "text": "at https://example.com/",
+      "diagnostics": "at https://example.com"
+    },
+    {
+      "text": "see (https://example.com/path).",
+      "diagnostics": "see (https://example.com/…)."
+    },
+    {
+      "text": "HTTPS://BOB:pw@Example.COM",
+      "diagnostics": "https://example.com"
+    },
+    {
+      "text": "to http://user:pw@[::1 now",
+      "diagnostics": "to [address] now"
+    },
+    {
+      "text": "http://[::1]:8080/secret",
+      "diagnostics": "http://[::1]:8080/…"
+    },
+    {
+      "text": "img data:image/png;base64,AAAA rejected",
+      "diagnostics": "img data:… rejected"
+    },
+    {
+      "text": "javascript:alert(document.cookie)",
+      "diagnostics": "javascript:…"
+    },
+    {
+      "text": "login alice:hunter2@host",
+      "diagnostics": "login [redacted]@host"
+    },
+    {
+      "text": "Cookie: sid=1; theme=dark",
+      "diagnostics": "Cookie: [redacted]"
+    },
+    {
+      "text": "access_token=xyz&x=1 api_key=k",
+      "diagnostics": "access_token=[redacted]&x=1 api_key=[redacted]"
+    },
+    {
+      "text": "first\nERROR forged\r\n\u0000second",
+      "diagnostics": "first ERROR forged second"
+    },
+    {
+      "text": "{\"Cookie\":\"foo=bar\"}",
+      "diagnostics": "{\"Cookie\":\"[redacted]\"}"
+    },
+    {
+      "text": "[{\"name\":\"Cookie\",\"value\":\"sessid=abc\"}]",
+      "diagnostics": "[{\"name\":\"Cookie\",\"value\":\"[redacted]\"}]"
+    },
+    {
+      "text": "[[\"Cookie\",\"a=b\"]]",
+      "diagnostics": "[[\"Cookie\",\"[redacted]\"]]"
+    },
+    {
+      "text": "Cookie: a=b\nUser-Agent: Firefox",
+      "diagnostics": "Cookie: [redacted] User-Agent: Firefox"
+    },
+    {
+      "text": "Cookie:a=b",
+      "diagnostics": "Cookie:[redacted]"
+    },
+    {
+      "text": "token:abc",
+      "diagnostics": "token:[redacted]"
+    },
+    {
+      "text": "Authorization:Basic dXNlcjpwYXNz",
+      "diagnostics": "Authorization:[redacted]"
+    },
+    {
+      "text": "GET https://a.example/x net::ERR_ABORTED 404",
+      "diagnostics": "GET https://a.example/… net::ERR_ABORTED 404"
+    },
+    {
+      "text": "(see https://example.com/x?token=abc)",
+      "diagnostics": "(see https://example.com/…)"
+    },
+    {
+      "text": "(token=abc) failed",
+      "diagnostics": "(token=[redacted]) failed"
+    },
+    {
+      "text": "token: Basic dXNlcjpwYXNz next=1",
+      "diagnostics": "token: [redacted] next=1"
+    },
+    {
+      "text": "X-Auth-Token: Token abc123 / ERROR: real cause",
+      "diagnostics": "X-Auth-Token: [redacted] / ERROR: real cause"
+    },
+    {
+      "text": "(token: abc) failed",
+      "diagnostics": "(token: [redacted]) failed"
+    },
+    {
+      "text": "<password>x</password>",
+      "diagnostics": "<password>[redacted]</password>"
+    },
+    {
+      "text": "password => 'x'",
+      "diagnostics": "password => '[redacted]'"
+    },
+    {
+      "text": "see www.example.com/watch?v=1",
+      "diagnostics": "see www.example.com/…"
+    },
+    {
+      "text": "get //cdn.example.com/a?x=1",
+      "diagnostics": "get //cdn.example.com/…"
+    },
+    {
+      "text": "Cannot write /home/alice/x.mp4",
+      "diagnostics": "Cannot write [path]"
+    },
+    {
+      "text": "from alice@example.com",
+      "diagnostics": "from [email]",
+      "private": [
+        "alice"
+      ]
+    },
+    {
+      "text": "see example.com:8080/download/x.mp4.",
+      "diagnostics": "see example.com:8080/…."
+    },
+    {
+      "text": "get localhost:3000/a/b and 10.0.0.2:81/c",
+      "diagnostics": "get localhost:3000/… and 10.0.0.2:81/…"
+    },
+    {
+      "text": "see (https://en.example.org/wiki/A_(b)).",
+      "diagnostics": "see (https://en.example.org/…)."
+    },
+    {
+      "text": "Cannot write C:/Users/x.mp4",
+      "diagnostics": "Cannot write [path]"
+    },
+    {
+      "text": "at line:42",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "TypeError: Failed to fetch. Why? 50/50 and/or 12:30",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "Expected one of \"key\", \"value\"",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "Cannot open my-very-long-video-file-name-here-2024-final.mp4",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "id 123e4567-e89b-12d3-a456-426614174000",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "Cannot fetch segment_00012345abcdefgh.ts",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "Cannot load chunk-ABCD1234efgh5678.js",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "request 0123456789abcdef failed",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "base64/path/like/thing/abcdefghijklmnop",
+      "kept_by": [
+        "diagnostics"
+      ]
+    },
+    {
+      "text": "see www.example.com/watch?v=privatevideo&list=abc",
+      "private": [
+        "privatevideo"
+      ]
+    },
+    {
+      "text": "get //cdn.example.com/a/b.mp4?Policy=eyJ&Expires=1 failed",
+      "private": [
+        "/a/b.mp4"
+      ]
+    },
+    {
+      "text": "open /private/path/report.pdf?Policy=x&Expires=1",
+      "private": [
+        "report.pdf"
+      ]
+    },
+    {
+      "text": "nav about:blank#frag",
+      "private": [
+        "frag"
+      ]
+    },
+    {
+      "text": "magnet:?xt=urn:btih:abc&dn=private.movie",
+      "private": [
+        "private.movie"
+      ]
+    },
+    {
+      "text": "mailto:alice@example.com?subject=hi",
+      "private": [
+        "alice"
+      ]
+    },
+    {
+      "text": "Cannot write /home/alice/Videos/private.mp4",
+      "private": [
+        "alice"
+      ]
+    },
+    {
+      "text": "Cannot write C:\\Users\\Alice\\Downloads\\secret-report.pdf",
+      "private": [
+        "Alice"
+      ]
+    },
+    {
+      "text": "Cannot write \\\\server\\share\\alice\\x.pdf",
+      "private": [
+        "alice"
+      ]
+    },
+    {
+      "text": "Cannot write ~/Videos/private.mp4",
+      "private": [
+        "private.mp4"
+      ]
+    },
+    {
+      "text": "page.html?q=private#top",
+      "private": [
+        "private"
+      ]
+    },
+    {
+      "text": "Cannot write C:/Users/Ehsan/Downloads/x.mp4 failed",
+      "private": [
+        "Ehsan"
+      ]
+    },
+    {
+      "text": "Cannot write D:/Videos/ehsan-holiday.mp4",
+      "private": [
+        "ehsan"
+      ]
+    },
+    {
+      "text": "see example.com/download/ehsan-private.mp4",
+      "private": [
+        "ehsan"
+      ]
+    }
+  ]
+}

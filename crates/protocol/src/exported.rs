@@ -543,6 +543,7 @@ mod tests {
             crate::app::exported_consts(),
             crate::desktop::exported_consts(),
             crate::extension::exported_consts(),
+            crate::secrets::exported_consts(),
             crate::version::since_tables(),
             format_tables(),
             audio_tables(),

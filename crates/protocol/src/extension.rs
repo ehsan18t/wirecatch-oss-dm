@@ -1,11 +1,13 @@
 //! What the browser extension hands over, and the settings it can change (D5).
 
 use std::collections::HashSet;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::secrets::HIDDEN;
 use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
 
 crate::exported::exported_consts! {
@@ -15,8 +17,8 @@ crate::exported::exported_consts! {
     pub const MAX_SITE_CHARS: usize = 253;
 }
 
-/// A download captured in the browser.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// A download captured in the browser. Its `Debug` hides the cookies, and the values of the headers that may carry a sign-in (see [`Header`]).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct NewDownload {
     /// Chosen by the extension, unique per handover. The app treats a repeated
@@ -60,6 +62,42 @@ pub struct NewDownload {
     pub media: Option<MediaHint>,
 }
 
+impl fmt::Debug for NewDownload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Taken apart, so a field added later does not compile until it is written here too.
+        let Self {
+            handover_id,
+            url,
+            referrer,
+            page_url,
+            suggested_name,
+            mime,
+            size_hint,
+            cookies,
+            user_agent,
+            extra_headers,
+            source,
+            queue,
+            media,
+        } = self;
+        f.debug_struct("NewDownload")
+            .field("handover_id", handover_id)
+            .field("url", url)
+            .field("referrer", referrer)
+            .field("page_url", page_url)
+            .field("suggested_name", suggested_name)
+            .field("mime", mime)
+            .field("size_hint", size_hint)
+            .field("cookies", &cookies.as_ref().map(|_| HIDDEN))
+            .field("user_agent", user_agent)
+            .field("extra_headers", extra_headers)
+            .field("source", source)
+            .field("queue", queue)
+            .field("media", media)
+            .finish()
+    }
+}
+
 /// What the extension knows about captured media.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -85,14 +123,48 @@ pub enum MediaKind {
     Page,
 }
 
-/// One HTTP request header.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// Headers that say nothing about the person, so they may follow a download to another site (compared in lowercase). Every other header (cookies, credentials, tokens in custom headers, the referring page's address) stays with the site the browser sent it to.
+pub const HEADERS_SAFE_FOR_ANY_SITE: &[&str] = &["accept", "accept-language"];
+
+/// One HTTP request header. Its `Debug` writes the value of a header that may carry a sign-in as `***` (see [`Header::may_carry_sign_in`]), so a log line that prints one does not show it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Header {
     /// The header's name, for example `Authorization`.
     pub name: String,
     /// The header's value.
     pub value: String,
+}
+
+impl Header {
+    /// Whether the header is one of [`HEADERS_SAFE_FOR_ANY_SITE`], whatever its case and surrounding space.
+    #[must_use]
+    pub fn is_safe_for_any_site(&self) -> bool {
+        let name = self.name.trim();
+        HEADERS_SAFE_FOR_ANY_SITE
+            .iter()
+            .any(|safe| name.eq_ignore_ascii_case(safe))
+    }
+
+    /// Whether the header may carry the person's sign-in: any header but `Referer` and those of [`HEADERS_SAFE_FOR_ANY_SITE`], since a site may put a token in a header of its own.
+    #[must_use]
+    pub fn may_carry_sign_in(&self) -> bool {
+        !(self.name.trim().eq_ignore_ascii_case("referer") || self.is_safe_for_any_site())
+    }
+}
+
+impl fmt::Debug for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value: &dyn fmt::Debug = if self.may_carry_sign_in() {
+            &HIDDEN
+        } else {
+            &self.value
+        };
+        f.debug_struct("Header")
+            .field("name", &self.name)
+            .field("value", value)
+            .finish()
+    }
 }
 
 /// What in the browser handed a download to the app.
@@ -564,6 +636,45 @@ pub(crate) fn apply_cases() -> Vec<(ExtensionSettings, ExtensionSettingsPatch)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn header(name: &str, value: &str) -> Header {
+        Header {
+            name: name.into(),
+            value: value.into(),
+        }
+    }
+
+    #[test]
+    fn debug_hides_what_may_carry_a_sign_in() {
+        for name in ["Cookie", "Authorization", "X-Auth-Token", "X-Custom"] {
+            let written = format!("{:?}", header(name, "SECRET1"));
+            assert_eq!(
+                written,
+                format!("Header {{ name: {name:?}, value: \"***\" }}")
+            );
+        }
+        for name in ["Referer", " accept ", "Accept-Language"] {
+            assert!(format!("{:?}", header(name, "shown")).contains("\"shown\""));
+        }
+        let download = NewDownload {
+            handover_id: "h".into(),
+            url: "https://example.com/f".into(),
+            referrer: None,
+            page_url: None,
+            suggested_name: None,
+            mime: None,
+            size_hint: None,
+            cookies: Some("sid=SECRET2".into()),
+            user_agent: None,
+            extra_headers: vec![header("Authorization", "Bearer SECRET3")],
+            source: CaptureSource::ContextMenu,
+            queue: None,
+            media: None,
+        };
+        let written = format!("{download:?} {download:#?}");
+        assert!(!written.contains("SECRET"), "{written}");
+        assert!(written.contains("cookies: Some(\"***\")"), "{written}");
+    }
 
     #[test]
     fn patch_changes_only_given_fields() {

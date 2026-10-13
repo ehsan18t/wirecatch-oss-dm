@@ -5,7 +5,7 @@ import type { MediaHint } from './MediaHint';
 import type { QueueId } from './QueueId';
 
 /**
- * A download captured in the browser.
+ * A download captured in the browser. Its `Debug` hides the cookies, and the values of the headers that may carry a sign-in (see [`Header`]).
  */
 export type NewDownload = {
   /**

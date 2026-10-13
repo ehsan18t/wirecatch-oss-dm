@@ -45,11 +45,6 @@ const FORBIDDEN: &[&str] = &[
 /// Headers that must appear at most once in a request.
 const SINGLE: &[&str] = &["cookie", "referer", "authorization"];
 
-/// Headers that say nothing about the user, so they may follow a download to
-/// another site. Everything else (cookies, credentials, tokens in custom headers,
-/// the referring page's address) stays with the site the browser sent it to.
-const SAFE_FOR_ANY_SITE: &[&str] = &["accept", "accept-language"];
-
 /// Whether a client may set a header with this name.
 pub(crate) fn is_allowed(name: &str) -> bool {
     let name = name.trim().to_ascii_lowercase();
@@ -64,17 +59,11 @@ pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
         .map(|h| h.value.as_str())
 }
 
-/// `headers` without the sign-in they carry, or `None` when they carry none:
-/// cookies, `Authorization` and any other header that may hold a token are
-/// dropped; the referring page and the harmless headers of
-/// [`SAFE_FOR_ANY_SITE`] stay.
+/// `headers` without the sign-in they carry, or `None` when they carry none: cookies, `Authorization` and any other header that may hold a token are dropped (see [`Header::may_carry_sign_in`]); the referring page and the harmless headers of [`HEADERS_SAFE_FOR_ANY_SITE`](wirecatch_protocol::extension::HEADERS_SAFE_FOR_ANY_SITE) stay.
 pub(crate) fn without_sign_in(headers: &[Header]) -> Option<Vec<Header>> {
     let kept: Vec<Header> = headers
         .iter()
-        .filter(|h| {
-            let name = h.name.trim().to_ascii_lowercase();
-            name == "referer" || SAFE_FOR_ANY_SITE.contains(&name.as_str())
-        })
+        .filter(|h| !h.may_carry_sign_in())
         .cloned()
         .collect();
     (kept.len() != headers.len()).then_some(kept)
@@ -85,7 +74,7 @@ pub(crate) fn without_sign_in(headers: &[Header]) -> Option<Vec<Header>> {
 pub(crate) fn for_another_site(headers: &[Header]) -> Vec<Header> {
     headers
         .iter()
-        .filter(|h| SAFE_FOR_ANY_SITE.contains(&h.name.trim().to_ascii_lowercase().as_str()))
+        .filter(|h| h.is_safe_for_any_site())
         .cloned()
         .collect()
 }

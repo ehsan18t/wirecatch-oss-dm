@@ -7611,6 +7611,7 @@ dependencies = [
  "tokio",
  "ts-rs",
  "url",
+ "wirecatch-test-support",
 ]
 
 [[package]]
@@ -7651,6 +7652,8 @@ dependencies = [
  "quinn",
  "rcgen",
  "rustls",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-rustls",
  "tracing",

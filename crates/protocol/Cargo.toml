@@ -24,6 +24,8 @@ tokio = ["dep:tokio"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["io-util", "rt", "macros"] }
+# The cases of the secret rules, shared with their TypeScript port.
+wirecatch-test-support = { path = "../test-support", features = ["redaction"] }
 
 [lints]
 workspace = true

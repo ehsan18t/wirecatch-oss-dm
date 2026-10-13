@@ -16,6 +16,8 @@
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
 //!
+//! With the `redaction` feature, `redaction`: the samples both redactions (the log's and the extension's) are tested against, read from `data/redaction.json`, which the extension's tests load too.
+//!
 //! With the `logs` feature, `logs::Logs`: what the code under test logs, as
 //! structured events.
 //!
@@ -48,6 +50,8 @@ pub mod http;
 pub mod http3;
 #[cfg(feature = "logs")]
 pub mod logs;
+#[cfg(feature = "redaction")]
+pub mod redaction;
 #[cfg(feature = "servers")]
 pub mod silent;
 #[cfg(feature = "servers")]

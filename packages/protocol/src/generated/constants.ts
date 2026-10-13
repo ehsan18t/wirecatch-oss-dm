@@ -216,6 +216,138 @@ export const MAX_IGNORED_SITES = 1000;
 export const MAX_SITE_CHARS = 253;
 
 /**
+ * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.
+ */
+export const SECRET_WORDS: readonly string[] = [
+  'token',
+  'secret',
+  'password',
+  'passwd',
+  'passphrase',
+  'pass',
+  'pwd',
+  'passcode',
+  'session',
+  'sessionid',
+  'sessid',
+  'jsessionid',
+  'phpsessid',
+  'sid',
+  'sig',
+  'signature',
+  'hdnts',
+  'key',
+  'apikey',
+  'accesskey',
+  'privatekey',
+  'private',
+  'auth',
+  'authentication',
+  'authorization',
+  'bearer',
+  'credential',
+  'credentials',
+  'cookie',
+  'cookies',
+  'csrf',
+  'xsrf',
+  'jwt',
+  'otp',
+];
+
+/**
+ * Endings that make a segment run together from words a secret's: `accesstoken`, `clientsecret`, `oauth`, `proxyauthorization`, `xapikey`. Only as an ending, so `tokens` and `author` keep their values.
+ */
+export const SECRET_ENDINGS: readonly string[] = [
+  'token',
+  'secret',
+  'password',
+  'passwd',
+  'passphrase',
+  'passcode',
+  'auth',
+  'authorization',
+  'credential',
+  'credentials',
+  'cookie',
+  'apikey',
+  'accesskey',
+  'privatekey',
+  'sessionid',
+  'sessid',
+  'signature',
+];
+
+/**
+ * Secret words that name a password, whose value after a `:` may be several words (`password: correct horse battery staple`).
+ */
+export const PASSWORD_WORDS: readonly string[] = [
+  'password',
+  'passwd',
+  'passphrase',
+  'pass',
+  'pwd',
+  'passcode',
+];
+
+/**
+ * Headers that carry the browser's cookies, compared in lowercase. A cookie header's value holds `;`, `=` and quotes, and runs to the end of its field.
+ */
+export const COOKIE_HEADERS: readonly string[] = ['cookie', 'set-cookie'];
+
+/**
+ * Headers that carry a sign-in, compared in lowercase. Their value holds spaces and, for `Digest`, `name=value` pairs of its own, and runs to the end of its field.
+ */
+export const AUTHORIZATION_HEADERS: readonly string[] = ['authorization', 'proxy-authorization'];
+
+/**
+ * Authorization schemes whose next word is a credential, compared in lowercase. `Digest` is not one: its credential is a list of named pairs.
+ */
+export const AUTH_SCHEMES: readonly string[] = ['bearer', 'basic', 'negotiate', 'ntlm'];
+
+/**
+ * Shortest word after a scheme other than `Bearer` that is taken for a credential.
+ */
+export const CREDENTIAL_MIN_CHARS = 8;
+
+/**
+ * How services start their keys, compared as written: those of Stripe, Anthropic, `OpenAI`, `GitHub`, `GitLab`, npm, Slack, AWS and Google.
+ */
+export const KEY_PREFIXES: readonly string[] = [
+  'sk_live_',
+  'sk_test_',
+  'sk-live-',
+  'sk-test-',
+  'pk_live_',
+  'pk_test_',
+  'rk_live_',
+  'rk_test_',
+  'sk-ant-',
+  'sk-proj-',
+  'ghp_',
+  'gho_',
+  'ghu_',
+  'ghs_',
+  'ghr_',
+  'github_pat_',
+  'glpat-',
+  'npm_',
+  'xoxa-',
+  'xoxb-',
+  'xoxp-',
+  'xoxr-',
+  'xoxs-',
+  'AKIA',
+  'ASIA',
+  'AIza',
+];
+
+/**
+ * Fewest characters after a key prefix for a word to be taken for a key, so prose that starts the same way (`AKIA` alone) is kept.
+ */
+export const KEY_MIN_REST = 16;
+
+/**
  * The protocol version that added each call (D32): a client sends a call only on a connection whose version has it.
  */
 export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
