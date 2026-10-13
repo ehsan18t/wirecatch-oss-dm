@@ -3,9 +3,13 @@
 //! extension's capture flow, with and without confirmation.
 
 use std::collections::{HashMap, VecDeque};
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncWriteExt, DuplexStream};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wirecatch_core::{Manager, serve_connection};
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
@@ -39,6 +43,14 @@ struct Client {
 impl Client {
     fn connect(manager: &Manager) -> Self {
         let (stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
+        Self::serving(manager, stream, server_side)
+    }
+
+    /// A client on `stream`, served on `server_side`, the other end of it.
+    fn serving<S>(manager: &Manager, stream: DuplexStream, server_side: S) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let server = tokio::spawn(serve_connection(manager.clone(), server_side));
         Self {
             stream,
@@ -464,6 +476,71 @@ async fn settings_changes_reach_every_client() -> TestResult {
     assert!(matches!(
         firefox.next_event().await?,
         Event::QueuesChanged(q) if q.iter().any(|q| q.name == "Later")
+    ));
+    Ok(())
+}
+
+/// The server's end of a stream whose first flush waits for `release`: what the server
+/// wrote is already readable, but the server is held right after writing it.
+struct FirstFlushHeld {
+    stream: DuplexStream,
+    release: Option<oneshot::Receiver<()>>,
+}
+
+impl AsyncRead for FirstFlushHeld {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for FirstFlushHeld {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        if let Some(release) = &mut self.release {
+            ready!(Pin::new(release).poll(cx)).map_err(io::Error::other)?;
+            self.release = None;
+        }
+        Pin::new(&mut self.stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream).poll_shutdown(cx)
+    }
+}
+
+// A client may act as soon as its hello is answered, before the server's task runs
+// again; a change made in that moment still reaches it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_change_made_as_the_hello_is_answered_reaches_the_client() -> TestResult {
+    let h = Harness::new().await?;
+    let (stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
+    let (release, held) = oneshot::channel();
+    let server_side = FirstFlushHeld {
+        stream: server_side,
+        release: Some(held),
+    };
+    let mut client = Client::serving(&h.manager, stream, server_side);
+    let reply = client
+        .call(hello(MIN_PROTOCOL_VERSION, Some(PROTOCOL_VERSION)))
+        .await?;
+    assert!(matches!(reply, Ok(Reply::Hello(_))), "{reply:?}");
+
+    tune(&h.manager, |s| s.extension.capture_enabled = false)?;
+    release.send(()).map_err(|()| "the server stopped")?;
+    assert!(matches!(
+        client.next_event().await?,
+        Event::ExtensionSettingsChanged(s) if !s.capture_enabled
     ));
     Ok(())
 }

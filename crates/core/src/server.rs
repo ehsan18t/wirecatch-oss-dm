@@ -54,9 +54,13 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let mut frames = FrameReader::default();
-    let Some((hello, version)) = handshake(&mut frames, &mut stream).await? else {
+    let Some((id, hello, version)) = handshake(&mut frames, &mut stream).await? else {
         return Ok(());
     };
+    // Subscribed before the hello is answered: a client told it is connected gets every
+    // change made from then on, even one made before this task runs again.
+    let mut events = manager.subscribe_events();
+    send(&mut stream, ok(id, hello_reply(version)), version).await?;
     debug!(
         client = ?hello.client,
         client_version = %hello.client_version,
@@ -64,7 +68,6 @@ where
         "client connected"
     );
 
-    let mut events = manager.subscribe_events();
     // Request tasks hand their responses back here, to be written by this task.
     let (responder, mut responses) = mpsc::unbounded_channel::<Message>();
     let slots = Arc::new(Semaphore::new(MAX_REQUESTS_IN_FLIGHT));
@@ -142,9 +145,12 @@ fn start_request(
 }
 
 /// Reads the first frame and checks it is a `hello` naming protocol versions this app
-/// speaks too. Returns the hello and the version the connection speaks, or `None` after
-/// telling the client why it is refused.
-async fn handshake<S>(frames: &mut FrameReader, stream: &mut S) -> io::Result<Option<(Hello, u32)>>
+/// speaks too. Returns its request id, the hello and the version the connection speaks,
+/// for the caller to answer, or `None` after telling the client why it is refused.
+async fn handshake<S>(
+    frames: &mut FrameReader,
+    stream: &mut S,
+) -> io::Result<Option<(u64, Hello, u32)>>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
@@ -156,10 +162,7 @@ where
                 .versions()
                 .and_then(|theirs| VersionRange::THIS_BUILD.agree(theirs))
             {
-                Ok(version) => {
-                    send(stream, ok(id, hello_reply(version)), version).await?;
-                    return Ok(Some((hello, version)));
-                }
+                Ok(version) => return Ok(Some((id, hello, version))),
                 Err(refused) => version_refusal(id, &hello, refused),
             },
             Err(refusal) => *refusal,
