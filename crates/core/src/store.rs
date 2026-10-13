@@ -181,8 +181,8 @@ pub(crate) enum Recovery {
 const DAMAGED_SUFFIX: &str = ".damaged-";
 /// Suffix of the copy taken before a schema upgrade, followed by the schema version it holds.
 const BACKUP_SUFFIX: &str = ".bak-v";
-/// SQLite's own files next to the database, which belong to it and move with it.
-const SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
+/// The suffixes of SQLite's own files next to the database (`wirecatch.db-wal`), which belong to it and move with it.
+pub const DATABASE_SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
 /// How long a damaged list set aside, or a copy taken before an upgrade, is kept. Both hold every download's cookies, which a live download forgets after a week (D17); a month leaves time to recover a list by hand.
 const KEEP_COPIES_FOR: Duration = Duration::from_hours(720);
 
@@ -707,7 +707,7 @@ fn set_aside(path: &Path) -> Result<PathBuf> {
         .map_or(0, |since| since.as_millis());
     let kept_at = with_suffix(path, &format!("{DAMAGED_SUFFIX}{stamp}"));
     let mut moves = vec![(path.to_path_buf(), kept_at.clone())];
-    for side in SIDE_FILES {
+    for side in DATABASE_SIDE_FILES {
         let from = with_suffix(path, side);
         if from.exists() {
             moves.push((from, with_suffix(&kept_at, side)));

@@ -38,5 +38,5 @@ pub use manager::{
 };
 pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
-pub use store::DATABASE_FILE;
+pub use store::{DATABASE_FILE, DATABASE_SIDE_FILES};
 pub use user_error::StartupNotice;
