@@ -8,6 +8,7 @@ import {
   type DownloadControl,
   type DownloadState,
 } from '../capture/handover';
+import { fallback } from '../diag/log';
 import { baseName } from '../file-types';
 import { nonEmpty } from '../text';
 import type { InFlightEntry } from './deps';
@@ -68,7 +69,9 @@ export async function recoverHandover(
   if (state === null || (state !== 'unreadable' && state.state === 'interrupted')) {
     return { result: 'no_browser_copy', name, appMayHave: false };
   }
-  const outcome = await deps.withdraw(handoverId).catch(() => null);
+  const outcome = await deps
+    .withdraw(handoverId)
+    .catch(fallback('capture', 'Could not ask the app to withdraw a handover', null));
   if (outcome === 'already_started') {
     return {
       result: REMOVAL_RESULTS[await removeBrowserCopy(downloads, id)],

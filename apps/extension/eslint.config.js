@@ -11,6 +11,17 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
+      // Every caught error is logged, used or explained in place (docs/ENGINEERING.md, section 6);
+      // `fallback` from the logger makes a handler that logs.
+      files: ['src/**'],
+      rules: {
+        'wirecatch/no-silent-catch': [
+          'error',
+          { factories: [{ name: 'fallback', module: 'diag/log' }] },
+        ],
+      },
+    },
+    {
       // Only `src/lib/native` opens the connection to the app, so there is one place that owns its lifecycle and errors.
       files: ['src/**'],
       ignores: ['src/lib/native/**'],

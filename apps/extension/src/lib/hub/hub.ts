@@ -13,6 +13,7 @@ import {
   type JudgingSettings,
 } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
+import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
@@ -117,8 +118,14 @@ export class Hub {
     this.#client.onLateAnswer((call, outcome) => this.#onLateAnswer(call, outcome));
     // All are read before `ready`, so no new download can overwrite the list of paused ones first.
     const [cached, leftPaused] = await Promise.all([
-      this.#deps.cache.load().catch(() => null),
-      this.#deps.inFlight?.load().catch(() => []) ?? Promise.resolve([]),
+      this.#deps.cache
+        .load()
+        .catch(fallback('settings', 'Could not read the saved settings', null)),
+      this.#deps.inFlight
+        ?.load()
+        .catch(
+          fallback('capture', 'Could not read the downloads an earlier run left paused', []),
+        ) ?? Promise.resolve([]),
       this.#notices.load(),
     ]);
     this.#settings.loaded(cached);
@@ -262,7 +269,8 @@ export class Hub {
       // nothing has been sent yet when this fails.
       try {
         await this.#app.fetchSettings();
-      } catch {
+      } catch (error) {
+        log.warn('hub', 'Could not reach the app to send media', error);
         return { ok: false, message: MEDIA_UNREACHABLE };
       }
     }
@@ -290,7 +298,8 @@ export class Hub {
       await this.#deps.downloads.start(url);
       if (message !== null) this.#notices.warn(message);
       return 'browser';
-    } catch {
+    } catch (error) {
+      log.error('hub', 'The browser could not start the download either', error);
       this.#notices.error(BROWSER_DOWNLOAD_FAILED);
       return 'failed';
     }
@@ -299,7 +308,8 @@ export class Hub {
   async #siteAccess(url: string): Promise<boolean> {
     try {
       return await this.#deps.hasSiteAccess(url);
-    } catch {
+    } catch (error) {
+      log.warn('hub', 'Could not check access to the site; taking it as not granted', error);
       return false;
     }
   }
@@ -321,8 +331,8 @@ export class Hub {
     try {
       const settings = await this.#app.fetchSettings();
       if (settings !== null) return { settings, fromApp: true };
-    } catch {
-      // Unreachable: fall back to the cache below.
+    } catch (error) {
+      log.warn('settings', 'Could not reach the app for its settings; judging by the cache', error);
     }
     // Read after the wait: settings that came in meanwhile are the newest copy.
     const { cached } = this.#settings;
@@ -335,8 +345,9 @@ export class Hub {
         handoverId === null ? [] : [{ id, handoverId }],
       );
       await this.#deps.inFlight?.save(entries);
-    } catch {
-      // Session storage unavailable: recovery after a restart is best effort.
+    } catch (error) {
+      // Recovery after a restart is best effort; this download is still handled now.
+      log.warn('capture', 'Could not save the downloads waiting paused', error);
     }
   }
 

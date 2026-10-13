@@ -1,4 +1,5 @@
 import type { ElementInfo } from './messages';
+import { fallback } from '../diag/log';
 import { elementInfo } from './page-media';
 
 /** A "nothing to download" answer is asked again after this long (media may show up once playback starts). */
@@ -40,13 +41,15 @@ export class DownloadableChecks {
     if (!this.#asking.has(el)) {
       this.#asking.add(el);
       this.#check(elementInfo(el))
-        .catch(() => false)
+        .catch(fallback('page', 'Could not ask whether to offer this media', false))
         .then((show) => {
           this.#asking.delete(el);
           this.#known.set(el, { src, show, at: this.#now() });
           this.#answered();
         })
-        .catch(() => undefined);
+        .catch(
+          fallback('page', 'Could not record whether to offer this media', undefined, 'error'),
+        );
     }
     return known?.show ?? false;
   }

@@ -13,6 +13,7 @@ import {
   type Snapshot,
 } from '../messages';
 import { patchOf, type SettingsChange } from '../protocol';
+import { log } from '../diag/log';
 import { Requests } from './requests';
 
 export interface Feedback {
@@ -142,7 +143,8 @@ export class PopupModel {
     const { id, result } = this.#requests.start();
     try {
       this.#channel.postMessage({ id, command });
-    } catch {
+    } catch (error) {
+      log.warn('popup', 'Could not reach the background', error);
       this.#requests.settle(id, RESTARTED);
     }
     return result;

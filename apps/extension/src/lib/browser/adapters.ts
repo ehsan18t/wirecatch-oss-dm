@@ -6,6 +6,7 @@ import type { BrowserInfo } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
 import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '../cookies';
+import { fallback, log } from '../diag/log';
 import type {
   Badge,
   BrowserDownloads,
@@ -40,7 +41,11 @@ export function isFirefox(): boolean {
 
 async function browserInfo(): Promise<BrowserInfo> {
   const runtime: typeof browser.runtime & FirefoxRuntime = browser.runtime;
-  const firefox = runtime.getBrowserInfo ? await runtime.getBrowserInfo().catch(() => null) : null;
+  const firefox = runtime.getBrowserInfo
+    ? await runtime
+        .getBrowserInfo()
+        .catch(fallback('native', 'Could not read the browser name and version', null))
+    : null;
   const nav: Navigator & NavigatorClues = navigator;
   return detectBrowser({
     firefox,
@@ -65,15 +70,18 @@ export async function cookieHeaderFor(
   storeId: string | null,
   context: CookieContext,
 ): Promise<string | null> {
+  let rejected: unknown = null;
   for (const query of cookieQueries(url, storeId, context)) {
     try {
       const cookies = await browser.cookies.getAll(query);
       return cookieHeader(cookiesToSend(cookies, url, context));
-    } catch {
+    } catch (error) {
       // This browser rejects the query (first-party isolation, or no partitioned cookies): try the next.
+      rejected = error;
     }
   }
   // Without cookies the app still tries; downloads that need a login then report it in the app.
+  if (rejected !== null) log.warn('capture', 'Could not read the cookies; sending none', rejected);
   return null;
 }
 
@@ -104,7 +112,7 @@ export function browserDownloads(): BrowserDownloads {
 }
 
 /** `storage.session`, which survives a restarted background script but not a browser restart; missing in old browsers. */
-function sessionArea(): typeof browser.storage.session | undefined {
+export function sessionArea(): typeof browser.storage.session | undefined {
   return (browser.storage as Partial<typeof browser.storage>).session;
 }
 
@@ -168,7 +176,9 @@ export async function tabInfo(tabId: number): Promise<TabInfo | null> {
       incognito: tab.incognito,
       cookieStoreId: cookieStoreOf(tab),
     };
-  } catch {
+  } catch (error) {
+    // The tab closed meanwhile, or is one the extension cannot see.
+    log.debug('media', 'Could not read a tab', error);
     return null;
   }
 }
@@ -188,12 +198,11 @@ export function toolbarBadge(): Badge {
       const key = `${text}\n${title}`;
       if (key === last) return;
       last = key;
-      void browser.action.setBadgeText({ text }).catch(() => undefined);
-      void browser.action.setTitle({ title }).catch(() => undefined);
+      const failed = fallback('hub', 'Could not update the toolbar button', undefined);
+      void browser.action.setBadgeText({ text }).catch(failed);
+      void browser.action.setTitle({ title }).catch(failed);
       if (text !== '') {
-        void browser.action
-          .setBadgeBackgroundColor({ color: __BADGE_COLOR__ })
-          .catch(() => undefined);
+        void browser.action.setBadgeBackgroundColor({ color: __BADGE_COLOR__ }).catch(failed);
       }
     },
   };

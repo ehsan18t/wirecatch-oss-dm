@@ -7,6 +7,7 @@ import type {
 } from '@wirecatch/protocol';
 import type { CookieContext } from '../cookies';
 import { RequestError, type RequestErrorKind } from '../native/client';
+import { fallback, log } from '../diag/log';
 import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
 
@@ -254,7 +255,9 @@ async function withLatestVerdict(
   downloads: DownloadControl,
   id: number,
 ): Promise<CaptureCandidate> {
-  const latest = await downloads.state(id).catch(() => null);
+  const latest = await downloads
+    .state(id)
+    .catch(fallback('capture', 'Could not read the latest danger verdict of a download', null));
   const danger = nonEmpty(latest?.danger);
   return danger === null ? candidate : { ...candidate, danger };
 }
@@ -279,7 +282,8 @@ export async function readBrowserCopy(
 ): Promise<DownloadState | null | 'unreadable'> {
   try {
     return await downloads.state(id);
-  } catch {
+  } catch (error) {
+    log.warn('capture', 'Could not read a browser download', error);
     return 'unreadable';
   }
 }
@@ -299,7 +303,8 @@ export async function removeBrowserCopy(
   if (settled !== null) return settled;
   try {
     await downloads.cancel(id);
-  } catch {
+  } catch (error) {
+    log.warn('capture', 'Could not cancel the browser copy of a download', error);
     // Only a copy read as paused is known to wait; one that would not say may be running.
     return before === 'unreadable' ? 'kept_running' : 'left_paused';
   }
@@ -307,8 +312,9 @@ export async function removeBrowserCopy(
   if (after !== 'erase') return after;
   try {
     await downloads.erase(id);
-  } catch {
+  } catch (error) {
     // Cancelled but still listed: harmless, the person can clear it from the list.
+    log.debug('capture', 'Could not erase a cancelled download from the list', error);
   }
   return 'removed';
 }
@@ -337,7 +343,8 @@ export async function resumeBrowserCopy(
   try {
     await downloads.resume(id);
     return 'resumed';
-  } catch {
+  } catch (error) {
+    log.warn('capture', 'Could not resume the browser copy of a download', error);
     const state = await readBrowserCopy(downloads, id);
     // A copy that cannot be read may still be paused, so the person is asked to look.
     if (state === 'unreadable') return 'maybe_paused';

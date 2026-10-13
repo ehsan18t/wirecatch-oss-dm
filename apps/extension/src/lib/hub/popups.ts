@@ -6,6 +6,7 @@ import {
   type Snapshot,
 } from '../messages';
 import type { MediaCommands } from './deps';
+import { log } from '../diag/log';
 import { describeError } from './notices';
 
 export type PopupChannel = Channel<BackgroundMessage, unknown>;
@@ -71,7 +72,9 @@ export class Popups {
   #post(channel: PopupChannel, message: BackgroundMessage): void {
     try {
       channel.postMessage(message);
-    } catch {
+    } catch (error) {
+      // The popup closed between two updates.
+      log.debug('hub', 'A popup closed before its update', error);
       this.#channels.delete(channel);
     }
   }

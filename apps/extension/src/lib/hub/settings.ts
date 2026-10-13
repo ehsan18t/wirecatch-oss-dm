@@ -1,4 +1,5 @@
 import type { ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
+import { fallback } from '../diag/log';
 import type { Snapshot } from '../messages';
 import type { CachedSettings, HubDeps } from './deps';
 
@@ -91,9 +92,10 @@ export class KnownSettings {
   #rememberClosed(): void {
     if (this.#cached === null || this.#cached.appClosed) return;
     this.#cached = { ...this.#cached, appClosed: true };
-    this.#deps.cache.save(this.#cached).catch(() => {
-      // Not kept: the next wake connects once more to find out.
-    });
+    // Not kept, the next wake connects once more to find out.
+    this.#deps.cache
+      .save(this.#cached)
+      .catch(fallback('settings', 'Could not remember that the app is closed', undefined));
   }
 
   #save(): void {
@@ -105,16 +107,18 @@ export class KnownSettings {
       appClosed: false,
     };
     this.#cached = value;
-    this.#deps.cache.save(value).catch(() => {
-      // The cache is only for display; a failed write changes nothing else.
-    });
+    // The cache is only for display; a failed write changes nothing else.
+    this.#deps.cache
+      .save(value)
+      .catch(fallback('settings', 'Could not save the settings cache', undefined));
   }
 
   #publishButtonSetting(on: boolean): void {
     if (this.#buttonSetting === on) return;
     this.#buttonSetting = on;
-    this.#deps.mediaButtonSetting?.save(on).catch(() => {
-      // Not saved: the buttons keep the previous setting until the next change.
-    });
+    // Not saved, the buttons keep the previous setting until the next change.
+    this.#deps.mediaButtonSetting
+      ?.save(on)
+      .catch(fallback('settings', 'Could not save the media button setting', undefined));
   }
 }

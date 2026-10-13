@@ -1,5 +1,6 @@
 /** The notices the popup and the badge show, and which outcomes are worth one. */
 import type { DownloadState, HandoverResult } from '../capture/handover';
+import { fallback } from '../diag/log';
 import type { Notice } from '../messages';
 import type { NoticeStore } from './deps';
 import { DuplicateWatch } from './duplicates';
@@ -11,6 +12,9 @@ import {
   stuckPaused,
 } from './notices';
 import type { RecoveryResult } from './recovery';
+
+/** Notices that cannot be saved last as long as this background script. */
+const NOT_SAVED = 'Could not save the notices';
 
 /**
  * Most notices kept. The popup lists them all, and a person who has not opened it for this many
@@ -73,7 +77,10 @@ export class NoticeBoard {
    * still counts.
    */
   async load(): Promise<void> {
-    const stored = (await this.#deps.store?.load().catch(() => [])) ?? [];
+    const stored =
+      (await this.#deps.store
+        ?.load()
+        .catch(fallback('notices', 'Could not read the saved notices', []))) ?? [];
     const paused = await Promise.all(stored.map((old) => this.#stillStands(old)));
     const kept = stored.filter(
       (old, i) =>
@@ -83,7 +90,9 @@ export class NoticeBoard {
         !this.#notices.some((now) => now.id === old.id || sameDownload(now, old)),
     );
     this.#notices = newestFirst([...this.#notices, ...kept]);
-    if (kept.length !== stored.length) this.#deps.store?.save(this.#notices).catch(() => undefined);
+    if (kept.length !== stored.length) {
+      this.#deps.store?.save(this.#notices).catch(fallback('notices', NOT_SAVED, undefined));
+    }
   }
 
   /** Whether a stored notice still stands as far as the browser can say: one not asking to resume always does. */
@@ -96,7 +105,9 @@ export class NoticeBoard {
   async #readCopy(downloadId: number | null): Promise<DownloadState | null | 'unreadable'> {
     const read = this.#deps.readCopy;
     if (downloadId === null || read === undefined) return 'unreadable';
-    return read(downloadId).catch(() => 'unreadable' as const);
+    return read(downloadId).catch(
+      fallback('notices', 'Could not read a browser download', 'unreadable' as const),
+    );
   }
 
   /**
@@ -235,8 +246,7 @@ export class NoticeBoard {
 
   #set(notices: Notice[]): void {
     this.#notices = newestFirst(notices);
-    // Session storage unavailable: the notices then last as long as this background script.
-    this.#deps.store?.save(this.#notices).catch(() => undefined);
+    this.#deps.store?.save(this.#notices).catch(fallback('notices', NOT_SAVED, undefined));
     this.#deps.changed();
   }
 }

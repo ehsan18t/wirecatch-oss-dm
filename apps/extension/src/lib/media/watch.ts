@@ -1,3 +1,4 @@
+import { fallback } from '../diag/log';
 import { classifyResponse, isNavigation, type ObservedResponse } from './detect';
 import { pageKey, type MediaRegistry } from './registry';
 
@@ -96,7 +97,9 @@ export class MediaWatcher {
 
   async #whenReady(): Promise<void> {
     if (this.#restored || this.#deps.ready === undefined) return;
-    await this.#deps.ready.catch(() => undefined);
+    await this.#deps.ready.catch(
+      fallback('media', 'Restoring the media lists failed', undefined, 'error'),
+    );
     this.#restored = true;
   }
 

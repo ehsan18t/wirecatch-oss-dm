@@ -1,4 +1,8 @@
+import { fallback, log } from '../diag/log';
 import type { DownloadItemLike } from './candidate';
+
+/** A failed takeover leaves the download in the browser, so the person sees it there, not in the app. */
+const TAKEOVER_FAILED = 'Taking over a download failed; the browser keeps it';
 
 /** The download events this extension listens to (`browser.downloads`). */
 export interface DownloadEvents {
@@ -62,9 +66,10 @@ export function registerCapture(
       try {
         handler
           .onDownload(item)
-          .catch(() => undefined)
+          .catch(fallback('capture', TAKEOVER_FAILED, undefined, 'error'))
           .finally(suggestOnce);
-      } catch {
+      } catch (error) {
+        log.error('capture', TAKEOVER_FAILED, error);
         suggestOnce();
       }
       // `suggest` is called asynchronously, so Chromium must be told to wait for it.
@@ -74,9 +79,9 @@ export function registerCapture(
   }
   downloads.onCreated.addListener((item) => {
     try {
-      handler.onDownload(item).catch(() => undefined);
-    } catch {
-      // A failure here leaves the download in the browser, untouched.
+      handler.onDownload(item).catch(fallback('capture', TAKEOVER_FAILED, undefined, 'error'));
+    } catch (error) {
+      log.error('capture', TAKEOVER_FAILED, error);
     }
   });
   return 'created';

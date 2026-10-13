@@ -7,9 +7,13 @@ import {
   type ContentRequest,
   type DownloadAnswer,
 } from './messages';
+import { fallback } from '../diag/log';
 import { matchingSite } from '../sites';
+import { parseUrl } from '../url';
 import type { MediaRegistry, SavedMedia } from './registry';
 
+/** A tab that cannot be read is treated as gone. */
+const TAB_UNREADABLE = 'Could not read a tab';
 /** What the background needs to know about a tab (`tabs.get`). */
 export interface TabInfo {
   url: string | null;
@@ -116,13 +120,10 @@ function cleanTitle(title: string | null | undefined): string | null {
 
 /** True when both are web addresses on the same origin (opaque origins never match). */
 function sameWebOrigin(a: string, b: string): boolean {
-  try {
-    const first = new URL(a);
-    const second = new URL(b);
-    return /^https?:$/.test(first.protocol) && first.origin === second.origin;
-  } catch {
-    return false;
-  }
+  const first = parseUrl(a);
+  const second = parseUrl(b);
+  if (first === null || second === null) return false;
+  return /^https?:$/.test(first.protocol) && first.origin === second.origin;
 }
 
 /**
@@ -181,8 +182,10 @@ export class MediaCenter {
 
   async #restore(): Promise<void> {
     const [saved, live] = await Promise.all([
-      this.#deps.store?.load().catch(() => null),
-      this.#deps.liveTabs?.().catch(() => undefined),
+      this.#deps.store
+        ?.load()
+        .catch(fallback('media', 'Could not read the saved media lists', null)),
+      this.#deps.liveTabs?.().catch(fallback('media', 'Could not list the open tabs', undefined)),
     ]);
     // Called even without saved lists, so every open tab's page is known from the start.
     this.#deps.registry.restore(
@@ -261,7 +264,7 @@ export class MediaCenter {
   /** The popup's list for a tab. */
   async view(tabId: number): Promise<MediaView> {
     await this.#ready;
-    const tab = await this.#deps.getTab(tabId).catch(() => null);
+    const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (!tab?.url || !/^https?:/i.test(tab.url)) {
       return { tabId, page: 'other', entries: [] };
     }
@@ -299,7 +302,7 @@ export class MediaCenter {
    */
   async downloadBest(tabId: number): Promise<MediaSendResult> {
     await this.#ready;
-    const tab = await this.#deps.getTab(tabId).catch(() => null);
+    const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (tab === null) return { ok: false, message: TAB_GONE };
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
     const sender: ContentSender = { tab: { id: tabId, url: tab.url ?? undefined }, frameId: 0 };
@@ -324,7 +327,7 @@ export class MediaCenter {
   /** Sends one item from the popup's list to the app. */
   async download(tabId: number, key: string): Promise<MediaSendResult> {
     await this.#ready;
-    const tab = await this.#deps.getTab(tabId).catch(() => null);
+    const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (tab === null) return { ok: false, message: TAB_GONE };
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
     const target = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).find(
@@ -345,9 +348,10 @@ export class MediaCenter {
     if (store === undefined || this.#saveTimer !== null) return;
     this.#saveTimer = setTimeout(() => {
       this.#saveTimer = null;
-      store.save(this.#deps.registry.save()).catch(() => {
-        // Session storage unavailable: the lists then last as long as this background script.
-      });
+      // Not saved, the lists last as long as this background script.
+      store
+        .save(this.#deps.registry.save())
+        .catch(fallback('media', 'Could not save the media lists', undefined));
     }, this.#deps.saveDelayMs ?? SAVE_DELAY_MS);
   }
 }

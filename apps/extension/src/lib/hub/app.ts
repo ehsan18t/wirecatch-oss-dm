@@ -8,6 +8,7 @@ import type {
   WithdrawOutcome,
 } from '@wirecatch/protocol';
 import { submit, type SubmitResult } from '../capture/handover';
+import { log } from '../diag/log';
 import type { NativeClient } from '../native/client';
 import type { HubTiming } from './deps';
 import type { KnownSettings } from './settings';
@@ -112,8 +113,9 @@ export class AppCalls {
         settings.type === 'extension_settings' ? settings.data : null,
         queues.type === 'queues' ? queues.data : null,
       );
-    } catch {
+    } catch (error) {
       // The status listener already reports a broken connection; a slow answer is retried on the next connection.
+      log.warn('settings', 'Could not refresh the settings and queues', error);
     }
   }
 

@@ -3,6 +3,7 @@
  * registration itself (filters, sender checks, browser differences) can be tested
  * without a browser. The background script passes the real `browser` APIs.
  */
+import { fallback, log } from '../diag/log';
 import { SITE_ORIGINS } from '../site-access';
 import type { ContentSender, MediaCenter, MediaSendResult } from './center';
 import type { ObservedResponse } from './detect';
@@ -90,11 +91,13 @@ export function registerMediaListeners(
     if (command !== MEDIA_COMMAND || tabId === undefined || tabId < 0) return;
     media.downloadBest(tabId).then(
       (result) => announce(tabId, result),
-      () => undefined,
+      (error: unknown) => log.error('media', 'The media shortcut failed', error),
     );
   });
   const onResponse = (details: ObservedResponse): void => {
-    watcher.onResponse(details).catch(() => undefined);
+    watcher
+      .onResponse(details)
+      .catch(fallback('media', 'Could not look at a response for media', undefined, 'error'));
   };
   // Observe only: no `blocking` option, so requests are never held up or changed.
   api.onResponseStarted.addListener(onResponse, FILE_REQUESTS, ['responseHeaders']);
@@ -103,7 +106,10 @@ export function registerMediaListeners(
   api.onTabRemoved.addListener((tabId) => watcher.onTabRemoved(tabId));
   // Address changes without a new document (history API, back-forward cache).
   const onUpdated = (tabId: number, change: { url?: string }): void => {
-    if (change.url !== undefined) watcher.onUrlChange(tabId, change.url).catch(() => undefined);
+    if (change.url === undefined) return;
+    watcher
+      .onUrlChange(tabId, change.url)
+      .catch(fallback('media', 'Could not follow a tab to its new address', undefined, 'error'));
   };
   if (api.firefox) api.onTabUpdated.addListener(onUpdated, { properties: ['url'] });
   else api.onTabUpdated.addListener(onUpdated);
@@ -114,7 +120,10 @@ export function registerMediaListeners(
     if (sender.id !== api.extensionId || sender.tab === undefined) return undefined;
     const answer = media.handleContentMessage(message, sender);
     if (answer === null) return undefined;
-    answer.then(sendResponse, () => sendResponse(null));
+    answer.then(sendResponse, (error: unknown) => {
+      log.error('media', 'Could not answer the media button', error);
+      sendResponse(null);
+    });
     return true;
   });
 }

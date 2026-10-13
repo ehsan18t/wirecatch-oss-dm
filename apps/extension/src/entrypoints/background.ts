@@ -16,6 +16,8 @@ import {
 } from '@/lib/browser/adapters';
 import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
+import { installDiagnostics } from '@/lib/diag/install';
+import { fallback, log } from '@/lib/diag/log';
 import type { MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
 import { MediaCenter, type MediaSendResult } from '@/lib/media/center';
@@ -32,13 +34,16 @@ const MENU_ID = 'wirecatch-download';
 /** "Download with Wirecatch" on links and media, created once per install or update. */
 function registerContextMenu(hub: Hub): void {
   browser.runtime.onInstalled.addListener(() => {
-    void browser.contextMenus.removeAll().then(() => {
-      browser.contextMenus.create({
-        id: MENU_ID,
-        title: 'Download with Wirecatch',
-        contexts: ['link', 'image', 'video', 'audio'],
-      });
-    });
+    browser.contextMenus
+      .removeAll()
+      .then(() => {
+        browser.contextMenus.create({
+          id: MENU_ID,
+          title: 'Download with Wirecatch',
+          contexts: ['link', 'image', 'video', 'audio'],
+        });
+      })
+      .catch(fallback('background', 'Could not add the context menu item', undefined, 'error'));
   });
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId !== MENU_ID) return;
@@ -46,7 +51,9 @@ function registerContextMenu(hub: Hub): void {
       tab === undefined
         ? undefined
         : { incognito: tab.incognito, cookieStoreId: cookieStoreOf(tab) };
-    hub.onMenuClick(info, menuTab).catch(() => undefined);
+    hub
+      .onMenuClick(info, menuTab)
+      .catch(fallback('hub', 'The context menu download failed', undefined, 'error'));
   });
 }
 
@@ -73,7 +80,8 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
           ok: result.ok,
           message: result.message,
         };
-        browser.tabs.sendMessage(tabId, message, { frameId: 0 }).catch(() => {
+        browser.tabs.sendMessage(tabId, message, { frameId: 0 }).catch((error: unknown) => {
+          log.debug('media', 'The page cannot show the answer; the popup shows it', error);
           hub.notify(result.ok ? 'warning' : 'error', result.message);
         });
       },
@@ -82,6 +90,7 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
 }
 
 export default defineBackground(() => {
+  installDiagnostics('background', self);
   const client = new NativeClient({ transport: browserTransport(), hello: helloFromExtension });
 
   const registry = new MediaRegistry();

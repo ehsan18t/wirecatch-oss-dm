@@ -10,6 +10,7 @@ import {
   type DownloadDelta,
   type DownloadEvents,
 } from '../src/lib/capture/register';
+import { diagnostics } from '../src/lib/diag/log';
 import { Hub } from '../src/lib/hub/hub';
 import { NativeClient } from '../src/lib/native/client';
 import { FakeApp, FakeDownloads, MemoryCache, downloadItem, flush } from './fakes';
@@ -212,9 +213,13 @@ describe('registerCapture on Chromium', () => {
       onDownload: () => Promise.reject(new Error('boom')),
       onDownloadMoved: () => undefined,
     });
+    diagnostics.clear();
     const { suggest } = fire(downloadItem());
     await flush();
     expect(suggest).toHaveBeenCalledTimes(1);
+    expect(diagnostics.entries()).toEqual([
+      expect.objectContaining({ level: 'error', scope: 'capture', detail: 'Error: boom' }),
+    ]);
   });
 
   it('calls suggest once when the handler throws before returning a promise', async () => {
@@ -225,11 +230,15 @@ describe('registerCapture on Chromium', () => {
         throw new Error('boom');
       },
     });
+    diagnostics.clear();
     const { suggest, returned } = fire(downloadItem());
     expect(returned).toBe(true);
     expect(suggest).toHaveBeenCalledTimes(1);
     await flush();
     expect(suggest).toHaveBeenCalledTimes(1);
+    expect(diagnostics.entries()).toEqual([
+      expect.objectContaining({ level: 'error', scope: 'capture', detail: 'Error: boom' }),
+    ]);
   });
 
   it('survives suggest throwing (the download was cancelled meanwhile)', async () => {
@@ -248,7 +257,7 @@ describe('registerCapture on Chromium', () => {
 });
 
 describe('registerCapture on Firefox', () => {
-  it('uses onCreated and swallows handler failures', async () => {
+  it('uses onCreated and logs handler failures', async () => {
     let listener: ((item: DownloadItemLike) => void) | null = null;
     const events: DownloadEvents = {
       onChanged: { addListener: () => undefined },
@@ -265,8 +274,12 @@ describe('registerCapture on Firefox', () => {
     );
     const fire = listener as ((item: DownloadItemLike) => void) | null;
     expect(fire).not.toBeNull();
+    diagnostics.clear();
     fire?.(downloadItem());
     await flush();
     expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(diagnostics.entries()).toEqual([
+      expect.objectContaining({ level: 'error', scope: 'capture', detail: 'Error: boom' }),
+    ]);
   });
 });

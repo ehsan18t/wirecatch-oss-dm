@@ -5,6 +5,7 @@
  */
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { log } from '@/lib/diag/log';
 import { MediaButton } from '@/lib/media/button';
 import { SITE_ORIGINS } from '@/lib/site-access';
 import {
@@ -57,7 +58,10 @@ export default defineContentScript({
     ctx.onInvalidated(() => button.destroy());
     browser.storage.local.get(MEDIA_BUTTON_KEY).then(
       (items) => button.setEnabled(mediaButtonOn(items[MEDIA_BUTTON_KEY])),
-      () => button.setEnabled(true),
+      (error: unknown) => {
+        log.warn('page', 'Could not read the media button setting; showing the button', error);
+        button.setEnabled(true);
+      },
     );
     // Turning the setting on or off (in the popup or the app) takes effect at once.
     const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
