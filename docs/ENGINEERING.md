@@ -142,7 +142,9 @@ Everything a person reads: UI copy, CLI output, errors, docs, comments and commi
 
 `type(scope): subject` in Conventional Commits form: lower case, imperative, no trailing period, at most 72 characters. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `style`, `revert`. The scope is the package (`engine`, `protocol`, `core`, `ipc`, `bridge`, `streams`, `cli`, `e2e`, `test-support`, `desktop`, `extension`, `units`, `eslint-config`), or none for a repository-wide change. Breaking changes use `!` after the scope and a `BREAKING CHANGE:` footer. The body explains why, one line per paragraph. Merges into main: `chore: merge <what> (<work package>)`. No `Co-Authored-By` or other tool or AI credit lines; the author is the person who owns the repository.
 
-Enforced by: gate for the form, the length, lower case, the trailing period, em dashes and credit lines (`commits`, which CI runs over every pull request and push, and the commit-msg hook that `pnpm install` turns on); review for the imperative mood, a body that explains why, `BREAKING CHANGE:` footers and the merge form, since git writes merge messages itself.
+Before a branch merges into main, its commits are regrouped: one commit per problem solved, each review fix folded into the commit it fixes, and the merges of main into the branch dropped, so main's history reads as the problems solved rather than the order they were worked on. The branch with the history as it was reviewed is kept until the merge is done.
+
+Enforced by: gate for the form, the length, lower case, the trailing period, em dashes and credit lines (`commits`, which CI runs over every pull request and push, and the commit-msg hook that `pnpm install` turns on); review for the imperative mood, a body that explains why, `BREAKING CHANGE:` footers, the merge form, since git writes merge messages itself, and the regrouping before a merge.
 
 ## 10. Performance
 
