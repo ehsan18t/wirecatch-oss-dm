@@ -86,6 +86,7 @@ import type { RemoveAddonArgs } from './RemoveAddonArgs';
 import type { RemoveArgs } from './RemoveArgs';
 import type { ReorderArgs } from './ReorderArgs';
 import type { Reply } from './Reply';
+import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
 import type { Schedule } from './Schedule';
@@ -997,6 +998,12 @@ export function isReply(value: unknown): value is Reply {
   );
 }
 
+/** Whether `value` has the shape of a {@link ReportUnreadableEventArgs}; fields it does not name are not checked. */
+export function isReportUnreadableEventArgs(value: unknown): value is ReportUnreadableEventArgs {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && (typeof value1['kind'] === 'string' || value1['kind'] === null))(value);
+}
+
 /** Whether `value` has the shape of a {@link ResumeArgs}; fields it does not name are not checked. */
 export function isResumeArgs(value: unknown): value is ResumeArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
@@ -1306,4 +1313,7 @@ export const COMMAND_OUTPUTS: {
     value === null,
   main_window_ready: (value: unknown): value is CommandMap['main_window_ready']['output'] =>
     value === null,
+  report_unreadable_event: (
+    value: unknown,
+  ): value is CommandMap['report_unreadable_event']['output'] => value === null,
 };

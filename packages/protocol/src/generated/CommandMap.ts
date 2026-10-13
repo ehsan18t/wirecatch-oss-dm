@@ -38,6 +38,7 @@ import type { RejectCaptureArgs } from './RejectCaptureArgs';
 import type { RemoveAddonArgs } from './RemoveAddonArgs';
 import type { RemoveArgs } from './RemoveArgs';
 import type { ReorderArgs } from './ReorderArgs';
+import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
@@ -261,4 +262,8 @@ export type CommandMap = {
    * flashes blank.
    */
   main_window_ready: Command<null, null>;
+  /**
+   * Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
+   */
+  report_unreadable_event: Command<ReportUnreadableEventArgs, null>;
 };

@@ -91,6 +91,7 @@ export type { RemoveAddonArgs } from './generated/RemoveAddonArgs';
 export type { RemoveArgs } from './generated/RemoveArgs';
 export type { ReorderArgs } from './generated/ReorderArgs';
 export type { Reply } from './generated/Reply';
+export type { ReportUnreadableEventArgs } from './generated/ReportUnreadableEventArgs';
 export type { ResumeArgs } from './generated/ResumeArgs';
 export type { RetryArgs } from './generated/RetryArgs';
 export type { Schedule } from './generated/Schedule';

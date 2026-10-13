@@ -16,7 +16,10 @@ function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
   let now = NOON;
   const mock = mockBackend({ now: () => now, ...opts });
   const events: UiEvent[] = [];
-  void mock.subscribe((e) => events.push(e));
+  void mock.subscribe(
+    (e) => events.push(e),
+    () => undefined,
+  );
   return {
     mock,
     events,

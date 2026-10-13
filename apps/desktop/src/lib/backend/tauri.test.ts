@@ -1,8 +1,14 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DOWNLOAD_WINDOW_PAGE, downloadId, questionId, queueId } from '@wirecatch/protocol';
+import {
+  DOWNLOAD_WINDOW_PAGE,
+  UI_EVENT,
+  downloadId,
+  questionId,
+  queueId,
+} from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import { SIGNAL_EVENTS, TauriBackend, toBackendError } from './tauri';
+import { SIGNAL_EVENTS, TauriBackend, toBackendError, UNREADABLE_RELOAD_MS } from './tauri';
 import { BackendError } from './types';
 
 /** What the shell answers each command with in these tests: a new download's id, or nothing. */
@@ -127,6 +133,67 @@ describe('TauriBackend', () => {
     expect([coded.code, coded.message]).toEqual(['addon_required', 'This needs the add-on.']);
     expect(toBackendError({ code: 'from_the_future', message: 'x' }).code).toBeNull();
     expect(toBackendError(42).message).toMatch(/Try again/);
+  });
+});
+
+describe('app events', () => {
+  /** A Tauri `listen` that keeps each handler, so a test can send events through it. */
+  function fakeListen() {
+    const handlers = new Map<string, (event: { payload: unknown }) => void>();
+    const listen = vi.fn((name: string, handler: (event: { payload: unknown }) => void) => {
+      handlers.set(name, handler);
+      return Promise.resolve(() => handlers.delete(name));
+    });
+    const send = (name: string, payload: unknown) => {
+      handlers.get(name)?.({ payload });
+    };
+    return { listen, send };
+  }
+
+  it('passes on only events with the contract shape, and has the subscriber reload and the shell log otherwise', async () => {
+    const invoke = vi.fn(() => Promise.resolve(null));
+    const { listen, send } = fakeListen();
+    const b = new TauriBackend(invoke, listen);
+    const events = vi.fn();
+    const reload = vi.fn();
+    await b.subscribe(events, reload);
+
+    send(UI_EVENT, { type: 'downloads_removed', data: [downloadId(1)] });
+    expect(events).toHaveBeenCalledExactlyOnceWith({
+      type: 'downloads_removed',
+      data: [downloadId(1)],
+    });
+
+    send(UI_EVENT, { type: 'downloads_changed', data: [{ id: 1 }] });
+    send(UI_EVENT, 'not an event');
+    expect(events).toHaveBeenCalledOnce();
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(invoke.mock.calls).toEqual([
+      ['report_unreadable_event', { args: { kind: 'downloads_changed' } }],
+      ['report_unreadable_event', { args: { kind: null } }],
+    ]);
+  });
+
+  it('reloads for a mismatch that keeps happening at most once a minute, and logs each time', async () => {
+    vi.useFakeTimers();
+    try {
+      const invoke = vi.fn(() => Promise.resolve(null));
+      const { listen, send } = fakeListen();
+      const b = new TauriBackend(invoke, listen);
+      const reload = vi.fn();
+      await b.subscribe(() => undefined, reload);
+      const progress = { type: 'download_progress', data: {} };
+
+      send(UI_EVENT, progress);
+      send(UI_EVENT, progress);
+      expect(reload).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(UNREADABLE_RELOAD_MS);
+      send(UI_EVENT, progress);
+      expect(reload).toHaveBeenCalledTimes(2);
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

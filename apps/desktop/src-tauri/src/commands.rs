@@ -11,9 +11,9 @@ use wirecatch_protocol::desktop::{
     EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs,
     GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, IsProgramArgs, KeepOriginalArgs,
     MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
-    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ResumeArgs, RetryArgs,
-    SetDownloadFolderArgs, SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs,
-    UpdateAddonArgs, UpdateQueueArgs,
+    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
+    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetQueuePausedArgs, ShowProgressWindowArgs,
+    StartQueueNowArgs, UpdateAddonArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult, Reveal};
@@ -408,6 +408,25 @@ pub async fn main_window_ready(
     Ok(())
 }
 
+/// The longest event kind a window's report is logged with; a window sends the `type` of an event it could not read, which may be anything.
+const MAX_REPORTED_KIND_CHARS: usize = 64;
+
+#[tauri::command]
+pub async fn report_unreadable_event(
+    window: WebviewWindow,
+    args: contract::report_unreadable_event::Args,
+) -> CommandResult<contract::report_unreadable_event::Output> {
+    let ReportUnreadableEventArgs { kind } = args;
+    let kind: Option<String> =
+        kind.map(|kind| kind.chars().take(MAX_REPORTED_KIND_CHARS).collect());
+    tracing::warn!(
+        window = window.label(),
+        kind = kind.as_deref().unwrap_or("(none)"),
+        "a window could not read an event from the app and loads everything again"
+    );
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn fit_download_window(
     window: WebviewWindow,
@@ -560,6 +579,7 @@ handler![
     close_download_window,
     fit_download_window,
     main_window_ready,
+    report_unreadable_event,
 ];
 
 #[cfg(test)]

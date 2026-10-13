@@ -1,6 +1,4 @@
-// Talks to the Rust side through the commands of the generated contract (`CommandMap`, from
-// `crates/protocol/src/desktop.rs`) and the single `UI_EVENT` stream. Each command takes its
-// arguments as one `args` object keyed by the Rust names.
+// Talks to the Rust side through the commands of the generated contract (`CommandMap`, from `crates/protocol/src/desktop.rs`) and the single `UI_EVENT` stream. Each command takes its arguments as one `args` object keyed by the Rust names.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { getName } from '@tauri-apps/api/app';
@@ -10,6 +8,7 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import {
   COMMAND_OUTPUTS,
   isErrorCode,
+  isUiEvent,
   LINKS_EVENT,
   RESYNC_EVENT,
   UI_EVENT,
@@ -25,6 +24,7 @@ import {
   type QueueId,
   type UiEvent,
 } from '@wirecatch/protocol';
+import { keysOf } from '../keys';
 import {
   BackendError,
   type DownloadWindowBackend,
@@ -50,8 +50,24 @@ type Command = keyof CommandMap;
 type ArgsOf<C extends Command> = CommandMap[C]['args'] extends null ? [] : [CommandMap[C]['args']];
 /** What a command answers with. */
 type OutputOf<C extends Command> = CommandMap[C]['output'];
-/** Tauri's `listen`; tests pass their own. */
-type Listen = typeof listen;
+/** Tauri's `listen`; tests pass their own. Nothing checks what an event carries before it arrives, so its payload is `unknown` here, and a type argument cannot claim otherwise. */
+type Listen = (
+  event: string,
+  handler: (event: { payload: unknown }) => void,
+) => Promise<Unsubscribe>;
+
+/** How often, at most, a kind of event the window cannot read is reported and reloaded for: every time would reload in a loop, and only once would leave the window frozen while the mismatch lasts. */
+export const UNREADABLE_RELOAD_MS = 60_000;
+
+/** The `type` an event that failed its check says it is, or null when it says none. */
+function claimedKind(payload: unknown): string | null {
+  return typeof payload === 'object' &&
+    payload !== null &&
+    'type' in payload &&
+    typeof payload.type === 'string'
+    ? payload.type
+    : null;
+}
 
 /** Why a command failed when the shell's answer does not have the contract's shape: a bug, never the person's doing. */
 export function unreadableAnswer(command: string): string {
@@ -78,6 +94,8 @@ export class TauriBackend implements DownloadWindowBackend {
   readonly kind = 'tauri';
   readonly #invoke: Invoke;
   readonly #listen: Listen;
+  /** When each kind of event found unreadable was last reported and reloaded for. */
+  readonly #unreadableAt = new Map<string | null, number>();
 
   constructor(invoker: Invoke = invoke, listener: Listen = listen) {
     this.#invoke = invoker;
@@ -254,12 +272,27 @@ export class TauriBackend implements DownloadWindowBackend {
     return this.#call('check_addon_updates');
   }
 
-  async subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe> {
-    return this.#listen<UiEvent>(UI_EVENT, (e) => listener(e.payload));
+  /** Passes on every event with the contract's shape. One without it is a bug on one side: it is dropped, reported to the shell's log, and `reload` is called to load everything again from the commands, whose answers are checked; for a kind that keeps failing, at most once every `UNREADABLE_RELOAD_MS`. */
+  async subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe> {
+    return this.#listen(UI_EVENT, ({ payload }) => {
+      if (isUiEvent(payload)) listener(payload);
+      else if (this.#reportUnreadable(claimedKind(payload))) reload();
+    });
+  }
+
+  /** Reports an unreadable event of `kind` unless one was reported within `UNREADABLE_RELOAD_MS`; whether it did. */
+  #reportUnreadable(kind: string | null): boolean {
+    const now = Date.now();
+    const last = this.#unreadableAt.get(kind);
+    if (last !== undefined && now - last < UNREADABLE_RELOAD_MS) return false;
+    this.#unreadableAt.set(kind, now);
+    // The report is only for the log: a failure to send it changes nothing for the person.
+    this.#exec('report_unreadable_event', { kind }).catch(() => undefined);
+    return true;
   }
 
   async onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe> {
-    const signals = Object.keys(SIGNAL_EVENTS) as ShellSignal[];
+    const signals = keysOf(SIGNAL_EVENTS);
     const started = await Promise.allSettled(
       signals.map((signal) => this.#listen(SIGNAL_EVENTS[signal], () => listener(signal))),
     );

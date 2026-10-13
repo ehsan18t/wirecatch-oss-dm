@@ -410,7 +410,8 @@ export class MockBackend implements Backend {
     return this.#call((): Unsubscribe => () => undefined);
   }
 
-  subscribe(listener: (event: UiEvent) => void) {
+  /** Its events are always readable, so it never asks for a reload. */
+  subscribe(listener: (event: UiEvent) => void, _reload: () => void) {
     return this.#call((): Unsubscribe => {
       const listeners = this.#state.listeners;
       listeners.add(listener);

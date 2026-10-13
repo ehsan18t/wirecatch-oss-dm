@@ -138,7 +138,9 @@ export class DownloadWindowState {
     const generation = ++this.#generation;
     const events = new HeldEvents((e) => this.handle(e));
     try {
-      const unsubscribe = await this.#host.backend().subscribe(events.receive);
+      const unsubscribe = await this.#host.backend().subscribe(events.receive, () => {
+        void this.init();
+      });
       if (generation !== this.#generation) {
         // Closed (or loaded again) while subscribing: nothing would ever close this listener.
         unsubscribe();

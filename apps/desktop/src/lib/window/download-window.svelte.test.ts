@@ -374,3 +374,22 @@ describe('the window title', () => {
     expect(win.name).toBe('Wirecatch Dev');
   });
 });
+
+describe('an event the window cannot read', () => {
+  it('loads the window again, as the main window does', async () => {
+    const b = backend();
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    const subscribe = vi.spyOn(b, 'subscribe');
+    const { win } = await open(b, { question: asked?.id ?? questionId(0) });
+    const loads = vi.spyOn(b, 'getQuestion');
+
+    const unreadable = subscribe.mock.calls[0]?.[1];
+    expect(unreadable).toBeTypeOf('function');
+    unreadable?.();
+    await vi.waitFor(() => {
+      expect(loads).toHaveBeenCalledOnce();
+    });
+    expect(win.phase).toBe('ask');
+  });
+});

@@ -138,8 +138,8 @@ export interface Backend {
   /** Looks for a newer media add-on now; the add-ons as they stand afterwards. */
   checkAddonUpdates(): Promise<AddonInfo[]>;
 
-  /** Every change the core pushes, in order. */
-  subscribe(listener: (event: UiEvent) => void): Promise<Unsubscribe>;
+  /** Every change the core pushes, in order; `reload` when one could not be read, so the caller loads what it shows again. */
+  subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe>;
   /** Signals from the desktop shell (see `ShellSignal`). */
   onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe>;
 

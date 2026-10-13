@@ -47,7 +47,9 @@ export class Connection {
     onSignal: (signal: ShellSignal) => void,
   ): Promise<boolean> {
     const backend = await this.load();
-    const stopEvents = await backend.subscribe(onEvent);
+    const stopEvents = await backend.subscribe(onEvent, () => {
+      if (current()) onSignal('resync');
+    });
     const stopSignals = await backend
       .onShellSignal((signal) => {
         if (current()) onSignal(signal);

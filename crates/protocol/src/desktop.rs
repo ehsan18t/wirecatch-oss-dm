@@ -367,6 +367,11 @@ commands! {
     /// Shows the main window once its first view is drawn; it opens hidden, so it never
     /// flashes blank.
     main_window_ready -> ();
+    /// Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
+    report_unreadable_event: ReportUnreadableEventArgs {
+        /// The event's `type`, or `None` when it has none a window can read.
+        kind: Option<String>,
+    } -> ();
 }
 
 #[cfg(test)]
