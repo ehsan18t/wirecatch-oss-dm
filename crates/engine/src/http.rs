@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use base64::Engine as _;
 use percent_encoding::percent_decode_str;
 use reqwest::header::{
-    ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, DNT,
-    ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA, RANGE, REFERER,
+    ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, DATE,
+    DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA, RANGE, REFERER,
     RETRY_AFTER, USER_AGENT,
 };
 use reqwest::{Client, Response, StatusCode};
@@ -18,13 +18,14 @@ use crate::error::{Error, Result};
 use crate::naming;
 use crate::net_guard::Guard;
 use crate::options::DownloadOptions;
+use crate::request::RequestContext;
 
 mod client;
 mod range;
 pub(crate) mod status;
 
 pub(crate) use client::Clients;
-pub(crate) use range::{RequestRange, check_partial, content_range};
+pub(crate) use range::{RequestRange, check_partial, check_whole, content_range};
 pub(crate) use status::{MAX_REDIRECTS, is_busy};
 
 /// Longest `Retry-After` the engine waits for; a longer one is cut to this.
@@ -49,21 +50,63 @@ const PORTABLE_HEADERS: [HeaderName; 7] = [
 pub struct Validators {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    /// `last_modified` when it is a strong validator: at least one second
+    /// older than the answer's `Date` (RFC 9110, section 8.8.2.2). A server
+    /// that stamps each answer with the time it sends it gives a date that
+    /// says nothing about the file.
+    pub strong_modified: Option<SystemTime>,
 }
 
 impl Validators {
-    fn from_headers(headers: &HeaderMap) -> Self {
+    pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
         let text = |name| {
             headers
                 .get(name)
                 .and_then(|v: &HeaderValue| v.to_str().ok())
                 .map(str::to_string)
         };
+        let time = |name| httpdate::parse_http_date(text(name)?.trim()).ok();
+        let strong_modified = match (time(LAST_MODIFIED), time(DATE)) {
+            (Some(modified), Some(sent)) if modified + Duration::from_secs(1) <= sent => {
+                Some(modified)
+            }
+            _ => None,
+        };
         Self {
             etag: text(ETAG),
             last_modified: text(LAST_MODIFIED),
+            strong_modified,
         }
     }
+
+    /// Whether an answer carrying `answer` is about another version of the
+    /// file than the one these validators came from. When both carry an
+    /// `ETag`, it alone decides (RFC 9110, section 13.2.2 gives it precedence);
+    /// otherwise a strong `Last-Modified` on both that differs does.
+    ///
+    /// This only refuses a contradiction; it does not ask for proof that the
+    /// answers match. RFC 9110 (section 15.3.7.3) joins partial answers only
+    /// when they share a strong validator, compared strongly; the engine
+    /// departs from that on purpose, because many servers send only weak tags,
+    /// or none on some answers, and refusing them would fail downloads that are
+    /// sound. So entity tags are compared weakly (`W/"x"` matches `"x"`), two
+    /// answers with the same weak tag count as not contradicted rather than
+    /// proven the same, and a validator only one answer carries proves nothing.
+    pub(crate) fn contradicts(&self, answer: &Validators) -> bool {
+        if let (Some(known), Some(now)) = (&self.etag, &answer.etag) {
+            return opaque_tag(known) != opaque_tag(now);
+        }
+        matches!(
+            (self.strong_modified, answer.strong_modified),
+            (Some(known), Some(now)) if known != now
+        )
+    }
+}
+
+/// An entity tag without its weakness mark: `W/"x"` and `"x"` are both `"x"`.
+fn opaque_tag(tag: &str) -> &str {
+    let tag = tag.trim();
+    tag.strip_prefix("W/").unwrap_or(tag)
 }
 
 /// A failed request, with how long the server asked us to wait before trying
@@ -389,7 +432,9 @@ async fn probe_range(
     let mut limited_without_size = false;
     let (ranged, total) = match status {
         StatusCode::PARTIAL_CONTENT => {
-            if let Some(total) = check_partial(response_headers, 0, None)?.total {
+            if let Some(total) =
+                check_partial(response_headers, 0, None, &Validators::default())?.total
+            {
                 (true, Some(total))
             } else {
                 // Only the whole file if the request asked for all of it.
@@ -419,25 +464,31 @@ async fn probe_range(
     })
 }
 
-/// Requests `[from, to)`. Without range support the whole body is requested and
-/// the first `from` bytes must be skipped; the returned number says how many.
+/// Requests `[from, to)` of the file `request` describes. Without range
+/// support the whole body is requested and the first `from` bytes must be
+/// skipped; the returned number says how many. Either way the answer must be
+/// of the same file the first answer was about.
 pub(crate) async fn fetch(
     client: &Client,
-    url: &Url,
+    request: &RequestContext,
     session: &Session,
     from: u64,
     to: u64,
-    ranged: bool,
-    expected_total: Option<u64>,
 ) -> Result<(Response, u64), Failure> {
-    if !ranged {
-        let response = send(client, url, session, None).await?;
+    if !request.ranged {
+        let response = send(client, &request.url, session, None).await?;
         check_status(&response, StatusCode::OK)?;
+        check_whole(
+            response.headers(),
+            response.content_length(),
+            request.total,
+            &request.validators,
+        )?;
         return Ok((response, from));
     }
 
     let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
-    let response = send(client, url, session, Some(range)).await?;
+    let response = send(client, &request.url, session, Some(range)).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
@@ -446,7 +497,7 @@ pub(crate) async fn fetch(
         .into());
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
-    check_partial(response.headers(), from, expected_total)?;
+    check_partial(response.headers(), from, request.total, &request.validators)?;
     Ok((response, 0))
 }
 

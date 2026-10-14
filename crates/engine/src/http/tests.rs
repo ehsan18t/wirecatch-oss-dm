@@ -311,7 +311,15 @@ mod tls {
             "probe: {:?}",
             probed.map(|p| (p.ranged, p.total)).map_err(|f| f.error)
         );
-        let fetched = fetch(&client, &url, &session, 0, 10, true, Some(10)).await;
+        let request = RequestContext {
+            url,
+            ranged: true,
+            total: Some(10),
+            validators: Validators::default(),
+            cancel: CancellationToken::new(),
+            stall_timeout: opts.stall_timeout,
+        };
+        let fetched = fetch(&client, &request, &session, 0, 10).await;
         assert!(
             matches!(
                 fetched.as_ref().map_err(|f| &f.error),

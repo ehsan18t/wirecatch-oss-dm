@@ -99,30 +99,12 @@ impl Connection {
                 {
                     return Ok((Body::Http3(Box::new(body)), 0));
                 }
-                let (response, skip) = http::fetch(
-                    client,
-                    &request.url,
-                    session,
-                    from,
-                    to,
-                    request.ranged,
-                    request.total,
-                )
-                .await?;
+                let (response, skip) = http::fetch(client, request, session, from, to).await?;
                 Ok((Body::http(response), skip))
             }
             #[cfg(not(feature = "http3"))]
             (Connection::Http { client }, Remote::Http { session }) => {
-                let (response, skip) = http::fetch(
-                    client,
-                    &request.url,
-                    session,
-                    from,
-                    to,
-                    request.ranged,
-                    request.total,
-                )
-                .await?;
+                let (response, skip) = http::fetch(client, request, session, from, to).await?;
                 Ok((Body::http(response), skip))
             }
             _ => {

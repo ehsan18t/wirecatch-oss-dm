@@ -7,6 +7,7 @@ use std::fmt;
 use reqwest::header::{CONTENT_RANGE, HeaderMap};
 
 use crate::error::Error;
+use crate::http::Validators;
 use crate::segment::UNKNOWN_END;
 
 /// The bytes a request asks for: from `from` up to `to` (exclusive), or to the
@@ -112,17 +113,22 @@ fn digits(text: &str) -> Option<u64> {
 }
 
 /// Checks that a partial answer (`206`) with these headers holds the range
-/// asked for: its bytes start at `from`, and the file is still
-/// `expected_total` bytes long when both sizes are known.
+/// asked for of the file the first answer described: its bytes start at
+/// `from`, the file is still `expected_total` bytes long when both sizes are
+/// known, and its validators do not contradict `expected` (see
+/// [`Validators::contradicts`]). The first answer itself passes no size and
+/// empty validators. Every partial answer, over HTTP/1.1, HTTP/2, HTTP/3 or
+/// from the [`Fetcher`](crate::Fetcher), is checked here.
 ///
 /// # Errors
 ///
 /// [`Error::RangeNotHonored`] for other bytes than asked for, and
-/// [`Error::RemoteChanged`] for a file of another size.
+/// [`Error::RemoteChanged`] for a file of another size or version.
 pub(crate) fn check_partial(
     headers: &HeaderMap,
     from: u64,
     expected_total: Option<u64>,
+    expected: &Validators,
 ) -> Result<ContentRange, Error> {
     let got = content_range(headers);
     let start = got.and_then(|c| c.start);
@@ -132,21 +138,48 @@ pub(crate) fn check_partial(
             got: start,
         });
     }
-    if let (Some(expected), Some(actual)) = (expected_total, got.and_then(|c| c.total))
-        && expected != actual
-    {
+    let total = got.and_then(|c| c.total);
+    check_same_file(headers, total, expected_total, expected)?;
+    Ok(ContentRange { start, total })
+}
+
+/// Checks that a whole answer (`200`) to a request that continues a transfer,
+/// whose first bytes are skipped because they arrived before, is of the same
+/// file: the same size (its `Content-Length`, `length`) when both are known,
+/// and validators that do not contradict `expected`.
+///
+/// # Errors
+///
+/// [`Error::RemoteChanged`] for a file of another size or version.
+pub(crate) fn check_whole(
+    headers: &HeaderMap,
+    length: Option<u64>,
+    expected_total: Option<u64>,
+    expected: &Validators,
+) -> Result<(), Error> {
+    check_same_file(headers, length, expected_total, expected)
+}
+
+/// [`Error::RemoteChanged`] when an answer saying the file is `total` bytes
+/// long, with these headers, is about another file than the one of
+/// `expected_total` bytes with `expected` validators.
+fn check_same_file(
+    headers: &HeaderMap,
+    total: Option<u64>,
+    expected_total: Option<u64>,
+    expected: &Validators,
+) -> Result<(), Error> {
+    let other_size = matches!((expected_total, total), (Some(known), Some(now)) if known != now);
+    if other_size || expected.contradicts(&Validators::from_headers(headers)) {
         return Err(Error::RemoteChanged);
     }
-    Ok(ContentRange {
-        start,
-        total: got.and_then(|c| c.total),
-    })
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::header::HeaderValue;
+    use reqwest::header::{DATE, ETAG, HeaderValue, LAST_MODIFIED};
 
     #[test]
     fn content_range_forms() {
@@ -188,30 +221,148 @@ mod tests {
 
     #[test]
     fn a_partial_answer_must_be_the_range_asked_for() {
+        let none = Validators::default();
         let headers = |value: &'static str| {
             let mut headers = HeaderMap::new();
             headers.insert(CONTENT_RANGE, HeaderValue::from_static(value));
             headers
         };
-        assert!(check_partial(&headers("bytes 10-19/100"), 10, Some(100)).is_ok());
-        assert!(check_partial(&headers("bytes 10-19/*"), 10, Some(100)).is_ok());
+        assert!(check_partial(&headers("bytes 10-19/100"), 10, Some(100), &none).is_ok());
+        assert!(check_partial(&headers("bytes 10-19/*"), 10, Some(100), &none).is_ok());
         assert!(matches!(
-            check_partial(&headers("bytes 0-19/100"), 10, Some(100)),
+            check_partial(&headers("bytes 0-19/100"), 10, Some(100), &none),
             Err(Error::RangeNotHonored {
                 expected: 10,
                 got: Some(0)
             })
         ));
         assert!(matches!(
-            check_partial(&headers("bytes */100"), 0, None),
+            check_partial(&headers("bytes */100"), 0, None, &none),
             Err(Error::RangeNotHonored { got: None, .. })
         ));
         assert!(matches!(
-            check_partial(&HeaderMap::new(), 0, None),
+            check_partial(&HeaderMap::new(), 0, None, &none),
             Err(Error::RangeNotHonored { got: None, .. })
         ));
         assert!(matches!(
-            check_partial(&headers("bytes 10-19/101"), 10, Some(100)),
+            check_partial(&headers("bytes 10-19/101"), 10, Some(100), &none),
+            Err(Error::RemoteChanged)
+        ));
+    }
+
+    /// The headers of an answer; `date` is its `Date`.
+    fn answer(
+        content_range: Option<&str>,
+        etag: Option<&str>,
+        modified: Option<&str>,
+        date: Option<&str>,
+    ) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        let mut set = |name, value: Option<&str>| {
+            if let Some(value) = value {
+                headers.insert(name, HeaderValue::from_str(value).unwrap());
+            }
+        };
+        set(CONTENT_RANGE, content_range);
+        set(ETAG, etag);
+        set(LAST_MODIFIED, modified);
+        set(DATE, date);
+        headers
+    }
+
+    const MONDAY: &str = "Mon, 05 Oct 2026 10:00:00 GMT";
+    const A_SECOND_LATER: &str = "Mon, 05 Oct 2026 10:00:01 GMT";
+    const TUESDAY: &str = "Tue, 06 Oct 2026 10:00:00 GMT";
+    const WEDNESDAY: &str = "Wed, 07 Oct 2026 10:00:00 GMT";
+
+    #[test]
+    fn a_partial_answer_of_another_version_of_the_file_is_refused() {
+        let range = Some("bytes 10-19/100");
+        let first = answer(None, Some("\"v1\""), Some(MONDAY), Some(WEDNESDAY));
+        let known = Validators::from_headers(&first);
+        let check = |etag, modified| {
+            let later = answer(range, etag, modified, Some(WEDNESDAY));
+            check_partial(&later, 10, Some(100), &known)
+        };
+        assert!(check(Some("\"v1\""), Some(MONDAY)).is_ok());
+        // The same tag, marked weak on this answer only.
+        assert!(check(Some("W/\"v1\""), Some(MONDAY)).is_ok());
+        // A validator left out of an answer proves nothing.
+        assert!(check(None, None).is_ok());
+        assert!(check(Some("\"v1\""), None).is_ok());
+        assert!(check(None, Some(MONDAY)).is_ok());
+        // A shared entity tag settles it, whatever the dates say.
+        assert!(check(Some("\"v1\""), Some(TUESDAY)).is_ok());
+        for (etag, modified) in [
+            (Some("\"v2\""), Some(MONDAY)),
+            (Some("W/\"v2\""), Some(MONDAY)),
+            (None, Some(TUESDAY)),
+            (Some("\"v2\""), None),
+        ] {
+            assert!(
+                matches!(check(etag, modified), Err(Error::RemoteChanged)),
+                "{etag:?} {modified:?}"
+            );
+        }
+        // Without known validators (the first answer) nothing is compared.
+        let first = answer(Some("bytes 0-9/100"), Some("\"v2\""), Some(TUESDAY), None);
+        assert!(check_partial(&first, 0, None, &Validators::default()).is_ok());
+    }
+
+    /// A `Last-Modified` is only a validator when it is at least a second
+    /// older than the answer's `Date` (RFC 9110, section 8.8.2.2): a server
+    /// that stamps each answer with the time it was sent says nothing about
+    /// the file.
+    #[test]
+    fn a_last_modified_proves_a_change_only_when_both_are_strong() {
+        let range = Some("bytes 10-19/100");
+        let check = |first: (&str, Option<&str>), later: (&str, Option<&str>)| {
+            let first = answer(None, None, Some(first.0), first.1);
+            let later = answer(range, None, Some(later.0), later.1);
+            check_partial(&later, 10, Some(100), &Validators::from_headers(&first))
+        };
+        // Each answer stamped with the time it was sent.
+        assert!(
+            check(
+                (MONDAY, Some(MONDAY)),
+                (A_SECOND_LATER, Some(A_SECOND_LATER))
+            )
+            .is_ok()
+        );
+        // Without a `Date` there is nothing to tell a strong one by.
+        assert!(check((MONDAY, None), (TUESDAY, None)).is_ok());
+        // Only one of the two is strong.
+        assert!(check((MONDAY, Some(WEDNESDAY)), (TUESDAY, Some(TUESDAY))).is_ok());
+        assert!(check((MONDAY, Some(MONDAY)), (TUESDAY, Some(WEDNESDAY))).is_ok());
+        // Both strong, and different.
+        assert!(matches!(
+            check((MONDAY, Some(WEDNESDAY)), (TUESDAY, Some(WEDNESDAY))),
+            Err(Error::RemoteChanged)
+        ));
+        // Both strong, the same time written differently.
+        assert!(
+            check(
+                (MONDAY, Some(WEDNESDAY)),
+                ("Monday, 05-Oct-26 10:00:00 GMT", Some(WEDNESDAY))
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_whole_answer_that_continues_a_transfer_must_be_the_same_file() {
+        let known = Validators::from_headers(&answer(None, Some("\"v1\""), None, None));
+        let same = answer(None, Some("\"v1\""), None, None);
+        assert!(check_whole(&same, Some(100), Some(100), &known).is_ok());
+        assert!(check_whole(&same, None, Some(100), &known).is_ok());
+        assert!(check_whole(&same, Some(100), None, &known).is_ok());
+        assert!(matches!(
+            check_whole(&same, Some(101), Some(100), &known),
+            Err(Error::RemoteChanged)
+        ));
+        let other = answer(None, Some("\"v2\""), None, None);
+        assert!(matches!(
+            check_whole(&other, Some(100), Some(100), &known),
             Err(Error::RemoteChanged)
         ));
     }

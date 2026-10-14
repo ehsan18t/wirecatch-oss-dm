@@ -54,8 +54,9 @@ pub enum Error {
         got: Option<u64>,
     },
 
-    /// The server now reports a different size for the file, so the bytes
-    /// downloaded so far belong to another version of it.
+    /// The server now describes the file differently (another size, `ETag`
+    /// or `Last-Modified`, or over FTP another size or modification time), so
+    /// the bytes downloaded so far belong to another version of it.
     #[error("the file on the server changed while downloading")]
     RemoteChanged,
 

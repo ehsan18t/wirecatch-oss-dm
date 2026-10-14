@@ -6,6 +6,8 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
+use crate::http::Validators;
+
 /// What every request of one download needs, and all the protocol layers get
 /// of it.
 pub(crate) struct RequestContext {
@@ -15,6 +17,8 @@ pub(crate) struct RequestContext {
     pub ranged: bool,
     /// The size of the file, if known.
     pub total: Option<u64>,
+    /// The validators of the first answer; every later answer must agree.
+    pub validators: Validators,
     /// Cancelled when the download pauses.
     pub cancel: CancellationToken,
     /// [`DownloadOptions::stall_timeout`](crate::DownloadOptions::stall_timeout).

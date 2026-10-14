@@ -637,3 +637,65 @@ async fn a_redirect_without_location_is_reported_as_such() {
         "{error:?}"
     );
 }
+
+/// The file is replaced on the server by another of the same size between two
+/// requests of one download, so the later answer carries another `ETag`. The
+/// bytes of the two versions must not be stitched into one file reported as
+/// complete.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_file_replaced_mid_download_is_reported_as_changed() -> TestResult {
+    let server = TestServer::start(
+        test_data(512 * KIB_USIZE),
+        Config {
+            ranges: true,
+            etag: Some("\"v1\"".into()),
+            // The first answer ends early, so the download asks again.
+            short_first: Some(64 * KIB),
+            ..Config::default()
+        },
+    )
+    .await;
+    let dir = private_dir("replaced")?;
+    server.hold();
+    let download = tokio::spawn(run(request(&server, "f.bin", dir.path(), 1)));
+    // The first answer is decided once its request arrives; every later one
+    // is about the new file.
+    server
+        .wait_for_request("f.bin", Duration::from_secs(10))
+        .await;
+    server.configure(|config| config.etag = Some("\"v2\"".into()));
+    server.release();
+    let result = download.await?;
+    assert!(matches!(result, Err(Error::RemoteChanged)), "{result:?}");
+    dir.remove()?;
+    Ok(())
+}
+
+/// The same for a server without byte ranges: the download asks for the
+/// whole file again after a dropped connection and skips what it has, which
+/// must be the same file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_file_replaced_before_a_whole_answer_is_asked_again_is_reported_as_changed() -> TestResult
+{
+    let server = TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            etag: Some("\"v1\"".into()),
+            drop_first: Some((1, 500 * KIB)),
+            ..Config::default()
+        },
+    )
+    .await;
+    let dir = private_dir("replaced-whole")?;
+    server.hold();
+    let download = tokio::spawn(run(request(&server, "f.bin", dir.path(), 1)));
+    server
+        .wait_for_request("f.bin", Duration::from_secs(10))
+        .await;
+    server.configure(|config| config.etag = Some("\"v2\"".into()));
+    server.release();
+    let result = download.await?;
+    assert!(matches!(result, Err(Error::RemoteChanged)), "{result:?}");
+    dir.remove()?;
+    Ok(())
+}

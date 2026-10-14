@@ -73,6 +73,39 @@ fn http3_is_not_used_through_a_proxy() {
     }));
 }
 
+/// An answer over HTTP/3 about another version of the file is a changed file,
+/// as over TCP, not a reason to give up HTTP/3.
+#[test]
+fn an_answer_about_another_version_of_the_file_is_a_changed_file() {
+    let context = RequestContext {
+        url: Url::parse("https://files.example/a.iso").unwrap(),
+        ranged: true,
+        total: Some(100),
+        validators: http::Validators {
+            etag: Some("\"v1\"".into()),
+            ..http::Validators::default()
+        },
+        cancel: CancellationToken::new(),
+        stall_timeout: Duration::from_secs(5),
+    };
+    let answer = |etag: &'static str| {
+        ::http::Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header("content-range", "bytes 10-19/100")
+            .header("etag", etag)
+            .body(())
+            .unwrap()
+    };
+    assert!(check_response(&answer("\"v1\""), &context, 10).is_ok());
+    assert!(matches!(
+        check_response(&answer("\"v2\""), &context, 10),
+        Err(H3Failure::Answer(Failure {
+            error: Error::RemoteChanged,
+            ..
+        }))
+    ));
+}
+
 fn test_data(len: usize) -> Bytes {
     Bytes::from(
         (0..len)

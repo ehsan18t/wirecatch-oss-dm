@@ -295,3 +295,75 @@ async fn a_server_refusing_to_encrypt_data_is_not_used() {
     assert_eq!(server.stats.count("EPSV"), 0);
     dir.remove().unwrap();
 }
+
+/// A new connection finds the file with another modification time than the
+/// first connection saw, as when it was replaced by a file of the same size:
+/// that connection must not add its bytes to the old ones.
+#[tokio::test]
+async fn a_file_modified_since_the_first_connection_is_reported_as_changed() {
+    let file = data(1000);
+    let server = FtpServer::start(FtpConfig {
+        mdtm: Some("20260102030405".into()),
+        ..served(&file)
+    })
+    .await;
+    let target = target(server.url("ftp", "alice:pw@", "file.bin").as_str()).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
+    let first_saw = |modified: &str| Server {
+        target: target.clone(),
+        addr,
+        size: Some(1000),
+        modified: Some(modified.into()),
+        epsv_refused: AtomicBool::new(false),
+    };
+    assert!(first_saw("20260102030405").connect(None).await.is_ok());
+    let changed = first_saw("20250101000000").connect(None).await;
+    assert!(matches!(
+        changed,
+        Err(Failure {
+            error: Error::RemoteChanged,
+            ..
+        })
+    ));
+}
+
+/// A worker keeps its control connection from one range to the next. The file
+/// changed after it logged in: the next range must not add its bytes either.
+#[tokio::test]
+async fn a_file_modified_before_a_kept_connection_starts_its_next_range_is_reported_as_changed() {
+    let file = data(1000);
+    let server = FtpServer::start(FtpConfig {
+        mdtm: Some("20260102030405".into()),
+        ..served(&file)
+    })
+    .await;
+    let url = server.url("ftp", "alice:pw@", "file.bin");
+    let target = target(url.as_str()).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
+    let mut control = target.connect(addr, None).await.unwrap();
+    target.login(&mut control, false).await.unwrap();
+    let mut connection = Connection::new(Arc::new(Server {
+        target: target.clone(),
+        addr,
+        size: Some(1000),
+        modified: Some("20250101000000".into()),
+        epsv_refused: AtomicBool::new(false),
+    }));
+    connection.control = Some(control);
+    let request = RequestContext {
+        url,
+        ranged: true,
+        total: Some(1000),
+        validators: Validators::default(),
+        cancel: CancellationToken::new(),
+        stall_timeout: std::time::Duration::from_secs(5),
+    };
+    let opened = connection.open(&request, 500).await;
+    assert!(matches!(
+        opened,
+        Err(Failure {
+            error: Error::RemoteChanged,
+            ..
+        })
+    ));
+}

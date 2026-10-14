@@ -155,7 +155,7 @@ mod tests {
     fn validators(etag: Option<&str>) -> Validators {
         Validators {
             etag: etag.map(str::to_string),
-            last_modified: None,
+            ..Validators::default()
         }
     }
 

@@ -440,3 +440,65 @@ async fn the_local_network_is_allowed_for_a_local_start_or_when_asked() {
     let auto = fetcher(&public, &options()).await.unwrap();
     assert!(auto.blocks_private_network());
 }
+
+/// The resource is replaced on the server between two requests of one
+/// transfer, so the answer that continues it carries another `ETag`: the bytes
+/// of the two versions must not be joined.
+#[tokio::test]
+async fn a_resource_replaced_between_requests_is_reported_as_changed() {
+    let server = TestServer::start(
+        test_data(200_000),
+        Config {
+            ranges: true,
+            etag: Some("\"v1\"".into()),
+            // The first answer ends early, so the fetcher asks again.
+            short_first: Some(50_000),
+            ..Config::default()
+        },
+    )
+    .await;
+    let f = fetcher(&server.url("seg.ts"), &options()).await.unwrap();
+    server.hold();
+    let get = tokio::spawn({
+        let f = f.clone();
+        async move { f.get(f.url(), Some(0..200_000), MIB).await }
+    });
+    server
+        .wait_for_request("seg.ts", Duration::from_secs(10))
+        .await;
+    server.configure(|config| config.etag = Some("\"v2\"".into()));
+    server.release();
+    let result = get.await.unwrap().map(|fetched| fetched.body.len());
+    assert!(matches!(result, Err(Error::RemoteChanged)), "{result:?}");
+}
+
+/// The same with a server that ignores ranges: the fetcher asks for the rest
+/// and gets the whole resource again, whose start it skips, so it must be the
+/// same resource.
+#[tokio::test]
+async fn a_resource_replaced_before_a_whole_answer_is_asked_again_is_reported_as_changed() {
+    let server = TestServer::start(
+        test_data(2_000_000),
+        Config {
+            etag: Some("\"v1\"".into()),
+            drop_first: Some((1, 500_000)),
+            ..Config::default()
+        },
+    )
+    .await;
+    let f = fetcher(&server.url("seg.ts"), &options()).await.unwrap();
+    server.hold();
+    let get = tokio::spawn({
+        let f = f.clone();
+        async move { f.get(f.url(), None, 4 * MIB).await }
+    });
+    server
+        .wait_for_request("seg.ts", Duration::from_secs(10))
+        .await;
+    server.configure(|config| config.etag = Some("\"v2\"".into()));
+    server.release();
+    let result = get.await.unwrap().map(|fetched| fetched.body.len());
+    assert!(matches!(result, Err(Error::RemoteChanged)), "{result:?}");
+    assert_eq!(server.stats.requests.load(Ordering::SeqCst), 2);
+}
+

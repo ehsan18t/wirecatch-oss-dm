@@ -336,6 +336,17 @@ impl Target {
             .flatten())
     }
 
+    /// The file's modification time (`MDTM`), or `None` if the server cannot
+    /// tell.
+    async fn modified(&self, control: &mut Control) -> Result<Option<String>, Failure> {
+        let reply = control
+            .command(&format!("MDTM {}", self.path), "MDTM")
+            .await?;
+        Ok((reply.code == reply::FILE_STATUS)
+            .then(|| control::parse_mdtm(&reply.text))
+            .flatten())
+    }
+
     /// An error reply as a failure: 4xx temporary, 5xx permanent. Any other
     /// code where an error was expected means the conversation went wrong,
     /// which a new connection may fix.
@@ -372,22 +383,41 @@ pub(crate) struct Server {
     addr: SocketAddr,
     /// The size the first connection saw, to notice a file that changed.
     size: Option<u64>,
+    /// The modification time the first connection saw, for the same reason.
+    modified: Option<String>,
     /// Set once the server refused `EPSV`; `PASV` is used from then on.
     epsv_refused: AtomicBool,
 }
 
 impl Server {
-    /// A new, logged-in control connection for one more worker.
+    /// A new, logged-in control connection for one more worker, once it has
+    /// checked that the file is still the one the first connection found.
     async fn connect(&self, tls: Option<&Tls>) -> Result<Control, Failure> {
         let mut control = self.target.connect(self.addr, tls).await?;
         self.target.login(&mut control, false).await?;
+        self.check_same_file(&mut control).await?;
+        Ok(control)
+    }
+
+    /// Checks over `control` that the file still has the size and
+    /// modification time the first connection found, where the server tells
+    /// them. FTP has no validator that comes with the data itself, so this
+    /// runs before every range; a file replaced while a range is being sent
+    /// is still missed until the next one.
+    async fn check_same_file(&self, control: &mut Control) -> Result<(), Failure> {
         if let Some(expected) = self.size
-            && let Some(now) = self.target.size(&mut control).await?
+            && let Some(now) = self.target.size(control).await?
             && now != expected
         {
             return Err(Error::RemoteChanged.into());
         }
-        Ok(control)
+        if let Some(expected) = &self.modified
+            && let Some(now) = self.target.modified(control).await?
+            && now != *expected
+        {
+            return Err(Error::RemoteChanged.into());
+        }
+        Ok(())
     }
 
     /// Asks for a passive data port: `EPSV` (RFC 2428), else `PASV`.
@@ -512,12 +542,7 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
         };
         target.login(&mut control, true).await?;
         let size = target.size(&mut control).await?;
-        let mdtm = control
-            .command(&format!("MDTM {}", target.path), "MDTM")
-            .await?;
-        let modified = (mdtm.code == reply::FILE_STATUS)
-            .then(|| control::parse_mdtm(&mdtm.text))
-            .flatten();
+        let modified = target.modified(&mut control).await?;
         // `REST 0` is harmless (the transfer starts at 0 anyway) and tells
         // whether ranges are possible.
         let rest = control.command("REST 0", "REST 0").await?.code == reply::PENDING;
@@ -526,6 +551,7 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
             target: target.clone(),
             addr,
             size,
+            modified: modified.clone(),
             epsv_refused: AtomicBool::new(false),
         });
         let transfer = server
@@ -547,6 +573,7 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
             validators: Validators {
                 etag: None,
                 last_modified: modified,
+                strong_modified: None,
             },
         })
     };
@@ -582,7 +609,9 @@ impl Connection {
     /// has no control connection yet.
     pub async fn open(&mut self, request: &RequestContext, from: u64) -> Result<Transfer, Failure> {
         let work = async {
-            let control = if let Some(control) = self.control.take() {
+            let control = if let Some(mut control) = self.control.take() {
+                // Kept from the last range: the file may have changed since.
+                self.server.check_same_file(&mut control).await?;
                 control
             } else {
                 self.tls = self.server.target.tls.as_ref().map(Tls::for_new_session);

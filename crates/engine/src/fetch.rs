@@ -16,7 +16,7 @@ use tracing::warn;
 use url::Url;
 
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
-use crate::http::{self, Clients, Failure, RequestRange, Session};
+use crate::http::{self, Clients, Failure, RequestRange, Session, Validators};
 use crate::limiter::{Paced, RateLimiter, pace};
 use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
@@ -335,6 +335,7 @@ impl Fetcher {
             base: range.as_ref().map_or(0, |r| r.start),
             end: range.map(|r| r.end),
             written: 0,
+            first: None,
         };
         let mut attempts = Attempts::new(Refusals::AsFailures, self.inner.max_retries);
         loop {
@@ -371,12 +372,19 @@ impl Fetcher {
         on_bytes: &mut (dyn FnMut(u64) + Send),
     ) -> Result<Answer, Failure> {
         let from = position.base + position.written;
-        let (response, mut skip) = self.open(client, url, from, position.end).await?;
+        let (response, mut skip) = self
+            .open(client, url, from, position.end, position.first.as_ref())
+            .await?;
+        let total = known_end(&response, from, skip);
         if position.end.is_none() {
             // The size, once known, lets a later retry ask for exactly the rest
             // and tells a complete body from one cut short.
-            position.end = known_end(&response, from, skip);
+            position.end = total;
         }
+        position.first.get_or_insert_with(|| FirstAnswer {
+            total,
+            validators: Validators::from_headers(response.headers()),
+        });
         if let Some(end) = position.end {
             sink.expect(end.saturating_sub(from))?;
         }
@@ -431,24 +439,34 @@ impl Fetcher {
 
     /// Asks for the bytes from `from` up to `end` (exclusive), or to the end of
     /// the resource. Returns the response and how many bytes at its start to
-    /// skip: a server that ignores ranges sends the whole resource.
+    /// skip: a server that ignores ranges sends the whole resource. A request
+    /// that continues a transfer must be answered about the resource `first`
+    /// described.
     async fn open(
         &self,
         client: &Client,
         url: &Url,
         from: u64,
         end: Option<u64>,
+        first: Option<&FirstAnswer>,
     ) -> Result<(Response, u64), Failure> {
         let range = RequestRange::up_to(from, end)
             .ok_or_else(|| http::empty_range(from, end.unwrap_or(from)))?;
         let range = (!range.is_whole()).then_some(range);
         let response = http::send(client, url, &self.inner.session, range).await?;
+        let nothing_known = FirstAnswer::default();
+        let first = first.unwrap_or(&nothing_known);
+        let headers = response.headers();
         match (response.status(), range) {
-            (StatusCode::OK, None) => Ok((response, 0)),
-            // The server ignores ranges and sends everything.
-            (StatusCode::OK, Some(_)) => Ok((response, from)),
+            (StatusCode::OK, range) => {
+                let length = response.content_length();
+                http::check_whole(headers, length, first.total, &first.validators)?;
+                // A server that ignores ranges sends everything.
+                let skip = if range.is_some() { from } else { 0 };
+                Ok((response, skip))
+            }
             (StatusCode::PARTIAL_CONTENT, Some(_)) => {
-                http::check_partial(response.headers(), from, None)?;
+                http::check_partial(headers, from, first.total, &first.validators)?;
                 Ok((response, 0))
             }
             _ => Err(Failure::status(&response)),
@@ -464,6 +482,17 @@ struct Position {
     end: Option<u64>,
     /// Bytes delivered to the sink so far.
     written: u64,
+    /// What the first answer said about the resource, once it came.
+    first: Option<FirstAnswer>,
+}
+
+/// What the first answer of a transfer said about the resource; every answer
+/// that continues the transfer must be about the same one.
+#[derive(Default)]
+struct FirstAnswer {
+    /// Its size, if the answer said.
+    total: Option<u64>,
+    validators: Validators,
 }
 
 /// What a finished transfer learned.

@@ -359,7 +359,7 @@ fn check_response(
             url: context.url.to_string(),
         }));
     }
-    match http::check_partial(response.headers(), from, context.total) {
+    match http::check_partial(response.headers(), from, context.total, &context.validators) {
         Ok(_) => Ok(()),
         Err(changed @ Error::RemoteChanged) => Err(H3Failure::Answer(changed.into())),
         Err(other) => Err(H3Failure::Unusable(other)),

@@ -325,6 +325,7 @@ pub(crate) async fn download_guarded(
             url: final_url,
             ranged,
             total,
+            validators: validators.clone(),
             cancel,
             stall_timeout: opts.stall_timeout,
         },
