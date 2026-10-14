@@ -49,8 +49,18 @@ url.workspace = true
 # The same version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state.
 winreg = "0.10.1"
 # The version Tauri already uses, to keep a download window behind the window that took the
-# focus from it (D23).
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# focus from it (D23), and to lay the window that offers the snap layouts over the maximize button (D36).
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# The versions Tauri already uses: the accent colour chosen in Windows, and which Windows this is
+# (Mica on 11, Acrylic on 10; D36).
+windows = { version = "0.62.2", features = ["UI", "UI_ViewManagement"] }
+windows-version = "0.1.7"
 
 # The versions Tauri already uses, to put the hidden main window's web view to sleep (D13).
 webview2-com = "0.39.1"

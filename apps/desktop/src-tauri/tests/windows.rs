@@ -65,6 +65,7 @@ const DOWNLOAD_WINDOW: &[(&str, ActsOn)] = &[
     ("close_download_window", ActsOn::Neither),
     ("fit_download_window", ActsOn::Neither),
     ("report_unreadable_event", ActsOn::Neither),
+    ("system_appearance", ActsOn::Neither),
 ];
 
 /// Of [`DOWNLOAD_WINDOW`], the commands the main window has no use for. The main window may call
@@ -145,6 +146,40 @@ fn each_window_may_call_only_the_commands_it_uses() -> TestResult {
                 window.label()
             );
         }
+    }
+    Ok(())
+}
+
+/// Every window's title bar drags it (Tauri's `data-tauri-drag-region`, which Linux needs); only
+/// the main window maximizes, so only it may ask for a double-click's maximize.
+#[test]
+fn each_title_bar_drags_its_window_and_only_the_main_one_maximizes() -> TestResult {
+    let app = mock_builder().build(tauri::generate_context!(test = true))?;
+    let main = window(&app, MAIN_WINDOW)?;
+    let download = window(&app, &Shows::Question(QuestionId(1)).label())?;
+    let progress = window(&app, &Shows::Download(DownloadId(1)).label())?;
+    let refused = |window: &WebviewWindow<MockRuntime>, command: &str| -> TestResult<bool> {
+        Ok(match call(window, command, json!({}))? {
+            Ok(_) => false,
+            Err(answer) => answer
+                .as_str()
+                .is_some_and(|text| text.contains("not allowed")),
+        })
+    };
+    for window in [&main, &download, &progress] {
+        assert!(
+            !refused(window, "plugin:window|start_dragging")?,
+            "{} drags",
+            window.label()
+        );
+    }
+    assert!(!refused(&main, "plugin:window|internal_toggle_maximize")?);
+    for window in [&download, &progress] {
+        assert!(
+            refused(window, "plugin:window|internal_toggle_maximize")?,
+            "{} does not maximize",
+            window.label()
+        );
     }
     Ok(())
 }

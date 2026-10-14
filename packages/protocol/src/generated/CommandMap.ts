@@ -9,6 +9,7 @@ import type { ChangeSettingsArgs } from './ChangeSettingsArgs';
 import type { ChooseMediaArgs } from './ChooseMediaArgs';
 import type { Command } from './Command';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
+import type { ControlWindowArgs } from './ControlWindowArgs';
 import type { CreateQueueArgs } from './CreateQueueArgs';
 import type { DeleteQueueArgs } from './DeleteQueueArgs';
 import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
@@ -41,12 +42,15 @@ import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
+import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { SuffixListInfo } from './SuffixListInfo';
+import type { SystemAppearance } from './SystemAppearance';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
+import type { WindowFrame } from './WindowFrame';
 
 /**
  * Every command, with its arguments and answer, for the TypeScript side.
@@ -271,6 +275,26 @@ export type CommandMap = {
    * flashes blank.
    */
   main_window_ready: Command<null, null>;
+  /**
+   * Minimizes, maximizes or closes the window that calls it, for its caption buttons.
+   */
+  control_window: Command<ControlWindowArgs, null>;
+  /**
+   * The state of the window that calls it; later changes arrive on `WINDOW_FRAME_EVENT`.
+   */
+  window_frame: Command<null, WindowFrame>;
+  /**
+   * Says where the calling window's maximize button is, so that on Windows 11 hovering it offers the system's snap layouts; `null` when it has none. Call again whenever it moves.
+   */
+  set_maximize_button: Command<SetMaximizeButtonArgs, null>;
+  /**
+   * The system's accent colour; later changes arrive on `SYSTEM_APPEARANCE_EVENT`.
+   */
+  system_appearance: Command<null, SystemAppearance>;
+  /**
+   * Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
+   */
+  take_captured: Command<null, Array<DownloadSummary>>;
   /**
    * Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
    */

@@ -45,6 +45,14 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     Attention::Ask(id) => download_windows::ask(&app, id),
                     Attention::Closed(id) => download_windows::question_closed(&app, id),
                     Attention::ShowMain => crate::window::show_main_window(&app),
+                    Attention::ShowCaptured(row) => {
+                        if let Some(captured) = app.try_state::<crate::window::PendingCaptures>() {
+                            captured.started(&row);
+                        }
+                        // The person is browsing: the window comes forward, the focus stays.
+                        crate::window::show_main_window_with(&app, crate::window::Focus::Leave);
+                    }
+                    Attention::Theme(theme) => crate::appearance::follow_theme(&app, theme),
                     Attention::Notify { title, body } => {
                         let unseen = app.get_webview_window(MAIN_WINDOW).is_none()
                             || sleep::skips_events(&app, MAIN_WINDOW);

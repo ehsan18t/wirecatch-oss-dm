@@ -9,7 +9,7 @@
   } from '@wirecatch/protocol';
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
-  import { followTheme } from '$lib/theme.svelte';
+  import { Appearance, followLook } from '$lib/state/appearance.svelte';
   import DownloadWindow from '$lib/window/DownloadWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
@@ -30,6 +30,7 @@
   let win = $state<DownloadWindowState | null>(null);
   let problem = $state<string | null>(null);
   let backend: DownloadWindowBackend | null = null;
+  const appearance = new Appearance();
 
   // The window is only as tall as the view it shows; a failure leaves it as it is.
   setFitWindow((height) => void backend?.fitDownloadWindow(height).catch(() => undefined));
@@ -56,10 +57,14 @@
     );
     win = state;
     void state.init();
-    return () => state.dispose();
+    const following = appearance.connect(shell);
+    return () => {
+      state.dispose();
+      void following.then((stop) => stop());
+    };
   });
 
-  followTheme(() => win?.settings?.theme);
+  followLook(appearance, () => win?.settings);
 </script>
 
 <svelte:head><title>{win?.name ?? PRODUCT_NAME} download</title></svelte:head>

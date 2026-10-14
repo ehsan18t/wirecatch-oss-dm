@@ -57,6 +57,13 @@ const DEFS = [
     keywords: 'theme dark mode light mode colors',
   },
   {
+    id: 'accent',
+    section: 'general',
+    label: 'Accent colour',
+    help: 'The colour that marks what is selected and what is downloading. System uses the colour you chose in Windows.',
+    keywords: 'accent color colour highlight tint',
+  },
+  {
     id: 'start_with_system',
     section: 'general',
     label: 'Start Wirecatch when you sign in',

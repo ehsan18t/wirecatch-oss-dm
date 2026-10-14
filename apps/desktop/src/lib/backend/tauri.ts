@@ -8,13 +8,18 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 import {
   COMMAND_OUTPUTS,
   isErrorCode,
+  isSystemAppearance,
   isUiEvent,
+  isWindowFrame,
   LINKS_EVENT,
   RESYNC_EVENT,
+  SYSTEM_APPEARANCE_EVENT,
   UI_EVENT,
+  WINDOW_FRAME_EVENT,
   type AddonId,
   type AddRequest,
   type AppSettingsPatch,
+  type ButtonArea,
   type CaptureConfirmation,
   type CommandMap,
   type DownloadId,
@@ -22,7 +27,10 @@ import {
   type QuestionId,
   type Queue,
   type QueueId,
+  type SystemAppearance,
   type UiEvent,
+  type WindowAction,
+  type WindowFrame,
 } from '@wirecatch/protocol';
 import { keysOf } from '../keys';
 import {
@@ -309,6 +317,39 @@ export class TauriBackend implements DownloadWindowBackend {
     return () => {
       for (const stop of stops) stop();
     };
+  }
+
+  /** Listens to a shell event whose payload is checked against the contract; one that does not fit is dropped. */
+  #listenChecked<T>(
+    event: string,
+    fits: (value: unknown) => value is T,
+    listener: (payload: T) => void,
+  ): Promise<Unsubscribe> {
+    return this.#listen(event, (e) => {
+      if (fits(e.payload)) listener(e.payload);
+    });
+  }
+
+  takeCaptured() {
+    return this.#call('take_captured');
+  }
+  systemAppearance() {
+    return this.#call('system_appearance');
+  }
+  onSystemAppearance(listener: (appearance: SystemAppearance) => void) {
+    return this.#listenChecked(SYSTEM_APPEARANCE_EVENT, isSystemAppearance, listener);
+  }
+  controlWindow(action: WindowAction) {
+    return this.#exec('control_window', { action });
+  }
+  windowFrame() {
+    return this.#call('window_frame');
+  }
+  onWindowFrame(listener: (frame: WindowFrame) => void) {
+    return this.#listenChecked(WINDOW_FRAME_EVENT, isWindowFrame, listener);
+  }
+  setMaximizeButton(area: ButtonArea | null) {
+    return this.#exec('set_maximize_button', { area });
   }
 
   async pickFolder(current?: string) {

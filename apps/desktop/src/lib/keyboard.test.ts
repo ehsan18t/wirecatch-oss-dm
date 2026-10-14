@@ -81,7 +81,7 @@ describe('keyboard only', () => {
     await press('{Enter}');
     expect(app.paletteOpen).toBe(false);
     expect(app.settings?.theme).toBe('dark');
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.documentElement.dataset.scheme).toBe('dark');
   });
 
   it('jumps from the palette straight to a setting and focuses it', async () => {

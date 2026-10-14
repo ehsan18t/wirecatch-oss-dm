@@ -20,8 +20,8 @@ function block(selector: string): Record<string, string> {
 }
 
 const light = block(':root {');
-const dark = block(":root[data-theme='dark'] {");
-const darkMedia = block(":root:not([data-theme='light']) {");
+const dark = block(":root[data-scheme='dark'] {");
+const darkMedia = block(":root:not([data-scheme='light']) {");
 
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {

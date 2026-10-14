@@ -5,13 +5,14 @@
 // settings and the core's events.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
-import type { AppSettings, DownloadId, UiEvent } from '@wirecatch/protocol';
+import type { AppSettings, DownloadId, DownloadSummary, UiEvent } from '@wirecatch/protocol';
 import { createContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { Addons } from './addons.svelte';
+import { Appearance } from './appearance.svelte';
 import { SuffixList } from './suffix-list.svelte';
 import { runningAppName } from './app-name';
 import { Clock } from './clock.svelte';
@@ -59,6 +60,9 @@ export class AppState {
     row: (id) => this.downloads.get(id),
   });
   readonly questions = new Questions({ backend: () => this.#backend });
+  /** The window's theme and accent on its page (D36); the shell components apply the settings to it. */
+  readonly appearance = new Appearance();
+  #stopAppearance: (() => void) | null = null;
   readonly addons = new Addons({
     backend: () => this.#backend,
     runner: this.#runner,
@@ -189,6 +193,8 @@ export class AppState {
     this.ready = true;
     this.clock.start();
     // None is needed for the list, so none holds it up.
+    void this.#followSystem(current);
+    void this.#takeCaptured();
     void this.addons.load();
     void this.suffixList.load();
     void this.#takeLaunchLinks();
@@ -237,6 +243,25 @@ export class AppState {
     }
   }
 
+  /** Follows the system's light or dark and accent colour until the next init or dispose. */
+  async #followSystem(current: () => boolean): Promise<void> {
+    const stop = await this.appearance.connect(this.#backend);
+    if (current()) this.#stopAppearance = stop;
+    else stop();
+  }
+
+  /** Notes for the browser downloads that started while this page was still loading (D36.7). */
+  async #takeCaptured(): Promise<void> {
+    let rows: DownloadSummary[];
+    try {
+      rows = await this.#backend.takeCaptured();
+    } catch {
+      // Only the notes are lost: the downloads are in the list.
+      return;
+    }
+    for (const row of rows) this.toasts.captured(row);
+  }
+
   /** Links from the command line (`wirecatch-app https://...`) open the Add dialog. */
   async #takeLaunchLinks(): Promise<void> {
     let links: string[];
@@ -254,6 +279,8 @@ export class AppState {
   #teardown(): void {
     this.#connection.close();
     this.clock.stop();
+    this.#stopAppearance?.();
+    this.#stopAppearance = null;
   }
 
   dispose(): void {

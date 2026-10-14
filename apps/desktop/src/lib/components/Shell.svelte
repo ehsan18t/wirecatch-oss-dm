@@ -5,7 +5,7 @@
   import { isEditable, windowCommand } from '$lib/keymap';
   import { DOCK_WIDTH } from '$lib/layout';
   import { getApp } from '$lib/state/app.svelte';
-  import { followTheme } from '$lib/theme.svelte';
+  import { followLook } from '$lib/state/appearance.svelte';
   import Button from './Button.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import DetailPanel from './DetailPanel.svelte';
@@ -28,7 +28,7 @@
     return () => query.removeEventListener('change', update);
   });
 
-  followTheme(() => app.settings?.theme);
+  followLook(app.appearance, () => app.settings);
 
   const detail = $derived.by((): 'docked' | 'overlay' | null => {
     if (app.screen !== 'downloads') return null;

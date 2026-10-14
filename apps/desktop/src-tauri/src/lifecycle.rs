@@ -255,9 +255,45 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
         }
         RunEvent::WindowEvent {
             label,
+            event: event @ (WindowEvent::Resized(_) | WindowEvent::Focused(_)),
+            ..
+        } => {
+            if let Some(window) = app.get_webview_window(&label) {
+                crate::frame::send_frame(&window);
+                if matches!(event, WindowEvent::Resized(_)) {
+                    crate::frame::place_overlay(&window);
+                }
+            }
+            // Coming back from the system's settings is when a new accent colour is noticed.
+            if matches!(event, WindowEvent::Focused(true)) {
+                crate::appearance::refresh_system_accent(app);
+            }
+        }
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::ScaleFactorChanged { .. },
+            ..
+        } => {
+            // The button keeps its CSS size, so the page reports nothing: place it again.
+            if let Some(window) = app.get_webview_window(&label) {
+                crate::frame::place_overlay(&window);
+            }
+        }
+        RunEvent::WindowEvent {
+            event: WindowEvent::ThemeChanged(_),
+            ..
+        } => crate::appearance::refresh_system_accent(app),
+        RunEvent::WindowEvent {
+            label,
             event: WindowEvent::Destroyed,
             ..
         } => {
+            crate::frame::forget(app, &label);
+            if label == MAIN_WINDOW
+                && let Some(captured) = app.try_state::<crate::window::PendingCaptures>()
+            {
+                captured.page_gone();
+            }
             if is_download_window(&label) {
                 download_windows::window_gone(app, &label);
             } else if closing_quits_now(app, &label) {

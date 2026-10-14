@@ -6,14 +6,19 @@ import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import type {
   AddRequest,
   AppSettingsPatch,
+  ButtonArea,
   CaptureConfirmation,
   DownloadId,
+  DownloadSummary,
   MediaSelection,
   QuestionId,
   Queue,
   QueueId,
   SettingsProfile,
+  SystemAppearance,
   UiEvent,
+  WindowAction,
+  WindowFrame,
 } from '@wirecatch/protocol';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
@@ -59,6 +64,8 @@ export interface MockOptions {
 const DEFAULT_SEED = 7;
 /** With `autoCapture`, the browser "sends" a download this long after start. */
 const AUTO_CAPTURE_MS = 6000;
+/** The sample system's accent colour: Windows' own default blue. */
+export const SAMPLE_SYSTEM_ACCENT = '#0078d4';
 /** How long the slow sample page takes to read. */
 const SLOW_READING_MS = 3000;
 
@@ -429,9 +436,45 @@ export class MockBackend implements Backend {
     return this.#call((): string[] => []);
   }
 
+  takeCaptured() {
+    // The sample page is listening from its start: every capture reaches it as an event.
+    return this.#call((): DownloadSummary[] => []);
+  }
+
   onShellSignal(_listener: (signal: ShellSignal) => void) {
     // A browser tab has no desktop shell to signal anything.
     return this.#call((): Unsubscribe => () => undefined);
+  }
+
+  systemAppearance() {
+    return this.#call((): SystemAppearance => ({ accent: SAMPLE_SYSTEM_ACCENT }));
+  }
+
+  onSystemAppearance(_listener: (appearance: SystemAppearance) => void) {
+    // The sample system never changes its accent colour.
+    return this.#call((): Unsubscribe => () => undefined);
+  }
+
+  controlWindow(_action: WindowAction) {
+    // A browser tab cannot minimize, maximize or close itself.
+    return this.#call(() => undefined);
+  }
+
+  windowFrame() {
+    return this.#call((): WindowFrame => ({
+      maximized: false,
+      focused: true,
+      maximize_hovered: false,
+    }));
+  }
+
+  onWindowFrame(_listener: (frame: WindowFrame) => void) {
+    return this.#call((): Unsubscribe => () => undefined);
+  }
+
+  setMaximizeButton(_area: ButtonArea | null) {
+    // The page keeps the pointer over its own button: there are no snap layouts to offer.
+    return this.#call(() => undefined);
   }
 
   /** Its events are always readable, so it never asks for a reload. */

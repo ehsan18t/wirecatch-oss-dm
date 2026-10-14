@@ -19,6 +19,8 @@
 //! - [`RESYNC_EVENT`] (no payload): events were missed; reload everything.
 //! - [`LINKS_EVENT`] (no payload): links arrived from a second launch; fetch them with
 //!   `take_launch_links`.
+//! - `WINDOW_FRAME_EVENT`, to one window: the state its title bar shows changed (see [`frame`]).
+//! - `SYSTEM_APPEARANCE_EVENT`: the system's accent colour changed (see [`appearance`]).
 //!
 //! Every event reaches every window: the main window and the download windows (D23, see
 //! [`download_windows`]), which each keep only what concerns their download.
@@ -43,6 +45,7 @@
 
 pub mod activity;
 pub mod api;
+pub mod appearance;
 pub mod appimage;
 pub mod autostart;
 pub mod background;
@@ -50,8 +53,11 @@ pub mod bridge;
 mod commands;
 pub mod download_windows;
 pub mod elevation;
+pub mod frame;
 pub mod host;
 pub mod lifecycle;
+#[cfg(windows)]
+mod maximize_overlay;
 pub mod questions;
 pub mod sleep;
 pub mod tray;
@@ -113,10 +119,30 @@ pub fn run() {
 
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
+        .manage(window::PendingCaptures::default())
+        .manage(window::PendingReveal::default())
         .manage(Lifecycle::default())
         .manage(sleep::MainAsleep::default())
         .manage(download_windows::DownloadWindows::default())
         .manage(api::WarningsShown::default())
+        .manage(frame::Frames::default())
+        .manage(appearance::SystemAccent::read())
+        .manage(appearance::AppliedTheme::default())
+        .on_page_load(|webview, payload| {
+            if payload.event() != tauri::webview::PageLoadEvent::Started {
+                return;
+            }
+            // A new page (a reload, or recovering from a crash) reports its own button and
+            // takes the downloads it missed.
+            if let Some(window) = webview.app_handle().get_webview_window(webview.label()) {
+                frame::page_loading(&window);
+            }
+            if webview.label() == window::MAIN_WINDOW
+                && let Some(captured) = webview.try_state::<window::PendingCaptures>()
+            {
+                captured.page_gone();
+            }
+        })
         .setup(move |app| setup(app, &launch))
         .invoke_handler(commands::handler())
         .build(context);
@@ -270,6 +296,10 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
         app.clone(),
         events,
     )));
+    // A window built while the download list was opening has the system's theme, not the
+    // stored one (the main window also takes it when its page has drawn, in case it was only
+    // queued then).
+    appearance::follow_theme(&app, manager.get_settings().theme);
     // A browser download that arrived while the download list was opening gets its window.
     download_windows::restore(&app);
     life.keep(tauri::async_runtime::spawn(background::watch(

@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the main window uses: the wirecatch://event stream, the app's name for titles, the file and folder pickers, and the app's commands except the ones only a download window has a use for (D43).",
+  "description": "What the main window uses: the wirecatch://event stream, the app's name for titles, the file and folder pickers, dragging the frameless window by its title bar (a double-click there maximizes it), and the app's commands except the ones only a download window has a use for (D43).",
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:app:allow-name",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "dialog:allow-open",
     "dialog:allow-save",
     "allow-list-downloads",
@@ -51,6 +53,11 @@
     "allow-show-question-windows",
     "allow-show-progress-window",
     "allow-main-window-ready",
+    "allow-control-window",
+    "allow-window-frame",
+    "allow-set-maximize-button",
+    "allow-system-appearance",
+    "allow-take-captured",
     "allow-report-unreadable-event"
   ]
 }

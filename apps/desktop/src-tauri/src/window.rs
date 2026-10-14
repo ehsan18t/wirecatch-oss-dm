@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindowBuilder};
 use wirecatch_engine::units::KIB_USIZE;
+use wirecatch_protocol::app::DownloadSummary;
 
 /// Label of the one window, as declared in `tauri.conf.json`.
 pub const MAIN_WINDOW: &str = "main";
@@ -83,6 +84,51 @@ impl LaunchLinks {
     }
 }
 
+/// Most browser downloads kept for the main window's notes while its page is not listening.
+pub const MAX_PENDING_CAPTURES: usize = 20;
+
+/// Browser downloads that started without a window of their own (D36.7) while the main
+/// window's page was not listening yet: the main window is opened for them, and its page, still
+/// loading, would miss their `Captured` events, so it takes them once it has loaded. A page
+/// listens from the moment it takes them until it goes (a reload, or the window is destroyed).
+#[derive(Default)]
+pub struct PendingCaptures(Mutex<Captures>);
+
+#[derive(Default)]
+struct Captures {
+    listening: bool,
+    waiting: Vec<DownloadSummary>,
+}
+
+impl PendingCaptures {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Captures> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A download started without a window: kept unless the page already listens (then its
+    /// event reaches it), at most [`MAX_PENDING_CAPTURES`].
+    pub fn started(&self, row: &DownloadSummary) {
+        let mut captures = self.lock();
+        if !captures.listening && captures.waiting.len() < MAX_PENDING_CAPTURES {
+            captures.waiting.push(row.clone());
+        }
+    }
+
+    /// The page has loaded and listens: hands every waiting download over, once.
+    pub fn take(&self) -> Vec<DownloadSummary> {
+        let mut captures = self.lock();
+        captures.listening = true;
+        std::mem::take(&mut captures.waiting)
+    }
+
+    /// The page is gone (it reloads, or the window was destroyed): it listens no more.
+    pub fn page_gone(&self) {
+        self.lock().listening = false;
+    }
+}
+
 /// What a launch asks for, read from its command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Launch {
@@ -110,11 +156,63 @@ impl Launch {
     }
 }
 
-/// Shows the main window, creating it if it was closed to the tray, and brings it to the front.
+/// Whether showing a window gives it the keyboard focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    /// It takes the focus: the person asked for it (the tray, a second launch, the browser).
+    Take,
+    /// It comes to the front and leaves the focus where it is: a browser download started
+    /// without asking while the person keeps browsing (D36.7).
+    Leave,
+}
+
+/// How a main window that is still opening shows once its page has drawn: the last request
+/// wins, and taking the focus wins over leaving it, since the person asked for the window.
+#[derive(Default)]
+pub struct PendingReveal(Mutex<Option<Focus>>);
+
+impl PendingReveal {
+    /// Asks for `focus` when the opening window shows.
+    pub fn request(&self, focus: Focus) {
+        let mut pending = self.lock();
+        if *pending != Some(Focus::Take) {
+            *pending = Some(focus);
+        }
+    }
+
+    /// How to show the window now, once; [`Focus::Take`] when nothing asked otherwise.
+    pub fn take(&self) -> Focus {
+        self.lock().take().unwrap_or(Focus::Take)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<Focus>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// Shows the main window, creating it if it was closed to the tray, and brings it to the front
+/// with the focus.
 pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    show_main_window_with(app, Focus::Take);
+}
+
+/// Shows the main window, creating it if it was closed to the tray, and brings it to the front,
+/// with or without the focus.
+pub fn show_main_window_with<R: Runtime>(app: &AppHandle<R>, focus: Focus) {
+    if let Some(pending) = app.try_state::<PendingReveal>() {
+        pending.request(focus);
+    }
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         crate::sleep::wake_main(&window);
-        bring_forward(&window);
+        let focus = app
+            .try_state::<PendingReveal>()
+            .map_or(focus, |pending| pending.take());
+        match focus {
+            Focus::Take => bring_forward(&window),
+            Focus::Leave => show_quietly(&window),
+        }
         return;
     }
     let Some(config) = app
@@ -129,8 +227,8 @@ pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     };
     // Opened hidden: the page shows it once its first view is drawn (`main_window_ready`), so
     // it never flashes blank. If the page never says so, it is shown after a moment anyway.
-    let built =
-        WebviewWindowBuilder::from_config(app, config).and_then(|b| b.visible(false).build());
+    let built = WebviewWindowBuilder::from_config(app, config)
+        .and_then(|b| crate::appearance::frameless(app, b).visible(false).build());
     match built {
         Ok(window) => {
             tauri::async_runtime::spawn(async move {
@@ -155,7 +253,32 @@ pub fn reveal_main<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     if window.is_visible().unwrap_or(true) {
         return;
     }
-    show_focused(window);
+    let focus = window
+        .try_state::<PendingReveal>()
+        .map_or(Focus::Take, |pending| pending.take());
+    match focus {
+        Focus::Take => show_focused(window),
+        Focus::Leave => show_quietly(window),
+    }
+}
+
+/// Shows `window` in front, restored if minimized, without taking the focus: while it cannot be
+/// focused the system shows it without activating it.
+pub fn show_quietly<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let label = window.label();
+    warn_if_failed(
+        format_args!("keep the window {label} from taking the focus"),
+        window.set_focusable(false),
+    );
+    warn_if_failed(
+        format_args!("restore the minimized window {label}"),
+        window.unminimize(),
+    );
+    warn_if_failed(format_args!("show the window {label}"), window.show());
+    warn_if_failed(
+        format_args!("let the window {label} take the focus again"),
+        window.set_focusable(true),
+    );
 }
 
 /// Brings `window` to the front: restored if minimized, shown and focused.
@@ -282,6 +405,77 @@ mod tests {
         let with_link = Launch::from_args(&args(&["app", "--background", "https://x.example/f"]));
         assert!(with_link.shows_window());
         assert_eq!(with_link.links, ["https://x.example/f"]);
+    }
+
+    fn started(id: i64) -> DownloadSummary {
+        DownloadSummary {
+            id: wirecatch_protocol::DownloadId(id),
+            url: format!("https://example.com/{id}.zip"),
+            file_name: format!("{id}.zip"),
+            path: format!("C:/Downloads/{id}.zip"),
+            queue: wirecatch_protocol::QueueId(1),
+            category: wirecatch_protocol::app::Category::Archive,
+            status: wirecatch_protocol::app::DownloadStatus::Downloading,
+            total: None,
+            done: 0,
+            speed: 0,
+            connections: 0,
+            eta_secs: None,
+            error: None,
+            waiting: None,
+            media: None,
+            added_at: 0,
+            completed_at: None,
+            processing: None,
+        }
+    }
+
+    /// D36.7 on the start-with-system path: the main window opens for a browser download, and
+    /// its page, still loading, gets the note once it has loaded.
+    #[test]
+    fn a_page_that_was_not_listening_gets_the_downloads_it_missed_once() {
+        let captures = PendingCaptures::default();
+        captures.started(&started(1));
+        captures.started(&started(2));
+        let taken: Vec<_> = captures.take().into_iter().map(|r| r.id.0).collect();
+        assert_eq!(taken, [1, 2]);
+        // Listening now: the events reach the page, nothing is kept twice.
+        captures.started(&started(3));
+        assert_eq!(captures.take(), []);
+        // A reload stops listening until the new page takes them.
+        captures.page_gone();
+        captures.started(&started(4));
+        assert_eq!(captures.take().len(), 1);
+    }
+
+    #[test]
+    fn at_most_twenty_missed_downloads_are_kept() {
+        let captures = PendingCaptures::default();
+        for id in 0..50 {
+            captures.started(&started(id));
+        }
+        assert_eq!(captures.take().len(), MAX_PENDING_CAPTURES);
+    }
+
+    #[test]
+    fn an_opening_window_shows_as_last_asked_and_asking_for_it_wins() {
+        let pending = PendingReveal::default();
+        assert_eq!(
+            pending.take(),
+            Focus::Take,
+            "nothing asked: the person opened it"
+        );
+        pending.request(Focus::Leave);
+        assert_eq!(pending.take(), Focus::Leave);
+        assert_eq!(pending.take(), Focus::Take, "taken once");
+        pending.request(Focus::Leave);
+        pending.request(Focus::Take);
+        pending.request(Focus::Leave);
+        assert_eq!(
+            pending.take(),
+            Focus::Take,
+            "the person asked for it meanwhile"
+        );
     }
 
     #[test]

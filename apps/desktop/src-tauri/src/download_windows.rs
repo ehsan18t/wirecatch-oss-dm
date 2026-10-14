@@ -548,18 +548,19 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
         .product_name
         .clone()
         .unwrap_or_else(|| crate::host::CHANNEL.name().to_owned());
-    let built =
-        WebviewWindowBuilder::new(app, &open.label, WebviewUrl::App(open.shows.route().into()))
-            .title(title)
-            .inner_size(WINDOW_SIZE.0, WINDOW_SIZE.1)
-            .min_inner_size(MIN_WINDOW_SIZE.0, MIN_WINDOW_SIZE.1)
-            .resizable(true)
-            .maximizable(false)
-            .always_on_top(true)
-            .focused(true)
-            .visible(false)
-            .disable_drag_drop_handler()
-            .build();
+    let builder =
+        WebviewWindowBuilder::new(app, &open.label, WebviewUrl::App(open.shows.route().into()));
+    let built = crate::appearance::frameless(app, builder)
+        .title(title)
+        .inner_size(WINDOW_SIZE.0, WINDOW_SIZE.1)
+        .min_inner_size(MIN_WINDOW_SIZE.0, MIN_WINDOW_SIZE.1)
+        .resizable(true)
+        .maximizable(false)
+        .always_on_top(true)
+        .focused(true)
+        .visible(false)
+        .disable_drag_drop_handler()
+        .build();
     let window = match built {
         Ok(window) => window,
         Err(e) => {

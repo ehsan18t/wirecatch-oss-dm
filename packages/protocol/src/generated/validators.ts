@@ -12,6 +12,7 @@ import type { AddonState } from './AddonState';
 import type { AppSettings } from './AppSettings';
 import type { AppSettingsPatch } from './AppSettingsPatch';
 import type { BrowserInfo } from './BrowserInfo';
+import type { ButtonArea } from './ButtonArea';
 import type { Call } from './Call';
 import type { CancelAddonOperationArgs } from './CancelAddonOperationArgs';
 import type { CancelArgs } from './CancelArgs';
@@ -23,6 +24,7 @@ import type { ChangeSettingsArgs } from './ChangeSettingsArgs';
 import type { ChooseMediaArgs } from './ChooseMediaArgs';
 import type { ClientKind } from './ClientKind';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
+import type { ControlWindowArgs } from './ControlWindowArgs';
 import type { CreateQueueArgs } from './CreateQueueArgs';
 import type { DeleteQueueArgs } from './DeleteQueueArgs';
 import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
@@ -92,12 +94,14 @@ import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
 import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
+import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StreamAction } from './StreamAction';
 import type { SuffixListInfo } from './SuffixListInfo';
+import type { SystemAppearance } from './SystemAppearance';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
 import type { UiEvent } from './UiEvent';
@@ -106,6 +110,8 @@ import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { UserError } from './UserError';
 import type { WaitReason } from './WaitReason';
 import type { Weekday } from './Weekday';
+import type { WindowAction } from './WindowAction';
+import type { WindowFrame } from './WindowFrame';
 import type { WithdrawOutcome } from './WithdrawOutcome';
 import type { WithdrawRequest } from './WithdrawRequest';
 import type { CommandMap } from './CommandMap';
@@ -280,6 +286,16 @@ export function isBrowserInfo(value: unknown): value is BrowserInfo {
     (typeof value1['version'] === 'string' || value1['version'] === null))(value);
 }
 
+/** Whether `value` has the shape of a {@link ButtonArea}; fields it does not name are not checked. */
+export function isButtonArea(value: unknown): value is ButtonArea {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['x'] === 'number' &&
+    typeof value1['y'] === 'number' &&
+    typeof value1['width'] === 'number' &&
+    typeof value1['height'] === 'number')(value);
+}
+
 /** Whether `value` has the shape of a {@link Call}; fields it does not name are not checked. */
 export function isCall(value: unknown): value is Call {
   return (
@@ -377,6 +393,13 @@ export function isConfirmCaptureArgs(value: unknown): value is ConfirmCaptureArg
     isRecord(value1) &&
     isQuestionId(value1['id']) &&
     isCaptureConfirmation(value1['confirmation']))(value);
+}
+
+/** Whether `value` has the shape of a {@link ControlWindowArgs}; fields it does not name are not checked. */
+export function isControlWindowArgs(value: unknown): value is ControlWindowArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isWindowAction(value1['action']))(
+    value,
+  );
 }
 
 /** Whether `value` has the shape of a {@link CreateQueueArgs}; fields it does not name are not checked. */
@@ -1054,6 +1077,12 @@ export function isSetDownloadFolderArgs(value: unknown): value is SetDownloadFol
     isRecord(value1) && isDownloadId(value1['id']) && typeof value1['folder'] === 'string')(value);
 }
 
+/** Whether `value` has the shape of a {@link SetMaximizeButtonArgs}; fields it does not name are not checked. */
+export function isSetMaximizeButtonArgs(value: unknown): value is SetMaximizeButtonArgs {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && (isButtonArea(value1['area']) || value1['area'] === null))(value);
+}
+
 /** Whether `value` has the shape of a {@link SetQueuePausedArgs}; fields it does not name are not checked. */
 export function isSetQueuePausedArgs(value: unknown): value is SetQueuePausedArgs {
   return ((value1: unknown): boolean =>
@@ -1094,6 +1123,12 @@ export function isSuffixListInfo(value: unknown): value is SuffixListInfo {
     typeof value1['published'] === 'number' &&
     (typeof value1['checked'] === 'number' || value1['checked'] === null) &&
     typeof value1['check_failed'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link SystemAppearance}; fields it does not name are not checked. */
+export function isSystemAppearance(value: unknown): value is SystemAppearance {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && (typeof value1['accent'] === 'string' || value1['accent'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link Theme}; fields it does not name are not checked. */
@@ -1252,6 +1287,20 @@ export function isWeekday(value: unknown): value is Weekday {
   );
 }
 
+/** Whether `value` has the shape of a {@link WindowAction}; fields it does not name are not checked. */
+export function isWindowAction(value: unknown): value is WindowAction {
+  return value === 'minimize' || value === 'toggle_maximize' || value === 'close';
+}
+
+/** Whether `value` has the shape of a {@link WindowFrame}; fields it does not name are not checked. */
+export function isWindowFrame(value: unknown): value is WindowFrame {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['maximized'] === 'boolean' &&
+    typeof value1['focused'] === 'boolean' &&
+    typeof value1['maximize_hovered'] === 'boolean')(value);
+}
+
 /** Whether `value` has the shape of a {@link WithdrawOutcome}; fields it does not name are not checked. */
 export function isWithdrawOutcome(value: unknown): value is WithdrawOutcome {
   return value === 'withdrawn' || value === 'not_found' || value === 'already_started';
@@ -1353,6 +1402,16 @@ export const COMMAND_OUTPUTS: {
     value === null,
   main_window_ready: (value: unknown): value is CommandMap['main_window_ready']['output'] =>
     value === null,
+  control_window: (value: unknown): value is CommandMap['control_window']['output'] =>
+    value === null,
+  window_frame: (value: unknown): value is CommandMap['window_frame']['output'] =>
+    isWindowFrame(value),
+  set_maximize_button: (value: unknown): value is CommandMap['set_maximize_button']['output'] =>
+    value === null,
+  system_appearance: (value: unknown): value is CommandMap['system_appearance']['output'] =>
+    isSystemAppearance(value),
+  take_captured: (value: unknown): value is CommandMap['take_captured']['output'] =>
+    isArrayOf(value, isDownloadSummary),
   report_unreadable_event: (
     value: unknown,
   ): value is CommandMap['report_unreadable_event']['output'] => value === null,

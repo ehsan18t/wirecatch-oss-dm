@@ -9,13 +9,13 @@ use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
     AddDownloadArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs, ChooseMediaArgs,
-    ConfirmCaptureArgs, CreateQueueArgs, DeleteQueueArgs, DismissMediaChoiceArgs,
-    EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs,
-    GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs,
-    OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
-    RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
-    SetDownloadFolderArgs, SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs,
-    UpdateAddonArgs, UpdateQueueArgs,
+    ConfirmCaptureArgs, ControlWindowArgs, CreateQueueArgs, DeleteQueueArgs,
+    DismissMediaChoiceArgs, EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs,
+    GetDownloadArgs, GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs,
+    MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
+    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
+    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueuePausedArgs,
+    ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, UpdateAddonArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen, WarningsShown};
@@ -482,6 +482,7 @@ pub async fn close_download_window<R: Runtime>(
 pub async fn main_window_ready<R: Runtime>(
     window: WebviewWindow<R>,
 ) -> CommandResult<contract::main_window_ready::Output> {
+    crate::appearance::match_stored_theme(&window);
     crate::window::reveal_main(&window);
     Ok(())
 }
@@ -605,6 +606,52 @@ pub async fn check_suffix_list(
     api::check_suffix_list(core.manager().await?).await
 }
 
+#[tauri::command]
+pub async fn control_window<R: Runtime>(
+    window: WebviewWindow<R>,
+    args: contract::control_window::Args,
+) -> CommandResult<contract::control_window::Output> {
+    let ControlWindowArgs { action } = args;
+    crate::frame::control(&window, action).map_err(|e| {
+        api::failed(format!(
+            "The window did not respond ({e}). Use its taskbar button instead."
+        ))
+    })
+}
+
+#[tauri::command]
+pub async fn window_frame<R: Runtime>(
+    window: WebviewWindow<R>,
+) -> CommandResult<contract::window_frame::Output> {
+    Ok(crate::frame::frame_of(&window))
+}
+
+#[tauri::command]
+pub async fn set_maximize_button<R: Runtime>(
+    window: WebviewWindow<R>,
+    args: contract::set_maximize_button::Args,
+) -> CommandResult<contract::set_maximize_button::Output> {
+    let SetMaximizeButtonArgs { area } = args;
+    crate::frame::set_maximize_button(&window, area);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn system_appearance<R: Runtime>(
+    app: AppHandle<R>,
+) -> CommandResult<contract::system_appearance::Output> {
+    Ok(SystemAppearance {
+        accent: crate::appearance::last_system_accent(&app),
+    })
+}
+
+#[tauri::command]
+pub async fn take_captured(
+    captured: State<'_, crate::window::PendingCaptures>,
+) -> CommandResult<contract::take_captured::Output> {
+    Ok(captured.take())
+}
+
 /// Registers the commands named, for the app's invoke handler, and lists their names in
 /// [`REGISTERED`] for the test that holds them to the contract.
 macro_rules! handler {
@@ -672,6 +719,11 @@ handler![
     close_download_window,
     fit_download_window,
     main_window_ready,
+    control_window,
+    window_frame,
+    set_maximize_button,
+    system_appearance,
+    take_captured,
     report_unreadable_event,
 ];
 

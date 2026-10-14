@@ -238,3 +238,18 @@ describe('commands', () => {
     for (const c of all) expect(c.title).not.toMatch(/\u2014/);
   });
 });
+
+describe('browser downloads that started while the main window was loading (D36.7)', () => {
+  it('get their notes once the page has loaded, once each', async () => {
+    const backend = mockBackend();
+    const [row] = await backend.listDownloads();
+    if (!row) throw new Error('the sample list has downloads');
+    vi.spyOn(backend, 'takeCaptured').mockResolvedValue([row]);
+    const app = appState(backend);
+    await app.init();
+    await vi.waitFor(() => expect(app.toasts.items).toHaveLength(1));
+    // The same download's event reached the page while it was taking them.
+    app.handle({ type: 'captured', data: row });
+    expect(app.toasts.items.filter((t) => t.downloadId === row.id)).toHaveLength(1);
+  });
+});

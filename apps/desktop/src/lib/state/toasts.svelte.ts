@@ -30,8 +30,12 @@ export class Toasts {
     this.#show({ kind: 'error', message: text });
   }
 
-  /** A download the browser handed over, by its file name. */
+  /**
+   * A download the browser handed over, by its file name; once per download, since a page that
+   * was still loading may get it both from the shell and as an event.
+   */
   captured(row: DownloadSummary): void {
+    if (this.items.some((t) => t.kind === 'capture' && t.downloadId === row.id)) return;
     this.#show({ kind: 'capture', message: row.file_name, downloadId: row.id });
   }
 

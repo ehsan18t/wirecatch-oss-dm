@@ -2,10 +2,13 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   DOWNLOAD_WINDOW_PAGE,
+  SYSTEM_APPEARANCE_EVENT,
   UI_EVENT,
+  WINDOW_FRAME_EVENT,
   downloadId,
   questionId,
   queueId,
+  type WindowFrame,
 } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { SIGNAL_EVENTS, TauriBackend, toBackendError, UNREADABLE_RELOAD_MS } from './tauri';
@@ -60,6 +63,9 @@ describe('TauriBackend', () => {
     await b.closeDownloadWindow();
     await b.fitDownloadWindow(432);
     await b.mainWindowReady();
+    await b.controlWindow('toggle_maximize');
+    await b.setMaximizeButton({ x: 1000, y: 0, width: 46, height: 32 });
+    await b.setMaximizeButton(null);
     expect(invoke.mock.calls).toEqual([
       ['remove', { args: { ids: [1, 2], delete_file: true } }],
       ['reorder', { args: { queue: 3, ids_in_order: [2, 1] } }],
@@ -107,6 +113,9 @@ describe('TauriBackend', () => {
       ['close_download_window', undefined],
       ['fit_download_window', { args: { height: 432 } }],
       ['main_window_ready', undefined],
+      ['control_window', { args: { action: 'toggle_maximize' } }],
+      ['set_maximize_button', { args: { area: { x: 1000, y: 0, width: 46, height: 32 } } }],
+      ['set_maximize_button', { args: { area: null } }],
     ]);
   });
 
@@ -215,6 +224,48 @@ describe('shell signals', () => {
     expect(listen).toHaveBeenCalledTimes(signals);
     expect(stops).toHaveLength(signals - 1);
     for (const stop of stops) expect(stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('window frames and the system look', () => {
+  /** A Tauri `listen` that remembers each listener, so a test can send it payloads. */
+  function events() {
+    const handlers = new Map<string, (e: { payload: unknown }) => void>();
+    const listen = vi.fn((event: string, handler: (e: { payload: unknown }) => void) => {
+      handlers.set(event, handler);
+      return Promise.resolve(() => handlers.delete(event));
+    });
+    const send = (event: string, payload: unknown) => handlers.get(event)?.({ payload });
+    return { listen, send };
+  }
+
+  it('pass on only payloads with the contract shape', async () => {
+    const { listen, send } = events();
+    const b = new TauriBackend(vi.fn(), listen);
+    const frames: WindowFrame[] = [];
+    const accents: (string | null)[] = [];
+    await b.onWindowFrame((frame) => frames.push(frame));
+    await b.onSystemAppearance((system) => accents.push(system.accent));
+    const frame = { maximized: true, focused: false, maximize_hovered: true };
+    send(WINDOW_FRAME_EVENT, frame);
+    send(WINDOW_FRAME_EVENT, { maximized: 'yes' });
+    send(SYSTEM_APPEARANCE_EVENT, { accent: '#0078d4' });
+    send(SYSTEM_APPEARANCE_EVENT, { accent: 7 });
+    expect(frames).toEqual([frame]);
+    expect(accents).toEqual(['#0078d4']);
+  });
+
+  it('read the window frame and the system accent through checked commands', async () => {
+    const frame = { maximized: false, focused: true, maximize_hovered: false };
+    const answers: Record<string, unknown> = {
+      window_frame: frame,
+      system_appearance: { accent: null },
+    };
+    const b = new TauriBackend((command) => Promise.resolve(answers[command]));
+    expect(await b.windowFrame()).toEqual(frame);
+    expect(await b.systemAppearance()).toEqual({ accent: null });
+    const wrong = new TauriBackend(() => Promise.resolve({ accent: 3 }));
+    await expect(wrong.systemAppearance()).rejects.toThrow(/cannot read/);
   });
 });
 

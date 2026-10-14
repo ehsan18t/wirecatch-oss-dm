@@ -144,6 +144,17 @@ export const RESYNC_EVENT = 'wirecatch://resync';
 export const LINKS_EVENT = 'wirecatch://links';
 
 /**
+ * The Tauri event, sent to one window, that carries its [`WindowFrame`] after it changed.
+ */
+export const WINDOW_FRAME_EVENT = 'wirecatch://window-frame';
+
+/**
+ * The Tauri event, sent to every window, that carries the [`SystemAppearance`] after the
+ * system changed it.
+ */
+export const SYSTEM_APPEARANCE_EVENT = 'wirecatch://system-appearance';
+
+/**
  * The page a download window shows, relative to the app's address.
  */
 export const DOWNLOAD_WINDOW_PAGE = 'download.html';

@@ -8,6 +8,7 @@ import type {
   AddRequest,
   AppSettings,
   AppSettingsPatch,
+  ButtonArea,
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
@@ -20,8 +21,11 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  SystemAppearance,
   SuffixListInfo,
   UiEvent,
+  WindowAction,
+  WindowFrame,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../sample-windows';
 
@@ -117,6 +121,12 @@ export interface Backend {
 
   /** Links passed on the command line that the interface has not shown yet, handed over once. */
   takeLaunchLinks(): Promise<string[]>;
+  /**
+   * Browser downloads that started without a window of their own while this page was still
+   * loading, for their notes (D36.7); handed over once, and later ones arrive as `captured`
+   * events.
+   */
+  takeCaptured(): Promise<DownloadSummary[]>;
 
   /** Downloads (or with `later`, adds paused) the chosen quality; the new download's id. */
   chooseMedia(id: QuestionId, selection: MediaSelection): Promise<DownloadId>;
@@ -146,6 +156,25 @@ export interface Backend {
   subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe>;
   /** Signals from the desktop shell (see `ShellSignal`). */
   onShellSignal(listener: (signal: ShellSignal) => void): Promise<Unsubscribe>;
+
+  /** The system's accent colour, for the "system" accent (D36). */
+  systemAppearance(): Promise<SystemAppearance>;
+  /** Changes to the system's accent colour. */
+  onSystemAppearance(listener: (appearance: SystemAppearance) => void): Promise<Unsubscribe>;
+
+  /** Minimizes, maximizes or closes this window, for the caption buttons of its title bar. */
+  controlWindow(action: WindowAction): Promise<void>;
+  /** The state this window's title bar shows. */
+  windowFrame(): Promise<WindowFrame>;
+  /** Changes to the state this window's title bar shows. */
+  onWindowFrame(listener: (frame: WindowFrame) => void): Promise<Unsubscribe>;
+  /**
+   * Where this window's maximize button is, in CSS pixels, or `null` when it has none, so that on
+   * Windows 11 hovering it offers the snap layouts. Call it again whenever the button moves; while
+   * it is set the shell, not the page, gets the pointer there and reports hovering it in
+   * `WindowFrame.maximize_hovered`.
+   */
+  setMaximizeButton(area: ButtonArea | null): Promise<void>;
 
   /** System pickers. They resolve to `null` when the person cancels. */
   pickFolder(current?: string): Promise<string | null>;

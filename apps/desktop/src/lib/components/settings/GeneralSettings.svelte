@@ -1,20 +1,44 @@
 <script lang="ts">
-  // General: the theme, and how Wirecatch starts, closes and tells about finished files.
-  import type { Theme } from '@wirecatch/protocol';
+  // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files.
+  import { ACCENTS, type Accent, type Theme } from '@wirecatch/protocol';
   import { tick, type Snippet } from 'svelte';
   import { findElement } from '$lib/dom';
+  import { offeredValue } from '$lib/select-value';
+  import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
   import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
+  const app = getApp();
+
+  /** The accents offered: "Match system" only where the system has an accent colour (Windows), or while it is the choice. */
+  function offeredAccents(current: Accent): readonly Accent[] {
+    const system = app.appearance.systemAccent !== null || current === 'system';
+    return ACCENTS.filter((a) => a !== 'system' || system);
+  }
 
   const THEMES: { value: Theme; label: string }[] = [
     { value: 'system', label: 'Match system' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ];
+
+  /** What each accent is called in the menu; the design unit's settings page replaces it with swatches. */
+  const ACCENT_NAMES: Record<Accent, string> = {
+    cyan: 'Cyan',
+    purple: 'Purple',
+    blue: 'Blue',
+    green: 'Green',
+    orange: 'Orange',
+    pink: 'Pink',
+    red: 'Red',
+    teal: 'Teal',
+    indigo: 'Indigo',
+    amber: 'Amber',
+    system: 'Match system',
+  };
 
   /** Arrow keys move the theme choice along, as in any group of radio buttons. */
   function onThemeKey(e: KeyboardEvent & { currentTarget: HTMLElement }, current: Theme) {
@@ -30,6 +54,7 @@
 
   const controls: Record<SettingIn<'general'>, Snippet<[Row]>> = {
     theme,
+    accent,
     start_with_system: startWithSystem,
     close_to_tray: closeToTray,
     notify_on_complete: notifyOnComplete,
@@ -53,6 +78,23 @@
       </button>
     {/each}
   </div>
+{/snippet}
+
+{#snippet accent({ s, labelId, helpId }: Row)}
+  <select
+    class="field"
+    aria-labelledby={labelId}
+    aria-describedby={helpId}
+    value={s.accent}
+    onchange={(e) => {
+      const chosen = offeredValue(offeredAccents(s.accent), e.currentTarget.value);
+      if (chosen) save((d) => void (d.accent = chosen));
+    }}
+  >
+    {#each offeredAccents(s.accent) as a (a)}
+      <option value={a}>{ACCENT_NAMES[a]}</option>
+    {/each}
+  </select>
 {/snippet}
 
 {#snippet startWithSystem({ def, s, helpId }: Row)}

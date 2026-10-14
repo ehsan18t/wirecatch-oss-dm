@@ -13,11 +13,11 @@
 
 use wirecatch_protocol::QuestionId;
 use wirecatch_protocol::app::{
-    AddonRequestItem, MediaChoice, MediaReading, PendingCapture, UiEvent,
+    AddonRequestItem, DownloadSummary, MediaChoice, MediaReading, PendingCapture, Theme, UiEvent,
 };
 
 /// What a core event needs from the desktop besides reaching the open windows.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Attention {
     /// Nothing more.
     None,
@@ -28,6 +28,12 @@ pub enum Attention {
     Closed(QuestionId),
     /// A client asked to see Wirecatch: the main window comes to the front.
     ShowMain,
+    /// A browser download started without a window of its own (`ask_before_download` off,
+    /// D36.7): the main window comes to the front with its note, leaving the focus in the
+    /// browser; a page still loading takes the note later ([`crate::window::PendingCaptures`]).
+    ShowCaptured(Box<DownloadSummary>),
+    /// The settings changed: every window takes on their theme (see [`crate::appearance`]).
+    Theme(Theme),
     /// Something went wrong that the person must know about: a system notification when no
     /// main window shows it.
     Notify {
@@ -49,6 +55,8 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
         UiEvent::WindowRequested => Attention::ShowMain,
+        UiEvent::Captured(row) => Attention::ShowCaptured(Box::new(row.clone())),
+        UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),
         UiEvent::StorageFailed(error) => Attention::Notify {
             title: format!(
                 "{} could not save its download list",
@@ -83,8 +91,10 @@ pub fn open_question_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, Category, UserError};
+    use wirecatch_protocol::app::{
+        AddonId, AddonInfo, AddonState, Category, DownloadStatus, UserError,
+    };
+    use wirecatch_protocol::{DownloadId, QueueId};
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {
@@ -175,6 +185,46 @@ mod tests {
             Attention::None
         );
         assert_eq!(attention(&UiEvent::WindowRequested), Attention::ShowMain);
+    }
+
+    /// D36.7: a browser download started without asking (`ask_before_download` off) opens no
+    /// window of its own; the main window comes forward with its note instead.
+    #[test]
+    fn a_download_started_without_asking_brings_the_main_window_forward() {
+        let started = DownloadSummary {
+            id: DownloadId(9),
+            url: "https://example.com/a.zip".into(),
+            file_name: "a.zip".into(),
+            path: "C:/Downloads/a.zip".into(),
+            queue: QueueId(1),
+            category: Category::Archive,
+            status: DownloadStatus::Downloading,
+            total: None,
+            done: 0,
+            speed: 0,
+            connections: 0,
+            eta_secs: None,
+            error: None,
+            waiting: None,
+            media: None,
+            added_at: 0,
+            completed_at: None,
+            processing: None,
+        };
+        assert_eq!(
+            attention(&UiEvent::Captured(started.clone())),
+            Attention::ShowCaptured(Box::new(started))
+        );
+    }
+
+    #[test]
+    fn changed_settings_carry_the_theme_to_every_window() {
+        let mut settings = wirecatch_core::default_settings();
+        settings.theme = Theme::Dark;
+        assert_eq!(
+            attention(&UiEvent::SettingsChanged(settings)),
+            Attention::Theme(Theme::Dark)
+        );
     }
 
     #[test]

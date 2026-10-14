@@ -28,6 +28,11 @@ crate::exported::exported_consts! {
     /// The Tauri event, with no payload, that says links arrived from a second launch: fetch
     /// them with `take_launch_links`.
     pub const LINKS_EVENT: &str = "wirecatch://links";
+    /// The Tauri event, sent to one window, that carries its [`WindowFrame`] after it changed.
+    pub const WINDOW_FRAME_EVENT: &str = "wirecatch://window-frame";
+    /// The Tauri event, sent to every window, that carries the [`SystemAppearance`] after the
+    /// system changed it.
+    pub const SYSTEM_APPEARANCE_EVENT: &str = "wirecatch://system-appearance";
     /// The page a download window shows, relative to the app's address.
     pub const DOWNLOAD_WINDOW_PAGE: &str = "download.html";
     /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.
@@ -55,6 +60,57 @@ crate::exported::exported_consts! {
         "pdf", "txt", "md", "docx", "xlsx", "pptx", "epub", "zip", "7z", "rar", "tar", "gz", "tgz",
         "bz2", "xz", "zst",
     ];
+}
+
+/// What a window's own caption buttons ask of it. Every window is frameless (D36), so its title
+/// bar is part of its page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WindowAction {
+    /// Minimize it.
+    Minimize,
+    /// Maximize it, or restore it when it is maximized.
+    ToggleMaximize,
+    /// Close it, as its X does: the main window may go to the tray.
+    Close,
+}
+
+/// The state of a window that its title bar shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WindowFrame {
+    /// It fills the screen; the maximize button shows restore.
+    pub maximized: bool,
+    /// It has the keyboard focus; an unfocused title bar is drawn quieter.
+    pub focused: bool,
+    /// The pointer is over the maximize button. On Windows the shell, not the page, receives
+    /// the pointer there (so the system can offer its snap layouts), and says so here.
+    pub maximize_hovered: bool,
+}
+
+/// Where a window's maximize button is, in CSS pixels from the top left of its page.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ButtonArea {
+    /// Left edge.
+    pub x: f64,
+    /// Top edge.
+    pub y: f64,
+    /// Width.
+    pub width: f64,
+    /// Height.
+    pub height: f64,
+}
+
+/// What the operating system says about how apps should look, beyond light or dark (which the
+/// page reads from `prefers-color-scheme`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SystemAppearance {
+    /// The system's accent colour as `#rrggbb`, when it has one (Windows); `null` elsewhere,
+    /// where the system accent falls back to Wirecatch's cyan.
+    pub accent: Option<String>,
 }
 
 /// A command's name, as the interface invokes it.
@@ -370,6 +426,22 @@ commands! {
     /// Shows the main window once its first view is drawn; it opens hidden, so it never
     /// flashes blank.
     main_window_ready -> ();
+    /// Minimizes, maximizes or closes the window that calls it, for its caption buttons.
+    control_window: ControlWindowArgs {
+        /// What to do.
+        action: WindowAction,
+    } -> ();
+    /// The state of the window that calls it; later changes arrive on `WINDOW_FRAME_EVENT`.
+    window_frame -> WindowFrame;
+    /// Says where the calling window's maximize button is, so that on Windows 11 hovering it offers the system's snap layouts; `null` when it has none. Call again whenever it moves.
+    set_maximize_button: SetMaximizeButtonArgs {
+        /// The button's area, or `null`.
+        area: Option<ButtonArea>,
+    } -> ();
+    /// The system's accent colour; later changes arrive on `SYSTEM_APPEARANCE_EVENT`.
+    system_appearance -> SystemAppearance;
+    /// Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
+    take_captured -> Vec<DownloadSummary>;
     /// Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
     report_unreadable_event: ReportUnreadableEventArgs {
         /// The event's `type`, or `None` when it has none a window can read.
