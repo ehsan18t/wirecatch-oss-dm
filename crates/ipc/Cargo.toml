@@ -12,6 +12,8 @@ publish = false
 
 [dependencies]
 wirecatch-product.workspace = true
+wirecatch-protocol.workspace = true
+getrandom.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "time"] }
 

@@ -157,7 +157,7 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
         Ok(listener) => Some(listener),
         Err(IpcError::AlreadyInUse { endpoint }) => {
             tracing::error!(
-                "another copy of Wirecatch is already running (it owns {endpoint}); this one exits"
+                "another copy of Wirecatch is already running (it holds {endpoint}); this one exits"
             );
             // This copy opens nothing else.
             say_already_running(&handle);

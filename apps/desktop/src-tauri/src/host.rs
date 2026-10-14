@@ -348,12 +348,14 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The browser endpoint this build serves: its [`CHANNEL`]'s per-user endpoint.
+/// The browser endpoint this build serves, as a client finds it: its [`CHANNEL`]'s per-user
+/// endpoint, named with the key [`crate::bridge::bind`] keeps.
 ///
 /// # Errors
 ///
-/// The current user cannot be read (Windows), or the endpoint's folder cannot be created or
-/// is not private to this user (Linux); see [`wirecatch_ipc::endpoint_for`].
+/// No key yet, because this build has not listened for this user; the current user cannot be
+/// read (Windows); or the endpoint's folder cannot be created or is not private to this user
+/// (Linux); see [`wirecatch_ipc::endpoint_for`].
 pub fn endpoint() -> Result<Endpoint, IpcError> {
     wirecatch_ipc::endpoint_for(CHANNEL)
 }
@@ -585,6 +587,29 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&log).unwrap(),
             "bridge started\nstill logging\n"
+        );
+    }
+
+    /// The upgraded app takes its endpoint before it moves the data folder (`setup`): its listener has made the local folder, written the endpoint key there and holds the key's lock (D41.4), which must not stop the download list from moving, nor be moved over.
+    #[test]
+    fn the_data_folder_moves_after_the_listener_kept_its_key_in_the_local_one() {
+        let root = tempfile::tempdir().unwrap();
+        let old = old_data_folder(root.path());
+        let new = root.path().join("Local").join("Wirecatch");
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(
+            new.join("endpoint-key"),
+            b"0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        let lock = std::fs::File::create(new.join("endpoint-key.lock")).unwrap();
+        lock.try_lock().unwrap();
+
+        assert_eq!(migrate(&old, &new), (new.clone(), Migration::Merged));
+        assert_moved_into(&new, &old);
+        assert_eq!(
+            std::fs::read(new.join("endpoint-key")).unwrap(),
+            b"0123456789abcdef0123456789abcdef"
         );
     }
 

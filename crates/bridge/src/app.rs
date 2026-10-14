@@ -46,7 +46,8 @@ pub(crate) mod test_overrides {
     pub(crate) const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
 }
 
-/// The endpoint to connect to.
+/// The endpoint to connect to: the release app's, named with the key the app keeps (D41.4),
+/// so it is read again at every attempt.
 pub(crate) fn endpoint() -> Result<Endpoint, IpcError> {
     #[cfg(feature = "test-overrides")]
     if let Some(raw) = std::env::var_os(test_overrides::ENDPOINT_VAR) {
@@ -262,6 +263,7 @@ impl Unavailable {
             IpcError::WrongOwner { .. } | IpcError::EndpointTaken { .. } => Self::new(
                 "Wirecatch's connection point belongs to another user account on this computer, so nothing was sent to it. Another signed-in user may be trying to intercept your downloads. Ask the other users to sign out (or restart the computer), then open Wirecatch again.",
             ),
+            IpcError::NoEndpointKey { .. } => Self::new(error.to_string()),
             IpcError::UnsafeDirectory { .. } => Self::new(format!(
                 "Wirecatch could not be reached safely, so nothing was sent to it. {error}"
             )),
@@ -283,21 +285,22 @@ pub(crate) enum Start {
 
 /// Connects to the app, starting it if nothing is listening and `start` allows it, and gives up after `budget`.
 ///
-/// A server owned by another user (or any error other than "not running") is
-/// never retried and never causes a launch.
+/// `endpoint` is asked for the endpoint at every attempt: its key may not exist until the
+/// app has started, and the app writes a new one when its name is taken (D41.6).
+/// No key yet counts as "not running"; if there is still none when the budget runs out, the error says so, with its advice for a browser that sees other folders than the app. A server owned by another user counts as not running too, since the app takes a new name when it starts and finds its name held. Nothing is ever sent to it, and any other error than these is never retried and never causes a launch.
 pub(crate) async fn connect_or_launch(
-    endpoint: &Endpoint,
+    endpoint: &dyn Fn() -> Result<Endpoint, IpcError>,
     launcher: &dyn Launcher,
     budget: Duration,
     start: Start,
 ) -> Result<Connection, Unavailable> {
     let deadline = Instant::now() + budget;
-    match attempt(endpoint, deadline, budget).await {
+    let mut why = match attempt(endpoint, deadline, budget).await {
         Attempt::Connected(conn) => return Ok(conn),
-        Attempt::NotRunning if start == Start::Never => return Err(Unavailable::not_running()),
-        Attempt::NotRunning => {}
+        Attempt::NotYet(_) if start == Start::Never => return Err(Unavailable::not_running()),
+        Attempt::NotYet(why) => why,
         Attempt::Failed(unavailable) => return Err(unavailable),
-    }
+    };
 
     if let Err(e) = launcher.launch() {
         tracing::error!("could not start Wirecatch ({}): {e}", launcher.describe());
@@ -308,14 +311,19 @@ pub(crate) async fn connect_or_launch(
     let mut pause = FIRST_RETRY;
     loop {
         if Instant::now() >= deadline {
-            tracing::error!("Wirecatch did not start listening within {budget:?}");
-            return Err(Unavailable::timed_out(budget));
+            return Err(if let Some(error) = why {
+                tracing::error!("Wirecatch could not be reached within {budget:?}: {error}");
+                Unavailable::from_ipc(&error)
+            } else {
+                tracing::error!("Wirecatch did not start listening within {budget:?}");
+                Unavailable::timed_out(budget)
+            });
         }
         sleep_until((Instant::now() + pause).min(deadline)).await;
         pause = (pause * 2).min(MAX_RETRY);
         match attempt(endpoint, deadline, budget).await {
             Attempt::Connected(conn) => return Ok(conn),
-            Attempt::NotRunning => {}
+            Attempt::NotYet(now) => why = now,
             Attempt::Failed(unavailable) => return Err(unavailable),
         }
     }
@@ -323,14 +331,30 @@ pub(crate) async fn connect_or_launch(
 
 enum Attempt {
     Connected(Connection),
-    NotRunning,
+    /// Not reachable yet, which starting the app may change. Holds why when there is more to say than that nothing listens: the error to report if it lasts until the budget runs out.
+    NotYet(Option<IpcError>),
     Failed(Unavailable),
 }
 
-async fn attempt(endpoint: &Endpoint, deadline: Instant, budget: Duration) -> Attempt {
-    match timeout_at(deadline, wirecatch_ipc::connect(endpoint)).await {
+async fn attempt(
+    endpoint: &dyn Fn() -> Result<Endpoint, IpcError>,
+    deadline: Instant,
+    budget: Duration,
+) -> Attempt {
+    let connected = match endpoint() {
+        Ok(endpoint) => timeout_at(deadline, wirecatch_ipc::connect(&endpoint)).await,
+        Err(e) => Ok(Err(e)),
+    };
+    match connected {
         Ok(Ok(conn)) => Attempt::Connected(conn),
-        Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotRunning,
+        Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotYet(None),
+        Ok(Err(error @ IpcError::NoEndpointKey { .. })) => Attempt::NotYet(Some(error)),
+        Ok(Err(error @ IpcError::WrongOwner { .. })) => {
+            tracing::warn!(
+                "{error} Nothing was sent; starting Wirecatch, which moves to a new name."
+            );
+            Attempt::NotYet(Some(error))
+        }
         Ok(Err(e)) => {
             tracing::warn!("could not connect to Wirecatch: {e}");
             Attempt::Failed(Unavailable::from_ipc(&e))
@@ -415,6 +439,170 @@ mod tests {
         }
     }
 
+    /// Starts an in-process "app" that listens at a keyed endpoint after a delay, writing
+    /// the key only then, as the real app does.
+    struct DelayedKeyedApp {
+        folder: PathBuf,
+        delay: Duration,
+        launches: Arc<Mutex<u32>>,
+    }
+
+    impl Launcher for DelayedKeyedApp {
+        fn launch(&self) -> io::Result<()> {
+            *self.launches.lock().unwrap() += 1;
+            let folder = self.folder.clone();
+            let delay = self.delay;
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+                let mut listener =
+                    Listener::bind_keyed(wirecatch_ipc::Channel::Dev, &folder).unwrap();
+                let mut conn = listener.accept().await.unwrap();
+                let mut byte = [0u8; 1];
+                conn.read_exact(&mut byte).await.unwrap();
+                conn.write_all(&byte).await.unwrap();
+            });
+            Ok(())
+        }
+
+        fn describe(&self) -> String {
+            "in-process keyed test app".into()
+        }
+    }
+
+    // Only the app writes the key, so before it starts there is none to read: the bridge
+    // takes that as "not running", starts the app, and reads the key again until it can
+    // connect (W4I review M2).
+    #[tokio::test]
+    async fn a_key_that_does_not_exist_yet_starts_the_app_and_is_read_again() {
+        let dir = private_dir("bridge-keyed").unwrap();
+        let folder = dir.path().join("Wirecatch");
+        let app = DelayedKeyedApp {
+            folder: folder.clone(),
+            delay: Duration::from_millis(200),
+            launches: Arc::new(Mutex::new(0)),
+        };
+        let find = || wirecatch_ipc::endpoint_keyed_in(wirecatch_ipc::Channel::Dev, &folder);
+        let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
+            .await
+            .unwrap();
+        conn.write_all(b"k").await.unwrap();
+        let mut byte = [0u8; 1];
+        conn.read_exact(&mut byte).await.unwrap();
+        assert_eq!(&byte, b"k");
+    }
+
+    /// What the connector answers at a name another account holds.
+    fn squatted() -> IpcError {
+        IpcError::WrongOwner {
+            endpoint: "the keyed name".into(),
+            expected: "me".into(),
+            actual: "them".into(),
+        }
+    }
+
+    // Only the app moves a keyed name away from another account that holds it, by writing a new key when it starts; the bridge gave up instead of starting it, so the name stayed taken until the person opened Wirecatch (W4I review R2-L1).
+    #[tokio::test]
+    async fn a_keyed_name_another_account_holds_starts_the_app_and_reads_the_new_key() {
+        let dir = private_dir("bridge-keyed-taken").unwrap();
+        let folder = dir.path().join("Wirecatch");
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedKeyedApp {
+            folder: folder.clone(),
+            delay: Duration::from_millis(200),
+            launches: launches.clone(),
+        };
+        // Until the app starts, the name its old key gives is held by someone else.
+        let find = || {
+            if *launches.lock().unwrap() == 0 {
+                Err(squatted())
+            } else {
+                wirecatch_ipc::endpoint_keyed_in(wirecatch_ipc::Channel::Dev, &folder)
+            }
+        };
+        let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
+            .await
+            .unwrap();
+        assert_eq!(*launches.lock().unwrap(), 1);
+        conn.write_all(b"n").await.unwrap();
+        let mut byte = [0u8; 1];
+        conn.read_exact(&mut byte).await.unwrap();
+        assert_eq!(&byte, b"n");
+    }
+
+    #[tokio::test]
+    async fn a_keyed_name_that_stays_taken_is_reported_as_taken() {
+        let (endpoint, _dir) = test_endpoint();
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedApp {
+            endpoint,
+            delay: Duration::from_secs(30),
+            launches: launches.clone(),
+        };
+        let err = connect_or_launch(
+            &|| Err(squatted()),
+            &app,
+            Duration::from_millis(600),
+            Start::IfNeeded,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.message.contains("another user account"), "{err:?}");
+        assert_eq!(*launches.lock().unwrap(), 1);
+    }
+
+    // A key that never appears once the app was started means the bridge looks in other folders than the app (a browser from an app store, a snap or a flatpak); the bridge said only that the app did not respond (W4I review R2-L2).
+    #[tokio::test]
+    async fn a_key_that_never_appears_is_reported_with_its_own_advice() {
+        let (endpoint, dir) = test_endpoint();
+        let missing = dir.path().join("Wirecatch").join("endpoint-key");
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedApp {
+            endpoint,
+            delay: Duration::from_secs(30),
+            launches: launches.clone(),
+        };
+        let find = || {
+            Err(IpcError::NoEndpointKey {
+                path: missing.clone(),
+            })
+        };
+        let err = connect_or_launch(&find, &app, Duration::from_millis(600), Start::IfNeeded)
+            .await
+            .unwrap_err();
+        assert!(err.message.contains("app store"), "{err:?}");
+        assert_eq!(*launches.lock().unwrap(), 1, "the app was started first");
+    }
+
+    // The reason reported is the last attempt's: a key that appeared once the app started, with nothing listening yet, is a slow start, not a missing key.
+    #[tokio::test]
+    async fn the_last_attempt_decides_what_is_reported() {
+        let (endpoint, dir) = test_endpoint();
+        let missing = dir.path().join("Wirecatch").join("endpoint-key");
+        let app = DelayedApp {
+            endpoint: endpoint.clone(),
+            delay: Duration::from_secs(30),
+            launches: Arc::new(Mutex::new(0)),
+        };
+        let resolved = Mutex::new(0);
+        let find = || {
+            let mut resolved = resolved.lock().unwrap();
+            *resolved += 1;
+            if *resolved == 1 {
+                Err(IpcError::NoEndpointKey {
+                    path: missing.clone(),
+                })
+            } else {
+                Ok(endpoint.clone())
+            }
+        };
+        let budget = Duration::from_millis(600);
+        let err = connect_or_launch(&find, &app, budget, Start::IfNeeded)
+            .await
+            .unwrap_err();
+        assert_eq!(err, Unavailable::timed_out(budget));
+        assert!(*resolved.lock().unwrap() > 1, "the key was looked up again");
+    }
+
     #[tokio::test]
     async fn starts_the_app_and_connects_once_it_listens() {
         let (endpoint, _dir) = test_endpoint();
@@ -425,9 +613,14 @@ mod tests {
             launches: launches.clone(),
         };
         let started = Instant::now();
-        let mut conn = connect_or_launch(&endpoint, &app, START_BUDGET, Start::IfNeeded)
-            .await
-            .unwrap();
+        let mut conn = connect_or_launch(
+            &|| Ok(endpoint.clone()),
+            &app,
+            START_BUDGET,
+            Start::IfNeeded,
+        )
+        .await
+        .unwrap();
         assert!(started.elapsed() < START_BUDGET);
         assert_eq!(*launches.lock().unwrap(), 1);
         conn.write_all(b"x").await.unwrap();
@@ -448,7 +641,8 @@ mod tests {
             launches: launches.clone(),
         };
 
-        let refused = connect_or_launch(&endpoint, &app, START_BUDGET, Start::Never).await;
+        let refused =
+            connect_or_launch(&|| Ok(endpoint.clone()), &app, START_BUDGET, Start::Never).await;
 
         assert_eq!(refused.err(), Some(Unavailable::not_running()));
         assert_eq!(*launches.lock().unwrap(), 0, "nothing was started");
@@ -466,7 +660,7 @@ mod tests {
         };
 
         assert!(
-            connect_or_launch(&endpoint, &app, START_BUDGET, Start::Never)
+            connect_or_launch(&|| Ok(endpoint.clone()), &app, START_BUDGET, Start::Never)
                 .await
                 .is_ok()
         );
@@ -483,9 +677,14 @@ mod tests {
             delay: Duration::ZERO,
             launches: launches.clone(),
         };
-        connect_or_launch(&endpoint, &app, START_BUDGET, Start::IfNeeded)
-            .await
-            .unwrap();
+        connect_or_launch(
+            &|| Ok(endpoint.clone()),
+            &app,
+            START_BUDGET,
+            Start::IfNeeded,
+        )
+        .await
+        .unwrap();
         assert_eq!(*launches.lock().unwrap(), 0);
     }
 
@@ -493,9 +692,14 @@ mod tests {
     async fn gives_up_when_the_app_cannot_be_started() {
         let (endpoint, _dir) = test_endpoint();
         let started = Instant::now();
-        let err = connect_or_launch(&endpoint, &FailingLauncher, START_BUDGET, Start::IfNeeded)
-            .await
-            .unwrap_err();
+        let err = connect_or_launch(
+            &|| Ok(endpoint.clone()),
+            &FailingLauncher,
+            START_BUDGET,
+            Start::IfNeeded,
+        )
+        .await
+        .unwrap_err();
         // FailingLauncher reports NotFound: the advice is to reinstall.
         assert!(err.message.contains("could not find it"), "{err:?}");
         assert!(err.message.contains("Reinstall Wirecatch"), "{err:?}");
@@ -535,7 +739,7 @@ mod tests {
         };
         let budget = Duration::from_millis(600);
         let started = Instant::now();
-        let err = connect_or_launch(&endpoint, &app, budget, Start::IfNeeded)
+        let err = connect_or_launch(&|| Ok(endpoint.clone()), &app, budget, Start::IfNeeded)
             .await
             .unwrap_err();
         assert_eq!(err, Unavailable::timed_out(budget));

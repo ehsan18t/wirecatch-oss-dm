@@ -5,11 +5,12 @@ use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tokio::net::{UnixListener, UnixStream};
 use wirecatch_product::Channel;
 
+use crate::key::EndpointKey;
 use crate::paths::{self, DirFacts};
 use crate::{Connection, Endpoint, Inner, IpcError};
 
@@ -19,12 +20,57 @@ pub(crate) fn current_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
-pub(crate) fn endpoint(channel: Channel) -> Result<Endpoint, IpcError> {
+/// Whether the endpoint's name needs a key: only in the shared `/tmp` fallback, since the
+/// runtime folder is the user's own.
+pub(crate) fn needs_key() -> bool {
+    paths::usable_runtime_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref()).is_none()
+}
+
+/// `channel`'s socket for the current user: in the runtime folder, which is the user's own,
+/// or else in the shared `/tmp`, in a folder named with the endpoint key that `key` gives,
+/// since without one another account could create the folder first. `key` is called only
+/// for `/tmp`.
+pub(crate) fn endpoint(
+    channel: Channel,
+    key: impl FnOnce() -> Result<EndpointKey, IpcError>,
+) -> Result<Endpoint, IpcError> {
     let uid = current_uid();
     let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
-    let path = paths::socket_path(channel, runtime_dir.as_deref(), uid);
-    ensure_private_dir(parent_of(&path)?, uid)?;
-    Ok(Endpoint::from_raw(path))
+    let endpoint = if let Some(runtime) = paths::usable_runtime_dir(runtime_dir.as_deref()) {
+        Endpoint::from_raw(paths::runtime_socket_path(channel, runtime))
+    } else {
+        let key = key()?;
+        Endpoint::keyed(paths::shared_socket_path(channel, uid, key.as_str()), &key)
+    };
+    ensure_private_dir(parent_of(Path::new(endpoint.as_os_str()))?, uid)
+        .map_err(|e| hiding_key(e, &endpoint))?;
+    Ok(endpoint)
+}
+
+/// `error` with `endpoint`'s key hidden wherever it names the socket's folder or a file in
+/// it, which in `/tmp` carry the key.
+fn hiding_key(error: IpcError, endpoint: &Endpoint) -> IpcError {
+    let hide = |text: &str| endpoint.hide_key_in(text).into_owned();
+    match error {
+        IpcError::UnsafeDirectory { path, reason, fix } => IpcError::UnsafeDirectory {
+            path: hide(&path.to_string_lossy()).into(),
+            reason: hide(&reason),
+            fix: hide(&fix),
+        },
+        IpcError::Io { context, source } => IpcError::Io {
+            context: hide(&context),
+            source,
+        },
+        other => other,
+    }
+}
+
+/// The base of the user's local data folders: `$XDG_DATA_HOME`, or `~/.local/share`.
+pub(crate) fn local_data_base() -> Option<PathBuf> {
+    paths::linux_data_home(
+        std::env::var_os("XDG_DATA_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
 }
 
 fn parent_of(path: &Path) -> Result<&Path, IpcError> {
@@ -98,6 +144,10 @@ pub(crate) struct SocketListener {
 
 impl SocketListener {
     pub(crate) fn bind(endpoint: &Endpoint) -> Result<Self, IpcError> {
+        Self::bind_named(endpoint).map_err(|e| hiding_key(e, endpoint))
+    }
+
+    fn bind_named(endpoint: &Endpoint) -> Result<Self, IpcError> {
         let uid = current_uid();
         let path = Path::new(endpoint.as_os_str());
         let dir = parent_of(path)?;
@@ -297,6 +347,33 @@ mod tests {
     /// The app's endpoint inside `dir`.
     fn endpoint_in(dir: &PrivateDir) -> Endpoint {
         Endpoint::from_raw(dir.path().join(Channel::Release.socket_name()))
+    }
+
+    // The app's log keeps long hexadecimal runs (D40.10), so an error naming the `/tmp`
+    // folder handed the endpoint key to anyone the log was sent to (D41.4).
+    #[test]
+    fn an_error_about_the_keyed_folder_hides_the_key() {
+        const KEY: &str = "0123456789abcdef0123456789abcdef";
+        let key = EndpointKey::parse(KEY).unwrap();
+        let folder = format!("/tmp/wirecatch-1000-{KEY}");
+        let endpoint = Endpoint::keyed(format!("{folder}/app.sock"), &key);
+        let errors = [
+            IpcError::UnsafeDirectory {
+                path: folder.clone().into(),
+                reason: format!("{folder} is not yours"),
+                fix: format!("Remove {folder}"),
+            },
+            IpcError::io(
+                format!("Could not open the lock file {folder}/app.sock.lock"),
+                io::Error::from(io::ErrorKind::PermissionDenied),
+            ),
+        ];
+        for error in errors {
+            let shown = hiding_key(error, &endpoint);
+            let written = format!("{shown} {shown:?}");
+            assert!(!written.contains(KEY), "{written}");
+            assert!(written.contains("/tmp/wirecatch-1000-***"), "{written}");
+        }
     }
 
     #[tokio::test]

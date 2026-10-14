@@ -136,15 +136,11 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
             app::Start::Never
         };
         async move {
-            let endpoint = app::endpoint().map_err(|e| {
-                tracing::error!("{e}");
-                app::Unavailable::from_ipc(&e)
-            })?;
             let launcher = app::launcher().map_err(|e| {
                 tracing::error!("{e:#}");
                 app::Unavailable::cannot_start(&format!("{e:#}"))
             })?;
-            app::connect_or_launch(&endpoint, &launcher, app::START_BUDGET, start).await
+            app::connect_or_launch(&app::endpoint, &launcher, app::START_BUDGET, start).await
         }
     }));
     if ended == relay::Ended::AppClosed {

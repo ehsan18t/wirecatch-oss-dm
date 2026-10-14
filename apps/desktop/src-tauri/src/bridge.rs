@@ -34,8 +34,9 @@ fn backoff_after(error: &IpcError) -> Option<Duration> {
     }
 }
 
-/// Starts listening on this build's endpoint (see [`crate::host::endpoint`]). Must run inside
-/// the async runtime.
+/// Starts listening on this build's endpoint, named with the endpoint key the listener keeps in
+/// its channel's [key folder](wirecatch_ipc::key_folder), where [`crate::host::endpoint`] and the
+/// bridge read it (D41.4). Must run inside the async runtime.
 ///
 /// # Errors
 ///
@@ -43,7 +44,10 @@ fn backoff_after(error: &IpcError) -> Option<Duration> {
 /// must then not open a second manager on the same database. Any other error means this
 /// user's endpoint cannot be found or listened on.
 pub fn bind() -> Result<Listener, IpcError> {
-    Listener::bind(&crate::host::endpoint()?)
+    Listener::bind_keyed(
+        crate::host::CHANNEL,
+        &wirecatch_ipc::key_folder(crate::host::CHANNEL)?,
+    )
 }
 
 /// Serves every client that connects (the bridge, later the CLI) until the task is stopped.

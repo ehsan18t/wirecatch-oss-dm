@@ -109,20 +109,3 @@ async fn connecting_without_a_listener_reports_not_running() {
         Err(IpcError::NotRunning { .. })
     ));
 }
-
-#[tokio::test]
-async fn the_real_endpoint_is_per_user() {
-    let endpoint = wirecatch_ipc::endpoint().unwrap();
-    let name = endpoint.as_os_str().to_string_lossy().into_owned();
-    let release = wirecatch_ipc::Channel::Release;
-    #[cfg(windows)]
-    assert!(
-        name.starts_with(&format!(r"\\.\pipe\{}S-1-5-", release.pipe_prefix())),
-        "{name}"
-    );
-    #[cfg(unix)]
-    assert!(
-        name.ends_with(&format!("/{}", release.socket_name())),
-        "{name}"
-    );
-}

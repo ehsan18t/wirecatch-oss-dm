@@ -3,11 +3,13 @@
 
 use std::ffi::{OsStr, c_void};
 use std::fmt;
+use std::fs::File;
 use std::io;
 use std::iter;
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle, RawHandle};
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::time::Duration;
 
@@ -15,7 +17,8 @@ use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, PipeMode, 
 use tokio::time::{Instant, sleep};
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_CANNOT_IMPERSONATE, ERROR_CANT_OPEN_ANONYMOUS, ERROR_FILE_NOT_FOUND,
-    ERROR_PIPE_BUSY, ERROR_SUCCESS, HANDLE, LocalFree, TRUE, WIN32_ERROR,
+    ERROR_PIPE_BUSY, ERROR_SUCCESS, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE, LocalFree, TRUE,
+    WIN32_ERROR,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
@@ -29,13 +32,16 @@ use windows_sys::Win32::Security::{
     TokenElevationTypeFull as FULL_TOKEN, TokenElevationTypeLimited as LIMITED_TOKEN,
     TokenIntegrityLevel, TokenIsAppContainer, TokenUser,
 };
-use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
+use windows_sys::Win32::Storage::FileSystem::{
+    CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, SECURITY_IDENTIFICATION,
+};
 use windows_sys::Win32::System::Pipes::ImpersonateNamedPipeClient;
 use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken,
 };
 use wirecatch_product::Channel;
 
+use crate::key::EndpointKey;
 use crate::{Connection, Elevation, Endpoint, Inner, IpcError, paths};
 
 /// How long `connect` keeps retrying while every pipe instance is busy. The
@@ -68,11 +74,31 @@ fn os_error(code: WIN32_ERROR) -> io::Error {
     io::Error::from_raw_os_error(code.cast_signed())
 }
 
-pub(crate) fn endpoint(channel: Channel) -> Result<Endpoint, IpcError> {
+/// Whether the endpoint's name needs a key: always, since pipe names are machine-wide and
+/// another account that knows the user's SID (which is no secret) could create the pipe
+/// first.
+pub(crate) fn needs_key() -> bool {
+    true
+}
+
+/// `channel`'s pipe for the current user, named with the endpoint key that `key` gives.
+pub(crate) fn endpoint(
+    channel: Channel,
+    key: impl FnOnce() -> Result<EndpointKey, IpcError>,
+) -> Result<Endpoint, IpcError> {
     let sid = Sid::current_user()?
         .to_string_form()
         .map_err(|e| IpcError::io("Could not read your user account", e))?;
-    Ok(Endpoint::from_raw(paths::pipe_name(channel, &sid)))
+    let key = key()?;
+    Ok(Endpoint::keyed(
+        paths::pipe_name(channel, &sid, key.as_str()),
+        &key,
+    ))
+}
+
+/// The user's local application data folder, `%LOCALAPPDATA%`.
+pub(crate) fn local_data_base() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
 }
 
 /// A Windows security identifier: who an account is. It prints in its string form, for
@@ -112,6 +138,32 @@ impl Sid {
         let [_revision, count, a0, a1] = head.to_le_bytes();
         let [a2, a3, a4, a5] = authority_tail.to_le_bytes();
         (count == 1 && [a0, a1, a2, a3, a4, a5] == MANDATORY_LABEL_AUTHORITY).then_some(level)
+    }
+
+    /// The SID `S-1-5-<sub_authorities>` of the NT authority, laid out as [`Self::integrity_level`] reads one.
+    fn nt_authority<const N: usize>(sub_authorities: [u32; N]) -> Self {
+        const NT_AUTHORITY: u8 = 5;
+        const {
+            assert!(N > 0);
+            assert!(N <= 15);
+        };
+        let count = u8::try_from(N).unwrap_or(u8::MAX);
+        let mut words = vec![
+            u32::from_le_bytes([1, count, 0, 0]),
+            u32::from_le_bytes([0, 0, 0, NT_AUTHORITY]),
+        ];
+        words.extend(sub_authorities);
+        Self { words }
+    }
+
+    /// `BUILTIN\Administrators`, `S-1-5-32-544`.
+    pub(crate) fn administrators() -> Self {
+        Self::nt_authority([32, 544])
+    }
+
+    /// The operating system's own account (`LocalSystem`), `S-1-5-18`.
+    pub(crate) fn local_system() -> Self {
+        Self::nt_authority([18])
     }
 
     /// Copies the SID at `psid`.
@@ -351,13 +403,12 @@ fn client_token(pipe: &NamedPipeServer) -> io::Result<OwnedHandle> {
     Ok(unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) })
 }
 
-/// Ends the current thread's impersonation of a pipe client when dropped.
+/// Ends the current thread's impersonation when dropped.
 struct Impersonating;
 
 impl Drop for Impersonating {
     fn drop(&mut self) {
-        // SAFETY: a plain call with no arguments; it ends the impersonation this
-        // thread started in `client_token`.
+        // SAFETY: a plain call with no arguments; it ends the impersonation this thread started before making the guard.
         if unsafe { RevertToSelf() } == 0 {
             // The thread would go on running as the client, and every task the
             // runtime puts on it with it. Nothing may run that way.
@@ -515,21 +566,23 @@ fn to_wide(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(iter::once(0)).collect()
 }
 
-/// The SDDL for the pipe:
+/// The SDDL of an object that is `sid`'s alone:
 ///
 /// - `O:` owned by `sid`;
-/// - `D:P(A;;FA;;;sid)`: a protected DACL (nothing inherited) that grants full
-///   file access to `sid` and nothing to anyone else;
-/// - `S:(ML;;NWNR;;;integrity)`: a mandatory label at the server's own integrity level with no-write-up and no-read-up, so only a process at that level or above can open it, even though every process of the user matches the DACL. A normal server is medium, which keeps out low-integrity processes (a sandboxed renderer, for example); an elevated one is high, which keeps out every unelevated process, so the pipe can never be a way around UAC. Without a label Windows applies medium no-write-up only, which still lets lower processes read.
-pub(crate) fn owner_only_sddl(sid: &str, integrity: &str) -> String {
-    format!("O:{sid}D:P(A;;FA;;;{sid})S:(ML;;NWNR;;;{integrity})")
+/// - `D:P(A;;FA;;;sid)`: a protected DACL (nothing inherited) that grants full file access to `sid` and nothing to anyone else.
+fn private_sddl(sid: &str) -> String {
+    format!("O:{sid}D:P(A;;FA;;;{sid})")
 }
 
-/// A self-relative security descriptor, normally built from [`owner_only_sddl`].
+/// The SDDL for the pipe: [`private_sddl`], and `S:(ML;;NWNR;;;integrity)`: a mandatory label at the server's own integrity level with no-write-up and no-read-up, so only a process at that level or above can open it, even though every process of the user matches the DACL. A normal server is medium, which keeps out low-integrity processes (a sandboxed renderer, for example); an elevated one is high, which keeps out every unelevated process, so the pipe can never be a way around UAC. Without a label Windows applies medium no-write-up only, which still lets lower processes read.
+pub(crate) fn owner_only_sddl(sid: &str, integrity: &str) -> String {
+    format!("{}S:(ML;;NWNR;;;{integrity})", private_sddl(sid))
+}
+
+/// A self-relative security descriptor, normally built from [`owner_only_sddl`] or [`private_sddl`].
 struct OwnerOnlyDescriptor(PSECURITY_DESCRIPTOR);
 
-// SAFETY: the descriptor is a heap block owned by this value and never written
-// after creation; Windows only reads it when creating pipe instances.
+// SAFETY: the descriptor is a heap block owned by this value and never written after creation; Windows only reads it when creating pipe instances and files.
 unsafe impl Send for OwnerOnlyDescriptor {}
 // SAFETY: as above, shared access is read-only.
 unsafe impl Sync for OwnerOnlyDescriptor {}
@@ -785,6 +838,49 @@ pub(crate) fn verify_owner(
     }
 }
 
+/// The owner of an open file.
+pub(crate) fn file_owner(file: &std::fs::File) -> io::Result<Sid> {
+    handle_owner(file.as_raw_handle())
+}
+
+/// Whether a file that `owner` owns may be taken as `user`'s own: the user's, or Administrators' or the system's, which own what an elevated program of the user (or any program of an administrator with UAC off) creates without naming an owner. Only a token that holds one of those as an owner can give it a file, and such a token can already read and write all of the user's files (D41.4).
+pub(crate) fn may_own_users_file(owner: &Sid, user: &Sid) -> bool {
+    owner == user || *owner == Sid::administrators() || *owner == Sid::local_system()
+}
+
+/// Creates a new file at `path`, open for writing, that is the user's alone: owned by the user and open to nobody else ([`private_sddl`]). Without an owner of its own the file would get the program's default owner, Administrators in an elevated program.
+///
+/// # Errors
+///
+/// The file exists already (`AlreadyExists`), or Windows refuses to create it.
+pub(crate) fn create_private_file(path: &Path) -> io::Result<File> {
+    let user = process_token().and_then(|token| token_sid(&token, TokenUser))?;
+    let descriptor = OwnerOnlyDescriptor::from_sddl(&private_sddl(&user.to_string_form()?))?;
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: win32_size_of::<SECURITY_ATTRIBUTES>(),
+        lpSecurityDescriptor: descriptor.0,
+        bInheritHandle: 0,
+    };
+    let wide = to_wide(path.as_os_str());
+    // SAFETY: `wide` is NUL-terminated; `attributes` is a valid SECURITY_ATTRIBUTES whose descriptor `descriptor` keeps alive for the whole call; there is no template file. On success the handle is new and ours.
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            GENERIC_WRITE,
+            0,
+            &raw const attributes,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `handle` is a valid file handle that nothing else owns or closes.
+    Ok(unsafe { File::from_raw_handle(handle as RawHandle) })
+}
+
 /// Reads the owner of a kernel object from its handle (needs `READ_CONTROL`, which
 /// a pipe client opened for reading has).
 fn handle_owner(handle: RawHandle) -> io::Result<Sid> {
@@ -812,6 +908,71 @@ fn handle_owner(handle: RawHandle) -> io::Result<Sid> {
     // SAFETY: `owner` points into `descriptor`, which is alive until the guard
     // drops after this copy.
     unsafe { Sid::copy_from(owner) }
+}
+
+/// Runs `work` on a thread of its own whose token makes Administrators the owner of what it creates, as an elevated program's token does unless the computer is set otherwise. `None` when this program's token cannot do that (it is not elevated), for the caller to say that it checked nothing.
+#[cfg(test)]
+pub(crate) fn as_an_elevated_program<T: Send>(work: impl FnOnce() -> T + Send) -> Option<T> {
+    use windows_sys::Win32::Foundation::ERROR_INVALID_OWNER;
+    use windows_sys::Win32::Security::{
+        DuplicateTokenEx, SecurityImpersonation, SetTokenInformation, TOKEN_ADJUST_DEFAULT,
+        TOKEN_DUPLICATE, TOKEN_IMPERSONATE, TOKEN_OWNER, TokenImpersonation, TokenOwner,
+    };
+    use windows_sys::Win32::System::Threading::SetThreadToken;
+
+    let administrators = Sid::administrators();
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let mut raw: HANDLE = ptr::null_mut();
+                // SAFETY: the pseudo handle of the current process needs no closing; on success `raw` is a new token handle that we own.
+                let opened =
+                    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE, &raw mut raw) };
+                assert_ne!(opened, 0, "{}", io::Error::last_os_error());
+                // SAFETY: `raw` is the open token handle from above, owned only here.
+                let process = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+                let mut raw: HANDLE = ptr::null_mut();
+                // SAFETY: `process` is open with TOKEN_DUPLICATE; on success `raw` is a new impersonation token that we own.
+                let duplicated = unsafe {
+                    DuplicateTokenEx(
+                        process.as_raw_handle() as HANDLE,
+                        TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
+                        ptr::null(),
+                        SecurityImpersonation,
+                        TokenImpersonation,
+                        &raw mut raw,
+                    )
+                };
+                assert_ne!(duplicated, 0, "{}", io::Error::last_os_error());
+                // SAFETY: `raw` is the new token handle from above, owned only here.
+                let token = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+                let owner = TOKEN_OWNER {
+                    Owner: administrators.as_psid(),
+                };
+                // SAFETY: `token` is open with TOKEN_ADJUST_DEFAULT; `owner` is a TOKEN_OWNER of the size given, and the SID it points at outlives the call.
+                let set = unsafe {
+                    SetTokenInformation(
+                        token.as_raw_handle() as HANDLE,
+                        TokenOwner,
+                        (&raw const owner).cast(),
+                        win32_size_of::<TOKEN_OWNER>(),
+                    )
+                };
+                if set == 0 {
+                    let error = io::Error::last_os_error();
+                    assert!(is_os_error(&error, ERROR_INVALID_OWNER), "{error}");
+                    return None;
+                }
+                // SAFETY: a null thread means this thread, and `token` is an impersonation token; the impersonation is reverted below, before the thread ends.
+                let impersonating =
+                    unsafe { SetThreadToken(ptr::null(), token.as_raw_handle() as HANDLE) };
+                assert_ne!(impersonating, 0, "{}", io::Error::last_os_error());
+                let _revert = Impersonating;
+                Some(work())
+            })
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 #[cfg(test)]
@@ -999,15 +1160,40 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_is_named_after_the_current_user() {
+    fn endpoint_is_named_after_the_current_user_and_the_key() {
         let user = Sid::current_user().unwrap().to_string_form().unwrap();
         assert!(user.starts_with("S-1-5-"), "{user}");
+        let key = EndpointKey::parse("0123456789abcdef0123456789abcdef").unwrap();
+        let named = endpoint(Channel::Release, || Ok(key.clone())).unwrap();
         assert_eq!(
-            endpoint(Channel::Release).unwrap().as_os_str(),
+            named.as_os_str(),
             OsStr::new(&format!(
-                r"\\.\pipe\{}{user}",
-                Channel::Release.pipe_prefix()
+                "{}{}{user}-{}",
+                paths::PIPE_ROOT,
+                Channel::Release.pipe_prefix(),
+                key.as_str()
             ))
+        );
+    }
+
+    // The pipe used to be named after the SID alone, which every account on the computer
+    // can read, so any of them could create it first and keep Wirecatch from starting
+    // (IPB-10). Built with a made-up SID, so the test never touches a real Wirecatch's name.
+    #[test]
+    fn a_keyed_pipe_name_cannot_be_worked_out_from_the_users_sid() {
+        const SID: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
+        let derivable = format!(
+            "{}{}{SID}",
+            paths::PIPE_ROOT,
+            Channel::Release.pipe_prefix()
+        );
+        let one = EndpointKey::parse("0123456789abcdef0123456789abcdef").unwrap();
+        let other = EndpointKey::parse("fedcba9876543210fedcba9876543210").unwrap();
+        let keyed = paths::pipe_name(Channel::Release, SID, one.as_str());
+        assert_eq!(keyed, format!("{derivable}-{}", one.as_str()));
+        assert_ne!(
+            keyed,
+            paths::pipe_name(Channel::Release, SID, other.as_str())
         );
     }
 
@@ -1021,11 +1207,106 @@ mod tests {
         );
     }
 
+    // Another account that once saw the keyed name (every account can list pipe names) can
+    // take it while Wirecatch is closed; the listener then writes a new key instead of
+    // staying shut out (D41.6).
+    #[tokio::test]
+    async fn a_listener_whose_keyed_name_is_taken_listens_under_a_new_key() {
+        let dir = wirecatch_test_support::private_dir("ipc-keyed-taken").unwrap();
+        let first = crate::Listener::bind_keyed(Channel::Dev, dir.path()).unwrap();
+        let seen = first.endpoint().clone();
+        drop(first);
+
+        let user = Sid::current_user().unwrap();
+        let foreign = OwnerOnlyDescriptor::from_sddl(&format!(
+            "O:{}D:P(A;;FA;;;SY)",
+            user.to_string_form().unwrap()
+        ))
+        .unwrap();
+        let _squatter = create_instance(&seen, &foreign, true).unwrap();
+
+        let mut listener = crate::Listener::bind_keyed(Channel::Dev, dir.path()).unwrap();
+        assert_ne!(listener.endpoint(), &seen);
+        let current = crate::endpoint_keyed_in(Channel::Dev, dir.path()).unwrap();
+        assert_eq!(&current, listener.endpoint(), "clients read the new key");
+        let (client, server) = tokio::join!(connect(&current, &user), listener.accept());
+        client.unwrap();
+        server.unwrap();
+    }
+
     #[test]
     fn sid_round_trips_through_its_string_form() {
         let system = Sid::parse("S-1-5-18").unwrap();
         assert_eq!(system.to_string_form().unwrap(), "S-1-5-18");
         assert!(Sid::parse("not a sid").is_err());
+    }
+
+    #[test]
+    fn the_well_known_accounts_have_their_well_known_ids() {
+        assert_eq!(Sid::administrators(), Sid::parse("S-1-5-32-544").unwrap());
+        assert_eq!(Sid::local_system(), Sid::parse("S-1-5-18").unwrap());
+    }
+
+    // An elevated program, and every program of an administrator with UAC off, gives what it creates to Administrators unless it names an owner, so a key such a Wirecatch wrote was refused by every later run, its own included (W4I review R2-H1).
+    #[test]
+    fn only_the_user_administrators_or_the_system_may_own_the_users_files() {
+        let user = Sid::current_user().unwrap();
+        assert!(may_own_users_file(&user, &user));
+        assert!(may_own_users_file(&Sid::administrators(), &user));
+        assert!(may_own_users_file(&Sid::local_system(), &user));
+        for other in [
+            "S-1-5-21-1-2-3-1002",
+            "S-1-5-32-545",
+            "S-1-5-32-546",
+            "S-1-1-0",
+            "S-1-5-11",
+            "S-1-5-7",
+            "S-1-5-19",
+            "S-1-5-20",
+            "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
+            "S-1-16-12288",
+        ] {
+            let other = Sid::parse(other).unwrap();
+            assert!(!may_own_users_file(&other, &user), "{other}");
+        }
+    }
+
+    /// The owner and the access entries of the endpoint key a listener writes in a new folder.
+    fn security_of_a_new_key() -> Security {
+        let dir = wirecatch_test_support::private_dir("ipc-key-security").unwrap();
+        let lock = crate::key::KeyLock::take(dir.path()).unwrap();
+        lock.current().unwrap();
+        let file = std::fs::File::open(dir.path().join(crate::key::KEY_FILE)).unwrap();
+        read_security(file.as_raw_handle()).unwrap()
+    }
+
+    fn assert_the_users_alone(security: &Security, user: &Sid) {
+        assert_eq!(&security.owner, user, "owner");
+        assert!(security.dacl_protected, "the DACL must not inherit entries");
+        assert_eq!(
+            security.aces.as_deref(),
+            Some(
+                &[AceInfo {
+                    ace_type: ACCESS_ALLOWED_ACE_TYPE,
+                    mask: FILE_ALL_ACCESS,
+                    sid: user.clone(),
+                }][..]
+            ),
+            "the only entry must grant the current user, and nobody else"
+        );
+    }
+
+    // The key took the folder's entries and the program's default owner, which an elevated program sets to Administrators (W4I review R2-H1).
+    #[test]
+    fn the_endpoint_key_is_the_users_alone_even_from_an_elevated_listener() {
+        let user = Sid::current_user().unwrap();
+        assert_the_users_alone(&security_of_a_new_key(), &user);
+        match as_an_elevated_program(security_of_a_new_key) {
+            Some(security) => assert_the_users_alone(&security, &user),
+            None => eprintln!(
+                "this program is not elevated, so it cannot make Administrators the owner of what it creates: the elevated case was not checked"
+            ),
+        }
     }
 
     #[tokio::test]
@@ -1204,9 +1485,11 @@ mod tests {
         );
     }
 
-    /// A descriptor that lets everyone in at any integrity level (an untrusted
-    /// label): what the listener would have if its own descriptor ever regressed.
-    const REGRESSED: &str = "D:P(A;;FA;;;WD)(A;;FA;;;AN)S:(ML;;NW;;;S-1-16-0)";
+    /// A descriptor that lets everyone in at any integrity level (an untrusted label): what the listener would have if its own descriptor ever regressed. It names the user as the owner, as the listener does, or an elevated test would get a pipe Administrators own, which its own connector refuses.
+    fn regressed() -> String {
+        let user = Sid::current_user().unwrap().to_string_form().unwrap();
+        format!("O:{user}D:P(A;;FA;;;WD)(A;;FA;;;AN)S:(ML;;NW;;;S-1-16-0)")
+    }
 
     /// Accepts the client that `open` connects, and expects it refused.
     async fn expect_refused<Client>(
@@ -1229,7 +1512,7 @@ mod tests {
     #[tokio::test]
     async fn the_listener_refuses_another_principal_its_descriptor_let_in() {
         let endpoint = unique_endpoint();
-        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let mut listener = PipeListener::bind_behind(&endpoint, &regressed()).unwrap();
         let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
             open_as_anonymous(endpoint, GENERIC_READ | GENERIC_WRITE).unwrap()
         })
@@ -1249,7 +1532,7 @@ mod tests {
     #[tokio::test]
     async fn the_listener_refuses_a_lower_integrity_program_of_the_same_user() {
         let endpoint = unique_endpoint();
-        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let mut listener = PipeListener::bind_behind(&endpoint, &regressed()).unwrap();
         let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
             open_at_low_integrity(endpoint, GENERIC_READ | GENERIC_WRITE).unwrap()
         })
@@ -1342,7 +1625,7 @@ mod tests {
     #[tokio::test]
     async fn the_listener_refuses_a_sandboxed_program_of_the_same_user() {
         let endpoint = unique_endpoint();
-        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let mut listener = PipeListener::bind_behind(&endpoint, &regressed()).unwrap();
         let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
             open_with_restricted_token(endpoint).unwrap()
         })

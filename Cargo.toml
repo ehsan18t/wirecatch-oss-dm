@@ -24,6 +24,7 @@ anyhow = "1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
+getrandom = { version = "0.3", features = ["std"] }
 indicatif = "0.17"
 libc = "0.2"
 percent-encoding = "2"
