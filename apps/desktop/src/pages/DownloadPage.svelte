@@ -10,7 +10,7 @@
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
   import { Appearance, followLook } from '$lib/state/appearance.svelte';
-  import DownloadWindow from '$lib/window/DownloadWindow.svelte';
+  import DownloadWindow from '../ui/download/DownloadWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
 
@@ -38,8 +38,7 @@
   onMount(() => {
     const wanted = target(window.location.search);
     if (!inTauri()) {
-      problem =
-        'This page is one of Wirecatch’s download windows and only works inside the app. In the sample app, download windows open inside the main page.';
+      problem = `This page is one of ${PRODUCT_NAME}’s download windows and only works inside the app. In the sample app, download windows open inside the main page.`;
       return;
     }
     if (!wanted) {
@@ -69,23 +68,10 @@
 
 <svelte:head><title>{win?.name ?? PRODUCT_NAME} download</title></svelte:head>
 
-<main class="window" aria-label="Download">
+<main class="h-full" aria-label="Download">
   {#if win}
     <DownloadWindow {win} />
   {:else if problem}
-    <p class="problem" role="alert">{problem}</p>
+    <p class="p-5 text-body text-ink" role="alert">{problem}</p>
   {/if}
 </main>
-
-<style>
-  .window {
-    height: 100vh;
-    background: var(--surface);
-  }
-
-  .problem {
-    margin: 0;
-    padding: 20px;
-    line-height: 1.5;
-  }
-</style>

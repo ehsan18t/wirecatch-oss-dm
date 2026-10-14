@@ -1,10 +1,8 @@
 <script lang="ts">
-  // The sample app's download windows (D23). A browser tab cannot open real windows that share
-  // the sample data, so each one floats inside the page, in the same cascade and with the same
-  // rules as the desktop's. Loaded only with the sample backend.
+  // The sample app's download windows (D23). A browser tab cannot open real windows that share the sample data, so each one floats inside the page, in the same cascade and with the same rules as the desktop's. Loaded only with the sample backend.
   import type { DownloadId } from '@wirecatch/protocol';
-  import type { OpenDownloadWindow } from './download-window.svelte';
   import type { OpenWindow, WindowRegistry } from '$lib/sample-windows';
+  import type { OpenDownloadWindow } from '$lib/window/download-window.svelte';
   import MockWindow from './MockWindow.svelte';
 
   let { registry, openWindow }: { registry: WindowRegistry; openWindow: OpenDownloadWindow } =

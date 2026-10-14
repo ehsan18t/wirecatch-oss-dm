@@ -33,20 +33,25 @@ const LINT_EXCEPTIONS = [
   },
   {
     id: 'E9',
-    file: 'apps/desktop/src/lib/window/FileQuestion.svelte',
+    file: 'apps/desktop/src/ui/download/FileQuestion.svelte',
     lints: ['a11y_no_noninteractive_element_interactions'],
   },
   {
     id: 'E10',
-    file: 'apps/desktop/src/lib/window/MediaQuestion.svelte',
+    file: 'apps/desktop/src/ui/download/MediaQuestion.svelte',
     lints: ['a11y_no_noninteractive_element_interactions'],
   },
   {
     id: 'E11',
-    file: 'apps/desktop/src/lib/window/ProgressView.svelte',
+    file: 'apps/desktop/src/ui/download/ProgressView.svelte',
     lints: ['a11y_no_static_element_interactions'],
   },
   { id: 'E12', file: 'crates/core/src/addons/manifest.rs', lints: ['clippy::expect_used'] },
+  {
+    id: 'E13',
+    file: 'apps/desktop/src/ui/download/WindowFrame.svelte',
+    lints: ['a11y_no_noninteractive_tabindex'],
+  },
 ];
 const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs and docs/AUDIT.md W14';
 

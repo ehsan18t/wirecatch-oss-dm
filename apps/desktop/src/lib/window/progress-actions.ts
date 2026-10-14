@@ -47,9 +47,16 @@ export class ProgressActions {
     return this.#onRow((id) => this.#host.backend().retry(id));
   }
 
-  /** Cancel on a download: stops it, deletes the partial file and takes it off the list. */
+  /**
+   * Cancel on a download: stops it, deletes the partial file and takes it off the list. A
+   * finished download has nothing to cancel. The core deletes an unfinished download's partial
+   * files on any removal, and a finished one's file only when asked, deciding by the status it
+   * holds at that moment; so the file is never asked for, and one that finished before the
+   * window heard of it is kept.
+   */
   async cancelDownload(): Promise<void> {
-    if (await this.#onRow((id) => this.#host.backend().remove([id], true))) this.#host.close();
+    if (this.#host.row()?.status === 'completed') return;
+    if (await this.#onRow((id) => this.#host.backend().remove([id], false))) this.#host.close();
   }
 
   /** Opens the finished file; for a program the shell first asks whether the person trusts where it came from. */

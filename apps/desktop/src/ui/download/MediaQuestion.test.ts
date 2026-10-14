@@ -3,8 +3,8 @@
 
 import { questionId } from '@wirecatch/protocol';
 import { render, screen, within } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from '$lib/backend/mock';
 import { mockBackend, settle, windowState } from '$lib/testing/setup';
 import DownloadWindow from './DownloadWindow.svelte';
@@ -25,6 +25,7 @@ async function asking(change?: (b: MockBackend) => Promise<void>) {
 }
 
 const saveAs = () => screen.getByRole('combobox', { name: 'Save as' });
+const audioQuality = () => screen.getByRole('combobox', { name: 'Audio quality' });
 
 /** The row a quality's radio button sits in. */
 function rowOf(radio: HTMLElement): HTMLElement {
@@ -32,22 +33,34 @@ function rowOf(radio: HTMLElement): HTMLElement {
   if (!row) throw new Error('the quality has no row');
   return row;
 }
-const optionTexts = (select: HTMLElement) =>
-  within(select)
+
+/** The options a menu offers, read from its list and closed again. */
+async function optionTexts(user: UserEvent, menu: HTMLElement): Promise<string[]> {
+  await user.click(menu);
+  const texts = within(screen.getByRole('listbox'))
     .getAllByRole('option')
     .map((o) => o.textContent.trim());
+  await user.keyboard('{Escape}');
+  return texts;
+}
+
+/** Picks the option named `name` from a menu, as the pointer does. */
+async function choose(user: UserEvent, menu: HTMLElement, name: string | RegExp) {
+  await user.click(menu);
+  await user.click(within(screen.getByRole('listbox')).getByRole('option', { name }));
+  await settle();
+}
 
 describe('the quality window with output formats', () => {
   it('starts as Original and says per quality what another format means', async () => {
     const { b, host, user } = await asking();
-    expect(saveAs()).toHaveValue('original');
-    expect(optionTexts(saveAs())).toEqual(['Original (WebM)', 'MP4', 'MKV', 'WebM']);
+    expect(saveAs()).toHaveTextContent('Original (WebM)');
+    expect(await optionTexts(user, saveAs())).toEqual(['Original (WebM)', 'MP4', 'MKV', 'WebM']);
     // Original converts nothing, so no row says anything about it.
     expect(screen.queryByText('Converts')).toBeNull();
     expect(screen.queryByText('No conversion')).toBeNull();
 
-    await user.selectOptions(saveAs(), 'mp4');
-    await settle();
+    await choose(user, saveAs(), 'MP4');
     // 2160p comes only as VP9: MP4 converts it, and the window says so before it starts.
     const uhd = screen.getByRole('radio', { name: /2160p, MP4/ });
     expect(uhd).toBeChecked();
@@ -60,7 +73,7 @@ describe('the quality window with output formats', () => {
 
     await user.click(fullHd);
     await settle();
-    expect(saveAs()).toHaveValue('mp4');
+    expect(saveAs()).toHaveTextContent('MP4');
     expect(
       screen.getByText(/^No conversion: the video and audio are copied into MP4 as they are/),
     ).toBeVisible();
@@ -97,29 +110,35 @@ describe('the quality window with output formats', () => {
     const { user } = await asking();
     await user.click(screen.getByRole('radio', { name: /Audio only/ }));
     await settle();
-    expect(optionTexts(saveAs())).toEqual(['Original (M4A)', 'MP3', 'M4A', 'Opus', 'FLAC', 'WAV']);
+    expect(await optionTexts(user, saveAs())).toEqual([
+      'Original (M4A)',
+      'MP3',
+      'M4A',
+      'Opus',
+      'FLAC',
+      'WAV',
+    ]);
     expect(screen.queryByRole('combobox', { name: 'Audio quality' })).toBeNull();
 
-    await user.selectOptions(saveAs(), 'mp3');
-    await settle();
-    const quality = screen.getByRole('combobox', { name: 'Audio quality' });
-    expect(quality).toHaveValue('192');
-    expect(optionTexts(quality)).toEqual(['128 kbps', '192 kbps', '256 kbps', '320 kbps']);
-    await user.selectOptions(quality, '320');
-    await settle();
+    await choose(user, saveAs(), 'MP3');
+    expect(audioQuality()).toHaveTextContent('192 kbps');
+    expect(await optionTexts(user, audioQuality())).toEqual([
+      '128 kbps',
+      '192 kbps',
+      '256 kbps',
+      '320 kbps',
+    ]);
+    await choose(user, audioQuality(), '320 kbps');
     expect(screen.getByText(/converted to MP3 at 320 kbps/)).toBeVisible();
     expect(screen.getByText(/320 kbps is more than the 160 kbps of the download/)).toBeVisible();
 
     // M4A takes the AAC as it is unless a quality is picked.
-    await user.selectOptions(saveAs(), 'm4a');
-    await settle();
-    expect(screen.getByRole('combobox', { name: 'Audio quality' })).toHaveValue('256');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Audio quality' }), '');
-    await settle();
+    await choose(user, saveAs(), 'M4A');
+    expect(audioQuality()).toHaveTextContent('256 kbps');
+    await choose(user, audioQuality(), /^As downloaded/);
     expect(screen.getByText('No conversion: the audio is copied into M4A as it is.')).toBeVisible();
 
-    await user.selectOptions(saveAs(), 'flac');
-    await settle();
+    await choose(user, saveAs(), 'FLAC');
     expect(
       screen.getByText(/The download's audio is Opus, which already left out some detail/),
     ).toBeVisible();
@@ -151,7 +170,7 @@ describe('the quality window with output formats', () => {
       };
       await b.changeSettings({ media: settings.media });
     });
-    expect(saveAs()).toHaveValue('mkv');
+    expect(saveAs()).toHaveTextContent('MKV');
     expect(screen.getByRole('checkbox', { name: 'English' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'English, auto-generated' })).not.toBeChecked();
     expect(
@@ -161,7 +180,28 @@ describe('the quality window with output formats', () => {
 
     await user.click(screen.getByRole('radio', { name: /Audio only/ }));
     await settle();
-    expect(saveAs()).toHaveValue('opus');
-    expect(screen.getByRole('combobox', { name: 'Audio quality' })).toHaveValue('160');
+    expect(saveAs()).toHaveTextContent('Opus');
+    expect(audioQuality()).toHaveTextContent('160 kbps');
+  });
+});
+
+describe('the quality window by keyboard', () => {
+  it('downloads the quality picked with the arrow keys when Enter is pressed on it', async () => {
+    const { b, user } = await asking();
+    const choose = vi.spyOn(b, 'chooseMedia');
+    const fullHd = screen.getByRole('radio', { name: /1080p/ });
+    const radios = screen.getAllByRole('radio');
+    radios.find((r) => r instanceof HTMLInputElement && r.checked)?.focus();
+    for (let i = 0; i < radios.length && !fullHd.matches(':checked'); i++) {
+      await user.keyboard('{ArrowDown}');
+    }
+    expect(fullHd).toBeChecked();
+    expect(fullHd).toHaveFocus();
+    expect(choose).not.toHaveBeenCalled();
+    await user.keyboard('{Enter}');
+    await settle();
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(choose.mock.calls[0]?.[1].option_id).toBe(fullHd.getAttribute('value'));
+    expect(await b.pendingMediaChoices()).toHaveLength(0);
   });
 });

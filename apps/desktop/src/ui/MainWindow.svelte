@@ -80,10 +80,10 @@
 </div>
 
 <Dialogs />
-{#if app.sample}
+<!-- The sample app's download windows float in the page; the real app opens real windows. The build condition, as in backend/index.ts, leaves their chunk out of a production build. -->
+{#if (import.meta.env.DEV || import.meta.env.MODE === 'mock') && app.sample}
   {@const sample = app.sample}
-  <!-- The sample app's download windows float in the page; the real app opens real windows. -->
-  {#await import('$lib/window/MockWindows.svelte') then { default: MockWindows }}
+  {#await import('./download/MockWindows.svelte') then { default: MockWindows }}
     <MockWindows registry={sample.windows} openWindow={app.openSampleWindow} />
   {/await}
 {/if}

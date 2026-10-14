@@ -1,5 +1,16 @@
-/* The download window's own rules while it is styled by app.css. The main window takes its scrollbars from the design system (`base.css`), which draws them only while these standard properties stay at auto, so they cannot live in app.css, which both windows load. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+/*
+ * The download window's stylesheet: the design system alone. The window shows the system's material through the page's transparent root (base.css), under its title bar.
+ */
+@layer theme, base, components, utilities;
+
+@import '@wirecatch/ui/tokens.css';
+@import '@wirecatch/ui/base.css';
+@source '../ui';
+@source './DownloadPage.svelte';
+
+@layer components {
+  html,
+  body {
+    overflow: hidden;
+  }
 }

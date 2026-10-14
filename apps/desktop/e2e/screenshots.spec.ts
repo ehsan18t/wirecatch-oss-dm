@@ -1,7 +1,7 @@
 // Screenshots of the main states for review, in both themes. Saved to docs/screenshots.
 
 import { expect, test } from '@playwright/test';
-import { open, row, rows, SCREENSHOTS, showDetails } from './helpers';
+import { open, row, rows, SCREENSHOTS, settled, showDetails } from './helpers';
 
 const dir = SCREENSHOTS;
 
@@ -55,6 +55,20 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('Enter');
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${dir}/${theme}-07-confirmation.png` });
+    });
+
+    test('download window progress', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.keyboard.press('Control+K');
+      await page.keyboard.type('asks first');
+      await page.keyboard.press('Enter');
+      const window = page.getByRole('region', { name: /^Wirecatch download window/ });
+      await window.getByRole('button', { name: 'Download now' }).click();
+      await window.getByRole('progressbar').waitFor();
+      // Once it says where it stands in its queue, and the window is as tall as what it shows.
+      await window.getByText(/in line in Main/).waitFor();
+      await settled(window);
+      await page.screenshot({ path: `${dir}/${theme}-23-download-window-progress.png` });
     });
 
     test('add from a pasted link', async ({ page }) => {

@@ -226,6 +226,23 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(window.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
+  it('turning the windows off from one: the next file starts with a toast and no window, 1 click', async () => {
+    const { app, backend, click } = await setup();
+    backend.simulateConfirmation();
+    const window = within(await downloadWindow());
+    await click(window.getByRole('checkbox', { name: 'Start downloads without asking' }));
+    expect(app.settings?.extension.ask_before_download).toBe(false);
+    // The file it asked about still waits for its answer.
+    await click(window.getByRole('button', { name: 'Download now' }));
+    await click(window.getByRole('button', { name: 'Hide' }));
+    expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
+    backend.simulateCapture();
+    await settle();
+    expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
+    const toasts = screen.getByRole('region', { name: 'Notifications' });
+    expect(within(toasts).getByText(/^Downloading to/)).toBeInTheDocument();
+  });
+
   it('a progress window for any download: its details, then Show progress window, 2 clicks', async () => {
     const { click, palette } = await setup();
     await click(inRow('ubuntu-24.04.3', 'Show details'));
@@ -423,7 +440,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     backend.simulateMediaChoice();
     let window = within(await downloadWindow());
     expect(window.getByRole('heading', { name: 'Pick a quality' })).toBeInTheDocument();
-    await click(window.getByRole('button', { name: 'Close this window' }));
+    await click(window.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
     // Closing is not an answer: it waits, counted in the sidebar and offered in the palette.
     expect(palette('questions.show')).toBe(true);

@@ -1,7 +1,7 @@
 <script lang="ts">
   // One download's details: how far it has got, why it waits or what went wrong, and where it comes from and goes, with what can change there.
   import Copy from '~icons/lucide/copy';
-  import type { DownloadSummary, QueueId } from '@wirecatch/protocol';
+  import type { DownloadSummary, FixAction, QueueId } from '@wirecatch/protocol';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
   import { Button, Callout, IconButton, ProgressBar, Select } from '@wirecatch/ui';
   import {
@@ -70,7 +70,11 @@
   </section>
 
   {#if row.status === 'failed'}
-    <ErrorNotice {row} />
+    <ErrorNotice
+      {row}
+      onfix={(fix: FixAction) => void app.actions.fix(row.id, fix)}
+      onretry={() => void app.actions.retry([row.id])}
+    />
   {:else if detail}
     <Callout tone={row.waiting?.type === 'server_refused' ? 'warning' : 'info'}>{detail}</Callout>
   {/if}

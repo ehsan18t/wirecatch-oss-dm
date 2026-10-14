@@ -1,4 +1,4 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /** Where the pictures for review go, tracked in the repository. */
 export const SCREENSHOTS = 'docs/screenshots';
@@ -9,13 +9,38 @@ export async function keepScreenshot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `${SCREENSHOTS}/${name}` });
 }
 
-/** Opens the app with mock options and waits for the list. Hints start dismissed unless asked. */
+/**
+ * Opens the app with mock options and waits for the list. Hints start dismissed unless asked.
+ * `textSize` is the root font size in px, as a larger text setting gives it: set before the page
+ * loads, as a person's setting is, rather than changed under a drawn page, where every size in
+ * rem moves to it through a transition the first measurements can race.
+ */
 export async function open(
   page: Page,
   query = 'capture=0',
-  { theme = 'light', hints = false }: { theme?: 'light' | 'dark'; hints?: boolean } = {},
+  {
+    theme = 'light',
+    hints = false,
+    textSize,
+  }: { theme?: 'light' | 'dark'; hints?: boolean; textSize?: number } = {},
 ): Promise<void> {
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+  if (textSize !== undefined) {
+    await page.addInitScript((px) => {
+      // The script runs before the page has its root element; the style goes in as soon as it does, first, so a style a test adds later still overrides it.
+      const add = (root: HTMLElement) => {
+        const style = document.createElement('style');
+        style.textContent = `html { font-size: ${String(px)}px !important; }`;
+        root.prepend(style);
+      };
+      new MutationObserver((_, observer) => {
+        const root = document.querySelector('html');
+        if (!root) return;
+        observer.disconnect();
+        add(root);
+      }).observe(document, { childList: true });
+    }, textSize);
+  }
   await page.addInitScript((showHints) => {
     if (!showHints) {
       localStorage.setItem(
@@ -33,6 +58,29 @@ export async function open(
   // The window draws before the sample backend answers; its badge shows once it has, and with it the palette's sample actions.
   await page.getByRole('banner').getByText('Sample data').waitFor();
   await page.evaluate(() => document.fonts.ready);
+  if (textSize !== undefined) {
+    const root = await page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
+    expect(root, 'the text size set before the page loaded').toBe(`${String(textSize)}px`);
+  }
+}
+
+/** Waits until `window`, a download window, has kept its height for a few frames: it follows its content a frame behind. */
+export async function settled(window: Locator): Promise<void> {
+  await window.evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        let last = -1;
+        let same = 0;
+        const tick = () => {
+          const height = el.getBoundingClientRect().height;
+          same = height === last ? same + 1 : 0;
+          last = height;
+          if (same >= 3) resolve();
+          else requestAnimationFrame(tick);
+        };
+        tick();
+      }),
+  );
 }
 
 export function row(page: Page, name: string) {

@@ -312,7 +312,7 @@ describe('a progress window', () => {
     expect(win.row?.status).toBe('queued');
     const remove = vi.spyOn(b, 'remove');
     await win.progress.cancelDownload();
-    expect(remove).toHaveBeenCalledWith([win.downloadId], true);
+    expect(remove).toHaveBeenCalledWith([win.downloadId], false);
     expect(host.close).toHaveBeenCalledTimes(1);
   });
 
@@ -391,5 +391,31 @@ describe('an event the window cannot read', () => {
       expect(loads).toHaveBeenCalledOnce();
     });
     expect(win.phase).toBe('ask');
+  });
+});
+
+describe('Cancel while an answer is being sent', () => {
+  it('leaves the answer to finish, so the window does not both start and refuse the download', async () => {
+    const b = backend();
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
+    const held: { release?: () => void } = {};
+    const confirm = b.confirmCapture.bind(b);
+    vi.spyOn(b, 'confirmCapture').mockImplementation(
+      (id, confirmation) =>
+        new Promise((resolve, reject) => {
+          held.release = () => void confirm(id, confirmation).then(resolve, reject);
+        }),
+    );
+    const reject = vi.spyOn(b, 'rejectCapture');
+    const sending = win.confirm(keep, false);
+    await win.discard();
+    held.release?.();
+    expect(await sending).toBe(true);
+    expect(reject).not.toHaveBeenCalled();
+    expect(host.close).not.toHaveBeenCalled();
+    expect(win.phase).toBe('progress');
+    expect(win.error).toBeNull();
   });
 });

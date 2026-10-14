@@ -379,6 +379,9 @@
   --z-index-scrim: 40;
   --z-index-drawer: 50;
   --z-index-slide-over: 60;
+  /* The sample app's download windows, floating over the page as real windows would; the one in front a step higher. */
+  --z-index-window: 70;
+  --z-index-window-front: 71;
   --z-index-toast: 100;
   --z-index-popover: 200;
 }

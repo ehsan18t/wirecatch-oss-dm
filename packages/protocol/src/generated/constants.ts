@@ -104,6 +104,17 @@ export const MAX_QUESTION_WINDOWS = 5;
 export const DOWNLOAD_WINDOW_CASCADE_STEP = 28;
 
 /**
+ * A download window's width, in logical pixels; the sample app's windows take it too, so
+ * they lay out as the real ones do.
+ */
+export const DOWNLOAD_WINDOW_WIDTH = 460;
+
+/**
+ * The least height a download window keeps, in logical pixels, however little it shows.
+ */
+export const DOWNLOAD_WINDOW_MIN_HEIGHT = 320;
+
+/**
  * Every [`Theme`], in the order settings offer them.
  */
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];

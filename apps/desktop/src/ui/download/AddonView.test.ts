@@ -25,4 +25,16 @@ describe('the add-on offer', () => {
     expect(window.getByTestId('addon-live')).toBe(live);
     expect(live.textContent.trim()).toBe('Installing the media add-on.');
   });
+
+  it('gives the focus to Hide when Install, which had it, goes', async () => {
+    const r = await renderApp({ empty: true });
+    r.backend.simulateAddonRequired();
+    const window = within(await downloadWindow());
+    const install = window.getByRole('button', { name: /^Install$/ });
+    expect(install).toHaveFocus();
+    await userEvent.setup().keyboard('{Enter}');
+    await settle();
+    expect(window.queryByRole('button', { name: /^Install$/ })).toBeNull();
+    expect(window.getByRole('button', { name: 'Hide' })).toHaveFocus();
+  });
 });

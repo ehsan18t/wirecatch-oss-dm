@@ -161,15 +161,14 @@ const TEXT_SIZES = [
 
 /** Opens the list with the root at `root` px and waits for the rows to take their height from it (`--spacing-row`, in rem). */
 async function withText(page: Page, root: number) {
-  await open(page, 'capture=0');
+  await open(page, 'capture=0', { textSize: root });
   const token = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--spacing-row').trim(),
   );
   const rem = /^(\d+(?:\.\d+)?)rem$/.exec(token)?.[1];
   if (rem === undefined) throw new Error(`--spacing-row is not in rem: ${token}`);
-  await page.addStyleTag({ content: `html { font-size: ${root}px !important; }` });
   const grid = page.getByRole('grid', { name: 'Downloads' });
-  // The page's own stylesheets arrive as modules and settle a moment after the tag.
+  // The page's own stylesheets arrive as modules, a moment after the list is drawn.
   await expect
     .poll(
       () =>

@@ -935,6 +935,11 @@ crate::exported::exported_consts! {
     /// How far each download window sits down and right of the one before it, in logical
     /// pixels.
     pub const DOWNLOAD_WINDOW_CASCADE_STEP: u32 = 28;
+    /// A download window's width, in logical pixels; the sample app's windows take it too, so
+    /// they lay out as the real ones do.
+    pub const DOWNLOAD_WINDOW_WIDTH: u32 = 460;
+    /// The least height a download window keeps, in logical pixels, however little it shows.
+    pub const DOWNLOAD_WINDOW_MIN_HEIGHT: u32 = 320;
     /// Every [`Theme`], in the order settings offer them.
     pub const THEMES: &[Theme] = &[Theme::System, Theme::Light, Theme::Dark];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`

@@ -18,21 +18,25 @@ export function getFitWindow(): FitWindow | null {
   return hasFitContext() ? fitContext() : null;
 }
 
-/** The parts of a window frame that add up to the height it needs. */
+/** What a window frame measures to tell the height it needs. */
 export interface FrameParts {
-  /** The title area. */
-  head: number;
-  /** The content of the scrolling body, without its padding. */
+  /** The whole frame: the title, the body and the buttons. */
+  frame: number;
+  /** The scrolling body as it is laid out now. */
+  body: number;
+  /** The content of the body, without its padding. */
   content: number;
   /** The body's padding, top and bottom together. */
   padding: number;
-  /** The button bar, or 0 when there is none. */
-  foot: number;
 }
 
-/** The height a frame needs to show everything without scrolling, rounded up to whole pixels. */
+/**
+ * The height a frame needs to show everything without scrolling, rounded up to whole pixels:
+ * everything around the body as it is, and the body as tall as its content. Measuring around the
+ * body, rather than adding up its neighbours, counts every border and gap in the frame.
+ */
 export function neededHeight(parts: FrameParts): number {
-  const total = parts.head + parts.content + parts.padding + parts.foot;
+  const total = parts.frame - parts.body + parts.content + parts.padding;
   return Number.isFinite(total) && total > 0 ? Math.ceil(total) : 0;
 }
 

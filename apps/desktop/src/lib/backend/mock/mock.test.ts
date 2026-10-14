@@ -263,6 +263,18 @@ describe('MockBackend', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('asks nothing more about a slow reading cancelled before it finished', async () => {
+    vi.useFakeTimers();
+    const { mock } = make({ empty: true });
+    mock.simulateSlowReading();
+    const shown = mock.windows.windows[0]?.shows;
+    const id = shown?.kind === 'question' ? shown.id : questionId(0);
+    await mock.dismissMediaChoice(id);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await mock.pendingMediaChoices()).toEqual([]);
+    await expect(mock.getQuestion(id)).resolves.toBeNull();
+  });
+
   it('drops answers still on their way back when disposed', async () => {
     vi.useFakeTimers();
     const { mock } = make({ empty: true, latencyMs: 100 });

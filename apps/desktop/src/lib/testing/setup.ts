@@ -10,7 +10,7 @@ import TestHost from './TestHost.svelte';
 // The shell imports the download windows on demand. Importing them with this module loads them
 // while the test file is collected, outside any test's time limit, so a wait for a window is for
 // the window to open and not for its modules to load.
-import '$lib/window/MockWindows.svelte';
+import '../../ui/download/MockWindows.svelte';
 
 /** Noon on Saturday 10 October 2026, so schedules behave the same on every run. */
 export const NOON = new Date(2026, 9, 10, 12, 0).getTime();

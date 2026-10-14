@@ -386,8 +386,13 @@ export class DownloadWindowState {
     }
   }
 
-  /** Cancel on a question: nothing is downloaded, and the window closes. */
+  /**
+   * Cancel on a question: nothing is downloaded, and the window closes. Not while an answer is
+   * being sent: refusing the same question then would either fail that answer or start a
+   * download the window had just refused.
+   */
   async discard(): Promise<void> {
+    if (this.busy) return;
     const question = this.question;
     const id = this.questionId;
     if (!question || id === null) {

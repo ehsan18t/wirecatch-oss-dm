@@ -2,14 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { fitReporter, neededHeight } from './fit';
 
 describe('a download window fits its content', () => {
-  it('adds up the title, the content, the body padding and the buttons', () => {
-    expect(neededHeight({ head: 64.4, content: 300, padding: 22, foot: 61 })).toBe(448);
-    expect(neededHeight({ head: 64, content: 300, padding: 22, foot: 0 })).toBe(386);
+  it('keeps everything around the body and makes the body as tall as its content', () => {
+    // A frame 600 tall whose body takes 400 of it: the title and the buttons need the other 200.
+    expect(neededHeight({ frame: 600, body: 400, content: 226.4, padding: 22 })).toBe(449);
+    // Squeezed by a small screen, the body is shorter than its content; what it needs is the same.
+    expect(neededHeight({ frame: 320, body: 120, content: 226.4, padding: 22 })).toBe(449);
   });
 
   it('reports nothing for a frame that is not laid out yet', () => {
-    expect(neededHeight({ head: 0, content: 0, padding: 0, foot: 0 })).toBe(0);
-    expect(neededHeight({ head: Number.NaN, content: 10, padding: 0, foot: 0 })).toBe(0);
+    expect(neededHeight({ frame: 0, body: 0, content: 0, padding: 0 })).toBe(0);
+    expect(neededHeight({ frame: Number.NaN, body: 0, content: 10, padding: 0 })).toBe(0);
   });
 
   it('resizes once per frame, only for a new height', () => {

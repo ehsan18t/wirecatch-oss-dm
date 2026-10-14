@@ -8,6 +8,8 @@ const MARKERS = [
   'Pretend the browser sent a download',
   'cdn.example-conf.com',
   'Sample data only',
+  // The sample app's floating download windows, a chunk only the mock backend loads; the main page names it where it imports it.
+  'MockWindows',
   // The component gallery's page (gallery/index.html), served by the dev server only. Its modules are kept out by the build itself (scripts/dev-only-modules.mjs), which reads the module graph.
   'Wirecatch component gallery',
 ];

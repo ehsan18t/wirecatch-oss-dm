@@ -80,7 +80,18 @@ export const THEME_NAMES = {
 /** Scales Tailwind keys outside the theme groups above. */
 export const GROUP_NAMES = {
   w: ['sidebar', 'drawer', 'slide-over', 'toast', 'details-beside', 'popup'],
-  z: ['raised', 'sticky', 'titlebar', 'scrim', 'drawer', 'slide-over', 'toast', 'popover'],
+  z: [
+    'raised',
+    'sticky',
+    'titlebar',
+    'scrim',
+    'drawer',
+    'slide-over',
+    'window',
+    'window-front',
+    'toast',
+    'popover',
+  ],
   duration: ['fast', 'normal', 'slow', 'slower', 'highlight', 'activity', 'flow', 'spin'],
   delay: ['reveal', 'settle', 'tooltip', 'linger'],
   opacity: ['disabled', 'busy', 'quiet', 'tint', 'soft', 'rim', 'hover', 'pressed', 'sheen'],

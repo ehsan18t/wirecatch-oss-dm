@@ -109,7 +109,7 @@ const DEFS = [
     id: 'ask_before_download',
     section: 'browser',
     label: 'Show a window before each download',
-    help: 'Each file from the browser opens its own window first, so you can change its name, folder and queue, or download it later. Videos always ask for a quality.',
+    help: 'Each file from the browser opens its own window first, so you can change its name, folder and queue, or download it later. Off: files start at once, and the main window comes forward with a note for each. Videos always ask for a quality.',
     keywords: 'confirm prompt dialog question ask window start without asking',
   },
   {

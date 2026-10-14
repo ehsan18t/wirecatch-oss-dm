@@ -6,10 +6,11 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from '$lib/backend/mock';
+import { BackendError } from '$lib/backend';
 import { mockBackend, NOON, settle, windowState } from '$lib/testing/setup';
 import { HOURS_PER_DAY, MS_PER_HOUR } from '$lib/time';
 import DownloadWindow from './DownloadWindow.svelte';
-import { CLOSE_AFTER_MS, type Target } from './download-window.svelte';
+import { CLOSE_AFTER_MS, type Target } from '$lib/window/download-window.svelte';
 
 async function show(b: MockBackend, target: Target) {
   const { win, host } = windowState(b, target);
@@ -29,7 +30,7 @@ describe('a download window with the keyboard', () => {
     // Every control has a name a screen reader can say.
     expect(screen.getByRole('textbox', { name: 'File name' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Queue' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Change the folder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
     expect(
       screen.getByRole('checkbox', { name: 'Start downloads without asking' }),
     ).not.toBeChecked();
@@ -41,6 +42,19 @@ describe('a download window with the keyboard', () => {
     await settle();
     expect(host.becameDownload).toHaveBeenCalledTimes(1);
     expect(win.phase).toBe('progress');
+  });
+
+  it('has a title bar whose one caption button closes the window and leaves the question waiting', async () => {
+    const b = mockBackend({ empty: true });
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    const { host } = await show(b, { question: asked?.id ?? questionId(0) });
+    expect(screen.getByText('Wirecatch')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Minimize' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^(Maximize|Restore)$/ })).toBeNull();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Close' }));
+    expect(host.close).toHaveBeenCalledTimes(1);
+    expect(await b.pendingConfirmations()).toHaveLength(1);
   });
 
   it('closes with Escape and leaves the question waiting', async () => {
@@ -57,6 +71,41 @@ describe('a download window with the keyboard', () => {
     });
     expect(host.close).toHaveBeenCalledTimes(1);
     expect(await b.pendingMediaChoices()).toHaveLength(1);
+  });
+
+  it('downloads with Enter on a checkbox, which Space checks', async () => {
+    const b = mockBackend({ empty: true });
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    const { win, host } = await show(b, { question: asked?.id ?? questionId(0) });
+    const user = userEvent.setup();
+    const closeAfter = screen.getByRole('checkbox', {
+      name: 'Close this window when downloads start',
+    });
+    closeAfter.focus();
+    await user.keyboard(' ');
+    await settle();
+    expect(closeAfter).toBeChecked();
+    expect(host.becameDownload).not.toHaveBeenCalled();
+    await user.keyboard('{Enter}');
+    await settle();
+    expect(host.becameDownload).toHaveBeenCalledTimes(1);
+    expect(win.phase).not.toBe('asking');
+  });
+
+  it('says what went wrong next to the buttons, outside the part that scrolls', async () => {
+    const b = mockBackend({ empty: true });
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    await show(b, { question: asked?.id ?? questionId(0) });
+    vi.spyOn(b, 'confirmCapture').mockRejectedValue(new BackendError('The disk is full.'));
+    const now = screen.getByRole('button', { name: 'Download now' });
+    await userEvent.setup().click(now);
+    await settle();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('The disk is full.');
+    expect(alert.closest('.overflow-y-auto')).toBeNull();
+    expect(alert.compareDocumentPosition(now) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('asks before Cancel removes a download, and Escape keeps it', async () => {
@@ -136,7 +185,7 @@ describe('a finished download’s window', () => {
     const { b, id } = await finished();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { host } = await show(b, { download: id });
-    const window = screen.getByRole('button', { name: 'Open' }).closest('.progress-window');
+    const window = screen.getByRole('button', { name: 'Open' }).closest('[data-progress-window]');
     await fireEvent.mouseEnter(window!);
     await settle();
     vi.advanceTimersByTime(CLOSE_AFTER_MS * 3);

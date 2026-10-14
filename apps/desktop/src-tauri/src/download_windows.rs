@@ -36,7 +36,8 @@ use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, Webvi
 use wirecatch_core::Manager;
 use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
 use wirecatch_protocol::app::{
-    AppSettingsPatch, DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS,
+    AppSettingsPatch, DOWNLOAD_WINDOW_CASCADE_STEP, DOWNLOAD_WINDOW_MIN_HEIGHT,
+    DOWNLOAD_WINDOW_WIDTH, MAX_QUESTION_WINDOWS,
 };
 use wirecatch_protocol::desktop::{DOWNLOAD_PARAMETER, DOWNLOAD_WINDOW_PAGE, QUESTION_PARAMETER};
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
@@ -51,10 +52,10 @@ use crate::window::{bring_forward, show_focused, warn_if_failed};
 pub const LABEL_PREFIX: &str = "download-";
 
 /// A download window's size when it opens, in logical pixels.
-pub const WINDOW_SIZE: (f64, f64) = (460.0, 600.0);
+pub const WINDOW_SIZE: (f64, f64) = (DOWNLOAD_WINDOW_WIDTH as f64, 600.0);
 
 /// The smallest a download window can be made, in logical pixels.
-pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, 320.0);
+pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, DOWNLOAD_WINDOW_MIN_HEIGHT as f64);
 
 /// The space kept free above and below a window that fits its content, in logical pixels.
 pub const SCREEN_MARGIN: f64 = 48.0;

@@ -373,10 +373,14 @@ export class MockBackend implements Backend {
     media.simulateMediaChoice(this.#state, this.#mediaIndex++, page, id);
   }
 
-  /** Sample data only: a page that takes three seconds to read before its qualities show. */
+  /** Sample data only: a page that takes three seconds to read before its qualities show, unless it is cancelled first. */
   simulateSlowReading(): void {
     const id = media.startReading(this.#state, media.SLOW_SAMPLE_PAGE);
-    this.#after(SLOW_READING_MS, () => this.simulateMediaChoice(media.SLOW_SAMPLE_PAGE, id));
+    this.#after(SLOW_READING_MS, () => {
+      if (this.#state.reading.some((r) => r.id === id)) {
+        this.simulateMediaChoice(media.SLOW_SAMPLE_PAGE, id);
+      }
+    });
   }
 
   /** Sample data only: a page that needs the media add-on to download. */

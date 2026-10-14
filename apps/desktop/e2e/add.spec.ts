@@ -192,8 +192,7 @@ for (const { scale, root, width, height } of SCALES) {
     test('the Add dialog fits, for one link and for many, with a folder chosen', async ({
       page,
     }) => {
-      await open(page, 'capture=0');
-      await page.addStyleTag({ content: `html { font-size: ${root}px !important; }` });
+      await open(page, 'capture=0', { textSize: root });
       await openAdd(page);
       await checkFits(page, 'empty');
       await linksBox(page).fill(LINKS[0] ?? '');
@@ -212,8 +211,7 @@ for (const { scale, root, width, height } of SCALES) {
     test('the Add dialog fits with what it says when something is wrong, and a long folder', async ({
       page,
     }) => {
-      await open(page, 'capture=0');
-      await page.addStyleTag({ content: `html { font-size: ${root}px !important; }` });
+      await open(page, 'capture=0', { textSize: root });
       await openAdd(page);
       await addDialog(page).getByRole('button', { name: 'Download' }).click();
       await expect(linksBox(page)).toHaveAttribute('aria-invalid', 'true');
