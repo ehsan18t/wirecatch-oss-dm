@@ -10,7 +10,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, Error, Fetcher, PrivateNetwork, RateLimiter, Url,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::{private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, private_dir, test_data};
 
 fn options() -> DownloadOptions {
     let mut options = DownloadOptions::default();
@@ -463,9 +463,7 @@ async fn a_resource_replaced_between_requests_is_reported_as_changed() {
         let f = f.clone();
         async move { f.get(f.url(), Some(0..200_000), MIB).await }
     });
-    server
-        .wait_for_request("seg.ts", Duration::from_secs(10))
-        .await;
+    server.wait_for_request("seg.ts", PATIENCE).await;
     server.configure(|config| config.etag = Some("\"v2\"".into()));
     server.release();
     let result = get.await.unwrap().map(|fetched| fetched.body.len());
@@ -492,9 +490,7 @@ async fn a_resource_replaced_before_a_whole_answer_is_asked_again_is_reported_as
         let f = f.clone();
         async move { f.get(f.url(), None, 4 * MIB).await }
     });
-    server
-        .wait_for_request("seg.ts", Duration::from_secs(10))
-        .await;
+    server.wait_for_request("seg.ts", PATIENCE).await;
     server.configure(|config| config.etag = Some("\"v2\"".into()));
     server.release();
     let result = get.await.unwrap().map(|fetched| fetched.body.len());

@@ -12,7 +12,7 @@ use wirecatch_engine::header::{
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
-use wirecatch_test_support::{TestResult, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, TestResult, private_dir, test_data};
 
 mod common;
 use common::{request, run};
@@ -660,9 +660,7 @@ async fn a_file_replaced_mid_download_is_reported_as_changed() -> TestResult {
     let download = tokio::spawn(run(request(&server, "f.bin", dir.path(), 1)));
     // The first answer is decided once its request arrives; every later one
     // is about the new file.
-    server
-        .wait_for_request("f.bin", Duration::from_secs(10))
-        .await;
+    server.wait_for_request("f.bin", PATIENCE).await;
     server.configure(|config| config.etag = Some("\"v2\"".into()));
     server.release();
     let result = download.await?;
@@ -689,9 +687,7 @@ async fn a_file_replaced_before_a_whole_answer_is_asked_again_is_reported_as_cha
     let dir = private_dir("replaced-whole")?;
     server.hold();
     let download = tokio::spawn(run(request(&server, "f.bin", dir.path(), 1)));
-    server
-        .wait_for_request("f.bin", Duration::from_secs(10))
-        .await;
+    server.wait_for_request("f.bin", PATIENCE).await;
     server.configure(|config| config.etag = Some("\"v2\"".into()));
     server.release();
     let result = download.await?;

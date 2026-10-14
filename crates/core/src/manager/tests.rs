@@ -129,26 +129,23 @@ async fn a_failed_capture_is_answered_before_its_attempt_is_cleaned_up() {
 
 /// The capture timeout counts from when the capture arrived, not from when the
 /// wait for its server begins: whatever the check of the link took first is
-/// already spent.
+/// already spent. Here all of it was, so the answer comes without waiting; a
+/// wait counted from its own start would last twice `PATIENCE`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_captures_answer_comes_within_the_timeout_of_its_arrival() {
-    let capture_timeout = Duration::from_secs(5);
+    let capture_timeout = 2 * PATIENCE;
     let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), capture_timeout).await;
-    let asked = Instant::now();
-    // Most of the time was spent before the wait began.
     let arrived = tokio::time::Instant::now()
-        .checked_sub(Duration::from_millis(4_800))
-        .unwrap();
-    let err = manager
-        .capture_arrived(capture("https://example.com/late.pdf"), arrived)
-        .await
-        .unwrap_err();
+        .checked_sub(capture_timeout)
+        .expect("the machine has been running for longer than the capture timeout");
+    let answer = tokio::time::timeout(
+        PATIENCE,
+        manager.capture_arrived(capture("https://example.com/late.pdf"), arrived),
+    )
+    .await
+    .expect("the wait for the server counted from its own start, not the capture's arrival");
+    let err = answer.unwrap_err();
     assert!(matches!(err, CoreError::NotStarted(_)), "{err}");
-    assert!(
-        asked.elapsed() < Duration::from_millis(2_500),
-        "answered only after {:?}",
-        asked.elapsed()
-    );
 }
 
 fn add_request(url: &str) -> AddRequest {
