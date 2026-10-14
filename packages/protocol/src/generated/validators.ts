@@ -46,7 +46,6 @@ import type { ImportSettingsArgs } from './ImportSettingsArgs';
 import type { ImportSummary } from './ImportSummary';
 import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
-import type { IsProgramArgs } from './IsProgramArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { Link } from './Link';
 import type { MediaChoice } from './MediaChoice';
@@ -608,11 +607,6 @@ export function isInstallAddonArgs(value: unknown): value is InstallAddonArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isAddonId(value1['id']))(value);
 }
 
-/** Whether `value` has the shape of a {@link IsProgramArgs}; fields it does not name are not checked. */
-export function isIsProgramArgs(value: unknown): value is IsProgramArgs {
-  return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
-}
-
 /** Whether `value` has the shape of a {@link KeepOriginalArgs}; fields it does not name are not checked. */
 export function isKeepOriginalArgs(value: unknown): value is KeepOriginalArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
@@ -770,10 +764,7 @@ export function isNewDownload(value: unknown): value is NewDownload {
 
 /** Whether `value` has the shape of a {@link OpenFileArgs}; fields it does not name are not checked. */
 export function isOpenFileArgs(value: unknown): value is OpenFileArgs {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) && isDownloadId(value1['id']) && typeof value1['allow_program'] === 'boolean')(
-    value,
-  );
+  return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
 /** Whether `value` has the shape of a {@link OpenFolderArgs}; fields it does not name are not checked. */
@@ -1280,8 +1271,6 @@ export const COMMAND_OUTPUTS: {
   reject_capture: (value: unknown): value is CommandMap['reject_capture']['output'] =>
     value === null,
   open_file: (value: unknown): value is CommandMap['open_file']['output'] => value === null,
-  is_program: (value: unknown): value is CommandMap['is_program']['output'] =>
-    typeof value === 'boolean',
   open_folder: (value: unknown): value is CommandMap['open_folder']['output'] => value === null,
   set_download_folder: (value: unknown): value is CommandMap['set_download_folder']['output'] =>
     value === null,

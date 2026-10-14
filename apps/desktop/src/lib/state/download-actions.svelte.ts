@@ -23,7 +23,6 @@ export interface DownloadActionsHost {
   selection: Selection;
   queues: Queues;
   openDialog: (dialog: Dialog) => void;
-  closeDialog: () => void;
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
   place: () => { view: View; sort: SortKey };
 }
@@ -104,21 +103,9 @@ export class DownloadActions {
     return this.#host.runner.succeeds(() => this.#host.backend().refreshLink(id, url));
   }
 
-  /** Opens a finished file; a program asks first whether the person trusts where it came from. */
+  /** Opens a finished file; for a program the shell first asks whether the person trusts where it came from. */
   async openFile(id: DownloadId): Promise<void> {
-    const program = await this.#host.runner.run(() => this.#host.backend().isProgram(id));
-    if (program === undefined) return;
-    if (program) {
-      this.#host.openDialog({ kind: 'open-program', id });
-      return;
-    }
     await this.#host.runner.run(() => this.#host.backend().openFile(id));
-  }
-
-  /** Opens a program the person confirmed they trust. */
-  async openProgram(id: DownloadId): Promise<void> {
-    this.#host.closeDialog();
-    await this.#host.runner.run(() => this.#host.backend().openFile(id, true));
   }
 
   async openFolder(id: DownloadId): Promise<void> {

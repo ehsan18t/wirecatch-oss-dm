@@ -46,8 +46,8 @@ crate::exported::exported_consts! {
     /// `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
     /// which carry the mark of the web, in Protected View.
     ///
-    /// The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`); the interface
-    /// reads it for wording and the sample backend.
+    /// The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`) and asks in
+    /// a warning of its own; the sample backend reads it to ask the same way.
     pub const SAFE_EXTENSIONS: &[&str] = &[
         "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "3gp",
         "ogv", "mp3", "m4a", "aac", "flac", "wav", "ogg", "oga", "opus", "wma", "aiff", "mka", "srt",
@@ -263,19 +263,13 @@ commands! {
         /// The question.
         id: QuestionId,
     } -> ();
-    /// Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
-    /// `allow_program` is set, after the person said they trust where it came from.
+    /// Opens a finished file. A program (an installer, a script, a shortcut) opens only once the
+    /// person agreed to the shell's own warning, which names where it came from; the page cannot
+    /// answer that warning, so declining it is not an error.
     open_file: OpenFileArgs {
         /// The download.
         id: DownloadId,
-        /// The person confirmed they trust where the program came from.
-        allow_program: bool,
     } -> ();
-    /// Whether opening the file would run code, so the interface asks first.
-    is_program: IsProgramArgs {
-        /// The download.
-        id: DownloadId,
-    } -> bool;
     /// Shows a download's file in its folder, or the folder alone while the file is not there
     /// yet.
     open_folder: OpenFolderArgs {

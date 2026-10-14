@@ -145,8 +145,8 @@ export const DOWNLOAD_PARAMETER = 'download';
  * `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
  * which carry the mark of the web, in Protected View.
  *
- * The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`); the interface
- * reads it for wording and the sample backend.
+ * The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`) and asks in
+ * a warning of its own; the sample backend reads it to ask the same way.
  */
 export const SAFE_EXTENSIONS: readonly string[] = [
   'mp4',

@@ -13,5 +13,4 @@ export type Dialog =
   | { kind: 'export' }
   | { kind: 'import' }
   | { kind: 'shortcuts' }
-  | { kind: 'open-program'; id: DownloadId }
   | { kind: 'remove-addon'; id: AddonId };

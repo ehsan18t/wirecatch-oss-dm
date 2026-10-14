@@ -15,7 +15,6 @@ import type {
   SettingsProfile,
   UiEvent,
 } from '@wirecatch/protocol';
-import { isProgramName } from '../../filetypes';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
 import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
@@ -86,6 +85,11 @@ export class MockBackend implements Backend {
   nextUpdateCheck: addons.UpdateCheck = 'up-to-date';
   /** Files opened, for tests: the mock opens nothing for real. */
   readonly opened: DownloadId[] = [];
+  /**
+   * How the sample asks before it opens a program. The shell asks in a dialog of its own, which no
+   * page can answer; the browser's confirm is the sample's equivalent. Tests replace it.
+   */
+  answerProgramWarning: (warning: string) => boolean = (warning) => window.confirm(warning);
 
   readonly #state: MockState;
   readonly #latencyMs: number;
@@ -421,15 +425,10 @@ export class MockBackend implements Backend {
 
   // ---- Files and pickers ----
 
-  openFile(id: DownloadId, allowProgram = false) {
+  openFile(id: DownloadId) {
     return this.#call(() => {
-      downloads.openFile(this.#state, id, allowProgram);
-      this.opened.push(id);
+      if (downloads.mayOpen(this.#state, id, this.answerProgramWarning)) this.opened.push(id);
     });
-  }
-
-  isProgram(id: DownloadId) {
-    return this.#call(() => isProgramName(this.#state.row(id).file_name));
   }
 
   openFolder(id: DownloadId) {

@@ -114,6 +114,24 @@ describe('a finished download’s window', () => {
     expect(host.close).toHaveBeenCalledTimes(1);
   });
 
+  it('stays while the shell asks whether to open the file, which takes the focus away', async () => {
+    const { b, id } = await finished();
+    let answer: () => void = () => undefined;
+    vi.spyOn(b, 'openFile').mockReturnValue(
+      new Promise<void>((resolve) => (answer = () => resolve())),
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { host } = await show(b, { download: id });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    await settle();
+    vi.advanceTimersByTime(CLOSE_AFTER_MS * 3);
+    expect(host.close).not.toHaveBeenCalled();
+    answer();
+    await settle();
+    vi.advanceTimersByTime(CLOSE_AFTER_MS + 100);
+    expect(host.close).toHaveBeenCalledTimes(1);
+  });
+
   it('stays while the pointer is over it', async () => {
     const { b, id } = await finished();
     vi.useFakeTimers({ shouldAdvanceTime: true });

@@ -106,12 +106,10 @@ export interface Backend {
   mainWindowReady(): Promise<void>;
 
   /**
-   * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
-   * `allowProgram` is set, after the person said they trust where it came from.
+   * Opens a finished file. A program (an installer, a script, a shortcut) opens only once the
+   * person agreed to the shell's own warning, which no page can answer; declining is no error.
    */
-  openFile(id: DownloadId, allowProgram?: boolean): Promise<void>;
-  /** Whether opening the file would run code, so the interface asks first. */
-  isProgram(id: DownloadId): Promise<boolean>;
+  openFile(id: DownloadId): Promise<void>;
   openFolder(id: DownloadId): Promise<void>;
   /** Moves a download, running or not, to another folder. */
   setDownloadFolder(id: DownloadId, folder: string): Promise<void>;

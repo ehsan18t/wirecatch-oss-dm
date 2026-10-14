@@ -3,20 +3,21 @@
 //! finds the manager and calls the matching function in [`crate::api`].
 
 use tauri::{AppHandle, Manager as _, State, WebviewWindow};
+use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
     AddDownloadArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs, ChooseMediaArgs,
     ConfirmCaptureArgs, CreateQueueArgs, DeleteQueueArgs, DismissMediaChoiceArgs,
     EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs,
-    GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, IsProgramArgs, KeepOriginalArgs,
-    MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
-    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
-    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetQueuePausedArgs, ShowProgressWindowArgs,
-    StartQueueNowArgs, UpdateAddonArgs, UpdateQueueArgs,
+    GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs,
+    OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
+    RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
+    SetDownloadFolderArgs, SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs,
+    UpdateAddonArgs, UpdateQueueArgs,
 };
 
-use crate::api::{self, CommandResult, Reveal};
+use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen};
 use crate::download_windows;
 use crate::host::Core;
 use crate::window::LaunchLinks;
@@ -255,13 +256,22 @@ pub async fn reject_capture(
 
 #[tauri::command]
 pub async fn open_file(
-    app: AppHandle,
+    window: WebviewWindow,
     core: CoreState<'_>,
     args: contract::open_file::Args,
 ) -> CommandResult<contract::open_file::Output> {
-    let OpenFileArgs { id, allow_program } = args;
-    let path = api::file_to_open(core.manager().await?, id, allow_program)?;
-    app.opener()
+    let OpenFileArgs { id } = args;
+    let path = match api::file_to_open(core.manager().await?, id)? {
+        ToOpen::File(path) => path,
+        ToOpen::Program { path, warning } => {
+            if !agrees_to_open(&window, warning).await {
+                return Ok(());
+            }
+            path
+        }
+    };
+    window
+        .opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| {
             api::failed(format!(
@@ -271,13 +281,26 @@ pub async fn open_file(
         })
 }
 
-#[tauri::command]
-pub async fn is_program(
-    core: CoreState<'_>,
-    args: contract::is_program::Args,
-) -> CommandResult<contract::is_program::Output> {
-    let IsProgramArgs { id } = args;
-    api::download_is_program(core.manager().await?, id)
+/// Shows `warning` in the system's own dialog over `window`, and says whether the person chose
+/// Open. The dialog belongs to the shell, so a script in the page cannot answer it.
+async fn agrees_to_open(window: &WebviewWindow, warning: ProgramWarning) -> bool {
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    window
+        .dialog()
+        .message(warning.message)
+        .title(warning.title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Open".to_owned(),
+            "Cancel".to_owned(),
+        ))
+        .parent(window)
+        .show(move |open| {
+            if answer.send(open).is_err() {
+                tracing::debug!("the warning was answered after its command stopped waiting");
+            }
+        });
+    answered.await.unwrap_or(false)
 }
 
 #[tauri::command]
@@ -557,7 +580,6 @@ handler![
     confirm_capture,
     reject_capture,
     open_file,
-    is_program,
     open_folder,
     set_download_folder,
     take_launch_links,

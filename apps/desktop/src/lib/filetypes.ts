@@ -1,4 +1,4 @@
-// File types as the desktop reads them. The decision whether a file may open without asking is made in Rust (`is_program` in `src-tauri/src/api.rs`) from `SAFE_EXTENSIONS`, generated from `crates/protocol`; this is the same list and the same reading, for wording and for the sample backend.
+// File types as the desktop reads them. Whether a file may open without asking is decided in Rust (`is_program` in `src-tauri/src/api.rs`) from `SAFE_EXTENSIONS`, generated from `crates/protocol`, and asked there in a dialog of the shell's own; this is the same list and the same reading, for the sample backend.
 
 import { SAFE_EXTENSIONS } from '@wirecatch/protocol';
 

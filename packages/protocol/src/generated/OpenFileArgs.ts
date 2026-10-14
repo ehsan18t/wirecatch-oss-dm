@@ -9,8 +9,4 @@ export type OpenFileArgs = {
    * The download.
    */
   id: DownloadId;
-  /**
-   * The person confirmed they trust where the program came from.
-   */
-  allow_program: boolean;
 };

@@ -86,7 +86,6 @@ export class AppState {
     selection: this.selection,
     queues: this.queues,
     openDialog: (dialog) => this.openDialog(dialog),
-    closeDialog: () => this.closeDialog(),
     place: () => ({ view: this.view, sort: this.sort }),
   });
   /** Settings changes go to the app one after another, in the order they were made. */

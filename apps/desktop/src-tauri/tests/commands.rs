@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use common::Sandbox;
 use wirecatch_core::Manager;
-use wirecatch_desktop_lib::api::{self, Reveal};
+use wirecatch_desktop_lib::api::{self, Reveal, ToOpen};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::{quit_core, quit_sequence};
 use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
@@ -159,35 +159,39 @@ async fn open_and_reveal(
 ) -> TestResult<DownloadId> {
     let id = api::add_download(manager, request(server, "small.zip", saved, true)).await?;
     let done = wait_status(manager, id, DownloadStatus::Completed).await;
-    let file = api::file_to_open(manager, id, false)?;
-    assert!(!api::download_is_program(manager, id)?);
+    let ToOpen::File(file) = api::file_to_open(manager, id)? else {
+        return Err("a zip file asked for trust before opening".into());
+    };
     assert_eq!(std::fs::read(&file)?, server.data);
     assert_eq!(file, PathBuf::from(&done.path));
     assert_eq!(api::item_to_reveal(manager, id)?, Reveal::File(file));
-    let Err(not_done) = api::file_to_open(manager, unfinished, false) else {
+    let Err(not_done) = api::file_to_open(manager, unfinished) else {
         return Err("an unfinished download opened".into());
     };
     assert!(not_done.message.contains("not finished"), "{not_done}");
     Ok(id)
 }
 
-/// A downloaded program only opens once the person said they trust its site.
+/// A downloaded program opens only through the shell's own warning, which names its type and
+/// the site it came from; nothing the page sends can skip it (DRS-5).
 async fn a_program_opens_only_when_trusted(
     manager: &Manager,
     server: &TestServer,
     saved: &Path,
 ) -> TestResult {
     let program = api::add_download(manager, request(server, "Setup.EXE", saved, true)).await?;
-    wait_status(manager, program, DownloadStatus::Completed).await;
-    assert!(api::download_is_program(manager, program)?);
-    let Err(refused) = api::file_to_open(manager, program, false) else {
+    let done = wait_status(manager, program, DownloadStatus::Completed).await;
+    let ToOpen::Program { path, warning } = api::file_to_open(manager, program)? else {
         return Err("a program opened without the person's trust".into());
     };
+    assert_eq!(path, PathBuf::from(&done.path));
+    assert!(warning.title.contains("Setup.EXE"), "{warning:?}");
     assert!(
-        refused.message.contains("can run code") && refused.message.contains("127.0.0.1"),
-        "{refused}"
+        warning.message.contains(".exe file")
+            && warning.message.contains("can run code")
+            && warning.message.contains("127.0.0.1"),
+        "{warning:?}"
     );
-    api::file_to_open(manager, program, true)?;
     Ok(())
 }
 
@@ -385,9 +389,8 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
     );
 
     // Opening looks the download up in the core by id.
-    let missing = api::file_to_open(&manager, DownloadId(4242), false).unwrap_err();
+    let missing = api::file_to_open(&manager, DownloadId(4242)).unwrap_err();
     assert!(missing.message.contains("no longer exists"), "{missing}");
-    assert!(api::download_is_program(&manager, DownloadId(4242)).is_err());
     manager.shutdown().await;
     Ok(())
 }

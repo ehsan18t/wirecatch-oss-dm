@@ -1,4 +1,4 @@
-// Opening finished files: a program asks first; anything else opens at once.
+// Opening finished files: a program opens only once the person agrees to the warning the shell shows itself; anything else opens at once.
 
 import { describe, expect, it } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
@@ -23,27 +23,32 @@ async function finished(url: string) {
 }
 
 describe('opening a finished file', () => {
-  it('asks before opening a program, and Open then opens it', async () => {
+  it('opens a program only once the person agrees to the warning, which names its type and site', async () => {
     const { app, backend, id } = await finished('https://downloads.example.com/Setup.EXE');
+    const warnings: string[] = [];
+    backend.answerProgramWarning = (warning) => {
+      warnings.push(warning);
+      return false;
+    };
     await app.actions.openFile(id);
-    expect(app.dialog).toEqual({ kind: 'open-program', id });
     expect(backend.opened).toEqual([]);
-
-    await app.actions.openProgram(id);
     expect(app.dialog).toBeNull();
-    expect(backend.opened).toEqual([id]);
-  });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/This is a \.exe file, a type that can run code/);
+    expect(warnings[0]).toMatch(/trust downloads\.example\.com/);
 
-  it('opens other files at once', async () => {
-    const { app, backend, id } = await finished('https://example.com/report.pdf');
+    backend.answerProgramWarning = () => true;
     await app.actions.openFile(id);
-    expect(app.dialog).toBeNull();
     expect(backend.opened).toEqual([id]);
   });
 
-  it('refuses a program that skipped the question', async () => {
-    const { backend, id } = await finished('https://example.com/install.sh');
-    await expect(backend.openFile(id)).rejects.toThrow(/can run code/);
+  it('opens other files without asking', async () => {
+    const { app, backend, id } = await finished('https://example.com/report.pdf');
+    backend.answerProgramWarning = () => {
+      throw new Error('a pdf asked before opening');
+    };
+    await app.actions.openFile(id);
+    expect(backend.opened).toEqual([id]);
   });
 
   it('asks for every type not known to be safe, in any case', () => {

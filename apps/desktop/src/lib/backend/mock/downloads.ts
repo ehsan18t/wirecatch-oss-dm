@@ -1,7 +1,7 @@
 // What the mock core does to downloads: add, pause, resume, cancel, retry, move and remove them.
 
 import type { AddRequest, DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
-import { isProgramName } from '../../filetypes';
+import { fileType, isProgramName } from '../../filetypes';
 import { hostOf } from '../../format';
 import { BackendError } from '../types';
 import { RUNNING, stop, type MockState } from './state';
@@ -148,17 +148,28 @@ export function resumeAll(state: MockState): void {
   state.changed(rows);
 }
 
-/** Like the core: a file opens once it is finished, and a program only when the person allows it. */
-export function openFile(state: MockState, id: DownloadId, allowProgram: boolean): void {
+/**
+ * Like the shell: a file opens once it is finished, and a program only when the person agrees to
+ * the warning `ask` shows, with the shell's wording.
+ */
+export function mayOpen(
+  state: MockState,
+  id: DownloadId,
+  ask: (warning: string) => boolean,
+): boolean {
   const row = state.row(id);
   if (row.status !== 'completed') {
     throw new BackendError('The file is not finished yet. It opens once the download completes.');
   }
-  if (isProgramName(row.file_name) && !allowProgram) {
-    throw new BackendError(
-      `${row.file_name} is a type of file that can run code. Only open it if you trust ${hostOf(row.url)}. Use Show in folder to open it yourself.`,
-    );
-  }
+  if (!isProgramName(row.file_name)) return true;
+  const type = fileType(row.file_name);
+  const what =
+    type === null
+      ? `${row.file_name} has no file type, so it may run code.`
+      : `This is a .${type} file, a type that can run code.`;
+  return ask(
+    `${what} Only open it if you trust ${hostOf(row.url)}. Code can change your computer, and a file from an unknown site can contain anything. To look at it first, choose Cancel and use Show in folder.`,
+  );
 }
 
 export function setDownloadFolder(state: MockState, id: DownloadId, folder: string): void {

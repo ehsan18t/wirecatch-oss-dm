@@ -5,7 +5,6 @@
   import { getApp, type Dialog } from '$lib/state/app.svelte';
   import AddDialog from './AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
-  import OpenProgramDialog from './OpenProgramDialog.svelte';
   import RemoveAddonDialog from './RemoveAddonDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
@@ -27,7 +26,6 @@
     export: transferView,
     import: transferView,
     shortcuts: shortcutsView,
-    'open-program': openProgramView,
     'remove-addon': removeAddonView,
   };
 
@@ -70,10 +68,6 @@
 
 {#snippet shortcutsView(_: DialogOf<'shortcuts'>)}
   <ShortcutsDialog />
-{/snippet}
-
-{#snippet openProgramView(d: DialogOf<'open-program'>)}
-  <OpenProgramDialog id={d.id} />
 {/snippet}
 
 {#snippet removeAddonView(d: DialogOf<'remove-addon'>)}

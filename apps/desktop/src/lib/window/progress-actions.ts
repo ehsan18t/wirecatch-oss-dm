@@ -52,15 +52,9 @@ export class ProgressActions {
     if (await this.#onRow((id) => this.#host.backend().remove([id], true))) this.#host.close();
   }
 
-  /** Whether opening the finished file could run code, so the window asks first. */
-  async isProgram(): Promise<boolean | undefined> {
-    const id = this.#host.downloadId();
-    if (id === null) return undefined;
-    return this.#host.runner.run(() => this.#host.backend().isProgram(id));
-  }
-
-  openFile(allowProgram = false): Promise<boolean> {
-    return this.#onRow((id) => this.#host.backend().openFile(id, allowProgram));
+  /** Opens the finished file; for a program the shell first asks whether the person trusts where it came from. */
+  openFile(): Promise<boolean> {
+    return this.#onRow((id) => this.#host.backend().openFile(id));
   }
 
   openFolder(): Promise<boolean> {

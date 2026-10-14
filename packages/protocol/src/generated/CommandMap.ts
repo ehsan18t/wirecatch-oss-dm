@@ -22,7 +22,6 @@ import type { GetQuestionArgs } from './GetQuestionArgs';
 import type { ImportPreview } from './ImportPreview';
 import type { ImportSettingsArgs } from './ImportSettingsArgs';
 import type { InstallAddonArgs } from './InstallAddonArgs';
-import type { IsProgramArgs } from './IsProgramArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { MediaChoice } from './MediaChoice';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
@@ -163,14 +162,11 @@ export type CommandMap = {
    */
   reject_capture: Command<RejectCaptureArgs, null>;
   /**
-   * Opens a finished file. A program (an installer, a script, a shortcut) is refused unless
-   * `allow_program` is set, after the person said they trust where it came from.
+   * Opens a finished file. A program (an installer, a script, a shortcut) opens only once the
+   * person agreed to the shell's own warning, which names where it came from; the page cannot
+   * answer that warning, so declining it is not an error.
    */
   open_file: Command<OpenFileArgs, null>;
-  /**
-   * Whether opening the file would run code, so the interface asks first.
-   */
-  is_program: Command<IsProgramArgs, boolean>;
   /**
    * Shows a download's file in its folder, or the folder alone while the file is not there
    * yet.

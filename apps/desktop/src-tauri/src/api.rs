@@ -354,35 +354,77 @@ fn is_marked_executable(_path: &Path) -> bool {
     false
 }
 
-/// Whether the download `id` is a program (see [`is_program`]), for the interface to ask first.
-///
-/// # Errors
-///
-/// There is no download `id`.
-pub fn download_is_program(m: &Manager, id: DownloadId) -> CommandResult<bool> {
-    Ok(is_program(Path::new(&find(m, id)?.path)))
-}
-
-/// The site a download came from, for "only open it if you trust example.com".
+/// The site a download came from, for "only open it if you trust example.com": its host as a
+/// browser reads the link, with the port when it is not the scheme's own.
 fn site_of(url: &str) -> String {
-    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
-    if host.is_empty() {
-        "where it came from".to_owned()
-    } else {
-        host.to_owned()
+    let parsed = url::Url::parse(url).ok();
+    match parsed
+        .as_ref()
+        .and_then(|link| Some((link.host_str()?, link.port())))
+    {
+        Some((host, Some(port))) => format!("{host}:{port}"),
+        Some((host, None)) => host.to_owned(),
+        None => "where it came from".to_owned(),
     }
 }
 
-/// The finished file to open for `open_file`. A program is only opened when `allow_program` is
-/// set, after the person confirmed they trust where it came from.
+/// What `open_file` opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToOpen {
+    /// A file that cannot run code: it opens at once.
+    File(PathBuf),
+    /// A program: it opens only once the person agreed to `warning`, which the shell shows in a
+    /// dialog of its own, so no page can answer it for them.
+    Program {
+        /// The program.
+        path: PathBuf,
+        /// What the person is asked.
+        warning: ProgramWarning,
+    },
+}
+
+/// The warning before a program opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramWarning {
+    /// Names the file.
+    pub title: String,
+    /// Says what the file can do and where it came from.
+    pub message: String,
+}
+
+impl ProgramWarning {
+    /// The warning for the program at `path`, downloaded from `url`. It names the file and type
+    /// on disk, which decided that it is a program.
+    fn new(path: &Path, url: &str) -> Self {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
+        let what = match file_type(&name) {
+            Some(ext) if SAFE_EXTENSIONS.contains(&ext.as_str()) => {
+                format!("{name} is marked as a program, so it may run code.")
+            }
+            Some(ext) => format!("This is a .{ext} file, a type that can run code."),
+            None => format!("{name} has no file type, so it may run code."),
+        };
+        Self {
+            title: format!("Open \"{name}\"?"),
+            message: format!(
+                "{what} Only open it if you trust {}. Code can change your computer, and a file from an unknown site can contain anything. To look at it first, choose Cancel and use Show in folder.",
+                site_of(url)
+            ),
+        }
+    }
+}
+
+/// The finished file to open for `open_file`, and whether it is a program the person must
+/// trust first.
 ///
 /// # Errors
 ///
-/// There is no download `id`, it has not finished, its file is no longer where it was saved,
-/// or it is a program and `allow_program` is not set. Each message says what to do instead.
-pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> CommandResult<PathBuf> {
+/// There is no download `id`, it has not finished, or its file is no longer where it was saved.
+/// Each message says what to do instead.
+pub fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<ToOpen> {
     let row = find(m, id)?;
     if row.status != DownloadStatus::Completed {
         return Err(refused(
@@ -396,14 +438,14 @@ pub fn file_to_open(m: &Manager, id: DownloadId, allow_program: bool) -> Command
             row.file_name, row.path
         )));
     }
-    if is_program(&path) && !allow_program {
-        return Err(refused(format!(
-            "{} is a type of file that can run code. Only open it if you trust {}. Use Show in folder to open it yourself.",
-            row.file_name,
-            site_of(&row.url)
-        )));
-    }
-    Ok(path)
+    Ok(if is_program(&path) {
+        ToOpen::Program {
+            warning: ProgramWarning::new(&path, &row.url),
+            path,
+        }
+    } else {
+        ToOpen::File(path)
+    })
 }
 
 /// What `open_folder` shows.
@@ -687,6 +729,30 @@ mod tests {
             std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
             assert!(is_program(&file), "{name} marked executable");
         }
+        let warning = ProgramWarning::new(&dir.path().join("movie.mp4"), "https://a.example/");
+        assert!(
+            warning
+                .message
+                .starts_with("movie.mp4 is marked as a program"),
+            "{warning:?}"
+        );
+    }
+
+    #[test]
+    fn the_warning_names_the_file_on_disk_and_where_to_look_first() {
+        let warning = ProgramWarning::new(
+            &Path::new("downloads").join("Setup.EXE"),
+            "https://dl.example.com/get",
+        );
+        assert_eq!(warning.title, "Open \"Setup.EXE\"?");
+        assert!(
+            warning
+                .message
+                .starts_with("This is a .exe file, a type that can run code.")
+                && warning.message.contains("trust dl.example.com.")
+                && warning.message.contains("use Show in folder."),
+            "{warning:?}"
+        );
     }
 
     /// The interface tells this error from others by its code (`isAddonRequired` in
@@ -706,5 +772,29 @@ mod tests {
             "dl.example.com:8080"
         );
         assert_eq!(site_of("http://example.com"), "example.com");
+    }
+
+    /// The site named is the one the link was fetched from, as a browser reads the link, never a
+    /// part of it a site chose to look like a host.
+    #[test]
+    fn the_source_site_is_the_host_the_link_reaches() {
+        // A backslash ends the host in a web address, so the `@` after it is in the path.
+        assert_eq!(
+            site_of(r"https://dl.example.com\@trusted.example/a.exe"),
+            "dl.example.com"
+        );
+        assert_eq!(
+            site_of("https://dl.example.com?@trusted.example/a.exe"),
+            "dl.example.com"
+        );
+        assert_eq!(site_of("https://DL.Example.COM/a.exe"), "dl.example.com");
+        assert_eq!(
+            site_of("https://dl.example.com:443/a.exe"),
+            "dl.example.com"
+        );
+        assert_eq!(site_of("http://[::1]:8080/a.exe"), "[::1]:8080");
+        for unreadable in ["", "not a link", "file:///C:/setup.exe", "https://"] {
+            assert_eq!(site_of(unreadable), "where it came from", "{unreadable:?}");
+        }
     }
 }

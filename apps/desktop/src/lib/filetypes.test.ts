@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isProgramName } from './filetypes';
+import { fileType, isProgramName } from './filetypes';
 
 describe('file types that open without asking', () => {
   it('leave out documents that can run code or formulas', () => {
@@ -9,5 +9,14 @@ describe('file types that open without asking', () => {
     for (const name of ['a.docx', 'a.xlsx', 'a.pptx', 'a.pdf']) {
       expect(isProgramName(name), name).toBe(false);
     }
+  });
+});
+
+describe('the type of a file', () => {
+  it('is read the way Windows reads it', () => {
+    expect(fileType('video.mp4. ')).toBe('mp4');
+    expect(fileType('report.PDF.EXE')).toBe('exe');
+    expect(fileType('README')).toBeNull();
+    expect(fileType('trailing.')).toBeNull();
   });
 });

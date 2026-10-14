@@ -225,11 +225,8 @@ export class TauriBackend implements DownloadWindowBackend {
   fitDownloadWindow(height: number) {
     return this.#exec('fit_download_window', { height });
   }
-  openFile(id: DownloadId, allowProgram = false) {
-    return this.#exec('open_file', { id, allow_program: allowProgram });
-  }
-  isProgram(id: DownloadId) {
-    return this.#call('is_program', { id });
+  openFile(id: DownloadId) {
+    return this.#exec('open_file', { id });
   }
   openFolder(id: DownloadId) {
     return this.#exec('open_folder', { id });

@@ -14,7 +14,6 @@
     formatEta,
     formatPercent,
     formatSize,
-    hostOf,
     MEDIA_SOURCE_LABEL,
     PROCESSING_LABEL,
     statusDetail,
@@ -28,8 +27,8 @@
   let { win, row }: { win: DownloadWindowState; row: DownloadSummary } = $props();
   const uid = $props.id();
 
-  /** An inline question shown over the buttons: cancel, open a program, or a fresh link. */
-  let asking = $state<'cancel' | 'program' | 'link' | null>(null);
+  /** An inline question shown over the buttons: cancel, or a fresh link. */
+  let asking = $state<'cancel' | 'link' | null>(null);
   let link = $state('');
   let linkError = $state('');
 
@@ -52,21 +51,25 @@
   // Closes by itself once finished, unless the person is looking at it or using it.
   let hovered = $state(false);
   let focused = $state(false);
+  // Opening a program waits for the shell's own warning, which takes the focus from the window.
+  let opening = $state(false);
   let root = $state<HTMLDivElement>();
   function updateFocus() {
     focused = document.hasFocus() && !!root && root.contains(document.activeElement);
   }
   $effect(() => {
-    if (!finished || hovered || focused || asking !== null) return;
+    if (!finished || hovered || focused || opening || asking !== null) return;
     const timer = setTimeout(() => win.close(), CLOSE_AFTER_MS);
     return () => clearTimeout(timer);
   });
 
   async function open() {
-    const program = await win.progress.isProgram();
-    if (program === undefined) return;
-    if (program) asking = 'program';
-    else await win.progress.openFile();
+    opening = true;
+    try {
+      await win.progress.openFile();
+    } finally {
+      opening = false;
+    }
   }
 
   async function saveLink() {
@@ -177,24 +180,6 @@
             <Button {@attach focusNow} onclick={() => (asking = null)}>Keep downloading</Button>
             <Button variant="danger" onclick={() => win.progress.cancelDownload()}
               >Cancel and delete the partial file</Button
-            >
-          </div>
-        </div>
-      {:else if asking === 'program'}
-        <div class="ask" role="group" aria-labelledby="{uid}-program">
-          <p id="{uid}-program">
-            {row.file_name} can run code on this computer. Only open it if you trust {hostOf(
-              row.url,
-            )}.
-          </p>
-          <div class="ask-actions">
-            <Button {@attach focusNow} onclick={() => (asking = null)}>Do not open</Button>
-            <Button
-              variant="danger"
-              onclick={async () => {
-                asking = null;
-                await win.progress.openFile(true);
-              }}>Open it</Button
             >
           </div>
         </div>
