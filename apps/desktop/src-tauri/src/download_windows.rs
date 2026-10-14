@@ -20,6 +20,10 @@
 //!   core and is counted in the main window's sidebar; it is not opened again by itself (only an
 //!   event that moves it on, or the person, opens it again).
 //!
+//! - **Scope**: a download window shows text that websites chose, so it is trusted with little
+//!   (D43). Its capability grants only the commands it calls, and [`may_act_on`] and
+//!   [`may_change`] keep those to the question or download it shows and to its own two settings.
+//!
 //! Windows are created on the main thread ([`AppHandle::run_on_main_thread`]), never from an
 //! async task or a command directly, so nothing blocks and nothing deadlocks on Windows.
 
@@ -31,8 +35,11 @@ use std::sync::{Mutex, PoisonError};
 use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, WebviewWindowBuilder};
 use wirecatch_core::Manager;
 use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
-use wirecatch_protocol::app::{DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS};
+use wirecatch_protocol::app::{
+    AppSettingsPatch, DOWNLOAD_WINDOW_CASCADE_STEP, MAX_QUESTION_WINDOWS,
+};
 use wirecatch_protocol::desktop::{DOWNLOAD_PARAMETER, DOWNLOAD_WINDOW_PAGE, QUESTION_PARAMETER};
+use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::{DownloadId, QuestionId};
 
 use crate::host::Core;
@@ -176,6 +183,15 @@ impl Registry {
     #[must_use]
     pub fn windows(&self) -> &[OpenWindow] {
         &self.windows
+    }
+
+    /// What the window `label` shows now, or `None` when no such window is open.
+    #[must_use]
+    pub fn shows(&self, label: &str) -> Option<Shows> {
+        self.windows
+            .iter()
+            .find(|w| w.label == label)
+            .map(|w| w.shows)
     }
 
     /// Questions waiting for room to open their window, oldest first.
@@ -383,6 +399,42 @@ impl DownloadWindows {
     pub fn waiting(&self) -> Vec<QuestionId> {
         self.with(|r| r.waiting().collect())
     }
+}
+
+/// What a download window is told when it acts on anything but what it shows.
+pub const NOT_ITS_OWN: &str =
+    "This window acts only on its own download. Use the main window for the others.";
+
+/// What a download window is told when it changes a setting other than its own two.
+pub const NOT_ITS_SETTING: &str =
+    "This window changes only its own settings. Use Settings in the main window for the others.";
+
+/// Whether the window `label` may act on `target`: the main window on anything, a download
+/// window only on the question or download it shows now (D43).
+pub fn may_act_on<R: Runtime>(app: &AppHandle<R>, label: &str, target: Shows) -> bool {
+    !is_download_window(label)
+        || app
+            .try_state::<DownloadWindows>()
+            .is_some_and(|windows| windows.with(|r| r.shows(label)) == Some(target))
+}
+
+/// Whether a download window may make the settings change `patch`: only the two settings it
+/// shows, whether browser downloads start without asking and whether progress windows open
+/// (D43).
+#[must_use]
+pub fn may_change(patch: &AppSettingsPatch) -> bool {
+    let its_own = AppSettingsPatch {
+        extension: patch
+            .extension
+            .as_ref()
+            .map(|extension| ExtensionSettingsPatch {
+                ask_before_download: extension.ask_before_download,
+                ..ExtensionSettingsPatch::default()
+            }),
+        show_progress_windows: patch.show_progress_windows,
+        ..AppSettingsPatch::default()
+    };
+    *patch == its_own
 }
 
 fn update<R: Runtime>(app: &AppHandle<R>, change: impl FnOnce(&mut Registry) -> Vec<Step>) {
@@ -610,6 +662,7 @@ const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_protocol::app::PortablePath;
 
     fn q(id: u64) -> QuestionId {
         QuestionId(id)
@@ -642,6 +695,60 @@ mod tests {
             Some(Step::Open(window)) => window,
             other => panic!("expected a window to open, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_window_is_known_by_what_it_shows_now() {
+        let mut registry = Registry::default();
+        let window = opened(registry.ask(q(4)));
+        assert_eq!(registry.shows(&window.label), Some(Shows::Question(q(4))));
+        registry.became_download(&window.label, DownloadId(9));
+        assert_eq!(
+            registry.shows(&window.label),
+            Some(Shows::Download(DownloadId(9)))
+        );
+        registry.gone(&window.label);
+        assert_eq!(registry.shows(&window.label), None);
+        assert_eq!(registry.shows("main"), None);
+    }
+
+    #[test]
+    fn a_download_window_changes_only_its_own_two_settings() {
+        let start_without_asking = AppSettingsPatch {
+            extension: Some(ExtensionSettingsPatch {
+                ask_before_download: Some(false),
+                ..ExtensionSettingsPatch::default()
+            }),
+            ..AppSettingsPatch::default()
+        };
+        assert!(may_change(&start_without_asking));
+        let close_when_started = AppSettingsPatch {
+            show_progress_windows: Some(false),
+            ..AppSettingsPatch::default()
+        };
+        assert!(may_change(&close_when_started));
+        assert!(may_change(&AppSettingsPatch::default()));
+
+        let elsewhere = AppSettingsPatch {
+            default_folder: Some(PortablePath(r"C:\Users\someone\Startup".to_owned())),
+            show_progress_windows: Some(false),
+            ..AppSettingsPatch::default()
+        };
+        assert!(!may_change(&elsewhere));
+        let more_of_the_extension = AppSettingsPatch {
+            extension: Some(ExtensionSettingsPatch {
+                ask_before_download: Some(false),
+                capture_enabled: Some(true),
+                ..ExtensionSettingsPatch::default()
+            }),
+            ..AppSettingsPatch::default()
+        };
+        assert!(!may_change(&more_of_the_extension));
+        let start_with_system = AppSettingsPatch {
+            start_with_system: Some(true),
+            ..AppSettingsPatch::default()
+        };
+        assert!(!may_change(&start_with_system));
     }
 
     #[test]

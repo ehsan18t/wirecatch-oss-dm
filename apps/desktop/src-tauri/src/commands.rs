@@ -2,7 +2,7 @@
 //! Each takes the contract's `Args` as its one `args` parameter, answers with its `Output`, and
 //! finds the manager and calls the matching function in [`crate::api`].
 
-use tauri::{AppHandle, Manager as _, State, WebviewWindow};
+use tauri::{AppHandle, Manager as _, Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_protocol::desktop::commands as contract;
@@ -18,11 +18,20 @@ use wirecatch_protocol::desktop::{
 };
 
 use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen};
-use crate::download_windows;
+use crate::download_windows::{self, Shows};
 use crate::host::Core;
 use crate::window::LaunchLinks;
 
 type CoreState<'a> = State<'a, Core>;
+
+/// Refuses a download window acting on anything but the question or download it shows (D43).
+fn its_own<R: Runtime>(window: &WebviewWindow<R>, target: Shows) -> CommandResult<()> {
+    if download_windows::may_act_on(window.app_handle(), window.label(), target) {
+        Ok(())
+    } else {
+        Err(api::refused(download_windows::NOT_ITS_OWN))
+    }
+}
 
 #[tauri::command]
 pub async fn list_downloads(
@@ -41,20 +50,24 @@ pub async fn add_download(
 }
 
 #[tauri::command]
-pub async fn pause(
+pub async fn pause<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::pause::Args,
 ) -> CommandResult<contract::pause::Output> {
     let PauseArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     api::pause(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn resume(
+pub async fn resume<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::resume::Args,
 ) -> CommandResult<contract::resume::Output> {
     let ResumeArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     api::resume(core.manager().await?, id)
 }
 
@@ -68,38 +81,48 @@ pub async fn cancel(
 }
 
 #[tauri::command]
-pub async fn remove(
+pub async fn remove<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::remove::Args,
 ) -> CommandResult<contract::remove::Output> {
     let RemoveArgs { ids, delete_file } = args;
+    for id in &ids {
+        its_own(&window, Shows::Download(*id))?;
+    }
     api::remove(core.manager().await?, &ids, delete_file).await
 }
 
 #[tauri::command]
-pub async fn retry(
+pub async fn retry<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::retry::Args,
 ) -> CommandResult<contract::retry::Output> {
     let RetryArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     api::retry(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn refresh_link(
+pub async fn refresh_link<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::refresh_link::Args,
 ) -> CommandResult<contract::refresh_link::Output> {
     let RefreshLinkArgs { id, url } = args;
+    its_own(&window, Shows::Download(id))?;
     api::refresh_link(core.manager().await?, id, url.as_str())
 }
 
 #[tauri::command]
-pub async fn keep_original(
+pub async fn keep_original<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::keep_original::Args,
 ) -> CommandResult<contract::keep_original::Output> {
     let KeepOriginalArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     api::keep_original(core.manager().await?, id)
 }
 
@@ -190,11 +213,16 @@ pub async fn get_settings(core: CoreState<'_>) -> CommandResult<contract::get_se
 }
 
 #[tauri::command]
-pub async fn change_settings(
+pub async fn change_settings<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::change_settings::Args,
 ) -> CommandResult<contract::change_settings::Output> {
     let ChangeSettingsArgs { patch } = args;
+    if download_windows::is_download_window(window.label()) && !download_windows::may_change(&patch)
+    {
+        return Err(api::refused(download_windows::NOT_ITS_SETTING));
+    }
     api::change_settings(core.manager().await?, patch)
 }
 
@@ -233,12 +261,13 @@ pub async fn pending_confirmations(
 }
 
 #[tauri::command]
-pub async fn confirm_capture(
-    window: WebviewWindow,
+pub async fn confirm_capture<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::confirm_capture::Args,
 ) -> CommandResult<contract::confirm_capture::Output> {
     let ConfirmCaptureArgs { id, confirmation } = args;
+    its_own(&window, Shows::Question(id))?;
     let download = api::confirm_capture(core.manager().await?, id, confirmation).await?;
     // Answered in its own window: that window shows the download from now on.
     download_windows::became_download(window.app_handle(), window.label(), download);
@@ -246,21 +275,24 @@ pub async fn confirm_capture(
 }
 
 #[tauri::command]
-pub async fn reject_capture(
+pub async fn reject_capture<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::reject_capture::Args,
 ) -> CommandResult<contract::reject_capture::Output> {
     let RejectCaptureArgs { id } = args;
+    its_own(&window, Shows::Question(id))?;
     api::reject_capture(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn open_file(
-    window: WebviewWindow,
+pub async fn open_file<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::open_file::Args,
 ) -> CommandResult<contract::open_file::Output> {
     let OpenFileArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     let path = match api::file_to_open(core.manager().await?, id)? {
         ToOpen::File(path) => path,
         ToOpen::Program { path, warning } => {
@@ -283,7 +315,7 @@ pub async fn open_file(
 
 /// Shows `warning` in the system's own dialog over `window`, and says whether the person chose
 /// Open. The dialog belongs to the shell, so a script in the page cannot answer it.
-async fn agrees_to_open(window: &WebviewWindow, warning: ProgramWarning) -> bool {
+async fn agrees_to_open<R: Runtime>(window: &WebviewWindow<R>, warning: ProgramWarning) -> bool {
     let (answer, answered) = tokio::sync::oneshot::channel();
     window
         .dialog()
@@ -304,12 +336,14 @@ async fn agrees_to_open(window: &WebviewWindow, warning: ProgramWarning) -> bool
 }
 
 #[tauri::command]
-pub async fn open_folder(
-    app: AppHandle,
+pub async fn open_folder<R: Runtime>(
+    window: WebviewWindow<R>,
+    app: AppHandle<R>,
     core: CoreState<'_>,
     args: contract::open_folder::Args,
 ) -> CommandResult<contract::open_folder::Output> {
     let OpenFolderArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     let opener = app.opener();
     match api::item_to_reveal(core.manager().await?, id)? {
         Reveal::File(path) => opener.reveal_item_in_dir(&path).map_err(|e| {
@@ -331,11 +365,13 @@ pub async fn open_folder(
 }
 
 #[tauri::command]
-pub async fn set_download_folder(
+pub async fn set_download_folder<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::set_download_folder::Args,
 ) -> CommandResult<contract::set_download_folder::Output> {
     let SetDownloadFolderArgs { id, folder } = args;
+    its_own(&window, Shows::Download(id))?;
     api::set_download_folder(core.manager().await?, id, &folder).await
 }
 
@@ -349,47 +385,54 @@ pub async fn take_launch_links(
 }
 
 #[tauri::command]
-pub async fn choose_media(
-    window: WebviewWindow,
+pub async fn choose_media<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::choose_media::Args,
 ) -> CommandResult<contract::choose_media::Output> {
     let ChooseMediaArgs { id, selection } = args;
+    its_own(&window, Shows::Question(id))?;
     let download = api::choose_media(core.manager().await?, id, selection).await?;
     download_windows::became_download(window.app_handle(), window.label(), download);
     Ok(download)
 }
 
 #[tauri::command]
-pub async fn get_question(
+pub async fn get_question<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::get_question::Args,
 ) -> CommandResult<contract::get_question::Output> {
     let GetQuestionArgs { id } = args;
+    its_own(&window, Shows::Question(id))?;
     Ok(api::question(core.manager().await?, id))
 }
 
 #[tauri::command]
-pub async fn get_download(
+pub async fn get_download<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::get_download::Args,
 ) -> CommandResult<contract::get_download::Output> {
     let GetDownloadArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
     api::get_download(core.manager().await?, id)
 }
 
 #[tauri::command]
-pub async fn earlier_download(
+pub async fn earlier_download<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::earlier_download::Args,
 ) -> CommandResult<contract::earlier_download::Output> {
     let EarlierDownloadArgs { id } = args;
+    its_own(&window, Shows::Question(id))?;
     Ok(api::earlier_download(core.manager().await?, id))
 }
 
 #[tauri::command]
-pub async fn show_question_windows(
-    app: AppHandle,
+pub async fn show_question_windows<R: Runtime>(
+    app: AppHandle<R>,
     core: CoreState<'_>,
 ) -> CommandResult<contract::show_question_windows::Output> {
     download_windows::show_all(&app, core.manager().await?);
@@ -397,8 +440,8 @@ pub async fn show_question_windows(
 }
 
 #[tauri::command]
-pub async fn show_progress_window(
-    app: AppHandle,
+pub async fn show_progress_window<R: Runtime>(
+    app: AppHandle<R>,
     core: CoreState<'_>,
     args: contract::show_progress_window::Args,
 ) -> CommandResult<contract::show_progress_window::Output> {
@@ -410,8 +453,8 @@ pub async fn show_progress_window(
 }
 
 #[tauri::command]
-pub async fn close_download_window(
-    window: WebviewWindow,
+pub async fn close_download_window<R: Runtime>(
+    window: WebviewWindow<R>,
 ) -> CommandResult<contract::close_download_window::Output> {
     if !download_windows::is_download_window(window.label()) {
         return Err(api::refused("Only a download window closes this way."));
@@ -424,8 +467,8 @@ pub async fn close_download_window(
 }
 
 #[tauri::command]
-pub async fn main_window_ready(
-    window: WebviewWindow,
+pub async fn main_window_ready<R: Runtime>(
+    window: WebviewWindow<R>,
 ) -> CommandResult<contract::main_window_ready::Output> {
     crate::window::reveal_main(&window);
     Ok(())
@@ -435,8 +478,8 @@ pub async fn main_window_ready(
 const MAX_REPORTED_KIND_CHARS: usize = 64;
 
 #[tauri::command]
-pub async fn report_unreadable_event(
-    window: WebviewWindow,
+pub async fn report_unreadable_event<R: Runtime>(
+    window: WebviewWindow<R>,
     args: contract::report_unreadable_event::Args,
 ) -> CommandResult<contract::report_unreadable_event::Output> {
     let ReportUnreadableEventArgs { kind } = args;
@@ -451,8 +494,8 @@ pub async fn report_unreadable_event(
 }
 
 #[tauri::command]
-pub async fn fit_download_window(
-    window: WebviewWindow,
+pub async fn fit_download_window<R: Runtime>(
+    window: WebviewWindow<R>,
     args: contract::fit_download_window::Args,
 ) -> CommandResult<contract::fit_download_window::Output> {
     let FitDownloadWindowArgs { height } = args;
@@ -466,11 +509,13 @@ pub async fn fit_download_window(
 }
 
 #[tauri::command]
-pub async fn dismiss_media_choice(
+pub async fn dismiss_media_choice<R: Runtime>(
+    window: WebviewWindow<R>,
     core: CoreState<'_>,
     args: contract::dismiss_media_choice::Args,
 ) -> CommandResult<contract::dismiss_media_choice::Output> {
     let DismissMediaChoiceArgs { id } = args;
+    its_own(&window, Shows::Question(id))?;
     api::dismiss_media_choice(core.manager().await?, id)
 }
 
@@ -545,7 +590,7 @@ macro_rules! handler {
         pub const REGISTERED: &[&str] = &[$(stringify!($command)),+];
 
         /// Every command above, for the app's invoke handler.
-        pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+        pub fn handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
             tauri::generate_handler![$($command),+]
         }
     };

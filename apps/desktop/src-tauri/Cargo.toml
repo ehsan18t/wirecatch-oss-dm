@@ -20,6 +20,8 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.7.2", features = [] }
+# The contract's command names, each of which needs a permission a window is granted (D43).
+wirecatch-protocol.workspace = true
 
 [dependencies]
 tauri = { version = "2.12.3", features = ["tray-icon"] }

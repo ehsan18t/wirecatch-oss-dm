@@ -11,6 +11,10 @@
 //! is pending. The core checks for add-on updates by itself (once a day, while
 //! `auto_update_addons` is on), so the desktop never schedules it.
 //!
+//! A window calls only the commands its capability in `capabilities/` grants: the build gives
+//! every command of the contract its own permission. A download window gets only those it uses,
+//! and acts only on what it shows (D43, see [`download_windows`]).
+//!
 //! - [`UI_EVENT`] carries every core `UiEvent`, in order.
 //! - [`RESYNC_EVENT`] (no payload): events were missed; reload everything.
 //! - [`LINKS_EVENT`] (no payload): links arrived from a second launch; fetch them with
@@ -60,6 +64,7 @@ use wirecatch_core::ManagerConfig;
 use wirecatch_ipc::IpcError;
 use wirecatch_product::Channel;
 
+pub use commands::handler;
 pub use window::{BACKGROUND_FLAG, wants_background};
 pub use wirecatch_protocol::desktop::{LINKS_EVENT, RESYNC_EVENT, UI_EVENT};
 

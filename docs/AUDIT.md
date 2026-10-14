@@ -89,6 +89,7 @@ Every check proposed during the audit run, so none lives only in a reviewer's no
 - CI caches are actually saved (a cache hit on the second run) and runner disk use is watched, so the disk exhaustion that failed the Linux job (D33) is seen before it fails.
 - `wirecatch/no-silent-catch` for every package, not the extension only (the desktop has 14 sites and protocol one to handle first).
 - `no-magic-numbers` applied to object property values, which it skips today.
+- Each desktop window's capability names exactly the commands its page calls: the commands reached from `apps/desktop/src/lib/window` and its route against `capabilities/download-windows.json`, and the rest of the interface against `capabilities/default.json`, so a grant nothing uses, or a call no grant allows, fails the gate rather than a running window (D43).
 
 ### W7. Engine
 
