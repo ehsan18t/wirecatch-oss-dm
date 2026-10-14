@@ -6,7 +6,10 @@
 //! handover the app has not acted on yet, so the browser and the app never both
 //! download the same file.
 
-use wirecatch_engine::Url;
+use std::time::Duration;
+
+use tokio::time::Instant;
+use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{
     CaptureConfirmation, Category, DownloadSummary, MediaSummary, PendingCapture, PortablePath,
     UiEvent,
@@ -55,6 +58,18 @@ impl Manager {
     /// is not http, https or FTP; [`CoreError::Path`] when the folder for its category
     /// does not resolve; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn add_capture(&self, capture: NewDownload) -> Result<AddedDownload> {
+        // The extension waits a fixed time for the answer from when it sent
+        // the capture, the check of the link included.
+        self.capture_arrived(capture, Instant::now()).await
+    }
+
+    /// [`add_capture`](Self::add_capture) for a capture that `arrived` at
+    /// that moment, which the capture timeout counts from.
+    pub(super) async fn capture_arrived(
+        &self,
+        capture: NewDownload,
+        arrived: Instant,
+    ) -> Result<AddedDownload> {
         handovers::check_id(&capture.handover_id)?;
         let url = parse_url(&capture.url)?;
         let Arrival {
@@ -115,7 +130,10 @@ impl Manager {
             self.emit(UiEvent::Captured(row));
             return Ok(reply);
         }
-        match self.await_answer(row.id, &capture.handover_id).await {
+        match self
+            .await_answer(row.id, &capture.handover_id, arrived)
+            .await
+        {
             Ok(()) => {
                 let mut state = self.lock();
                 state.handovers.decide(&capture.handover_id, reply.clone());
@@ -136,12 +154,14 @@ impl Manager {
     }
 
     /// Waits until the server has answered the app with the captured file, the
-    /// attempt failed, or the capture timeout ran out. `Err` carries the reason as
-    /// whole sentences, for [`CoreError::NotStarted`].
+    /// attempt failed, or the capture timeout, counted from when the capture
+    /// `arrived`, ran out. `Err` carries the reason as whole sentences, for
+    /// [`CoreError::NotStarted`].
     async fn await_answer(
         &self,
         id: DownloadId,
         handover: &str,
+        arrived: Instant,
     ) -> std::result::Result<(), String> {
         let tokens = {
             let state = self.lock();
@@ -151,19 +171,13 @@ impl Manager {
                 .and_then(|e| e.run.as_ref())
                 .map(|run| (run.answered.clone(), run.exited.clone()))
         };
-        if let Some((answered, exited)) = tokens {
-            let timeout = tokio::time::sleep(self.inner.capture_timeout);
-            tokio::select! {
-                biased;
-                () = answered.cancelled() => {}
-                () = exited.cancelled() => {}
-                () = timeout => {
-                    return Err(format!(
-                        "The server did not answer within {} seconds.",
-                        self.inner.capture_timeout.as_secs()
-                    ));
-                }
-            }
+        if let Some((answered, exited)) = tokens
+            && !ended_in_time(&answered, &exited, arrived, self.inner.capture_timeout).await
+        {
+            return Err(format!(
+                "The server did not answer within {} seconds.",
+                self.inner.capture_timeout.as_secs()
+            ));
         }
         let state = self.lock();
         if state.handovers.get(handover).is_none() {
@@ -583,9 +597,53 @@ pub(super) fn origin_of(capture: &NewDownload) -> Origin {
     }
 }
 
+/// Waits until the server answered a captured link (`answered`) or its attempt
+/// ended (`exited`), but no longer than `timeout` after the capture `arrived`:
+/// the browser waits a fixed time from when it sent the capture, so the time
+/// the check before this wait took counts too. False when the time ran out.
+async fn ended_in_time(
+    answered: &CancellationToken,
+    exited: &CancellationToken,
+    arrived: Instant,
+    timeout: Duration,
+) -> bool {
+    tokio::select! {
+        biased;
+        () = answered.cancelled() => true,
+        () = exited.cancelled() => true,
+        () = tokio::time::sleep_until(arrived + timeout) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::same_address;
+    use std::time::Duration;
+
+    use tokio::time::Instant;
+    use wirecatch_engine::CancellationToken;
+
+    use super::{ended_in_time, same_address};
+
+    /// The capture timeout counts from the capture's arrival, the check of its
+    /// link included, so the answer never comes after the browser stopped
+    /// waiting for it.
+    #[tokio::test(start_paused = true)]
+    async fn the_wait_for_the_server_counts_from_the_captures_arrival() {
+        let timeout = Duration::from_secs(8);
+        let arrived = Instant::now();
+        // The check of the link took most of the time.
+        tokio::time::advance(Duration::from_secs(5)).await;
+        let never = CancellationToken::new();
+        let waiting = Instant::now();
+        assert!(!ended_in_time(&never, &never, arrived, timeout).await);
+        assert_eq!(waiting.elapsed(), Duration::from_secs(3));
+
+        let done = CancellationToken::new();
+        done.cancel();
+        assert!(ended_in_time(&done, &never, arrived, timeout).await);
+        assert!(ended_in_time(&never, &done, arrived, timeout).await);
+        assert_eq!(waiting.elapsed(), Duration::from_secs(3));
+    }
 
     #[test]
     fn the_same_address_ignores_only_the_fragment() {

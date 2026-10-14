@@ -75,7 +75,8 @@ fn capture(url: &str) -> NewDownload {
         handover_id: format!("handover-{url}"),
         url: url.into(),
         referrer: None,
-        page_url: None,
+        // A page on the person's network (D39), so no name is looked up first.
+        page_url: Some("http://intranet.test/".into()),
         frame_url: None,
         suggested_name: Some("report.pdf".into()),
         mime: None,
@@ -124,6 +125,30 @@ async fn a_failed_capture_is_answered_before_its_attempt_is_cleaned_up() {
         manager.lock().downloads.is_empty()
     })
     .await;
+}
+
+/// The capture timeout counts from when the capture arrived, not from when the
+/// wait for its server begins: whatever the check of the link took first is
+/// already spent.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captures_answer_comes_within_the_timeout_of_its_arrival() {
+    let capture_timeout = Duration::from_secs(5);
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), capture_timeout).await;
+    let asked = Instant::now();
+    // Most of the time was spent before the wait began.
+    let arrived = tokio::time::Instant::now()
+        .checked_sub(Duration::from_millis(4_800))
+        .unwrap();
+    let err = manager
+        .capture_arrived(capture("https://example.com/late.pdf"), arrived)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CoreError::NotStarted(_)), "{err}");
+    assert!(
+        asked.elapsed() < Duration::from_millis(2_500),
+        "answered only after {:?}",
+        asked.elapsed()
+    );
 }
 
 fn add_request(url: &str) -> AddRequest {
