@@ -72,8 +72,9 @@ jobs:
           cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
       - name: Gate (Rust)
-        run: node scripts/gate.mjs rust
+        run: node scripts/gate.mjs rust --no-fail-fast
 
       # The published engine: its package and its minimum Rust version. Once per run is enough; its http3 feature is checked in the Rust group, on every system.
       - name: Gate (engine release checks)
