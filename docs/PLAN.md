@@ -77,12 +77,12 @@ Acceptance checklist:
 
 ## WP4: Desktop UI (`apps/desktop`, `@wirecatch/desktop`)
 
-Tauri 2, SvelteKit (static adapter), Svelte 5. In Wave 1 the UI talks to a mock backend behind one interface, so it can be designed, reviewed and tested in a normal browser; Wave 2 swaps in the real core.
+Tauri 2, Svelte 5 with Vite (D36). In Wave 1 the UI talks to a mock backend behind one interface, so it can be designed, reviewed and tested in a normal browser; Wave 2 swaps in the real core.
 
 Builds the D3 principles: queues in the sidebar with schedule and limits visible, drag downloads between queues; a virtualized list; paste a link anywhere to add it; the toast after a capture (D4) and the confirmation dialog when asked; a command palette (Ctrl+K); searchable plain-language settings with an Advanced section; errors with fix buttons; empty states that teach; light, dark and system themes; settings export and import screens.
 
 Acceptance checklist:
-1. Every feature is reachable from visible UI in at most two clicks, and from the command palette. The report includes the feature-to-path table that proves it.
+1. Every feature is reachable from visible UI along the path that feels natural to the person, and from the command palette (D36 retired the earlier two-click limit). The report includes the feature-to-path table that proves it.
 2. The list stays smooth at 10,000 downloads (measured in the report).
 3. Everything works with the keyboard alone, with visible focus; contrast meets WCAG AA in both themes.
 4. `pnpm dev:mock` runs the full UI in a browser with realistic fake downloads.

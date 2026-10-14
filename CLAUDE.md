@@ -32,6 +32,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `packages/eslint-config` | The one ESLint configuration, and the `wirecatch/*` rules. |
 | `packages/product` | Product identity for TypeScript, generated from `config/product.toml`. Never edit `src` by hand. |
 | `packages/units` | Byte units, and how sizes and speeds are shown and typed, for both apps. |
+| `packages/ui` | The design system both apps share: tokens, themes, motion and primitives (D36). |
 | `config/` | Product identity (`product.toml`) and the templates of the package hooks and `SECURITY.md`; everything else that carries identity is generated from them (D29). |
 | `scripts/gate.mjs` | Every quality check: the runner, with the checks in `scripts/gate/`. |
 

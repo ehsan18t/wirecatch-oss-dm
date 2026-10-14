@@ -33,6 +33,7 @@ License: GPL-3.0-only. Decisions behind the design are in [docs/DECISIONS.md](do
 | `apps/extension` | The browser extension (WXT, Svelte 5) for Chromium and Firefox. |
 | `packages/protocol` | Generated TypeScript types. |
 | `packages/eslint-config` | The one ESLint configuration every package uses. |
+| `packages/ui` | The design system both apps share: tokens, themes, motion and primitives. |
 
 ## Getting started (development)
 

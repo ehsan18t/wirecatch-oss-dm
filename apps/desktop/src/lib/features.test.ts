@@ -1,6 +1,4 @@
-// Acceptance item 1: every feature is reachable from visible UI in at most two clicks, and from
-// the command palette. Each case below performs the visible path for real and checks the
-// outcome, then checks that the palette offers the same action.
+// Acceptance item 1: every feature is reachable from visible UI, along the path that feels natural rather than within a click count (D36), and from the command palette. Each case below performs the visible path for real and checks the outcome, then checks that the palette offers the same action.
 
 import { downloadId, PROFILE_FORMAT_VERSION } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
@@ -23,7 +21,7 @@ async function setup() {
 const button = (name: RegExp | string) => screen.getByRole('button', { name });
 const dialog = () => screen.getByRole('dialog');
 
-describe('feature paths (two clicks or fewer, and in the palette)', () => {
+describe('feature paths (visible in the interface, and in the palette)', () => {
   it('add a download: Add download button, 1 click', async () => {
     const { click, palette } = await setup();
     await click(button('Add download'));
