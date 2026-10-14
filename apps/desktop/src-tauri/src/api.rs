@@ -4,7 +4,9 @@
 //! tests drive exactly the code the interface runs, without a webview. Every error is a
 //! [`ProtocolError`]: a code the interface acts on and plain-language text, ready to show as is.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use wirecatch_core::Manager;
 use wirecatch_protocol::app::{
@@ -417,6 +419,38 @@ impl ProgramWarning {
     }
 }
 
+/// The downloads whose program warning the shell shows now. A page can call `open_file` without
+/// a click and as often as it likes, so while one warning is up for a download, opening that
+/// download again raises no other (D43.1).
+#[derive(Debug, Default)]
+pub struct WarningsShown(Mutex<HashSet<DownloadId>>);
+
+impl WarningsShown {
+    /// Marks the warning for download `id` as showing until the answer drops. `None` when it
+    /// shows already.
+    pub fn show(&self, id: DownloadId) -> Option<WarningShowing<'_>> {
+        let newly = self.ids().insert(id);
+        newly.then_some(WarningShowing { shown: self, id })
+    }
+
+    fn ids(&self) -> std::sync::MutexGuard<'_, HashSet<DownloadId>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// A program warning that is showing; it is gone once this drops.
+#[derive(Debug)]
+pub struct WarningShowing<'a> {
+    shown: &'a WarningsShown,
+    id: DownloadId,
+}
+
+impl Drop for WarningShowing<'_> {
+    fn drop(&mut self) {
+        self.shown.ids().remove(&self.id);
+    }
+}
+
 /// The finished file to open for `open_file`, and whether it is a program the person must
 /// trust first.
 ///
@@ -617,6 +651,17 @@ pub async fn remove_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
 mod tests {
     use super::*;
     use wirecatch_core::CoreError;
+
+    #[test]
+    fn one_warning_shows_per_download_until_it_is_answered() {
+        let shown = WarningsShown::default();
+        let first = shown.show(DownloadId(1));
+        assert!(first.is_some());
+        assert!(shown.show(DownloadId(1)).is_none());
+        assert!(shown.show(DownloadId(2)).is_some());
+        drop(first);
+        assert!(shown.show(DownloadId(1)).is_some());
+    }
 
     #[test]
     fn known_safe_types_open_directly_in_any_case() {

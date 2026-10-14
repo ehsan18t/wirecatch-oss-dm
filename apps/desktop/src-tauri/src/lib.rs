@@ -116,6 +116,7 @@ pub fn run() {
         .manage(Lifecycle::default())
         .manage(sleep::MainAsleep::default())
         .manage(download_windows::DownloadWindows::default())
+        .manage(api::WarningsShown::default())
         .setup(move |app| setup(app, &launch))
         .invoke_handler(commands::handler())
         .build(context);

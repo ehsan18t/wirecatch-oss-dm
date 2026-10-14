@@ -3,6 +3,8 @@
 //! websites chose, so it gets only what it uses, never what writes or reads files, changes the
 //! list or settings, or adds downloads, and acts only on the question or download it shows.
 
+use std::path::Path;
+
 use serde_json::{Value, json};
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{
@@ -11,6 +13,7 @@ use tauri::test::{
 use tauri::webview::InvokeRequest;
 use tauri::{App, Manager as _, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use wirecatch_core::{KnownFolders, ManagerConfig};
+use wirecatch_desktop_lib::api::WarningsShown;
 use wirecatch_desktop_lib::download_windows::{
     self, DownloadWindows, NOT_ITS_OWN, NOT_ITS_SETTING, Shows,
 };
@@ -218,23 +221,26 @@ fn refusal(answer: &Result<Value, Value>) -> Option<&str> {
     answer.as_ref().err()?.get("message")?.as_str()
 }
 
+/// The app with its commands, plugins and state, its manager's data in `folder`.
+fn app_with_commands(folder: &Path) -> TestResult<App<MockRuntime>> {
+    let config = ManagerConfig::new(folder.join("data"), KnownFolders::under_home(folder));
+    Ok(mock_builder()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(Core::new(config))
+        .manage(DownloadWindows::default())
+        .manage(WarningsShown::default())
+        .invoke_handler(wirecatch_desktop_lib::handler())
+        .build(tauri::generate_context!(test = true))?)
+}
+
 /// The capabilities let a download window call these commands for any id, so each command's own
 /// check is all that keeps the window to what it shows. The commands run for real here, against
 /// a manager with no downloads: a call that gets past the check fails later, for another reason.
 #[test]
 fn every_command_keeps_a_download_window_to_what_it_shows() -> TestResult {
     let folder = tempfile::tempdir()?;
-    let config = ManagerConfig::new(
-        folder.path().join("data"),
-        KnownFolders::under_home(folder.path()),
-    );
-    let app = mock_builder()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .manage(Core::new(config))
-        .manage(DownloadWindows::default())
-        .invoke_handler(wirecatch_desktop_lib::handler())
-        .build(tauri::generate_context!(test = true))?;
+    let app = app_with_commands(folder.path())?;
     let (shown_download, shown_question) = (DownloadId(1), QuestionId(1));
     download_windows::show_download(app.handle(), shown_download);
     download_windows::ask(app.handle(), shown_question);
@@ -272,5 +278,29 @@ fn every_command_keeps_a_download_window_to_what_it_shows() -> TestResult {
     assert!(its_own.is_ok(), "its own setting: {its_own:?}");
     let from_main = change_settings(&main, &another_setting)?;
     assert!(from_main.is_ok(), "main window: {from_main:?}");
+    Ok(())
+}
+
+/// A page may call `open_file` as often as it likes, with no click: while the shell's warning
+/// for a download is up, opening it again raises no second warning and opens nothing.
+#[test]
+fn a_download_raises_one_program_warning_at_a_time() -> TestResult {
+    let folder = tempfile::tempdir()?;
+    let app = app_with_commands(folder.path())?;
+    let shown = DownloadId(1);
+    download_windows::show_download(app.handle(), shown);
+    let progress = window(&app, &Shows::Download(shown).label())?;
+    let open = || call(&progress, "open_file", json!({ "args": { "id": shown } }));
+
+    let warnings = app.state::<WarningsShown>();
+    let showing = warnings.show(shown);
+    assert!(showing.is_some());
+    assert_eq!(open()?, Ok(Value::Null), "while its warning is up");
+    drop(showing);
+    let answer = open()?;
+    assert!(
+        answer.is_err(),
+        "once it is answered, it opens again: {answer:?}"
+    );
     Ok(())
 }

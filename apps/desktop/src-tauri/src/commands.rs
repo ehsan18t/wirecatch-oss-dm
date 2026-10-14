@@ -17,7 +17,7 @@ use wirecatch_protocol::desktop::{
     UpdateAddonArgs, UpdateQueueArgs,
 };
 
-use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen};
+use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen, WarningsShown};
 use crate::download_windows::{self, Shows};
 use crate::host::Core;
 use crate::window::LaunchLinks;
@@ -289,10 +289,14 @@ pub async fn reject_capture<R: Runtime>(
 pub async fn open_file<R: Runtime>(
     window: WebviewWindow<R>,
     core: CoreState<'_>,
+    warnings: State<'_, WarningsShown>,
     args: contract::open_file::Args,
 ) -> CommandResult<contract::open_file::Output> {
     let OpenFileArgs { id } = args;
     its_own(&window, Shows::Download(id))?;
+    let Some(_showing) = warnings.show(id) else {
+        return Ok(());
+    };
     let path = match api::file_to_open(core.manager().await?, id)? {
         ToOpen::File(path) => path,
         ToOpen::Program { path, warning } => {
