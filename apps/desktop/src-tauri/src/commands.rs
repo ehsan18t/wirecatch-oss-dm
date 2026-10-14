@@ -5,6 +5,7 @@
 use tauri::{AppHandle, Manager as _, Runtime, State, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt as _;
+use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
     AddDownloadArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs, ChooseMediaArgs,
@@ -112,7 +113,14 @@ pub async fn refresh_link<R: Runtime>(
 ) -> CommandResult<contract::refresh_link::Output> {
     let RefreshLinkArgs { id, url } = args;
     its_own(&window, Shows::Download(id))?;
-    api::refresh_link(core.manager().await?, id, url.as_str())
+    // A download window also shows what websites chose, so a script there could have written
+    // the link: only the main window's is the person's (D43.5).
+    let from = if window.label() == crate::window::MAIN_WINDOW {
+        LinkFrom::Person
+    } else {
+        LinkFrom::SharedPage
+    };
+    api::refresh_link(core.manager().await?, id, url.as_str(), from)
 }
 
 #[tauri::command]

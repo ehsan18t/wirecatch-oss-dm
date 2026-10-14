@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-use wirecatch_core::Manager;
+use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
@@ -109,14 +109,15 @@ pub fn retry(m: &Manager, id: DownloadId) -> CommandResult<()> {
     plain(m.retry(id))
 }
 
-/// Swaps in a fresh link for an expired one, keeping the downloaded bytes.
+/// Swaps in a fresh link for an expired one, keeping the downloaded bytes. `from` says whose
+/// link it is: the person's only from the main window (D43.5).
 ///
 /// # Errors
 ///
 /// The new link is not http, https or FTP, the download has finished, there is no download
 /// `id`, or the manager has shut down ([`Manager::refresh_link`]).
-pub fn refresh_link(m: &Manager, id: DownloadId, url: &str) -> CommandResult<()> {
-    plain(m.refresh_link(id, url))
+pub fn refresh_link(m: &Manager, id: DownloadId, url: &str, from: LinkFrom) -> CommandResult<()> {
+    plain(m.refresh_link(id, url, from))
 }
 
 /// Saves a download whose conversion failed as it was downloaded instead (D24).

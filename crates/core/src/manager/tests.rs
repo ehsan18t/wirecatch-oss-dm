@@ -14,9 +14,9 @@ use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_test_support::PATIENCE;
 
-use super::Manager;
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
 use super::settle::ServerAnswer;
+use super::{LinkFrom, Manager};
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
@@ -192,9 +192,11 @@ async fn a_download_being_removed_cannot_be_brought_back() {
     assert!(gone(manager.retry(id)));
     assert!(gone(manager.pause(id)));
     assert!(gone(manager.cancel(id)));
-    assert!(gone(
-        manager.refresh_link(id, "https://example.com/again.bin")
-    ));
+    assert!(gone(manager.refresh_link(
+        id,
+        "https://example.com/again.bin",
+        LinkFrom::Person
+    )));
     assert!(gone(manager.move_to_queue(&[id], DEFAULT_QUEUE_ID)));
     let elsewhere = dir.path().join("elsewhere").to_string_lossy().into_owned();
     assert!(gone(manager.set_download_folder(id, &elsewhere).await));
@@ -502,7 +504,7 @@ async fn refuses_to_restart_split(manager: &Manager, id: DownloadId, elsewhere: 
         .unwrap_err();
     assert!(matches!(again, CoreError::WrongState(_)), "{again}");
     let relinked = manager
-        .refresh_link(id, "https://example.com/big.iso?fresh")
+        .refresh_link(id, "https://example.com/big.iso?fresh", LinkFrom::Person)
         .unwrap_err();
     assert!(matches!(relinked, CoreError::WrongState(_)), "{relinked}");
     let state = manager.lock();
@@ -557,11 +559,16 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
 
     let id = confirmed("https://example.com/page", "http://93.184.215.14/a.pdf").await;
     assert_eq!(rules(1).await, [PrivateNetwork::Block]);
+    // A page that shows what the website chose keeps its rule (D43.5).
     manager
-        .refresh_link(id, "http://93.184.215.14/a.pdf")
+        .refresh_link(id, "http://93.184.215.14/a.pdf", LinkFrom::SharedPage)
         .unwrap();
-    assert_eq!(rules(2).await[1], PrivateNetwork::Auto);
-    confirmed("http://nas/files", "http://93.184.215.15/b.pdf").await;
+    assert_eq!(rules(2).await[1], PrivateNetwork::Block);
+    manager
+        .refresh_link(id, "http://93.184.215.14/a.pdf", LinkFrom::Person)
+        .unwrap();
     assert_eq!(rules(3).await[2], PrivateNetwork::Auto);
+    confirmed("http://nas/files", "http://93.184.215.15/b.pdf").await;
+    assert_eq!(rules(4).await[3], PrivateNetwork::Auto);
     manager.shutdown().await;
 }

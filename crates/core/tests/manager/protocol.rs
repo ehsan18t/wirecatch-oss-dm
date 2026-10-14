@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use wirecatch_core::{Manager, serve_connection};
+use wirecatch_core::{LinkFrom, Manager, serve_connection};
 use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
 use wirecatch_protocol::extension::{
     AddAction, CaptureSource, ExtensionSettingsPatch, Header, NewDownload, WithdrawOutcome,
@@ -1289,10 +1289,14 @@ async fn a_link_refreshed_to_another_site_leaves_the_credentials_behind() -> Tes
     let moves = h.manager.add_capture(with_credentials("moves.pdf")).await;
     let (stays, moves) = (stays.unwrap().id.unwrap(), moves.unwrap().id.unwrap());
     h.manager
-        .refresh_link(stays, first.url("fresh/stays.pdf").as_str())
+        .refresh_link(
+            stays,
+            first.url("fresh/stays.pdf").as_str(),
+            LinkFrom::Person,
+        )
         .unwrap();
     h.manager
-        .refresh_link(moves, other.url("moves.pdf").as_str())
+        .refresh_link(moves, other.url("moves.pdf").as_str(), LinkFrom::Person)
         .unwrap();
     h.manager
         .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
@@ -1357,7 +1361,7 @@ async fn a_queued_capture_that_gets_another_file_offers_a_fresh_link() -> TestRe
     );
 
     h.manager
-        .refresh_link(id, right.url("report.pdf").as_str())
+        .refresh_link(id, right.url("report.pdf").as_str(), LinkFrom::Person)
         .unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(std::fs::read(&done.path).unwrap(), right.data);

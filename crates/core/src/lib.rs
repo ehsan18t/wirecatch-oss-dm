@@ -37,7 +37,7 @@ pub use error::{CoreError, Result};
 pub use folders::{KnownFolders, PathError};
 pub use manager::{
     DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,
-    DEFAULT_STOP_TIMEOUT, Manager, ManagerConfig,
+    DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig,
 };
 pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};

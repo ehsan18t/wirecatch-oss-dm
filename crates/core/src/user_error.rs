@@ -114,10 +114,11 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
 /// in the words for whoever chose it (D34.5, D39).
 pub(crate) fn private_network(chosen_by: ChosenBy) -> UserError {
     match chosen_by {
-        // Pasting the same link makes it the person's own, which may reach
-        // their network: the one way out, and it does not loop.
+        // Pasting the same link in the main window makes it the person's own, which
+        // may reach their network: the one way out, and it does not loop. A link
+        // given in a download's own window keeps the website's rule (D43.5).
         ChosenBy::Website => UserError {
-            message: "This link leads to a device on your own network, and Wirecatch does not follow a link a website gave it there. If you trust this link, give the download a new link and paste the same one: a link you paste yourself may reach your own network.".into(),
+            message: "This link leads to a device on your own network, and Wirecatch does not follow a link a website gave it there. If you trust this link, give the download a new link in Wirecatch's main window and paste the same one: a link you paste there yourself may reach your own network.".into(),
             fix: Some(FixAction::RefreshLink),
         },
         // The link itself was allowed; somewhere on the internet it was sent

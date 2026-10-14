@@ -60,6 +60,19 @@ pub(super) fn capture_action(row: &DownloadSummary) -> AddAction {
     }
 }
 
+/// Where a download's fresh link comes from ([`Manager::refresh_link`]), which decides whose
+/// link it is (D39, D43.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkFrom {
+    /// The person, where nothing a website chose is shown (the main window): the link becomes
+    /// theirs, whoever chose the old one, so it may reach their own network.
+    Person,
+    /// A page that also shows what websites chose, such as a download's own window, where a
+    /// script could have written the link: it keeps the rule of whoever chose the download's
+    /// link, so a website's download stays under a website's rule.
+    SharedPage,
+}
+
 impl Manager {
     /// Every download, grouped by queue: the queues in the order
     /// [`list_queues`](Self::list_queues) returns them, and within each queue in
@@ -296,7 +309,8 @@ impl Manager {
         });
     }
 
-    /// Gives a download a fresh link, for example after the old one expired. What
+    /// Gives a download a fresh link, for example after the old one expired, from `from`, which
+    /// decides whose link it is and so whether it may reach the local network (D39, D43.5). What
     /// was already downloaded is kept as long as the server still serves the same file.
     /// A link to another site (scheme, host or port) does not get the browser's
     /// cookies and credentials for the old one; the user agent and harmless
@@ -309,7 +323,7 @@ impl Manager {
     /// a failed move left split between two folders,
     /// [`CoreError::DownloadNotFound`] when there is no download `id`, and
     /// [`CoreError::Closed`] once the manager has shut down.
-    pub fn refresh_link(&self, id: DownloadId, url: &str) -> Result<()> {
+    pub fn refresh_link(&self, id: DownloadId, url: &str, from: LinkFrom) -> Result<()> {
         let url = parse_url(url)?;
         let mut state = self.lock_open()?;
         let entry = state.entry_mut(id)?;
@@ -324,8 +338,9 @@ impl Manager {
             entry.origin.headers = headers::for_another_site(&entry.origin.headers);
         }
         entry.row.url = url.to_string();
-        // The person pasted this link themselves, whoever chose the old one.
-        entry.chosen_by = ChosenBy::Person;
+        if from == LinkFrom::Person {
+            entry.chosen_by = ChosenBy::Person;
+        }
         entry.row.error = None;
         // A running download restarts on the new link; the engine continues the part file.
         if !self.stop_run(entry, Stop::Requeue) {

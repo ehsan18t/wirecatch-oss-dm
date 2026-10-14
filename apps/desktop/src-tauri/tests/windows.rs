@@ -12,14 +12,17 @@ use tauri::test::{
 };
 use tauri::webview::InvokeRequest;
 use tauri::{App, Manager as _, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use wirecatch_core::{KnownFolders, ManagerConfig};
+use tokio::sync::broadcast;
+use wirecatch_core::{DEFAULT_QUEUE_ID, KnownFolders, Manager, ManagerConfig};
 use wirecatch_desktop_lib::api::WarningsShown;
 use wirecatch_desktop_lib::download_windows::{
     self, DownloadWindows, NOT_ITS_OWN, NOT_ITS_SETTING, Shows,
 };
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent};
 use wirecatch_protocol::desktop::COMMAND_NAMES;
+use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_protocol::{DownloadId, QuestionId};
 use wirecatch_test_support::TestResult;
 
@@ -302,5 +305,100 @@ fn a_download_raises_one_program_warning_at_a_time() -> TestResult {
         answer.is_err(),
         "once it is answered, it opens again: {answer:?}"
     );
+    Ok(())
+}
+
+/// A website's download, captured into a paused queue so it waits without running.
+fn website_download(manager: &Manager) -> TestResult<DownloadId> {
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
+    let mut settings = manager.get_settings();
+    settings.extension.ask_before_download = false;
+    manager.update_settings(settings)?;
+    let capture = NewDownload {
+        handover_id: "handover-1".into(),
+        // An address on the internet, so no name is looked up first.
+        url: "https://93.184.215.14/file.bin".into(),
+        referrer: None,
+        page_url: Some("https://example.com/".into()),
+        frame_url: None,
+        suggested_name: Some("file.bin".into()),
+        mime: None,
+        size_hint: None,
+        cookies: None,
+        user_agent: None,
+        extra_headers: vec![],
+        source: CaptureSource::BrowserDownload,
+        queue: None,
+        media: None,
+    };
+    let added = tauri::async_runtime::block_on(manager.add_capture(capture))?;
+    Ok(added.id.ok_or("the capture added no download")?)
+}
+
+/// The download once a change on `events` shows it started or failed.
+fn started_or_failed(
+    events: &mut broadcast::Receiver<UiEvent>,
+    id: DownloadId,
+) -> TestResult<DownloadSummary> {
+    let changed = async {
+        loop {
+            if let UiEvent::DownloadsChanged(rows) = events.recv().await? {
+                let done = rows.into_iter().find(|row| {
+                    row.id == id
+                        && matches!(
+                            row.status,
+                            DownloadStatus::Failed
+                                | DownloadStatus::Connecting
+                                | DownloadStatus::Downloading
+                        )
+                });
+                if let Some(row) = done {
+                    return TestResult::Ok(row);
+                }
+            }
+        }
+    };
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(20), changed).await?
+    })
+}
+
+/// Whether the download failed because a website's link may not reach the local network.
+fn refused_as_a_websites(row: &DownloadSummary) -> bool {
+    row.error.as_ref().is_some_and(|e| {
+        e.message
+            .contains("does not follow a link a website gave it there")
+    })
+}
+
+// A download window's page could give its own download any link, which then counted as the
+// person's and so reached the local network: a script in the page D43 distrusts lifted D39's
+// guard on a website's links (W4 milestone review M3). Only the main window's link is the
+// person's.
+#[test]
+fn a_link_from_a_download_window_never_becomes_the_persons() -> TestResult {
+    let folder = tempfile::tempdir()?;
+    let app = app_with_commands(folder.path())?;
+    let manager = tauri::async_runtime::block_on(app.state::<Core>().manager())?.clone();
+    let id = website_download(&manager)?;
+    download_windows::show_download(app.handle(), id);
+    let progress = window(&app, &Shows::Download(id).label())?;
+    let local = json!({ "args": { "id": id, "url": "http://127.0.0.1:9/file.bin" } });
+    let mut events = manager.subscribe();
+
+    call(&progress, "refresh_link", local.clone())?.map_err(|e| e.to_string())?;
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+    let row = started_or_failed(&mut events, id)?;
+    assert!(refused_as_a_websites(&row), "{row:?}");
+
+    let main = window(&app, MAIN_WINDOW)?;
+    call(&main, "refresh_link", local)?.map_err(|e| e.to_string())?;
+    let row = started_or_failed(&mut events, id)?;
+    assert_eq!(
+        row.status,
+        DownloadStatus::Connecting,
+        "the main window's link is the person's: {row:?}"
+    );
+    manager.pause(id)?;
     Ok(())
 }

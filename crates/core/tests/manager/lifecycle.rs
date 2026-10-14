@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
@@ -41,7 +41,11 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     server.configure(|c| c.hold_bodies_from = Some(0));
     let asked_before = server.stats.seen().len();
     h.manager
-        .refresh_link(row.id, server.url("new/file.bin").as_str())
+        .refresh_link(
+            row.id,
+            server.url("new/file.bin").as_str(),
+            LinkFrom::Person,
+        )
         .unwrap();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(done.path, row.path, "the file moved");
@@ -209,7 +213,8 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
         m.resume_all().unwrap(),
         m.move_to_queue(&[id], queue.id).unwrap(),
         m.reorder(queue.id, &[id]).unwrap(),
-        m.refresh_link(id, "https://example.com/b.bin").unwrap(),
+        m.refresh_link(id, "https://example.com/b.bin", LinkFrom::Person)
+            .unwrap(),
         m.cancel(id).unwrap(),
         m.retry(id).unwrap(),
     ];

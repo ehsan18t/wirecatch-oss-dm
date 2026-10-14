@@ -45,6 +45,7 @@ use crate::folders::KnownFolders;
 use crate::naming;
 use crate::store::Store;
 use crate::user_error::{self, StartupNotice};
+pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
