@@ -444,6 +444,7 @@ fn engine_request(
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent.clone_from(agent);
     }
+    options.private_network = entry.chosen_by.private_network();
     Ok(request)
 }
 

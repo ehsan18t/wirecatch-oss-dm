@@ -1085,6 +1085,120 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() -
     Ok(())
 }
 
+/// `url` with its host written as a name that resolves to this computer, as a
+/// website's name can when its owner makes it answer with a local address.
+fn by_name(mut url: wirecatch_engine::Url) -> TestResult<wirecatch_engine::Url> {
+    url.set_host(Some("localhost"))?;
+    Ok(url)
+}
+
+/// A captured page is never taken to be on the local network because its
+/// name resolves there: the site's owner controls that answer (CORE-3). Its
+/// formats stay on the internet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_page_whose_name_answers_local_gets_no_exception() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"))?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            by_name(server.url("watch?v=1"))?,
+            MediaKind::Page,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select("137+140"))
+        .await
+        .unwrap();
+    let id = h.manager.list_downloads()[0].id;
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("your own network"),
+        "{}",
+        error.message
+    );
+    assert_eq!(server.requests("fmt/video.mp4"), 0);
+    assert_eq!(server.requests("fmt/audio.m4a"), 0);
+    Ok(())
+}
+
+/// A captured stream whose name resolves to the local network is refused
+/// while it is read, and nothing is offered.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_stream_whose_name_answers_local_is_refused() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    h.manager
+        .add_capture(media_capture(
+            by_name(server.url("hls/master.m3u8"))?,
+            MediaKind::Hls,
+            None,
+        ))
+        .await
+        .unwrap();
+    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
+    assert_eq!(row.status, DownloadStatus::Failed);
+    let error = row.error.unwrap();
+    assert!(
+        error.message.contains("your own network"),
+        "{}",
+        error.message
+    );
+    assert_eq!(h.manager.pending_media_choices().len(), 0);
+    assert_eq!(server.requests("hls/master.m3u8"), 0);
+    Ok(())
+}
+
+/// A captured stream on an address (which the engine lets through, D34.4)
+/// whose segments lead to a name on the local network: the download of the
+/// chosen quality refuses them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_stream_cannot_lead_its_download_into_the_local_network() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let segment = |n: u8| by_name(server.url(&format!("hls/720/seg{n}.ts")));
+    let (first, second) = (segment(0)?, segment(1)?);
+    server.put(
+        "hls/720/index.m3u8",
+        format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\n{first}\n#EXTINF:4.0,\n{second}\n#EXT-X-ENDLIST\n",
+        ),
+    );
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            server.url("hls/master.m3u8"),
+            MediaKind::Hls,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await
+        .unwrap();
+    let id = h.manager.list_downloads()[0].id;
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert!(
+        error.message.contains("your own network"),
+        "{}",
+        error.message
+    );
+    assert_eq!(server.requests("hls/720/seg0.ts"), 0);
+    assert_eq!(server.requests("hls/720/seg1.ts"), 0);
+    Ok(())
+}
+
 /// Stopping yt-dlp stops everything it started too.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stopping_yt_dlp_stops_what_it_started() -> TestResult {

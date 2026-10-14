@@ -124,6 +124,7 @@ fn restore_entry(
         row: stored.summary,
         position: stored.position,
         origin: stored.origin,
+        chosen_by: stored.chosen_by,
         naming: stored.naming,
         expect: None,
         run: None,
@@ -167,6 +168,7 @@ fn restore_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chosen_by::ChosenBy;
     use crate::store::{LastIds, NameChoice};
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};
@@ -226,6 +228,7 @@ mod tests {
             },
             position: id * 10,
             origin: Origin::default(),
+            chosen_by: ChosenBy::Website,
             naming: NameChoice::settled(),
             media: None,
             stranded: None,

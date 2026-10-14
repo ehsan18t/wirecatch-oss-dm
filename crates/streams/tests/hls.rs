@@ -32,7 +32,7 @@ fn options() -> DownloadOptions {
 }
 
 fn request(server: &FileServer, playlist: &str, output: &Path) -> StreamRequest {
-    let mut request = StreamRequest::new(server.url(playlist), output);
+    let mut request = StreamRequest::new(server.url(playlist), output, PrivateNetwork::Auto);
     request.options = options();
     request
 }
@@ -121,6 +121,7 @@ async fn a_chosen_quality_survives_a_playlist_that_lists_variants_in_another_ord
     let info = inspect(
         &server.url("master.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -164,6 +165,7 @@ async fn master_playlists_are_inspected_and_the_chosen_variant_downloaded() {
     let info = inspect(
         &server.url("master.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -541,6 +543,7 @@ async fn live_streams_are_refused_with_a_plain_message() {
     let info = inspect(
         &server.url("live/index.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -658,9 +661,14 @@ async fn separate_audio_without_ffmpeg_is_refused_before_downloading() {
          #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO=\"aud\"\nv/index.m3u8\n",
         MPEGURL,
     );
-    let info = inspect(&server.url("av.m3u8"), &options(), CancellationToken::new())
-        .await
-        .unwrap();
+    let info = inspect(
+        &server.url("av.m3u8"),
+        &options(),
+        PrivateNetwork::Auto,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(info.audio.len(), 1);
     assert!(info.audio[0].default);
     let dir = private_dir("hls-noffmpeg").unwrap();
@@ -688,6 +696,7 @@ async fn links_that_are_not_streams_are_explained() {
     let error = inspect(
         &server.url("page.html"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -696,6 +705,7 @@ async fn links_that_are_not_streams_are_explained() {
     let error = inspect(
         &server.url("missing.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -724,6 +734,7 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     let error = inspect(
         &server.url("many.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -732,6 +743,7 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     let error = inspect(
         &server.url("big.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -753,6 +765,7 @@ async fn the_extension_is_known_in_advance() {
     let info = inspect(
         &server.url("master.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -771,6 +784,7 @@ async fn the_extension_is_known_in_advance() {
     let info = inspect(
         &server.url("f/index.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -948,6 +962,7 @@ async fn an_absurd_segment_duration_is_unknown_not_a_crash() {
     let info = inspect(
         &server.url("huge/index.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -970,6 +985,7 @@ async fn a_segment_longer_than_a_day_counts_as_unknown() {
     let info = inspect(
         &server.url("long/index.m3u8"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await

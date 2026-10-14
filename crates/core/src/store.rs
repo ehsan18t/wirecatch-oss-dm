@@ -18,6 +18,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
+use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
 use crate::media::StoredMedia;
 use crate::owner_only;
@@ -83,6 +84,11 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN stranded TEXT;
 ",
+    // Who chose a download's link (`ChosenBy`, D34.5). Downloads stored before
+    // it was kept are taken to be a website's: the rule that fails closed.
+    r"
+    ALTER TABLE downloads ADD COLUMN chosen_by TEXT NOT NULL DEFAULT 'website';
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -115,6 +121,7 @@ pub(crate) struct StoredDownload {
     /// Order within its queue; lower runs first.
     pub position: i64,
     pub origin: Origin,
+    pub chosen_by: ChosenBy,
     pub naming: NameChoice,
     /// For video and audio: what the row shows and, for streams and pages, what
     /// to download (kept so it continues after a restart).
@@ -872,7 +879,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded
+                stranded, chosen_by
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1017,9 +1024,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded)
+             stranded, chosen_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18)",
+                 ?18, ?19)",
     )?
     .execute(params![
         d.id.0,
@@ -1042,6 +1049,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         row.stranded
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
+        enum_text(&row.chosen_by),
     ])?;
     Ok(())
 }
@@ -1154,6 +1162,9 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
             },
             position: row.get(4)?,
             origin,
+            // A value this build does not know is read as the rule that
+            // fails closed.
+            chosen_by: from_text(&row.get::<_, String>(18)?).unwrap_or(ChosenBy::Website),
             naming: NameChoice {
                 settled: row.get(13)?,
                 name: row.get(14)?,
@@ -1243,6 +1254,7 @@ mod tests {
                 }],
                 forgot_sign_in: false,
             },
+            chosen_by: ChosenBy::Person,
             naming: NameChoice {
                 settled: false,
                 name: Some("chosen.zip".into()),
@@ -2052,6 +2064,8 @@ mod tests {
         assert_eq!(old.summary.file_name, "a.zip");
         // Its path was chosen before paths waited for the server: it is final.
         assert_eq!(old.naming, NameChoice::settled());
+        // Who chose its link was not kept, so it gets the rule that fails closed.
+        assert_eq!(old.chosen_by, ChosenBy::Website);
     }
 
     /// Stored settings as a database at `version` holds them, with `ask` for the window setting.

@@ -955,6 +955,72 @@ async fn started_means_the_server_answered() -> TestResult {
     Ok(())
 }
 
+/// `url` with its host written as a name that resolves to this computer, as a
+/// website's name can when its owner makes it answer with a local address.
+fn by_name(mut url: wirecatch_engine::Url) -> TestResult<String> {
+    url.set_host(Some("localhost"))?;
+    Ok(url.to_string())
+}
+
+/// A link a website gave whose name resolves to the local network is not
+/// downloaded, and the browser keeps it (CORE-3).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_link_whose_name_answers_local_is_left_to_the_browser() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let error = h
+        .manager
+        .add_capture(capture(by_name(server.url("report.pdf"))?))
+        .await
+        .unwrap_err();
+    let wirecatch_core::CoreError::NotStarted(reason) = error else {
+        panic!("{error:?}");
+    };
+    assert!(reason.contains("your own network"), "{reason}");
+    assert!(
+        server.stats.seen().is_empty(),
+        "the local server was contacted"
+    );
+    Ok(())
+}
+
+/// A captured link on an address (which the engine lets through, D34.4)
+/// cannot redirect into the local network by name.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_link_cannot_redirect_into_the_local_network() -> TestResult {
+    let inside = fast_server(1024).await?;
+    let local = by_name(inside.url("report.pdf"))?;
+    let outside = capture_server(1024, |c| {
+        c.redirect = Some(("/report.pdf".into(), local));
+    })
+    .await;
+    let h = Harness::new().await?;
+    let error = h
+        .manager
+        .add_capture(capture(outside.url("report.pdf").to_string()))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, wirecatch_core::CoreError::NotStarted(_)),
+        "{error:?}"
+    );
+    assert!(
+        inside.stats.seen().is_empty(),
+        "the local server was contacted"
+    );
+    Ok(())
+}
+
+/// A link the person adds themselves may name a server on their own network.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_link_the_person_adds_may_name_a_server_on_their_network() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let row = h.add(by_name(server.url("report.pdf"))?).await?;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_server_that_does_not_answer_in_time_leaves_the_download_to_the_browser() -> TestResult {
     let silent = SilentServer::start().await;

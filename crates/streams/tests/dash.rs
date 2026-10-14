@@ -22,7 +22,7 @@ fn options() -> DownloadOptions {
 }
 
 fn request(server: &FileServer, manifest: &str, output: &Path) -> StreamRequest {
-    let mut request = StreamRequest::new(server.url(manifest), output);
+    let mut request = StreamRequest::new(server.url(manifest), output, PrivateNetwork::Auto);
     request.options = options();
     request
 }
@@ -92,6 +92,7 @@ async fn number_templates_download_the_chosen_representation() {
     let info = inspect(
         &server.url("dash/manifest.mpd"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -254,6 +255,7 @@ async fn live_drm_and_several_periods_are_refused() {
     let info = inspect(
         &server.url("live.mpd"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -317,6 +319,7 @@ async fn an_absurd_presentation_duration_is_not_a_crash() {
     let info = inspect(
         &server.url("huge.mpd"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await
@@ -389,6 +392,7 @@ async fn the_forecast_extension_follows_the_automatic_pick() -> TestResult {
     let info = inspect(
         &server.url("main.mpd"),
         &options(),
+        PrivateNetwork::Auto,
         CancellationToken::new(),
     )
     .await?;

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use wirecatch_engine::{CancellationToken, DownloadOptions};
-use wirecatch_streams::{Error, StreamInfo, inspect};
+use wirecatch_streams::{Error, PrivateNetwork, StreamInfo, inspect};
 use wirecatch_test_support::TestResult;
 use wirecatch_test_support::files::FileServer;
 
@@ -104,7 +104,13 @@ fn inspect_measured(manifest: String) -> TestResult<(Result<StreamInfo, Error>, 
         server.put_typed("manifest.mpd", manifest, "application/dash+xml");
         let url = server.url("manifest.mpd");
         let start = measure();
-        let info = inspect(&url, &DownloadOptions::default(), CancellationToken::new()).await;
+        let info = inspect(
+            &url,
+            &DownloadOptions::default(),
+            PrivateNetwork::Auto,
+            CancellationToken::new(),
+        )
+        .await;
         Ok((info, peak_since(start)))
     })
 }

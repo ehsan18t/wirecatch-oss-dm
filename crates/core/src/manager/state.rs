@@ -18,6 +18,7 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
+use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
@@ -123,6 +124,8 @@ pub(super) struct Entry {
     /// Order within its queue; lower runs first.
     pub position: i64,
     pub origin: Origin,
+    /// Who chose its link, which decides whether it may reach the local network.
+    pub chosen_by: ChosenBy,
     /// Whether its path is final, and the user's or browser's choices for it.
     pub naming: NameChoice,
     /// What the browser saw of a captured file, checked when the server answers.
@@ -418,6 +421,7 @@ impl Entry {
             summary: self.row.clone(),
             position: self.position,
             origin: self.origin.clone(),
+            chosen_by: self.chosen_by,
             naming: self.naming.clone(),
             media: self.row.media.clone().map(|summary| StoredMedia {
                 summary,
@@ -508,6 +512,7 @@ mod tests {
             },
             position: 1,
             origin: Origin::default(),
+            chosen_by: ChosenBy::Person,
             naming: NameChoice::settled(),
             expect: None,
             run: Some(Run {

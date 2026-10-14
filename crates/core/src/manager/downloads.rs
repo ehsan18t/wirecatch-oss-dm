@@ -15,6 +15,7 @@ use super::Manager;
 use super::handovers::{Handover, Target};
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Expectation, State, Stop};
+use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
 use crate::media::StoredMedia;
 use crate::naming;
@@ -34,6 +35,8 @@ pub(super) struct NewEntry {
     /// `false` adds it paused.
     pub start: bool,
     pub origin: Origin,
+    /// Who chose the link: the person, or a website through a capture.
+    pub chosen_by: ChosenBy,
     /// The extension's handover id, for captures.
     pub handover: Option<String>,
     /// What the browser saw of a captured file.
@@ -112,6 +115,7 @@ impl Manager {
                 queue,
                 start: request.start,
                 origin: Origin::default(),
+                chosen_by: ChosenBy::Person,
                 handover: None,
                 expect: None,
                 media: None,
@@ -320,6 +324,8 @@ impl Manager {
             entry.origin.headers = headers::for_another_site(&entry.origin.headers);
         }
         entry.row.url = url.to_string();
+        // The person pasted this link themselves, whoever chose the old one.
+        entry.chosen_by = ChosenBy::Person;
         entry.row.error = None;
         // A running download restarts on the new link; the engine continues the part file.
         if !self.stop_run(entry, Stop::Requeue) {
@@ -580,6 +586,7 @@ impl Manager {
             row,
             position,
             origin: new.origin,
+            chosen_by: new.chosen_by,
             naming,
             expect: new.expect,
             run: None,

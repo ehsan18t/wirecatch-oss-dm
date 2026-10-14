@@ -249,11 +249,10 @@ pub struct StreamRequest {
     /// together in one track can be saved, as the stream's own segments joined
     /// end to end.
     pub ffmpeg: Option<PathBuf>,
-    /// Whether segments, keys and init sections may come from the local
-    /// network (default [`PrivateNetwork::Auto`]: refused with
-    /// [`Error::PrivateNetwork`](crate::Error::PrivateNetwork) when the
-    /// playlist itself is on the internet, allowed when it is on the local
-    /// network too, such as a media server at home).
+    /// Whether the playlist, segments, keys and init sections may come from
+    /// the local network. It has no default: [`PrivateNetwork::Block`] for a
+    /// link a website chose, [`PrivateNetwork::Auto`] only for one the user
+    /// typed or pasted (see [`PrivateNetwork`] on the starting URL).
     pub private_network: PrivateNetwork,
     /// Headers (cookies and the like, bound to the playlist's origin), user
     /// agent, timeouts, retries and speed limits, as for a download.
@@ -263,16 +262,18 @@ pub struct StreamRequest {
 }
 
 impl StreamRequest {
-    /// A request for the stream at `url`, saved at `output`, with automatic
-    /// track choice and default options.
-    pub fn new(url: Url, output: impl Into<PathBuf>) -> Self {
+    /// A request for the stream at `url`, saved at `output`, under the rule
+    /// `private_network` for the local network, with automatic track choice
+    /// and default options. The rule is asked for here because only the caller
+    /// knows who chose the link.
+    pub fn new(url: Url, output: impl Into<PathBuf>, private_network: PrivateNetwork) -> Self {
         Self {
             url,
             output: output.into(),
             video: Choice::Auto,
             audio: Choice::Auto,
             ffmpeg: None,
-            private_network: PrivateNetwork::Auto,
+            private_network,
             options: DownloadOptions::default(),
         }
     }

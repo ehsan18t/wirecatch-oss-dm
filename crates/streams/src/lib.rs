@@ -17,13 +17,17 @@
 //! # async fn example() -> Result<(), wirecatch_streams::Error> {
 //! use std::sync::Arc;
 //! use wirecatch_engine::{CancellationToken, DownloadOptions, Url};
-//! use wirecatch_streams::{Choice, StreamProgress, StreamRequest, download, inspect};
+//! use wirecatch_streams::{
+//!     Choice, PrivateNetwork, StreamProgress, StreamRequest, download, inspect,
+//! };
 //!
+//! // A link a website chose: it may not lead into the local network.
 //! let url = Url::parse("https://video.example/watch/master.m3u8").unwrap();
-//! let info = inspect(&url, &DownloadOptions::default(), CancellationToken::new()).await?;
+//! let rule = PrivateNetwork::Block;
+//! let info = inspect(&url, &DownloadOptions::default(), rule, CancellationToken::new()).await?;
 //! let smallest = info.video.iter().min_by_key(|v| v.height).map(|v| v.id.clone());
 //!
-//! let mut request = StreamRequest::new(url, "Downloads/My video.mp4");
+//! let mut request = StreamRequest::new(url, "Downloads/My video.mp4", rule);
 //! if let Some(id) = smallest {
 //!     request.video = Choice::Track(id);
 //! }
@@ -62,6 +66,10 @@
 //! to, or redirect to) loopback, private, link-local, shared CGNAT or other
 //! non-public addresses are refused with [`Error::PrivateNetwork`] (see
 //! [`PrivateNetwork`] for the full list and [`StreamRequest::private_network`]).
+//! [`inspect`] and [`StreamRequest::new`] take the rule and have no default,
+//! because only the caller knows whether a website or the user chose the link:
+//! [`PrivateNetwork::Block`] for a website's, [`PrivateNetwork::Auto`] for one
+//! the user typed.
 //!
 //! # Joining
 //!
@@ -122,7 +130,9 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Reads the playlist or manifest at `url` and describes what it offers.
 ///
 /// Headers, timeouts, retries and the redirect rule come from `options`, as
-/// for a download; credentials stay with the origin of `url`. For an HLS
+/// for a download; credentials stay with the origin of `url`. Whether the
+/// playlists may come from the local network is `private_network`'s to say,
+/// as for [`StreamRequest::private_network`]. For an HLS
 /// master playlist, the best quality's own playlist is read too, to learn the
 /// duration and whether the stream is live. A live stream is described
 /// (with [`StreamInfo::live`] set), but downloading it is refused.
@@ -131,13 +141,15 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 ///
 /// [`Error::NotAStream`] when the link is neither HLS nor DASH,
 /// [`Error::Manifest`] when it is broken, [`Error::Request`] when it cannot be
-/// fetched, and [`Error::Cancelled`] when `cancel` is cancelled first.
+/// fetched, [`Error::PrivateNetwork`] when `private_network` refuses where it
+/// leads, and [`Error::Cancelled`] when `cancel` is cancelled first.
 pub async fn inspect(
     url: &Url,
     options: &DownloadOptions,
+    private_network: PrivateNetwork,
     cancel: CancellationToken,
 ) -> Result<StreamInfo> {
-    let fetcher = Fetcher::new(url, options, cancel).await?;
+    let fetcher = Fetcher::with_private_network(url, options, cancel, private_network).await?;
     let source = source::Source::load(&fetcher).await?;
     source.info(&fetcher).await
 }

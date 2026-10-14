@@ -52,6 +52,12 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         // reaches a person is that the server sent something other than the file
         // the browser saw: a fresh link from the page is the way out.
         EngineError::TargetRejected(reason) => fix(reason.message(), FixAction::RefreshLink),
+        // Only a link a website gave is refused this way (D34.5); one the
+        // person pastes themselves may reach their own network.
+        EngineError::PrivateNetwork { .. } => fix(
+            "This link leads to a device on your own network, which Wirecatch does not reach for a link a website gave it. If you trust it, refresh the link by pasting it yourself.",
+            FixAction::RefreshLink,
+        ),
         EngineError::Internal(detail) => fix(
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
@@ -590,6 +596,7 @@ mod tests {
                 url: "u".into(),
             },
             insecure(),
+            EngineError::PrivateNetwork { url: "u".into() },
             EngineError::Internal("x".into()),
         ];
         for e in &errors {

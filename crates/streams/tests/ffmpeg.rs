@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wirecatch_engine::{CancellationToken, DownloadOptions};
-use wirecatch_streams::{Error, Outcome, Role, StreamProgress, StreamRequest, download};
+use wirecatch_streams::{
+    Error, Outcome, PrivateNetwork, Role, StreamProgress, StreamRequest, download,
+};
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{PrivateDir, TestResult, private_dir, ts_segment};
 
@@ -129,7 +131,7 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     video_and_audio(&server).unwrap();
     let (root, dir) = hostile_dir("ffmpeg-args").unwrap();
     let output = dir.join("-i evil name.mp4");
-    let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
+    let mut request = StreamRequest::new(server.url("master.m3u8"), &output, PrivateNetwork::Auto);
     request.options = options();
     request.ffmpeg = Some(ffmpeg);
 
@@ -196,7 +198,7 @@ async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     video_and_audio(&server).unwrap();
     let dir = private_dir("ffmpeg-fail").unwrap();
     let output = dir.join("fail-please.mp4");
-    let mut request = StreamRequest::new(server.url("master.m3u8"), &output);
+    let mut request = StreamRequest::new(server.url("master.m3u8"), &output, PrivateNetwork::Auto);
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
     let error = run(request.clone()).await.unwrap_err();
@@ -306,7 +308,11 @@ async fn real_ffmpeg_merges_a_codec_mp4_players_refuse_into_matroska() {
         MPEGURL,
     );
     let (root, dir) = hostile_dir("real-ffmpeg").unwrap();
-    let mut request = StreamRequest::new(server.url("master.m3u8"), dir.join("-out video.mp4"));
+    let mut request = StreamRequest::new(
+        server.url("master.m3u8"),
+        dir.join("-out video.mp4"),
+        PrivateNetwork::Auto,
+    );
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
     let path = match run(request).await.unwrap() {
@@ -364,7 +370,11 @@ async fn real_ffmpeg_remuxes_a_single_ts_track() {
     let server = FileServer::start().await;
     serve_folder(&server, &source).unwrap();
     let dir = private_dir("real-ffmpeg-single").unwrap();
-    let mut request = StreamRequest::new(server.url("index.m3u8"), dir.join("clip"));
+    let mut request = StreamRequest::new(
+        server.url("index.m3u8"),
+        dir.join("clip"),
+        PrivateNetwork::Auto,
+    );
     request.options = options();
     request.ffmpeg = Some(ffmpeg.clone());
     let path = match run(request).await.unwrap() {
@@ -399,7 +409,7 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     one_segment(&server, "ffconcat version 1.0\nfile secret.mp4\n");
     let dir = private_dir("ffmpeg-unknown").unwrap();
     let output = dir.join("clip.mp4");
-    let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
+    let mut request = StreamRequest::new(server.url("index.m3u8"), &output, PrivateNetwork::Auto);
     request.options = options();
     request.ffmpeg = Some(ffmpeg);
     let error = run(request).await.unwrap_err();
@@ -457,7 +467,7 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     one_segment(&server, payload);
     let dir = private_dir("real-ffmpeg-disguised").unwrap();
     let output = dir.join("clip.mp4");
-    let mut request = StreamRequest::new(server.url("index.m3u8"), &output);
+    let mut request = StreamRequest::new(server.url("index.m3u8"), &output, PrivateNetwork::Auto);
     request.options = options();
     request.ffmpeg = Some(ffmpeg);
     let result = run(request).await;

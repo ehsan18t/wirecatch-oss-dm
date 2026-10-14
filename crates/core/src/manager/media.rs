@@ -27,6 +27,7 @@ use super::downloads::{NewEntry, parse_web_url};
 use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::addons::{Check, MediaTools};
+use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
 use crate::media::choice::{self, Offer, Plan, Resolved};
 use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
@@ -50,6 +51,8 @@ pub(super) struct MediaSource {
     pub title: Option<String>,
     pub page_url: Option<String>,
     pub origin: Origin,
+    /// Who chose the link: always a website, since media arrives as a capture.
+    pub chosen_by: ChosenBy,
 }
 
 /// A media capture that is not a download yet.
@@ -166,6 +169,7 @@ impl Manager {
             title: capture.media.as_ref().and_then(|m| m.title.clone()),
             page_url: capture.page_url.clone(),
             origin: origin_of(capture),
+            chosen_by: ChosenBy::Website,
         };
         state.media.insert(
             id,
@@ -575,9 +579,14 @@ impl Manager {
     ) -> std::result::Result<Found, UserError> {
         let mut options = media_options(&source.origin);
         options.connections = connections.max(1);
-        let info = wirecatch_streams::inspect(&source.url, &options, token.clone())
-            .await
-            .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None))?;
+        let info = wirecatch_streams::inspect(
+            &source.url,
+            &options,
+            source.chosen_by.private_network(),
+            token.clone(),
+        )
+        .await
+        .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None))?;
         Ok(Found {
             title: None,
             offers: choice::from_stream(
@@ -690,6 +699,7 @@ impl Manager {
                 queue: pending.queue,
                 start: false,
                 origin: source.origin.clone(),
+                chosen_by: source.chosen_by,
                 handover: None,
                 expect: None,
                 media: Some(StoredMedia {
@@ -752,6 +762,7 @@ impl Manager {
                 queue: selection.queue.unwrap_or(choice.queue),
                 start: !selection.later,
                 origin: pending.source.origin.clone(),
+                chosen_by: pending.source.chosen_by,
                 handover: None,
                 expect: None,
                 media: Some(StoredMedia {

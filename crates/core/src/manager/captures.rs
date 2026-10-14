@@ -20,6 +20,7 @@ use super::Manager;
 use super::downloads::{NewEntry, capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::state::{Expectation, Pending};
+use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
 use crate::media::StoredMedia;
 use crate::settings;
@@ -89,6 +90,7 @@ impl Manager {
                 queue,
                 start: true,
                 origin: origin_of(&capture),
+                chosen_by: ChosenBy::Website,
                 handover: Some(capture.handover_id.clone()),
                 expect: Some(Expectation {
                     size: capture.size_hint,
@@ -460,6 +462,7 @@ impl Manager {
                 queue: answer.queue.unwrap_or(proposal.queue),
                 start: !answer.later,
                 origin: origin_of(request),
+                chosen_by: ChosenBy::Website,
                 handover: None,
                 expect: Some(Expectation {
                     size: request.size_hint,
