@@ -308,7 +308,11 @@ impl Manager {
             Ok((store, restored, recoveries, not_private))
         })
         .await?;
-        store.save_settings(restored.state.settings.clone());
+        // Written back only when restoring changed them, so what another build saved and this one
+        // cannot read (an accent added later, say) survives this build opening them.
+        if restored.settings_changed {
+            store.save_settings(restored.state.settings.clone());
+        }
         store.save_queues(restored.state.queue_list());
         store.save_downloads(restored.changed);
 

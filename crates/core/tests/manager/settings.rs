@@ -105,6 +105,44 @@ async fn a_refused_patch_changes_nothing() -> TestResult {
     Ok(())
 }
 
+/// What another build saved and this one cannot read (an accent added later, a setting this build does not have) survives this build opening the settings: opening reads them, and only a change writes them back.
+#[tokio::test]
+async fn opening_keeps_settings_another_build_saved() -> TestResult {
+    let mut h = Harness::new().await?;
+    h.manager.shutdown().await;
+    let db = h
+        .root
+        .path()
+        .join("data")
+        .join(wirecatch_core::DATABASE_FILE);
+    let stored = |db: &std::path::Path| -> TestResult<serde_json::Value> {
+        let conn = rusqlite::Connection::open(db)?;
+        let json: String =
+            conn.query_row("SELECT value FROM settings WHERE key = 'app'", [], |r| {
+                r.get(0)
+            })?;
+        Ok(serde_json::from_str(&json)?)
+    };
+    let mut newer = stored(&db)?;
+    newer["accent"] = "chartreuse".into();
+    newer["from_a_newer_build"] = true.into();
+    rusqlite::Connection::open(&db)?.execute(
+        "UPDATE settings SET value = ?1 WHERE key = 'app'",
+        [newer.to_string()],
+    )?;
+
+    h.restart().await?;
+    assert_eq!(
+        h.manager.get_settings().accent,
+        wirecatch_protocol::app::Accent::Cyan
+    );
+    h.manager.shutdown().await;
+    let after = stored(&db)?;
+    assert_eq!(after["accent"], "chartreuse");
+    assert_eq!(after["from_a_newer_build"], true);
+    Ok(())
+}
+
 fn sites(list: impl IntoIterator<Item = String>) -> Vec<String> {
     list.into_iter().collect()
 }

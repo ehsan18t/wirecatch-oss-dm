@@ -1,11 +1,13 @@
 // Generated from crates/protocol by `pnpm protocol:generate`. Do not edit; run it again after changing the constants there.
 
+import type { Accent } from './Accent';
 import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
+import type { Theme } from './Theme';
 
 /**
  * The newest protocol version this build speaks. Raised by every change to the wire format
@@ -100,6 +102,30 @@ export const MAX_QUESTION_WINDOWS = 5;
  * pixels.
  */
 export const DOWNLOAD_WINDOW_CASCADE_STEP = 28;
+
+/**
+ * Every [`Theme`], in the order settings offer them.
+ */
+export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
+
+/**
+ * Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
+ * reads this list and defines a palette for each of these but `system`; its tests fail on
+ * an accent without one.
+ */
+export const ACCENTS: readonly Accent[] = [
+  'cyan',
+  'purple',
+  'blue',
+  'green',
+  'orange',
+  'pink',
+  'red',
+  'teal',
+  'indigo',
+  'amber',
+  'system',
+];
 
 /**
  * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.

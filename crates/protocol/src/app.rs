@@ -700,17 +700,80 @@ pub struct CategoryRule {
     pub folder: PortablePath,
 }
 
-/// How the app looks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// Whether the app is light or dark.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum Theme {
-    /// Follow the operating system's light or dark setting.
+    /// Follow the operating system's light or dark setting, and the default.
+    #[default]
     System,
     /// Always light.
     Light,
     /// Always dark.
     Dark,
+}
+
+/// The colour that marks what is selected, focused or running. The design system defines one
+/// palette for each, in light and dark (`data-accent` on the page's root element).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Accent {
+    /// Wirecatch's own colour, and the default.
+    #[default]
+    Cyan,
+    /// Purple.
+    Purple,
+    /// Blue.
+    Blue,
+    /// Green.
+    Green,
+    /// Orange.
+    Orange,
+    /// Pink.
+    Pink,
+    /// Red.
+    Red,
+    /// Teal.
+    Teal,
+    /// Indigo.
+    Indigo,
+    /// Amber.
+    Amber,
+    /// The accent colour chosen in Windows; [`Accent::Cyan`] where the system has none.
+    System,
+}
+
+/// A setting a newer Wirecatch may have saved with a value this build does not know (a theme
+/// or accent added later, say): it reads as the setting's default, so the rest of the settings
+/// still read. A missing field takes the default through `#[serde(default)]`.
+mod known_or_default {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer, T: Serialize>(
+        value: &T,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        value.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de> + Default,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Stored<T> {
+            Known(T),
+            Unknown(serde::de::IgnoredAny),
+        }
+        Ok(match Stored::<T>::deserialize(deserializer)? {
+            Stored::Known(value) => value,
+            Stored::Unknown(_) => T::default(),
+        })
+    }
 }
 
 /// A change to some of [`AppSettings`]: only the fields that are present change, and a group (`extension`, `media`) changes only in the fields its own patch holds. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
@@ -735,6 +798,8 @@ pub struct AppSettingsPatch {
     pub extension: Option<ExtensionSettingsPatch>,
     /// The new [`AppSettings::theme`].
     pub theme: Option<Theme>,
+    /// The new [`AppSettings::accent`].
+    pub accent: Option<Accent>,
     /// The new [`AppSettings::start_with_system`].
     pub start_with_system: Option<bool>,
     /// The new [`AppSettings::close_to_tray`].
@@ -858,6 +923,24 @@ crate::exported::exported_consts! {
     /// How far each download window sits down and right of the one before it, in logical
     /// pixels.
     pub const DOWNLOAD_WINDOW_CASCADE_STEP: u32 = 28;
+    /// Every [`Theme`], in the order settings offer them.
+    pub const THEMES: &[Theme] = &[Theme::System, Theme::Light, Theme::Dark];
+    /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
+    /// reads this list and defines a palette for each of these but `system`; its tests fail on
+    /// an accent without one.
+    pub const ACCENTS: &[Accent] = &[
+        Accent::Cyan,
+        Accent::Purple,
+        Accent::Blue,
+        Accent::Green,
+        Accent::Orange,
+        Accent::Pink,
+        Accent::Red,
+        Accent::Teal,
+        Accent::Indigo,
+        Accent::Amber,
+        Accent::System,
+    ];
 }
 
 /// Every user setting. The app is the only store (D5).
@@ -881,8 +964,14 @@ pub struct AppSettings {
     pub global_speed_limit: Option<u64>,
     /// What the browser extension does.
     pub extension: ExtensionSettings,
-    /// How the app looks.
+    /// Light, dark, or following the system.
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "Theme")]
     pub theme: Theme,
+    /// The accent colour.
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "Accent")]
+    pub accent: Accent,
     /// Start Wirecatch when the person signs in to the computer.
     pub start_with_system: bool,
     /// Closing the window keeps downloads running in the tray.
@@ -926,6 +1015,7 @@ impl AppSettings {
             global_speed_limit,
             extension,
             theme,
+            accent,
             start_with_system,
             close_to_tray,
             notify_on_complete,
@@ -943,6 +1033,7 @@ impl AppSettings {
             global_speed_limit: new_global_speed_limit,
             extension: extension_patch,
             theme: new_theme,
+            accent: new_accent,
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             notify_on_complete: new_notify_on_complete,
@@ -961,6 +1052,7 @@ impl AppSettings {
             extension.apply(extension_patch);
         }
         set(theme, new_theme);
+        set(accent, new_accent);
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(notify_on_complete, new_notify_on_complete);
@@ -1349,6 +1441,116 @@ mod tests {
         assert!(read(r#"{"no_such_setting": 1}"#).is_err());
         assert!(read(r#"{"media": {"video": {"no_such_setting": 1}}}"#).is_err());
         assert!(read(r#"{"theme": 42}"#).is_err());
+    }
+
+    fn stored_settings() -> serde_json::Value {
+        serde_json::json!({
+            "default_folder": "{Downloads}",
+            "categories": [],
+            "connections_per_download": 8,
+            "max_concurrent_downloads": 5,
+            "global_speed_limit": null,
+            "extension": ExtensionSettings::default(),
+            "theme": "dark",
+            "accent": "green",
+            "start_with_system": false,
+            "close_to_tray": true,
+            "notify_on_complete": true,
+        })
+    }
+
+    fn read_settings(value: serde_json::Value) -> AppSettings {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn appearance_settings_round_trip() {
+        let settings = read_settings(stored_settings());
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::Dark, Accent::Green)
+        );
+        let written = serde_json::to_value(&settings).unwrap();
+        assert_eq!(
+            (&written["theme"], &written["accent"]),
+            (&"dark".into(), &"green".into())
+        );
+        assert_eq!(read_settings(written), settings);
+    }
+
+    /// Settings saved before the accent existed have none, and a newer build may have saved a
+    /// theme or accent this one does not know: each reads as its default, and the rest of the
+    /// settings are kept rather than lost with the one value.
+    #[test]
+    fn appearance_settings_read_their_default_when_missing_or_unknown() {
+        let mut older = stored_settings();
+        let fields = older.as_object_mut().unwrap();
+        fields.remove("theme");
+        fields.remove("accent");
+        let settings = read_settings(older);
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::System, Accent::Cyan)
+        );
+        assert_eq!(settings.connections_per_download, 8);
+
+        let mut newer = stored_settings();
+        newer["theme"] = "high_contrast".into();
+        newer["accent"] = serde_json::json!({"custom": "#123456"});
+        let settings = read_settings(newer);
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::System, Accent::Cyan)
+        );
+        assert_eq!(settings.max_concurrent_downloads, 5);
+    }
+
+    /// The design system's stylesheet names its accents with these words (`data-accent`), and
+    /// the desktop shell's first-paint script writes them as they are.
+    #[test]
+    fn accents_and_themes_are_snake_case_words() {
+        let accents = [
+            (Accent::Cyan, "cyan"),
+            (Accent::Purple, "purple"),
+            (Accent::Blue, "blue"),
+            (Accent::Green, "green"),
+            (Accent::Orange, "orange"),
+            (Accent::Pink, "pink"),
+            (Accent::Red, "red"),
+            (Accent::Teal, "teal"),
+            (Accent::Indigo, "indigo"),
+            (Accent::Amber, "amber"),
+            (Accent::System, "system"),
+        ];
+        for (accent, word) in accents {
+            assert_eq!(serde_json::to_value(accent).unwrap(), word);
+        }
+        assert_eq!(ACCENTS, accents.map(|(accent, _)| accent));
+        let themes = [
+            (Theme::System, "system"),
+            (Theme::Light, "light"),
+            (Theme::Dark, "dark"),
+        ];
+        assert_eq!(THEMES, themes.map(|(theme, _)| theme));
+        for (theme, word) in themes {
+            assert_eq!(serde_json::to_value(theme).unwrap(), word);
+        }
+    }
+
+    #[test]
+    fn a_patch_changes_the_accent_alone() {
+        let mut settings = read_settings(stored_settings());
+        let before = settings.clone();
+        settings.apply(serde_json::from_str(r#"{"accent": "system"}"#).unwrap());
+        assert_eq!(settings.accent, Accent::System);
+        assert_eq!(
+            AppSettings {
+                accent: before.accent,
+                ..settings
+            },
+            before
+        );
+        assert!(serde_json::from_str::<AppSettingsPatch>(r#"{"accent": "beige"}"#).is_err());
     }
 
     /// A selection from a client that knows nothing of output formats keeps today's

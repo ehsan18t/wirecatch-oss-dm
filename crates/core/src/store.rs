@@ -1291,7 +1291,7 @@ fn restrict_to_owner(path: &Path) {
 mod tests {
     use super::*;
     use wirecatch_protocol::app::{
-        Category, DownloadStatus, FixAction, Schedule, TimeOfDay, UserError,
+        Accent, Category, DownloadStatus, FixAction, Schedule, Theme, TimeOfDay, UserError,
     };
 
     fn download(id: i64) -> StoredDownload {
@@ -2270,6 +2270,70 @@ mod tests {
         drop(store);
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(!snapshot.settings.unwrap().extension.ask_before_download);
+    }
+
+    /// Writes `settings` as the stored settings of a database with every migration.
+    fn database_with_stored_settings(dir: &Path, settings: &serde_json::Value) {
+        database_with_settings(dir, MIGRATIONS.len(), true);
+        let conn = Connection::open(dir.join(DATABASE_FILE)).unwrap();
+        conn.execute(
+            "UPDATE settings SET value = ?2 WHERE key = ?1",
+            params![SETTINGS_KEY, settings.to_string()],
+        )
+        .unwrap();
+    }
+
+    fn stored_defaults() -> serde_json::Value {
+        let mut settings = crate::settings::default_settings();
+        settings.notify_on_complete = false;
+        serde_json::to_value(settings).unwrap()
+    }
+
+    #[test]
+    fn settings_saved_before_the_accent_existed_take_the_appearance_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut older = stored_defaults();
+        let fields = older.as_object_mut().unwrap();
+        fields.remove("theme");
+        fields.remove("accent");
+        database_with_stored_settings(dir.path(), &older);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::System, Accent::Cyan)
+        );
+        assert!(!settings.notify_on_complete, "nothing else changes");
+    }
+
+    #[test]
+    fn an_appearance_a_newer_build_saved_reads_as_the_default_and_keeps_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut newer = stored_defaults();
+        newer["theme"] = "sepia".into();
+        newer["accent"] = "chartreuse".into();
+        database_with_stored_settings(dir.path(), &newer);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::System, Accent::Cyan)
+        );
+        assert!(!settings.notify_on_complete, "nothing else changes");
+    }
+
+    #[tokio::test]
+    async fn the_theme_and_accent_are_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut settings = crate::settings::default_settings();
+        settings.theme = Theme::Dark;
+        settings.accent = Accent::System;
+        store.save_settings(settings.clone());
+        store.flush().await;
+        drop(store);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.settings, Some(settings));
     }
 
     #[test]

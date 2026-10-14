@@ -98,6 +98,7 @@ export function defaultSettings(): AppSettings {
       default_queue: MAIN_QUEUE_ID,
     },
     theme: 'system',
+    accent: 'cyan',
     start_with_system: true,
     close_to_tray: true,
     notify_on_complete: true,

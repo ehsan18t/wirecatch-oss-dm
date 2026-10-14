@@ -4,6 +4,7 @@ export * from './generated/validators';
 export * from './extension-settings';
 export * from './ids';
 export * from './secrets';
+export type { Accent } from './generated/Accent';
 export type { AddAction } from './generated/AddAction';
 export type { AddDownloadArgs } from './generated/AddDownloadArgs';
 export type { AddRequest } from './generated/AddRequest';

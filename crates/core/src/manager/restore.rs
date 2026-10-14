@@ -30,6 +30,10 @@ fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {
 pub(super) struct Restored {
     pub state: State,
     pub changed: Vec<StoredDownload>,
+    /// The settings differ from what was stored (a first start, or a number brought into
+    /// range), so they need saving. Otherwise the stored settings stay as they are, with
+    /// anything another build saved that this one cannot read.
+    pub settings_changed: bool,
 }
 
 /// What restoring needs to know about the world outside the database.
@@ -51,11 +55,14 @@ pub(super) struct Surroundings<'a> {
 /// download whose file finished just before the app stopped (the file is there and
 /// its partial files are gone) is marked completed instead of downloaded again.
 pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored {
-    let settings = snapshot
-        .settings
-        .map_or_else(settings::default_settings, |stored| {
-            settings::within_limits(stored, &around.suffixes)
-        });
+    let (settings, settings_changed) = match snapshot.settings {
+        None => (settings::default_settings(), true),
+        Some(stored) => {
+            let kept = settings::within_limits(stored.clone(), &around.suffixes);
+            let changed = kept != stored;
+            (kept, changed)
+        }
+    };
     let mut queues = restore_queues(snapshot.queues);
     let default_queue = queues
         .iter()
@@ -102,7 +109,11 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     for entry in downloads {
         state.insert_entry(entry);
     }
-    Restored { state, changed }
+    Restored {
+        state,
+        changed,
+        settings_changed,
+    }
 }
 
 /// The stored queues within today's limits, with the default queue first when
@@ -251,6 +262,19 @@ mod tests {
 
         assert_eq!(restored.state.queue_list(), vec![settings::default_queue()]);
         assert_eq!(restored.state.settings, settings::default_settings());
+        assert!(
+            restored.settings_changed,
+            "a first start saves its defaults"
+        );
+    }
+
+    #[test]
+    fn settings_already_in_range_are_not_saved_again() {
+        let snapshot = Snapshot {
+            settings: Some(settings::default_settings()),
+            ..Snapshot::default()
+        };
+        assert!(!restore(snapshot, &nowhere(&|_| None)).settings_changed);
     }
 
     // Stored values skip the checks a change goes through. A stored 0 connections ran as one
@@ -273,6 +297,7 @@ mod tests {
         let restored = restore(snapshot, &nowhere(&|_| None));
 
         let loaded = &restored.state.settings;
+        assert!(restored.settings_changed, "brought into range, so saved");
         assert_eq!(loaded.connections_per_download, 1);
         assert_eq!(loaded.max_concurrent_downloads, 1);
         assert_eq!(loaded.global_speed_limit, None);

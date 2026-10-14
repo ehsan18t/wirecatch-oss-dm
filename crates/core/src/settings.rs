@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
-    AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, PortablePath, Queue, Theme,
 };
@@ -98,6 +98,7 @@ pub fn default_settings() -> AppSettings {
         // The extension judges downloads by the same defaults until it first hears from the app.
         extension: ExtensionSettings::default(),
         theme: Theme::System,
+        accent: Accent::Cyan,
         start_with_system: false,
         close_to_tray: true,
         notify_on_complete: true,
@@ -581,6 +582,16 @@ mod tests {
     fn a_fresh_install_has_the_extension_defaults_the_extension_assumes() {
         assert_eq!(default_settings().extension, ExtensionSettings::default());
         assert_eq!(default_queue().id, DEFAULT_QUEUE_ID);
+    }
+
+    /// D36: a fresh profile follows the system's light or dark, with Wirecatch's cyan.
+    #[test]
+    fn a_fresh_install_follows_the_system_theme_with_the_cyan_accent() {
+        let settings = default_settings();
+        assert_eq!(
+            (settings.theme, settings.accent),
+            (Theme::System, Accent::Cyan)
+        );
     }
 
     #[test]

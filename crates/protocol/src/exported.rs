@@ -117,6 +117,28 @@ fn branded(number: i64, name: &'static str, import: &'static [&'static str]) -> 
 }
 
 #[cfg(test)]
+impl Exported for &[crate::app::Accent] {
+    fn written(&self) -> Written {
+        Written {
+            value: serde_json::to_string(self).unwrap(),
+            annotation: Some("readonly Accent[]"),
+            imports: &["Accent"],
+        }
+    }
+}
+
+#[cfg(test)]
+impl Exported for &[crate::app::Theme] {
+    fn written(&self) -> Written {
+        Written {
+            value: serde_json::to_string(self).unwrap(),
+            annotation: Some("readonly Theme[]"),
+            imports: &["Theme"],
+        }
+    }
+}
+
+#[cfg(test)]
 impl Exported for crate::QueueId {
     fn written(&self) -> Written {
         branded(self.0, "QueueId", &["QueueId"])
