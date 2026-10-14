@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use super::manifest::{AddonComponent, ArchiveKind};
+use super::manifest::{AddonComponent, ArchiveKind, Sha256Digest};
 use wirecatch_engine::units::{GIB, MIB_USIZE};
 
 /// Largest single file accepted from an archive (Deno is about 100 MB).
@@ -42,13 +42,13 @@ pub(crate) fn open_release(path: &Path) -> io::Result<File> {
     }
 }
 
-/// The SHA-256 of a file, as lower-case hex.
-pub(crate) fn sha256_file(path: &Path) -> io::Result<String> {
+/// The SHA-256 of a file.
+pub(crate) fn sha256_file(path: &Path) -> io::Result<Sha256Digest> {
     sha256_of(&mut open_release(path)?)
 }
 
-/// The SHA-256 of everything in `file`, from its start, as lower-case hex.
-pub(crate) fn sha256_of(file: &mut File) -> io::Result<String> {
+/// The SHA-256 of everything in `file`, from its start.
+pub(crate) fn sha256_of(file: &mut File) -> io::Result<Sha256Digest> {
     file.seek(SeekFrom::Start(0))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; MIB_USIZE];
@@ -59,18 +59,7 @@ pub(crate) fn sha256_of(file: &mut File) -> io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hex(&hasher.finalize()))
-}
-
-/// Lower-case hex of `bytes`.
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push(char::from(DIGITS[usize::from(b >> 4)]));
-        out.push(char::from(DIGITS[usize::from(b & 0xf)]));
-    }
-    out
+    Ok(Sha256Digest::from_bytes(hasher.finalize().into()))
 }
 
 /// The installed files of a part.
@@ -119,20 +108,30 @@ pub(crate) fn unpack(
     release: &mut File,
     stage: &Path,
 ) -> Result<Installed, ArchiveError> {
+    unpack_within(component, release, stage, MAX_FILE)
+}
+
+/// [`unpack`], refusing any file larger than `limit` bytes.
+fn unpack_within(
+    component: &AddonComponent,
+    release: &mut File,
+    stage: &Path,
+    limit: u64,
+) -> Result<Installed, ArchiveError> {
     release
         .seek(SeekFrom::Start(0))
         .map_err(ArchiveError::Disk)?;
     let targets: HashMap<&str, (PathBuf, bool)> = component
-        .files
+        .files()
         .iter()
         .map(|f| Ok((f.from.as_str(), (safe_join(stage, &f.to)?, f.executable))))
         .collect::<Result<_, ArchiveError>>()?;
-    let mut written: HashMap<String, (u64, String)> = HashMap::new();
-    match component.archive {
+    let mut written: HashMap<String, (u64, Sha256Digest)> = HashMap::new();
+    match component.archive() {
         ArchiveKind::Plain => {
-            let file = component.files.first().ok_or(ArchiveError::NoFiles)?;
+            let file = component.files().first().ok_or(ArchiveError::NoFiles)?;
             let (target, executable) = &targets[file.from.as_str()];
-            let written_file = write_file(release, target, *executable)?;
+            let written_file = write_file(release, target, *executable, limit)?;
             written.insert(file.from.clone(), written_file);
         }
         ArchiveKind::Zip => {
@@ -149,7 +148,7 @@ pub(crate) fn unpack(
                     return Err(ArchiveError::NotPlainFile(name));
                 }
                 claim(&mut written, &name)?;
-                let written_file = write_file(&mut entry, target, *executable)?;
+                let written_file = write_file(&mut entry, target, *executable, limit)?;
                 written.insert(name, written_file);
             }
         }
@@ -171,18 +170,18 @@ pub(crate) fn unpack(
                     return Err(ArchiveError::NotPlainFile(name));
                 }
                 claim(&mut written, &name)?;
-                let written_file = write_file(&mut entry, target, *executable)?;
+                let written_file = write_file(&mut entry, target, *executable, limit)?;
                 written.insert(name, written_file);
             }
         }
     }
     let mut installed = Installed::new();
-    for file in &component.files {
+    for file in component.files() {
         match written.get(&file.from) {
             Some((size, sha256)) => installed.push(super::InstalledFile {
                 path: file.to.clone(),
                 size: *size,
-                sha256: sha256.clone(),
+                sha256: *sha256,
             }),
             None => return Err(ArchiveError::Missing(file.from.clone())),
         }
@@ -191,7 +190,10 @@ pub(crate) fn unpack(
 }
 
 /// Refuses an entry that appears twice.
-fn claim(written: &mut HashMap<String, (u64, String)>, name: &str) -> Result<(), ArchiveError> {
+fn claim(
+    written: &mut HashMap<String, (u64, Sha256Digest)>,
+    name: &str,
+) -> Result<(), ArchiveError> {
     if written.contains_key(name) {
         return Err(ArchiveError::Duplicate(name.to_string()));
     }
@@ -199,17 +201,63 @@ fn claim(written: &mut HashMap<String, (u64, String)>, name: &str) -> Result<(),
 }
 
 /// `base` joined with the relative path `relative` (`/` separators), refusing
-/// anything that could leave `base`: absolute paths, drive letters, `..`.
+/// anything [`is_safe_relative`] refuses.
 pub(crate) fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, ArchiveError> {
-    let path = Path::new(relative);
-    let plain = !relative.is_empty()
-        && !relative.contains('\\')
-        && !relative.contains(':')
-        && path.components().all(|c| matches!(c, Component::Normal(_)));
-    if !plain {
+    if !is_safe_relative(relative) {
         return Err(ArchiveError::UnsafePath(relative.to_string()));
     }
-    Ok(base.join(path))
+    Ok(base.join(relative))
+}
+
+/// Names Windows opens as a device (or, for `CLOCK$`, reserved on older systems) in any folder and with any extension.
+const WINDOWS_DEVICES: [&str; 7] = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "CLOCK$"];
+/// Device names Windows numbers with one digit: `0` to `9`, or a superscript one, two or three.
+const WINDOWS_NUMBERED_DEVICES: [&str; 2] = ["COM", "LPT"];
+/// Characters Windows does not allow in a name, besides control characters; `\` and `:` also separate folders and name streams.
+const WINDOWS_FORBIDDEN: [char; 8] = ['<', '>', ':', '"', '\\', '|', '?', '*'];
+
+/// Whether `relative` (`/` separators) names a file inside its folder, and the same file on every system: nothing absolute, no drive letter or `..`, no `:` (a Windows stream or drive), none of the characters Windows forbids, no part ending in a dot or space (Windows drops them, so two names would meet in one file), no Windows device name, and nothing shaped like a Windows short name (`FFMPEG~1.EXE`), which can be another file's second name.
+pub(crate) fn is_safe_relative(relative: &str) -> bool {
+    !relative.is_empty()
+        && relative.split('/').all(is_safe_part)
+        && Path::new(relative)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)))
+}
+
+fn is_safe_part(part: &str) -> bool {
+    !part.is_empty()
+        && part != "."
+        && part != ".."
+        && !part.ends_with(['.', ' '])
+        && !part.contains(|c: char| c.is_control() || WINDOWS_FORBIDDEN.contains(&c))
+        && !is_windows_device(part)
+        && !is_short_name(part)
+}
+
+/// Whether `part` looks like a Windows 8.3 short name: a `~` followed by a digit.
+fn is_short_name(part: &str) -> bool {
+    part.split('~')
+        .skip(1)
+        .any(|after| after.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+fn is_windows_device(part: &str) -> bool {
+    let stem = part
+        .split('.')
+        .next()
+        .unwrap_or(part)
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    WINDOWS_DEVICES.contains(&stem.as_str())
+        || WINDOWS_NUMBERED_DEVICES.iter().any(|device| {
+            stem.strip_prefix(device).is_some_and(|number| {
+                let mut chars = number.chars();
+                chars.next().is_some_and(|c| {
+                    c.is_ascii_digit() || matches!(c, '\u{b9}' | '\u{b2}' | '\u{b3}')
+                }) && chars.next().is_none()
+            })
+        })
 }
 
 /// Writes into a file and hashes what it writes.
@@ -237,9 +285,10 @@ fn write_file(
     input: &mut impl Read,
     target: &Path,
     executable: bool,
-) -> Result<(u64, String), ArchiveError> {
+    limit: u64,
+) -> Result<(u64, Sha256Digest), ArchiveError> {
     use std::os::unix::fs::PermissionsExt;
-    let written = copy_file(input, target, MAX_FILE)?;
+    let written = copy_file(input, target, limit)?;
     let mode = if executable { 0o755 } else { 0o644 };
     std::fs::set_permissions(target, std::fs::Permissions::from_mode(mode))
         .map_err(ArchiveError::Disk)?;
@@ -253,17 +302,18 @@ fn write_file(
     input: &mut impl Read,
     target: &Path,
     _executable: bool,
-) -> Result<(u64, String), ArchiveError> {
-    copy_file(input, target, MAX_FILE)
+    limit: u64,
+) -> Result<(u64, Sha256Digest), ArchiveError> {
+    copy_file(input, target, limit)
 }
 
-/// Copies `input` to a new file at `target`, at most `limit` bytes ([`MAX_FILE`]).
+/// Copies `input` to a new file at `target`, at most `limit` bytes.
 /// Returns its size and SHA-256.
 fn copy_file(
     input: &mut impl Read,
     target: &Path,
     limit: u64,
-) -> Result<(u64, String), ArchiveError> {
+) -> Result<(u64, Sha256Digest), ArchiveError> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(ArchiveError::Disk)?;
     }
@@ -287,7 +337,7 @@ fn copy_file(
         return Err(ArchiveError::TooLarge);
     }
     out.flush().map_err(ArchiveError::Disk)?;
-    let sha256 = hex(&out.hasher.finalize());
+    let sha256 = Sha256Digest::from_bytes(out.hasher.finalize().into());
     drop(out.file);
     Ok((copied, sha256))
 }
@@ -295,7 +345,7 @@ fn copy_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::addons::manifest::AddonFile;
+    use crate::addons::manifest::{AddonFile, ComponentId, ReleaseFile};
 
     #[test]
     fn hashes_are_lower_case_hex() {
@@ -303,7 +353,7 @@ mod tests {
         let file = dir.path().join("abc");
         std::fs::write(&file, b"abc").unwrap();
         assert_eq!(
-            sha256_file(&file).unwrap(),
+            sha256_file(&file).unwrap().to_string(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
@@ -317,7 +367,10 @@ mod tests {
         std::fs::write(&path, b"original").unwrap();
         let mut release = open_release(&path).unwrap();
         let checked = sha256_of(&mut release).unwrap();
-        assert_eq!(checked, hex(&Sha256::digest(b"original")));
+        assert_eq!(
+            checked,
+            Sha256Digest::from_bytes(Sha256::digest(b"original").into())
+        );
 
         let other = dir.path().join("other");
         std::fs::write(&other, b"replaced").unwrap();
@@ -334,21 +387,7 @@ mod tests {
         }
 
         let stage = dir.path().join("stage");
-        let component = AddonComponent {
-            name: "x".into(),
-            version: "1".into(),
-            url: String::new(),
-            sha256: checked,
-            size: 8,
-            archive: ArchiveKind::Plain,
-            files: vec![AddonFile {
-                from: String::new(),
-                to: "tool".into(),
-                executable: true,
-            }],
-            program: "tool".into(),
-        };
-        unpack(&component, &mut release, &stage).unwrap();
+        unpack(&component(ArchiveKind::Plain, ""), &mut release, &stage).unwrap();
         assert_eq!(std::fs::read(stage.join("tool")).unwrap(), b"original");
     }
 
@@ -361,46 +400,160 @@ mod tests {
         assert!(safe_join(base, "lib/libavcodec.so.63").is_ok());
     }
 
+    /// Windows opens a device for these names in any folder and with any extension, drops trailing dots and spaces (so two names meet in one file), and reads `:` as a stream of the file.
     #[test]
-    fn a_manifest_with_an_unsafe_target_installs_nothing() {
+    fn names_windows_reads_otherwise_are_refused() {
+        let base = Path::new("/addons");
+        for bad in [
+            "NUL",
+            "con.txt",
+            "bin/aux",
+            "lib/Com1.dll",
+            "LPT9",
+            "COM\u{b9}",
+            "ffmpeg.exe.",
+            "ffmpeg.exe ",
+            "bin./ffmpeg",
+            "ffmpeg.exe:hidden",
+            "ffmpeg.exe::$DATA",
+            "a\u{0}b",
+            "a|b",
+            "a?b",
+            "a*b",
+            "a<b",
+            "a\"b",
+            "CONIN$",
+            "conout$.txt",
+            "CLOCK$",
+            "FFMPEG~1.EXE",
+            "lib/AVCODE~12.DLL",
+        ] {
+            assert!(safe_join(base, bad).is_err(), "{bad:?}");
+        }
+        for good in [
+            "console.exe",
+            "bin/nul-free",
+            "lib/com10.dll",
+            "a.b/c",
+            "a~b",
+            "cost$",
+        ] {
+            assert!(safe_join(base, good).is_ok(), "{good:?}");
+        }
+    }
+
+    /// Hard links and symbolic links in a tar are never followed or installed, even under the name of an expected file.
+    #[test]
+    fn links_in_a_tar_are_refused() {
+        for kind in [tar::EntryType::Link, tar::EntryType::Symlink] {
+            let mut tar = tar::Builder::new(Vec::new());
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(kind);
+            header.set_size(0);
+            tar.append_link(&mut header, "bin/tool", "/etc/passwd")
+                .unwrap();
+            let tar = tar.into_inner().unwrap();
+            let mut xz =
+                lzma_rust2::XzWriter::new(Vec::new(), lzma_rust2::XzOptions::with_preset(1))
+                    .unwrap();
+            xz.write_all(&tar).unwrap();
+            let bytes = xz.finish().unwrap();
+            let error =
+                unpack_bytes(&component(ArchiveKind::TarXz, "bin/tool"), &bytes).unwrap_err();
+            assert!(
+                matches!(error, ArchiveError::NotPlainFile(_)),
+                "{kind:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_symbolic_link_in_a_zip_is_refused() {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.add_symlink(
+            "bin/tool",
+            "/etc/passwd",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        let error = unpack_bytes(&component(ArchiveKind::Zip, "bin/tool"), &bytes).unwrap_err();
+        assert!(matches!(error, ArchiveError::NotPlainFile(_)), "{error}");
+    }
+
+    /// A zip entry that inflates past the limit is refused once it reaches the limit, whatever its header says, and is never written whole.
+    #[test]
+    fn an_entry_that_inflates_past_the_limit_is_refused() {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("bin/tool", options).unwrap();
+        zip.write_all(&vec![0u8; 1 << 20]).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        assert!(bytes.len() < 1 << 14, "the test archive does not compress");
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("tool");
-        std::fs::write(&path, b"tool").unwrap();
-        let mut release = open_release(&path).unwrap();
+        let path = dir.path().join("release");
+        std::fs::write(&path, &bytes).unwrap();
         let stage = dir.path().join("stage");
-        let component = AddonComponent {
-            name: "x".into(),
-            version: "1".into(),
-            url: String::new(),
-            sha256: String::new(),
-            size: 4,
-            archive: ArchiveKind::Plain,
-            files: vec![AddonFile {
-                from: String::new(),
-                to: "../escaped".into(),
-                executable: true,
-            }],
-            program: "../escaped".into(),
-        };
-        assert!(unpack(&component, &mut release, &stage).is_err());
-        assert!(!dir.path().join("escaped").exists());
+        let tool = component(ArchiveKind::Zip, "bin/tool");
+        let error =
+            unpack_within(&tool, &mut open_release(&path).unwrap(), &stage, 1 << 16).unwrap_err();
+        assert!(matches!(error, ArchiveError::TooLarge), "{error}");
+        let written = std::fs::metadata(stage.join("tool")).map_or(0, |m| m.len());
+        assert!(written <= (1 << 16) + 1, "{written} bytes written");
+        assert!(
+            unpack_within(
+                &tool,
+                &mut open_release(&path).unwrap(),
+                &dir.path().join("fits"),
+                1 << 20
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_manifest_with_an_unsafe_target_is_refused() {
+        for to in ["../escaped", "/escaped", "C:/escaped", "NUL"] {
+            let made = AddonComponent::new(
+                ComponentId::Deno,
+                "1",
+                release_file(),
+                ArchiveKind::Plain,
+                vec![AddonFile {
+                    from: String::new(),
+                    to: to.into(),
+                    executable: true,
+                }],
+                to,
+            );
+            assert!(made.is_err(), "{to}");
+        }
+    }
+
+    fn release_file() -> ReleaseFile {
+        ReleaseFile::new(
+            wirecatch_engine::Url::parse("https://example.com/tool").unwrap(),
+            Sha256Digest::from_bytes([0; 32]),
+            1,
+        )
+        .unwrap()
     }
 
     fn component(archive: ArchiveKind, from: &str) -> AddonComponent {
-        AddonComponent {
-            name: "x".into(),
-            version: "1".into(),
-            url: String::new(),
-            sha256: String::new(),
-            size: 0,
+        AddonComponent::new(
+            ComponentId::Deno,
+            "1",
+            release_file(),
             archive,
-            files: vec![AddonFile {
+            vec![AddonFile {
                 from: from.into(),
                 to: "tool".into(),
                 executable: true,
             }],
-            program: "tool".into(),
-        }
+            "tool",
+        )
+        .unwrap()
     }
 
     /// A `.tar.xz` holding `entries`: a name with content is a file, one without is a folder.

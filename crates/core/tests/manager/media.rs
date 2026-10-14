@@ -1270,7 +1270,14 @@ async fn pages_waiting_for_the_add_on_are_listed_and_can_be_dismissed() -> TestR
 async fn a_failed_install_turns_waiting_pages_into_failed_downloads() -> TestResult {
     let server = FileServer::start().await;
     let mut sources = publish(&server, &Releases::fake()?, "bad")?;
-    sources.deno.sha256 = crate::media_support::sha256(b"not it");
+    sources.deno = sources.deno.for_release(
+        sources.deno.version(),
+        wirecatch_core::ReleaseFile::new(
+            sources.deno.release().url().clone(),
+            crate::media_support::digest(b"not it"),
+            sources.deno.release().size(),
+        )?,
+    );
     let h = harness(sources).await?;
     h.manager
         .add_capture(media_capture(

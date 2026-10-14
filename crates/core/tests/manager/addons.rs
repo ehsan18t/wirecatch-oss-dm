@@ -6,9 +6,10 @@ use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::TestResult;
 use crate::media_support::{
-    FileServer, Releases, addon_dir, exe, harness, install, next_event, path_exists, publish,
-    sha256, sign, tar_xz, wait_addon, ytdlp_asset,
+    FileServer, Releases, addon_dir, digest, exe, harness, install, next_event, path_exists,
+    publish, release_file, sha256, sign, tar_xz, wait_addon, ytdlp_asset,
 };
+use wirecatch_core::ReleaseFile;
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -103,7 +104,14 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
 async fn a_release_that_does_not_match_its_checksum_is_never_unpacked() -> TestResult {
     let server = FileServer::start().await;
     let mut sources = publish(&server, &Releases::fake()?, "bad")?;
-    sources.ffmpeg.sha256 = sha256(b"something else");
+    sources.ffmpeg = sources.ffmpeg.for_release(
+        sources.ffmpeg.version(),
+        ReleaseFile::new(
+            sources.ffmpeg.release().url().clone(),
+            digest(b"something else"),
+            sources.ffmpeg.release().size(),
+        )?,
+    );
     let h = harness(sources).await?;
     let info = install(&h).await?;
     let AddonState::Failed { message } = info.state else {
@@ -381,11 +389,11 @@ const OLD: &str = "2026-10-01T00:00:00Z";
 async fn updatable(prefix: &str) -> TestResult<(FileServer, crate::common::Harness, Vec<u8>)> {
     let server = FileServer::start().await;
     let mut sources = publish(&server, &Releases::fake()?, prefix)?;
-    sources.ytdlp_releases = Some(server.url("api/releases").to_string());
-    sources.ytdlp_release_downloads = server.url("rel/").to_string();
+    sources.ytdlp_releases = Some(server.url("api/releases"));
+    sources.ytdlp_release_downloads = server.url("rel/");
     let h = harness(sources).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
-    let new_ytdlp = [crate::media_support::fake_tool()?, b"v2".to_vec()].concat();
+    let new_ytdlp = crate::media_support::ytdlp_release("2026.09.30")?;
     Ok((server, h, new_ytdlp))
 }
 
@@ -464,6 +472,300 @@ async fn a_newer_yt_dlp_is_installed_quietly_after_its_checksum_matches() -> Tes
     assert_eq!(installed_ytdlp(&h)?, new_ytdlp);
     // ffmpeg and Deno were not downloaded again.
     assert_eq!(server.requests("up/ffmpeg.zip"), ffmpeg_requests);
+    Ok(())
+}
+
+/// A release published under a newer tag but holding another release's files (an older yt-dlp with its own signed checksum list, say) is not taken for the newer one: what yt-dlp says it is must be the tag.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_older_yt_dlp_under_a_newer_tag_is_refused() -> TestResult {
+    let (server, h, _) = updatable("replay").await?;
+    let before = installed_ytdlp(&h)?;
+    // Another build of the pinned release, signed and listed, under a newer tag.
+    let replayed = crate::media_support::ytdlp_release("2026.08.19")?;
+    let size = replayed.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &replayed,
+        size,
+        &sha256(&replayed),
+        None,
+        OLD,
+    )?;
+    let info = check(&h).await?;
+    assert!(info.installed_version.unwrap().contains("2026.08.19"));
+    assert_eq!(
+        installed_ytdlp(&h)?,
+        before,
+        "the replayed release was installed"
+    );
+    Ok(())
+}
+
+/// A new yt-dlp is installed only when its version check succeeds and answers with exactly its tag: one that cannot start, crashes, fails, says more, or says too much is not installed, and the installed one keeps working. Only a successful answer that is not its tag is evidence of a replayed release, which the person hears of even from a quiet update; one that cannot start or fails may be an antivirus or a full temporary folder, and is only tried again later.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_yt_dlp_whose_version_check_fails_is_refused() -> TestResult {
+    let (server, h, _) = updatable("probe").await?;
+    let before = installed_ytdlp(&h)?;
+    let cases: [(&str, Vec<u8>, bool); 5] = [
+        ("2026.09.26", b"not a program at all".to_vec(), false),
+        (
+            "2026.09.27",
+            crate::media_support::ytdlp_release("2026.09.27+crash")?,
+            false,
+        ),
+        (
+            "2026.09.28",
+            crate::media_support::ytdlp_release("2026.09.28+fail")?,
+            false,
+        ),
+        (
+            "2026.09.29",
+            crate::media_support::ytdlp_release("2026.09.29+extra")?,
+            true,
+        ),
+        (
+            "2026.09.30",
+            crate::media_support::ytdlp_release("2026.09.30+flood")?,
+            true,
+        ),
+    ];
+    for (tag, program, warned) in cases {
+        let size = program.len() as u64;
+        serve_release(&server, tag, &program, size, &sha256(&program), None, OLD)?;
+        let info = check(&h).await?;
+        assert!(
+            info.installed_version.unwrap().contains("2026.08.19"),
+            "{tag}"
+        );
+        assert_eq!(installed_ytdlp(&h)?, before, "{tag} was installed");
+        let noted = info.note.is_some_and(|n| n.contains(tag));
+        assert_eq!(noted, warned, "{tag}: warned {noted}");
+    }
+    Ok(())
+}
+
+/// The release folder may be written without its last slash.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_release_folder_without_its_last_slash_still_matches() -> TestResult {
+    let server = FileServer::start().await;
+    let mut sources = publish(&server, &Releases::fake()?, "slash")?;
+    sources.ytdlp_releases = Some(server.url("api/releases"));
+    sources.ytdlp_release_downloads = server.url("rel");
+    let h = harness(sources).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let new_ytdlp = crate::media_support::ytdlp_release("2026.09.30")?;
+    let size = new_ytdlp.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        size,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    let info = check(&h).await?;
+    assert!(info.installed_version.unwrap().contains("2026.09.30"));
+    Ok(())
+}
+
+/// A release refused for not being what it claims is a warning sign, not a passing failure: the person hears of it even from a quiet update, and it is not downloaded or run again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_release_is_reported_and_not_tried_again() -> TestResult {
+    let (server, h, _) = updatable("again").await?;
+    let replayed = crate::media_support::ytdlp_release("2026.08.19")?;
+    let size = replayed.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &replayed,
+        size,
+        &sha256(&replayed),
+        None,
+        OLD,
+    )?;
+    let program = format!("rel/2026.09.30/{}", ytdlp_asset());
+    let info = check(&h).await?;
+    let note = info.note.unwrap_or_default();
+    assert!(note.contains("2026.09.30"), "{note:?}");
+    let fetched = server.requests(&program);
+    assert!(
+        !path_exists(
+            addon_dir(&h)
+                .join(".work")
+                .join("yt-dlp-2026.09.30.download")
+        ),
+        "the refused release is kept"
+    );
+    h.manager.update_addon(AddonId::Media).await?;
+    let info = check(&h).await?;
+    assert_eq!(
+        server.requests(&program),
+        fetched,
+        "the refused release was fetched again"
+    );
+    assert!(info.installed_version.unwrap().contains("2026.08.19"));
+    assert!(info.note.is_some_and(|n| n.contains("2026.09.30")));
+    Ok(())
+}
+
+/// A release refused after the Update button is told once, in the note, not again as a failed install.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refusal_after_the_update_button_is_told_once() -> TestResult {
+    let (server, h, _) = updatable("button").await?;
+    let mut settings = h.manager.get_settings();
+    settings.auto_update_addons = false;
+    h.manager.update_settings(settings)?;
+    let replayed = crate::media_support::ytdlp_release("2026.08.19")?;
+    let size = replayed.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &replayed,
+        size,
+        &sha256(&replayed),
+        None,
+        OLD,
+    )?;
+    assert_eq!(check(&h).await?.state, AddonState::UpdateAvailable);
+    let mut ui = h.manager.subscribe();
+    h.manager.update_addon(AddonId::Media).await?;
+    let info = wait_addon(&mut ui, "the update ended", |a| {
+        !matches!(a.state, AddonState::Installing { .. })
+    })
+    .await;
+    assert!(info.note.is_some_and(|n| n.contains("2026.09.30")));
+    assert!(
+        !matches!(info.state, AddonState::Failed { .. }),
+        "told twice: {:?}",
+        info.state
+    );
+    assert!(info.installed_version.unwrap().contains("2026.08.19"));
+    Ok(())
+}
+
+/// A refusal is shown while it still concerns the installed yt-dlp, next to a newer release that is waiting, and goes once a newer release is installed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refusal_is_shown_until_a_newer_release_is_installed() -> TestResult {
+    let (server, h, _) = updatable("clear").await?;
+    let replayed = crate::media_support::ytdlp_release("2026.08.19")?;
+    let size = replayed.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &replayed,
+        size,
+        &sha256(&replayed),
+        None,
+        OLD,
+    )?;
+    assert!(
+        check(&h)
+            .await?
+            .note
+            .is_some_and(|n| n.contains("2026.09.30"))
+    );
+    let waiting = "A newer version came out today; Wirecatch installs it once it is two days old.";
+    let fresh = crate::media_support::ytdlp_release("2026.10.12")?;
+    serve_releases(&server, &[("2026.10.12", &fresh, "2026-10-12T00:00:00Z")])?;
+    let note = check(&h).await?.note.unwrap_or_default();
+    assert!(
+        note.contains("2026.09.30") && note.contains(waiting),
+        "{note}"
+    );
+    let genuine = crate::media_support::ytdlp_release("2026.10.05")?;
+    serve_releases(
+        &server,
+        &[
+            ("2026.10.05", &genuine, OLD),
+            ("2026.10.12", &fresh, "2026-10-12T00:00:00Z"),
+        ],
+    )?;
+    let info = check(&h).await?;
+    assert!(info.installed_version.unwrap().contains("2026.10.05"));
+    assert_eq!(info.note.as_deref(), Some(waiting));
+    Ok(())
+}
+
+/// `url` with its host written as a name that resolves to this computer, as a poisoned name server or a hostile network could answer for GitHub.
+fn by_name(mut url: wirecatch_engine::Url) -> TestResult<wirecatch_engine::Url> {
+    url.set_host(Some("localhost"))?;
+    Ok(url)
+}
+
+/// GitHub is never on the local network: an add-on release whose name answers with a local address is not fetched.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_release_whose_name_answers_local_is_not_fetched() -> TestResult {
+    let server = FileServer::start().await;
+    let releases = Releases::fake()?;
+    let mut sources = publish(&server, &releases, "lan")?;
+    sources.ffmpeg = sources.ffmpeg.for_release(
+        sources.ffmpeg.version(),
+        ReleaseFile::new(
+            by_name(server.url("lan/ffmpeg.zip"))?,
+            digest(&releases.ffmpeg),
+            releases.ffmpeg.len() as u64,
+        )?,
+    );
+    let h = harness(sources).await?;
+    let info = install(&h).await?;
+    assert!(
+        matches!(info.state, AddonState::Failed { .. }),
+        "{:?}",
+        info.state
+    );
+    assert_eq!(
+        server.requests("lan/ffmpeg.zip"),
+        0,
+        "the local server was contacted"
+    );
+    Ok(())
+}
+
+/// The list of yt-dlp releases is not read from a name that answers with a local address either.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_release_list_whose_name_answers_local_is_not_read() -> TestResult {
+    let server = FileServer::start().await;
+    let mut sources = publish(&server, &Releases::fake()?, "lanlist")?;
+    sources.ytdlp_releases = Some(by_name(server.url("api/releases"))?);
+    sources.ytdlp_release_downloads = server.url("rel/");
+    let h = harness(sources).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    server.put("api/releases", b"[]".to_vec());
+    let error = h.manager.check_addon_updates().await.unwrap_err();
+    assert!(error.to_string().contains("could not check"), "{error}");
+    assert_eq!(
+        server.requests("api/releases"),
+        0,
+        "the local server was contacted"
+    );
+    Ok(())
+}
+
+/// yt-dlp's cache belongs to the version that wrote it: a new yt-dlp starts without it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn updating_yt_dlp_clears_its_cache() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("cache").await?;
+    let cache = addon_dir(&h).join("cache");
+    std::fs::create_dir_all(cache.join("youtube-nsig"))?;
+    std::fs::write(cache.join("youtube-nsig").join("old.json"), b"{}")?;
+    let size = new_ytdlp.len() as u64;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        size,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    let info = check(&h).await?;
+    assert!(info.installed_version.unwrap().contains("2026.09.30"));
+    assert!(
+        !path_exists(cache.join("youtube-nsig")),
+        "the old cache is still there"
+    );
     Ok(())
 }
 
@@ -584,7 +886,8 @@ async fn an_update_is_capped_at_its_announced_size() -> TestResult {
 /// quiet update, the Update button, a repair or a reinstall.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
-    let (server, h, new_ytdlp) = updatable("fresh").await?;
+    let (server, h, _) = updatable("fresh").await?;
+    let new_ytdlp = crate::media_support::ytdlp_release("2026.10.12")?;
     let size = new_ytdlp.len() as u64;
     let hash = sha256(&new_ytdlp);
     // The harness's clock: Monday 12 October 2026, 12:00 local time.
@@ -645,7 +948,7 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() -> TestResult {
     let (server, h, older) = updatable("list").await?;
-    let newest = [crate::media_support::fake_tool()?, b"v3".to_vec()].concat();
+    let newest = crate::media_support::ytdlp_release("2026.10.12")?;
     // Listed oldest first, to show the order the list comes in does not matter.
     serve_releases(
         &server,
@@ -701,10 +1004,9 @@ async fn a_new_pinned_ffmpeg_replaces_only_ffmpeg() -> TestResult {
         ("ff/bin/avcodec-63.dll", Some(b"new library".as_slice())),
     ])?;
     server.put("pin2/ffmpeg.zip", new_zip.clone());
-    newer.ffmpeg.version = "n9.1".into();
-    newer.ffmpeg.url = server.url("pin2/ffmpeg.zip").to_string();
-    newer.ffmpeg.sha256 = sha256(&new_zip);
-    newer.ffmpeg.size = new_zip.len() as u64;
+    newer.ffmpeg = newer
+        .ffmpeg
+        .for_release("n9.1", release_file(&server, "pin2/ffmpeg.zip", &new_zip)?);
     let newer = std::sync::Arc::new(newer);
     *h.tweak_mut() = Some(std::sync::Arc::new(
         move |c: wirecatch_core::ManagerConfig| c.with_addon_sources((*newer).clone()),
@@ -1009,10 +1311,10 @@ async fn a_half_finished_update_is_recorded_and_repaired() -> TestResult {
     let mut newer = sources;
     let new_ytdlp = [crate::media_support::fake_tool()?, b"v2".to_vec()].concat();
     server.put("half2/yt-dlp", new_ytdlp.clone());
-    newer.ytdlp.version = "2026.09.01".into();
-    newer.ytdlp.url = server.url("half2/yt-dlp").to_string();
-    newer.ytdlp.sha256 = sha256(&new_ytdlp);
-    newer.ytdlp.size = new_ytdlp.len() as u64;
+    newer.ytdlp = newer.ytdlp.for_release(
+        "2026.09.01",
+        release_file(&server, "half2/yt-dlp", &new_ytdlp)?,
+    );
     let new_zip = crate::media_support::zip(&[
         (
             &format!("ff/bin/{}", exe("ffmpeg")),
@@ -1021,10 +1323,9 @@ async fn a_half_finished_update_is_recorded_and_repaired() -> TestResult {
         ("ff/bin/avcodec-63.dll", Some(b"new library".as_slice())),
     ])?;
     server.put("half2/ffmpeg.zip", new_zip.clone());
-    newer.ffmpeg.version = "n9.1".into();
-    newer.ffmpeg.url = server.url("half2/ffmpeg.zip").to_string();
-    newer.ffmpeg.sha256 = sha256(&new_zip);
-    newer.ffmpeg.size = new_zip.len() as u64;
+    newer.ffmpeg = newer
+        .ffmpeg
+        .for_release("n9.1", release_file(&server, "half2/ffmpeg.zip", &new_zip)?);
     let newer = std::sync::Arc::new(newer);
     *h.tweak_mut() = Some(std::sync::Arc::new(
         move |c: wirecatch_core::ManagerConfig| c.with_addon_sources((*newer).clone()),

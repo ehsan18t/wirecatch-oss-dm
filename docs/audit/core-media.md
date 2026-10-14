@@ -89,6 +89,7 @@ Scope: `crates/core/src/media/{mod,choice,convert,merge,output,process,ytdlp}.rs
 - problem: "yt-dlp", "ffmpeg" and "deno" appear as literals in `tools()`, `outdated()`, the manifest and about five places in `manager/addons.rs`; a typo compiles and silently means "not installed". `Record.components` is keyed by `String`. The re-exported public types (`lib.rs:31`) carry `name`, `url`, `sha256`, `fingerprint` and `ytdlp_release_downloads` as plain `String`s: `sha256` must be 64 lower-case hex digits but that is only asserted in a test of `official()`, so an upper-case or malformed value from a caller never matches and surfaces as a misleading checksum error. `name` is used as a path component without `safe_join` in `swap_in` (`dir.join(&component.name)` and `remove_dir_all(work.join(format!("old-{}", name)))`), so a name such as `../x` from a caller of the public API moves and deletes directories outside the add-on folder.
 - fix: add `enum ComponentId { YtDlp, Ffmpeg, Deno }` with `as_str()`/serde rename for the record and folder names, and use it as the `BTreeMap` key and in `AddonComponent`. Add newtypes `Sha256Digest([u8; 32])` (parse once from hex, compare bytes, `Display` as lower-case hex), `Fingerprint`, and `Url` for the URL fields, validated at construction. Until then, run `component.name` through `archive::safe_join` in `swap_in`.
 - cross-package: no
+- status: fixed in W4 (D38.1 and D38.3). Parts are `ComponentId`, the only name of a folder or a record entry; the manifest types are `Sha256Digest`, `Fingerprint` and `Url`; `AddonComponent` has private fields and a constructor that refuses a malformed part, so an upper-case checksum matches and a name such as `../x` cannot be written.
 
 ## CMD-12 Magic values: about 90 inline CLI flags plus tuning numbers and duplicated literals
 - severity: low
@@ -137,6 +138,7 @@ Scope: `crates/core/src/media/{mod,choice,convert,merge,output,process,ytdlp}.rs
 - problem: `tools()` verifies size (and with `deep`, SHA-256) of each `component.files` entry, then returns `safe_join(folder, component.program)` without checking that `program` is one of those files. The manifest test asserts this for `official()` only. A record whose `program` names an unlisted file (a bug in a future manifest, or a record written by an older version) is executed with no integrity check at all, which defeats the "nothing half-installed or damaged is ever run" guarantee.
 - fix: in `tools()`, return `None` (with a warning) unless `component.files.iter().any(|f| f.path == component.program)`; enforce the same invariant when building an `AddonComponent` (constructor instead of public fields, see CMD-11).
 - cross-package: no
+- status: fixed in W4 (D38.1 and D38.2). `tools()` runs nothing unless each program is one of its recorded files, and `AddonComponent::new` refuses a program that is not one of its files marked as a program. Found with it and fixed: a yt-dlp update must answer its version check with exactly its tag, isolated like every other run, or it is refused, not tried again and reported (D38.4); add-on requests never reach the local network (D38.5); manifest paths refuse Windows device names, streams, short names and trailing dots (D38.3).
 
 ## CMD-18 yt-dlp shares the user's own yt-dlp cache
 - severity: low
@@ -145,6 +147,7 @@ Scope: `crates/core/src/media/{mod,choice,convert,merge,output,process,ytdlp}.rs
 - problem: `common_args` isolates configuration (`--ignore-config`, `--no-plugin-dirs`, `--no-js-runtimes`) but not the cache, so the add-on's yt-dlp reads and writes the shared `~/.cache/yt-dlp` (or `XDG_CACHE_HOME`), including cached YouTube player and signature data written by whatever other yt-dlp version the user runs. Behaviour then depends on machine state outside Wirecatch's control, which the module doc says it avoids, and stale entries from a different version are a known source of extraction failures.
 - fix: pass `--cache-dir <data_dir>/addons/media/cache` (inside the private data folder) via a `cache_dir` field on `Context`, and clear it when yt-dlp is updated.
 - cross-package: no
+- status: fixed in W4 (D38.7). yt-dlp runs with `--cache-dir` in the add-on folder, taken from `MediaTools`, and the cache is emptied whenever a new yt-dlp is put in place.
 
 ## CMD-19 Any yt-dlp failure on YouTube triggers a second full run with cookies
 - severity: low

@@ -14,18 +14,20 @@ use std::time::Duration;
 
 use tracing::{info, warn};
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, Fetcher, Outcome, Progress, RemoteFile,
-    Url,
+    CancellationToken, DownloadOptions, DownloadRequest, Fetcher, Outcome, PrivateNetwork,
+    Progress, RemoteFile, Url,
     header::{ACCEPT, HeaderValue},
 };
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
-use crate::addons::manifest::{self, AddonComponent};
+use crate::addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
 use crate::addons::{self, Check, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
+use crate::media::ytdlp;
 use crate::user_error;
 use wirecatch_engine::units::{KIB, MIB};
+use wirecatch_streams::process::{self, RunError, RunOptions};
 
 /// How often the progress of an install is reported.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
@@ -52,6 +54,12 @@ const RELEASES_LOOKED_AT: usize = 10;
 const MAX_METADATA: u64 = 4 * MIB;
 /// Largest signature file read (yt-dlp's is under 1 KB).
 const MAX_SIGNATURE: u64 = 64 * KIB;
+/// How long a new yt-dlp may take to say its version. It answers in about a second, more on its first run while an antivirus looks at it.
+const VERSION_TIMEOUT: Duration = Duration::from_mins(1);
+/// The most of a version a program prints that a message repeats.
+const MAX_SHOWN_VERSION: usize = 40;
+/// Every request for the add-on: a release host is never on the local network, so a name that answers with a local address, or a redirect there, is refused (D38.5).
+const ADDON_NETWORK: PrivateNetwork = PrivateNetwork::Block;
 
 /// Why installing or updating the media add-on failed.
 #[derive(Debug)]
@@ -61,6 +69,8 @@ struct InstallFailure {
     /// A part that was installed is gone: the new one could not be put in place
     /// and the old one could not be put back, so the add-on no longer works.
     part_lost: bool,
+    /// A yt-dlp the update check found was not the release it claimed.
+    refused: Option<Refusal>,
 }
 
 impl From<String> for InstallFailure {
@@ -68,8 +78,51 @@ impl From<String> for InstallFailure {
         Self {
             reason,
             part_lost: false,
+            refused: None,
         }
     }
+}
+
+/// A yt-dlp release refused because it is not the release it claims (D38.4). It is a warning sign rather than a passing failure: it is not offered, downloaded or run again while the app runs, and the person is told even when the update was a quiet one.
+#[derive(Debug, Clone)]
+pub(super) struct Refusal {
+    /// The release's tag.
+    pub version: String,
+    /// What the person is told, in sentences.
+    pub message: String,
+}
+
+/// Why one part was not made ready to put in place.
+#[derive(Debug)]
+enum PartError {
+    /// The install was stopped, or another part failed first.
+    Stopped,
+    /// It is not the release it claims.
+    Refused(Refusal),
+    /// Anything else, in sentences.
+    Failed(String),
+}
+
+impl From<String> for PartError {
+    fn from(reason: String) -> Self {
+        Self::Failed(reason)
+    }
+}
+
+/// Where a part to install comes from, which decides how it is checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    /// The app's own manifest, which names its checksum.
+    Pinned,
+    /// The update check, whose signed checksum list names no version: it must also say it is its tag.
+    Found,
+}
+
+/// One part to install, and where it comes from.
+#[derive(Debug, Clone)]
+struct Part {
+    component: AddonComponent,
+    origin: Origin,
 }
 
 /// Why looking up the newest yt-dlp gave nothing.
@@ -112,6 +165,8 @@ pub(super) struct AddonSlot {
     pub ytdlp_releases: Vec<NewRelease>,
     /// The record could not be read when the files were last looked at, so what is installed is unknown.
     pub unreadable: bool,
+    /// yt-dlp releases refused while the app runs for not being what they claim, newest refusal last.
+    pub refused: Vec<Refusal>,
 }
 
 /// A yt-dlp release found by the update check.
@@ -378,13 +433,25 @@ impl Manager {
         }
         let mut state = self.lock_open()?;
         state.addon.record.last_update_check = saved.last_update_check;
-        let installed = state.addon.record.version("yt-dlp").map(str::to_string);
+        let installed = state
+            .addon
+            .record
+            .version(ComponentId::YtDlp)
+            .map(str::to_string);
+        let refused: Vec<String> = state
+            .addon
+            .refused
+            .iter()
+            .map(|r| r.version.clone())
+            .collect();
         state.addon.ytdlp_releases = found
             .into_iter()
             .filter(|r| {
                 installed
                     .as_deref()
-                    .is_none_or(|have| addons::newer(&r.component.version, have))
+                    .is_none_or(|have| addons::newer(r.component.version(), have))
+                    // Refused for not being what it claims: never downloaded or run again while the app runs.
+                    && !refused.iter().any(|v| v == r.component.version())
             })
             .collect();
         // A release younger than two days is not installed yet, by any path.
@@ -440,19 +507,35 @@ impl Manager {
                     slot.record
                         .components
                         .iter()
-                        .map(|(name, c)| (name.as_str(), c.version.as_str())),
+                        .map(|(id, c)| (*id, c.version.as_str())),
                 )
             }),
             latest_version: Some(describe(
-                wanted.iter().map(|c| (c.name.as_str(), c.version.as_str())),
+                wanted
+                    .iter()
+                    .map(|p| (p.component.id(), p.component.version())),
             )),
-            size: (!plan.is_empty()).then(|| plan.iter().map(|c| c.size).sum()),
-            note: self.waiting_note(slot),
+            size: (!plan.is_empty())
+                .then(|| plan.iter().map(|p| p.component.release().size()).sum()),
+            note: self.addon_note(slot),
         }
     }
 
     pub(super) fn emit_addons(&self, slot: &AddonSlot) {
         self.emit(UiEvent::AddonsChanged(vec![self.addon_info(slot)]));
+    }
+
+    /// What the add-on says besides its state: the latest refusal while it still concerns the installed yt-dlp (no newer one is installed), and a newer release that waits.
+    fn addon_note(&self, slot: &AddonSlot) -> Option<String> {
+        let installed = slot.record.version(ComponentId::YtDlp);
+        let refusal = slot
+            .refused
+            .iter()
+            .rev()
+            .find(|r| installed.is_none_or(|have| !addons::newer(have, &r.version)))
+            .map(|r| r.message.clone());
+        let notes: Vec<String> = refusal.into_iter().chain(self.waiting_note(slot)).collect();
+        (!notes.is_empty()).then(|| notes.join(" "))
     }
 
     /// Says so when the newest yt-dlp is not installed yet because it is
@@ -476,35 +559,50 @@ impl Manager {
     /// The parts as they should be: the pinned ones, with the newest yt-dlp
     /// the update check found that is at least two days old. Every install
     /// path (quiet update, Update button, repair, reinstall) uses this.
-    fn wanted_components(&self, slot: &AddonSlot) -> Vec<AddonComponent> {
+    fn wanted_components(&self, slot: &AddonSlot) -> Vec<Part> {
         let sources = &self.inner.addon_sources;
         let now = self.inner.clock.unix_millis();
+        let pinned = |component: &AddonComponent| Part {
+            component: component.clone(),
+            origin: Origin::Pinned,
+        };
         let ytdlp = slot
             .ytdlp_releases
             .iter()
-            .find(|r| r.mature(now) && addons::newer(&r.component.version, &sources.ytdlp.version))
-            .map_or_else(|| sources.ytdlp.clone(), |r| r.component.clone());
-        vec![ytdlp, sources.ffmpeg.clone(), sources.deno.clone()]
+            .find(|r| {
+                r.mature(now) && addons::newer(r.component.version(), sources.ytdlp.version())
+            })
+            .map_or_else(
+                || pinned(&sources.ytdlp),
+                |r| Part {
+                    component: r.component.clone(),
+                    origin: Origin::Found,
+                },
+            );
+        vec![ytdlp, pinned(&sources.ffmpeg), pinned(&sources.deno)]
     }
 
     /// What must be downloaded: every part for a missing or damaged add-on,
     /// otherwise the parts that are out of date.
-    fn addon_plan(&self, slot: &AddonSlot) -> Vec<AddonComponent> {
+    fn addon_plan(&self, slot: &AddonSlot) -> Vec<Part> {
         let wanted = self.wanted_components(slot);
         if slot.tools.is_none() {
             return wanted;
         }
-        addons::outdated(&slot.record, &wanted)
+        wanted
+            .into_iter()
+            .filter(|p| addons::outdated(&slot.record, &p.component))
+            .collect()
     }
 
-    fn start_addon_op(&self, slot: &mut AddonSlot, plan: Vec<AddonComponent>, quiet: bool) {
+    fn start_addon_op(&self, slot: &mut AddonSlot, plan: Vec<Part>, quiet: bool) {
         let cancel = self.inner.stopped.child_token();
         let ended = CancellationToken::new();
         slot.op = Some(AddonOp {
             cancel: cancel.clone(),
             ended: ended.clone(),
             done: 0,
-            total: plan.iter().map(|c| c.size).sum(),
+            total: plan.iter().map(|p| p.component.release().size()).sum(),
             quiet,
         });
         if !quiet {
@@ -536,24 +634,42 @@ impl Manager {
                 state.addon.unreadable = false;
                 state.addon.failure = None;
                 // Releases no newer than what is now installed are done with.
-                let installed = state.addon.record.version("yt-dlp").map(str::to_string);
+                let installed = state
+                    .addon
+                    .record
+                    .version(ComponentId::YtDlp)
+                    .map(str::to_string);
                 if let Some(have) = installed {
                     state
                         .addon
                         .ytdlp_releases
-                        .retain(|r| addons::newer(&r.component.version, &have));
+                        .retain(|r| addons::newer(r.component.version(), &have));
                 }
                 info!("the media add-on is installed");
             }
-            // A stopped or quiet install stays quiet unless it broke what was
-            // installed.
-            Err(InstallFailure { reason, part_lost }) if part_lost || !(cancelled || quiet) => {
-                warn!(%reason, "installing the media add-on failed");
-                state.addon.failure = Some(format!("Installing the media add-on failed. {reason}"));
-            }
-            Err(_) if cancelled => {}
-            Err(InstallFailure { reason, .. }) => {
-                warn!(%reason, "a quiet update of the media add-on failed");
+            Err(InstallFailure {
+                reason,
+                part_lost,
+                refused,
+            }) => {
+                // A release that is not what it claims is never offered again while the app runs, and is shown however the install was started.
+                let was_refused = refused.is_some();
+                if let Some(refusal) = refused {
+                    warn!(version = %refusal.version, "a yt-dlp release was refused for not being what it claims");
+                    state
+                        .addon
+                        .ytdlp_releases
+                        .retain(|r| r.component.version() != refusal.version);
+                    state.addon.refused.push(refusal);
+                }
+                // A stopped or quiet install stays quiet unless it broke what was installed; a refusal is shown in the note, not twice.
+                if part_lost || !(cancelled || quiet || was_refused) {
+                    warn!(%reason, "installing the media add-on failed");
+                    state.addon.failure =
+                        Some(format!("Installing the media add-on failed. {reason}"));
+                } else if quiet && !cancelled && !was_refused {
+                    warn!(%reason, "a quiet update of the media add-on failed");
+                }
             }
         }
         self.emit_addons(&state.addon);
@@ -575,7 +691,7 @@ impl Manager {
     /// them in and writes the record. `Err` is the reason, in sentences.
     async fn install_parts(
         &self,
-        plan: Vec<AddonComponent>,
+        plan: Vec<Part>,
         cancel: CancellationToken,
     ) -> std::result::Result<(Record, Option<MediaTools>), InstallFailure> {
         let dir = self.inner.addon_dir.clone();
@@ -593,44 +709,53 @@ impl Manager {
         let progress: Vec<Arc<Progress>> = plan.iter().map(|_| Arc::default()).collect();
         let reporter = self.spawn(self.clone().report_addon_progress(
             progress.clone(),
-            plan.iter().map(|c| c.size).collect(),
+            plan.iter().map(|p| p.component.release().size()).collect(),
             cancel.clone(),
         ));
         // One part failing stops the others, without counting as a stop asked for.
         let parts_cancel = cancel.child_token();
         let mut tasks = Vec::new();
-        for (component, progress) in plan.iter().cloned().zip(progress) {
+        for (part, progress) in plan.iter().cloned().zip(progress) {
             let manager = self.clone();
             let (work, cancel) = (work.clone(), parts_cancel.clone());
             tasks.push(self.spawn(async move {
                 let result = manager
-                    .fetch_part(&component, &work, progress, cancel.clone())
+                    .fetch_part(&part, &work, progress, cancel.clone())
                     .await;
                 if result.is_err() {
                     // One part failing ends the install; stop the others.
                     cancel.cancel();
                 }
-                result.map(|staged| (component, staged))
+                result.map(|staged| (part.component, staged))
             }));
         }
         let mut staged = Vec::new();
-        let mut failure = None;
+        let mut failure: Option<InstallFailure> = None;
         for task in tasks {
             match task.await {
                 Ok(Ok(part)) => staged.push(part),
                 // A part stopped because another failed says less than that failure.
-                Ok(Err(reason)) if reason == STOPPED => {}
-                Ok(Err(reason)) => {
-                    failure.get_or_insert(reason);
+                Ok(Err(PartError::Stopped)) => {}
+                Ok(Err(PartError::Refused(refusal))) => {
+                    failure.get_or_insert(InstallFailure {
+                        reason: refusal.message.clone(),
+                        part_lost: false,
+                        refused: Some(refusal),
+                    });
+                }
+                Ok(Err(PartError::Failed(reason))) => {
+                    failure.get_or_insert(reason.into());
                 }
                 Err(e) => {
-                    failure.get_or_insert(format!("Something went wrong inside Wirecatch ({e})."));
+                    failure.get_or_insert(
+                        format!("Something went wrong inside Wirecatch ({e}).").into(),
+                    );
                 }
             }
         }
         reporter.abort();
-        if let Some(reason) = failure {
-            return Err(reason.into());
+        if let Some(failure) = failure {
+            return Err(failure);
         }
         if cancel.is_cancelled() || staged.len() != plan.len() {
             return Err(STOPPED.to_string().into());
@@ -645,28 +770,23 @@ impl Manager {
         .map_err(|e| e.to_string())?
     }
 
-    /// Downloads one part (continuing an earlier attempt), checks it and unpacks
-    /// it into its staging folder.
+    /// Downloads one part (continuing an earlier attempt), checks it and unpacks it into its staging folder. A yt-dlp the update check found must also say it is the release it was offered as; one that does not is deleted, download and all.
     async fn fetch_part(
         &self,
-        component: &AddonComponent,
+        part: &Part,
         work: &Path,
         progress: Arc<Progress>,
         cancel: CancellationToken,
-    ) -> std::result::Result<(PathBuf, archive::Installed), String> {
+    ) -> std::result::Result<(PathBuf, archive::Installed), PartError> {
+        let component = &part.component;
+        let id = component.id();
         let release = work.join(format!(
             "{}-{}.download",
-            component.name,
-            file_safe(&component.version)
+            id.as_str(),
+            file_safe(component.version())
         ));
-        if component.size == 0 {
-            return Err(format!(
-                "The size of {} is not known, so it was not downloaded.",
-                component.name
-            ));
-        }
-        let cap = component.size.saturating_add(SIZE_MARGIN);
-        let expected = component.sha256.clone();
+        let cap = component.release().size().saturating_add(SIZE_MARGIN);
+        let expected = component.release().sha256();
         let known = release.clone();
         let already = self
             .blocking(move || {
@@ -677,9 +797,7 @@ impl Manager {
             .await
             .map_err(|e| e.to_string())?;
         if !already {
-            let url = Url::parse(&component.url)
-                .map_err(|e| format!("The address of {} is not valid ({e}).", component.name))?;
-            let mut request = DownloadRequest::new(url, work);
+            let mut request = DownloadRequest::new(component.release().url().clone(), work);
             // The server must announce the size, and no more than expected, before
             // anything is written; a larger file is never downloaded.
             let target = release.clone();
@@ -689,32 +807,55 @@ impl Manager {
                     .map_err(wirecatch_engine::PathRejected::new)
             }));
             request.options = self.addon_download_options();
-            match wirecatch_engine::download(request, progress, cancel).await {
+            match wirecatch_engine::download(request, progress, cancel.clone()).await {
                 Ok(Outcome::Completed { .. }) => {}
                 Ok(_) | Err(wirecatch_engine::Error::Cancelled) => {
-                    return Err(STOPPED.into());
+                    return Err(PartError::Stopped);
                 }
                 Err(e) => {
                     return Err(format!(
-                        "{} could not be downloaded: {}",
-                        component.name,
+                        "{id} could not be downloaded: {}",
                         user_error::describe(&e, work, false).message
-                    ));
+                    )
+                    .into());
                 }
             }
         }
-        let component = component.clone();
-        let stage = work.join(format!("stage-{}", component.name));
-        self.blocking(move || Ok(verify_and_unpack(&component, &release, &stage, cap)))
+        let owned = component.clone();
+        let stage = work.join(format!("stage-{}", id.as_str()));
+        let downloaded = release.clone();
+        let staged = self
+            .blocking(move || Ok(verify_and_unpack(&owned, &downloaded, &stage, cap)))
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())??;
+        if part.origin == Origin::Found {
+            let confirmed = confirm_version(component, &staged.0, &cancel).await;
+            if let Err(error) = &confirmed {
+                // A refused release is never wanted again; anything else may be tried again from the same download.
+                let refused = matches!(error, PartError::Refused(_));
+                let stage = staged.0.clone();
+                self.blocking(move || {
+                    crate::discard::dir(&stage);
+                    if refused {
+                        crate::discard::file(&release);
+                    }
+                    Ok(())
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            confirmed?;
+        }
+        Ok(staged)
     }
 
+    /// Options for every request for the add-on: the app's own identity, and no request to the local network, since a release host never is on it (D38.5).
     fn addon_download_options(&self) -> DownloadOptions {
         let state = self.lock();
         let mut options = crate::headers::download_options();
         options.connections = usize::from(state.settings.connections_per_download);
         options.rate_limiters = vec![self.inner.global_limiter.clone()];
+        options.private_network = ADDON_NETWORK;
         options
     }
 
@@ -760,18 +901,17 @@ impl Manager {
         let Some(api) = &sources.ytdlp_releases else {
             return Ok(Vec::new());
         };
-        let api = Url::parse(api).map_err(|e| Lookup::Refused(e.to_string()))?;
         let cancel = self.inner.stopped.child_token();
         let mut options = crate::headers::download_options();
         options.headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.github+json"),
         );
-        let fetcher = Fetcher::new(&api, &options, cancel)
+        let fetcher = Fetcher::with_private_network(api, &options, cancel, ADDON_NETWORK)
             .await
             .map_err(|e| Lookup::Unreachable(e.to_string()))?;
         let body = fetcher
-            .get(&api, None, MAX_METADATA)
+            .get(api, None, MAX_METADATA)
             .await
             .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .body;
@@ -783,7 +923,7 @@ impl Manager {
             .take(RELEASES_LOOKED_AT)
             .filter(|r| !r.draft && !r.prerelease)
             // `newer` only reads plain dotted numbers, so the tag is safe in a path.
-            .filter(|r| addons::newer(r.tag_name.trim(), &sources.ytdlp.version))
+            .filter(|r| addons::newer(r.tag_name.trim(), sources.ytdlp.version()))
             .filter_map(|r| {
                 let published = r
                     .published_at
@@ -835,7 +975,22 @@ impl Manager {
         release: &addons::Release,
     ) -> std::result::Result<AddonComponent, Lookup> {
         let version = release.tag_name.trim().to_string();
-        let folder = format!("{}{version}/", sources.ytdlp_release_downloads);
+        // `newer` let only a plain dotted version through, so the tag is one folder name.
+        let mut downloads = sources.ytdlp_release_downloads.clone();
+        if !downloads.path().ends_with('/') {
+            let path = format!("{}/", downloads.path());
+            downloads.set_path(&path);
+        }
+        let folder = downloads
+            .join(&format!("{version}/"))
+            .map_err(|e| Lookup::Refused(e.to_string()))?;
+        // A file of the release is taken only from exactly `<folder><name>`.
+        let in_folder = |asset: &addons::Asset| -> Option<Url> {
+            folder
+                .join(&asset.name)
+                .ok()
+                .filter(|url| url.as_str() == asset.browser_download_url)
+        };
         let asset = |name: &str| release.assets.iter().find(|a| a.name == name);
         let (Some(program), Some(sums)) = (
             asset(&sources.ytdlp_asset),
@@ -846,22 +1001,18 @@ impl Manager {
                 sources.ytdlp_asset
             )));
         };
-        for asset in [program, sums] {
-            if asset.browser_download_url != format!("{folder}{}", asset.name) {
-                return Err(Lookup::Refused(format!(
-                    "release {version} points {} somewhere other than yt-dlp's releases",
-                    asset.name
-                )));
-            }
-        }
+        let (Some(program_url), Some(sums_url)) = (in_folder(program), in_folder(sums)) else {
+            return Err(Lookup::Refused(format!(
+                "release {version} points {} or its checksums somewhere other than yt-dlp's releases",
+                program.name
+            )));
+        };
         if program.size == 0 || program.size > MAX_UPDATE_SIZE {
             return Err(Lookup::Refused(format!(
                 "release {version} gives {} an unusable size ({} bytes)",
                 program.name, program.size
             )));
         }
-        let sums_url =
-            Url::parse(&sums.browser_download_url).map_err(|e| Lookup::Refused(e.to_string()))?;
         let list = fetcher
             .get(&sums_url, None, MAX_METADATA)
             .await
@@ -874,11 +1025,7 @@ impl Manager {
         };
         let sig_name = format!("{}.sig", sources.ytdlp_checksums_asset);
         let sig = asset(&sig_name).ok_or_else(|| unsigned(Unsigned::NoSignature))?;
-        if sig.browser_download_url != format!("{folder}{}", sig.name) {
-            return Err(unsigned(Unsigned::Elsewhere));
-        }
-        let sig_url =
-            Url::parse(&sig.browser_download_url).map_err(|e| Lookup::Refused(e.to_string()))?;
+        let sig_url = in_folder(sig).ok_or_else(|| unsigned(Unsigned::Elsewhere))?;
         let signature = fetcher
             .get(&sig_url, None, MAX_SIGNATURE)
             .await
@@ -897,15 +1044,11 @@ impl Manager {
                 sources.ytdlp_asset
             ))
         })?;
-        let mut component = manifest::ytdlp_component(
-            &version,
-            program.browser_download_url.clone(),
-            &sha256,
-            program.size,
-        );
-        component.files.clone_from(&sources.ytdlp.files);
-        component.program.clone_from(&sources.ytdlp.program);
-        Ok(component)
+        Ok(sources.ytdlp.for_release(
+            version,
+            ReleaseFile::new(program_url, sha256, program.size)
+                .map_err(|e| Lookup::Refused(e.to_string()))?,
+        ))
     }
 
     /// Runs the update check whenever it is due, while the app runs.
@@ -962,26 +1105,78 @@ fn check_id(id: AddonId) -> Result<()> {
 }
 
 /// "yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7".
-fn describe<'a>(parts: impl Iterator<Item = (&'a str, &'a str)>) -> String {
-    let mut parts: Vec<(&str, &str)> = parts.collect();
-    let order = |name: &str| ["yt-dlp", "ffmpeg", "deno"].iter().position(|n| *n == name);
-    parts.sort_by_key(|(name, _)| order(name));
+fn describe<'a>(parts: impl Iterator<Item = (ComponentId, &'a str)>) -> String {
+    let mut parts: Vec<(ComponentId, &str)> = parts.collect();
+    parts.sort_by_key(|(id, _)| *id);
     parts
         .into_iter()
-        .map(|(name, version)| match name {
-            "ffmpeg" => format!(
-                "ffmpeg {}",
+        .map(|(id, version)| match id {
+            ComponentId::Ffmpeg => format!(
+                "{id} {}",
                 version
                     .trim_start_matches('n')
                     .split('-')
                     .next()
                     .unwrap_or(version)
             ),
-            "deno" => format!("Deno {version}"),
-            other => format!("{other} {version}"),
+            _ => format!("{id} {version}"),
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Asks a yt-dlp the update check found, unpacked in `stage`, which version it is, and installs it only when it answers, successfully and with nothing else, with the tag it was offered as. yt-dlp's checksum list is signed but names no version, so an older release's files and signed list published again under a newer tag would otherwise be installed as the newer release (D38.4). Only a successful answer that is not the tag is evidence of that, a [`PartError::Refused`]; one that cannot be started, does not answer in time or ends with an error is an ordinary failure, tried again later (an antivirus or a full temporary folder can cause it).
+async fn confirm_version(
+    component: &AddonComponent,
+    stage: &Path,
+    cancel: &CancellationToken,
+) -> std::result::Result<(), PartError> {
+    let id = component.id();
+    let version = component.version();
+    let program = archive::safe_join(stage, component.program()).map_err(|e| e.to_string())?;
+    let options = RunOptions::collect().with_timeout(VERSION_TIMEOUT);
+    let args = ytdlp::version_args();
+    let ran = match process::run(&program, &args, stage, options, cancel, |_, _| {}).await {
+        Ok(ran) => ran,
+        Err(RunError::Cancelled) => return Err(PartError::Stopped),
+        Err(e) => {
+            return Err(format!(
+                "The downloaded {id} {version} could not be started to confirm its version ({e}), so it was not installed. Try again later."
+            )
+            .into());
+        }
+    };
+    // A run that did not succeed says nothing about which release this is: a full temporary folder or a security product can end a genuine one.
+    if !ran.success() {
+        return Err(format!(
+            "The downloaded {id} {version} ended with an error when asked which version it is, so it was not installed. Wirecatch tries again later."
+        )
+        .into());
+    }
+    let said = String::from_utf8_lossy(&ran.stdout);
+    let said = said.trim();
+    if !ran.stdout_truncated && said == version {
+        return Ok(());
+    }
+    let shown: String = said
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_SHOWN_VERSION)
+        .collect();
+    let answered = if ran.stdout_truncated {
+        "with far more than a version".to_string()
+    } else if shown.is_empty() {
+        "nothing".to_string()
+    } else {
+        format!("\"{shown}\"")
+    };
+    warn!(part = id.as_str(), offered = version, said = %shown, truncated = ran.stdout_truncated, "a new release says it is another version");
+    Err(PartError::Refused(Refusal {
+        version: version.to_string(),
+        message: format!(
+            "{id} {version} was not installed: asked which version it is, it answered {answered}, so it may be an older release published again under a newer name. The installed version keeps working. If this keeps happening, please report it."
+        ),
+    }))
 }
 
 /// Whether a release file the server announces as `total` bytes may be
@@ -1018,7 +1213,7 @@ fn verify_and_unpack(
     cap: u64,
 ) -> std::result::Result<(PathBuf, archive::Installed), String> {
     let unreadable =
-        |e: std::io::Error| format!("The downloaded {} could not be read ({e}).", component.name);
+        |e: std::io::Error| format!("The downloaded {} could not be read ({e}).", component.id());
     // One open file is checked and unpacked, so nothing can swap it in between.
     let mut file = archive::open_release(release).map_err(unreadable)?;
     // Never hash (or unpack) more than was announced.
@@ -1028,17 +1223,17 @@ fn verify_and_unpack(
         crate::discard::file(release);
         return Err(format!(
             "The downloaded {} is larger than its release says, so it was not installed. Try again later; if it keeps happening, please report it.",
-            component.name
+            component.id()
         ));
     }
     let actual = archive::sha256_of(&mut file).map_err(unreadable)?;
-    if actual != component.sha256 {
-        warn!(component = %component.name, expected = %component.sha256, %actual, "checksum mismatch");
+    if actual != component.release().sha256() {
+        warn!(part = component.id().as_str(), expected = %component.release().sha256(), %actual, "checksum mismatch");
         drop(file);
         crate::discard::file(release);
         return Err(format!(
             "The downloaded {} did not match its published checksum, so it was not installed. Try again later; if it keeps happening, please report it.",
-            component.name
+            component.id()
         ));
     }
     match std::fs::remove_dir_all(stage) {
@@ -1070,44 +1265,46 @@ fn swap_in(
     mut rename: impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> std::result::Result<(Record, Option<MediaTools>), InstallFailure> {
     for (component, (stage, files)) in staged {
-        let target = dir.join(&component.name);
-        let old = work.join(format!("old-{}", component.name));
+        let id = component.id();
+        let target = dir.join(id.as_str());
+        let old = work.join(format!("old-{}", id.as_str()));
         crate::discard::dir(&old);
         let had_old = target.exists();
         if had_old {
             rename(&target, &old).map_err(|e| {
                 format!(
                     "The old {} could not be replaced ({e}). Wait until no video is being processed, then try again.",
-                    component.name
+                    component.id()
                 )
             })?;
         }
         if let Err(e) = rename(&stage, &target) {
             // Put the old part back, so what was installed keeps working.
             if had_old && let Err(restore) = rename(&old, &target) {
-                warn!(component = %component.name, from = %old.display(), to = %target.display(), error = %restore, "could not put the old add-on part back");
+                warn!(part = id.as_str(), from = %old.display(), to = %target.display(), error = %restore, "could not put the old add-on part back");
                 // The part is gone from its place: the record must not claim it,
                 // so the add-on shows as needing an install and nothing runs it.
-                record.components.remove(&component.name);
+                record.components.remove(&id);
                 if let Err(error) = record.save(dir) {
                     warn!(%error, "could not record that an add-on part is missing");
                 }
                 return Err(InstallFailure {
                     reason: format!(
                         "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings, Add-ons.",
-                        component.name
+                        component.id()
                     ),
                     part_lost: true,
+                    refused: None,
                 });
             }
-            return Err(format!("{} could not be put in place ({e}).", component.name).into());
+            return Err(format!("{id} could not be put in place ({e}).").into());
         }
         crate::discard::dir(&old);
         record.components.insert(
-            component.name.clone(),
+            id,
             addons::InstalledComponent {
-                version: component.version.clone(),
-                program: component.program.clone(),
+                version: component.version().to_string(),
+                program: component.program().to_string(),
                 files,
             },
         );
@@ -1119,9 +1316,13 @@ fn swap_in(
             .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
         crate::discard::file(&work.join(format!(
             "{}-{}.download",
-            component.name,
-            file_safe(&component.version)
+            id.as_str(),
+            file_safe(component.version())
         )));
+        // What another version cached (player code, signatures) is a known cause of failed reads.
+        if id == ComponentId::YtDlp {
+            crate::discard::dir(&addons::ytdlp_cache(dir));
+        }
     }
     let tools = addons::tools(dir, &record, Check::Sizes);
     Ok((record, tools))
@@ -1131,7 +1332,7 @@ fn swap_in(
 mod tests {
     use super::*;
     use crate::addons::InstalledComponent;
-    use crate::addons::manifest::ArchiveKind;
+    use crate::addons::manifest::{ArchiveKind, Sha256Digest};
 
     /// Add-on downloads name the app, never the engine library's default.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1164,6 +1365,7 @@ mod tests {
             let failure = InstallFailure {
                 reason: "ffmpeg could not be put in place.".into(),
                 part_lost,
+                refused: None,
             };
             manager.end_addon_op(Err(failure), cancelled);
             manager.lock().addon.failure.take()
@@ -1179,6 +1381,23 @@ mod tests {
         }
     }
 
+    /// A part with one program file, `tool`, from release file `sha256`.
+    fn part(id: ComponentId, sha256: Sha256Digest) -> AddonComponent {
+        AddonComponent::new(
+            id,
+            "2",
+            ReleaseFile::new(Url::parse("https://example.com/tool").unwrap(), sha256, 4).unwrap(),
+            ArchiveKind::Plain,
+            vec![manifest::AddonFile {
+                from: String::new(),
+                to: "tool".into(),
+                executable: true,
+            }],
+            "tool",
+        )
+        .unwrap()
+    }
+
     /// A new part that cannot be put in place, when the old one cannot be put
     /// back either, leaves the add-on without that part: the record must stop
     /// claiming it, and the error must say to install the add-on again.
@@ -1191,7 +1410,7 @@ mod tests {
         std::fs::create_dir_all(&target).unwrap();
         let mut record = Record::default();
         record.components.insert(
-            "ffmpeg".into(),
+            ComponentId::Ffmpeg,
             InstalledComponent {
                 version: "1".into(),
                 program: "ffmpeg".into(),
@@ -1199,16 +1418,7 @@ mod tests {
             },
         );
         record.save(dir.path()).unwrap();
-        let component = AddonComponent {
-            name: "ffmpeg".into(),
-            version: "2".into(),
-            url: "https://example.com/ffmpeg".into(),
-            sha256: String::new(),
-            size: 0,
-            archive: ArchiveKind::Plain,
-            files: Vec::new(),
-            program: "ffmpeg".into(),
-        };
+        let component = part(ComponentId::Ffmpeg, Sha256Digest::from_bytes([0; 32]));
         let staged = vec![(component, (work.join("stage-ffmpeg"), Vec::new()))];
         let mut calls = 0;
         let failure = swap_in(dir.path(), &work, record, staged, |from, to| {
@@ -1233,9 +1443,58 @@ mod tests {
             !Record::load(dir.path())
                 .unwrap()
                 .components
-                .contains_key("ffmpeg"),
+                .contains_key(&ComponentId::Ffmpeg),
             "the record still claims the part"
         );
+    }
+
+    /// A checksum is a value, not its spelling: upper-case hex names the same file.
+    #[test]
+    fn a_checksum_given_in_upper_case_still_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        let release = dir.path().join("release");
+        std::fs::write(&release, b"tool").unwrap();
+        let upper = archive::sha256_file(&release)
+            .unwrap()
+            .to_string()
+            .to_ascii_uppercase();
+        let component = part(ComponentId::Deno, Sha256Digest::parse(&upper).unwrap());
+        let (_, installed) =
+            verify_and_unpack(&component, &release, &dir.path().join("stage"), 100).unwrap();
+        assert_eq!(installed.len(), 1);
+    }
+
+    /// A part's folder is named by the part, so nothing a caller names can move or delete a folder outside the add-on's: each part lands in its own folder inside it.
+    #[test]
+    fn a_part_cannot_be_put_outside_the_add_on_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("media");
+        let work = dir.join(".work");
+        let mut staged = Vec::new();
+        for id in ComponentId::ALL {
+            let stage = work.join(format!("stage-{}", id.as_str()));
+            std::fs::create_dir_all(&stage).unwrap();
+            std::fs::write(stage.join("tool"), b"tool").unwrap();
+            let files = vec![addons::InstalledFile {
+                path: "tool".into(),
+                size: 4,
+                sha256: archive::sha256_file(&stage.join("tool")).unwrap(),
+            }];
+            staged.push((part(id, Sha256Digest::from_bytes([0; 32])), (stage, files)));
+        }
+        let (_, tools) = swap_in(&dir, &work, Record::default(), staged, |from, to| {
+            std::fs::rename(from, to)
+        })
+        .unwrap();
+        let outside: Vec<_> = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(outside, ["media"]);
+        for id in ComponentId::ALL {
+            assert!(dir.join(id.as_str()).join("tool").is_file(), "{id}");
+        }
+        assert!(tools.is_some());
     }
 
     #[test]
@@ -1248,9 +1507,9 @@ mod tests {
     #[test]
     fn versions_read_plainly() {
         let parts = [
-            ("deno", "2.9.7"),
-            ("ffmpeg", "n9.0.2-25-g67b60c310b"),
-            ("yt-dlp", "2026.08.19"),
+            (ComponentId::Deno, "2.9.7"),
+            (ComponentId::Ffmpeg, "n9.0.2-25-g67b60c310b"),
+            (ComponentId::YtDlp, "2026.08.19"),
         ];
         assert_eq!(
             describe(parts.into_iter()),

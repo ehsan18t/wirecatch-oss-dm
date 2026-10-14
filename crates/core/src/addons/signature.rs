@@ -12,6 +12,8 @@ use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
 use pgp::packet::SignatureType;
 use pgp::types::KeyDetails;
 
+use super::manifest::ManifestError;
+
 /// yt-dlp's release signing key ("Simon Sawicki (yt-dlp signing key)
 /// <contact@grub4k.xyz>", RSA 4096, created 2023-02-26, no expiry).
 ///
@@ -28,15 +30,50 @@ const YTDLP_PUBLIC_KEY: &str = include_str!("ytdlp-signing-key.asc");
 /// The full fingerprint of [`YTDLP_PUBLIC_KEY`]'s primary key.
 const YTDLP_FINGERPRINT: &str = "AC0CBBE6848D6A873464AF4E57CF65933B5A7581";
 
+/// The full fingerprint of an OpenPGP primary key: 40 hex digits (version 4) or 64 (version 6), kept in upper case. Spaces and case do not matter when it is read.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Fingerprint(String);
+
+impl Fingerprint {
+    /// Reads a full fingerprint, ignoring spaces and case.
+    ///
+    /// # Errors
+    ///
+    /// [`ManifestError::Fingerprint`] for anything else, such as a short key id.
+    pub fn parse(text: &str) -> Result<Self, ManifestError> {
+        let hex: String = text
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_uppercase();
+        if matches!(hex.len(), 40 | 64) && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            Ok(Self(hex))
+        } else {
+            Err(ManifestError::Fingerprint(text.chars().take(80).collect()))
+        }
+    }
+
+    /// The fingerprint in upper-case hex.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Fingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// An OpenPGP public key trusted for one purpose, pinned by its full
 /// fingerprint: a key whose fingerprint differs is never used.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinnedKey {
     /// The public key, ASCII-armored.
     pub armored: String,
-    /// The primary key's full fingerprint, in hex (spaces and case do not
-    /// matter).
-    pub fingerprint: String,
+    /// The primary key's full fingerprint.
+    pub fingerprint: Fingerprint,
 }
 
 impl PinnedKey {
@@ -45,7 +82,7 @@ impl PinnedKey {
     pub fn ytdlp() -> Self {
         Self {
             armored: YTDLP_PUBLIC_KEY.into(),
-            fingerprint: YTDLP_FINGERPRINT.into(),
+            fingerprint: Fingerprint(YTDLP_FINGERPRINT.into()),
         }
     }
 }
@@ -89,12 +126,7 @@ pub(crate) fn verify_detached(
 ) -> Result<(), SignatureError> {
     let (public, _) = SignedPublicKey::from_string(&key.armored)
         .map_err(|e| SignatureError::UnreadableKey(e.to_string()))?;
-    let pinned: String = key
-        .fingerprint
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect::<String>()
-        .to_ascii_uppercase();
+    let pinned = key.fingerprint.as_str().to_string();
     let actual = format!("{:X}", public.fingerprint());
     if actual != pinned {
         return Err(SignatureError::OtherKey { actual, pinned });
@@ -158,7 +190,7 @@ mod tests {
         let public = SignedPublicKey::from(secret.clone());
         let pinned = PinnedKey {
             armored: public.to_armored_string(ArmorOptions::default()).unwrap(),
-            fingerprint: format!("{:X}", public.fingerprint()),
+            fingerprint: Fingerprint::parse(&format!("{:X}", public.fingerprint())).unwrap(),
         };
         (secret, pinned)
     }
@@ -184,8 +216,8 @@ mod tests {
         let official = super::super::manifest::MediaAddonSources::official();
         let listed =
             super::super::checksum_for(std::str::from_utf8(SUMS).unwrap(), &official.ytdlp_asset);
-        assert_eq!(listed.as_deref(), Some(official.ytdlp.sha256.as_str()));
-        assert_eq!(official.ytdlp.version, "2026.08.19");
+        assert_eq!(listed, Some(official.ytdlp.release().sha256()));
+        assert_eq!(official.ytdlp.version(), "2026.08.19");
         // One changed byte in the list breaks the signature.
         let mut changed = SUMS.to_vec();
         changed[0] ^= 1;
@@ -249,19 +281,40 @@ mod tests {
         let signature = sign(&secret, data);
         // The right key, but pinned to another fingerprint (for example the
         // embedded key file swapped for an attacker's).
-        key.fingerprint = YTDLP_FINGERPRINT.into();
+        key.fingerprint = Fingerprint::parse(YTDLP_FINGERPRINT).unwrap();
         let error = verify_detached(&key, data, &signature).unwrap_err();
         assert!(matches!(error, SignatureError::OtherKey { .. }), "{error}");
         // Spaces and lower case in a pinned fingerprint are fine.
         let (_, mut spaced) = throwaway(6);
-        spaced.fingerprint = spaced
+        let written = spaced
             .fingerprint
+            .as_str()
             .to_ascii_lowercase()
             .as_bytes()
             .chunks(4)
             .map(|c| std::str::from_utf8(c).unwrap())
             .collect::<Vec<_>>()
             .join(" ");
+        spaced.fingerprint = Fingerprint::parse(&written).unwrap();
         verify_detached(&spaced, data, &signature).unwrap();
+    }
+
+    /// A short key id or anything that is not a full fingerprint cannot pin a key.
+    #[test]
+    fn only_a_full_fingerprint_pins_a_key() {
+        assert_eq!(
+            Fingerprint::parse(YTDLP_FINGERPRINT).unwrap(),
+            PinnedKey::ytdlp().fingerprint
+        );
+        for bad in [
+            "",
+            "3B5A7581",
+            "57CF65933B5A7581",
+            &"G".repeat(40),
+            &"A".repeat(41),
+        ] {
+            assert!(Fingerprint::parse(bad).is_err(), "{bad:?}");
+        }
+        assert!(Fingerprint::parse(&"a".repeat(64)).is_ok());
     }
 }

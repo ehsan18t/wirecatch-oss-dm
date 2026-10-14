@@ -46,6 +46,7 @@ const LINT_EXCEPTIONS = [
     file: 'apps/desktop/src/lib/window/ProgressView.svelte',
     lints: ['a11y_no_static_element_interactions'],
   },
+  { id: 'E12', file: 'crates/core/src/addons/manifest.rs', lints: ['clippy::expect_used'] },
 ];
 const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs and docs/AUDIT.md W14';
 

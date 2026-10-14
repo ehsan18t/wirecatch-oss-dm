@@ -28,7 +28,8 @@ mod user_error;
 mod zone;
 
 pub use addons::manifest::{
-    AddonComponent, AddonFile, ArchiveKind, MEDIA_ADDON_FOLDER, MediaAddonSources, PinnedKey,
+    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
+    ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
 };
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};

@@ -5,23 +5,8 @@
 //! folder it is installed in (so a test can prepare them before the install),
 //! and tests never reach the internet:
 //!
-//! - `yt-dlp`: appends each call to `calls.jsonl` (its arguments, and the
-//!   cookies file's text and Unix mode at that moment). With `-J` it prints
-//!   `info.json`, or fails with the text of `fail.txt` if that exists (or of
-//!   `fail-without-cookies.txt`, when it exists and the call has no
-//!   `--cookies`), after waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads":
-//!   writes a file at its `-o` template (extension `mp4`, or the text of
-//!   `download-ext`), prints two progress
-//!   lines in the format Wirecatch asks for, and prints the file's path.
-//! - `ffmpeg`: with `real-ffmpeg`, runs the program whose path that file
-//!   holds with the same arguments, sharing the outputs, and ends as it does,
-//!   so a test can use a real ffmpeg without installing a copy of it. Otherwise
-//!   it checks every `-i file:<path>` input exists, waits
-//!   `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments,
-//!   one per line, into the output (its last argument, `file:<path>`). Asked
-//!   for `-progress`, it first reports half of a two-second media done; a
-//!   conversion (whose arguments, unlike a join's or a subtitle's, map
-//!   chapters) fails with the text of `ffmpeg-fail.txt` if that exists.
+//! - `yt-dlp`: appends each call to `calls.jsonl` (its arguments, and the cookies file's text and Unix mode at that moment). With `-J` it prints `info.json`, or fails with the text of `fail.txt` if that exists (or of `fail-without-cookies.txt`, when it exists and the call has no `--cookies`), after waiting `delay-ms` milliseconds if that exists. Otherwise it "downloads": writes a file at its `-o` template (extension `mp4`, or the text of `download-ext`), prints two progress lines in the format Wirecatch asks for, and prints the file's path. Asked for `--version`, it logs nothing and answers as `version` says: the version a test appended to its file (see `VERSION_MARK`), or the pinned one; it refuses to answer unless asked with `--ignore-config` and `--no-plugin-dirs`.
+//! - `ffmpeg`: with `real-ffmpeg`, runs the program whose path that file holds with the same arguments, sharing the outputs, and ends as it does, so a test can use a real ffmpeg without installing a copy of it. Otherwise it checks every `-i file:<path>` input exists, waits `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments, one per line, into the output (its last argument, `file:<path>`). Asked for `-progress`, it first reports half of a two-second media done; a conversion (whose arguments, unlike a join's or a subtitle's, map chapters) fails with the text of `ffmpeg-fail.txt` if that exists.
 //! - `deno`: prints a version.
 //!
 //! With `spawn-child` present, the `-J` call first starts a copy of itself that
@@ -64,7 +49,9 @@ async fn main() -> ExitCode {
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    let ran = if name.starts_with("yt-dlp") {
+    let ran = if name.starts_with("yt-dlp") && args.iter().any(|a| a == "--version") {
+        version(&exe, &args)
+    } else if name.starts_with("yt-dlp") {
         ytdlp(&dir, &args).await
     } else if name.starts_with("ffmpeg") {
         ffmpeg(&dir, &args).await
@@ -75,6 +62,61 @@ async fn main() -> ExitCode {
         eprintln!("fake tool: cannot write its output: {e}");
         ExitCode::from(OUTPUT_FAILED)
     })
+}
+
+/// What a test appends to this program to make it another yt-dlp release, followed by the version.
+const VERSION_MARK: &[u8] = b"\nwirecatch-fake-version=";
+/// How far from the end of its file the appended [`VERSION_MARK`] can be.
+const MARKED_TAIL: usize = 128;
+/// The version a copy without [`VERSION_MARK`] says it is: the pinned one in the tests.
+const PINNED_VERSION: &str = "2026.08.19";
+
+/// How this copy answers `--version`, by what follows the version a test appended: `+fail` prints it and fails, `+crash` fails having printed nothing, `+extra` prints another line after it, `+flood` prints more than Wirecatch reads after it.
+fn version(exe: &Path, args: &[String]) -> io::Result<ExitCode> {
+    let isolated = ["--ignore-config", "--no-plugin-dirs"]
+        .iter()
+        .all(|flag| args.iter().any(|a| a == flag));
+    if !isolated {
+        eprintln!("fake tool: --version asked without the isolation flags");
+        return Ok(ExitCode::from(LOG_FAILED));
+    }
+    let made = ytdlp_version(exe);
+    let (number, how) = made.split_once('+').unwrap_or((&made, ""));
+    if how == "crash" {
+        return Ok(ExitCode::FAILURE);
+    }
+    say(number)?;
+    match how {
+        "fail" => return Ok(ExitCode::FAILURE),
+        "extra" => say("and another line")?,
+        "flood" => {
+            let line = "x".repeat(1 << 20);
+            let mut out = io::stdout().lock();
+            for _ in 0..FLOOD_MIB {
+                writeln!(out, "{line}")?;
+            }
+        }
+        _ => {}
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// How many MiB `+flood` prints: more than the 64 MiB a run collects.
+const FLOOD_MIB: u32 = 65;
+
+/// The version this copy of the program was made to be: the text after a [`VERSION_MARK`] at the end of its own file. Only the end is searched, since the program's own text holds the mark too.
+fn ytdlp_version(exe: &Path) -> String {
+    let bytes = std::fs::read(exe).unwrap_or_default();
+    let tail = bytes
+        .get(bytes.len().saturating_sub(MARKED_TAIL)..)
+        .unwrap_or_default();
+    tail.windows(VERSION_MARK.len())
+        .rposition(|w| w == VERSION_MARK)
+        .and_then(|at| tail.get(at + VERSION_MARK.len()..))
+        .map_or_else(
+            || PINNED_VERSION.to_string(),
+            |rest| String::from_utf8_lossy(rest).trim().to_string(),
+        )
 }
 
 /// Writes `line` to standard output. `println!` panics when the reader has

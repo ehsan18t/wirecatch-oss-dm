@@ -18,7 +18,10 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
-use wirecatch_core::{AddonComponent, AddonFile, ArchiveKind, MediaAddonSources, PinnedKey};
+use wirecatch_core::{
+    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MediaAddonSources, PinnedKey,
+    ReleaseFile, Sha256Digest,
+};
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 
@@ -44,6 +47,15 @@ pub fn fake_tool() -> TestResult<Vec<u8>> {
         )
         .into()
     })
+}
+
+/// The fake tool as yt-dlp release `version`: it says it is that version when asked.
+pub fn ytdlp_release(version: &str) -> TestResult<Vec<u8>> {
+    Ok([
+        fake_tool()?,
+        format!("\nwirecatch-fake-version={version}").into_bytes(),
+    ]
+    .concat())
 }
 
 /// A real ffmpeg for the join test, from `WIRECATCH_TEST_FFMPEG`.
@@ -176,66 +188,70 @@ pub fn publish(
     server.put(&format!("{prefix}/ffmpeg.zip"), releases.ffmpeg.clone());
     server.put(&format!("{prefix}/deno.tar.xz"), releases.deno.clone());
     let ytdlp = exe("yt-dlp");
+    let file = |from: String, to: String, executable| AddonFile {
+        from,
+        to,
+        executable,
+    };
     Ok(MediaAddonSources {
-        ytdlp: AddonComponent {
-            name: "yt-dlp".into(),
-            version: "2026.08.19".into(),
-            url: server.url(&format!("{prefix}/yt-dlp")).into(),
-            sha256: sha256(&releases.ytdlp),
-            size: releases.ytdlp.len() as u64,
-            archive: ArchiveKind::Plain,
-            files: vec![AddonFile {
-                from: String::new(),
-                to: ytdlp.clone(),
-                executable: true,
-            }],
-            program: ytdlp,
-        },
-        ffmpeg: AddonComponent {
-            name: "ffmpeg".into(),
-            version: "n9.0.2-25-g67b60c310b".into(),
-            url: server.url(&format!("{prefix}/ffmpeg.zip")).into(),
-            sha256: sha256(&releases.ffmpeg),
-            size: releases.ffmpeg.len() as u64,
-            archive: ArchiveKind::Zip,
-            files: vec![
-                AddonFile {
-                    from: format!("ff/bin/{}", exe("ffmpeg")),
-                    to: format!("bin/{}", exe("ffmpeg")),
-                    executable: true,
-                },
-                AddonFile {
-                    from: "ff/bin/avcodec-63.dll".into(),
-                    to: "bin/avcodec-63.dll".into(),
-                    executable: false,
-                },
+        ytdlp: AddonComponent::new(
+            ComponentId::YtDlp,
+            "2026.08.19",
+            release_file(server, &format!("{prefix}/yt-dlp"), &releases.ytdlp)?,
+            ArchiveKind::Plain,
+            vec![file(String::new(), ytdlp.clone(), true)],
+            ytdlp,
+        )?,
+        ffmpeg: AddonComponent::new(
+            ComponentId::Ffmpeg,
+            "n9.0.2-25-g67b60c310b",
+            release_file(server, &format!("{prefix}/ffmpeg.zip"), &releases.ffmpeg)?,
+            ArchiveKind::Zip,
+            vec![
+                file(
+                    format!("ff/bin/{}", exe("ffmpeg")),
+                    format!("bin/{}", exe("ffmpeg")),
+                    true,
+                ),
+                file(
+                    "ff/bin/avcodec-63.dll".into(),
+                    "bin/avcodec-63.dll".into(),
+                    false,
+                ),
             ],
-            program: format!("bin/{}", exe("ffmpeg")),
-        },
-        deno: AddonComponent {
-            name: "deno".into(),
-            version: "2.9.7".into(),
-            url: server.url(&format!("{prefix}/deno.tar.xz")).into(),
-            sha256: sha256(&releases.deno),
-            size: releases.deno.len() as u64,
-            archive: ArchiveKind::TarXz,
-            files: vec![AddonFile {
-                from: format!("deno/{}", exe("deno")),
-                to: exe("deno"),
-                executable: true,
-            }],
-            program: exe("deno"),
-        },
+            format!("bin/{}", exe("ffmpeg")),
+        )?,
+        deno: AddonComponent::new(
+            ComponentId::Deno,
+            "2.9.7",
+            release_file(server, &format!("{prefix}/deno.tar.xz"), &releases.deno)?,
+            ArchiveKind::TarXz,
+            vec![file(format!("deno/{}", exe("deno")), exe("deno"), true)],
+            exe("deno"),
+        )?,
         ytdlp_releases: None,
         ytdlp_asset: ytdlp_asset(),
         ytdlp_checksums_asset: "SHA2-256SUMS".into(),
         ytdlp_signing_key: test_signer()?.1.clone(),
-        ytdlp_release_downloads: server.url("rel/").into(),
+        ytdlp_release_downloads: server.url("rel/"),
     })
 }
 
-/// A throwaway OpenPGP key made for the tests (seeded, so every run makes the
-/// same one), standing in for yt-dlp's release key; and the same key pinned.
+/// The release file `bytes`, served at `path`.
+pub fn release_file(server: &FileServer, path: &str, bytes: &[u8]) -> TestResult<ReleaseFile> {
+    Ok(ReleaseFile::new(
+        server.url(path),
+        digest(bytes),
+        bytes.len() as u64,
+    )?)
+}
+
+/// The SHA-256 of `bytes`, worked out here rather than by the add-on code under test.
+pub fn digest(bytes: &[u8]) -> Sha256Digest {
+    Sha256Digest::from_bytes(Sha256::digest(bytes).into())
+}
+
+/// A throwaway OpenPGP key made for the tests (seeded, so every run makes the same one), standing in for yt-dlp's release key; and the same key pinned.
 fn signer(seed: u64) -> TestResult<(SignedSecretKey, PinnedKey)> {
     let mut params = SecretKeyParamsBuilder::default();
     params
@@ -247,7 +263,7 @@ fn signer(seed: u64) -> TestResult<(SignedSecretKey, PinnedKey)> {
     let public = SignedPublicKey::from(secret.clone());
     let pinned = PinnedKey {
         armored: public.to_armored_string(ArmorOptions::default())?,
-        fingerprint: format!("{:X}", public.fingerprint()),
+        fingerprint: Fingerprint::parse(&format!("{:X}", public.fingerprint()))?,
     };
     Ok((secret, pinned))
 }

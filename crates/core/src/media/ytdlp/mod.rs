@@ -1,11 +1,7 @@
 //! Running the media add-on's yt-dlp: reading a page's formats (`-J`) and, for
 //! formats Wirecatch cannot download itself, letting yt-dlp download them.
 //!
-//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to
-//! the page's host, readable only by the current user (it is created inside the
-//! app's private data folder and restricted again), and deleted as soon as
-//! yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime
-//! and ignores any configuration files on the machine.
+//! The browser's cookies reach yt-dlp through a Netscape cookies file bound to the page's host, readable only by the current user (it is created inside the app's private data folder and restricted again), and deleted as soon as yt-dlp exits. yt-dlp gets the add-on's Deno as its only JavaScript runtime, ignores any configuration files and plugins on the machine, and keeps its cache in the add-on folder rather than the one other copies of yt-dlp share.
 
 #![forbid(unsafe_code)]
 
@@ -248,21 +244,34 @@ async fn make_dir(path: &Path) -> Result<(), YtDlpError> {
         })
 }
 
+/// What keeps every run of yt-dlp, the version check of a new one included, from reading the machine's own yt-dlp setup: its configuration files and its plugins.
+const ISOLATION: [&str; 2] = ["--ignore-config", "--no-plugin-dirs"];
+
+/// The arguments that make yt-dlp print its version and nothing else, read the same isolated way as every other run.
+pub(crate) fn version_args() -> Vec<OsString> {
+    ISOLATION
+        .iter()
+        .chain(&["--version"])
+        .map(OsString::from)
+        .collect()
+}
+
 /// The arguments every run gets.
 fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString> {
-    let mut args: Vec<OsString> = vec![
-        "--ignore-config".into(),
-        "--no-plugin-dirs".into(),
+    let mut args: Vec<OsString> = ISOLATION.iter().map(OsString::from).collect();
+    args.extend([
         "--no-playlist".into(),
         "--no-update".into(),
         "--no-js-runtimes".into(),
         "--js-runtimes".into(),
-    ];
+    ]);
     let mut deno = OsString::from("deno:");
     deno.push(ctx.tools.deno.as_os_str());
     args.push(deno);
     args.push("--ffmpeg-location".into());
     args.push(ctx.tools.ffmpeg.clone().into_os_string());
+    args.push("--cache-dir".into());
+    args.push(ctx.tools.ytdlp_cache.clone().into_os_string());
     if let Some(cookies) = cookies {
         args.push("--cookies".into());
         args.push(cookies.path.clone().into_os_string());
@@ -302,6 +311,57 @@ mod tests {
         ] {
             assert!(cookies_first(&Url::parse(page).unwrap()), "{page}");
         }
+    }
+
+    /// yt-dlp's cache (player code, signatures) is the add-on's own, never the one another yt-dlp on the machine writes.
+    #[test]
+    fn yt_dlp_keeps_its_cache_in_the_add_on_folder() {
+        let tools = MediaTools::for_test(Path::new("ffmpeg"));
+        let page = Url::parse("https://example.com/v").unwrap();
+        let ctx = Context {
+            tools: &tools,
+            page: &page,
+            cookies: None,
+            user_agent: None,
+            temp_dir: Path::new("temp"),
+            timeout: Duration::from_secs(1),
+        };
+        let args = common_args(&ctx, None);
+        let at = args.iter().position(|a| a == "--cache-dir");
+        let dir = at.and_then(|at| args.get(at + 1));
+        assert_eq!(
+            dir,
+            Some(&tools.ytdlp_cache.clone().into_os_string()),
+            "{args:?}"
+        );
+        assert!(!args.iter().any(|a| a == "--no-cache-dir"));
+    }
+
+    /// The version check of a new yt-dlp is isolated like every other run.
+    #[test]
+    fn every_run_is_isolated_from_the_machines_yt_dlp_setup() {
+        let tools = MediaTools::for_test(Path::new("ffmpeg"));
+        let page = Url::parse("https://example.com/v").unwrap();
+        let ctx = Context {
+            tools: &tools,
+            page: &page,
+            cookies: None,
+            user_agent: None,
+            temp_dir: Path::new("temp"),
+            timeout: Duration::from_secs(1),
+        };
+        for args in [common_args(&ctx, None), version_args()] {
+            for flag in ["--ignore-config", "--no-plugin-dirs"] {
+                assert!(
+                    args.iter().any(|a| a == flag),
+                    "{flag} missing from {args:?}"
+                );
+            }
+        }
+        assert_eq!(
+            version_args().last().map(OsString::as_os_str),
+            Some("--version".as_ref())
+        );
     }
 
     /// A site controls how long yt-dlp's error line is: the reason a person reads is cut, and a sign-in asked for past the cut is still seen.
