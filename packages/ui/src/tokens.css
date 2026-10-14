@@ -1,10 +1,552 @@
 /*
- * The one home of the design tokens both interfaces use (D36). Each app imports this file once, before its own styles.
+ * The one home of Wirecatch's design tokens (D36): colour, surfaces and blur, radii, spacing, type, shadows, layers and motion. Components style themselves with the Tailwind utilities these tokens create, and with nothing else.
  *
- * Tailwind's preflight is left out on purpose until the design system lands, so today's screens keep their own base styles. Utilities are generated only from this package's sources, not from the apps, whose existing class names (`hidden`, `truncate` and others) would otherwise pick up Tailwind's rules.
+ * Each app imports this file once. A page built on the design system imports base.css after it, from a stylesheet of its own that names its sources with `@source`; today's screens import this file alone, so their own base styles stay in charge. Utilities are generated only from this package's sources and from what a page names, never by scanning the apps, whose existing class names (`hidden`, `truncate`) would otherwise pick up Tailwind's rules. Tailwind's default theme is not loaded: a component can only reach these tokens.
+ *
+ * The contract with the theme settings: `<html data-scheme="light|dark" data-accent="<name>" data-material="mica|acrylic">`, and `--accent-system` (any CSS colour) on `<html>` while the accent is `system`. Without `data-scheme` the page follows the system scheme. Any element may carry `data-scheme` or `data-accent` to restyle its subtree: every colour token is declared again on such an element, so it resolves there.
  */
 @layer theme, base, components, utilities;
-@import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @source './';
 @source not './**/*.test.ts';
+@source not './testing';
+
+/* Raw values. Components never name these: they use the utilities in the @theme blocks below. */
+@layer theme {
+  :root {
+    color-scheme: light dark;
+  }
+
+  /*
+   * Every colour, declared again on each element that sets its own scheme. A custom property's `var()` and `light-dark()` resolve on the element that declares it, and its descendants inherit the result; the production build also lowers `light-dark()` to variables the `[data-scheme]` rules below switch. Declared on `:root` alone, a subtree with its own scheme would keep the page's colours (built-css.test.ts checks this).
+   */
+  :root,
+  [data-scheme] {
+    /* Graphite on cool paper. The window background is the base; the content sits on a translucent layer, so the same values work over a solid colour and over the OS material. */
+    --wc-base: light-dark(#eceef2, #12151b);
+    /* The window's own background: the base, or what lets the OS material through (below). */
+    --wc-window: var(--wc-base);
+    --wc-layer: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.035));
+    --wc-raised: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.06));
+    /* Menus, popovers, dialogs and toasts: the scheme's overlay tone, nearly opaque, with the backdrop blur behind them. */
+    --wc-overlay-tone: light-dark(rgb(249 250 252), rgb(32 36 44));
+    --wc-overlay: --alpha(var(--wc-overlay-tone) / 86%);
+    --wc-control: light-dark(rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.07));
+    --wc-control-hover: light-dark(rgb(250 251 252 / 0.96), rgb(255 255 255 / 0.11));
+    --wc-field: light-dark(rgb(255 255 255 / 0.75), rgb(0 0 0 / 0.2));
+    /* Hover and pressed washes for quiet controls and rows. */
+    --wc-wash: light-dark(rgb(21 26 35 / 0.05), rgb(255 255 255 / 0.06));
+    --wc-wash-strong: light-dark(rgb(21 26 35 / 0.09), rgb(255 255 255 / 0.1));
+    --wc-scrim: light-dark(rgb(21 26 35 / 0.28), rgb(0 0 0 / 0.5));
+    --wc-track: light-dark(rgb(21 26 35 / 0.12), rgb(255 255 255 / 0.12));
+    /* The opaque ring of a slider's thumb. */
+    --wc-thumb: light-dark(#ffffff, #454b56);
+    /* The lit top edge of a glass surface. */
+    --wc-edge: light-dark(rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.07));
+
+    --wc-ink: light-dark(#151a23, #e6e9ef);
+    --wc-ink-muted: light-dark(#434c5e, #b1b8c4);
+    --wc-ink-subtle: light-dark(#5c6576, #8f98a7);
+    --wc-line: light-dark(rgb(21 26 35 / 0.1), rgb(255 255 255 / 0.08));
+    /* Control outlines: 3:1 against the base and the layer. */
+    --wc-line-strong: light-dark(#7a8393, #667084);
+
+    --wc-success: light-dark(#17773f, #5fd08f);
+    --wc-warning: light-dark(#875200, #f0b54a);
+    --wc-danger: light-dark(#b3261e, #ff8b80);
+    --wc-info: light-dark(#1d5fb8, #7cb4ff);
+    /* Text on a filled status or accent colour. */
+    --wc-on-fill: light-dark(#ffffff, #0b0d12);
+    /* A finished download's wire: settled, so it leaves the accent to data that is still moving. A queued one's, waiting: a neutral a step stronger. Both stand out from the track at 3:1 (WCAG 1.4.11). */
+    --wc-progress-done: light-dark(#6f7889, #8f98a7);
+    --wc-progress-queued: light-dark(#5c6576, #a6aebb);
+
+    /* Windows 11's caption close red, the same in both schemes. */
+    --wc-caption-close: #c42b1c;
+  }
+
+  [data-scheme='light'] {
+    color-scheme: light;
+  }
+
+  [data-scheme='dark'] {
+    color-scheme: dark;
+  }
+
+  /* With the OS material behind the window, the window's background lets it through; the layer above keeps text on a known tone. Only the window changes: the base stays solid wherever a part of the page uses it. */
+  :root[data-material='mica'],
+  :root[data-material='mica'] [data-scheme] {
+    --wc-window: transparent;
+  }
+
+  /* Over the OS material the webview draws no backdrop blur at all: its page root is transparent so the material shows, and Chromium then draws no backdrop-filter (D36.2). Menus, dialogs, toasts and the slide-over take the scheme's overlay tone nearly opaque instead, readable without the blur. */
+  :root[data-material],
+  :root[data-material] [data-scheme] {
+    --wc-overlay: --alpha(var(--wc-overlay-tone) / 97%);
+  }
+
+  /* Acrylic lets more of the desktop through than Mica, so the window keeps most of the base's tone over it. */
+  :root[data-material='acrylic'],
+  :root[data-material='acrylic'] [data-scheme] {
+    --wc-window: light-dark(rgb(236 238 242 / 0.7), rgb(18 21 27 / 0.72));
+  }
+
+  /*
+   * Accents: one tone for the light scheme (deep, so white text and text on the paper both pass 4.5:1) and one for the dark scheme (bright, for dark text on it and for text on the graphite). The contrast test in tokens.test.ts holds every pair to that. Cyan is Wirecatch's own and the default.
+   */
+  :root,
+  [data-accent='cyan'] {
+    --wc-accent-light: #0a6b70;
+    --wc-accent-dark: #4fd1c7;
+  }
+
+  [data-accent='blue'] {
+    --wc-accent-light: #0065b8;
+    --wc-accent-dark: #61cdff;
+  }
+
+  [data-accent='indigo'] {
+    --wc-accent-light: #4747c9;
+    --wc-accent-dark: #a5b4fc;
+  }
+
+  [data-accent='purple'] {
+    --wc-accent-light: #6b33cc;
+    --wc-accent-dark: #be99ff;
+  }
+
+  [data-accent='pink'] {
+    --wc-accent-light: #b01f67;
+    --wc-accent-dark: #f98bc2;
+  }
+
+  [data-accent='red'] {
+    --wc-accent-light: #b81d2a;
+    --wc-accent-dark: #ff858f;
+  }
+
+  [data-accent='orange'] {
+    --wc-accent-light: #a34008;
+    --wc-accent-dark: #ffa352;
+  }
+
+  [data-accent='amber'] {
+    --wc-accent-light: #8c5a00;
+    --wc-accent-dark: #f5b942;
+  }
+
+  [data-accent='teal'] {
+    --wc-accent-light: #036e56;
+    --wc-accent-dark: #3fd8a8;
+  }
+
+  [data-accent='green'] {
+    --wc-accent-light: #0b6f3d;
+    --wc-accent-dark: #59cf94;
+  }
+
+  /* The system accent arrives as one colour; each scheme keeps its hue and chroma and moves its lightness into the range the named accents use, so text on it stays readable. Without relative colours it is used as it is. */
+  [data-accent='system'] {
+    --wc-accent-light: var(--accent-system, #0a6b70);
+    --wc-accent-dark: var(--accent-system, #4fd1c7);
+  }
+
+  @supports (color: oklch(from red l c h)) {
+    [data-accent='system'] {
+      --wc-accent-light: oklch(from var(--accent-system, #0a6b70) min(l, 0.5) c h);
+      --wc-accent-dark: oklch(from var(--accent-system, #4fd1c7) max(l, 0.78) c h);
+    }
+  }
+
+  /* Declared again on every element that picks an accent or a scheme, so a subtree with its own accent derives its ramp from its own pair, and one with its own scheme picks its own tone of it. */
+  :root,
+  [data-accent],
+  [data-scheme] {
+    --wc-accent: light-dark(var(--wc-accent-light), var(--wc-accent-dark));
+    --wc-accent-hover: color-mix(in oklab, var(--wc-accent) 86%, light-dark(#000000, #ffffff));
+    --wc-accent-pressed: color-mix(in oklab, var(--wc-accent) 74%, light-dark(#000000, #ffffff));
+    --wc-accent-fg: light-dark(#ffffff, color-mix(in oklab, var(--wc-accent-dark) 14%, #0b0d12));
+    --wc-accent-soft: color-mix(in oklab, var(--wc-accent) 14%, transparent);
+  }
+}
+
+/* Colours, resolved where they are used, so a subtree's scheme and accent apply to it. */
+@theme inline {
+  --color-window: var(--wc-window);
+  --color-base: var(--wc-base);
+  --color-layer: var(--wc-layer);
+  --color-raised: var(--wc-raised);
+  --color-overlay: var(--wc-overlay);
+  --color-control: var(--wc-control);
+  --color-control-hover: var(--wc-control-hover);
+  --color-field: var(--wc-field);
+  --color-wash: var(--wc-wash);
+  --color-wash-strong: var(--wc-wash-strong);
+  --color-scrim: var(--wc-scrim);
+  --color-track: var(--wc-track);
+  --color-edge: var(--wc-edge);
+  --color-thumb: var(--wc-thumb);
+
+  --color-ink: var(--wc-ink);
+  --color-ink-muted: var(--wc-ink-muted);
+  --color-ink-subtle: var(--wc-ink-subtle);
+  --color-line: var(--wc-line);
+  --color-line-strong: var(--wc-line-strong);
+
+  --color-accent: var(--wc-accent);
+  --color-accent-hover: var(--wc-accent-hover);
+  --color-accent-pressed: var(--wc-accent-pressed);
+  --color-accent-fg: var(--wc-accent-fg);
+  --color-accent-soft: var(--wc-accent-soft);
+  --color-ring: var(--wc-accent);
+
+  --color-success: var(--wc-success);
+  --color-warning: var(--wc-warning);
+  --color-danger: var(--wc-danger);
+  --color-info: var(--wc-info);
+  --color-on-fill: var(--wc-on-fill);
+
+  /* A download's progress: moving data is the accent; a pause, a failure and a finish each have their own. */
+  --color-progress: var(--wc-accent);
+  --color-progress-paused: var(--wc-warning);
+  --color-progress-error: var(--wc-danger);
+  --color-progress-done: var(--wc-progress-done);
+  --color-progress-queued: var(--wc-progress-queued);
+
+  --color-caption-close: var(--wc-caption-close);
+  --color-white: #ffffff;
+  --color-transparent: transparent;
+  --color-current: currentcolor;
+
+  /* Forced colours (Windows High Contrast): controls that draw their state themselves switch to these. */
+  --color-sys-canvas: Canvas;
+  --color-sys-text: CanvasText;
+  --color-sys-highlight: Highlight;
+  --color-sys-highlight-text: HighlightText;
+  --color-sys-button: ButtonFace;
+  --color-sys-button-text: ButtonText;
+  --color-sys-gray: GrayText;
+}
+
+@theme {
+  /* Type: the system's own faces (Segoe UI Variable on Windows); elsewhere the system's sans. */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display:
+    'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  --default-font-family: var(--font-sans);
+  --default-mono-font-family: var(--font-mono);
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* From the smallest label to the largest heading. */
+  --text-badge: 0.625rem;
+  --text-badge--line-height: 1rem;
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1rem;
+  --text-small: 0.75rem;
+  --text-small--line-height: 1.125rem;
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-lead: 0.9375rem;
+  --text-lead--line-height: 1.375rem;
+  --text-subtitle: 1rem;
+  --text-subtitle--line-height: 1.5rem;
+  --text-heading: 1.125rem;
+  --text-heading--line-height: 1.5rem;
+  --text-headline: 1.25rem;
+  --text-headline--line-height: 1.75rem;
+  --text-title: 1.625rem;
+  --text-title--line-height: 2rem;
+  --text-hero: 2.125rem;
+  --text-hero--line-height: 2.5rem;
+
+  --tracking-display: -0.02em;
+  --tracking-caps: 0.06em;
+  --leading-none: 1;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+
+  /* Spacing: a 4px grid (`p-3` is 12px), and named lengths for what has a fixed size. */
+  --spacing: 0.25rem;
+  --spacing-titlebar: 2.75rem;
+  /* A Windows 11 caption button is 46px wide. */
+  --spacing-caption: 2.875rem;
+  --spacing-control-xs: 1.5rem;
+  --spacing-control-sm: 1.75rem;
+  --spacing-control: 2rem;
+  --spacing-control-lg: 2.5rem;
+  --spacing-rail: 3.25rem;
+  /* One place in the navigation: dense enough that three sections fit a 900px window, as the toolbox's sidebar is. */
+  --spacing-nav-item: 2.25rem;
+  /* A scrollbar's room, and the clear edge around its thumb inside it. */
+  --spacing-scrollbar: 0.625rem;
+  --spacing-scrollbar-gap: 0.125rem;
+  /* One download in the main list: the name, its status line and its progress. The list measures a drawn row to place the rows it renders, so this is the only place the height is set. */
+  --spacing-row: 3.5rem;
+  --spacing-icon-xs: 0.75rem;
+  --spacing-icon-sm: 0.875rem;
+  --spacing-icon-md: 1rem;
+  --spacing-icon-lg: 1.125rem;
+  --spacing-icon-xl: 1.25rem;
+  --spacing-icon-2xl: 1.5rem;
+  --spacing-icon-3xl: 2rem;
+  --spacing-icon-hero: 3rem;
+  /* Windows 11's caption glyphs, drawn on a 10px grid. */
+  --spacing-glyph: 0.625rem;
+  /* The tallest an extension's popup can be: Chromium and Firefox both stop it at 600px and scroll the page. */
+  --spacing-popup: 37.5rem;
+
+  --width-sidebar: 15rem;
+  --width-drawer: 17rem;
+  --width-slide-over: 26rem;
+  --width-toast: 22rem;
+  /* The content width from which a slide-over sits beside the content as a column of its own: its width, and the list beside it keeping room for a name and a status (`--container-list-narrow`). Narrower, it opens over the content with a veil. */
+  --width-details-beside: calc(var(--width-slide-over) + var(--container-list-narrow));
+  /* The extension's popup, narrow enough to sit under the toolbar button. */
+  --width-popup: 22.5rem;
+
+  --container-menu: 11rem;
+  --container-dialog-sm: 25rem;
+  --container-dialog-md: 32.5rem;
+  --container-dialog-lg: 42.5rem;
+  --container-prose: 36rem;
+  /* A full page of content, such as settings, before it stops growing. */
+  --container-page: 64rem;
+  /* The download list's widths from which each number column shows, the last to go first: Time left, then Speed, then Size, whose figures then move under the name. Each leaves the name at least 16rem, as does the narrowest list beside the details. */
+  --container-list-narrow: 36rem;
+  --container-list-size: 40rem;
+  --container-list-speed: 46rem;
+  --container-list-eta: 52rem;
+
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+
+  /* Controls are softly rounded, surfaces more, so layers read as layers. */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Depth: a lit top edge on glass, and soft shadows that grow with the layer. */
+  --shadow-control: 0 1px 0 light-dark(rgb(21 26 35 / 0.07), rgb(0 0 0 / 0.3));
+  --shadow-raised:
+    0 1px 2px light-dark(rgb(21 26 35 / 0.06), rgb(0 0 0 / 0.3)),
+    0 2px 8px light-dark(rgb(21 26 35 / 0.05), rgb(0 0 0 / 0.2));
+  --shadow-flyout:
+    inset 0 1px 0 var(--wc-edge), 0 8px 24px light-dark(rgb(21 26 35 / 0.14), rgb(0 0 0 / 0.42)),
+    0 2px 6px light-dark(rgb(21 26 35 / 0.06), rgb(0 0 0 / 0.25));
+  --shadow-dialog:
+    inset 0 1px 0 var(--wc-edge), 0 24px 64px light-dark(rgb(21 26 35 / 0.22), rgb(0 0 0 / 0.55)),
+    0 4px 16px light-dark(rgb(21 26 35 / 0.08), rgb(0 0 0 / 0.3));
+  --shadow-thumb: 0 1px 3px light-dark(rgb(21 26 35 / 0.3), rgb(0 0 0 / 0.5));
+  /* A focused field's bottom line, doubled inside the border so the box does not move. */
+  --shadow-focus-line: inset 0 -1px 0 var(--wc-accent);
+  --shadow-invalid-line: inset 0 -1px 0 var(--wc-danger);
+
+  /* Opacity steps, for `opacity-*` and for a colour's alpha (`bg-danger/soft`). Named, so the same step means the same thing everywhere. */
+  --opacity-disabled: 45%;
+  --opacity-busy: 75%;
+  /* Secondary marks: a trailing chevron, a window that is not in front. */
+  --opacity-quiet: 60%;
+  /* A faint panel in a tone, its soft fill, and its rim. */
+  --opacity-tint: 8%;
+  --opacity-soft: 14%;
+  --opacity-rim: 35%;
+  /* A solid fill under the pointer, and pressed. */
+  --opacity-hover: 88%;
+  --opacity-pressed: 78%;
+  /* The highlight that runs along a moving progress bar. */
+  --opacity-sheen: 35%;
+
+  /* Backdrop blur by layer: a light veil behind dialogs, frosted glass for everything that floats. */
+  --blur-scrim: 4px;
+  --blur-overlay: 28px;
+  --blur-panel: 40px;
+  --backdrop-saturate-glass: 1.6;
+
+  /* Stacking, lowest first. Dialogs and flyouts render in the browser's top layer and need no index. */
+  --z-index-raised: 10;
+  --z-index-sticky: 20;
+  --z-index-titlebar: 30;
+  --z-index-scrim: 40;
+  --z-index-drawer: 50;
+  --z-index-slide-over: 60;
+  --z-index-toast: 100;
+  --z-index-popover: 200;
+}
+
+/* Static: motion.ts and the sidebar read these at runtime, so they are emitted even when no utility uses them. Entrances decelerate (ease-out), exits accelerate (ease-in) and run a step faster. */
+@theme static {
+  --breakpoint-nav: 63rem;
+  /* The window height from which the main window's navigation shows every section open without scrolling (its statuses, three queues and every file type, at --spacing-nav-item); shorter, File types starts folded. */
+  --height-nav-open: 61rem;
+
+  --transition-duration-fast: 100ms;
+  --transition-duration-normal: 150ms;
+  --transition-duration-slow: 200ms;
+  --transition-duration-slower: 300ms;
+  --transition-duration-highlight: 1500ms;
+  --transition-duration-activity: 1400ms;
+  --transition-duration-flow: 2400ms;
+  --transition-duration-spin: 900ms;
+
+  --transition-delay-reveal: 150ms;
+  --transition-delay-settle: 250ms;
+  --transition-delay-tooltip: 400ms;
+  /* How long a tooltip stays after the pointer leaves its anchor, so the pointer can move onto it. */
+  --transition-delay-linger: 150ms;
+
+  --ease-out: cubic-bezier(0, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --default-transition-duration: var(--transition-duration-fast);
+  --default-transition-timing-function: var(--ease-out);
+
+  --motion-distance-sm: 4px;
+  --motion-distance-md: 8px;
+  --motion-distance-lg: 16px;
+  --motion-distance-panel: 32px;
+  --motion-scale-delta: 0.04;
+
+  --animate-fade-in: fade-in var(--transition-duration-slow) var(--ease-out);
+  --animate-fade-out: fade-out var(--transition-duration-normal) var(--ease-in) forwards;
+  /* Anti-flicker: stays invisible unless what it stands for outlasts the reveal delay. */
+  --animate-reveal: fade-in var(--transition-duration-slow) var(--ease-out)
+    var(--transition-delay-reveal) backwards;
+  --animate-rise-in: rise-in var(--transition-duration-slow) var(--ease-out);
+  --animate-pop-in: pop-in var(--transition-duration-normal) var(--ease-out);
+  --animate-highlight: highlight var(--transition-duration-highlight) var(--ease-in-out);
+  --animate-activity: activity var(--transition-duration-activity) var(--ease-in-out) infinite;
+  --animate-flow: flow var(--transition-duration-flow) linear infinite;
+  --animate-spin: spin var(--transition-duration-spin) linear infinite;
+  --animate-pulse: pulse var(--transition-duration-flow) var(--ease-in-out) infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      translate: 0 var(--motion-distance-md);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      scale: calc(1 - var(--motion-scale-delta));
+    }
+  }
+
+  @keyframes highlight {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+    30%,
+    70% {
+      box-shadow: 0 0 0 3px var(--wc-accent-soft);
+    }
+  }
+
+  /* The indeterminate bar: a segment a third of the track wide crossing it. */
+  @keyframes activity {
+    from {
+      translate: -100% 0;
+    }
+    to {
+      translate: 300% 0;
+    }
+  }
+
+  /* The sheen that runs along a bar while data moves. */
+  @keyframes flow {
+    from {
+      translate: -100% 0;
+    }
+    to {
+      translate: 100% 0;
+    }
+  }
+
+  @keyframes spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+
+  @keyframes pulse {
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
+
+/* An aria-disabled control (focusable, so it can say why) reacts no more than a natively disabled one. */
+@custom-variant enabled (&:enabled:not([aria-disabled='true']));
+/* Inside a window that shows the OS material behind it. */
+@custom-variant material (&:where([data-material] *));
+/* While the window is not the one in front, the title bar quiets, as Windows does. */
+@custom-variant inactive (&:where([data-inactive] *, [data-inactive]));
+
+@custom-variant slider-thumb {
+  &::-webkit-slider-thumb {
+    @slot;
+  }
+  &::-moz-range-thumb {
+    @slot;
+  }
+}
+
+/* The frameless window's drag regions; interactive children opt out. */
+@utility drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* A pressed control sinks by half a motion step. */
+@utility scale-pressed {
+  scale: calc(1 - var(--motion-scale-delta) / 2);
+}
+
+/* Frosted glass behind floating surfaces. */
+@utility glass {
+  backdrop-filter: blur(var(--blur-overlay)) saturate(var(--backdrop-saturate-glass));
+}
+
+@utility glass-panel {
+  backdrop-filter: blur(var(--blur-panel)) saturate(var(--backdrop-saturate-glass));
+}
+
+/* A slider's track: the accent up to the value (`--slider-fill`, a percentage), the track colour after it. */
+@utility slider-track {
+  background: linear-gradient(
+    to right,
+    var(--wc-accent) var(--slider-fill, 0%),
+    var(--wc-track) var(--slider-fill, 0%)
+  );
+}

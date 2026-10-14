@@ -8,6 +8,8 @@ catalog:
   "@eslint/js": 10.0.1
   "@iconify-json/lucide": 1.2.142
   "@sveltejs/vite-plugin-svelte": 7.3.1
+  "@tailwindcss/node": 4.3.3
+  "@tailwindcss/oxide": 4.3.3
   "@tailwindcss/vite": 4.3.3
   "@testing-library/svelte": 5.4.2
   "@testing-library/user-event": 14.6.7
@@ -18,6 +20,7 @@ catalog:
   eslint-plugin-svelte: 3.23.1
   globals: 17.13.0
   jsdom: 30.1.2
+  lightningcss: 1.33.0
   prettier: 3.9.10
   prettier-plugin-svelte: 4.1.1
   smol-toml: 1.9.0

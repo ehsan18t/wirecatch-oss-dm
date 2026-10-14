@@ -1,0 +1,131 @@
+/*
+ * The reset and the element styles of a page built on the design system. Import it after tokens.css, from the page's own stylesheet:
+ *
+ *   @import '@wirecatch/ui/tokens.css';
+ *   @import '@wirecatch/ui/base.css';
+ *   @source '../pages';
+ */
+@import 'tailwindcss/preflight.css' layer(base);
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  /* The text size goes on the body, never on html: there it would change what a rem is, and every length in tokens.css is written for a 16px rem. */
+  body {
+    @apply text-body;
+  }
+
+  html {
+    @apply bg-window font-sans text-ink antialiased;
+    interpolate-size: allow-keywords;
+  }
+
+  /* The focus ring is an outline, not a shadow: forced colours keep outlines and drop shadows. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+
+  ::selection {
+    @apply bg-accent/rim;
+  }
+
+  * {
+    scrollbar-width: thin;
+    /* The raw token, not `--color-ink`: that one is declared on `:root` only, so a subtree with its own scheme would get the page's ink. */
+    scrollbar-color: --alpha(var(--wc-ink) / 28%) transparent;
+  }
+
+  /*
+   * Chromium on Windows draws arrow buttons even on a thin scrollbar. Where the engine lets the scrollbar be styled this way (Chromium, WebKitGTK), it is a thin rounded thumb with no arrows. The standard properties switch these rules off where both are supported, so here they go back to auto; other engines (Firefox) keep the thin scrollbar above.
+   */
+  @supports selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+
+    ::-webkit-scrollbar {
+      width: var(--spacing-scrollbar);
+      height: var(--spacing-scrollbar);
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-button {
+      display: none;
+    }
+
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      border: var(--spacing-scrollbar-gap) solid transparent;
+      border-radius: var(--radius-md);
+      background: --alpha(var(--wc-ink) / 28%) padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: --alpha(var(--wc-ink) / 45%) padding-box;
+    }
+  }
+
+  /* A search field's own clear button: the design system's Input draws one of its own, which keeps the focus in the field. */
+  input[type='search']::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  /* Quiet controls fade their colour and depth; transforms stay with the components that move. */
+  button,
+  a,
+  [role='button'],
+  [role='switch'],
+  [role='tab'],
+  [role='radio'],
+  [role='option'],
+  [role='menuitem'] {
+    transition-property:
+      background-color, border-color, color, fill, stroke, box-shadow, opacity, scale;
+    transition-duration: var(--transition-duration-fast);
+    transition-timing-function: var(--ease-out);
+  }
+
+  /* Set for one frame while the scheme or accent changes, so every colour switches at once instead of fading one by one. */
+  :root[data-appearance-changing] *,
+  :root[data-appearance-changing] *::before,
+  :root[data-appearance-changing] *::after {
+    transition: none !important;
+  }
+
+  details::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    transition:
+      block-size var(--transition-duration-normal) var(--ease-out),
+      content-visibility var(--transition-duration-normal) allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* One iteration too: a near-zero infinite loop (spinners, sheens) flickers. motion.ts does the same for Svelte transitions, which this cannot reach. */
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* A rule of its own: an engine that does not know the pseudo-element drops the whole list it is in. */
+    *::details-content {
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

@@ -3,33 +3,45 @@
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "The design system the desktop app and the extension share: tokens, themes, motion and primitives.",
+  "description": "The design system the desktop app and the extension share: tokens, themes, accents, motion, primitives and the window shell.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./base.css": "./src/base.css",
+    "./testing/jsdom": "./src/testing/jsdom.ts"
   },
   "scripts": {
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run"
   },
   "dependencies": {
+    "@wirecatch/protocol": "workspace:*",
     "tailwind-merge": "catalog:",
     "tailwind-variants": "catalog:"
   },
   "peerDependencies": {
+    "@iconify-json/lucide": "catalog:",
     "svelte": "catalog:",
-    "tailwindcss": "catalog:"
+    "tailwindcss": "catalog:",
+    "unplugin-icons": "catalog:"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "catalog:",
     "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/node": "catalog:",
+    "@tailwindcss/oxide": "catalog:",
     "@testing-library/svelte": "catalog:",
+    "@testing-library/user-event": "catalog:",
+    "@types/node": "catalog:",
     "@wirecatch/eslint-config": "workspace:*",
     "jsdom": "catalog:",
+    "lightningcss": "catalog:",
     "svelte": "catalog:",
     "svelte-check": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
+    "unplugin-icons": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
   }
