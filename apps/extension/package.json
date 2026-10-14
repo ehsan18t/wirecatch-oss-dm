@@ -10,9 +10,9 @@
     "dev:firefox": "wxt -b firefox --mv3",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:dev": "wxt build --mode development",
-    "build:store": "node ../../scripts/gate.mjs publish && wxt zip --mode store",
+    "build:store": "node ../../scripts/gate.mjs publish-extension && wxt zip --mode store",
     "build:firefox": "wxt build -b firefox --mv3",
-    "sign:firefox": "node ../../scripts/gate.mjs publish && node scripts/sign-firefox.mjs",
+    "sign:firefox": "node ../../scripts/gate.mjs publish-extension && node scripts/sign-firefox.mjs",
     "zip": "wxt zip && wxt zip -b firefox --mv3",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "test": "vitest run",
@@ -21,7 +21,8 @@
   "dependencies": {
     "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
-    "@wirecatch/units": "workspace:*"
+    "@wirecatch/units": "workspace:*",
+    "tldts": "7.4.18"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "catalog:",

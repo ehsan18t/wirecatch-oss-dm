@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // The quality gate: every check a change must pass, in one place. CI, CLAUDE.md, CONTRIBUTING.md and scripts/linux-test.sh run this script instead of repeating its commands, so they cannot drift apart. This file is the runner; the checks live in scripts/gate/, one module per subject.
 //
-//   node scripts/gate.mjs                  every check CI runs (see DEFAULT)
-//   node scripts/gate.mjs rust js          named checks or groups (see GROUPS)
-//   node scripts/gate.mjs publish          what a release needs on top of DEFAULT
-//   node scripts/gate.mjs commit-msg FILE  check one commit message (the commit-msg hook)
-//   node scripts/gate.mjs --install-tools  install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
-//   node scripts/gate.mjs --tool-specs     print those tools as name@version, for CI's prebuilt installer
-//   node scripts/gate.mjs --list           list checks and groups
+//   node scripts/gate.mjs                    every check CI runs (see DEFAULT)
+//   node scripts/gate.mjs rust js            named checks or groups (see GROUPS)
+//   node scripts/gate.mjs publish            what a release needs on top of DEFAULT
+//   node scripts/gate.mjs publish-extension  `publish` plus what a release of the browser extension needs
+//   node scripts/gate.mjs commit-msg FILE    check one commit message (the commit-msg hook)
+//   node scripts/gate.mjs --install-tools    install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
+//   node scripts/gate.mjs --tool-specs       print those tools as name@version, for CI's prebuilt installer
+//   node scripts/gate.mjs --list             list checks and groups
 //
 // Options, before or after the names:
 //   --no-desktop    leave out the desktop crate, for machines without its system libraries (it says so when it does)
@@ -21,6 +22,7 @@ import { JS_CHECKS } from './gate/javascript.mjs';
 import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
+import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
 import { TAURI_CHECKS } from './gate/tauri.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
@@ -40,6 +42,7 @@ const CHECKS = {
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
   ...TAURI_CHECKS,
+  ...SUFFIX_LIST_CHECKS,
   product: productCheck('product'),
   'product-placeholders': productCheck('product-placeholders'),
 };
@@ -64,6 +67,8 @@ const GROUPS = {
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every release script runs this group before it builds anything.
   publish: ['product', 'product-placeholders'],
+  // What the extension's release scripts run instead of `publish`: the extension alone ships the Public Suffix List, so only its releases wait on the list's age, which needs the registry and changes as the calendar moves (D35).
+  'publish-extension': ['publish', 'suffix-list'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */

@@ -1,3 +1,5 @@
+import { getDomain } from 'tldts';
+
 import { parseUrl } from './url';
 
 /** The fields of a `cookies.Cookie` needed to build a `Cookie` header. */
@@ -45,85 +47,22 @@ export interface CookieQuery {
 }
 
 /**
- * Second-level labels under a two-letter country code that act as public
- * suffixes (`example.co.uk`, `example.com.au`). An approximation of the Public
- * Suffix List, which the extension APIs do not expose.
+ * Both sections of the Public Suffix List: shared hosts such as `myshopify.com` give
+ * every customer a site of their own. The list is the one bundled in `tldts`, which
+ * must stay current (D35).
  */
-const COUNTRY_SECOND_LEVELS = new Set([
-  'ac',
-  'co',
-  'com',
-  'edu',
-  'gob',
-  'go',
-  'gov',
-  'gv',
-  'ltd',
-  'me',
-  'mil',
-  'ne',
-  'net',
-  'nic',
-  'nom',
-  'or',
-  'org',
-  'plc',
-  'sch',
-]);
-
-/**
- * Shared hosting suffixes where every customer gets a site of their own
- * (`alice.github.io` and `bob.github.io` are different sites), from the private
- * part of the Public Suffix List.
- */
-const SHARED_SUFFIXES = new Set([
-  'appspot.com',
-  'azurewebsites.net',
-  'blogspot.com',
-  'cloudfront.net',
-  'firebaseapp.com',
-  'fly.dev',
-  'github.io',
-  'gitlab.io',
-  'glitch.me',
-  'herokuapp.com',
-  'netlify.app',
-  'ngrok.io',
-  'onrender.com',
-  'pages.dev',
-  's3.amazonaws.com',
-  'vercel.app',
-  'web.app',
-  'workers.dev',
-]);
+const PSL_OPTIONS = { allowPrivateDomains: true, extractHostname: false } as const;
 
 /**
  * The registrable domain of a host (`www.example.co.uk` gives `example.co.uk`),
- * approximated without the full Public Suffix List. IP addresses and single
- * labels are their own site.
+ * from the Public Suffix List, as the browser decides what is same-site. IP
+ * addresses, single labels, hosts with an empty label and hosts that are a
+ * public suffix themselves are their own site.
  */
 export function registrableDomain(host: string): string {
   const h = host.toLowerCase().replace(/\.+$/, '');
-  if (h.startsWith('[') || /^\d+(\.\d+){3}$/.test(h)) return h;
-  const labels = h.split('.');
-  if (labels.length <= 2) return h;
-  return labels.slice(-(suffixLabels(labels) + 1)).join('.');
-}
-
-/** Labels in the longest of `SHARED_SUFFIXES`. */
-const MAX_SHARED_SUFFIX_LABELS = Math.max(...[...SHARED_SUFFIXES].map((s) => s.split('.').length));
-
-/** Country code top-level domains have two letters (`uk`, `au`). */
-const COUNTRY_CODE_LENGTH = 2;
-
-/** How many of the host's last labels are its public suffix (`co.uk` is two, `com` is one). */
-function suffixLabels(labels: readonly string[]): number {
-  for (let n = Math.min(MAX_SHARED_SUFFIX_LABELS, labels.length); n > 1; n -= 1) {
-    if (SHARED_SUFFIXES.has(labels.slice(-n).join('.'))) return n;
-  }
-  const top = labels[labels.length - 1] ?? '';
-  const second = labels[labels.length - 2] ?? '';
-  return top.length === COUNTRY_CODE_LENGTH && COUNTRY_SECOND_LEVELS.has(second) ? 2 : 1;
+  if (h.split('.').includes('')) return h;
+  return getDomain(h, PSL_OPTIONS) ?? h;
 }
 
 /** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */

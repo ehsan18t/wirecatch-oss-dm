@@ -342,6 +342,9 @@ importers:
       '@wirecatch/units':
         specifier: workspace:*
         version: link:../../packages/units
+      tldts:
+        specifier: 7.4.18
+        version: 7.4.18
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: 'catalog:'

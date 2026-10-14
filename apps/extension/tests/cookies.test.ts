@@ -175,3 +175,67 @@ describe('cookieQueries', () => {
     ).toEqual([{ url }, { url, firstPartyDomain: 'example.com' }]);
   });
 });
+
+describe('sites on the Public Suffix List', () => {
+  it.each([
+    // Private section: every customer has a site of their own.
+    ['victim.myshopify.com', 'victim.myshopify.com'],
+    ['cdn.victim.myshopify.com', 'victim.myshopify.com'],
+    ['bucket.r2.dev', 'bucket.r2.dev'],
+    ['bucket.s3.us-east-2.amazonaws.com', 'bucket.s3.us-east-2.amazonaws.com'],
+    ['shop.example.uk.com', 'example.uk.com'],
+    // ICANN section rules the old approximation got wrong.
+    ['www.school.k12.ca.us', 'school.k12.ca.us'],
+    ['www.example.ac.jp', 'example.ac.jp'],
+    ['www.example.xn--p1ai', 'example.xn--p1ai'],
+    // A host that is a public suffix itself is its own site.
+    ['myshopify.com', 'myshopify.com'],
+    ['co.uk', 'co.uk'],
+    // No DNS name has an empty label, so no rule applies: the host is its own site.
+    ['attacker..com', 'attacker..com'],
+    ['a..example.com', 'a..example.com'],
+  ])('the registrable domain of %s is %s', (host, domain) => {
+    expect(registrableDomain(host)).toBe(domain);
+  });
+
+  it('keeps unrelated customers of one shared host on different sites', () => {
+    const url = 'https://victim.myshopify.com/export';
+    for (const initiator of [
+      'https://attacker.myshopify.com/',
+      'https://myshopify.com/',
+      'https://victim.myshopify.com.evil.test/',
+      'https://evilvictim.myshopify.com/',
+    ]) {
+      expect(isCrossSite(url, { initiator, navigation: true }), initiator).toBe(true);
+    }
+    expect(
+      isCrossSite(url, { initiator: 'https://admin.victim.myshopify.com/', navigation: true }),
+    ).toBe(false);
+  });
+
+  it('withholds Strict cookies from a link one shared-host customer gives to another', () => {
+    const context: CookieContext = {
+      initiator: 'https://attacker.myshopify.com/links',
+      navigation: true,
+    };
+    expect(names(cookiesToSend(JAR, 'https://victim.myshopify.com/export', context))).toEqual([
+      'none',
+      'lax',
+      'unspecified',
+    ]);
+  });
+
+  it('reads partitioned cookies for media one shared-host customer loads from another', () => {
+    const url = 'https://victim.myshopify.com/v.mp4';
+    const context: CookieContext = {
+      initiator: 'https://attacker.myshopify.com/watch',
+      topLevel: 'https://attacker.myshopify.com/watch',
+      navigation: false,
+    };
+    expect(names(cookiesToSend(JAR, url, context))).toEqual(['none']);
+    expect(cookieQueries(url, null, context)[0]).toEqual({
+      url,
+      partitionKey: { topLevelSite: 'https://attacker.myshopify.com' },
+    });
+  });
+});
