@@ -1,4 +1,4 @@
-// Fails the build if any sample data from the mock backend ended up in the production bundle.
+// Fails the build if any sample data from the mock backend, or the dev-only component gallery, ended up in the production bundle.
 // Run after `vite build` (the `build` script does this). Mock builds (`--mode mock`) skip it.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,6 +8,8 @@ const MARKERS = [
   'Pretend the browser sent a download',
   'cdn.example-conf.com',
   'Sample data only',
+  // The component gallery's page (gallery/index.html), served by the dev server only. Its modules are kept out by the build itself (scripts/dev-only-modules.mjs), which reads the module graph.
+  'Wirecatch component gallery',
 ];
 
 function* files(dir) {
@@ -27,7 +29,7 @@ for (const file of files('build')) {
 }
 
 if (found.length > 0) {
-  console.error('The production build contains mock backend code:\n' + found.join('\n'));
+  console.error('The production build contains mock backend or gallery code:\n' + found.join('\n'));
   process.exit(1);
 }
-console.log(`Checked ${scanned} files in build: no mock backend code.`);
+console.log(`Checked ${scanned} files in build: no mock backend or gallery code.`);

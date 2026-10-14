@@ -6,6 +6,11 @@ const NO_TAURI_IMPORT = {
   group: ['@tauri-apps/*'],
   message: 'Call Tauri through `$lib/backend` only.',
 };
+// The component gallery is dev-only (vite.config.ts fails any build that bundles it); only its own files import it, by relative paths that never name the folder.
+const NO_GALLERY_IMPORT = {
+  group: ['**/gallery', '**/gallery/**'],
+  message: 'The component gallery is dev-only: import it from nowhere outside src/gallery.',
+};
 const NO_TAURI_DYNAMIC_IMPORT = {
   selector: 'ImportExpression[source.value=/^@tauri-apps\\//]',
   message: 'Call Tauri through `$lib/backend` only.',
@@ -14,7 +19,7 @@ const NO_TAURI_DYNAMIC_IMPORT = {
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: { ...globals.browser },
-  ignores: ['build/', 'src-tauri/', 'test-results/', 'playwright-report/'],
+  ignores: ['build/', 'build-gallery/', 'src-tauri/', 'test-results/', 'playwright-report/'],
   svelteConfig,
   layers: [
     {
@@ -26,6 +31,7 @@ export default wirecatch({
           {
             patterns: [
               NO_TAURI_IMPORT,
+              NO_GALLERY_IMPORT,
               {
                 group: ['$lib/backend/*', '**/backend/*'],
                 message: 'Import the backend from `$lib/backend`, not from one implementation.',
@@ -46,6 +52,7 @@ export default wirecatch({
           {
             patterns: [
               NO_TAURI_IMPORT,
+              NO_GALLERY_IMPORT,
               {
                 group: [
                   '$lib/backend/*',
@@ -118,6 +125,7 @@ export default wirecatch({
           {
             patterns: [
               NO_TAURI_IMPORT,
+              NO_GALLERY_IMPORT,
               {
                 group: ['$lib/backend', '**/backend'],
                 allowTypeImports: true,
@@ -142,6 +150,7 @@ export default wirecatch({
           {
             patterns: [
               NO_TAURI_IMPORT,
+              NO_GALLERY_IMPORT,
               {
                 group: ['$lib/backend', '$lib/backend/*', '**/backend', '**/backend/*'],
                 message: 'Components get what they need from state, not from the backend.',

@@ -9,7 +9,7 @@ const PORT = 4317;
 
 export default defineConfig({
   testDir: 'e2e',
-  testIgnore: ['performance.spec.ts'],
+  testIgnore: ['performance.spec.ts', 'gallery.spec.ts'],
   timeout: 90_000,
   fullyParallel: false,
   workers: 1,

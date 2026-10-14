@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Icons from 'unplugin-icons/vite';
 import { defineConfig, type Plugin } from 'vite';
+import { devOnlyModules } from './scripts/dev-only-modules.mjs';
 
 /** Set by `tauri dev` to serve a device on the network; unset or empty means this machine only. */
 const host = process.env.TAURI_DEV_HOST ?? '';
@@ -32,6 +33,14 @@ const PAGES = readdirSync(import.meta.dirname)
   .filter((file) => file.endsWith('.html'))
   .map((file) => join(import.meta.dirname, file));
 
+/**
+ * The component gallery: served by the dev server at `/gallery/`, and built on its own by `--mode gallery` (into GALLERY_OUT, never `build/`), so its browser checks run against production CSS. Every other build fails if any of its modules is bundled.
+ */
+const GALLERY_MODE = 'gallery';
+const GALLERY_PAGE = join(import.meta.dirname, 'gallery', 'index.html');
+const GALLERY_SOURCES = join(import.meta.dirname, 'src', 'gallery');
+const GALLERY_OUT = 'build-gallery';
+
 function moduleCacheKey(): Plugin {
   const hash = createHash('sha256');
   for (const file of COMPILE_INPUTS) {
@@ -48,20 +57,21 @@ function moduleCacheKey(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     svelte(),
     tailwindcss(),
     Icons({ compiler: 'svelte', autoInstall: false }),
     svelteTesting(),
     moduleCacheKey(),
+    mode === GALLERY_MODE ? null : devOnlyModules([GALLERY_SOURCES]),
   ],
   // `$lib` and any other path alias are declared once, in tsconfig.json.
   resolve: { tsconfigPaths: true },
-  build: {
-    outDir: 'build',
-    rolldownOptions: { input: PAGES },
-  },
+  build:
+    mode === GALLERY_MODE
+      ? { outDir: GALLERY_OUT, rolldownOptions: { input: [GALLERY_PAGE] } }
+      : { outDir: 'build', rolldownOptions: { input: PAGES } },
   // Tauri expects a fixed port and fails if it is taken.
   clearScreen: false,
   server: {
@@ -100,4 +110,4 @@ export default defineConfig({
     // src/lib/layout.ts reads its lengths from the text of app.css, so tests need the real file.
     css: { include: [/\/src\/app\.css/] },
   },
-});
+}));
