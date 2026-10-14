@@ -220,8 +220,9 @@ describe('shell signals', () => {
 
 describe('download windows', () => {
   it('open a page the interface has', () => {
-    // Vitest runs from apps/desktop; the shell opens DOWNLOAD_WINDOW_PAGE relative to the app.
-    const page = resolve(process.cwd(), 'src/routes', DOWNLOAD_WINDOW_PAGE, '+page.svelte');
+    // Vitest runs from apps/desktop, where Vite builds each page from its HTML file; the shell
+    // opens DOWNLOAD_WINDOW_PAGE relative to the app.
+    const page = resolve(process.cwd(), DOWNLOAD_WINDOW_PAGE);
     expect(existsSync(page), page).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import '@wirecatch/ui/tokens.css';
 import { mount } from 'svelte';
 import { browser } from 'wxt/browser';
 import App from '@/components/App.svelte';

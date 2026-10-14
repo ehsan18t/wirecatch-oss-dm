@@ -1,0 +1,10 @@
+/* Linked from each page's head, so the right background is painted before any script runs and a window never flashes white. */
+html {
+  background: #eceef2;
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    background: #12151b;
+  }
+}

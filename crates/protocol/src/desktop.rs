@@ -29,7 +29,7 @@ crate::exported::exported_consts! {
     /// them with `take_launch_links`.
     pub const LINKS_EVENT: &str = "wirecatch://links";
     /// The page a download window shows, relative to the app's address.
-    pub const DOWNLOAD_WINDOW_PAGE: &str = "window/download";
+    pub const DOWNLOAD_WINDOW_PAGE: &str = "download.html";
     /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.
     pub const QUESTION_PARAMETER: &str = "question";
     /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the download a window shows.

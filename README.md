@@ -29,7 +29,7 @@ License: GPL-3.0-only. Decisions behind the design are in [docs/DECISIONS.md](do
 | `crates/bridge` | `wirecatch-bridge`: the native messaging host browsers start. |
 | `crates/cli` | `wirecatch`: a command-line downloader built on the engine. |
 | `crates/e2e` | End-to-end tests over the real bridge, socket and manager. |
-| `apps/desktop` | The desktop app (Tauri 2, SvelteKit, Svelte 5). |
+| `apps/desktop` | The desktop app (Tauri 2, Svelte 5, Vite). |
 | `apps/extension` | The browser extension (WXT, Svelte 5) for Chromium and Firefox. |
 | `packages/protocol` | Generated TypeScript types. |
 | `packages/eslint-config` | The one ESLint configuration every package uses. |

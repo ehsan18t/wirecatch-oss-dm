@@ -6,7 +6,9 @@ packages:
 catalog:
   "@eslint-community/eslint-plugin-eslint-comments": 4.8.1
   "@eslint/js": 10.0.1
+  "@iconify-json/lucide": 1.2.142
   "@sveltejs/vite-plugin-svelte": 7.3.1
+  "@tailwindcss/vite": 4.3.3
   "@testing-library/svelte": 5.4.2
   "@testing-library/user-event": 14.6.7
   "@types/node": 24.19.2
@@ -21,8 +23,12 @@ catalog:
   smol-toml: 1.9.0
   svelte: 5.57.2
   svelte-check: 4.7.6
+  tailwind-merge: 3.7.0
+  tailwind-variants: 3.3.1
+  tailwindcss: 4.3.3
   typescript: 6.0.3
   typescript-eslint: 8.71.1
+  unplugin-icons: 24.0.0
   vite: 8.3.4
   vitest: 5.0.3
 
@@ -30,8 +36,6 @@ catalog:
 overrides:
   # GHSA-pqg4-j6r4-53mv: command injection in quote(), reached through web-ext.
   "shell-quote@>=1.8.4 <1.11.0": ">=1.11.0"
-  # GHSA-pxg6-pf52-xh8x: out-of-bounds characters in cookie names, reached through SvelteKit.
-  "cookie@<0.7.0": ">=0.7.0 <0.8.0"
 
 auditConfig:
   ignoreGhsas:

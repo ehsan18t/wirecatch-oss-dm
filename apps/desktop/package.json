@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "Wirecatch desktop app: Tauri 2 shell with a SvelteKit and Svelte 5 interface.",
+  "description": "Wirecatch desktop app: Tauri 2 shell with a Svelte 5 interface.",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
@@ -14,7 +14,7 @@
     "build:tauri": "node scripts/prepare-bridge.mjs && tauri build --debug --config src-tauri/tauri.bundle.conf.json",
     "bundle": "node scripts/prepare-bridge.mjs --release && tauri build --config src-tauri/tauri.bundle.conf.json",
     "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:perf": "pnpm build:mock && playwright test -c playwright.perf.config.ts",
@@ -27,14 +27,15 @@
     "@tauri-apps/plugin-dialog": "2.8.2",
     "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
+    "@wirecatch/ui": "workspace:*",
     "@wirecatch/units": "workspace:*"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
+    "@iconify-json/lucide": "catalog:",
     "@playwright/test": "1.64.0",
-    "@sveltejs/adapter-static": "3.0.10",
-    "@sveltejs/kit": "2.70.3",
     "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/vite": "catalog:",
     "@tauri-apps/cli": "2.12.1",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/svelte": "catalog:",
@@ -45,7 +46,9 @@
     "jsdom": "catalog:",
     "svelte": "catalog:",
     "svelte-check": "catalog:",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:",
+    "unplugin-icons": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"
   }

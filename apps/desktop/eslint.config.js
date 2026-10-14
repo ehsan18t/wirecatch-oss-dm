@@ -14,7 +14,7 @@ const NO_TAURI_DYNAMIC_IMPORT = {
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: { ...globals.browser },
-  ignores: ['build/', '.svelte-kit/', 'src-tauri/', 'test-results/', 'playwright-report/'],
+  ignores: ['build/', 'src-tauri/', 'test-results/', 'playwright-report/'],
   svelteConfig,
   layers: [
     {
@@ -134,7 +134,7 @@ export default wirecatch({
       },
     },
     {
-      // Components show state and report what the person did; the state classes call the backend, and the routes wire the two together.
+      // Components show state and report what the person did; the state classes call the backend, and the pages wire the two together.
       files: ['src/lib/components/**'],
       rules: {
         'no-restricted-imports': [

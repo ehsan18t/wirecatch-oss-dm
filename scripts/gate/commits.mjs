@@ -30,6 +30,7 @@ const COMMIT_SCOPES = [
   'desktop',
   'extension',
   'units',
+  'ui',
   'eslint-config',
 ];
 const MAX_SUBJECT_LENGTH = 72;

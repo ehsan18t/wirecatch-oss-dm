@@ -1,8 +1,11 @@
 /// <reference types="vitest/config" />
-import { sveltekit } from '@sveltejs/kit/vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import Icons from 'unplugin-icons/vite';
 import { defineConfig, type Plugin } from 'vite';
 
 /** Set by `tauri dev` to serve a device on the network; unset or empty means this machine only. */
@@ -12,16 +15,22 @@ const host = process.env.TAURI_DEV_HOST ?? '';
  * What decides how a module compiles besides its own source: the installed versions (the
  * lockfile), the Svelte and TypeScript options and the plugin options in this file. Vitest's
  * module cache key leaves them out and the cache survives `pnpm install`, so they are hashed
- * into the key here. SvelteKit writes .svelte-kit/tsconfig.json on sync, so it may not be there
- * yet.
+ * into the key here.
  */
 const COMPILE_INPUTS = [
   '../../pnpm-lock.yaml',
   './svelte.config.js',
   './vite.config.ts',
   './tsconfig.json',
-  './.svelte-kit/tsconfig.json',
 ];
+
+/**
+ * Every HTML file next to this config is a page of its own: index.html for the main window, and
+ * DOWNLOAD_WINDOW_PAGE (in @wirecatch/protocol), which the shell opens for each download window.
+ */
+const PAGES = readdirSync(import.meta.dirname)
+  .filter((file) => file.endsWith('.html'))
+  .map((file) => join(import.meta.dirname, file));
 
 function moduleCacheKey(): Plugin {
   const hash = createHash('sha256');
@@ -40,7 +49,19 @@ function moduleCacheKey(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [sveltekit(), svelteTesting(), moduleCacheKey()],
+  plugins: [
+    svelte(),
+    tailwindcss(),
+    Icons({ compiler: 'svelte', autoInstall: false }),
+    svelteTesting(),
+    moduleCacheKey(),
+  ],
+  // `$lib` and any other path alias are declared once, in tsconfig.json.
+  resolve: { tsconfigPaths: true },
+  build: {
+    outDir: 'build',
+    rolldownOptions: { input: PAGES },
+  },
   // Tauri expects a fixed port and fails if it is taken.
   clearScreen: false,
   server: {

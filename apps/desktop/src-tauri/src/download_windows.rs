@@ -757,10 +757,10 @@ mod tests {
         assert_eq!(Shows::Download(DownloadId(7)).label(), "download-d7");
         assert!(is_download_window("download-q7"));
         assert!(!is_download_window("main"));
-        assert_eq!(Shows::Question(q(7)).route(), "window/download?question=7");
+        assert_eq!(Shows::Question(q(7)).route(), "download.html?question=7");
         assert_eq!(
             Shows::Download(DownloadId(3)).route(),
-            "window/download?download=3"
+            "download.html?download=3"
         );
     }
 

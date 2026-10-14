@@ -120,7 +120,7 @@ export const LINKS_EVENT = 'wirecatch://links';
 /**
  * The page a download window shows, relative to the app's address.
  */
-export const DOWNLOAD_WINDOW_PAGE = 'window/download';
+export const DOWNLOAD_WINDOW_PAGE = 'download.html';
 
 /**
  * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.

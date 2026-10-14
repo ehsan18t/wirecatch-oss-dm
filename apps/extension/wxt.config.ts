@@ -5,6 +5,8 @@ import {
   PRODUCT_NAME,
   WEBSITE_URL,
 } from '@wirecatch/product';
+import tailwindcss from '@tailwindcss/vite';
+import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'wxt';
 import { buildDefines } from './build-values';
 import { SITE_ORIGINS } from './src/lib/site-access';
@@ -22,6 +24,7 @@ export default defineConfig({
   // Everything is imported explicitly, so the code reads the same in tests and in editors.
   imports: false,
   vite: () => ({
+    plugins: [tailwindcss(), Icons({ compiler: 'svelte', autoInstall: false })],
     define: buildDefines(),
   }),
   manifest: ({ browser, mode }) => {

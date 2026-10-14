@@ -1,0 +1,10 @@
+/*
+ * The one home of the design tokens both interfaces use (D36). Each app imports this file once, before its own styles.
+ *
+ * Tailwind's preflight is left out on purpose until the design system lands, so today's screens keep their own base styles. Utilities are generated only from this package's sources, not from the apps, whose existing class names (`hidden`, `truncate` and others) would otherwise pick up Tailwind's rules.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source './';
+@source not './**/*.test.ts';

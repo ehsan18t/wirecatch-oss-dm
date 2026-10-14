@@ -21,11 +21,14 @@
   "dependencies": {
     "@wirecatch/product": "workspace:*",
     "@wirecatch/protocol": "workspace:*",
+    "@wirecatch/ui": "workspace:*",
     "@wirecatch/units": "workspace:*",
     "tldts": "7.4.18"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "catalog:",
     "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/vite": "catalog:",
     "@testing-library/svelte": "catalog:",
     "@testing-library/user-event": "catalog:",
     "@types/node": "catalog:",
@@ -35,7 +38,9 @@
     "jsdom": "catalog:",
     "svelte": "catalog:",
     "svelte-check": "catalog:",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:",
+    "unplugin-icons": "catalog:",
     "vitest": "catalog:",
     "web-ext": "10.7.0",
     "wxt": "0.21.4"
