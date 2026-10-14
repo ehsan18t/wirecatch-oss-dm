@@ -259,7 +259,7 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
             return;
         }
     };
-    if let Some(notice) = manager.startup_notice() {
+    for notice in manager.startup_notices() {
         tracing::warn!("{}: {}", notice.title, notice.message);
         background::show_notification(&app, notice.title.clone(), notice.message.clone());
     }

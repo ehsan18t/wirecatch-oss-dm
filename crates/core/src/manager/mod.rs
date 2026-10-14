@@ -245,7 +245,7 @@ struct Inner {
     /// Stops the background tasks.
     stopped: CancellationToken,
     /// What to tell the person about this start, if anything.
-    startup_notice: Option<StartupNotice>,
+    startup_notices: Vec<StartupNotice>,
     /// Plays the engine in unit tests.
     #[cfg(test)]
     fake_engine: Mutex<Option<fake::FakeEngine>>,
@@ -289,9 +289,11 @@ impl Manager {
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
-        let (store, restored, recoveries) = blocking(&runtime, move || {
+        let notices_dir = dir.clone();
+        let (store, restored, recoveries, not_private) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_failure)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
+            let not_private = snapshot.not_private.take();
             let around = restore::Surroundings {
                 now,
                 now_millis,
@@ -303,7 +305,7 @@ impl Manager {
             restored.state.suffix_check = suffix_list::SuffixCheck::load(&dir);
             // Cookies files left by a crash: nothing may keep them.
             crate::discard::dir(&temp_at);
-            Ok((store, restored, recoveries))
+            Ok((store, restored, recoveries, not_private))
         })
         .await?;
         store.save_settings(restored.state.settings.clone());
@@ -333,7 +335,10 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notice: user_error::list_recovered(&recoveries),
+            startup_notices: user_error::list_recovered(&recoveries)
+                .into_iter()
+                .chain(not_private.map(|reason| user_error::not_private(&notices_dir, &reason)))
+                .collect(),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
             #[cfg(test)]
@@ -345,10 +350,10 @@ impl Manager {
         Ok(manager)
     }
 
-    /// What the person should be told about this start, such as a damaged download list that was set aside. `None` on a normal start.
+    /// What the person should be told about this start, such as a damaged download list that was set aside, or a data folder other accounts may read. Empty on a normal start.
     #[must_use]
-    pub fn startup_notice(&self) -> Option<&StartupNotice> {
-        self.inner.startup_notice.as_ref()
+    pub fn startup_notices(&self) -> &[StartupNotice] {
+        &self.inner.startup_notices
     }
 
     /// Events for the desktop UI.

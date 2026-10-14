@@ -173,6 +173,18 @@ pub(crate) fn list_recovered(recoveries: &[Recovery]) -> Option<StartupNotice> {
     }
 }
 
+/// The notice for a data folder that could not be made private to the person's account, for
+/// `reason`: the download list in it holds the cookies websites gave for downloads (D17).
+pub(crate) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
+    StartupNotice {
+        title: "Other accounts may be able to read your download list".to_owned(),
+        message: format!(
+            "Wirecatch could not make its folder {} private to your account ({reason}). The download list in it keeps the sign-ins websites gave for your downloads, so other accounts on this computer may be able to read them. Make sure your account owns the folder and that it is on a drive that keeps permissions, then open Wirecatch again.",
+            folder.display()
+        ),
+    }
+}
+
 /// The notice for one repair.
 fn recovered(recovery: &Recovery) -> StartupNotice {
     match recovery {
@@ -722,6 +734,12 @@ mod tests {
         assert!(both.starts_with("3 downloads in"), "{both}");
         assert!(both.contains("2 queues held"), "{both}");
         assert!(both.ends_with("Check your queues' speed limits."), "{both}");
+        let open = not_private(Path::new("/data"), "access denied");
+        for text in [&open.title, &open.message] {
+            assert!(!text.contains('\u{2014}'), "em dash in {text}");
+        }
+        assert!(open.message.ends_with('.'), "{}", open.message);
+        assert!(open.message.contains("/data"), "{}", open.message);
         // Several repairs make one notice that says each.
         let together = list_recovered(&recoveries[1..3]).unwrap().message;
         assert!(together.contains("could not read 1 download"), "{together}");

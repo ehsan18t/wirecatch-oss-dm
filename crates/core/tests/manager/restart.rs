@@ -145,7 +145,7 @@ async fn the_data_folder_can_be_deleted_right_after_shutdown() -> TestResult {
 async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestResult {
     let mut h = Harness::new().await?;
     assert!(
-        h.manager.startup_notice().is_none(),
+        h.manager.startup_notices().is_empty(),
         "a normal start has nothing to say"
     );
     h.manager.shutdown().await;
@@ -158,7 +158,9 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
 
     h.restart().await?;
 
-    let notice = h.manager.startup_notice().expect("the person is told");
+    let [notice] = h.manager.startup_notices() else {
+        panic!("the person is told once: {:?}", h.manager.startup_notices());
+    };
     assert!(notice.message.contains("damaged"), "{}", notice.message);
     assert!(
         notice.message.contains("still in their folders"),

@@ -98,7 +98,7 @@ The Bridge talks to the app over a local socket: a named pipe on Windows, a Unix
 Svelte 5 (runes) and strict TypeScript everywhere. Desktop: SvelteKit with the static adapter inside Tauri 2. Extension: WXT with its Svelte module. pnpm workspaces, Vitest, svelte-check, ESLint and Prettier.
 
 ### D17. Persistence
-SQLite (`rusqlite`, bundled) in the per-user app data folder, with versioned migrations. Cookies and headers needed to resume a download are stored with it; the database file is readable only by the current user.
+SQLite (`rusqlite`, bundled) in the per-user app data folder, with versioned migrations. Cookies and headers needed to resume a download are stored with it; the database file is readable only by the current user. When the data folder cannot be made private (a drive that keeps no permissions, a folder another account owns), the app still starts and tells the person at every start, naming the folder and the reason (CORE-22).
 
 ### D18. Quality bar (definition of done)
 A change is done only when all of these hold:

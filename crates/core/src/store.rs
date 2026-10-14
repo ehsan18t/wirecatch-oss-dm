@@ -164,6 +164,9 @@ pub(crate) struct Snapshot {
     pub downloads: Vec<StoredDownload>,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
+    /// Why the data folder could not be made private to the current user, when it could
+    /// not: the list holds cookies (D17), so the person is told.
+    pub not_private: Option<String>,
 }
 
 /// A repair made while opening the download list.
@@ -282,8 +285,13 @@ impl Store {
             path: dir.display().to_string(),
             source,
         })?;
-        // The folder first, so the database and its journal files inherit its access.
-        restrict_to_owner(dir);
+        // The folder first, so the database and its journal files inherit its access. It is
+        // what keeps other accounts out of every file in it, so the person is told when it
+        // stays open.
+        let not_private = owner_only::restrict(dir).err().map(|e| {
+            warn!(path = %dir.display(), error = %e, "could not restrict access to the current user");
+            e.to_string()
+        });
         let path = dir.join(DATABASE_FILE);
         // Before anything touches the files: a second manager would set the first one's
         // live list aside, or write over its rows.
@@ -304,6 +312,7 @@ impl Store {
         if let Some(damaged) = damaged {
             snapshot.recoveries.insert(0, damaged);
         }
+        snapshot.not_private = not_private;
 
         let (ops, rx) = mpsc::channel();
         thread::Builder::new()
@@ -1006,6 +1015,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         .into_iter()
         .flatten()
         .collect(),
+        not_private: None,
     })
 }
 
@@ -1269,7 +1279,8 @@ fn from_json<T: DeserializeOwned>(json: &str, what: &str) -> Option<T> {
 }
 
 /// The database holds cookies, so only its owner may read it (D17). A failure is
-/// logged rather than fatal: the app still works, with the folder's default access.
+/// logged rather than fatal: the app still works, with the folder's default access. The
+/// data folder's own outcome is reported in [`Snapshot::not_private`] instead.
 fn restrict_to_owner(path: &Path) {
     if let Err(e) = owner_only::restrict(path) {
         warn!(path = %path.display(), error = %e, "could not restrict access to the current user");
@@ -1500,6 +1511,19 @@ mod tests {
         drop(store);
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![row]);
+    }
+
+    // The list holds cookies (D17), yet a data folder that could not be made private was
+    // only logged, so the person never learned other accounts might read it (CORE-22).
+    #[test]
+    fn a_data_folder_that_cannot_be_made_private_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.not_private, None);
+        drop(store);
+        crate::owner_only::refuse_on_this_thread();
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(snapshot.not_private.is_some(), "{snapshot:?}");
     }
 
     /// A media download whose stored details are damaged must not run as a

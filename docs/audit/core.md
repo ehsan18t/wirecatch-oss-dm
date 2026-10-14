@@ -178,6 +178,7 @@
 - problem: D17 requires the database (which holds browser cookies) to be readable only by the current user, but `restrict_to_owner` logs a `warn!` and continues when the ACL or chmod fails. Nothing reaches the UI, so the person never learns their cookies are readable with the folder's inherited access, and a regression in `owner_only` would ship unnoticed.
 - fix: Return the outcome from `Store::open` (for example a `restricted: bool` on the snapshot) and emit a one-time `UiEvent` or settings warning when it fails; keep starting the app.
 - cross-package: yes (desktop, to show the warning)
+- status: fixed in W4 (milestone review M2). The data folder is the boundary (on Linux its mode 0700 keeps other accounts out of every file in it; on Windows every file inherits its list), so `Store::open` reports its outcome in `Snapshot::not_private`, and the manager turns a failure into a startup notice that names the folder and the reason and keeps starting; the files in it are still restricted one by one, with a logged warning. `Manager::startup_notice` became `startup_notices`, since a start may now have two things to say, and the desktop shows each as a notification. Tests: `store::tests::a_data_folder_that_cannot_be_made_private_is_reported` (seen failing first; `owner_only::refuse_on_this_thread` makes the restriction fail), and the house-style test of startup notices.
 
 ## CORE-23 Small-file size cap is enforced by polling
 - severity: low

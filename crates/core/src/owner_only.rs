@@ -8,7 +8,23 @@ use std::path::Path;
 
 /// Restricts `path` (a folder or a file) to the current user.
 pub(crate) fn restrict(path: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    if REFUSED.get() {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
     imp::restrict(path)
+}
+
+#[cfg(test)]
+thread_local! {
+    static REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Makes every later [`restrict`] on this thread fail, as on a drive that keeps no
+/// permissions or a folder another account owns.
+#[cfg(test)]
+pub(crate) fn refuse_on_this_thread() {
+    REFUSED.set(true);
 }
 
 #[cfg(unix)]
