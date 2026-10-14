@@ -293,9 +293,8 @@ mod tests {
         let state = dir.join("f.bin.wcstate");
         std::fs::create_dir(&state).unwrap();
         let reason = std::fs::read(&state).unwrap_err().to_string();
-        let logs = wirecatch_test_support::logs::Logs::default();
-        let saved = tracing::subscriber::with_default(logs.subscriber(), || saved_state(&state));
-        assert!(saved.is_none());
+        let (logs, _capturing) = wirecatch_test_support::logs::Logs::capture();
+        assert!(saved_state(&state).is_none());
         let logged = logs.text();
         assert!(logged.contains(&reason), "{logged}");
         dir.remove().unwrap();

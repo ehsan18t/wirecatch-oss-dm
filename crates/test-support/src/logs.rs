@@ -14,12 +14,13 @@
 //! assert!(logs.events().iter().any(|e| e.field("retry_in").is_some()));
 //! ```
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, Once, PoisonError};
 
 use tracing::field::{Field, Visit};
+use tracing::level_filters::LevelFilter;
 use tracing::span::{Attributes, Id, Record};
-use tracing::subscriber::DefaultGuard;
-use tracing::{Event, Level, Subscriber};
+use tracing::subscriber::{DefaultGuard, Interest};
+use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry::{LookupSpan, Scope};
@@ -97,14 +98,29 @@ impl Logs {
     /// multi-threaded runtime logs from other threads too, which this does not
     /// see; it installs [`subscriber`](Self::subscriber) for the process
     /// instead, in a test binary of its own.
+    ///
+    /// Use this rather than setting [`subscriber`](Self::subscriber) for a
+    /// thread by hand: tracing settles once per call site whether anyone wants
+    /// its events, and while a capture is the only subscriber in the process it
+    /// asks only the subscriber of the thread that reaches the site first. A
+    /// thread without one, in another test, would settle the site as wanted by
+    /// nobody for every thread, and the capture would miss it. So the first
+    /// capture makes the process's own subscriber one that never settles a
+    /// site, unless the test binary installed its own.
     #[must_use]
     pub fn capture() -> (Self, DefaultGuard) {
+        static ASK_EVERY_TIME: Once = Once::new();
+        ASK_EVERY_TIME.call_once(|| {
+            let (Ok(()) | Err(_)) = tracing::subscriber::set_global_default(AskEveryTime);
+        });
         let logs = Self::default();
         let guard = tracing::subscriber::set_default(logs.subscriber());
         (logs, guard)
     }
 
-    /// A subscriber that records every event, at every level, into these logs.
+    /// A subscriber that records every event, at every level, into these logs,
+    /// for a test binary that installs it for the whole process. To capture
+    /// what one thread logs, use [`capture`](Self::capture).
     #[must_use]
     pub fn subscriber(&self) -> impl Subscriber + Send + Sync + 'static {
         Registry::default().with(Recorder(self.clone()))
@@ -130,6 +146,39 @@ impl Logs {
         }
         text
     }
+}
+
+/// The process's subscriber while logs are captured: it takes no events, and
+/// leaves every call site to be asked again each time, so the subscriber of
+/// the thread that logs decides.
+struct AskEveryTime;
+
+impl Subscriber for AskEveryTime {
+    fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
+        Interest::sometimes()
+    }
+
+    fn max_level_hint(&self) -> Option<LevelFilter> {
+        Some(LevelFilter::TRACE)
+    }
+
+    fn enabled(&self, _: &Metadata<'_>) -> bool {
+        false
+    }
+
+    fn new_span(&self, _: &Attributes<'_>) -> Id {
+        Id::from_u64(1)
+    }
+
+    fn record(&self, _: &Id, _: &Record<'_>) {}
+
+    fn record_follows_from(&self, _: &Id, _: &Id) {}
+
+    fn event(&self, _: &Event<'_>) {}
+
+    fn enter(&self, _: &Id) {}
+
+    fn exit(&self, _: &Id) {}
 }
 
 /// The layer that records events into [`Logs`]. Each span keeps its fields in

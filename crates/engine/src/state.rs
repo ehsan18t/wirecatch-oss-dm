@@ -214,13 +214,10 @@ mod tests {
     /// without a warning that its ranges are damaged.
     #[test]
     fn an_unknown_size_is_not_taken_for_damaged_ranges() {
-        let logs = wirecatch_test_support::logs::Logs::default();
+        let (logs, _capturing) = wirecatch_test_support::logs::Logs::capture();
         let v = validators(None);
         let unknown = ResumeState::new("https://x/f", None, true, &v, Vec::new());
-        let resumes = tracing::subscriber::with_default(logs.subscriber(), || {
-            unknown.can_resume(true, None, &v)
-        });
-        assert!(!resumes);
+        assert!(!unknown.can_resume(true, None, &v));
         let logged_info = logs
             .events()
             .iter()
@@ -235,9 +232,7 @@ mod tests {
             &v,
             vec![ByteRange { start: 5, end: 50 }],
         );
-        tracing::subscriber::with_default(logs.subscriber(), || {
-            damaged.can_resume(true, Some(10), &v)
-        });
+        assert!(!damaged.can_resume(true, Some(10), &v));
         assert!(
             logs.text().contains("cannot belong to the file"),
             "{}",

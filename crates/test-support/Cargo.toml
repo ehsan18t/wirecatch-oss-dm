@@ -64,3 +64,7 @@ http3 = ["servers", "dep:h3", "dep:h3-quinn", "dep:http", "dep:hyper", "dep:hype
 
 [lints]
 workspace = true
+
+[[test]]
+name = "logs"
+required-features = ["logs"]
