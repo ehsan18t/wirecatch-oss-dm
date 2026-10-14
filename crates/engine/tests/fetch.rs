@@ -502,3 +502,22 @@ async fn a_resource_replaced_before_a_whole_answer_is_asked_again_is_reported_as
     assert_eq!(server.stats.requests.load(Ordering::SeqCst), 2);
 }
 
+/// A name the caller saw as public may resolve to a local address when the
+/// engine looks it up (DNS rebinding); `localhost` stands in for such a name.
+/// With the local network blocked, the starting host is held to the same rule
+/// as every other name, not let through because its own lookup was local.
+#[tokio::test]
+async fn a_start_name_that_resolves_to_the_local_network_is_blocked_when_asked() {
+    let site = TestServer::start(test_data(100), Config::default()).await;
+    let port = site.url("x").port().unwrap();
+    let url = Url::parse(&format!("http://localhost:{port}/index.m3u8")).unwrap();
+    let error = match blocking_fetcher(&url, PrivateNetwork::Block).await {
+        Err(error) => error,
+        Ok(f) => match f.get(f.url(), None, 1000).await {
+            Err(error) => error,
+            Ok(_) => panic!("the local address was reached"),
+        },
+    };
+    assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
+    assert!(site.stats.seen().is_empty(), "the site was contacted");
+}

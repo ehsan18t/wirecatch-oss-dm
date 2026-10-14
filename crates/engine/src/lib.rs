@@ -244,7 +244,7 @@ pub use download::{DownloadRequest, Outcome, PathRejected, PathResolver, RemoteF
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;
-pub use net_guard::PrivateNetwork;
+pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
 pub use storage::{PART_EXT, STATE_EXT};

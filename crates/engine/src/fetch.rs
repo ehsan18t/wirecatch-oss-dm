@@ -50,21 +50,32 @@ const SAVE_BUFFER: usize = 256 * KIB_USIZE;
 /// - A server that stops sending for [`DownloadOptions::stall_timeout`] counts
 ///   as a failed attempt, and cancelling the token stops every request at once.
 /// - Every byte counts against [`DownloadOptions::rate_limiters`].
-/// - When the URL it was created with is on the internet, requests to the
-///   local network (loopback, private, link-local, shared CGNAT and other
-///   non-public addresses, whether written as an IP, also inside an IPv6
-///   address, or reached through a name or a redirect) are
-///   refused with [`Error::PrivateNetwork`]: a playlist from a website must
-///   not make the program reach the router or other devices at home. See
+/// - Requests to the local network (loopback, private, link-local, shared
+///   CGNAT and other non-public addresses, whether written as an IP, also
+///   inside an IPv6 address, or reached through a name or a redirect) are
+///   refused with [`Error::PrivateNetwork`] under the rule it was created
+///   with: a playlist from a website must not make the program reach the
+///   router or other devices at home. [`Fetcher::new`] uses
+///   [`PrivateNetwork::Auto`], which trusts its starting URL and is only for
+///   a URL the person chose; start a URL a website chose with
+///   [`Fetcher::with_private_network`] and [`PrivateNetwork::Block`]. See
 ///   [`PrivateNetwork`].
 ///
 /// ```no_run
 /// # async fn example() -> wirecatch_engine::Result<()> {
-/// use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, Url};
+/// use wirecatch_engine::{CancellationToken, DownloadOptions, Fetcher, PrivateNetwork, Url};
 /// use wirecatch_engine::units::MIB;
 ///
+/// // A playlist found on a web page: the website chose it, so the local
+/// // network stays blocked whatever its name resolves to.
 /// let playlist = Url::parse("https://video.example/stream/index.m3u8").unwrap();
-/// let fetcher = Fetcher::new(&playlist, &DownloadOptions::default(), CancellationToken::new()).await?;
+/// let fetcher = Fetcher::with_private_network(
+///     &playlist,
+///     &DownloadOptions::default(),
+///     CancellationToken::new(),
+///     PrivateNetwork::Block,
+/// )
+/// .await?;
 ///
 /// // A small resource, read into memory, refused if larger than 1 MiB.
 /// let text = fetcher.get(fetcher.url(), None, MIB).await?;
@@ -129,7 +140,11 @@ impl Fetcher {
     /// Headers, user agent, timeouts, retries, speed limits and the redirect
     /// rule come from `options`. Cancelling `cancel` stops every request made
     /// through this fetcher, with [`Error::Cancelled`]. Requests to the local
-    /// network follow [`PrivateNetwork::Auto`].
+    /// network follow [`PrivateNetwork::Auto`], which decides from a lookup of
+    /// `url`'s host whether it is itself on the local network: use it only for
+    /// a URL the person typed or pasted, and
+    /// [`Fetcher::with_private_network`] with [`PrivateNetwork::Block`] for one
+    /// a website chose.
     ///
     /// # Errors
     ///

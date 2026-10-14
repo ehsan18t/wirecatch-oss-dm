@@ -100,18 +100,18 @@ pub struct DownloadOptions {
     /// already as fast, and QUIC costs more processor time per byte.
     pub http3: bool,
     /// Whether an `http` or `https` download may reach the local network
-    /// (loopback, private, link-local, shared CGNAT and the other addresses
-    /// [`PrivateNetwork`] lists). Default
+    /// (loopback, private, link-local, shared CGNAT and every other address
+    /// that is not [`AddressKind::Public`](crate::AddressKind::Public)). Default
     /// [`PrivateNetwork::Allow`]: a link the user gave may point anywhere.
     ///
     /// With [`PrivateNetwork::Block`], or [`PrivateNetwork::Auto`] when the
     /// link's host is on the internet, the download follows the same rules as a
-    /// [`Fetcher`](crate::Fetcher): every request and redirect hop to another
-    /// origin is checked first, and every connection resolves names through a
-    /// filter that never hands out a local address, so a name that changes its
-    /// address later (DNS rebinding) cannot reach one either. The link's own host
-    /// keeps local addresses only if all of its addresses were local when the
-    /// download started. HTTP/3 is not used then, as QUIC connections do not go
+    /// [`Fetcher`](crate::Fetcher): every request and redirect hop is checked
+    /// first (to the link's own origin too, unless its host is written as an
+    /// address), and every connection resolves names through a filter that
+    /// never hands out a local address, so a name that changes its address
+    /// later (DNS rebinding) cannot reach one either (see [`PrivateNetwork`]
+    /// on the starting URL). HTTP/3 is not used then, as QUIC connections do not go
     /// through that filter. `ftp` links are not covered.
     pub private_network: PrivateNetwork,
     /// The most bytes one HTTP request may ask for (default `None`: no limit).

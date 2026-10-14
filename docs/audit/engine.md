@@ -70,6 +70,7 @@
 - location: crates/engine/src/fetch.rs:594-646, crates/core/src/manager/media_run.rs:1205-1229
 - problem: The engine's `is_private` covers CGNAT (100.64/10), benchmarking, multicast, reserved, NAT64, 6to4 and IPv4-compatible addresses. Core has its own `is_private`/`all_private`/`addresses` that covers none of those, and uses it to decide `PrivateNetwork::Allow` vs `Block` and to refuse formats. The two disagree on, for example, a Tailscale `100.x` host or a NAT64 / 6to4 address wrapping `10.0.0.1`, so the same URL is "local" to one layer and "public" to the other. Security rules that drift between layers are how bypasses appear.
 - fix: Expose the engine's classifier publicly (for example `wirecatch_engine::net::is_local_address(IpAddr)` and an async `host_is_local(&Url, timeout)`), delete core's copy, and keep the tests in one place.
+- correction (W4, D34.5): the classifier is public as `wirecatch_engine::AddressKind`; no `host_is_local` was added, because a separate lookup of a host name decides nothing about the connection that follows (CORE-3).
 - cross-package: yes (core)
 
 ## ENG-10 Disk errors carry no path and every io::Error is labelled "disk error"

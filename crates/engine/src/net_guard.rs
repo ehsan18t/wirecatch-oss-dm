@@ -7,7 +7,7 @@
 //! take them from here.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -40,24 +40,27 @@ const LOOKUP_PORT: u16 = 0;
 
 /// Whether requests may go to the local network: those of a
 /// [`Fetcher`](crate::Fetcher), and those of a download with
-/// [`DownloadOptions::private_network`](crate::DownloadOptions::private_network). These
-/// addresses count as local:
+/// [`DownloadOptions::private_network`](crate::DownloadOptions::private_network). Every
+/// address whose [`AddressKind`] is not [`AddressKind::Public`] counts as
+/// local: loopback, private, link-local, carrier-grade NAT and the other
+/// ranges listed there, and an IPv6 address that only carries one of them.
 ///
-/// - loopback (`127.0.0.0/8`, `::1`) and unspecified (`0.0.0.0/8`, `::`);
-/// - private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`,
-///   and the old site-local `fec0::/10`);
-/// - link-local (`169.254.0.0/16`, `fe80::/10`);
-/// - shared address space (`100.64.0.0/10`), used by carrier-grade NAT and by
-///   VPNs such as Tailscale;
-/// - benchmarking (`198.18.0.0/15`), multicast (`224.0.0.0/4`, `ff00::/8`),
-///   and reserved and broadcast (`240.0.0.0/4`, so `255.255.255.255` too);
-/// - local-use NAT64 (`64:ff9b:1::/48`);
-/// - an IPv6 address that only carries an IPv4 one counts as that IPv4
-///   address: IPv4-mapped (`::ffff:10.0.0.1`), IPv4-compatible (`::10.0.0.1`),
-///   NAT64 (`64:ff9b::10.0.0.1`) and 6to4 (`2002:0a00:0001::`).
+/// # The starting URL
 ///
-/// The origin the requests start at (the fetcher's, or the download's link) is
-/// always allowed.
+/// The URL the requests start at (the fetcher's, or the download's link) is
+/// the caller's to vouch for, and the rules treat it so:
+///
+/// - [`Auto`](Self::Auto) looks its host up once, separately, and turns the
+///   guard off when every address it gets is local. Whoever controls the
+///   name's answers controls that lookup, so a name chosen by a website must
+///   not be started with `Auto`.
+/// - [`Block`](Self::Block) allows the starting origin when its host is
+///   written as an address, which the caller can classify itself (see
+///   [`AddressKind`]). A starting host written as a name gets no exception:
+///   it is checked before each request like any other, and every connection
+///   to it resolves through the filter, so it cannot reach a local address
+///   even if its answer changes between a check and the connection (DNS
+///   rebinding).
 ///
 /// # With a proxy
 ///
@@ -80,60 +83,157 @@ const LOOKUP_PORT: u16 = 0;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PrivateNetwork {
-    /// Block when the fetcher's own URL is on the internet (the usual case
-    /// for a video from a website); allow when it is itself on the local
-    /// network, such as a media server at home.
+    /// Block when the starting URL is on the internet (the usual case for a
+    /// video from a website); allow when it is itself on the local network,
+    /// such as a media server at home. Whether it is, is decided from a
+    /// lookup of its host when the requests start, so use it only for a URL
+    /// the user chose (see the section on the starting URL).
     #[default]
     Auto,
-    /// Always block (except the fetcher's own origin).
+    /// Always block, except the starting origin when its host is written as
+    /// an address.
     Block,
     /// Never block.
     Allow,
 }
 
-/// Whether an address is on the local network or otherwise not a public
-/// internet host; see [`PrivateNetwork`] for the list. An IPv6 address that
-/// carries an IPv4 one (mapped, compatible, NAT64 or 6to4) counts as that
-/// IPv4 address.
-pub(crate) fn is_private(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            a == 0 // "this network", 0.0.0.0/8
-                || v4.is_loopback() // 127.0.0.0/8
-                || v4.is_private() // 10/8, 172.16/12, 192.168/16
-                || v4.is_link_local() // 169.254.0.0/16
-                || (a == 100 && b & 0xc0 == 64) // shared (CGNAT, Tailscale), 100.64.0.0/10
-                || (a == 198 && b & 0xfe == 18) // benchmarking, 198.18.0.0/15
-                || v4.is_multicast() // 224.0.0.0/4
-                || a >= 240 // reserved and broadcast, 240.0.0.0/4
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = embedded_ipv4(v6) {
-                return is_private(IpAddr::V4(v4));
-            }
-            let first = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_multicast() // ff00::/8
-                || (first & 0xfe00) == 0xfc00 // unique local, fc00::/7
-                || (first & 0xffc0) == 0xfe80 // link-local, fe80::/10
-                || (first & 0xffc0) == 0xfec0 // old site-local, fec0::/10
-                // Local-use NAT64, 64:ff9b:1::/48: translated by a gateway on
-                // the local network, to wherever it was set up for.
-                || v6.segments()[..3] == [0x64, 0xff9b, 1]
+/// What kind of address an IP address is: a public internet host, or one of
+/// the ranges [`PrivateNetwork`] keeps requests away from. These are the
+/// ranges of the IANA special-purpose address registries that are not
+/// reachable on the internet, plus multicast, which is no host to download
+/// from.
+///
+/// An IPv6 address that only carries an IPv4 one is of that IPv4 address's
+/// kind: IPv4-mapped (`::ffff:10.0.0.1`), IPv4-compatible (`::10.0.0.1`),
+/// NAT64 (`64:ff9b::10.0.0.1`) and 6to4 (`2002:0a00:0001::`) addresses reach
+/// or name the IPv4 address inside, so `64:ff9b::192.168.1.1` is
+/// [`Private`](Self::Private) and `64:ff9b::8.8.8.8` is
+/// [`Public`](Self::Public). Teredo (`2001::/32`) is not unwrapped: the
+/// addresses inside it belong to a relay and a router on the internet.
+///
+/// ```
+/// use wirecatch_engine::AddressKind;
+///
+/// let kind = |address: &str| AddressKind::of(address.parse().unwrap());
+/// assert_eq!(kind("100.100.100.100"), AddressKind::SharedAddressSpace);
+/// assert_eq!(kind("64:ff9b::c0a8:101"), AddressKind::Private);
+/// assert!(kind("93.184.215.14").is_public());
+/// ```
+///
+/// New kinds may be added, and an address that is `Public` now may be given
+/// one of them in a later version, as the registries assign new ranges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AddressKind {
+    /// Any other address: a host on the internet.
+    Public,
+    /// This computer: `127.0.0.0/8` and `::1`.
+    Loopback,
+    /// No address, or this network: `0.0.0.0/8` and `::`. Connecting to one
+    /// reaches this computer on most systems.
+    Unspecified,
+    /// A private network: `10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`,
+    /// unique local `fc00::/7`, and the old site-local `fec0::/10`.
+    Private,
+    /// The network link itself: `169.254.0.0/16` (where cloud metadata
+    /// services answer) and `fe80::/10`.
+    LinkLocal,
+    /// Shared address space, `100.64.0.0/10`: carrier-grade NAT, and VPNs
+    /// such as Tailscale.
+    SharedAddressSpace,
+    /// Benchmarking, `198.18.0.0/15` and `2001:2::/48`, used for test
+    /// networks.
+    Benchmarking,
+    /// Documentation: `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`,
+    /// `2001:db8::/32` and `3fff::/20`. Examples only, never a real host.
+    Documentation,
+    /// Multicast: `224.0.0.0/4` and `ff00::/8`.
+    Multicast,
+    /// Reserved: `240.0.0.0/4` (with the broadcast address
+    /// `255.255.255.255`), the IETF protocol assignments `192.0.0.0/24` and
+    /// `2001::/23` (without Teredo `2001::/32` and the ranges there that serve
+    /// the internet, which are public), the discard-only `100::/64`, the
+    /// dummy prefix `100:0:0:1::/64`, and segment routing identifiers
+    /// `5f00::/16`.
+    Reserved,
+    /// Local-use NAT64, `64:ff9b:1::/48`: translated by a gateway on the local
+    /// network to wherever it was set up for.
+    LocalNat64,
+}
+
+impl AddressKind {
+    /// The kind of `ip`.
+    #[must_use]
+    pub fn of(ip: IpAddr) -> Self {
+        match ip {
+            IpAddr::V4(v4) => Self::of_v4(v4),
+            IpAddr::V6(v6) => embedded_ipv4(v6).map_or_else(|| Self::of_v6(v6), Self::of_v4),
         }
     }
+
+    /// Whether this is a host on the internet, which [`PrivateNetwork`] lets
+    /// requests reach; every other kind counts as local.
+    #[must_use]
+    pub fn is_public(self) -> bool {
+        self == Self::Public
+    }
+
+    fn of_v4(v4: Ipv4Addr) -> Self {
+        match v4.octets() {
+            [0, ..] => Self::Unspecified,
+            [127, ..] => Self::Loopback,
+            [10, ..] | [172, 16..=31, ..] | [192, 168, ..] => Self::Private,
+            [169, 254, ..] => Self::LinkLocal,
+            [100, 64..=127, ..] => Self::SharedAddressSpace,
+            [198, 18..=19, ..] => Self::Benchmarking,
+            [192, 0, 2, _] | [198, 51, 100, _] | [203, 0, 113, _] => Self::Documentation,
+            [192, 0, 0, _] | [240..=255, ..] => Self::Reserved,
+            [224..=239, ..] => Self::Multicast,
+            _ => Self::Public,
+        }
+    }
+
+    /// The kind of an IPv6 address that carries no IPv4 one.
+    fn of_v6(v6: Ipv6Addr) -> Self {
+        if v6.is_unspecified() {
+            return Self::Unspecified;
+        }
+        if v6.is_loopback() {
+            return Self::Loopback;
+        }
+        match v6.segments() {
+            [0xff00..=0xffff, ..] => Self::Multicast,
+            [0xfc00..=0xfdff | 0xfec0..=0xfeff, ..] => Self::Private,
+            [0xfe80..=0xfebf, ..] => Self::LinkLocal,
+            [0x64, 0xff9b, 1, ..] => Self::LocalNat64,
+            [0x2001, 0xdb8, ..] | [0x3fff, 0..=0x0fff, ..] => Self::Documentation,
+            [0x2001, 2, 0, ..] => Self::Benchmarking,
+            // The IETF protocol assignments, `2001::/23`, are not reachable
+            // on the internet, except Teredo, the anycast addresses of PCP,
+            // TURN and DNS-SD service registration, AMT, AS112 and ORCHIDv2
+            // and drone identifiers.
+            [0x2001, 0 | 3 | 0x20..=0x3f, ..]
+            | [0x2001, 1, 0, 0, 0, 0, 0, 1..=3]
+            | [0x2001, 4, 0x112, ..] => Self::Public,
+            [0x2001, 0..=0x1ff, ..] | [0x100, 0, 0, 0 | 1, ..] | [0x5f00, ..] => Self::Reserved,
+            _ => Self::Public,
+        }
+    }
+}
+
+/// Whether requests must be kept away from `ip`: any kind but public.
+pub(crate) fn is_private(ip: IpAddr) -> bool {
+    !AddressKind::of(ip).is_public()
 }
 
 /// The IPv4 address inside an IPv6 one that is only a way of writing or
 /// reaching it: IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d`,
 /// NAT64 `64:ff9b::a.b.c.d` and 6to4 `2002:aabb:ccdd::/48`.
-fn embedded_ipv4(v6: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+fn embedded_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     let last = |hi: u16, lo: u16| {
         let [first, second] = hi.to_be_bytes();
         let [third, fourth] = lo.to_be_bytes();
-        std::net::Ipv4Addr::new(first, second, third, fourth)
+        Ipv4Addr::new(first, second, third, fourth)
     };
     if let Some(v4) = v6.to_ipv4_mapped() {
         return Some(v4);
@@ -175,19 +275,6 @@ async fn host_addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
     }
 }
 
-/// Local addresses the starting host may keep using once the guard is on.
-/// Only a host that was entirely local (the user deliberately fetching from
-/// their own network) keeps them; a host that mixed public and local answers
-/// gets none, so a hostile name server cannot slip a local address in beside a
-/// public one.
-fn pinned_addresses(start: &[IpAddr]) -> Vec<IpAddr> {
-    if all_private(start) {
-        start.to_vec()
-    } else {
-        Vec::new()
-    }
-}
-
 /// Whether a host with these addresses is on the local network: it has
 /// addresses and all of them are local. A host that does not resolve counts as
 /// public, which keeps the guard on.
@@ -218,24 +305,17 @@ pub(crate) async fn private_guard(
     if rule == PrivateNetwork::Allow {
         return None;
     }
-    // The addresses the starting host has right now. Only these may be on the
-    // local network later: a name that switches to a local address after this
-    // check (DNS rebinding) is filtered like any other.
-    let start_addrs = host_addresses(url, timeout).await;
-    if rule == PrivateNetwork::Auto && all_private(&start_addrs) {
+    // `Auto` trusts the starting host: this lookup, not the connection,
+    // decides whether it is on the local network.
+    if rule == PrivateNetwork::Auto && all_private(&host_addresses(url, timeout).await) {
         return None;
     }
-    Some(guard_from(url, &start_addrs, timeout, env))
+    Some(guard_from(url, timeout, env))
 }
 
-/// The protection for requests starting at `url`, whose host had `start_addrs`,
-/// through clients whose proxy settings `env` reads.
-pub(crate) fn guard_from(
-    url: &Url,
-    start_addrs: &[IpAddr],
-    timeout: Duration,
-    env: proxy::Env<'_>,
-) -> PrivateGuard {
+/// The protection for requests starting at `url`, through clients whose proxy
+/// settings `env` reads.
+pub(crate) fn guard_from(url: &Url, timeout: Duration, env: proxy::Env<'_>) -> PrivateGuard {
     let check = Arc::new(NetworkGuard::new(url, timeout));
     PrivateGuard {
         guard: Guard(Arc::new(move |target: &Url| {
@@ -243,8 +323,6 @@ pub(crate) fn guard_from(
             Box::pin(async move { check.check(&target).await })
         })),
         resolver: Arc::new(FilteringResolver {
-            exempt: url.host_str().map(str::to_string),
-            pinned: pinned_addresses(start_addrs),
             proxies: proxy::host_names(env),
         }),
     }
@@ -253,7 +331,9 @@ pub(crate) fn guard_from(
 /// Refuses requests to the local network, before they are sent; checked for
 /// every request and every redirect hop.
 struct NetworkGuard {
-    /// The fetcher's own origin, always allowed.
+    /// The fetcher's own origin, allowed when its host is written as an
+    /// address: the caller chose it and could check it. A name is checked
+    /// like any other, since what it resolves to can change.
     origin: url::Origin,
     timeout: Duration,
     /// Names already checked, and whether they were refused.
@@ -278,7 +358,7 @@ impl NetworkGuard {
     }
 
     async fn check(&self, url: &Url) -> Result<()> {
-        if url.origin() == self.origin {
+        if url.origin() == self.origin && !matches!(url.host(), Some(Host::Domain(_))) {
             return Ok(());
         }
         let refused = match url.host() {
@@ -313,12 +393,6 @@ impl NetworkGuard {
 /// connection itself can then never reach one, even if a name's address
 /// changes between the check and the connection.
 pub(crate) struct FilteringResolver {
-    /// The fetcher's own host.
-    exempt: Option<String>,
-    /// Local addresses the fetcher's own host had when the fetcher was created;
-    /// the only local addresses it may use. Empty when it started public, so a
-    /// later switch to a local address is filtered (DNS rebinding).
-    pinned: Vec<IpAddr>,
     /// The proxies the user set (see [`proxy::host_names`]), resolved without the
     /// filter: the connection to a proxy is the user's choice, and a request
     /// that names one as its target is still checked by the [`NetworkGuard`].
@@ -329,15 +403,10 @@ impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
         let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
-        let pinned = if self.exempt.as_deref() == Some(host.as_str()) {
-            self.pinned.clone()
-        } else {
-            Vec::new()
-        };
         Box::pin(async move {
             let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
                 .await?
-                .filter(|a| trusted || !is_private(a.ip()) || pinned.contains(&a.ip()))
+                .filter(|a| trusted || !is_private(a.ip()))
                 .collect();
             if addrs.is_empty() {
                 return Err(format!(
@@ -355,80 +424,156 @@ mod tests {
     use super::*;
     use tokio_util::sync::CancellationToken;
 
+    /// Addresses at the edges of each range and inside the IPv6 forms that
+    /// carry an IPv4 address, with their kinds.
+    const KINDS: &[(&str, AddressKind)] = {
+        use AddressKind::*;
+        &[
+            ("0.0.0.0", Unspecified),
+            ("0.255.255.255", Unspecified),
+            ("::", Unspecified),
+            ("127.0.0.1", Loopback),
+            ("127.255.255.255", Loopback),
+            ("::1", Loopback),
+            ("10.0.0.0", Private),
+            ("10.255.255.255", Private),
+            ("172.16.0.0", Private),
+            ("172.31.255.255", Private),
+            ("192.168.0.0", Private),
+            ("192.168.255.255", Private),
+            ("fc00::", Private),
+            ("fd12:3456::1", Private),
+            ("fdff:ffff::1", Private),
+            ("fec0::1", Private),
+            ("feff::1", Private),
+            ("169.254.0.0", LinkLocal),
+            ("169.254.169.254", LinkLocal),
+            ("fe80::1", LinkLocal),
+            ("febf:ffff::1", LinkLocal),
+            ("100.64.0.0", SharedAddressSpace),
+            ("100.100.100.100", SharedAddressSpace),
+            ("100.127.255.255", SharedAddressSpace),
+            ("198.18.0.0", Benchmarking),
+            ("198.19.255.255", Benchmarking),
+            ("192.0.2.1", Documentation),
+            ("198.51.100.255", Documentation),
+            ("203.0.113.0", Documentation),
+            ("2001:db8::1", Documentation),
+            ("2001:db8:ffff::1", Documentation),
+            ("3fff::1", Documentation),
+            ("3fff:fff::1", Documentation),
+            ("224.0.0.0", Multicast),
+            ("239.255.255.255", Multicast),
+            ("ff00::", Multicast),
+            ("ff02::1", Multicast),
+            ("192.0.0.0", Reserved),
+            ("192.0.0.170", Reserved),
+            ("240.0.0.0", Reserved),
+            ("255.255.255.255", Reserved),
+            ("100::", Reserved),
+            ("100::ffff:ffff:ffff:ffff", Reserved),
+            ("100:0:0:1::", Reserved),
+            ("100:0:0:1:ffff:ffff:ffff:ffff", Reserved),
+            ("2001:1::", Reserved),
+            ("2001:1::4", Reserved),
+            ("2001:2:1::", Reserved),
+            ("2001:4:113::1", Reserved),
+            ("2001:10::1", Reserved),
+            ("2001:1f:ffff::1", Reserved),
+            ("2001:40::1", Reserved),
+            ("2001:1ff:ffff::1", Reserved),
+            ("5f00::", Reserved),
+            ("5f00:ffff::1", Reserved),
+            ("2001:2::", Benchmarking),
+            ("2001:2:0:ffff::1", Benchmarking),
+            ("64:ff9b:1::", LocalNat64),
+            ("64:ff9b:1:ffff::1", LocalNat64),
+            // An IPv6 address that only carries an IPv4 one is of its kind.
+            ("::ffff:10.0.0.1", Private),
+            ("::ffff:198.51.100.7", Documentation),
+            ("::127.0.0.1", Loopback),
+            ("::0.0.0.2", Unspecified),
+            ("64:ff9b::a9fe:a9fe", LinkLocal),
+            ("64:ff9b::100.64.0.1", SharedAddressSpace),
+            ("2002:c0a8:0101::1", Private),
+            ("2002:e000:1::", Multicast),
+            ("::ffff:127.0.0.1", Loopback),
+            ("::10.0.0.1", Private),
+            ("64:ff9b::7f00:1", Loopback),
+            ("64:ff9b::192.168.1.1", Private),
+            ("2002:7f00:1::", Loopback),
+            ("2002:a9fe:a9fe:1::5", LinkLocal),
+            ("2002:6440:1::", SharedAddressSpace),
+            // Local-use NAT64 is not unwrapped: the gateway decides.
+            ("64:ff9b:1:abcd::8.8.8.8", LocalNat64),
+            // Public, including just outside each range.
+            ("8.8.8.8", Public),
+            ("2606:4700::1111", Public),
+            ("64:ff9b::93.184.215.14", Public),
+            ("1.0.0.0", Public),
+            ("9.255.255.255", Public),
+            ("11.0.0.0", Public),
+            ("100.63.255.255", Public),
+            ("100.128.0.0", Public),
+            ("126.255.255.255", Public),
+            ("128.0.0.0", Public),
+            ("169.253.255.255", Public),
+            ("169.255.0.0", Public),
+            ("172.15.255.255", Public),
+            ("172.32.0.0", Public),
+            ("192.0.1.255", Public),
+            ("192.0.3.0", Public),
+            ("192.88.99.1", Public),
+            ("192.167.255.255", Public),
+            ("192.169.0.0", Public),
+            ("198.17.255.255", Public),
+            ("198.20.0.0", Public),
+            ("198.51.99.255", Public),
+            ("198.51.101.0", Public),
+            ("203.0.112.255", Public),
+            ("203.0.114.0", Public),
+            ("223.255.255.255", Public),
+            ("2001:4860:4860::8888", Public),
+            ("2001:db9::1", Public),
+            ("2001::1", Public),
+            ("3ffe:ffff::1", Public),
+            ("3fff:1000::1", Public),
+            ("100:0:0:2::", Public),
+            ("2001:1::1", Public),
+            ("2001:1::3", Public),
+            ("2001:3::1", Public),
+            ("2001:4:112::1", Public),
+            ("2001:20::1", Public),
+            ("2001:3f:ffff::1", Public),
+            ("2001:200::1", Public),
+            ("5eff:ffff::1", Public),
+            ("5f01::1", Public),
+            // IPv4-translated (SIIT, `::ffff:0:a.b.c.d`) is in neither
+            // registry and is left public on purpose.
+            ("::ffff:0:a00:1", Public),
+            ("fbff::1", Public),
+            ("fe00::1", Public),
+            ("fe7f::1", Public),
+            ("64:ff9b:2::1", Public),
+            ("::ffff:8.8.8.8", Public),
+            ("::8.8.8.8", Public),
+            ("64:ff9b::8.8.8.8", Public),
+            ("2002:0808:0808::1", Public),
+        ]
+    };
+
     #[test]
-    fn local_network_addresses_are_recognized() {
-        for private in [
-            "127.0.0.1",
-            "127.255.0.9",
-            "10.1.2.3",
-            "172.16.0.1",
-            "172.31.255.255",
-            "192.168.1.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "::1",
-            "::",
-            "fc00::1",
-            "fd12:3456::1",
-            "fe80::1",
-            "::ffff:192.168.0.1",
-            "::ffff:127.0.0.1",
-            // Shared address space: carrier-grade NAT, Tailscale.
-            "100.64.0.1",
-            "100.100.100.100",
-            "100.127.255.255",
-            // Benchmarking.
-            "198.18.0.1",
-            "198.19.255.255",
-            // Multicast, reserved and broadcast.
-            "224.0.0.1",
-            "239.255.255.250",
-            "240.0.0.1",
-            "255.255.255.255",
-            "ff02::1",
-            "ff05::1:3",
-            // Old site-local IPv6.
-            "fec0::1",
-            // IPv4 inside IPv6: compatible, NAT64, local-use NAT64, 6to4.
-            "::127.0.0.1",
-            "::10.0.0.1",
-            "::0.0.0.2",
-            "64:ff9b::7f00:1",
-            "64:ff9b::192.168.1.1",
-            "64:ff9b::100.64.0.1",
-            "64:ff9b:1::1",
-            "64:ff9b:1:abcd::8.8.8.8",
-            "2002:7f00:1::",
-            "2002:c0a8:0101::1",
-            "2002:a9fe:a9fe:1::5",
-            "2002:6440:1::",
-        ] {
-            assert!(is_private(private.parse().unwrap()), "{private}");
-        }
-        for public in [
-            "8.8.8.8",
-            "172.32.0.1",
-            "192.169.0.1",
-            "100.63.255.255",
-            "100.128.0.1",
-            "198.17.255.255",
-            "198.20.0.1",
-            "223.255.255.255",
-            "2001:4860:4860::8888",
-            "::ffff:8.8.8.8",
-            "::8.8.8.8",
-            "64:ff9b::8.8.8.8",
-            "64:ff9b::93.184.215.14",
-            "2002:0808:0808::1",
-            "fe00::1",
-            "2606:4700::1111",
-        ] {
-            assert!(!is_private(public.parse().unwrap()), "{public}");
+    fn each_range_has_its_kind() {
+        for &(address, kind) in KINDS {
+            let ip: IpAddr = address.parse().unwrap();
+            assert_eq!(AddressKind::of(ip), kind, "{address}");
+            assert_eq!(kind.is_public(), kind == AddressKind::Public);
+            assert_eq!(is_private(ip), !kind.is_public(), "{address}");
         }
     }
 
     #[tokio::test]
-    async fn the_guard_refuses_local_addresses_but_not_its_own_origin() {
+    async fn the_guard_refuses_local_addresses_but_not_its_own_address() {
         let start = Url::parse("http://127.0.0.1:8000/master.m3u8").unwrap();
         let guard = NetworkGuard::new(&start, Duration::from_secs(5));
         let ok = |u: &str| Url::parse(u).unwrap();
@@ -451,6 +596,8 @@ mod tests {
             "http://[2002:c0a8:101::1]/admin",
             "http://[::192.168.1.1]/",
             "http://255.255.255.255/",
+            "http://192.0.2.1/",
+            "http://[2001:db8::1]/",
         ] {
             let error = guard.check(&ok(refused)).await.unwrap_err();
             assert!(matches!(error, Error::PrivateNetwork { .. }), "{refused}");
@@ -461,14 +608,18 @@ mod tests {
                 .await
                 .is_ok()
         );
+
+        // A starting host written as a name is checked like any other.
+        let start = Url::parse("http://localhost:8000/master.m3u8").unwrap();
+        let guard = NetworkGuard::new(&start, Duration::from_secs(5));
+        let error = guard.check(&start).await.unwrap_err();
+        assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
     }
 
     #[tokio::test]
     async fn the_resolver_never_hands_out_local_addresses() {
         use std::str::FromStr;
         let resolver = FilteringResolver {
-            exempt: Some("own-host.invalid".into()),
-            pinned: Vec::new(),
             proxies: Vec::new(),
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
@@ -477,29 +628,12 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("blocked for safety"), "{error}");
-        // The fetcher's own host keeps the local addresses it had at creation.
-        let start = host_addresses(
-            &Url::parse("http://localhost/").unwrap(),
-            Duration::from_secs(5),
-        )
-        .await;
-        assert!(all_private(&start), "localhost resolved to {start:?}");
-        let resolver = FilteringResolver {
-            exempt: Some("localhost".into()),
-            pinned: start.clone(),
-            proxies: Vec::new(),
-        };
-        let addrs: Vec<_> = resolver
-            .resolve(Name::from_str("localhost").unwrap())
-            .await
-            .unwrap()
-            .collect();
-        assert!(!addrs.is_empty() && addrs.iter().all(|a| start.contains(&a.ip())));
     }
 
-    /// A download's host looked public when it started; it now resolves to a
-    /// local address, as a rebinding name server would make it. No connection
-    /// of the download may reach that address.
+    /// A download's host resolves to a local address when it connects, as a
+    /// rebinding name server would make it, whatever an earlier lookup by the
+    /// caller saw. No connection of the download may reach that address, its
+    /// first one included.
     #[tokio::test]
     async fn a_download_cannot_be_rebound_to_the_local_network() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -563,13 +697,7 @@ mod tests {
         );
         accepted.store(0, Ordering::SeqCst);
 
-        // The addresses seen at the start: public (none of them local).
-        let guard = guard_from(
-            &url,
-            &["93.184.215.14".parse().unwrap()],
-            Duration::from_secs(5),
-            clients().environment(),
-        );
+        let guard = guard_from(&url, Duration::from_secs(5), clients().environment());
         let result = run(Some(guard)).await;
         assert!(result.is_err(), "the download went through");
         assert_eq!(
@@ -580,43 +708,10 @@ mod tests {
         dir.remove().unwrap();
     }
 
-    #[test]
-    fn a_host_mixing_public_and_local_answers_keeps_no_local_address() {
-        let public: IpAddr = "93.184.215.14".parse().unwrap();
-        let local: IpAddr = "127.0.0.1".parse().unwrap();
-        assert_eq!(
-            pinned_addresses(&[public, local]),
-            [] as [std::net::IpAddr; 0]
-        );
-        assert_eq!(pinned_addresses(&[public]), [] as [std::net::IpAddr; 0]);
-        assert_eq!(pinned_addresses(&[]), [] as [std::net::IpAddr; 0]);
-        assert_eq!(pinned_addresses(&[local]), vec![local]);
-    }
-
-    #[tokio::test]
-    async fn the_own_host_cannot_switch_to_a_local_address_later() {
-        use std::str::FromStr;
-        // The own host looked public when the fetcher was created (no pinned
-        // local addresses); it now resolves to loopback, as a rebinding DNS
-        // server would make it. Those addresses must be filtered.
-        let resolver = FilteringResolver {
-            exempt: Some("localhost".into()),
-            pinned: Vec::new(),
-            proxies: Vec::new(),
-        };
-        let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
-            Ok(addrs) => panic!("rebinding got through: {:?}", addrs.collect::<Vec<_>>()),
-            Err(error) => error,
-        };
-        assert!(error.to_string().contains("blocked for safety"), "{error}");
-    }
-
     #[tokio::test]
     async fn the_proxy_the_user_set_may_be_local() {
         use std::str::FromStr;
         let resolver = FilteringResolver {
-            exempt: Some("own-host.invalid".into()),
-            pinned: Vec::new(),
             proxies: vec!["localhost".into()],
         };
         let addrs: Vec<_> = resolver
