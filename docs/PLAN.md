@@ -2,6 +2,10 @@
 
 How the rest of v1 gets built: what each part is, who builds it, the contracts between parts, and how quality is checked. Decisions referenced as D1 to D18 are in [DECISIONS.md](DECISIONS.md).
 
+## Where the work stands
+
+Waves 0 to 3 are built and merged. Since then the work follows the code quality audit and the interface revamp, not new work packages: [AUDIT](AUDIT.md) has the status of every workstream and [ROADMAP](ROADMAP.md) the order for the next session, which starts with the flaky tests under W6 and goes on to phase 2 of the revamp ([REVAMP](REVAMP.md)). The rules below still hold for any work package: its own folders only, the gates, an independent review, and a fix round before the merge.
+
 ## How the work runs
 
 Work is split into packages that touch separate folders, so several agents can build in parallel without stepping on each other. Each package runs in its own git worktree. When a package is done, a different agent reviews it against its acceptance checklist (the author never verifies their own work), fixes go back to the author, and only then is it merged.

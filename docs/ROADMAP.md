@@ -9,7 +9,23 @@
 5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno, pinned by SHA-256, yt-dlp updates verified by signature and a two-day delay (D20, D21). Done; smoke-tested end to end against a real Wikimedia Commons video.
 6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
 7. **Release readiness.** Done: final security review and fixes, Linux suite green in Docker, quiet-machine benchmark, Windows installer built (5.2 MiB), commit history cleaned. Left for the maintainer: GitHub organization, code signing, the updater signing key, store listings for the extension (which also gives Chromium browsers a trusted extension id), and the user actions in D21.
-8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 rebuilds the rest after the maintainer's review. See [REVAMP](REVAMP.md).
+8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 rebuilds the rest after the maintainer's review and has not started. See [REVAMP](REVAMP.md).
+
+## Where things stand and what comes next
+
+As of 2026-10-15 (main at e18e845f) the code quality audit has W0 to W5, W7, W8 and W14 done, and phase 1 of the interface revamp is on main. [AUDIT](AUDIT.md) has the status table and every carried item; this section is the order to take them in, which the maintainer may change.
+
+1. The two flaky tests that now fail CI on Windows regularly: `settle::a_part_file_left_by_a_crash_is_picked_up_again` (core) and `a_capture_starts_after_the_server_answers_and_completes` (e2e). A third, `a_resume_file_that_cannot_be_read_is_logged_with_the_reason` (engine), failed once. All three are listed under W6 in AUDIT.
+2. Phase 2 of the interface revamp ([REVAMP](REVAMP.md)): settings pages, the add-ons page, the remaining dialogs, the command palette, the in-page media button, the tray menu and installer pages, "Copy diagnostics" in the extension popup, the desktop's "already running" notice, then what phase 1 left open.
+3. The rest of W6: shared test support, CI, and the backlog of proposed gate checks listed under W6.
+4. W9 (core manager), W10 (IPC, bridge and CLI) and W11 (desktop shell, with the gaps D43 records), then what is left of W12 (desktop interface) and W13 (extension, with D44.6, the cookie scope the app decides).
+5. W15 last: comments only where they earn their place.
+
+For the maintainer:
+
+- Confirm that D44.6 is carried to W13. It was part of the approved Public Suffix List design but needs the protocol and the extension to change, so W4 landed without it.
+- Acrylic on Windows 10 and the solid background on Linux were never seen in the real app (REVAMP, "Not seen working yet").
+- Left for release, as before: the GitHub organization, code signing, the updater signing key and the extension store listings.
 
 ## Phase 1 acceptance checklist
 
