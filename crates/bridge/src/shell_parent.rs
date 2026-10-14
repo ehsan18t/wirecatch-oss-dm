@@ -10,6 +10,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::io::{BorrowedHandle, RawHandle};
 use std::path::Path;
 
 use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
@@ -17,9 +18,11 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DETACHED_PROCESS,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
     LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS,
-    PROCESS_CREATE_PROCESS, PROCESS_INFORMATION, STARTUPINFOEXW, UpdateProcThreadAttribute,
+    PROCESS_CREATE_PROCESS, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, STARTUPINFOEXW,
+    UpdateProcThreadAttribute,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
+use wirecatch_ipc::{IpcError, ProcessAccount};
 
 /// The process id of the desktop shell (Explorer) of this session, if one runs.
 pub(crate) fn shell_process_id() -> Option<u32> {
@@ -39,13 +42,7 @@ pub(crate) fn shell_process_id() -> Option<u32> {
 /// process id. Fails when there is no shell or it cannot be used as the parent; the caller then
 /// starts the program the usual way.
 pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io::Result<u32> {
-    let shell = shell_process_id()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no desktop shell is running"))?;
-    // SAFETY: the handle is checked and closed by the guard.
-    let parent = Handle(unsafe { OpenProcess(PROCESS_CREATE_PROCESS, FALSE, shell) });
-    if parent.0.is_null() {
-        return Err(io::Error::last_os_error());
-    }
+    let parent = open_shell(shell_process_id, ProcessAccount::of)?;
     let attributes = AttributeList::with_parent(&parent)?;
 
     let application = wide(program.as_os_str());
@@ -84,6 +81,61 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
     Ok(info.dwProcessId)
 }
 
+/// Opens the desktop shell that `find_shell` names, to be the parent of a new process, after
+/// checking that it still is the shell and that it runs as the bridge's own account, which
+/// `account_of` reads from the opened process.
+fn open_shell(
+    mut find_shell: impl FnMut() -> Option<u32>,
+    account_of: impl FnOnce(BorrowedHandle<'_>) -> Result<ProcessAccount, IpcError>,
+) -> io::Result<Handle> {
+    let shell = find_shell()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no desktop shell is running"))?;
+    // SAFETY: the handle is checked and closed by the guard.
+    let parent = Handle(unsafe {
+        OpenProcess(
+            PROCESS_CREATE_PROCESS | PROCESS_QUERY_LIMITED_INFORMATION,
+            FALSE,
+            shell,
+        )
+    });
+    if parent.0.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // An open handle keeps its process's id from going to another process, so if the shell
+    // still has this id, the handle is the shell, not a program that got the id after the
+    // shell restarted.
+    if find_shell() != Some(shell) {
+        return Err(io::Error::other(
+            "the desktop shell restarted while Wirecatch was being started",
+        ));
+    }
+    check_parent(
+        &ProcessAccount::current().map_err(io::Error::other)?,
+        &account_of(parent.borrow()).map_err(io::Error::other)?,
+    )?;
+    Ok(parent)
+}
+
+/// Whether a process running as `shell` may be the parent of the app that the bridge, running
+/// as `bridge`, starts. The app takes its parent's account: a shell of another user (a browser
+/// started with "Run as different user") would start it as that user, listening where this
+/// user's bridge never looks, and a shell with more rights would start it elevated. A shell
+/// with fewer rights is what an elevated bridge needs: the app then starts unelevated.
+fn check_parent(bridge: &ProcessAccount, shell: &ProcessAccount) -> io::Result<()> {
+    if shell.user != bridge.user {
+        return Err(io::Error::other(format!(
+            "the desktop shell runs as another user account ({})",
+            shell.user
+        )));
+    }
+    if shell.integrity > bridge.integrity {
+        return Err(io::Error::other(
+            "the desktop shell runs with more rights than the browser",
+        ));
+    }
+    Ok(())
+}
+
 /// The size of `T` as the `u32` that Win32 structures record (`cb`, `dwSize`). A type of
 /// 4 GiB or more does not compile, so the conversion below never falls back.
 fn win32_size_of<T>() -> u32 {
@@ -93,6 +145,14 @@ fn win32_size_of<T>() -> u32 {
 
 /// A process or thread handle, closed when dropped.
 struct Handle(HANDLE);
+
+impl Handle {
+    fn borrow(&self) -> BorrowedHandle<'_> {
+        // SAFETY: the handle is open (callers check it is not null) until `self` drops,
+        // which the borrow cannot outlive.
+        unsafe { BorrowedHandle::borrow_raw(self.0 as RawHandle) }
+    }
+}
 
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -251,6 +311,97 @@ mod tests {
             }
             None
         }
+    }
+
+    /// A finder that names each of `ids` in turn, then nothing.
+    fn finder(ids: &[u32]) -> impl FnMut() -> Option<u32> + '_ {
+        let mut ids = ids.iter().copied();
+        move || ids.next()
+    }
+
+    // Between reading the shell's id and opening it, Explorer can restart and its id go to
+    // another program, which then became the app's parent (IPB-8). The shell is used only
+    // if it still has the id once the handle holds the process.
+    #[test]
+    fn a_shell_that_moved_to_another_id_is_not_used() {
+        let here = std::process::id();
+        let err = open_shell(finder(&[here, here + 4]), ProcessAccount::of)
+            .err()
+            .expect("refused");
+        assert_eq!(err.kind(), io::ErrorKind::Other, "{err}");
+        assert!(
+            open_shell(finder(&[here]), ProcessAccount::of).is_err(),
+            "the shell went away"
+        );
+        assert!(
+            open_shell(finder(&[]), ProcessAccount::of).is_err(),
+            "no shell at all"
+        );
+        open_shell(finder(&[here, here]), ProcessAccount::of).expect("still the shell");
+    }
+
+    fn account(user: &str, integrity: u32) -> ProcessAccount {
+        ProcessAccount {
+            user: wirecatch_ipc::Sid::parse(user).unwrap(),
+            integrity,
+        }
+    }
+
+    // `check_parent` alone being right did not mean `open_shell` asked it (W4I review L1):
+    // the shell found here is this very process, read back as another user's.
+    #[test]
+    fn a_shell_read_as_another_users_is_not_opened_as_the_parent() {
+        let here = std::process::id();
+        let mine = ProcessAccount::current().unwrap();
+        let someone_else = |_: BorrowedHandle<'_>| {
+            Ok(account(
+                "S-1-5-21-1111111111-2222222222-3333333333-1001",
+                mine.integrity,
+            ))
+        };
+        assert!(open_shell(finder(&[here, here]), someone_else).is_err());
+        let higher = |_: BorrowedHandle<'_>| {
+            Ok(ProcessAccount {
+                user: mine.user.clone(),
+                integrity: mine.integrity + 4096,
+            })
+        };
+        assert!(open_shell(finder(&[here, here]), higher).is_err());
+    }
+
+    // The app takes its parent's account: a shell of another user started it as that user,
+    // listening where this user's bridge never looks; a shell with more rights started it
+    // elevated (IPB-8).
+    #[test]
+    fn a_shell_of_another_user_or_with_more_rights_is_not_used() {
+        const ME: &str = "S-1-5-21-1-2-3-1001";
+        const MEDIUM: u32 = 8192;
+        let bridge = account(ME, MEDIUM);
+        assert!(check_parent(&bridge, &account(ME, MEDIUM)).is_ok());
+        assert!(
+            check_parent(&account(ME, 12288), &account(ME, MEDIUM)).is_ok(),
+            "an elevated bridge starts the app unelevated, as it should"
+        );
+        assert!(check_parent(&bridge, &account("S-1-5-21-1-2-3-1002", MEDIUM)).is_err());
+        assert!(check_parent(&bridge, &account(ME, 12288)).is_err());
+        assert!(check_parent(&bridge, &account("S-1-5-18", 16384)).is_err());
+    }
+
+    #[test]
+    fn the_account_of_a_program_is_read_from_its_handle() {
+        use std::os::windows::io::AsHandle;
+
+        let system = std::env::var_os("SystemRoot")
+            .map_or_else(|| std::path::PathBuf::from(r"C:\Windows"), Into::into);
+        let mut ping = std::process::Command::new(system.join("System32").join("PING.EXE"))
+            .args(["-n", "2", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let account = ProcessAccount::of(ping.as_handle());
+        ping.kill().ok();
+        ping.wait().ok();
+        assert_eq!(account.unwrap(), ProcessAccount::current().unwrap());
     }
 
     #[test]

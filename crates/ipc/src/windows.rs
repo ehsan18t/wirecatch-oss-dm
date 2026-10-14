@@ -7,7 +7,7 @@ use std::io;
 use std::iter;
 use std::mem;
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
+use std::os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::ptr;
 use std::time::Duration;
 
@@ -75,12 +75,13 @@ pub(crate) fn endpoint(channel: Channel) -> Result<Endpoint, IpcError> {
     Ok(Endpoint::from_raw(paths::pipe_name(channel, &sid)))
 }
 
-/// A security identifier, copied out of whatever buffer Windows returned it in.
+/// A Windows security identifier: who an account is. It prints in its string form, for
+/// example `S-1-5-21-...-1001`.
 ///
 /// Stored as 32-bit words because a SID is always 8 bytes plus 4 per
 /// sub-authority, which keeps the buffer aligned for the APIs that read it.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Sid {
+pub struct Sid {
     words: Vec<u32>,
 }
 
@@ -139,8 +140,11 @@ impl Sid {
     }
 
     /// Parses the string form, for example `S-1-5-18`.
-    #[cfg(test)]
-    pub(crate) fn parse(text: &str) -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// Windows does not read `text` as a SID.
+    pub fn parse(text: &str) -> io::Result<Self> {
         use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
 
         let wide = to_wide(OsStr::new(text));
@@ -203,14 +207,74 @@ impl fmt::Debug for Sid {
 
 /// The current process's access token, for reading only.
 fn process_token() -> io::Result<OwnedHandle> {
+    // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing and is
+    // valid for the whole life of the process.
+    let current = unsafe { BorrowedHandle::borrow_raw(GetCurrentProcess() as RawHandle) };
+    token_of(current)
+}
+
+/// The access token of `process`, for reading only. The handle needs
+/// `PROCESS_QUERY_LIMITED_INFORMATION`.
+fn token_of(process: BorrowedHandle<'_>) -> io::Result<OwnedHandle> {
     let mut raw: HANDLE = ptr::null_mut();
-    // SAFETY: GetCurrentProcess returns a pseudo handle that needs no closing; on
+    // SAFETY: `process` is open for the duration of the call (it is borrowed); on
     // success `raw` is a new token handle that we own.
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut raw) } == 0 {
+    if unsafe { OpenProcessToken(process.as_raw_handle() as HANDLE, TOKEN_QUERY, &raw mut raw) }
+        == 0
+    {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: `raw` is a valid handle we own and nothing else closes it.
     Ok(unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) })
+}
+
+/// The account a Windows process runs as: its user and its integrity level.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessAccount {
+    /// The user.
+    pub user: Sid,
+    /// The integrity level: 4096 low, 8192 medium, 12288 high (elevated), 16384
+    /// system.
+    pub integrity: u32,
+}
+
+impl ProcessAccount {
+    /// The account the current process runs as.
+    ///
+    /// # Errors
+    ///
+    /// [`IpcError::Io`] when Windows cannot report the process's token.
+    pub fn current() -> Result<Self, IpcError> {
+        process_token()
+            .and_then(|token| Self::from_token(&token))
+            .map_err(|e| IpcError::io("Could not read your user account", e))
+    }
+
+    /// The account `process` runs as. The handle needs
+    /// `PROCESS_QUERY_LIMITED_INFORMATION`.
+    ///
+    /// # Errors
+    ///
+    /// [`IpcError::Io`] when the process's token cannot be opened or read, as for
+    /// most processes of another user.
+    pub fn of(process: BorrowedHandle<'_>) -> Result<Self, IpcError> {
+        token_of(process)
+            .and_then(|token| Self::from_token(&token))
+            .map_err(|e| IpcError::io("Could not read the account of another program", e))
+    }
+
+    fn from_token(token: &OwnedHandle) -> io::Result<Self> {
+        let user = token_sid(token, TokenUser)?;
+        let integrity = token_sid(token, TokenIntegrityLevel)?
+            .integrity_level()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Windows reported an integrity level that is not one",
+                )
+            })?;
+        Ok(Self { user, integrity })
+    }
 }
 
 /// The SID that a token information class names in `token`, which must be open for
@@ -944,6 +1008,16 @@ mod tests {
                 r"\\.\pipe\{}{user}",
                 Channel::Release.pipe_prefix()
             ))
+        );
+    }
+
+    #[test]
+    fn the_current_account_is_the_current_user_at_the_current_level() {
+        let account = ProcessAccount::current().unwrap();
+        assert_eq!(account.user, Sid::current_user().unwrap());
+        assert_eq!(
+            Some(account.integrity),
+            Sid::current_integrity().unwrap().integrity_level()
         );
     }
 
