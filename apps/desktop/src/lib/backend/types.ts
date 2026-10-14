@@ -20,6 +20,7 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  SuffixListInfo,
   UiEvent,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../sample-windows';
@@ -135,6 +136,11 @@ export interface Backend {
   cancelAddonOperation(id: AddonId): Promise<void>;
   /** Looks for a newer media add-on now; the add-ons as they stand afterwards. */
   checkAddonUpdates(): Promise<AddonInfo[]>;
+
+  /** The Public Suffix List in use and when a newer one was last looked for (D44). */
+  suffixList(): Promise<SuffixListInfo>;
+  /** Looks for a newer Public Suffix List now; the list in use afterwards. */
+  checkSuffixList(): Promise<SuffixListInfo>;
 
   /** Every change the core pushes, in order; `reload` when one could not be read, so the caller loads what it shows again. */
   subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe>;

@@ -593,6 +593,18 @@ pub async fn check_addon_updates(
     api::check_addon_updates(core.manager().await?).await
 }
 
+#[tauri::command]
+pub async fn suffix_list(core: CoreState<'_>) -> CommandResult<contract::suffix_list::Output> {
+    Ok(api::suffix_list(core.manager().await?))
+}
+
+#[tauri::command]
+pub async fn check_suffix_list(
+    core: CoreState<'_>,
+) -> CommandResult<contract::check_suffix_list::Output> {
+    api::check_suffix_list(core.manager().await?).await
+}
+
 /// Registers the commands named, for the app's invoke handler, and lists their names in
 /// [`REGISTERED`] for the test that holds them to the contract.
 macro_rules! handler {
@@ -650,6 +662,8 @@ handler![
     remove_addon,
     cancel_addon_operation,
     check_addon_updates,
+    suffix_list,
+    check_suffix_list,
     get_question,
     get_download,
     earlier_download,

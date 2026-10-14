@@ -857,7 +857,12 @@ impl Manager {
         if choice.chapters {
             defaults.chapters = selection.chapters;
         }
-        match settings::validate(new, &state.queue_list(), &self.inner.folders) {
+        match settings::validate(
+            new,
+            &state.queue_list(),
+            &self.inner.folders,
+            &state.suffixes,
+        ) {
             Ok(new) => self.apply_settings(&mut state, new),
             Err(e) => warn!(error = %e, "could not remember the media choices"),
         }

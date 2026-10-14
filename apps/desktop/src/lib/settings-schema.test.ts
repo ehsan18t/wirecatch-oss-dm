@@ -30,7 +30,15 @@ describe('settings schema', () => {
       'connections_per_download',
       'max_concurrent_downloads',
       'local_sites',
+      'update_suffix_list',
     ]);
+  });
+
+  it('says what keeping the list of public domains current sends, and where', () => {
+    const def = SETTINGS.find((d) => d.id === 'update_suffix_list');
+    expect(def?.help).toContain('publicsuffix.org');
+    expect(def?.help).toMatch(/IP address/);
+    expect(searchSettings('privacy').map((d) => d.id)).toContain('update_suffix_list');
   });
 
   it('finds settings by words people use', () => {

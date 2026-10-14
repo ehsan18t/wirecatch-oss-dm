@@ -9,6 +9,7 @@ import {
   type MediaKind,
   type ProcessingStep,
   type Schedule,
+  type SuffixListInfo,
   type TimeOfDay,
   type WaitReason,
   type Weekday,
@@ -308,7 +309,7 @@ export function relativeDay(ms: number, now: Date): RelativeDay {
   return { day: 'earlier', time };
 }
 
-/** An earlier day, for example `3 Oct 2026`. */
+/** A day, for example `3 Oct 2026`. */
 function calendarDay(ms: number): string {
   const d = new Date(ms);
   const month = d.toLocaleString('en-GB', { month: 'short' });
@@ -461,6 +462,19 @@ function whenSaid(ms: number, now: Date): string {
   if (day === 'today') return `today at ${time}`;
   if (day === 'yesterday') return `yesterday at ${time}`;
   return `on ${calendarDay(ms)}`;
+}
+
+/**
+ * The Public Suffix List in use, for its setting (D44): "List of 15 Sep 2026, checked today at
+ * 14:05.", "List of 15 Sep 2026, the last check failed today at 14:05." or "List of 15 Sep 2026,
+ * not checked yet."
+ */
+export function suffixListNote(info: SuffixListInfo, now: Date): string {
+  const checked =
+    info.checked === null
+      ? 'not checked yet'
+      : `${info.check_failed ? 'the last check failed' : 'checked'} ${whenSaid(info.checked, now)}`;
+  return `List of ${calendarDay(info.published)}, ${checked}.`;
 }
 
 /**

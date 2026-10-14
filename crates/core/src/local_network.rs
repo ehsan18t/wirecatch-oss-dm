@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use wirecatch_engine::{AddressKind, PrivateNetwork, Url};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload, read_site};
 
-use crate::public_suffix;
+use crate::public_suffix::SuffixList;
 
 /// Who chose a download's link. It is set once, where the link arrives, kept
 /// with the download, and is the only thing that decides the rule for the
@@ -49,7 +49,11 @@ impl ChosenBy {
     /// it. Nothing here looks a name up: a page's owner controls what its
     /// name answers (CORE-3). Being the same site as the link proves nothing
     /// for the same reason.
-    pub(crate) fn of_capture(capture: &NewDownload, local_sites: &[String]) -> Self {
+    pub(crate) fn of_capture(
+        capture: &NewDownload,
+        local_sites: &[String],
+        suffixes: &SuffixList,
+    ) -> Self {
         let pages = [&capture.page_url, &capture.frame_url, &capture.referrer];
         let mut pages = pages.into_iter().flatten().peekable();
         // Only a browser download's page address is the document's own (its
@@ -61,8 +65,9 @@ impl ChosenBy {
             || capture.referrer.is_some();
         let carried = frame_traced && pages.peek().is_some();
         let all_local = pages.all(|page| {
-            Url::parse(page)
-                .is_ok_and(|page| is_local_by_itself(&page) || is_listed(&page, local_sites))
+            Url::parse(page).is_ok_and(|page| {
+                is_local_by_itself(&page, suffixes) || is_listed(&page, local_sites, suffixes)
+            })
         });
         if carried && all_local {
             Self::LocalPage
@@ -113,7 +118,7 @@ const UNRESERVED_LOCAL_SUFFIXES: &[&str] = &[
 /// local address, a single-label name (`nas`) that is not a top-level domain
 /// (public DNS may serve records at `ai.` itself), or a name under one of
 /// [`LOCAL_SUFFIXES`] or [`UNRESERVED_LOCAL_SUFFIXES`].
-pub(crate) fn is_local_by_itself(url: &Url) -> bool {
+pub(crate) fn is_local_by_itself(url: &Url, suffixes: &SuffixList) -> bool {
     if let Some(ip) = address_in(url) {
         return is_local(ip);
     }
@@ -125,12 +130,12 @@ pub(crate) fn is_local_by_itself(url: &Url) -> bool {
         return false;
     }
     if !name.contains('.') {
-        return !public_suffix::is_public_suffix(name);
+        return !suffixes.is_public_suffix(name);
     }
     LOCAL_SUFFIXES.iter().any(|suffix| is_under(name, suffix))
         || UNRESERVED_LOCAL_SUFFIXES
             .iter()
-            .any(|suffix| is_under(name, suffix) && !public_suffix::is_public_suffix(suffix))
+            .any(|suffix| is_under(name, suffix) && !suffixes.is_public_suffix(suffix))
 }
 
 /// Why an entry cannot be one of the person's sites on their network.
@@ -151,7 +156,10 @@ pub(crate) enum NotALocalSite {
 /// address; lower case, international names in ASCII form, no dots at either
 /// end, as the URL parser writes a page's host), when it is a registrable
 /// domain or a name under one. `None` for an entry of nothing but white space.
-pub(crate) fn local_site(entry: &str) -> Result<Option<String>, NotALocalSite> {
+pub(crate) fn local_site(
+    entry: &str,
+    suffixes: &SuffixList,
+) -> Result<Option<String>, NotALocalSite> {
     let Some(host) = read_site(entry).map_err(|_| NotALocalSite::Unreadable)? else {
         return Ok(None);
     };
@@ -160,20 +168,24 @@ pub(crate) fn local_site(entry: &str) -> Result<Option<String>, NotALocalSite> {
         return Err(NotALocalSite::Address);
     }
     let name = url.domain().ok_or(NotALocalSite::Unreadable)?;
-    if public_suffix::registrable_domain(name).is_none() {
+    if suffixes.registrable_domain(name).is_none() {
         return Err(NotALocalSite::Shared);
     }
     Ok(Some(name.to_string()))
 }
 
 /// Whether `url`'s host is one of `sites` or under one of them
-/// (`corp.example.com` covers `wiki.corp.example.com`).
-fn is_listed(url: &Url, sites: &[String]) -> bool {
+/// (`corp.example.com` covers `wiki.corp.example.com`). A site counts only
+/// while it is one owner's by the list in use, which may be newer than the
+/// one it was checked with when it was saved.
+fn is_listed(url: &Url, sites: &[String], suffixes: &SuffixList) -> bool {
     let Some(name) = url.host_str() else {
         return false;
     };
     let name = name.trim_end_matches('.');
-    sites.iter().any(|site| is_under(name, site))
+    sites
+        .iter()
+        .any(|site| is_under(name, site) && suffixes.registrable_domain(site).is_some())
 }
 
 /// Whether host `name` is `domain` or a name under it. Both are lower case:
@@ -269,11 +281,14 @@ mod tests {
             "http://app.localhost/",
             "http://LOCALHOST/",
         ] {
-            assert!(is_local_by_itself(&url(local)), "{local}");
+            assert!(
+                is_local_by_itself(&url(local), &SuffixList::built_in()),
+                "{local}"
+            );
         }
         // The guard against a delegated name disables none of them today.
         for suffix in UNRESERVED_LOCAL_SUFFIXES {
-            assert!(!public_suffix::is_public_suffix(suffix), "{suffix}");
+            assert!(!SuffixList::built_in().is_public_suffix(suffix), "{suffix}");
         }
         for public in [
             "https://93.184.215.14/",
@@ -287,7 +302,10 @@ mod tests {
             "http://com./",
             "http://xn--p1ai/",
         ] {
-            assert!(!is_local_by_itself(&url(public)), "{public}");
+            assert!(
+                !is_local_by_itself(&url(public), &SuffixList::built_in()),
+                "{public}"
+            );
         }
     }
 
@@ -315,7 +333,7 @@ mod tests {
         let none: &[String] = &[];
         let listed = ["corp.example.com".to_string()];
         let of = |page, referrer, sites: &[String]| {
-            ChosenBy::of_capture(&capture(page, referrer), sites)
+            ChosenBy::of_capture(&capture(page, referrer), sites, &SuffixList::built_in())
         };
         assert_eq!(
             of(Some("http://nas/files"), None, none),
@@ -351,6 +369,34 @@ mod tests {
         );
     }
 
+    // A site listed while one owner held it stops counting once a newer list makes it a
+    // public suffix, as stored settings are read with the list in use, since the names
+    // under it are then every customer's sites (D39.4, D44).
+    #[test]
+    fn a_listed_site_a_newer_list_makes_public_no_longer_counts() {
+        let listed = ["corp.example.com".to_string()];
+        let page = || capture(Some("https://wiki.corp.example.com/p"), None);
+        let built_in = SuffixList::built_in();
+        assert_eq!(
+            ChosenBy::of_capture(&page(), &listed, &built_in),
+            ChosenBy::LocalPage
+        );
+        let newer = crate::public_suffix::testing::list(
+            crate::public_suffix::testing::NEWER,
+            &["corp.example.com"],
+        );
+        let newer = SuffixList::accept(
+            newer.as_bytes(),
+            &built_in,
+            crate::public_suffix::testing::NEWER_MILLIS,
+        )
+        .unwrap();
+        assert_eq!(
+            ChosenBy::of_capture(&page(), &listed, &newer),
+            ChosenBy::Website
+        );
+    }
+
     /// A frame from another site on a local page, or a referrer from one,
     /// started the capture: the frame chose the link, not the local page.
     #[test]
@@ -359,7 +405,7 @@ mod tests {
         let of = |page: Option<&str>, frame: Option<&str>, referrer: Option<&str>| {
             let mut capture = capture(page, referrer);
             capture.frame_url = frame.map(str::to_string);
-            ChosenBy::of_capture(&capture, none)
+            ChosenBy::of_capture(&capture, none, &SuffixList::built_in())
         };
         let portal = Some("http://portal/home");
         let vendor = Some("https://media.vendorcdn.com/player");
@@ -386,7 +432,7 @@ mod tests {
             let mut capture = capture(Some("http://portal/home"), referrer);
             capture.source = source;
             capture.frame_url = frame.map(str::to_string);
-            ChosenBy::of_capture(&capture, none)
+            ChosenBy::of_capture(&capture, none, &SuffixList::built_in())
         };
         for source in [CaptureSource::ContextMenu, CaptureSource::MediaButton] {
             assert_eq!(of(source, None, None), ChosenBy::Website, "{source:?}");

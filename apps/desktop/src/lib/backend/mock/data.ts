@@ -11,6 +11,7 @@ import {
   type Category,
   type CategoryRule,
   type Queue,
+  type SuffixListInfo,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 
@@ -29,6 +30,11 @@ const MEDIA_ADDON: AddonInfo = {
   size: 131 * MB,
   note: null,
 };
+
+/** The Public Suffix List built into the sample app, published on 15 September 2026 (D44). */
+export function builtInSuffixList(): SuffixListInfo {
+  return { published: Date.parse('2026-09-15T10:18:26Z'), checked: null, check_failed: false };
+}
 
 /** The one optional add-on (D20): yt-dlp, ffmpeg and Deno, installed together. */
 export function mediaAddon(): AddonInfo {
@@ -99,6 +105,7 @@ export function defaultSettings(): AppSettings {
     show_progress_windows: true,
     media: { video: defaultOutput(), audio: defaultOutput() },
     local_sites: [],
+    update_suffix_list: true,
   };
 }
 

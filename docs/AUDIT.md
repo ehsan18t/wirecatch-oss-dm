@@ -54,7 +54,7 @@ XC-8, XC-9, XC-10, XC-11, IPB-4, IPB-5, IPB-12, IPB-13, IPB-14, IPB-15, DRS-1, D
 
 CORE-2, CORE-3, CORE-22, ENG-6, ENG-9, ENG-11, CMD-11, CMD-17, CMD-18, IPB-8, IPB-9, IPB-10, IPB-11, DRS-4, DRS-5, DRS-18, DRS-19, EXT-3, EXT-15
 
-Planned inside W4 (maintainer, 2026-10-13): the Public Suffix List is kept up to date at run time, and the app owns it. The app bundles a snapshot and refreshes it weekly while idle from publicsuffix.org; settings show the date it was last updated and a "Check now" button, and a setting turns the refresh off, with a privacy note saying what the request tells publicsuffix.org. A downloaded list is validated (complete, within a size cap, parses, not suspiciously smaller than the current one) and saved atomically, and any failure keeps the current list. The app decides cookie scope and the extension passes the cookies the browser would send. D35 stays as the floor: the list bundled at a release is current when the release is made. The protocol gains the setting and the call, which is possible now that W3 is done, and its settings page belongs to the revamp ([REVAMP](REVAMP.md)).
+Planned inside W4 (maintainer, 2026-10-13): the Public Suffix List is kept up to date at run time, and the app owns it. The app bundles a snapshot and refreshes it weekly while idle from publicsuffix.org; settings show the date it was last updated and a "Check now" button, and a setting turns the refresh off, with a privacy note saying what the request tells publicsuffix.org. A downloaded list is validated (complete, within a size cap, parses, not suspiciously smaller than the current one) and saved atomically, and any failure keeps the current list. The app decides cookie scope and the extension passes the cookies the browser would send. D35 stays as the floor: the list bundled at a release is current when the release is made. The protocol gains the setting and the call, which is possible now that W3 is done, and its settings page belongs to the revamp ([REVAMP](REVAMP.md)). Done on `ws/w4-psl` and recorded as D44, except that the extension still decides cookie scope with its own list (D44.6), which needs the extension and the protocol to change; that part is carried to W13, and W4 lands without it.
 
 ### W5. Logging and diagnostics
 
@@ -90,6 +90,7 @@ Every check proposed during the audit run, so none lives only in a reviewer's no
 - `wirecatch/no-silent-catch` for every package, not the extension only (the desktop has 14 sites and protocol one to handle first).
 - `no-magic-numbers` applied to object property values, which it skips today.
 - Each desktop window's capability names exactly the commands its page calls: the commands reached from `apps/desktop/src/lib/window` and its route against `capabilities/download-windows.json`, and the rest of the interface against `capabilities/default.json`, so a grant nothing uses, or a call no grant allows, fails the gate rather than a running window (D43).
+- A `publish` check that the `VERSION` date of `crates/core/data/public_suffix_list.dat` is recent, as `suffix-list` checks the extension's `tldts` (D44.5).
 
 ### W7. Engine
 
@@ -123,7 +124,7 @@ The revamp ([REVAMP](REVAMP.md)) replaces the interface the component, layout an
 
 ### W13. Extension
 
-EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16
+EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13, EXT-16, and D44.6 carried from W4: cookie scope decided by the app with the Public Suffix List it keeps current
 
 ### W14. Zero lint warnings
 
@@ -177,6 +178,7 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 Parts of W4 carried into later work:
 
 - ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
+- D44.6: cookie scope decided by the app with the Public Suffix List it keeps current. Today the extension decides which cookies go with a captured download from its own `tldts` list, current only at each release (D35). It needs the extension to send every cookie for the download's address with its `SameSite` and the request's context (the page's site, top-level navigation or not, the method), a protocol addition under a new version (D32) that an older app is still served by, and core filtering the cookies with the list its manager holds. Carried to W13, whose unit owns `apps/extension` and changes `crates/protocol` with it; W4 lands without it (the maintainer confirms this when W4 is handed over).
 
 Parts of W5 carried into later workstreams:
 

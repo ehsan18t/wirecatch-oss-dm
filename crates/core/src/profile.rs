@@ -13,6 +13,7 @@ use wirecatch_protocol::app::{
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
+use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use wirecatch_engine::units::MIB;
 
@@ -43,9 +44,19 @@ pub(crate) fn export(
     }
 }
 
+/// A profile as its file holds it.
+#[derive(Debug)]
+pub(crate) struct Parsed {
+    pub profile: SettingsProfile,
+    /// Whether its settings say if the Public Suffix List is kept current (D44.2). One
+    /// written before that setting existed does not, and then the choice made here
+    /// stays: turning the refresh off is a privacy choice an import must not undo.
+    pub sets_suffix_list_updates: bool,
+}
+
 /// Reads a profile file. The version is checked before anything else, so a file
 /// from a newer Wirecatch gets a clear message instead of a parse error.
-pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
     let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
     let version = value
@@ -61,7 +72,13 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
     if version == 0 {
         return Err(CoreError::InvalidProfile("its format version is 0".into()));
     }
-    serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))
+    let sets_suffix_list_updates = value.pointer("/settings/update_suffix_list").is_some();
+    let profile =
+        serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
+    Ok(Parsed {
+        profile,
+        sets_suffix_list_updates,
+    })
 }
 
 /// Settings and queues after applying an imported profile, and what changed.
@@ -83,15 +100,22 @@ pub(crate) struct Imported {
 pub(crate) struct Localized {
     pub profile: SettingsProfile,
     pub folders: Vec<ImportedFolder>,
+    /// See [`Parsed::sets_suffix_list_updates`].
+    pub sets_suffix_list_updates: bool,
 }
 
-/// Resolves `profile`'s folders on this machine; see [`Localized`]. Blocks on
+/// Resolves the profile's folders on this machine; see [`Localized`]. Blocks on
 /// the disk.
-pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> Localized {
+pub(crate) fn localize(parsed: Parsed, folders: &KnownFolders) -> Localized {
+    let Parsed {
+        mut profile,
+        sets_suffix_list_updates,
+    } = parsed;
     let report = localize_folders(&mut profile.settings, folders);
     Localized {
         profile,
         folders: report,
+        sets_suffix_list_updates,
     }
 }
 
@@ -124,7 +148,19 @@ pub(crate) fn merge(
     folders: &KnownFolders,
     next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
-    merge_localized(localize(profile, folders), current, folders, next_queue_id)
+    let here = profile.settings.clone();
+    let parsed = Parsed {
+        profile,
+        sets_suffix_list_updates: true,
+    };
+    merge_localized(
+        localize(parsed, folders),
+        current,
+        &here,
+        folders,
+        &SuffixList::built_in(),
+        next_queue_id,
+    )
 }
 
 /// Merges a profile whose folders were resolved here into the current queues
@@ -135,16 +171,21 @@ pub(crate) fn merge(
 /// known name updates that queue, and the rest are added. Queues missing from the
 /// profile are kept, because downloads may still be in them. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
-/// startup or system folder, falls back to the default folder.
+/// startup or system folder, falls back to the default folder. A setting the profile
+/// is too old to carry and that must not change unasked keeps its value in `here`,
+/// the settings in use.
 pub(crate) fn merge_localized(
     localized: Localized,
     current: &[Queue],
+    here: &AppSettings,
     folders: &KnownFolders,
+    suffixes: &SuffixList,
     mut next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
     let Localized {
         profile,
         folders: folder_report,
+        sets_suffix_list_updates,
     } = localized;
     // Checked before the merge so a huge file costs nothing.
     settings::check_queue_count(profile.queues.len())?;
@@ -187,6 +228,9 @@ pub(crate) fn merge_localized(
     }
 
     let mut settings = profile.settings;
+    if !sets_suffix_list_updates {
+        settings.update_suffix_list = here.update_suffix_list;
+    }
     // A profile is stored data, possibly from an older version: its sites are read as a stored list is.
     settings.extension.ignored_sites = settings::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
@@ -194,7 +238,7 @@ pub(crate) fn merge_localized(
         .copied()
         .unwrap_or(DEFAULT_QUEUE_ID);
     settings::check_queue_count(queues.len())?;
-    let settings = settings::validate(settings, &queues, folders)?;
+    let settings = settings::validate(settings, &queues, folders, suffixes)?;
     let count = |names: &[String]| saturating_cast::<u32, _>(names.len());
     Ok(Imported {
         settings,
@@ -332,7 +376,7 @@ mod tests {
             PortablePath("{Downloads}/Stuff".into())
         );
         let bytes = serde_json::to_vec(&profile).unwrap();
-        assert_eq!(parse(&bytes).unwrap(), profile);
+        assert_eq!(parse(&bytes).unwrap().profile, profile);
     }
 
     /// The media defaults travel with the profile (D24), and a profile written
@@ -348,11 +392,11 @@ mod tests {
         s.media.audio.audio_kbps = Some(256);
         let profile = export(&s, &[default_queue()], &f, 42);
         let bytes = serde_json::to_vec(&profile).unwrap();
-        assert_eq!(parse(&bytes).unwrap().settings.media, s.media);
+        assert_eq!(parse(&bytes).unwrap().profile.settings.media, s.media);
 
         let mut old = serde_json::to_value(&profile).unwrap();
         old["settings"].as_object_mut().unwrap().remove("media");
-        let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
+        let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap().profile;
         assert_eq!(read.format_version, 1);
         assert_eq!(read.settings.media, MediaDefaults::default());
     }

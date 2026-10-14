@@ -102,6 +102,7 @@ export type { SettingsProfile } from './generated/SettingsProfile';
 export type { ShowProgressWindowArgs } from './generated/ShowProgressWindowArgs';
 export type { StartQueueNowArgs } from './generated/StartQueueNowArgs';
 export type { StreamAction } from './generated/StreamAction';
+export type { SuffixListInfo } from './generated/SuffixListInfo';
 export type { Theme } from './generated/Theme';
 export type { TimeOfDay } from './generated/TimeOfDay';
 export type { UiEvent } from './generated/UiEvent';

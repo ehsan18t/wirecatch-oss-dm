@@ -12,6 +12,7 @@ import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { Addons } from './addons.svelte';
+import { SuffixList } from './suffix-list.svelte';
 import { runningAppName } from './app-name';
 import { Clock } from './clock.svelte';
 import { Connection } from './connection';
@@ -59,6 +60,11 @@ export class AppState {
   });
   readonly questions = new Questions({ backend: () => this.#backend });
   readonly addons = new Addons({
+    backend: () => this.#backend,
+    runner: this.#runner,
+    toasts: this.toasts,
+  });
+  readonly suffixList = new SuffixList({
     backend: () => this.#backend,
     runner: this.#runner,
     toasts: this.toasts,
@@ -182,8 +188,9 @@ export class AppState {
     events.release();
     this.ready = true;
     this.clock.start();
-    // Neither is needed for the list, so neither holds it up.
+    // None is needed for the list, so none holds it up.
     void this.addons.load();
+    void this.suffixList.load();
     void this.#takeLaunchLinks();
     void this.questions.restore();
   }

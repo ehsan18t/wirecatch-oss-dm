@@ -14,6 +14,7 @@ import type {
   QuestionId,
   QueueId,
   SettingsProfile,
+  SuffixListInfo,
   UiEvent,
   UserError,
 } from '@wirecatch/protocol';
@@ -23,6 +24,7 @@ import { fileNameFromUrl } from '../../format';
 import type { WindowRegistry } from '../../sample-windows';
 import { BackendError } from '../types';
 import {
+  builtInSuffixList,
   categoryFor,
   defaultQueues,
   defaultSettings,
@@ -108,6 +110,7 @@ export class MockState {
   pending: PendingCapture[] = [];
   mediaChoices: MediaChoice[] = [];
   addons: AddonInfo[] = [mediaAddon()];
+  suffixList: SuffixListInfo = builtInSuffixList();
   /** Pages being read for their qualities. */
   reading: MediaReading[] = [];
   /** Pages that asked for the media add-on; they continue once it is installed. */

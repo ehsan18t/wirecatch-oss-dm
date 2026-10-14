@@ -20,6 +20,7 @@ mod scheduling;
 mod settle;
 mod sign_in;
 mod state;
+mod suffix_list;
 #[cfg(test)]
 mod tests;
 mod ticker;
@@ -33,7 +34,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
-use wirecatch_engine::{CancellationToken, RateLimiter};
+use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::UiEvent;
 use wirecatch_protocol::wire::Event;
@@ -43,10 +44,12 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
+use crate::public_suffix::SuffixList;
 use crate::store::Store;
 use crate::user_error::{self, StartupNotice};
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
+pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
 const UI_EVENT_BUFFER: usize = 1024;
@@ -84,6 +87,10 @@ pub struct ManagerConfig {
     /// fresh addresses, after the server refused one or said it expired. One
     /// entry per automatic try; once they are used up, the download fails.
     pub media_refresh_delays: Vec<Duration>,
+    /// Where a newer Public Suffix List is fetched from (D44), or `None` to keep the list
+    /// built in, as [`new`](Self::new) does so no test reaches the internet. The app
+    /// fetches it from publicsuffix.org ([`with_official_suffix_list`](Self::with_official_suffix_list)).
+    pub suffix_list_source: Option<Url>,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -126,7 +133,25 @@ impl ManagerConfig {
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
+            suffix_list_source: None,
         }
+    }
+
+    /// Fetches a newer Public Suffix List from `source`; see
+    /// [`suffix_list_source`](Self::suffix_list_source).
+    #[must_use]
+    pub fn with_suffix_list_source(mut self, source: Url) -> Self {
+        self.suffix_list_source = Some(source);
+        self
+    }
+
+    /// Fetches a newer Public Suffix List from where publicsuffix.org publishes it,
+    /// [`PUBLIC_SUFFIX_LIST_URL`], as the app does (D44).
+    #[must_use]
+    pub fn with_official_suffix_list(mut self) -> Self {
+        // A constant a test reads, so it always parses.
+        self.suffix_list_source = Url::parse(PUBLIC_SUFFIX_LIST_URL).ok();
+        self
     }
 
     /// Installs and updates the media add-on from `sources` instead of the
@@ -202,6 +227,11 @@ struct Inner {
     addon_sources: MediaAddonSources,
     /// A private folder for short-lived files (cookies handed to yt-dlp).
     temp_dir: PathBuf,
+    /// The data folder, where a newer Public Suffix List is kept.
+    data_dir: PathBuf,
+    suffix_list_source: Option<Url>,
+    /// Held by a check of the Public Suffix List, so two never overlap.
+    suffix_checking: tokio::sync::Mutex<()>,
     media_timeout: Duration,
     media_refresh_delays: Arc<[Duration]>,
     /// Shared by every download for the global speed limit.
@@ -266,9 +296,11 @@ impl Manager {
                 now,
                 now_millis,
                 finished_size: &naming::finished_size,
+                suffixes: SuffixList::load(&dir, now_millis),
             };
             let mut restored = restore::restore(snapshot, &around);
             restored.state.addon = addons::AddonSlot::load(&addons_at);
+            restored.state.suffix_check = suffix_list::SuffixCheck::load(&dir);
             // Cookies files left by a crash: nothing may keep them.
             crate::discard::dir(&temp_at);
             Ok((store, restored, recoveries))
@@ -290,6 +322,9 @@ impl Manager {
             addon_dir,
             addon_sources: config.addon_sources,
             temp_dir,
+            data_dir: config.data_dir,
+            suffix_list_source: config.suffix_list_source,
+            suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
             global_limiter,
@@ -383,7 +418,14 @@ impl Manager {
             self.inner.clock.clone(),
             self.inner.stopped.clone(),
         ));
-        self.spawn(Manager::run_addon_updates(weak, self.inner.stopped.clone()));
+        self.spawn(Manager::run_addon_updates(
+            weak.clone(),
+            self.inner.stopped.clone(),
+        ));
+        self.spawn(Manager::run_suffix_list_updates(
+            weak,
+            self.inner.stopped.clone(),
+        ));
     }
 
     /// Asks a running download to stop, and makes sure it does: a run still going

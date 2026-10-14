@@ -270,6 +270,49 @@ describe('feature paths (two clicks or fewer, and in the palette)', () => {
     expect(button('Update')).toBeInTheDocument();
   });
 
+  it('the list of public domains: Settings, then Check now, 2 clicks; its date and the result in words', async () => {
+    const { app, backend, click } = await setup();
+    await click(button(/^Settings/));
+    // The month as the system writes it short: "Sep", or "Sept" with newer locale data.
+    expect(screen.getByText(/^List of 15 Sept? 2026, not checked yet\.$/)).toBeInTheDocument();
+    const note = () => app.toasts.items.at(-1);
+
+    await click(button('Check now'));
+    expect(note()).toMatchObject({
+      kind: 'info',
+      message: 'The list of public domains is up to date.',
+    });
+    expect(screen.getByText(/^List of 15 Sept? 2026, checked today at /)).toBeInTheDocument();
+
+    backend.nextSuffixCheck = 'unreachable';
+    await click(button('Check now'));
+    expect(note()?.kind).toBe('error');
+    expect(note()?.message).toMatch(/^Wirecatch could not update its list of public domains/);
+    expect(
+      screen.getByText(/^List of 15 Sept? 2026, the last check failed today at /),
+    ).toBeInTheDocument();
+
+    backend.nextSuffixCheck = 'newer';
+    await click(button('Check now'));
+    expect(note()).toMatchObject({
+      kind: 'info',
+      message: 'Wirecatch now uses a newer list of public domains.',
+    });
+    expect(screen.getByText(/^List of 1 Oct 2026, checked today at /)).toBeInTheDocument();
+  });
+
+  it('the list of public domains: the weekly check shows on an open settings page', async () => {
+    const { app, backend, click } = await setup();
+    await click(button(/^Settings/));
+    backend.simulateWeeklySuffixCheck('newer');
+    await settle();
+    expect(screen.getByText(/^List of 1 Oct 2026, checked today at /)).toBeInTheDocument();
+
+    backend.nextSuffixCheck = 'up-to-date';
+    await click(button('Check now'));
+    expect(app.toasts.items.at(-1)?.message).toBe('The list of public domains is up to date.');
+  });
+
   it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
     const { app, backend, click } = await setup();
     await click(button(/^Settings/));

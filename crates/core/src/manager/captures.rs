@@ -393,7 +393,7 @@ impl Manager {
             queue: state
                 .slot(wanted)
                 .map_or_else(|_| state.default_queue(), |s| s.queue.id),
-            chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites),
+            chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites, &state.suffixes),
         })
     }
 

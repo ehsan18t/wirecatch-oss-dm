@@ -16,6 +16,7 @@ use wirecatch_protocol::extension::{
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use crate::local_network::{self, NotALocalSite};
+use crate::public_suffix::SuffixList;
 use crate::schedule;
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
@@ -105,6 +106,7 @@ pub fn default_settings() -> AppSettings {
         // Original: nobody's downloads change until they choose (D24).
         media: MediaDefaults::default(),
         local_sites: Vec::new(),
+        update_suffix_list: true,
     }
 }
 
@@ -123,7 +125,7 @@ pub(crate) fn default_queue() -> Queue {
 }
 
 /// Brings the numbers downloads depend on into the range [`validate`] keeps them in, and keeps the ignored sites the way the list keeps them. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
-pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
+pub(crate) fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) -> AppSettings {
     settings.connections_per_download = settings
         .connections_per_download
         .clamp(1, MAX_CONNECTIONS_PER_DOWNLOAD);
@@ -132,7 +134,7 @@ pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
         .clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
     settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
-    settings.local_sites = stored_local_sites(&settings.local_sites);
+    settings.local_sites = stored_local_sites(&settings.local_sites, suffixes);
     settings
 }
 
@@ -163,11 +165,11 @@ pub(crate) fn stored_sites(stored: Vec<String>) -> Vec<String> {
     kept
 }
 
-/// The stored sites on the person's network that [`validate`] would keep, without duplicates. One a change would refuse is dropped, since one that covers the sites of many owners must never count; each one dropped is logged by its place in the list.
-fn stored_local_sites(stored: &[String]) -> Vec<String> {
+/// The stored sites on the person's network that [`validate`] would keep with `suffixes`, without duplicates. One a change would refuse is dropped, since one that covers the sites of many owners must never count; each one dropped is logged by its place in the list. A start reads the stored list through it, and so does a newer suffix list taken while the app runs.
+pub(crate) fn stored_local_sites(stored: &[String], suffixes: &SuffixList) -> Vec<String> {
     let mut kept: Vec<String> = Vec::with_capacity(stored.len());
     for (entry, site) in stored.iter().enumerate() {
-        match local_network::local_site(site) {
+        match local_network::local_site(site, suffixes) {
             Ok(Some(site)) if site.chars().count() <= MAX_SITE_CHARS => {
                 if !kept.contains(&site) {
                     kept.push(site);
@@ -228,6 +230,7 @@ pub(crate) fn validate(
     mut settings: AppSettings,
     queues: &[Queue],
     folders: &KnownFolders,
+    suffixes: &SuffixList,
 ) -> Result<AppSettings> {
     check_folder(&settings.default_folder, folders)?;
     if settings.categories.len() > MAX_CATEGORY_RULES {
@@ -265,7 +268,7 @@ pub(crate) fn validate(
     )?;
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
-    settings.local_sites = clean_local_sites(&settings.local_sites)?;
+    settings.local_sites = clean_local_sites(&settings.local_sites, suffixes)?;
     Ok(settings)
 }
 
@@ -283,11 +286,11 @@ const LOCAL_SITES: ListRules = ListRules {
 /// public suffix or a name above one (`com`, `co.uk`, `github.io`) are
 /// refused: single-label hosts such as `nas` and pages at a local address
 /// count as local without being listed.
-fn clean_local_sites(list: &[String]) -> Result<Vec<String>> {
+fn clean_local_sites(list: &[String], suffixes: &SuffixList) -> Result<Vec<String>> {
     clean_list(
         list,
         |entry| {
-            local_network::local_site(entry)
+            local_network::local_site(entry, suffixes)
                 .map(Option::unwrap_or_default)
                 .map_err(|why| not_a_local_site(entry.trim(), why))
         },
@@ -583,7 +586,13 @@ mod tests {
     #[test]
     fn defaults_are_valid() {
         let settings = default_settings();
-        let checked = validate(settings.clone(), &[default_queue()], &folders()).unwrap();
+        let checked = validate(
+            settings.clone(),
+            &[default_queue()],
+            &folders(),
+            &SuffixList::built_in(),
+        )
+        .unwrap();
         assert_eq!(checked, settings);
     }
 
@@ -595,7 +604,7 @@ mod tests {
             let mut s = default_settings();
             s.media.video.format = video;
             s.media.audio.format = audio;
-            validate(s, &[default_queue()], &folders())
+            validate(s, &[default_queue()], &folders(), &SuffixList::built_in())
         };
         assert!(check(OutputFormat::Mp4, OutputFormat::Mp3).is_ok());
         assert!(check(OutputFormat::Original, OutputFormat::Original).is_ok());
@@ -607,16 +616,16 @@ mod tests {
         s.media.video.subtitle_languages =
             vec!["EN".into(), " en ".into(), "pt-BR".into(), String::new()];
         s.media.audio.audio_kbps = Some(320);
-        let s = validate(s, &[default_queue()], &folders()).unwrap();
+        let s = validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).unwrap();
         assert_eq!(s.media.video.subtitle_languages, ["en", "pt-br"]);
         for bad in [Some(8), Some(10_000)] {
             let mut s = default_settings();
             s.media.audio.audio_kbps = bad;
-            assert!(validate(s, &[default_queue()], &folders()).is_err());
+            assert!(validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).is_err());
         }
         let mut s = default_settings();
         s.media.video.subtitle_languages = vec!["en; rm -rf".into()];
-        assert!(validate(s, &[default_queue()], &folders()).is_err());
+        assert!(validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).is_err());
     }
 
     /// Settings stored before media defaults existed read as Original.
@@ -650,7 +659,7 @@ mod tests {
             .chain(["Corp.Example.Com.".into(), "team.github.io".into()])
             .collect();
         assert_eq!(
-            within_limits(settings).local_sites,
+            within_limits(settings, &SuffixList::built_in()).local_sites,
             ["corp.example.com", "team.github.io"]
         );
     }
@@ -663,7 +672,7 @@ mod tests {
             settings.local_sites = vec![site.into()];
             assert!(
                 matches!(
-                    validate(settings, &queues, &folders()),
+                    validate(settings, &queues, &folders(), &SuffixList::built_in()),
                     Err(CoreError::Invalid(_))
                 ),
                 "{site}"
@@ -676,7 +685,9 @@ mod tests {
             "nas.lan".into(),
         ];
         assert_eq!(
-            validate(settings, &queues, &folders()).unwrap().local_sites,
+            validate(settings, &queues, &folders(), &SuffixList::built_in())
+                .unwrap()
+                .local_sites,
             ["team.github.io", "xn--bcher-kva.example", "nas.lan"]
         );
     }
@@ -693,7 +704,13 @@ mod tests {
             "  ".into(),
         ];
         let queues = [default_queue()];
-        let clean = validate(settings.clone(), &queues, &folders()).unwrap();
+        let clean = validate(
+            settings.clone(),
+            &queues,
+            &folders(),
+            &SuffixList::built_in(),
+        )
+        .unwrap();
         assert_eq!(
             clean.local_sites,
             [
@@ -707,7 +724,12 @@ mod tests {
             settings.local_sites = vec![refused.into()];
             assert!(
                 matches!(
-                    validate(settings.clone(), &queues, &folders()),
+                    validate(
+                        settings.clone(),
+                        &queues,
+                        &folders(),
+                        &SuffixList::built_in()
+                    ),
                     Err(CoreError::Invalid(_))
                 ),
                 "{refused}"
@@ -733,7 +755,7 @@ mod tests {
             "*.cdn.net:8080".into(),
         ];
         s.categories[0].extensions = vec![".MKV".into()];
-        let s = validate(s, &[default_queue()], &folders()).unwrap();
+        let s = validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).unwrap();
         assert_eq!(s.extension.capture_extensions, vec!["zip", "mp4", "7z"]);
         assert_eq!(
             s.extension.ignored_sites,
@@ -748,7 +770,9 @@ mod tests {
         let check = |change: fn(&mut AppSettings)| {
             let mut s = default_settings();
             change(&mut s);
-            validate(s, &queues, &folders()).unwrap_err().to_string()
+            validate(s, &queues, &folders(), &SuffixList::built_in())
+                .unwrap_err()
+                .to_string()
         };
         assert!(check(|s| s.connections_per_download = 0).contains("between 1 and 32"));
         assert!(check(|s| s.max_concurrent_downloads = 0).contains("between 1 and 100"));
@@ -765,7 +789,7 @@ mod tests {
         let check = |change: &dyn Fn(&mut AppSettings)| {
             let mut s = default_settings();
             change(&mut s);
-            validate(s, &queues, &folders())
+            validate(s, &queues, &folders(), &SuffixList::built_in())
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         };
@@ -807,7 +831,7 @@ mod tests {
     fn validation_names_a_site_that_names_no_host() {
         let mut s = default_settings();
         s.extension.ignored_sites = vec!["example.com".into(), "  ".into(), "not a site".into()];
-        let refused = validate(s, &[default_queue()], &folders())
+        let refused = validate(s, &[default_queue()], &folders(), &SuffixList::built_in())
             .unwrap_err()
             .to_string();
         assert!(refused.contains("\"not a site\""), "{refused}");
@@ -818,9 +842,9 @@ mod tests {
     fn stored_sites_that_could_never_be_saved_are_dropped_on_load() {
         let mut s = default_settings();
         s.extension.ignored_sites = vec!["a".repeat(300), "x.example".into(), "not a site".into()];
-        let s = within_limits(s);
+        let s = within_limits(s, &SuffixList::built_in());
         assert_eq!(s.extension.ignored_sites, ["x.example"]);
-        assert!(validate(s, &[default_queue()], &folders()).is_ok());
+        assert!(validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).is_ok());
     }
 
     #[test]
@@ -829,7 +853,7 @@ mod tests {
         s.extension.ignored_sites = (0..MAX_IGNORED_SITES)
             .map(|i| format!("S{}.example", i % 10))
             .collect();
-        let s = validate(s, &[default_queue()], &folders()).unwrap();
+        let s = validate(s, &[default_queue()], &folders(), &SuffixList::built_in()).unwrap();
         assert_eq!(s.extension.ignored_sites.len(), 10);
         assert_eq!(s.extension.ignored_sites[0], "s0.example");
     }

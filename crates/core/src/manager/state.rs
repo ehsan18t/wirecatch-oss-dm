@@ -18,10 +18,12 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
+use super::suffix_list::SuffixCheck;
 use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
+use crate::public_suffix::SuffixList;
 use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
 use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
@@ -44,6 +46,10 @@ pub(super) struct State {
     pub media: BTreeMap<QuestionId, MediaPending>,
     /// The media add-on.
     pub addon: AddonSlot,
+    /// The Public Suffix List every decision about sites reads (D39, D44).
+    pub suffixes: Arc<SuffixList>,
+    /// The last time a newer list was looked for.
+    pub suffix_check: SuffixCheck,
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,

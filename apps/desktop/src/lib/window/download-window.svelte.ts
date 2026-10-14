@@ -239,6 +239,7 @@ export class DownloadWindowState {
       this.settings = e.data;
     },
     addons_changed: (e) => this.#addonsChanged(e.data),
+    suffix_list_checked: ignore,
     media_analysing: (e) => {
       if (this.#asking(e.data.id) && this.question?.kind !== 'choice') {
         this.question = { kind: 'reading', data: e.data };

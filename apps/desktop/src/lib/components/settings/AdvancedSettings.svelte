@@ -1,24 +1,32 @@
 <script lang="ts">
-  // Advanced: connections per download and downloads at once, within the core's limits, and the person's sites on their network (D39).
+  // Advanced: connections per download and downloads at once, within the core's limits, the person's sites on their network (D39), and the list of public domains that decides which sites are one owner's (D44).
   import {
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD,
     normalizeSite,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
+  import { suffixListNote } from '$lib/format';
   import { concurrentDownloads, connectionsPerDownload } from '$lib/limits';
   import { commitNumber } from '$lib/number-field';
   import type { SettingIn } from '$lib/settings-schema';
+  import { getApp } from '$lib/state/app.svelte';
+  import Button from '../Button.svelte';
   import ListEditor from '../ListEditor.svelte';
+  import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
 
+  const app = getApp();
+  const suffixes = $derived(app.suffixList);
+
   const controls: Record<SettingIn<'advanced'>, Snippet<[Row]>> = {
     connections_per_download: connections,
     max_concurrent_downloads: concurrent,
     local_sites: localSites,
+    update_suffix_list: suffixList,
   };
 </script>
 
@@ -73,7 +81,47 @@
   />
 {/snippet}
 
+{#snippet suffixList({ def, s, helpId }: Row)}
+  <div class="suffix-list">
+    <Toggle
+      label={def.label}
+      describedby={helpId}
+      checked={s.update_suffix_list}
+      onchange={(v: boolean) => save((d) => void (d.update_suffix_list = v))}
+    />
+    <p class="suffix-note">
+      <span>
+        {#if suffixes.info}
+          {suffixListNote(suffixes.info, app.clock.now)}
+        {:else if suffixes.error}
+          {suffixes.error}
+        {:else}
+          Reading the list.
+        {/if}
+      </span>
+      <Button small disabled={suffixes.checking} onclick={() => suffixes.check()}>Check now</Button>
+    </p>
+  </div>
+{/snippet}
+
 <style>
+  .suffix-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .suffix-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    max-width: 320px;
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
   input[type='range'] {
     width: 200px;
     accent-color: var(--accent);

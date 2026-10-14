@@ -37,7 +37,12 @@ impl Manager {
     /// error.
     pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
-        let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
+        let new = settings::validate(
+            new,
+            &state.queue_list(),
+            &self.inner.folders,
+            &state.suffixes,
+        )?;
         self.apply_settings(&mut state, new);
         Ok(())
     }
@@ -54,7 +59,12 @@ impl Manager {
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.apply(patch);
-        let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
+        let new = settings::validate(
+            new,
+            &state.queue_list(),
+            &self.inner.folders,
+            &state.suffixes,
+        )?;
         self.apply_settings(&mut state, new);
         Ok(())
     }
@@ -78,7 +88,12 @@ impl Manager {
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.extension.apply(patch);
-        let new = settings::validate(new, &state.queue_list(), &self.inner.folders)?;
+        let new = settings::validate(
+            new,
+            &state.queue_list(),
+            &self.inner.folders,
+            &state.suffixes,
+        )?;
         let extension = new.extension.clone();
         self.apply_settings(&mut state, new);
         Ok(extension)
@@ -141,8 +156,14 @@ impl Manager {
             // Ids for added queues come from a copy of the counters, kept only
             // once the profile is accepted, so a refused one uses up none.
             let mut ids = state.ids.clone();
-            let mut imported =
-                profile::merge_localized(localized, &current, &self.inner.folders, || ids.queue())?;
+            let mut imported = profile::merge_localized(
+                localized,
+                &current,
+                &state.settings,
+                &self.inner.folders,
+                &state.suffixes,
+                || ids.queue(),
+            )?;
             state.ids = ids;
             self.inner.store.save_last_ids(state.ids.last());
             for queue in imported.queues {
@@ -179,10 +200,17 @@ impl Manager {
         let current = state.queue_list();
         // Ids for queues that would be added; they are never used.
         let mut next = current.iter().map(|q| q.id.0).max().unwrap_or(0);
-        let imported = profile::merge_localized(localized, &current, &self.inner.folders, || {
-            next += 1;
-            QueueId(next)
-        })?;
+        let imported = profile::merge_localized(
+            localized,
+            &current,
+            &state.settings,
+            &self.inner.folders,
+            &state.suffixes,
+            || {
+                next += 1;
+                QueueId(next)
+            },
+        )?;
         let mut addons_to_offer = Vec::new();
         if wants_media && state.addon.tools.is_none() {
             addons_to_offer.push(AddonId::Media);

@@ -8,6 +8,7 @@ import type { MediaChoice } from './MediaChoice';
 import type { PendingCapture } from './PendingCapture';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
+import type { SuffixListInfo } from './SuffixListInfo';
 import type { UserError } from './UserError';
 
 /**
@@ -38,6 +39,7 @@ export type UiEvent =
       };
     }
   | { type: 'addons_changed'; data: Array<AddonInfo> }
+  | { type: 'suffix_list_checked'; data: SuffixListInfo }
   | {
       type: 'addon_required';
       data: {

@@ -7,6 +7,7 @@ import { ignore, type UiEventHandlers } from './events';
 import type { Questions } from './questions.svelte';
 import type { Queues } from './queues.svelte';
 import type { Selection } from './selection.svelte';
+import type { SuffixList } from './suffix-list.svelte';
 import type { SettingsTransfer } from './settings-transfer.svelte';
 import type { Toasts } from './toasts.svelte';
 import type { View } from './view';
@@ -24,6 +25,7 @@ export interface MainWindowEventsHost {
     'confirmationRequested' | 'mediaChoiceRequested' | 'analysing' | 'addonRequired' | 'closed'
   >;
   readonly addons: Pick<Addons, 'changed'>;
+  readonly suffixList: Pick<SuffixList, 'checked'>;
   readonly transfer: Pick<SettingsTransfer, 'lastImport'>;
   storageProblem: string | null;
 }
@@ -56,6 +58,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     addon_required: (e) => app.questions.addonRequired(e.data.id),
     confirmation_closed: (e) => app.questions.closed(e.data.id),
     addons_changed: (e) => app.addons.changed(e.data),
+    suffix_list_checked: (e) => app.suffixList.checked(e.data),
     settings_imported: (e) => {
       app.transfer.lastImport = e.data;
     },

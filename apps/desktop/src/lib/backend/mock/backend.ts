@@ -20,6 +20,7 @@ import { WindowRegistry } from '../../sample-windows';
 import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';
+import * as suffixList from './suffix-list';
 import { DOWNLOADS, HOME } from './data';
 import * as downloads from './downloads';
 import * as media from './media';
@@ -83,6 +84,8 @@ export class MockBackend implements Backend {
 
   /** Set by tests and sample data: what the next update check finds. */
   nextUpdateCheck: addons.UpdateCheck = 'up-to-date';
+  /** Set by tests: what the next check of the Public Suffix List finds. */
+  nextSuffixCheck: suffixList.SuffixCheck = 'up-to-date';
   /** Files opened, for tests: the mock opens nothing for real. */
   readonly opened: DownloadId[] = [];
   /**
@@ -393,6 +396,23 @@ export class MockBackend implements Backend {
 
   checkAddonUpdates() {
     return this.#call(() => addons.checkAddonUpdates(this.#state, this.nextUpdateCheck));
+  }
+
+  suffixList() {
+    return this.#call(() => ({ ...this.#state.suffixList }));
+  }
+
+  checkSuffixList() {
+    return this.#call(() => suffixList.checkSuffixList(this.#state, this.nextSuffixCheck));
+  }
+
+  /** Set by tests: the core's weekly check of the Public Suffix List runs, finding `finds`. */
+  simulateWeeklySuffixCheck(finds: suffixList.SuffixCheck): void {
+    try {
+      suffixList.checkSuffixList(this.#state, finds);
+    } catch {
+      // The core only logs a weekly check that failed; its event says so.
+    }
   }
 
   cancelAddonOperation(id: string) {

@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
@@ -10,7 +11,9 @@ use wirecatch_protocol::app::{DownloadStatus, Queue};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::state::{Counters, Entry, QueueSlot, State};
+use super::suffix_list::SuffixCheck;
 use crate::naming::Claimed;
+use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use crate::store::{Origin, Snapshot, StoredDownload};
 
@@ -38,6 +41,8 @@ pub(super) struct Surroundings<'a> {
     /// The size of the finished file at a path, if it is there with no part or
     /// resume file next to it.
     pub finished_size: &'a dyn Fn(&Path) -> Option<u64>,
+    /// The Public Suffix List the stored settings are read with.
+    pub suffixes: Arc<SuffixList>,
 }
 
 /// Rebuilds the state. A first start gets the default settings and queue. A
@@ -48,7 +53,9 @@ pub(super) struct Surroundings<'a> {
 pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored {
     let settings = snapshot
         .settings
-        .map_or_else(settings::default_settings, settings::within_limits);
+        .map_or_else(settings::default_settings, |stored| {
+            settings::within_limits(stored, &around.suffixes)
+        });
     let mut queues = restore_queues(snapshot.queues);
     let default_queue = queues
         .iter()
@@ -84,6 +91,8 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         pending: BTreeMap::new(),
         media: BTreeMap::new(),
         addon: AddonSlot::default(),
+        suffixes: around.suffixes.clone(),
+        suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
         last_checked: around.now,
@@ -178,6 +187,7 @@ mod tests {
             now: NaiveDateTime::default(),
             now_millis: 7,
             finished_size,
+            suffixes: SuffixList::built_in(),
         }
     }
 

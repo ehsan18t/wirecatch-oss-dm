@@ -83,18 +83,8 @@ impl Record {
 
     /// Writes the record, replacing the old one in one step, on disk before it replaces the old one, so a power cut leaves one or the other whole. Blocks on the disk.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        std::fs::create_dir_all(dir)?;
-        let tmp = dir.join(format!("{RECORD_FILE}.tmp"));
         let json = serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?;
-        let mut file = std::fs::File::create(&tmp)?;
-        std::io::Write::write_all(&mut file, &json)?;
-        file.sync_all()?;
-        drop(file);
-        std::fs::rename(&tmp, dir.join(RECORD_FILE))?;
-        // The rename reaches the disk with its folder on Unix. Windows has no handle for a folder to flush, and records the rename with the file.
-        #[cfg(unix)]
-        std::fs::File::open(dir)?.sync_all()?;
-        Ok(())
+        crate::whole_file::replace(dir, RECORD_FILE, &json)
     }
 
     pub fn version(&self, id: ComponentId) -> Option<&str> {

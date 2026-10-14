@@ -46,6 +46,8 @@
     "allow-remove-addon",
     "allow-cancel-addon-operation",
     "allow-check-addon-updates",
+    "allow-suffix-list",
+    "allow-check-suffix-list",
     "allow-show-question-windows",
     "allow-show-progress-window",
     "allow-main-window-ready",

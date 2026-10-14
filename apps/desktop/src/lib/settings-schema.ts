@@ -266,6 +266,13 @@ const DEFS = [
     help: 'Links on pages from these sites may lead to devices on your network, like a NAS or a router. Pages at a network address, or with a one-word name, count without being listed.',
     keywords: 'local network intranet nas router private lan trusted hosts',
   },
+  {
+    id: 'update_suffix_list',
+    section: 'advanced',
+    label: 'Keep the list of public domains up to date',
+    help: 'The Public Suffix List tells Wirecatch which addresses belong to one owner, for example which of your sites count as on your network. Once a week while nothing downloads, or the next day after a check that failed, Wirecatch fetches it from publicsuffix.org. Privacy: the request names Wirecatch and its version and sends nothing about your downloads or browsing; publicsuffix.org sees your IP address.',
+    keywords: 'public suffix list psl domains owner privacy update publicsuffix.org',
+  },
 ] as const satisfies readonly SettingText[];
 
 /** Every setting, by the id the screen, the palette and the core's field names share. */

@@ -65,4 +65,8 @@ export type AppSettingsPatch = {
    * The new [`AppSettings::local_sites`], replacing the list.
    */
   local_sites?: Array<string>;
+  /**
+   * The new [`AppSettings::update_suffix_list`].
+   */
+  update_suffix_list?: boolean;
 };

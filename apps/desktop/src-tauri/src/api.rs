@@ -12,7 +12,7 @@ use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
-    MediaSelection, PendingCapture, Question, Queue,
+    MediaSelection, PendingCapture, Question, Queue, SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
@@ -625,6 +625,24 @@ pub async fn update_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
 pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
     plain(m.check_addon_updates().await)?;
     Ok(m.list_addons())
+}
+
+/// The Public Suffix List in use and when a newer one was last looked for (D44). The weekly
+/// check runs in the core while `update_suffix_list` is on.
+#[must_use]
+pub fn suffix_list(m: &Manager) -> SuffixListInfo {
+    m.suffix_list()
+}
+
+/// Looks for a newer Public Suffix List now, as the person asked, and answers with the list in
+/// use afterwards.
+///
+/// # Errors
+///
+/// The list could not be fetched, was refused or could not be saved, which keeps the list in
+/// use, or the manager has shut down ([`Manager::check_suffix_list`]).
+pub async fn check_suffix_list(m: &Manager) -> CommandResult<SuffixListInfo> {
+    plain(m.check_suffix_list().await)
 }
 
 /// Stops an install or update in progress. An update keeps the installed version working; a

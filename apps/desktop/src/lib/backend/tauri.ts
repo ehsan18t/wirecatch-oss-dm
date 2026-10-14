@@ -268,6 +268,12 @@ export class TauriBackend implements DownloadWindowBackend {
   checkAddonUpdates() {
     return this.#call('check_addon_updates');
   }
+  suffixList() {
+    return this.#call('suffix_list');
+  }
+  checkSuffixList() {
+    return this.#call('check_suffix_list');
+  }
 
   /** Passes on every event with the contract's shape. One without it is a bug on one side: it is dropped, reported to the shell's log, and `reload` is called to load everything again from the commands, whose answers are checked; for a kind that keeps failing, at most once every `UNREADABLE_RELOAD_MS`. */
   async subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe> {

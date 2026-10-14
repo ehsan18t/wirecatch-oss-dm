@@ -69,4 +69,9 @@ export type AppSettings = {
    * page whose own address is local (D39). Empty by default.
    */
   local_sites: Array<string>;
+  /**
+   * Download a newer Public Suffix List from publicsuffix.org once a week while
+   * downloads are idle (D44). Off: the list in use stays until the person checks.
+   */
+  update_suffix_list: boolean;
 };

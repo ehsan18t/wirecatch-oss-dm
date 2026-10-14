@@ -96,6 +96,7 @@ import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StreamAction } from './StreamAction';
+import type { SuffixListInfo } from './SuffixListInfo';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
 import type { UiEvent } from './UiEvent';
@@ -216,7 +217,8 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
     isMediaDefaults(value1['media']) &&
-    isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string'))(value);
+    isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string') &&
+    typeof value1['update_suffix_list'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link AppSettingsPatch}; fields it does not name are not checked. */
@@ -245,7 +247,9 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['show_progress_windows'] === 'boolean') &&
     (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])) &&
     (value1['local_sites'] === undefined ||
-      isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string')))(value);
+      isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string')) &&
+    (value1['update_suffix_list'] === undefined ||
+      typeof value1['update_suffix_list'] === 'boolean'))(value);
 }
 
 /** Whether `value` has the shape of a {@link BrowserInfo}; fields it does not name are not checked. */
@@ -1063,6 +1067,15 @@ export function isStreamAction(value: unknown): value is StreamAction {
   return value === 'none' || value === 'copy' || value === 'encode';
 }
 
+/** Whether `value` has the shape of a {@link SuffixListInfo}; fields it does not name are not checked. */
+export function isSuffixListInfo(value: unknown): value is SuffixListInfo {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['published'] === 'number' &&
+    (typeof value1['checked'] === 'number' || value1['checked'] === null) &&
+    typeof value1['check_failed'] === 'boolean')(value);
+}
+
 /** Whether `value` has the shape of a {@link Theme}; fields it does not name are not checked. */
 export function isTheme(value: unknown): value is Theme {
   return value === 'system' || value === 'light' || value === 'dark';
@@ -1126,6 +1139,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) &&
       value1['type'] === 'addons_changed' &&
       isArrayOf(value1['data'], isAddonInfo))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'suffix_list_checked' &&
+      isSuffixListInfo(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'addon_required' &&
@@ -1296,6 +1313,10 @@ export const COMMAND_OUTPUTS: {
   ): value is CommandMap['cancel_addon_operation']['output'] => value === null,
   check_addon_updates: (value: unknown): value is CommandMap['check_addon_updates']['output'] =>
     isArrayOf(value, isAddonInfo),
+  suffix_list: (value: unknown): value is CommandMap['suffix_list']['output'] =>
+    isSuffixListInfo(value),
+  check_suffix_list: (value: unknown): value is CommandMap['check_suffix_list']['output'] =>
+    isSuffixListInfo(value),
   get_question: (value: unknown): value is CommandMap['get_question']['output'] =>
     isQuestion(value) || value === null,
   get_download: (value: unknown): value is CommandMap['get_download']['output'] =>

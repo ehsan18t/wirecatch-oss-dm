@@ -15,7 +15,7 @@ use ts_rs::TS;
 use crate::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
-    PendingCapture, Question, Queue,
+    PendingCapture, Question, Queue, SuffixListInfo,
 };
 use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
@@ -329,6 +329,14 @@ commands! {
     } -> ();
     /// Looks for a newer media add-on now; answers with the add-ons as they stand afterwards.
     check_addon_updates -> Vec<AddonInfo>;
+    /// The Public Suffix List in use and when the app last looked for a newer one (D44).
+    suffix_list -> SuffixListInfo;
+    /// Looks for a newer Public Suffix List now, whatever
+    /// [`AppSettings::update_suffix_list`](crate::app::AppSettings::update_suffix_list) says, and takes it when it passes every check;
+    /// answers with the list as it stands afterwards. Fails with `update_check_failed` and
+    /// a message for the person when it could not be fetched or was refused, keeping the
+    /// list in use.
+    check_suffix_list -> SuffixListInfo;
     /// The open question a download window shows, or `null` once it is answered, dismissed or
     /// taken back by the browser.
     get_question: GetQuestionArgs {

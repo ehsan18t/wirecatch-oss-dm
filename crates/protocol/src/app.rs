@@ -527,6 +527,23 @@ impl<'de> Deserialize<'de> for AddonId {
     }
 }
 
+/// The Public Suffix List the app decides which sites are one owner's with (D44), as the
+/// settings show it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SuffixListInfo {
+    /// When publicsuffix.org published the list in use, in milliseconds since the Unix epoch.
+    #[ts(type = "number")]
+    pub published: i64,
+    /// When the app last looked for a newer list, in milliseconds since the Unix epoch;
+    /// `None` until it first does.
+    #[ts(type = "number | null")]
+    pub checked: Option<i64>,
+    /// Whether that last look failed (no answer, a list refused or not saved), so a newer
+    /// list may exist; it is tried again a day later.
+    pub check_failed: bool,
+}
+
 /// An optional component (D2), as the add-ons settings show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -732,6 +749,8 @@ pub struct AppSettingsPatch {
     pub media: Option<MediaDefaultsPatch>,
     /// The new [`AppSettings::local_sites`], replacing the list.
     pub local_sites: Option<Vec<String>>,
+    /// The new [`AppSettings::update_suffix_list`].
+    pub update_suffix_list: Option<bool>,
 }
 
 /// A change to some of [`MediaDefaults`].
@@ -886,6 +905,10 @@ pub struct AppSettings {
     /// page whose own address is local (D39). Empty by default.
     #[serde(default)]
     pub local_sites: Vec<String>,
+    /// Download a newer Public Suffix List from publicsuffix.org once a week while
+    /// downloads are idle (D44). Off: the list in use stays until the person checks.
+    #[serde(default = "default_true")]
+    pub update_suffix_list: bool,
 }
 
 fn default_true() -> bool {
@@ -910,6 +933,7 @@ impl AppSettings {
             show_progress_windows,
             media,
             local_sites,
+            update_suffix_list,
         } = self;
         let AppSettingsPatch {
             default_folder: new_default_folder,
@@ -926,6 +950,7 @@ impl AppSettings {
             show_progress_windows: new_show_progress_windows,
             media: media_patch,
             local_sites: new_local_sites,
+            update_suffix_list: new_update_suffix_list,
         } = patch;
         set(default_folder, new_default_folder);
         set(categories, new_categories);
@@ -945,6 +970,7 @@ impl AppSettings {
             media.apply(media_patch);
         }
         set(local_sites, new_local_sites);
+        set(update_suffix_list, new_update_suffix_list);
     }
 }
 
@@ -1104,6 +1130,9 @@ pub enum UiEvent {
     },
     /// Every add-on, after any changed (an install's progress included).
     AddonsChanged(Vec<AddonInfo>),
+    /// The Public Suffix List after each look for a newer one, the weekly one or Check now,
+    /// whether it found one, none or failed (D44).
+    SuffixListChecked(SuffixListInfo),
     /// A capture needs an add-on that is not installed; the UI offers to install it.
     AddonRequired {
         /// The add-on needed.
