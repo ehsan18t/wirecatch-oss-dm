@@ -46,6 +46,7 @@ import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
+import type { StartupNotice } from './StartupNotice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
@@ -291,6 +292,14 @@ export type CommandMap = {
    * The system's accent colour; later changes arrive on `SYSTEM_APPEARANCE_EVENT`.
    */
   system_appearance: Command<null, SystemAppearance>;
+  /**
+   * What the person should know about how Wirecatch started this time (a damaged download list set aside, downloads hidden from the list, a data folder other accounts may read); empty on a normal start. The main window shows each, so none is lost with the system notification.
+   */
+  startup_notices: Command<null, Array<StartupNotice>>;
+  /**
+   * Shows the download list set aside at this start (`StartupNotice::set_aside`) selected in its folder. The shell knows the path; the page sends none, so no page can open a path of its choosing.
+   */
+  show_set_aside_list: Command<null, null>;
   /**
    * Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
    */

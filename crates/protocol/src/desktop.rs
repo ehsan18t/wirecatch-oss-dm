@@ -15,7 +15,7 @@ use ts_rs::TS;
 use crate::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
-    PendingCapture, Question, Queue, SuffixListInfo,
+    PendingCapture, Question, Queue, StartupNotice, SuffixListInfo,
 };
 use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
@@ -440,6 +440,10 @@ commands! {
     } -> ();
     /// The system's accent colour; later changes arrive on `SYSTEM_APPEARANCE_EVENT`.
     system_appearance -> SystemAppearance;
+    /// What the person should know about how Wirecatch started this time (a damaged download list set aside, downloads hidden from the list, a data folder other accounts may read); empty on a normal start. The main window shows each, so none is lost with the system notification.
+    startup_notices -> Vec<StartupNotice>;
+    /// Shows the download list set aside at this start (`StartupNotice::set_aside`) selected in its folder. The shell knows the path; the page sends none, so no page can open a path of its choosing.
+    show_set_aside_list -> ();
     /// Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
     take_captured -> Vec<DownloadSummary>;
     /// Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.

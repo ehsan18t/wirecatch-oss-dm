@@ -15,6 +15,7 @@ import type {
   Queue,
   QueueId,
   SettingsProfile,
+  StartupNotice,
   SystemAppearance,
   UiEvent,
   WindowAction,
@@ -26,7 +27,7 @@ import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';
 import * as suffixList from './suffix-list';
-import { DOWNLOADS, HOME } from './data';
+import { DOWNLOADS, HOME, startupNoticesFor } from './data';
 import * as downloads from './downloads';
 import * as media from './media';
 import { populate } from './populate';
@@ -58,6 +59,10 @@ export interface MockOptions {
    * answers arrive well after the events the call caused, which shows races in the interface.
    */
   latencyMs?: number;
+  /** Start as the app does after setting a damaged download list aside, with its notice. */
+  damagedList?: boolean;
+  /** Start as the app does when it could not make its data folder private, with its notice; after the damaged list's, as the core gives them. */
+  dataFolderNotPrivate?: boolean;
 }
 
 /** The seed of the sample data people and screenshots see. */
@@ -103,6 +108,7 @@ export class MockBackend implements Backend {
 
   readonly #state: MockState;
   readonly #latencyMs: number;
+  readonly #startupNotices: StartupNotice[];
   #timer: ReturnType<typeof setInterval> | undefined;
   /** Everything still to happen later (answers waiting out `latencyMs`, sample events), so `dispose` stops it. */
   readonly #later = new Set<ReturnType<typeof setTimeout>>();
@@ -115,6 +121,7 @@ export class MockBackend implements Backend {
     const now = options.now ?? (() => Date.now());
     this.#state = new MockState(this.windows, mulberry32(options.seed ?? DEFAULT_SEED), now);
     this.#latencyMs = options.latencyMs ?? 0;
+    this.#startupNotices = startupNoticesFor(options);
     this.#lastTick = now();
     if (!options.empty) populate(this.#state, options.count ?? SEEDS.length, options.active ?? 0);
     // Work out what runs and why the rest waits before anyone asks.
@@ -434,6 +441,15 @@ export class MockBackend implements Backend {
 
   takeLaunchLinks() {
     return this.#call((): string[] => []);
+  }
+
+  startupNotices() {
+    return this.#call((): StartupNotice[] => [...this.#startupNotices]);
+  }
+
+  showSetAsideList() {
+    // The sample app has no folder to show; the call answers as the shell's would.
+    return this.#call(() => undefined);
   }
 
   takeCaptured() {

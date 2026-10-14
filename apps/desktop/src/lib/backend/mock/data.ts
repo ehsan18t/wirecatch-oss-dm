@@ -11,8 +11,10 @@ import {
   type Category,
   type CategoryRule,
   type Queue,
+  type StartupNotice,
   type SuffixListInfo,
 } from '@wirecatch/protocol';
+import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import { MB } from '@wirecatch/units';
 
 export const HOME = 'C:\\Users\\you';
@@ -181,4 +183,29 @@ export function categoryFor(fileName: string, rules: readonly CategoryRule[]): C
 export function folderFor(category: Category, settings: AppSettings): string {
   const rule = settings.categories.find((r) => r.category === category);
   return resolvePortable(rule ? rule.folder : settings.default_folder);
+}
+
+/** The notice the core gives after setting a damaged download list aside, worded as the core words it. */
+const DAMAGED_LIST_NOTICE: StartupNotice = {
+  title: `${PRODUCT_NAME} started a new download list`,
+  message: `The download list was damaged, so ${PRODUCT_NAME} set it aside and started an empty one. Files you already downloaded are still in their folders. The damaged list is kept at ${HOME}\\AppData\\Roaming\\${PRODUCT_SLUG}\\downloads.db.damaged-1791000000000.`,
+  set_aside: true,
+};
+
+/** The notice the core gives when it could not make its data folder private, worded as the core words it. */
+const NOT_PRIVATE_NOTICE: StartupNotice = {
+  title: 'Other accounts may be able to read your download list',
+  message: `${PRODUCT_NAME} could not make its folder ${HOME}\\AppData\\Roaming\\${PRODUCT_SLUG} private to your account (access is denied). The download list in it keeps the sign-ins websites gave for your downloads, so other accounts on this computer may be able to read them. Make sure your account owns the folder and that it is on a drive that keeps permissions, then open ${PRODUCT_NAME} again.`,
+  set_aside: false,
+};
+
+/** The notices the core gives at start, in its order, for a start as `options` describe it. */
+export function startupNoticesFor(options: {
+  damagedList?: boolean;
+  dataFolderNotPrivate?: boolean;
+}): StartupNotice[] {
+  return [
+    ...(options.damagedList ? [DAMAGED_LIST_NOTICE] : []),
+    ...(options.dataFolderNotPrivate ? [NOT_PRIVATE_NOTICE] : []),
+  ];
 }

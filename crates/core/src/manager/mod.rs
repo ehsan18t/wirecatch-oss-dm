@@ -26,7 +26,7 @@ mod tests;
 mod ticker;
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::UiEvent;
+use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::wire::Event;
 
 use crate::addons::manifest::MediaAddonSources;
@@ -45,8 +45,8 @@ use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
 use crate::public_suffix::SuffixList;
-use crate::store::Store;
-use crate::user_error::{self, StartupNotice};
+use crate::store::{Recovery, Store};
+use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
@@ -246,6 +246,8 @@ struct Inner {
     stopped: CancellationToken,
     /// What to tell the person about this start, if anything.
     startup_notices: Vec<StartupNotice>,
+    /// Where a damaged download list was set aside at this start, if one was.
+    set_aside_list: Option<PathBuf>,
     /// Plays the engine in unit tests.
     #[cfg(test)]
     fake_engine: Mutex<Option<fake::FakeEngine>>,
@@ -343,6 +345,10 @@ impl Manager {
                 .into_iter()
                 .chain(not_private.map(|reason| user_error::not_private(&notices_dir, &reason)))
                 .collect(),
+            set_aside_list: recoveries.iter().find_map(|r| match r {
+                Recovery::Damaged { kept_at } => Some(kept_at.clone()),
+                _ => None,
+            }),
             #[cfg(test)]
             fake_engine: Mutex::new(None),
             #[cfg(test)]
@@ -358,6 +364,12 @@ impl Manager {
     #[must_use]
     pub fn startup_notices(&self) -> &[StartupNotice] {
         &self.inner.startup_notices
+    }
+
+    /// Where a damaged download list was set aside at this start, for showing it in its folder. `None` when nothing was.
+    #[must_use]
+    pub fn set_aside_list(&self) -> Option<&Path> {
+        self.inner.set_aside_list.as_deref()
     }
 
     /// Events for the desktop UI.

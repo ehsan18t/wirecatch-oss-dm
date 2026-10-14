@@ -140,13 +140,17 @@ async fn the_data_folder_can_be_deleted_right_after_shutdown() -> TestResult {
     Ok(())
 }
 
-/// A damaged download list used to stop the app from starting at all. Now it is set aside, a new list opens, and the person is told where the old one is.
+/// A damaged download list used to stop the app from starting at all. Now it is set aside, a new list opens, and the person is told where the old one is and can be shown it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestResult {
     let mut h = Harness::new().await?;
     assert!(
         h.manager.startup_notices().is_empty(),
         "a normal start has nothing to say"
+    );
+    assert!(
+        h.manager.set_aside_list().is_none(),
+        "nothing was set aside"
     );
     h.manager.shutdown().await;
     let database = h
@@ -167,6 +171,14 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
         "{}",
         notice.message
     );
+    assert!(notice.set_aside, "the notice offers to show the old list");
+    let kept = h.manager.set_aside_list().expect("the old list is kept");
+    assert!(
+        kept.is_file(),
+        "{} is where the old list is",
+        kept.display()
+    );
+    assert_eq!(kept.parent(), database.parent(), "beside the new list");
     assert_eq!(
         h.manager.list_downloads(),
         [] as [wirecatch_protocol::app::DownloadSummary; 0]

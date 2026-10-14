@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 
 use wirecatch_engine::Error as EngineError;
-use wirecatch_protocol::app::{FixAction, UserError};
+use wirecatch_protocol::app::{FixAction, StartupNotice, UserError};
 
 use crate::local_network::ChosenBy;
 use crate::store::Recovery;
@@ -147,15 +147,6 @@ pub(crate) fn describe_run(
 /// browser's notice: there is no download in the app to act on.
 pub(crate) const CAPTURE_TO_OWN_NETWORK: &str = "It leads to a device on your own network, which Wirecatch does not reach for a link a website gave.";
 
-/// Something the person should know about how Wirecatch started, shown once as a notification.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StartupNotice {
-    /// A short title.
-    pub title: String,
-    /// What happened and what it means for the person, in whole sentences.
-    pub message: String,
-}
-
 /// The notice for a download list that had to be repaired while opening, if it
 /// had to be: one notice, saying everything that was repaired.
 pub(crate) fn list_recovered(recoveries: &[Recovery]) -> Option<StartupNotice> {
@@ -169,6 +160,7 @@ pub(crate) fn list_recovered(recoveries: &[Recovery]) -> Option<StartupNotice> {
                 .map(|r| recovered(r).message)
                 .collect::<Vec<_>>()
                 .join(" "),
+            set_aside: several.iter().any(|r| recovered(r).set_aside),
         }),
     }
 }
@@ -182,6 +174,7 @@ pub(crate) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
             "Wirecatch could not make its folder {} private to your account ({reason}). The download list in it keeps the sign-ins websites gave for your downloads, so other accounts on this computer may be able to read them. Make sure your account owns the folder and that it is on a drive that keeps permissions, then open Wirecatch again.",
             folder.display()
         ),
+        set_aside: false,
     }
 }
 
@@ -194,6 +187,7 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
                 "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders. The damaged list is kept at {}.",
                 kept_at.display()
             ),
+            set_aside: true,
         },
         Recovery::UnreadableKept(count) => StartupNotice {
             title: "Some downloads are hidden from the list".to_owned(),
@@ -204,6 +198,7 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
                 if *count == 1 { "it" } else { "them" },
                 if *count == 1 { "its" } else { "their" },
             ),
+            set_aside: false,
         },
         Recovery::ValuesReset { downloads, queues } => {
             let mut said = Vec::new();
@@ -222,6 +217,7 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
             StartupNotice {
                 title: "Wirecatch repaired some damaged values".to_owned(),
                 message: said.join(" "),
+                set_aside: false,
             }
         }
     }

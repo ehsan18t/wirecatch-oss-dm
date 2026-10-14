@@ -21,6 +21,7 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  StartupNotice,
   SystemAppearance,
   SuffixListInfo,
   UiEvent,
@@ -127,6 +128,11 @@ export interface Backend {
    * events.
    */
   takeCaptured(): Promise<DownloadSummary[]>;
+
+  /** What the person should know about how the app started this time (a damaged list set aside, a data folder other accounts may read); empty on a normal start. The main window shows each (CORE-1). */
+  startupNotices(): Promise<StartupNotice[]>;
+  /** Shows the download list set aside at this start selected in its folder (`StartupNotice.set_aside`). */
+  showSetAsideList(): Promise<void>;
 
   /** Downloads (or with `later`, adds paused) the chosen quality; the new download's id. */
   chooseMedia(id: QuestionId, selection: MediaSelection): Promise<DownloadId>;

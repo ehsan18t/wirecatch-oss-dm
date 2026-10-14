@@ -119,6 +119,18 @@ pub struct UserError {
     pub fix: Option<FixAction>,
 }
 
+/// Something the person should know about how Wirecatch started, such as a damaged download list that was set aside: shown as a system notification and in the main window, which may open long after the notification has gone (CORE-1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct StartupNotice {
+    /// A short title.
+    pub title: String,
+    /// What happened and what it means for the person, in whole sentences.
+    pub message: String,
+    /// A damaged download list was set aside: the window offers to show it in its folder (`show_set_aside_list`), so the person need not copy its path out of the message.
+    pub set_aside: bool,
+}
+
 /// A fix the UI can offer for a [`UserError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]

@@ -105,6 +105,7 @@ export type { SetQueuePausedArgs } from './generated/SetQueuePausedArgs';
 export type { SettingsProfile } from './generated/SettingsProfile';
 export type { ShowProgressWindowArgs } from './generated/ShowProgressWindowArgs';
 export type { StartQueueNowArgs } from './generated/StartQueueNowArgs';
+export type { StartupNotice } from './generated/StartupNotice';
 export type { StreamAction } from './generated/StreamAction';
 export type { SuffixListInfo } from './generated/SuffixListInfo';
 export type { SystemAppearance } from './generated/SystemAppearance';

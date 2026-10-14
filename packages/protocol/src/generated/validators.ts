@@ -99,6 +99,7 @@ import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
+import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
@@ -1111,6 +1112,15 @@ export function isStartQueueNowArgs(value: unknown): value is StartQueueNowArgs 
   return ((value1: unknown): boolean => isRecord(value1) && isQueueId(value1['id']))(value);
 }
 
+/** Whether `value` has the shape of a {@link StartupNotice}; fields it does not name are not checked. */
+export function isStartupNotice(value: unknown): value is StartupNotice {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['title'] === 'string' &&
+    typeof value1['message'] === 'string' &&
+    typeof value1['set_aside'] === 'boolean')(value);
+}
+
 /** Whether `value` has the shape of a {@link StreamAction}; fields it does not name are not checked. */
 export function isStreamAction(value: unknown): value is StreamAction {
   return value === 'none' || value === 'copy' || value === 'encode';
@@ -1410,6 +1420,10 @@ export const COMMAND_OUTPUTS: {
     value === null,
   system_appearance: (value: unknown): value is CommandMap['system_appearance']['output'] =>
     isSystemAppearance(value),
+  startup_notices: (value: unknown): value is CommandMap['startup_notices']['output'] =>
+    isArrayOf(value, isStartupNotice),
+  show_set_aside_list: (value: unknown): value is CommandMap['show_set_aside_list']['output'] =>
+    value === null,
   take_captured: (value: unknown): value is CommandMap['take_captured']['output'] =>
     isArrayOf(value, isDownloadSummary),
   report_unreadable_event: (

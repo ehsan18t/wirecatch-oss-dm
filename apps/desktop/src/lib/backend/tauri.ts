@@ -333,6 +333,12 @@ export class TauriBackend implements DownloadWindowBackend {
   takeCaptured() {
     return this.#call('take_captured');
   }
+  startupNotices() {
+    return this.#call('startup_notices');
+  }
+  showSetAsideList() {
+    return this.#exec('show_set_aside_list');
+  }
   systemAppearance() {
     return this.#call('system_appearance');
   }

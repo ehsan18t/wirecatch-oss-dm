@@ -57,6 +57,8 @@
     "allow-window-frame",
     "allow-set-maximize-button",
     "allow-system-appearance",
+    "allow-startup-notices",
+    "allow-show-set-aside-list",
     "allow-take-captured",
     "allow-report-unreadable-event"
   ]

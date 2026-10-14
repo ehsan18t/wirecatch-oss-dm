@@ -646,6 +646,30 @@ pub async fn system_appearance<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn startup_notices(
+    core: CoreState<'_>,
+) -> CommandResult<contract::startup_notices::Output> {
+    Ok(core.manager().await?.startup_notices().to_vec())
+}
+
+#[tauri::command]
+pub async fn show_set_aside_list<R: Runtime>(
+    app: AppHandle<R>,
+    core: CoreState<'_>,
+) -> CommandResult<contract::show_set_aside_list::Output> {
+    let manager = core.manager().await?;
+    let Some(path) = manager.set_aside_list() else {
+        return Err(api::failed("No download list was set aside at this start."));
+    };
+    app.opener().reveal_item_in_dir(path).map_err(|e| {
+        api::failed(format!(
+            "Could not show the old download list in its folder ({e}). It is kept at {}.",
+            path.display()
+        ))
+    })
+}
+
+#[tauri::command]
 pub async fn take_captured(
     captured: State<'_, crate::window::PendingCaptures>,
 ) -> CommandResult<contract::take_captured::Output> {
@@ -723,6 +747,8 @@ handler![
     window_frame,
     set_maximize_button,
     system_appearance,
+    startup_notices,
+    show_set_aside_list,
     take_captured,
     report_unreadable_event,
 ];
