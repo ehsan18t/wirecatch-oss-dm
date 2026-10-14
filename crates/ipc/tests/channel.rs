@@ -4,7 +4,7 @@
 //! This binary runs this one test, since it points the user's local data folder at a folder
 //! of its own through the environment.
 
-use wirecatch_ipc::{Channel, IpcError, Listener, endpoint_for, key_folder};
+use wirecatch_ipc::{Channel, Folders, IpcError, Listener, endpoint_for};
 use wirecatch_test_support::private_dir;
 
 // The app listened at a name worked out from the user's SID (Windows) or uid (the `/tmp`
@@ -25,8 +25,9 @@ async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
             std::env::remove_var("XDG_RUNTIME_DIR");
         }
     }
-    let folder = key_folder(Channel::Dev).unwrap();
-    assert_eq!(folder, dir.path().join(Channel::Dev.data_folder()));
+    let folders = Folders::of_user(Channel::Dev).unwrap();
+    let folder = &folders.key;
+    assert_eq!(folder, &dir.path().join(Channel::Dev.data_folder()));
 
     // Before the app first listens, a client finds no key and makes none.
     match endpoint_for(Channel::Dev) {
@@ -34,7 +35,7 @@ async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
         other => panic!("expected NoEndpointKey, got {other:?}"),
     }
 
-    let mut listener = Listener::bind_keyed(Channel::Dev, &folder).unwrap();
+    let mut listener = Listener::bind_keyed(Channel::Dev, &folders).unwrap();
     let key = std::fs::read_to_string(folder.join("endpoint-key")).unwrap();
     let name = listener.endpoint().as_os_str().to_string_lossy();
     #[cfg(windows)]

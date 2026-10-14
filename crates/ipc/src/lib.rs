@@ -1,8 +1,8 @@
 //! Per-user local connections between the Wirecatch app and its clients (the
 //! browser bridge and, later, the CLI).
 //!
-//! The app calls [`Listener::bind_keyed`] for its [`Channel`] with that channel's
-//! [`key_folder`] and serves each accepted [`Connection`]. A client calls [`connect`] on
+//! The app calls [`Listener::bind_keyed`] for its [`Channel`] in the current user's
+//! [`Folders`] and serves each accepted [`Connection`]. A client calls [`connect`] on
 //! [`endpoint_for`] the same channel. Frames on a
 //! connection use `wirecatch_protocol::frame` (4-byte little-endian length plus
 //! JSON, capped at 1 MiB).
@@ -15,7 +15,7 @@
 //! - **Windows**: the endpoint is the named pipe `\\.\pipe\wirecatch-app-<user SID>-<key>`
 //!   (`wirecatch-app-dev-` for debug builds, from `config/product.toml`), where the key is
 //!   128 random bits the listener keeps in a file only the user can read, so another
-//!   account cannot work out the name and create the pipe first (see [`endpoint_keyed_in`]).
+//!   account cannot work out the name and create the pipe first (see [`endpoint_in`]).
 //!   The listener creates it with `FILE_FLAG_FIRST_PIPE_INSTANCE` (so it fails
 //!   instead of joining a pipe someone else created first), rejects remote
 //!   clients, and sets an explicit security descriptor whose owner is the current
@@ -51,7 +51,7 @@ compile_error!("wirecatch-ipc supports Windows and Linux only");
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -281,24 +281,23 @@ pub fn endpoint() -> Result<Endpoint, IpcError> {
 
 /// Returns the endpoint of `channel`'s app for the current user, for a client. Each channel
 /// has its own (D13), so a debug build never serves or reaches an installed release. It is
-/// [`endpoint_keyed_in`] the channel's [`key_folder`], where its app's listener keeps the key.
+/// [`endpoint_in`] the user's [`Folders`], where the channel's app listens.
 ///
 /// # Errors
 ///
-/// As [`endpoint_keyed_in`], and [`IpcError::Io`] when the system does not say where the
-/// local application data is.
+/// As [`endpoint_in`], and [`IpcError::Io`] when the system does not say where the local
+/// application data is.
 pub fn endpoint_for(channel: Channel) -> Result<Endpoint, IpcError> {
-    platform::endpoint(channel, || key::read(&key_folder(channel)?))
+    endpoint_in(channel, &Folders::of_user(channel)?)
 }
 
-/// Returns `channel`'s endpoint for the current user, for a client: named with the
-/// per-user key that the listener keeps in `key_folder` ([`Listener::bind_keyed`]). The key
-/// is 128 random bits in a file only the user can read, so another account cannot work out
-/// the name and take it before Wirecatch starts (on Windows every pipe name is
-/// machine-wide; on Linux this concerns the `/tmp` fallback, while a socket in
-/// `$XDG_RUNTIME_DIR` takes no key, and no key is read for it). A client only reads the
-/// key, and should read it again at every attempt to connect, since the listener writes a
-/// new one when its name is taken.
+/// Returns `channel`'s endpoint in `folders`, for a client: named with the per-user key that
+/// the listener keeps in `folders.key` ([`Listener::bind_keyed`]). The key is 128 random bits
+/// in a file only the user can read, so another account cannot work out the name and take it
+/// before Wirecatch starts (on Windows every pipe name is machine-wide; on Linux this
+/// concerns the `/tmp` fallback, while a socket in the runtime folder takes no key, and no key
+/// is read for it). A client only reads the key, and should read it again at every attempt to
+/// connect, since the listener writes a new one when its name is taken.
 ///
 /// On Linux this also creates the socket's folder with mode 0700 if it is missing, and
 /// refuses a folder that already exists but is not private to the current user.
@@ -310,8 +309,44 @@ pub fn endpoint_for(channel: Channel) -> Result<Endpoint, IpcError> {
 /// [`IpcError::UnsafeDirectory`] when the socket's folder exists but is not private to the
 /// current user (Linux), and [`IpcError::Io`] when the current user cannot be read
 /// (Windows) or the folder cannot be created or inspected (Linux).
-pub fn endpoint_keyed_in(channel: Channel, key_folder: &Path) -> Result<Endpoint, IpcError> {
-    platform::endpoint(channel, || key::read(key_folder))
+pub fn endpoint_in(channel: Channel, folders: &Folders) -> Result<Endpoint, IpcError> {
+    platform::endpoint(channel, folders.runtime.as_deref(), || {
+        key::read(&folders.key)
+    })
+}
+
+/// Where a channel's endpoint is named from: the folder that keeps its endpoint key and, on
+/// Linux, the user's runtime folder.
+///
+/// The app and its clients use [`Folders::of_user`]. A test or tool that listens at a keyed
+/// endpoint passes folders of its own, so it never reaches the user's running app or another
+/// test's endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Folders {
+    /// Where the listener keeps the endpoint key: [`key_folder`] for the current user.
+    pub key: PathBuf,
+    /// Linux: the user's runtime folder (`$XDG_RUNTIME_DIR`), where the socket takes no key.
+    /// `None`, or a path that is not absolute, puts the socket in the shared `/tmp`, named
+    /// with the key. Windows has no runtime folder and ignores it.
+    pub runtime: Option<PathBuf>,
+}
+
+impl Folders {
+    /// The current user's folders for `channel`: its [`key_folder`] and, on Linux,
+    /// `$XDG_RUNTIME_DIR`.
+    ///
+    /// # Errors
+    ///
+    /// [`IpcError::Io`] when the system does not say where the local application data is.
+    pub fn of_user(channel: Channel) -> Result<Self, IpcError> {
+        Ok(Self {
+            key: key_folder(channel)?,
+            #[cfg(unix)]
+            runtime: unix::runtime_dir(),
+            #[cfg(windows)]
+            runtime: None,
+        })
+    }
 }
 
 /// Where `channel` keeps its endpoint key: its data folder in the user's local
@@ -403,8 +438,9 @@ impl Listener {
         })
     }
 
-    /// Starts listening at `channel`'s keyed endpoint, with the key kept in `key_folder`
-    /// (see [`endpoint_keyed_in`]). Must be called inside a tokio runtime with I/O enabled.
+    /// Starts listening at `channel`'s keyed endpoint in `folders`, with the key kept in
+    /// `folders.key` (see [`endpoint_in`]). Must be called inside a tokio runtime with I/O
+    /// enabled.
     ///
     /// It first takes the key folder's lock and keeps it while it listens: that makes it
     /// the one listener of the channel for this account, even for a copy that could not
@@ -420,13 +456,14 @@ impl Listener {
     /// [`IpcError::AlreadyInUse`] when another listener holds the lock or the endpoint,
     /// [`IpcError::BadEndpointKey`] when the key file is not private, and as
     /// [`Listener::bind`] otherwise, also when the name a new key gives is taken too.
-    pub fn bind_keyed(channel: Channel, key_folder: &Path) -> Result<Self, IpcError> {
-        let lock = key::KeyLock::take(key_folder)?;
-        let first = platform::endpoint(channel, || lock.current())
+    pub fn bind_keyed(channel: Channel, folders: &Folders) -> Result<Self, IpcError> {
+        let lock = key::KeyLock::take(&folders.key)?;
+        let runtime = folders.runtime.as_deref();
+        let first = platform::endpoint(channel, runtime, || lock.current())
             .and_then(|endpoint| Self::bind(&endpoint));
         let listening = match first {
-            Err(taken) if taken.is_taken_by_someone_else() && platform::needs_key() => {
-                platform::endpoint(channel, || lock.renew())
+            Err(taken) if taken.is_taken_by_someone_else() && platform::needs_key(runtime) => {
+                platform::endpoint(channel, runtime, || lock.renew())
                     .and_then(|endpoint| Self::bind(&endpoint))
             }
             other => other,

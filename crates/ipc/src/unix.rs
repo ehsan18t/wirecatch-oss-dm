@@ -20,23 +20,28 @@ pub(crate) fn current_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
-/// Whether the endpoint's name needs a key: only in the shared `/tmp` fallback, since the
-/// runtime folder is the user's own.
-pub(crate) fn needs_key() -> bool {
-    paths::usable_runtime_dir(std::env::var_os("XDG_RUNTIME_DIR").as_deref()).is_none()
+/// The user's runtime folder, `$XDG_RUNTIME_DIR`, as the environment names it.
+pub(crate) fn runtime_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from)
 }
 
-/// `channel`'s socket for the current user: in the runtime folder, which is the user's own,
-/// or else in the shared `/tmp`, in a folder named with the endpoint key that `key` gives,
-/// since without one another account could create the folder first. `key` is called only
-/// for `/tmp`.
+/// Whether the endpoint's name needs a key: only in the shared `/tmp` fallback, used without
+/// a usable `runtime` folder, since the runtime folder is the user's own.
+pub(crate) fn needs_key(runtime: Option<&Path>) -> bool {
+    paths::usable_runtime_dir(runtime.map(Path::as_os_str)).is_none()
+}
+
+/// `channel`'s socket for the current user: in the `runtime` folder, which is the user's own,
+/// or without a usable one in the shared `/tmp`, in a folder named with the endpoint key that
+/// `key` gives, since without one another account could create the folder first. `key` is
+/// called only for `/tmp`.
 pub(crate) fn endpoint(
     channel: Channel,
+    runtime: Option<&Path>,
     key: impl FnOnce() -> Result<EndpointKey, IpcError>,
 ) -> Result<Endpoint, IpcError> {
     let uid = current_uid();
-    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
-    let endpoint = if let Some(runtime) = paths::usable_runtime_dir(runtime_dir.as_deref()) {
+    let endpoint = if let Some(runtime) = paths::usable_runtime_dir(runtime.map(Path::as_os_str)) {
         Endpoint::from_raw(paths::runtime_socket_path(channel, runtime))
     } else {
         let key = key()?;

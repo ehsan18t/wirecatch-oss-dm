@@ -76,14 +76,16 @@ fn os_error(code: WIN32_ERROR) -> io::Error {
 
 /// Whether the endpoint's name needs a key: always, since pipe names are machine-wide and
 /// another account that knows the user's SID (which is no secret) could create the pipe
-/// first.
-pub(crate) fn needs_key() -> bool {
+/// first. Windows has no runtime folder.
+pub(crate) fn needs_key(_runtime: Option<&Path>) -> bool {
     true
 }
 
 /// `channel`'s pipe for the current user, named with the endpoint key that `key` gives.
+/// Windows has no runtime folder, so the name always carries the key.
 pub(crate) fn endpoint(
     channel: Channel,
+    _runtime: Option<&Path>,
     key: impl FnOnce() -> Result<EndpointKey, IpcError>,
 ) -> Result<Endpoint, IpcError> {
     let sid = Sid::current_user()?
@@ -1164,7 +1166,7 @@ mod tests {
         let user = Sid::current_user().unwrap().to_string_form().unwrap();
         assert!(user.starts_with("S-1-5-"), "{user}");
         let key = EndpointKey::parse("0123456789abcdef0123456789abcdef").unwrap();
-        let named = endpoint(Channel::Release, || Ok(key.clone())).unwrap();
+        let named = endpoint(Channel::Release, None, || Ok(key.clone())).unwrap();
         assert_eq!(
             named.as_os_str(),
             OsStr::new(&format!(
@@ -1213,7 +1215,11 @@ mod tests {
     #[tokio::test]
     async fn a_listener_whose_keyed_name_is_taken_listens_under_a_new_key() {
         let dir = wirecatch_test_support::private_dir("ipc-keyed-taken").unwrap();
-        let first = crate::Listener::bind_keyed(Channel::Dev, dir.path()).unwrap();
+        let folders = crate::Folders {
+            key: dir.path().to_path_buf(),
+            runtime: None,
+        };
+        let first = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
         let seen = first.endpoint().clone();
         drop(first);
 
@@ -1225,9 +1231,9 @@ mod tests {
         .unwrap();
         let _squatter = create_instance(&seen, &foreign, true).unwrap();
 
-        let mut listener = crate::Listener::bind_keyed(Channel::Dev, dir.path()).unwrap();
+        let mut listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
         assert_ne!(listener.endpoint(), &seen);
-        let current = crate::endpoint_keyed_in(Channel::Dev, dir.path()).unwrap();
+        let current = crate::endpoint_in(Channel::Dev, &folders).unwrap();
         assert_eq!(&current, listener.endpoint(), "clients read the new key");
         let (client, server) = tokio::join!(connect(&current, &user), listener.accept());
         client.unwrap();

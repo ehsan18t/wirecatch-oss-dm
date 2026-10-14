@@ -46,7 +46,7 @@ fn backoff_after(error: &IpcError) -> Option<Duration> {
 pub fn bind() -> Result<Listener, IpcError> {
     Listener::bind_keyed(
         crate::host::CHANNEL,
-        &wirecatch_ipc::key_folder(crate::host::CHANNEL)?,
+        &wirecatch_ipc::Folders::of_user(crate::host::CHANNEL)?,
     )
 }
 

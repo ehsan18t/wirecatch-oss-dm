@@ -369,7 +369,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use wirecatch_ipc::Listener;
+    use wirecatch_ipc::{Channel, Folders, Listener};
     use wirecatch_test_support::{PrivateDir, private_dir};
 
     #[test]
@@ -439,10 +439,24 @@ mod tests {
         }
     }
 
+    /// Folders of a test's own for a keyed endpoint: the key in `key`, and no runtime folder,
+    /// so the Linux socket is keyed in `/tmp` as in a session without one. Naming the
+    /// session's runtime folder put every test's socket at one path (W4 milestone review M1).
+    fn keyed_in(key: PathBuf) -> Folders {
+        Folders { key, runtime: None }
+    }
+
+    /// Removes the socket's folder in `/tmp`, which outlives its listener.
+    #[cfg(unix)]
+    fn remove_socket_folder(folders: &Folders) {
+        let endpoint = wirecatch_ipc::endpoint_in(Channel::Dev, folders).unwrap();
+        std::fs::remove_dir_all(Path::new(endpoint.as_os_str()).parent().unwrap()).unwrap();
+    }
+
     /// Starts an in-process "app" that listens at a keyed endpoint after a delay, writing
     /// the key only then, as the real app does.
     struct DelayedKeyedApp {
-        folder: PathBuf,
+        folders: Folders,
         delay: Duration,
         launches: Arc<Mutex<u32>>,
     }
@@ -450,12 +464,11 @@ mod tests {
     impl Launcher for DelayedKeyedApp {
         fn launch(&self) -> io::Result<()> {
             *self.launches.lock().unwrap() += 1;
-            let folder = self.folder.clone();
+            let folders = self.folders.clone();
             let delay = self.delay;
             tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
-                let mut listener =
-                    Listener::bind_keyed(wirecatch_ipc::Channel::Dev, &folder).unwrap();
+                let mut listener = Listener::bind_keyed(Channel::Dev, &folders).unwrap();
                 let mut conn = listener.accept().await.unwrap();
                 let mut byte = [0u8; 1];
                 conn.read_exact(&mut byte).await.unwrap();
@@ -475,13 +488,13 @@ mod tests {
     #[tokio::test]
     async fn a_key_that_does_not_exist_yet_starts_the_app_and_is_read_again() {
         let dir = private_dir("bridge-keyed").unwrap();
-        let folder = dir.path().join("Wirecatch");
+        let folders = keyed_in(dir.path().join("Wirecatch"));
         let app = DelayedKeyedApp {
-            folder: folder.clone(),
+            folders: folders.clone(),
             delay: Duration::from_millis(200),
             launches: Arc::new(Mutex::new(0)),
         };
-        let find = || wirecatch_ipc::endpoint_keyed_in(wirecatch_ipc::Channel::Dev, &folder);
+        let find = || wirecatch_ipc::endpoint_in(Channel::Dev, &folders);
         let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
             .await
             .unwrap();
@@ -489,6 +502,8 @@ mod tests {
         let mut byte = [0u8; 1];
         conn.read_exact(&mut byte).await.unwrap();
         assert_eq!(&byte, b"k");
+        #[cfg(unix)]
+        remove_socket_folder(&folders);
     }
 
     /// What the connector answers at a name another account holds.
@@ -504,10 +519,10 @@ mod tests {
     #[tokio::test]
     async fn a_keyed_name_another_account_holds_starts_the_app_and_reads_the_new_key() {
         let dir = private_dir("bridge-keyed-taken").unwrap();
-        let folder = dir.path().join("Wirecatch");
+        let folders = keyed_in(dir.path().join("Wirecatch"));
         let launches = Arc::new(Mutex::new(0));
         let app = DelayedKeyedApp {
-            folder: folder.clone(),
+            folders: folders.clone(),
             delay: Duration::from_millis(200),
             launches: launches.clone(),
         };
@@ -516,7 +531,7 @@ mod tests {
             if *launches.lock().unwrap() == 0 {
                 Err(squatted())
             } else {
-                wirecatch_ipc::endpoint_keyed_in(wirecatch_ipc::Channel::Dev, &folder)
+                wirecatch_ipc::endpoint_in(Channel::Dev, &folders)
             }
         };
         let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
@@ -527,6 +542,8 @@ mod tests {
         let mut byte = [0u8; 1];
         conn.read_exact(&mut byte).await.unwrap();
         assert_eq!(&byte, b"n");
+        #[cfg(unix)]
+        remove_socket_folder(&folders);
     }
 
     #[tokio::test]
