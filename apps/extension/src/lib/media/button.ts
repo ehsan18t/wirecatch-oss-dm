@@ -6,6 +6,7 @@
  */
 import { BUTTON_HEIGHT, SHADOW_CSS, TYPICAL_BUTTON_WIDTH, icon } from './button-style';
 import { DownloadableChecks } from './checks';
+import { randomHostName } from './host-name';
 import { LiveMessage } from './live-message';
 import type { DownloadAnswer, ElementInfo } from './messages';
 import {
@@ -64,7 +65,7 @@ function hiddenByFullscreen(target: HTMLMediaElement, fullscreen: Element | null
 }
 
 export class MediaButton {
-  /** The element the page sees: a bare custom element whose content is in a closed shadow root. */
+  /** The element the page sees: a bare custom element, named afresh each time, whose content is in a closed shadow root. */
   readonly host: HTMLElement;
   /** Inside the closed shadow root; exposed for tests (pages cannot reach content script objects). */
   readonly button: HTMLButtonElement;
@@ -104,7 +105,7 @@ export class MediaButton {
     this.#deps = deps;
     this.#doc = doc;
     this.#now = now;
-    this.host = doc.createElement('wirecatch-media');
+    this.host = doc.createElement(randomHostName());
     const root = this.host.attachShadow({ mode: 'closed' });
     const style = doc.createElement('style');
     style.textContent = SHADOW_CSS;

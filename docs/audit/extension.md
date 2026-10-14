@@ -122,6 +122,7 @@
 - problem: The button host is always `<wirecatch-media>`, appended to `documentElement`. Any page script can detect it (`document.querySelector('wirecatch-media')`, a `MutationObserver`) and so fingerprint users who have Wirecatch installed, and probe whether its own media URLs were detected (the button only appears after the background confirms). The closed shadow root protects the contents, not the presence.
 - fix: Generate the tag name per content script instance (e.g. `x-` plus random letters from `crypto.getRandomValues`) or use a plain `div` host; nothing else references the tag name.
 - cross-package: no
+- status: fixed in W4, in part by design. Each copy of the content script names the host with random letters, so a page can neither find it by a fixed string nor register the name first to stop the button being built (a definition with its shadow root disabled did that). Accepted: the host stays detectable, since it is an element the page did not add at the root of the document, its name always has the same shape, and it carries a closed shadow root; a `div` host would be no less visible.
 
 ## EXT-16 Folder layout and naming obscure which code runs in which context
 - severity: low

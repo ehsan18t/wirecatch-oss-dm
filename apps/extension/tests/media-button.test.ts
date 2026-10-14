@@ -3,7 +3,7 @@
  * sends, and that it stays out of the page's way. Layout is faked through
  * `getBoundingClientRect`, since jsdom does none.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_MS, MediaButton, type ButtonDeps } from '../src/lib/media/button';
 import { MESSAGE_MS } from '../src/lib/media/live-message';
 import { SHADOW_CSS } from '../src/lib/media/button-style';
@@ -765,5 +765,57 @@ describe('MediaButton', () => {
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(b.host.isConnected).toBe(false);
+  });
+});
+
+describe('MediaButton on a page that looks for it', () => {
+  it('names its host so a page cannot look it up by a fixed name', async () => {
+    const b = await shownButton();
+    expect(document.querySelector('wirecatch-media')).toBeNull();
+    expect(b.host.localName).not.toMatch(/wirecatch/i);
+    // Every frame and every fresh copy of the script picks its own name.
+    const names = new Set([b.host.localName]);
+    for (let i = 0; i < 20; i += 1) names.add(new MediaButton(fakeDeps().deps).host.localName);
+    expect(names.size).toBe(21);
+  });
+
+  it('comes back after the page removes it', async () => {
+    const b = await shownButton();
+    const video = document.querySelector('video');
+    expect(video).not.toBeNull();
+    // The host is still an element the page did not add, so a page can find it and remove it.
+    for (const child of [...document.documentElement.children])
+      if (child !== document.head && child !== document.body) child.remove();
+    expect(b.host.isConnected).toBe(false);
+    clock += ACTIVE_MS + 1;
+    video?.dispatchEvent(new Event('play'));
+    await settle();
+    expect(b.host.isConnected).toBe(true);
+  });
+});
+
+async function shownButton(): Promise<MediaButton> {
+  const video = media('video', box(100, 50, 640, 360), { src: 'https://e.com/a.mp4' });
+  const b = start(fakeDeps());
+  video.dispatchEvent(new Event('play'));
+  await settle();
+  expect(b.state).toBe('shown');
+  return b;
+}
+
+// A custom element definition cannot be undone and lasts for the whole file, so this block
+// stays last: no other test may build an element under the name it takes.
+describe('MediaButton on a page that registered its old name first', () => {
+  class Trap extends HTMLElement {
+    static disabledFeatures = ['shadow'];
+  }
+
+  beforeAll(() => {
+    customElements.define('wirecatch-media', Trap);
+  });
+
+  it('is still built and shown', async () => {
+    const b = await shownButton();
+    expect(b.host).not.toBeInstanceOf(Trap);
   });
 });
