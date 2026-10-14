@@ -1,0 +1,3 @@
+# Prettier, run from the root by `pnpm lint` and `pnpm format`, reads this file and the root .gitignore only, so every ignore rule lives in one of the two (js-policy fails on a .gitignore or .prettierignore anywhere in apps/, packages/ or scripts/).
+# The Tauri crate: Rust, and JSON that Tauri and its schemas own.
+apps/desktop/src-tauri/

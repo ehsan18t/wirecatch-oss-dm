@@ -9,15 +9,10 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit",
-    "lint": "eslint . --max-warnings 0 && prettier --check .",
-    "format": "prettier --write ."
+    "check": "tsc --noEmit"
   },
   "devDependencies": {
     "@wirecatch/eslint-config": "workspace:*",
-    "eslint": "catalog:",
-    "prettier": "catalog:",
-    "prettier-plugin-svelte": "catalog:",
     "typescript": "catalog:"
   }
 }

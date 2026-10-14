@@ -1,7 +1,0 @@
-node_modules/
-.output/
-.wxt/
-.output-e2e/
-web-ext.config.ts
-stats.html
-*.log

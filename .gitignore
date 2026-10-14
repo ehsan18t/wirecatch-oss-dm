@@ -15,3 +15,13 @@ coverage/
 .cache/
 # Signing keys never belong in the repository (apps/extension/PUBLISHING.md).
 *.pem
+# The desktop app's test reports, and what Tauri generates and the bundle scripts stage.
+apps/desktop/test-results/
+apps/desktop/playwright-report/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
+# The extension's web-ext local settings and its bundle size report.
+apps/extension/web-ext.config.ts
+apps/extension/stats.html
+# The protocol generator's working folders next to src/generated (packages/protocol/scripts/generate.mjs); they exist only while it runs, or after it was interrupted.
+packages/protocol/src/generated.*/

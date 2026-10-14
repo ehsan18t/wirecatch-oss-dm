@@ -312,18 +312,9 @@ importers:
       axe-core:
         specifier: 'catalog:'
         version: 4.14.0
-      eslint:
-        specifier: 'catalog:'
-        version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
       jsdom:
         specifier: 'catalog:'
         version: 30.1.2
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.10
-      prettier-plugin-svelte:
-        specifier: 'catalog:'
-        version: 4.1.1(prettier@3.9.10)(svelte@5.57.2(@typescript-eslint/types@8.71.1))
       svelte:
         specifier: 'catalog:'
         version: 5.57.2(@typescript-eslint/types@8.71.1)
@@ -369,22 +360,13 @@ importers:
         version: link:../../packages/eslint-config
       '@wxt-dev/module-svelte':
         specifier: 2.0.5
-        version: 2.0.5(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(wxt@0.21.4(esbuild@0.28.2)(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))
+        version: 2.0.5(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(wxt@0.21.4(esbuild@0.28.2)(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))
       axe-core:
         specifier: 'catalog:'
         version: 4.14.0
-      eslint:
-        specifier: 'catalog:'
-        version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
       jsdom:
         specifier: 'catalog:'
         version: 30.1.2
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.10
-      prettier-plugin-svelte:
-        specifier: 'catalog:'
-        version: 4.1.1(prettier@3.9.10)(svelte@5.57.2(@typescript-eslint/types@8.71.1))
       svelte:
         specifier: 'catalog:'
         version: 5.57.2(@typescript-eslint/types@8.71.1)
@@ -402,7 +384,7 @@ importers:
         version: 10.7.0(jiti@2.7.0)(supports-color@7.2.0)
       wxt:
         specifier: 0.21.4
-        version: 0.21.4(esbuild@0.28.2)(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
+        version: 0.21.4(esbuild@0.28.2)(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
 
   packages/eslint-config:
     dependencies:
@@ -428,12 +410,6 @@ importers:
       eslint:
         specifier: 'catalog:'
         version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.10
-      prettier-plugin-svelte:
-        specifier: 'catalog:'
-        version: 4.1.1(prettier@3.9.10)(svelte@5.57.2(@typescript-eslint/types@8.71.1))
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -443,15 +419,6 @@ importers:
       '@wirecatch/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      eslint:
-        specifier: 'catalog:'
-        version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.10
-      prettier-plugin-svelte:
-        specifier: 'catalog:'
-        version: 4.1.1(prettier@3.9.10)(svelte@5.57.2(@typescript-eslint/types@8.71.1))
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -461,9 +428,6 @@ importers:
       '@wirecatch/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      eslint:
-        specifier: 'catalog:'
-        version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
       prettier:
         specifier: 'catalog:'
         version: 3.9.10
@@ -482,15 +446,6 @@ importers:
       '@wirecatch/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      eslint:
-        specifier: 'catalog:'
-        version: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
-      prettier:
-        specifier: 'catalog:'
-        version: 3.9.10
-      prettier-plugin-svelte:
-        specifier: 'catalog:'
-        version: 4.1.1(prettier@3.9.10)(svelte@5.57.2(@typescript-eslint/types@8.71.1))
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -4273,11 +4228,11 @@ snapshots:
       '@types/filesystem': 0.0.36
       '@types/har-format': 1.2.16
 
-  '@wxt-dev/module-svelte@2.0.5(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(wxt@0.21.4(esbuild@0.28.2)(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))':
+  '@wxt-dev/module-svelte@2.0.5(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(wxt@0.21.4(esbuild@0.28.2)(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)))':
     dependencies:
       '@sveltejs/vite-plugin-svelte': 7.3.1(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
       svelte: 5.57.2(@typescript-eslint/types@8.71.1)
-      wxt: 0.21.4(esbuild@0.28.2)(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
+      wxt: 0.21.4(esbuild@0.28.2)(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0))
     transitivePeerDependencies:
       - vite
 
@@ -6202,7 +6157,7 @@ snapshots:
       is-wsl: 3.1.1
       powershell-utils: 0.2.1
 
-  wxt@0.21.4(esbuild@0.28.2)(eslint@10.12.0(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)):
+  wxt@0.21.4(esbuild@0.28.2)(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))(rolldown@1.2.13)(rollup@4.64.5)(typescript@6.0.3)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))(web-ext@10.7.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
       '@1natsu/wait-element': 4.2.0
       '@aklinker1/rollup-plugin-visualizer': 5.12.0(rollup@4.64.5)
@@ -6235,7 +6190,7 @@ snapshots:
       unimport: 6.5.0(esbuild@0.28.2)(rolldown@1.2.13)(rollup@4.64.5)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
       vite: 8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)
     optionalDependencies:
-      eslint: 10.12.0(jiti@2.7.0)(supports-color@7.2.0)
+      eslint: 9.39.4(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 6.0.3
       web-ext: 10.7.0(jiti@2.7.0)(supports-color@7.2.0)
     transitivePeerDependencies:
