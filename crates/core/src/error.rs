@@ -103,6 +103,16 @@ pub enum CoreError {
     )]
     InvalidProfile(String),
 
+    /// Another manager has the download list open: another copy of Wirecatch, which may run
+    /// with other rights than this one.
+    #[error(
+        "Another copy of Wirecatch has the download list in {path} open. Close it, or keep using that copy."
+    )]
+    AlreadyOpen {
+        /// The folder that holds the list.
+        path: String,
+    },
+
     /// The database was written by a newer Wirecatch.
     #[error(
         "The download list was saved by a newer version of Wirecatch (database version {found}, this version reads up to {supported}). Update Wirecatch to open it."
@@ -198,6 +208,7 @@ impl CoreError {
             | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
             CoreError::AddonRequired => ErrorCode::AddonRequired,
             CoreError::DatabaseTooNew { .. }
+            | CoreError::AlreadyOpen { .. }
             | CoreError::Database(_)
             | CoreError::File { .. }
             | CoreError::FilesSplit { .. }
@@ -286,6 +297,7 @@ mod tests {
                 found: 9,
                 supported: 3,
             },
+            CoreError::AlreadyOpen { path: "/x".into() },
             CoreError::File {
                 path: "/x".into(),
                 source: io(),

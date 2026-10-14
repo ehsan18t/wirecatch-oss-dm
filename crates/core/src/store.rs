@@ -1,6 +1,7 @@
 //! SQLite persistence (D17). One connection lives on a dedicated thread; async code
 //! hands it writes through a channel and never waits on the disk.
 
+use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
@@ -284,6 +285,9 @@ impl Store {
         // The folder first, so the database and its journal files inherit its access.
         restrict_to_owner(dir);
         let path = dir.join(DATABASE_FILE);
+        // Before anything touches the files: a second manager would set the first one's
+        // live list aside, or write over its rows.
+        let lock = lock_list(dir, &path)?;
         remove_old_copies(&path);
         // Damage can also show while reading the rows, after the file opened.
         let opened = open_database(&path).and_then(|conn| Ok((load(&conn)?, conn)));
@@ -312,6 +316,9 @@ impl Store {
                     backing_off,
                 };
                 run(conn, &mut inbox, &on_failure);
+                // Held until the connection has closed, so the next manager finds the
+                // list complete.
+                drop(lock);
             })
             .map_err(|source| CoreError::File {
                 path: path.display().to_string(),
@@ -663,6 +670,65 @@ fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "secure_delete", "ON")?;
     Ok(())
+}
+
+/// How long opening the list waits for a manager that has it to close: long enough for one
+/// that is closing, as the previous manager of this process may be, and short enough that a
+/// second copy of the app says so at once.
+const LOCK_WAIT: Duration = Duration::from_secs(2);
+
+/// The lock file of the list at `database`: its path with `.lock` after it.
+fn lock_path(database: &Path) -> PathBuf {
+    let mut path = database.as_os_str().to_owned();
+    path.push(".lock");
+    PathBuf::from(path)
+}
+
+/// Takes the list's lock, which makes this the one manager of the list in `dir` for as long
+/// as the returned file stays open, or refuses when another manager keeps it. The
+/// operating system releases it when the process ends, however it ends, so a crash leaves
+/// nothing to clean up. It holds across processes running with different rights, which the
+/// browser endpoint does not.
+fn lock_list(dir: &Path, database: &Path) -> Result<File> {
+    let path = lock_path(database);
+    let file_error = |source| CoreError::File {
+        path: path.display().to_string(),
+        source,
+    };
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(file_error)?;
+    restrict_to_owner(&path);
+    match file.try_lock() {
+        Ok(()) => return Ok(file),
+        Err(TryLockError::WouldBlock) => {}
+        Err(TryLockError::Error(source)) => return Err(file_error(source)),
+    }
+    // Held already: by another copy of the app, or by a manager of this process whose
+    // database thread is still closing. Wait in the system's own lock call, for a while.
+    let (locked, waiting) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("wirecatch-db-lock".into())
+        .spawn(move || {
+            let outcome = file.lock().map(|()| file);
+            // Nobody is waiting any more once the wait has timed out: the lock, if it
+            // came, is released again as the file drops here.
+            if locked.send(outcome).is_err() {
+                debug!("the download list's lock came after opening stopped waiting");
+            }
+        })
+        .map_err(file_error)?;
+    match waiting.recv_timeout(LOCK_WAIT) {
+        Ok(Ok(file)) => Ok(file),
+        Ok(Err(source)) => Err(file_error(source)),
+        Err(_) => Err(CoreError::AlreadyOpen {
+            path: dir.display().to_string(),
+        }),
+    }
 }
 
 /// Opens the database at `path`, checks it is intact and brings its schema up to date.
@@ -1583,6 +1649,78 @@ mod tests {
     }
 
     // A damaged file used to stop the app from opening on every start, with advice to restart that could never help.
+    // Two managers on one download list overwrite each other's rows, and the second one's
+    // start can even set the first one's live file aside as damaged. The endpoint was the
+    // only guard, and a copy that could not claim it (an unelevated copy beside an elevated
+    // one, or a name another account squats) went on and opened the list anyway.
+    #[test]
+    fn a_second_store_on_the_same_list_is_refused_while_the_first_is_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1)]);
+        let second = Store::open(dir.path(), ignore_failures());
+        assert!(
+            matches!(second, Err(CoreError::AlreadyOpen { .. })),
+            "a second store opened the same list"
+        );
+        drop(store);
+        let (_, reopened) = Store::open(dir.path(), ignore_failures())
+            .expect("the list opens again once the first store has closed");
+        assert_eq!(reopened.downloads.len(), 1);
+    }
+
+    /// Set in a copy of this test binary that holds a list open for the test below.
+    const HOLD_LIST_VAR: &str = "WIRECATCH_TEST_HOLD_LIST";
+
+    /// What the holding copy prints once it has the list, at the end of the line the test
+    /// harness starts with the test's name.
+    const HELD: &str = "list-held";
+
+    // The case the endpoint missed: another process of the app (an elevated copy, say, whose
+    // endpoint an unelevated one cannot even inspect) has the list. Elevation itself cannot
+    // be set up without a prompt, so the other copy is a separate process with the same rights;
+    // the lock is the system's and ignores them.
+    #[test]
+    fn a_list_another_process_has_open_is_refused_until_it_closes() {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+
+        const NAME: &str =
+            "store::tests::a_list_another_process_has_open_is_refused_until_it_closes";
+        if let Some(dir) = std::env::var_os(HOLD_LIST_VAR) {
+            let (_store, _) = Store::open(Path::new(&dir), ignore_failures()).unwrap();
+            println!("{HELD}");
+            // Holds the list until the test closes this copy's input.
+            std::io::stdin().lines().for_each(drop);
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut holder = Command::new(std::env::current_exe().unwrap())
+            .args([NAME, "--exact", "--nocapture", "--test-threads=1"])
+            .env(HOLD_LIST_VAR, dir.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut output = BufReader::new(holder.stdout.take().unwrap()).lines();
+        let held = output
+            .by_ref()
+            .map_while(std::result::Result::ok)
+            .any(|line| line.ends_with(HELD));
+        assert!(held, "the other copy never opened the list");
+
+        let refused = Store::open(dir.path(), ignore_failures());
+        assert!(
+            matches!(refused, Err(CoreError::AlreadyOpen { .. })),
+            "opened a list another process has open"
+        );
+        drop(holder.stdin.take());
+        // Read the rest, so the other copy can finish writing its report and exit.
+        output.for_each(drop);
+        assert!(holder.wait().unwrap().success());
+        Store::open(dir.path(), ignore_failures()).expect("free once the other copy exits");
+    }
+
     #[test]
     fn a_file_that_is_not_a_database_is_set_aside() {
         let dir = tempfile::tempdir().unwrap();
@@ -2153,6 +2291,8 @@ mod tests {
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET status = 'exploded' WHERE id = 2", [])
             .unwrap();
+        // One store at a time has the list.
+        store.close(Duration::from_secs(5)).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![download(1)]);
     }

@@ -159,15 +159,8 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
             tracing::error!(
                 "another copy of Wirecatch is already running (it owns {endpoint}); this one exits"
             );
-            // Say so instead of vanishing. The message shows once the event loop runs; this
-            // copy opens nothing else and exits when it is closed.
-            let closing = handle.clone();
-            handle
-                .dialog()
-                .message(ALREADY_RUNNING)
-                .title(host::CHANNEL.name())
-                .kind(MessageDialogKind::Info)
-                .show(move |_| closing.exit(0));
+            // This copy opens nothing else.
+            say_already_running(&handle);
             return Ok(());
         }
         Err(e) => {
@@ -231,13 +224,31 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
+/// Says that another copy of Wirecatch is already running instead of vanishing, and exits once the person closes the message. The message shows once the event loop runs.
+fn say_already_running(handle: &tauri::AppHandle) {
+    let closing = handle.clone();
+    handle
+        .dialog()
+        .message(ALREADY_RUNNING)
+        .title(host::CHANNEL.name())
+        .kind(MessageDialogKind::Info)
+        .show(move |_| closing.exit(0));
+}
+
 /// Opens the manager, then starts the work that runs alongside it.
 async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>) {
     let core = app.state::<Core>();
-    let manager = match core.manager().await.cloned() {
-        Ok(manager) => manager,
-        Err(reason) => {
-            unavailable(&app, listener, reason.message);
+    let manager = match core.opened().await {
+        Ok(manager) => manager.clone(),
+        // A copy that got past the endpoint (an unelevated one beside an elevated one, whose pipe's label keeps its probe out) meets the list's lock instead (D41.8).
+        Err(unopened) if unopened.another_copy => {
+            tracing::error!("{}; this copy exits", unopened.reason);
+            drop(listener);
+            say_already_running(&app);
+            return;
+        }
+        Err(unopened) => {
+            unavailable(&app, listener, unopened.reason.message.clone());
             return;
         }
     };

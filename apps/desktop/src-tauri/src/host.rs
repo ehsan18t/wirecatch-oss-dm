@@ -7,7 +7,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use tokio::sync::OnceCell;
-use wirecatch_core::{DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig};
+use wirecatch_core::{
+    CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig,
+};
 use wirecatch_ipc::{Endpoint, IpcError};
 use wirecatch_product::Channel;
 use wirecatch_protocol::wire::ProtocolError;
@@ -33,7 +35,25 @@ pub const CHANNEL: Channel = if DEV_BUILD {
 /// The download manager this process hosts, opened on first use.
 pub struct Core {
     config: ManagerConfig,
-    cell: OnceCell<Result<Manager, ProtocolError>>,
+    cell: OnceCell<Result<Manager, Unopened>>,
+}
+
+/// Why the manager did not open.
+#[derive(Debug, Clone)]
+pub struct Unopened {
+    /// The core's code and plain-language reason, ready to show to a person.
+    pub reason: ProtocolError,
+    /// Another copy of Wirecatch has the download list open, so this copy says that Wirecatch runs already and closes, rather than staying open without a list.
+    pub another_copy: bool,
+}
+
+impl Unopened {
+    fn from_core(error: &CoreError) -> Self {
+        Self {
+            reason: error.to_protocol(),
+            another_copy: matches!(error, CoreError::AlreadyOpen { .. }),
+        }
+    }
 }
 
 impl Core {
@@ -54,16 +74,26 @@ impl Core {
     /// that cannot be written). The error carries the core's code and plain-language reason,
     /// ready to show to a person, and every later call answers with it again.
     pub async fn manager(&self) -> Result<&Manager, ProtocolError> {
+        self.opened()
+            .await
+            .map_err(|unopened| unopened.reason.clone())
+    }
+
+    /// The manager, opening it if nobody has yet.
+    ///
+    /// # Errors
+    ///
+    /// Why the manager could not open, including whether another copy of Wirecatch has the list open; every later call answers the same.
+    pub async fn opened(&self) -> Result<&Manager, &Unopened> {
         self.cell
             .get_or_init(|| async {
                 Manager::open(self.config.clone()).await.map_err(|e| {
                     tracing::error!("could not open the download manager: {e}");
-                    e.to_protocol()
+                    Unopened::from_core(&e)
                 })
             })
             .await
             .as_ref()
-            .map_err(Clone::clone)
     }
 
     /// The manager if it has opened successfully, without waiting.
@@ -338,6 +368,34 @@ pub fn known_folders(home: &Path) -> KnownFolders {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // An unelevated copy beside an elevated one gets past the endpoint (the elevated pipe's label keeps its probe out), and the list's lock then refuses it. It stayed open as a manager that could not open its list, instead of saying that Wirecatch runs already (W4I review R2-L3).
+    #[tokio::test]
+    async fn a_list_another_copy_has_open_is_told_apart_from_other_failures() {
+        let dir = wirecatch_test_support::private_dir("desktop-core").unwrap();
+        let mut config = ManagerConfig::new(
+            dir.path().join("data"),
+            KnownFolders::under_home(dir.path()),
+        );
+        // Tests never reach the internet.
+        config.addon_sources.ytdlp_releases = None;
+        let first = Core::new(config.clone());
+        let manager = first.opened().await.expect("the first copy opens the list");
+
+        let second = Core::new(config);
+        let Err(refused) = second.opened().await else {
+            panic!("a second copy opened a list the first has open");
+        };
+        assert!(refused.another_copy, "{refused:?}");
+        let Err(told) = second.manager().await else {
+            panic!("commands reached a manager that did not open");
+        };
+        assert_eq!(told, refused.reason, "commands get the same reason");
+        manager.shutdown().await;
+
+        let unwritable = Unopened::from_core(&CoreError::Closed);
+        assert!(!unwritable.another_copy);
+    }
 
     /// The tests that build their expectations from `CHANNEL` only mean something if a debug
     /// build really is the dev channel.
