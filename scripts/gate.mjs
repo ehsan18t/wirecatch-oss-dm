@@ -18,6 +18,7 @@
 
 import { COMMIT_CHECKS, commitMessageFile } from './gate/commits.mjs';
 import { EXCEPTION_CHECKS } from './gate/exceptions.mjs';
+import { BROWSER_CHECKS } from './gate/browser.mjs';
 import { JS_CHECKS } from './gate/javascript.mjs';
 import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
@@ -39,6 +40,7 @@ const CHECKS = {
   ...EXCEPTION_CHECKS,
   'clippy-linux': clippyLinux,
   ...JS_CHECKS,
+  ...BROWSER_CHECKS,
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
   ...TAURI_CHECKS,
@@ -62,7 +64,18 @@ const GROUPS = {
     'docs',
   ],
   release: ['engine-package', 'msrv'],
-  js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
+  // The e2e checks skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
+  js: [
+    'js-policy',
+    'protocol',
+    'js-check',
+    'js-lint',
+    'js-test',
+    'js-build',
+    'e2e-gallery',
+    'e2e-desktop',
+    'e2e-extension',
+  ],
   repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every release script runs this group before it builds anything.

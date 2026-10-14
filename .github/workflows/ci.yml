@@ -165,7 +165,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The browser checks (e2e-gallery, e2e-desktop, e2e-extension) skip only where their browser is not installed. Windows runners have Edge, so a skip there would hide a broken check: it fails instead.
       - name: Gate (JavaScript)
+        env:
+          WIRECATCH_REQUIRE_BROWSER: ${{ runner.os == 'Windows' && '1' || '' }}
         run: node scripts/gate.mjs js
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main.
