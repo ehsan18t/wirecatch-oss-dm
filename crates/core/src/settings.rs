@@ -15,6 +15,7 @@ use wirecatch_protocol::extension::{
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
+use crate::local_network::{self, NotALocalSite};
 use crate::schedule;
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
@@ -103,6 +104,7 @@ pub fn default_settings() -> AppSettings {
         show_progress_windows: true,
         // Original: nobody's downloads change until they choose (D24).
         media: MediaDefaults::default(),
+        local_sites: Vec::new(),
     }
 }
 
@@ -130,6 +132,7 @@ pub(crate) fn within_limits(mut settings: AppSettings) -> AppSettings {
         .clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
     settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
+    settings.local_sites = stored_local_sites(&settings.local_sites);
     settings
 }
 
@@ -157,6 +160,27 @@ pub(crate) fn stored_sites(stored: Vec<String>) -> Vec<String> {
             ),
         }
     }
+    kept
+}
+
+/// The stored sites on the person's network that [`validate`] would keep, without duplicates. One a change would refuse is dropped, since one that covers the sites of many owners must never count; each one dropped is logged by its place in the list.
+fn stored_local_sites(stored: &[String]) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::with_capacity(stored.len());
+    for (entry, site) in stored.iter().enumerate() {
+        match local_network::local_site(site) {
+            Ok(Some(site)) if site.chars().count() <= MAX_SITE_CHARS => {
+                if !kept.contains(&site) {
+                    kept.push(site);
+                }
+            }
+            Ok(None) => {}
+            Ok(Some(_)) | Err(_) => tracing::info!(
+                entry,
+                "a stored site on the network could not be saved today, so it is dropped"
+            ),
+        }
+    }
+    kept.truncate(MAX_LOCAL_SITES);
     kept
 }
 
@@ -241,7 +265,48 @@ pub(crate) fn validate(
     )?;
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
+    settings.local_sites = clean_local_sites(&settings.local_sites)?;
     Ok(settings)
+}
+
+/// Most sites on the person's network (D39).
+pub const MAX_LOCAL_SITES: usize = 256;
+
+const LOCAL_SITES: ListRules = ListRules {
+    what: "sites on your network",
+    max_items: MAX_LOCAL_SITES,
+    max_chars: MAX_SITE_CHARS,
+};
+
+/// The sites on the person's network as [`local_network::local_site`] keeps
+/// them, without duplicates. An address, a name that is not a host, and a
+/// public suffix or a name above one (`com`, `co.uk`, `github.io`) are
+/// refused: single-label hosts such as `nas` and pages at a local address
+/// count as local without being listed.
+fn clean_local_sites(list: &[String]) -> Result<Vec<String>> {
+    clean_list(
+        list,
+        |entry| {
+            local_network::local_site(entry)
+                .map(Option::unwrap_or_default)
+                .map_err(|why| not_a_local_site(entry.trim(), why))
+        },
+        &LOCAL_SITES,
+    )
+}
+
+fn not_a_local_site(entry: &str, why: NotALocalSite) -> CoreError {
+    CoreError::Invalid(match why {
+        NotALocalSite::Unreadable => format!(
+            "\"{entry}\" is not a site. Type a host name such as wiki.example.com, or a web address."
+        ),
+        NotALocalSite::Address => format!(
+            "\"{entry}\" is an address, not a site name. A page at an address on your network already counts as on your network."
+        ),
+        NotALocalSite::Shared => format!(
+            "\"{entry}\" is shared by the sites of many owners, so it would cover every site that ends in it. Enter your own site, such as wiki.example.com or example.com."
+        ),
+    })
 }
 
 /// Most subtitle languages remembered for media downloads.
@@ -562,6 +627,92 @@ mod tests {
         let s: AppSettings = serde_json::from_value(json).unwrap();
         assert_eq!(s.media, MediaDefaults::default());
         assert_eq!(s.media.video.format, OutputFormat::Original);
+    }
+
+    /// Names open to anyone's registration, and addresses, which suffix
+    /// matching makes no sense of (`2.3.4` would match `1.2.3.4`).
+    const NOT_ONE_OWNERS_SITE: [&str; 7] = [
+        "com",
+        "co.uk",
+        "github.io",
+        "blogspot.com",
+        "1.2.3.4",
+        "2.3.4",
+        "[::1]",
+    ];
+
+    #[test]
+    fn stored_sites_on_the_network_never_cover_a_whole_domain() {
+        let mut settings = default_settings();
+        settings.local_sites = NOT_ONE_OWNERS_SITE
+            .iter()
+            .map(|site| (*site).to_string())
+            .chain(["Corp.Example.Com.".into(), "team.github.io".into()])
+            .collect();
+        assert_eq!(
+            within_limits(settings).local_sites,
+            ["corp.example.com", "team.github.io"]
+        );
+    }
+
+    #[test]
+    fn a_site_on_the_network_is_one_owners_name() {
+        let queues = [default_queue()];
+        for site in NOT_ONE_OWNERS_SITE {
+            let mut settings = default_settings();
+            settings.local_sites = vec![site.into()];
+            assert!(
+                matches!(
+                    validate(settings, &queues, &folders()),
+                    Err(CoreError::Invalid(_))
+                ),
+                "{site}"
+            );
+        }
+        let mut settings = default_settings();
+        settings.local_sites = vec![
+            "team.github.io".into(),
+            "Bücher.Example".into(),
+            "nas.lan".into(),
+        ];
+        assert_eq!(
+            validate(settings, &queues, &folders()).unwrap().local_sites,
+            ["team.github.io", "xn--bcher-kva.example", "nas.lan"]
+        );
+    }
+
+    #[test]
+    fn sites_on_the_network_are_cleaned_and_need_a_domain() {
+        let mut settings = default_settings();
+        settings.local_sites = vec![
+            " Wiki.Corp.Example.Com ".into(),
+            ".corp.example.com.".into(),
+            "wiki.corp.example.com/".into(),
+            "https://user:secret@Files.Corp.Example.Com:8443/share?x#y".into(),
+            "*.lab.example.com".into(),
+            "  ".into(),
+        ];
+        let queues = [default_queue()];
+        let clean = validate(settings.clone(), &queues, &folders()).unwrap();
+        assert_eq!(
+            clean.local_sites,
+            [
+                "wiki.corp.example.com",
+                "corp.example.com",
+                "files.corp.example.com",
+                "lab.example.com"
+            ]
+        );
+        for refused in ["com", "exa mple.com", "https://192.168.1.10/"] {
+            settings.local_sites = vec![refused.into()];
+            assert!(
+                matches!(
+                    validate(settings.clone(), &queues, &folders()),
+                    Err(CoreError::Invalid(_))
+                ),
+                "{refused}"
+            );
+        }
     }
 
     #[test]

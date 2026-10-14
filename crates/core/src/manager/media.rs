@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tracing::warn;
-use wirecatch_engine::{CancellationToken, DownloadOptions, Url};
+use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, Url};
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
     MediaSummary, OutputFormat, PortablePath, UiEvent, UserError,
@@ -27,8 +27,8 @@ use super::downloads::{NewEntry, parse_web_url};
 use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::addons::{Check, MediaTools};
-use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
+use crate::local_network::ChosenBy;
 use crate::media::choice::{self, Offer, Plan, Resolved};
 use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use crate::store::Origin;
@@ -51,7 +51,7 @@ pub(super) struct MediaSource {
     pub title: Option<String>,
     pub page_url: Option<String>,
     pub origin: Origin,
-    /// Who chose the link: always a website, since media arrives as a capture.
+    /// Who chose the link: a website, or a page on the person's network.
     pub chosen_by: ChosenBy,
 }
 
@@ -111,6 +111,7 @@ impl Manager {
         &self,
         capture: &NewDownload,
         queue: QueueId,
+        chosen_by: ChosenBy,
     ) -> Result<AddedDownload> {
         let url = parse_web_url(&capture.url)?;
         let kind = capture.media.as_ref().map_or(MediaKind::Page, |m| m.kind);
@@ -169,7 +170,7 @@ impl Manager {
             title: capture.media.as_ref().and_then(|m| m.title.clone()),
             page_url: capture.page_url.clone(),
             origin: origin_of(capture),
-            chosen_by: ChosenBy::Website,
+            chosen_by,
         };
         state.media.insert(
             id,
@@ -577,7 +578,7 @@ impl Manager {
         connections: usize,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
-        let mut options = media_options(&source.origin);
+        let mut options = media_options(&source.origin, source.chosen_by.private_network());
         options.connections = connections.max(1);
         let info = wirecatch_streams::inspect(
             &source.url,
@@ -586,7 +587,7 @@ impl Manager {
             token.clone(),
         )
         .await
-        .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None))?;
+        .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None, source.chosen_by))?;
         Ok(Found {
             title: None,
             offers: choice::from_stream(
@@ -871,9 +872,10 @@ fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
     }
 }
 
-/// Request options carrying the browser's headers for the stream or page.
-pub(super) fn media_options(origin: &Origin) -> DownloadOptions {
-    let mut options = headers::download_options();
+/// Request options carrying the browser's headers for the stream or page,
+/// under `private_network`.
+pub(super) fn media_options(origin: &Origin, private_network: PrivateNetwork) -> DownloadOptions {
+    let mut options = headers::download_options(private_network);
     options.headers = headers::to_map(&origin.headers);
     if let Some(agent) = &origin.user_agent {
         options.user_agent.clone_from(agent);

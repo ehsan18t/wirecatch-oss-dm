@@ -729,6 +729,8 @@ pub struct AppSettingsPatch {
     pub show_progress_windows: Option<bool>,
     /// Changes to [`AppSettings::media`].
     pub media: Option<MediaDefaultsPatch>,
+    /// The new [`AppSettings::local_sites`], replacing the list.
+    pub local_sites: Option<Vec<String>>,
 }
 
 /// A change to some of [`MediaDefaults`].
@@ -877,6 +879,12 @@ pub struct AppSettings {
     /// What the quality window for a video starts from (D24).
     #[serde(default)]
     pub media: MediaDefaults,
+    /// Sites on the person's network: host names, each also covering the names
+    /// under it (`corp.example` covers `wiki.corp.example`). A link captured from
+    /// a page on one of them may lead to devices on the local network, like a
+    /// page whose own address is local (D39). Empty by default.
+    #[serde(default)]
+    pub local_sites: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -900,6 +908,7 @@ impl AppSettings {
             auto_update_addons,
             show_progress_windows,
             media,
+            local_sites,
         } = self;
         let AppSettingsPatch {
             default_folder: new_default_folder,
@@ -915,6 +924,7 @@ impl AppSettings {
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
             media: media_patch,
+            local_sites: new_local_sites,
         } = patch;
         set(default_folder, new_default_folder);
         set(categories, new_categories);
@@ -933,6 +943,7 @@ impl AppSettings {
         if let Some(media_patch) = media_patch {
             media.apply(media_patch);
         }
+        set(local_sites, new_local_sites);
     }
 }
 

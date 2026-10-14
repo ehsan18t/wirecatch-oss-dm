@@ -15,6 +15,8 @@ export interface MediaTarget {
   audio: boolean;
   /** For `page`: the site's name, for example YouTube. */
   site: string | null;
+  /** The document that chose its address (`MediaItem.requestedBy`); the page itself for `page`. */
+  requestedBy: string | null;
 }
 
 /** Where the button was clicked, as far as the content script can tell. */
@@ -40,6 +42,7 @@ function fromItem(item: MediaItem): MediaTarget {
     size: item.size,
     audio: item.audio,
     site: null,
+    requestedBy: item.requestedBy,
   };
 }
 
@@ -48,7 +51,16 @@ export function pageTarget(frameUrl: string | null, tabUrl: string | null): Medi
   for (const url of [frameUrl, tabUrl]) {
     const site = pageSiteFor(url);
     if (site !== null && url !== null) {
-      return { key: `page:${url}`, kind: 'page', url, mime: null, size: null, audio: false, site };
+      return {
+        key: `page:${url}`,
+        kind: 'page',
+        url,
+        mime: null,
+        size: null,
+        audio: false,
+        site,
+        requestedBy: url,
+      };
     }
   }
   return null;

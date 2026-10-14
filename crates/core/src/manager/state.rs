@@ -18,8 +18,8 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
-use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
+use crate::local_network::ChosenBy;
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::schedule::Gate;
@@ -239,6 +239,8 @@ pub(super) struct Pending {
     /// goes away only when every one of them is withdrawn.
     pub handovers: Vec<String>,
     pub request: NewDownload,
+    /// Who chose the link, decided when it was captured.
+    pub chosen_by: ChosenBy,
 }
 
 impl State {
@@ -480,6 +482,47 @@ impl Entry {
         self.row.connections = 0;
         self.row.eta_secs = None;
         self.row.processing = None;
+    }
+}
+
+/// A download that is not running, of `url` whose link `chosen_by` chose,
+/// for tests of what a run is given.
+#[cfg(test)]
+pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
+    use wirecatch_protocol::app::Category;
+    Entry {
+        row: DownloadSummary {
+            id: DownloadId(1),
+            url: url.into(),
+            file_name: "f".into(),
+            path: "f".into(),
+            queue: QueueId(1),
+            category: Category::Other,
+            status: DownloadStatus::Queued,
+            total: None,
+            done: 0,
+            speed: 0,
+            connections: 0,
+            eta_secs: None,
+            error: None,
+            added_at: 0,
+            completed_at: None,
+            waiting: None,
+            media: None,
+            processing: None,
+        },
+        position: 1,
+        origin: Origin::default(),
+        chosen_by,
+        naming: NameChoice::settled(),
+        expect: None,
+        run: None,
+        resume_first: false,
+        cleanup: None,
+        removing: false,
+        moving: None,
+        stranded: None,
+        media_job: None,
     }
 }
 

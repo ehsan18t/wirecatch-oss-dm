@@ -393,8 +393,9 @@ pub fn media_capture(url: impl AsRef<str>, kind: MediaKind, title: Option<&str>)
     NewDownload {
         handover_id: format!("media-{url}"),
         url: url.to_string(),
-        referrer: Some("https://videos.example/watch".into()),
-        page_url: Some("https://videos.example/watch".into()),
+        referrer: Some("https://videos.test/watch".into()),
+        page_url: Some("https://videos.test/watch".into()),
+        frame_url: None,
         suggested_name: None,
         mime: None,
         size_hint: None,

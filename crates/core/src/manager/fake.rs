@@ -7,7 +7,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use wirecatch_engine::{CancellationToken, Error as EngineError, Outcome};
+use wirecatch_engine::{CancellationToken, Error as EngineError, Outcome, PrivateNetwork};
 
 use super::Manager;
 use super::settle::Settle;
@@ -20,6 +20,8 @@ pub(super) struct FakeRun {
     /// Chooses the path from the server's answer; `None` once the path is settled.
     pub settle: Option<Settle>,
     pub cancel: CancellationToken,
+    /// The rule for the local network the real engine would have been given.
+    pub private_network: PrivateNetwork,
 }
 
 /// Plays the engine for every run of a manager.
@@ -33,8 +35,13 @@ pub(super) fn run(
     fake: Option<FakeEngine>,
     settle: Option<Settle>,
     cancel: CancellationToken,
+    private_network: PrivateNetwork,
 ) -> EngineFuture {
-    let run = FakeRun { settle, cancel };
+    let run = FakeRun {
+        settle,
+        cancel,
+        private_network,
+    };
     match fake {
         Some(fake) => fake(run),
         None => Box::pin(std::future::ready(Err(EngineError::Cancelled))),

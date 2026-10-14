@@ -220,8 +220,10 @@ async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() -> Te
     let capture = wirecatch_protocol::extension::NewDownload {
         handover_id: "tab-1".into(),
         url: server.url("report.pdf").to_string(),
-        referrer: None,
-        page_url: None,
+        // A page on the person's network, whose links may lead there (D39).
+        referrer: Some("http://intranet.test/".into()),
+        page_url: Some("http://intranet.test/".into()),
+        frame_url: None,
         suggested_name: Some("report.pdf".into()),
         mime: None,
         size_hint: Some(1024),

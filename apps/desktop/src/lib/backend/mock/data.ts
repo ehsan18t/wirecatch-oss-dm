@@ -98,6 +98,7 @@ export function defaultSettings(): AppSettings {
     auto_update_addons: true,
     show_progress_windows: true,
     media: { video: defaultOutput(), audio: defaultOutput() },
+    local_sites: [],
   };
 }
 

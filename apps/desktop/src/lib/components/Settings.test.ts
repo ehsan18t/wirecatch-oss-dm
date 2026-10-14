@@ -93,6 +93,18 @@ describe('the settings screen', () => {
     }
   });
 
+  it('keeps a site on the network as its host, the way the app keeps it', async () => {
+    const { app } = await openSettings();
+    const field = screen.getByLabelText('Add to your sites on your network');
+    await fireEvent.input(field, { target: { value: 'https://Wiki.Corp.Example.com/start' } });
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    await settle();
+    expect(app.settings?.local_sites).toEqual(['wiki.corp.example.com']);
+    expect(screen.getByRole('list', { name: 'Your sites on your network' })).toHaveTextContent(
+      'wiki.corp.example.com',
+    );
+  });
+
   it('says when no setting matches the search, and clears it', async () => {
     await openSettings();
     const search = screen.getByRole('searchbox', { name: 'Search settings' });

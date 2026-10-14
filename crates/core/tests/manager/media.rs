@@ -10,7 +10,7 @@ use wirecatch_protocol::app::{
     AddonId, AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection,
     OutputFormat, UiEvent, WaitReason,
 };
-use wirecatch_protocol::extension::{AddAction, MediaKind};
+use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
 use crate::common::{Harness, TestResult, extension, test_data, wait_until};
 use crate::media_support::{
@@ -738,7 +738,7 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
     let choice = choice_requested(&mut ui).await;
     assert_eq!(
         choice.page_url.as_deref(),
-        Some("https://videos.example/watch")
+        Some("https://videos.test/watch")
     );
     assert_eq!(h.manager.pending_media_choices(), vec![choice]);
     Ok(())
@@ -1060,11 +1060,11 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() -
     // The fake yt-dlp never fetches the page; its address only says where the
     // page is: on the internet.
     h.manager
-        .add_capture(media_capture(
+        .add_capture(from_website(media_capture(
             "http://93.184.215.14/watch?v=1",
             MediaKind::Page,
             None,
-        ))
+        )))
         .await
         .unwrap();
     let choice = choice_requested(&mut ui).await;
@@ -1092,110 +1092,39 @@ fn by_name(mut url: wirecatch_engine::Url) -> TestResult<wirecatch_engine::Url> 
     Ok(url)
 }
 
-/// A captured page is never taken to be on the local network because its
-/// name resolves there: the site's owner controls that answer (CORE-3). Its
-/// formats stay on the internet.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_captured_page_whose_name_answers_local_gets_no_exception() -> TestResult {
-    let server = FileServer::start().await;
-    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
-    assert_eq!(install(&h).await?.state, AddonState::Installed);
-    tell_tool(&h, "info.json", &page_info(&server, b"video", b"audio"))?;
-    let mut ui = h.manager.subscribe();
-    h.manager
-        .add_capture(media_capture(
-            by_name(server.url("watch?v=1"))?,
-            MediaKind::Page,
-            None,
-        ))
-        .await
-        .unwrap();
-    let choice = choice_requested(&mut ui).await;
-    h.manager
-        .choose_media(choice.id, select("137+140"))
-        .await
-        .unwrap();
-    let id = h.manager.list_downloads()[0].id;
-    let failed = h.wait_status(id, DownloadStatus::Failed).await;
-    let error = failed.error.unwrap();
-    assert!(
-        error.message.contains("your own network"),
-        "{}",
-        error.message
-    );
-    assert_eq!(server.requests("fmt/video.mp4"), 0);
-    assert_eq!(server.requests("fmt/audio.m4a"), 0);
-    Ok(())
+/// `capture` as a page on the internet sends it.
+fn from_website(capture: NewDownload) -> NewDownload {
+    let page = "https://videos.example.com/watch";
+    NewDownload {
+        referrer: Some(page.into()),
+        page_url: Some(page.into()),
+        frame_url: None,
+        ..capture
+    }
 }
 
-/// A captured stream whose name resolves to the local network is refused
-/// while it is read, and nothing is offered.
+/// A website's stream or page whose name resolves to the local network is
+/// declined before anything is read or offered (CORE-3).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_captured_stream_whose_name_answers_local_is_refused() -> TestResult {
+async fn a_websites_media_whose_name_answers_local_is_refused() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
     let h = Harness::new().await?;
-    h.manager
-        .add_capture(media_capture(
-            by_name(server.url("hls/master.m3u8"))?,
-            MediaKind::Hls,
-            None,
-        ))
-        .await
-        .unwrap();
-    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
-    assert_eq!(row.status, DownloadStatus::Failed);
-    let error = row.error.unwrap();
-    assert!(
-        error.message.contains("your own network"),
-        "{}",
-        error.message
-    );
+    for (link, kind) in [
+        (by_name(server.url("hls/master.m3u8"))?, MediaKind::Hls),
+        (server.url("hls/master.m3u8"), MediaKind::Hls),
+        (by_name(server.url("watch?v=1"))?, MediaKind::Page),
+    ] {
+        let error = h
+            .manager
+            .add_capture(from_website(media_capture(link, kind, None)))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CoreError::NotStarted(_)), "{error:?}");
+    }
     assert_eq!(h.manager.pending_media_choices().len(), 0);
+    assert_eq!(h.manager.list_downloads().len(), 0);
     assert_eq!(server.requests("hls/master.m3u8"), 0);
-    Ok(())
-}
-
-/// A captured stream on an address (which the engine lets through, D34.4)
-/// whose segments lead to a name on the local network: the download of the
-/// chosen quality refuses them.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_captured_stream_cannot_lead_its_download_into_the_local_network() -> TestResult {
-    let server = FileServer::start().await;
-    hls(&server, false, false);
-    let segment = |n: u8| by_name(server.url(&format!("hls/720/seg{n}.ts")));
-    let (first, second) = (segment(0)?, segment(1)?);
-    server.put(
-        "hls/720/index.m3u8",
-        format!(
-            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\n{first}\n#EXTINF:4.0,\n{second}\n#EXT-X-ENDLIST\n",
-        ),
-    );
-    let h = Harness::new().await?;
-    let mut ui = h.manager.subscribe();
-    h.manager
-        .add_capture(media_capture(
-            server.url("hls/master.m3u8"),
-            MediaKind::Hls,
-            None,
-        ))
-        .await
-        .unwrap();
-    let choice = choice_requested(&mut ui).await;
-    h.manager
-        .choose_media(choice.id, select(&choice.options[0].id))
-        .await
-        .unwrap();
-    let id = h.manager.list_downloads()[0].id;
-    let failed = h.wait_status(id, DownloadStatus::Failed).await;
-    let error = failed.error.unwrap();
-    assert!(
-        error.message.contains("your own network"),
-        "{}",
-        error.message
-    );
-    assert_eq!(server.requests("hls/720/seg0.ts"), 0);
-    assert_eq!(server.requests("hls/720/seg1.ts"), 0);
     Ok(())
 }
 
@@ -1352,7 +1281,7 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
         .as_str()
         .replacen("http://", "http://ada:s3cret@", 1);
     let mut capture = media_capture(&url, MediaKind::Hls, Some("Clip"));
-    capture.page_url = Some("https://ada:pagepass@example.com/watch".into());
+    capture.page_url = Some("https://ada:pagepass@videos.test/watch".into());
     h.manager.add_capture(capture).await.unwrap();
     let (_, analysing) = next_event(&mut ui, "MediaAnalysing", |e| match e {
         UiEvent::MediaAnalysing { id, url } => Some((*id, url.clone())),
@@ -1363,7 +1292,7 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
     let choice = choice_requested(&mut ui).await;
     assert_eq!(
         choice.page_url.as_deref(),
-        Some("https://ada:***@example.com/watch")
+        Some("https://ada:***@videos.test/watch")
     );
     for listed in h.manager.pending_media_choices() {
         let text = serde_json::to_string(&listed).unwrap();

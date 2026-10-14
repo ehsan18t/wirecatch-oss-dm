@@ -25,6 +25,15 @@ export interface ObservedResponse {
   documentLifecycle?: string;
   /** The frame that made the request: 0 for the tab's page, another number for a frame inside it. */
   frameId?: number;
+  /** Firefox only: the address of the document the response is for (the frame's, or the tab page's). */
+  documentUrl?: string;
+  /** Chromium only: the origin of the document that made the request. */
+  initiator?: string;
+}
+
+/** The document that requested a response, as far as the browser says (see `MediaItem.requestedBy`). */
+export function requestedBy(response: ObservedResponse): string | null {
+  return response.documentUrl ?? response.initiator ?? null;
 }
 
 /** Media found in one response. */

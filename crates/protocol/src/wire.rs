@@ -513,6 +513,7 @@ mod tests {
                 url: "https://example.com/a.zip".into(),
                 referrer: None,
                 page_url: None,
+                frame_url: None,
                 suggested_name: None,
                 mime: None,
                 size_hint: None,

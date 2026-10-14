@@ -18,8 +18,8 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
-use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
+use crate::local_network::ChosenBy;
 use crate::media::StoredMedia;
 use crate::owner_only;
 

@@ -295,6 +295,40 @@ describe('size limits', () => {
     expect(registry.items(3).map((i) => i.url)).toEqual([urlOf(100)]);
   });
 
+  it('keeps the document that requested each item across a restart, unknown for older lists', () => {
+    const registry = new MediaRegistry();
+    const file = (url: string) =>
+      ({ kind: 'direct', url, mime: null, size: null, audio: false }) as const;
+    registry.add(1, file('https://e.com/a.mp4'), 3, 'https://player.example.net');
+    // Too long to keep: unknown, which the app takes as the stricter answer.
+    registry.add(1, file('https://e.com/b.mp4'), 0, urlOf(MAX_MEDIA_URL_LENGTH + 1));
+    const copy = new MediaRegistry();
+    copy.restore(JSON.parse(JSON.stringify(registry.save())));
+    expect(copy.items(1).map((i) => i.requestedBy)).toEqual(['https://player.example.net', null]);
+    // A list saved before the field reads it as unknown.
+    const older = new MediaRegistry();
+    older.restore({
+      v: 1,
+      tabs: [
+        [
+          2,
+          [
+            {
+              kind: 'direct',
+              url: 'https://e.com/c.mp4',
+              key: 'direct:https://e.com/c.mp4',
+              mime: null,
+              size: null,
+              audio: false,
+              seenAt: 1,
+            },
+          ],
+        ],
+      ],
+    });
+    expect(older.items(2).map((i) => i.requestedBy)).toEqual([null]);
+  });
+
   it('keeps what it saves under the total size cap, newest tabs and items first', () => {
     let clock = 0;
     const registry = new MediaRegistry({ now: () => (clock += 1) });
@@ -434,6 +468,7 @@ describe('MediaRegistry', () => {
         key: 'direct:https://e.com/a.mp4',
         seenAt: 5,
         frameId: 0,
+        requestedBy: null,
         lastActive: 5,
       },
     ]);
@@ -561,6 +596,29 @@ describe('MediaWatcher', () => {
     );
     expect(registry.items(4).map((i) => i.frameId)).toEqual([0, 3]);
     expect(lookups).toEqual([4]);
+  });
+
+  it('records the document that requested the media, as each browser reports it', async () => {
+    const { registry, watcher } = setup();
+    // Firefox names the document's address, Chromium only the origin of whoever made the request.
+    await watcher.onResponse(
+      hlsResponse({ documentUrl: 'https://player.example.net/embed/7', frameId: 3 }),
+    );
+    await watcher.onResponse(
+      hlsResponse({
+        url: 'https://cdn.example.com/two/master.m3u8',
+        initiator: 'https://videos.example.org',
+        frameId: 4,
+      }),
+    );
+    await watcher.onResponse(
+      hlsResponse({ url: 'https://cdn.example.com/three/master.m3u8', frameId: 5 }),
+    );
+    expect(registry.items(4).map((i) => i.requestedBy)).toEqual([
+      'https://player.example.net/embed/7',
+      'https://videos.example.org',
+      null,
+    ]);
   });
 
   it('clears a tab when it loads a new page, and keeps a media file opened as the page itself', async () => {

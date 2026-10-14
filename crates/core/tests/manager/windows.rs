@@ -18,8 +18,9 @@ fn file_capture(url: String, handover: &str) -> NewDownload {
     NewDownload {
         handover_id: handover.to_string(),
         url,
-        referrer: Some("https://example.com/page".into()),
-        page_url: Some("https://example.com/page".into()),
+        referrer: Some("https://intranet.test/page".into()),
+        page_url: Some("https://intranet.test/page".into()),
+        frame_url: None,
         suggested_name: Some("report.pdf".into()),
         mime: None,
         size_hint: Some(1024),

@@ -89,8 +89,10 @@ async fn an_ftp_capture_that_fails_leaves_the_download_to_the_browser() -> TestR
     let capture = NewDownload {
         handover_id: "ftp-1".into(),
         url: server.url("ftp", "bob:pw@", "gone.iso").into(),
-        referrer: None,
-        page_url: None,
+        // A page on the person's network, whose links may lead there (D39).
+        referrer: Some("http://intranet.test/".into()),
+        page_url: Some("http://intranet.test/".into()),
+        frame_url: None,
         suggested_name: Some("gone.iso".into()),
         mime: None,
         size_hint: None,

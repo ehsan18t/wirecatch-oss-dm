@@ -62,4 +62,11 @@ export type AppSettings = {
    * What the quality window for a video starts from (D24).
    */
   media: MediaDefaults;
+  /**
+   * Sites on the person's network: host names, each also covering the names
+   * under it (`corp.example` covers `wiki.corp.example`). A link captured from
+   * a page on one of them may lead to devices on the local network, like a
+   * page whose own address is local (D39). Empty by default.
+   */
+  local_sites: Array<string>;
 };

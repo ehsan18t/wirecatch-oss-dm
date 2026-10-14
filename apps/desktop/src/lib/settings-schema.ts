@@ -259,6 +259,13 @@ const DEFS = [
     help: 'Across all queues together. Each queue also has its own limit.',
     keywords: 'concurrent simultaneous parallel limit',
   },
+  {
+    id: 'local_sites',
+    section: 'advanced',
+    label: 'Your sites on your network',
+    help: 'Links on pages from these sites may lead to devices on your network, like a NAS or a router. Pages at a network address, or with a one-word name, count without being listed.',
+    keywords: 'local network intranet nas router private lan trusted hosts',
+  },
 ] as const satisfies readonly SettingText[];
 
 /** Every setting, by the id the screen, the palette and the core's field names share. */

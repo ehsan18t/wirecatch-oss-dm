@@ -1456,6 +1456,8 @@ describe('context menu', () => {
       url: 'https://example.com/file.iso',
       referrer: 'https://example.com/page',
       page_url: 'https://example.com/page',
+      // Not in a frame: the page itself is the document the link is in.
+      frame_url: 'https://example.com/page',
       cookies: 'session=abc',
       source: 'context_menu',
       queue: 1,
@@ -1484,6 +1486,24 @@ describe('context menu', () => {
       'https://example.com/account?id=7',
     ]);
     expect(s.downloads.log).toEqual([]);
+  });
+
+  it('names the frame the link is in, which chose it, apart from the page', async () => {
+    s = await setup();
+    await s.hub.onMenuClick(
+      {
+        linkUrl: 'http://192.168.1.20/a.zip',
+        pageUrl: 'http://portal/home',
+        frameUrl: 'https://widget.example.net/embed',
+      },
+      undefined,
+    );
+    expect(addDownloadCalls(s.app)[0]).toMatchObject({
+      page_url: 'http://portal/home',
+      frame_url: 'https://widget.example.net/embed',
+      // From https to http the browser sends no referrer, so it cannot stand for the frame.
+      referrer: null,
+    });
   });
 
   it('uses the default cookie store in Chromium (no cookieStoreId)', async () => {

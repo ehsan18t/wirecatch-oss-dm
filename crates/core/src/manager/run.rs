@@ -19,6 +19,7 @@ use super::settle::path_resolver;
 use super::state::{Entry, Gauge, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
+use crate::local_network::{self, ChosenBy};
 use crate::speed::SpeedMeter;
 use crate::store::Origin;
 use crate::user_error;
@@ -58,8 +59,14 @@ enum Ended {
 impl Ended {
     /// How run `end` of download `id`, saving into `folder`, ended. A failure
     /// is described for the person, in words that depend on whether anything
-    /// had arrived before it (`worked_before`).
-    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked_before: bool) -> Self {
+    /// had arrived before it (`worked_before`) and on who chose the link.
+    fn of(
+        end: RunEnd,
+        id: DownloadId,
+        folder: &Path,
+        worked_before: bool,
+        chosen_by: ChosenBy,
+    ) -> Self {
         match end {
             RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
                 Ended::Completed { bytes, path: None }
@@ -67,7 +74,12 @@ impl Ended {
             RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
                 warn!(id = id.0, %error, "download failed");
-                Ended::Failed(user_error::describe(&error, folder, worked_before))
+                Ended::Failed(user_error::describe_run(
+                    &error,
+                    folder,
+                    worked_before,
+                    chosen_by,
+                ))
             }
             RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
                 bytes,
@@ -136,10 +148,11 @@ impl Manager {
         };
         match engine_request(entry, bandwidth, target) {
             #[cfg(test)]
-            Ok(_) if self.fake_engine().is_some() => {
+            Ok(request) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
+                let rule = request.options.private_network;
                 self.launch(state, id, run_id, answered, move |cancel| {
-                    let work = super::fake::run(fake, settle, cancel);
+                    let work = super::fake::run(fake, settle, cancel, rule);
                     (Gauge::Engine(Arc::default()), async move {
                         RunEnd::Engine(work.await)
                     })
@@ -243,7 +256,7 @@ impl Manager {
         entry.clear_live_fields();
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
-        let ended = Ended::of(end, id, &folder, worked_before);
+        let ended = Ended::of(end, id, &folder, worked_before, entry.chosen_by);
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
                 // The finished file now holds the name on disk.
@@ -429,6 +442,9 @@ fn engine_request(
             false,
         )
     })?;
+    if local_network::refuses_address(entry.chosen_by, &url) {
+        return Err(user_error::private_network(entry.chosen_by));
+    }
     let path = PathBuf::from(&entry.row.path);
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut request = DownloadRequest::new(url, dir);
@@ -436,7 +452,7 @@ fn engine_request(
         Target::Exact => request.exact_path = Some(path),
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
-    request.options = headers::download_options();
+    request.options = headers::download_options(entry.chosen_by.private_network());
     let options = &mut request.options;
     options.connections = bandwidth.connections;
     options.rate_limiters = bandwidth.limiters;
@@ -444,7 +460,6 @@ fn engine_request(
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent.clone_from(agent);
     }
-    options.private_network = entry.chosen_by.private_network();
     Ok(request)
 }
 
@@ -454,7 +469,40 @@ mod tests {
 
     use super::*;
     use crate::{KnownFolders, ManagerConfig};
+    use wirecatch_engine::PrivateNetwork;
     use wirecatch_protocol::app::AddRequest;
+
+    /// A website's link written as a local address is refused before it
+    /// starts: the engine's `Block` lets a starting address through (D34.4),
+    /// for its caller to classify (D39). Every other link runs under its rule.
+    #[test]
+    fn a_download_runs_under_the_rule_of_whoever_chose_its_link() {
+        let bandwidth = || Bandwidth {
+            connections: 1,
+            limiters: Vec::new(),
+        };
+        let run = |url: &str, chosen_by| {
+            engine_request(
+                &super::super::state::idle_entry(url, chosen_by),
+                bandwidth(),
+                Target::Exact,
+            )
+        };
+        let refused = run("http://192.168.1.1/f", ChosenBy::Website).unwrap_err();
+        assert_eq!(refused, user_error::private_network(ChosenBy::Website));
+        for (chosen_by, rule) in [
+            (ChosenBy::Website, PrivateNetwork::Block),
+            (ChosenBy::LocalPage, PrivateNetwork::Auto),
+            (ChosenBy::Person, PrivateNetwork::Auto),
+        ] {
+            let request = run("http://192.168.1.1/f", chosen_by);
+            if chosen_by != ChosenBy::Website {
+                assert_eq!(request.unwrap().options.private_network, rule);
+            }
+            let request = run("https://example.com/f", chosen_by).unwrap();
+            assert_eq!(request.options.private_network, rule, "{chosen_by:?}");
+        }
+    }
 
     /// A download so small it finishes before the ticker could mark its part
     /// file is still marked before the run reports it finished.

@@ -24,9 +24,13 @@ describe('settings schema', () => {
     }
   });
 
-  it('puts tuning under Advanced', () => {
+  it('puts tuning and the sites on the network under Advanced', () => {
     const advanced = SETTINGS.filter((d) => d.section === 'advanced').map((d) => d.id);
-    expect(advanced).toEqual(['connections_per_download', 'max_concurrent_downloads']);
+    expect(advanced).toEqual([
+      'connections_per_download',
+      'max_concurrent_downloads',
+      'local_sites',
+    ]);
   });
 
   it('finds settings by words people use', () => {

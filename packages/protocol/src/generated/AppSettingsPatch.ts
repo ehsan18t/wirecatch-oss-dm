@@ -61,4 +61,8 @@ export type AppSettingsPatch = {
    * Changes to [`AppSettings::media`].
    */
   media?: MediaDefaultsPatch;
+  /**
+   * The new [`AppSettings::local_sites`], replacing the list.
+   */
+  local_sites?: Array<string>;
 };

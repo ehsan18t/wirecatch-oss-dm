@@ -20,11 +20,12 @@ use super::Manager;
 use super::downloads::{NewEntry, capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::state::{Expectation, Pending};
-use crate::chosen_by::ChosenBy;
 use crate::error::{CoreError, Result};
+use crate::local_network::{self, ChosenBy};
 use crate::media::StoredMedia;
 use crate::settings;
 use crate::store::Origin;
+use crate::user_error;
 use crate::{headers, naming};
 
 /// Most captures that can wait for confirmation at once.
@@ -56,30 +57,31 @@ impl Manager {
     pub async fn add_capture(&self, capture: NewDownload) -> Result<AddedDownload> {
         handovers::check_id(&capture.handover_id)?;
         let url = parse_url(&capture.url)?;
-        let (known, ask, queue) = {
-            let state = self.lock_open()?;
-            let known = state.handovers.get(&capture.handover_id).is_some();
-            let wanted = capture
-                .queue
-                .unwrap_or(state.settings.extension.default_queue);
-            // A queue deleted since the extension last synced falls back to the default.
-            let queue = state
-                .slot(wanted)
-                .map_or_else(|_| state.default_queue(), |s| s.queue.id);
-            (known, state.settings.extension.ask_before_download, queue)
-        };
+        let Arrival {
+            known,
+            ask,
+            queue,
+            chosen_by,
+        } = self.arrival(&capture)?;
         if known {
             return self.known_handover(&capture.handover_id).await;
+        }
+        // Before anything is answered: once the browser hears the app has it
+        // (waiting for the person, or queued), the browser's copy is gone.
+        if local_network::refuses(chosen_by, &url).await {
+            return Err(CoreError::NotStarted(
+                user_error::CAPTURE_TO_OWN_NETWORK.into(),
+            ));
         }
         if capture
             .media
             .as_ref()
             .is_some_and(|m| m.kind != MediaKind::Direct)
         {
-            return self.add_media_capture(&capture, queue);
+            return self.add_media_capture(&capture, queue, chosen_by);
         }
         if ask {
-            return self.hold_for_confirmation(capture, &url, queue);
+            return self.hold_for_confirmation(capture, &url, queue, chosen_by);
         }
 
         let added = self
@@ -90,7 +92,7 @@ impl Manager {
                 queue,
                 start: true,
                 origin: origin_of(&capture),
-                chosen_by: ChosenBy::Website,
+                chosen_by,
                 handover: Some(capture.handover_id.clone()),
                 expect: Some(Expectation {
                     size: capture.size_hint,
@@ -364,11 +366,29 @@ impl Manager {
             .map(super::state::Entry::summary)
     }
 
+    /// How a capture arrives, read from the state in one go.
+    fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
+        let state = self.lock_open()?;
+        let wanted = capture
+            .queue
+            .unwrap_or(state.settings.extension.default_queue);
+        Ok(Arrival {
+            known: state.handovers.get(&capture.handover_id).is_some(),
+            ask: state.settings.extension.ask_before_download,
+            // A queue deleted since the extension last synced falls back to the default.
+            queue: state
+                .slot(wanted)
+                .map_or_else(|_| state.default_queue(), |s| s.queue.id),
+            chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites),
+        })
+    }
+
     fn hold_for_confirmation(
         &self,
         capture: NewDownload,
         url: &Url,
         queue: QueueId,
+        chosen_by: ChosenBy,
     ) -> Result<AddedDownload> {
         let mut state = self.lock_open()?;
         if let Some(known) = state.handovers.get(&capture.handover_id) {
@@ -432,6 +452,7 @@ impl Manager {
                 capture: proposal.clone(),
                 handovers: vec![capture.handover_id.clone()],
                 request: capture,
+                chosen_by,
             },
         );
         self.emit(UiEvent::ConfirmationRequested(capture_for_display(
@@ -462,7 +483,7 @@ impl Manager {
                 queue: answer.queue.unwrap_or(proposal.queue),
                 start: !answer.later,
                 origin: origin_of(request),
-                chosen_by: ChosenBy::Website,
+                chosen_by: pending.chosen_by,
                 handover: None,
                 expect: Some(Expectation {
                     size: request.size_hint,
@@ -537,6 +558,15 @@ fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
         page_url: wirecatch_logging::redact::optional_url_for_display(capture.page_url.as_deref()),
         ..capture.clone()
     }
+}
+
+/// How a capture arrives: whether its handover is known already, whether the
+/// person is asked first, the queue it goes to, and who chose its link.
+struct Arrival {
+    known: bool,
+    ask: bool,
+    queue: QueueId,
+    chosen_by: ChosenBy,
 }
 
 /// What makes a captured download work outside the browser: the browser's

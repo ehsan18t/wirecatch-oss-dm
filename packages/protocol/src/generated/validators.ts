@@ -215,7 +215,8 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['notify_on_complete'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
-    isMediaDefaults(value1['media']))(value);
+    isMediaDefaults(value1['media']) &&
+    isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string'))(value);
 }
 
 /** Whether `value` has the shape of a {@link AppSettingsPatch}; fields it does not name are not checked. */
@@ -242,7 +243,9 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['auto_update_addons'] === 'boolean') &&
     (value1['show_progress_windows'] === undefined ||
       typeof value1['show_progress_windows'] === 'boolean') &&
-    (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])))(value);
+    (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])) &&
+    (value1['local_sites'] === undefined ||
+      isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string')))(value);
 }
 
 /** Whether `value` has the shape of a {@link BrowserInfo}; fields it does not name are not checked. */
@@ -747,6 +750,7 @@ export function isNewDownload(value: unknown): value is NewDownload {
     typeof value1['url'] === 'string' &&
     (typeof value1['referrer'] === 'string' || value1['referrer'] === null) &&
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null) &&
+    (value1['frame_url'] === undefined || typeof value1['frame_url'] === 'string') &&
     (typeof value1['suggested_name'] === 'string' || value1['suggested_name'] === null) &&
     (typeof value1['mime'] === 'string' || value1['mime'] === null) &&
     (typeof value1['size_hint'] === 'number' || value1['size_hint'] === null) &&

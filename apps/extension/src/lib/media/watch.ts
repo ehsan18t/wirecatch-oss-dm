@@ -1,5 +1,5 @@
 import { fallback } from '../diag/log';
-import { classifyResponse, isNavigation, type ObservedResponse } from './detect';
+import { classifyResponse, isNavigation, requestedBy, type ObservedResponse } from './detect';
 import { pageKey, type MediaRegistry } from './registry';
 
 export interface WatchDeps {
@@ -70,7 +70,7 @@ export class MediaWatcher {
       if (await this.#isPrivate(tabId)) return;
       if ((this.#generation.get(tabId) ?? 0) !== generation) return;
     }
-    this.#registry.add(tabId, detection, response.frameId ?? 0);
+    this.#registry.add(tabId, detection, response.frameId ?? 0, requestedBy(response));
   }
 
   /**

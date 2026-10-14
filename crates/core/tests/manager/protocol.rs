@@ -162,8 +162,9 @@ fn capture(url: String) -> NewDownload {
     NewDownload {
         handover_id: format!("handover-{url}"),
         url,
-        referrer: Some("https://example.com/page".into()),
-        page_url: Some("https://example.com/page".into()),
+        referrer: Some("https://intranet.test/page".into()),
+        page_url: Some("https://intranet.test/page".into()),
+        frame_url: None,
         suggested_name: Some("report.pdf".into()),
         mime: None,
         size_hint: Some(1024),
@@ -631,7 +632,7 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     assert_eq!(proposal.size, Some(1024));
     assert_eq!(
         proposal.page_url.as_deref(),
-        Some("https://example.com/page")
+        Some("https://intranet.test/page")
     );
     assert_eq!(h.manager.pending_confirmations(), vec![proposal.clone()]);
     assert_eq!(
@@ -962,21 +963,63 @@ fn by_name(mut url: wirecatch_engine::Url) -> TestResult<String> {
     Ok(url.to_string())
 }
 
-/// A link a website gave whose name resolves to the local network is not
-/// downloaded, and the browser keeps it (CORE-3).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_captured_link_whose_name_answers_local_is_left_to_the_browser() -> TestResult {
-    let server = fast_server(1024).await?;
-    let h = Harness::new().await?;
-    let error = h
-        .manager
-        .add_capture(capture(by_name(server.url("report.pdf"))?))
-        .await
-        .unwrap_err();
-    let wirecatch_core::CoreError::NotStarted(reason) = error else {
-        panic!("{error:?}");
+/// A capture of `url` from a page at `page`.
+fn capture_from(page: &str, url: String) -> NewDownload {
+    NewDownload {
+        referrer: Some(page.into()),
+        page_url: Some(page.into()),
+        frame_url: None,
+        ..capture(url)
+    }
+}
+
+/// A capture of `url` from a page on the internet.
+fn from_website(url: String) -> NewDownload {
+    capture_from("https://example.com/page", url)
+}
+
+/// Captures `capture` and expects it left to the browser for leading into
+/// the local network, with nothing added or asked.
+async fn left_to_the_browser(h: &Harness, capture: NewDownload) -> TestResult {
+    let before = h.manager.list_downloads().len();
+    let result = h.manager.add_capture(capture).await;
+    let Err(wirecatch_core::CoreError::NotStarted(reason)) = result else {
+        panic!("{result:?}");
     };
     assert!(reason.contains("your own network"), "{reason}");
+    assert_eq!(h.manager.list_downloads().len(), before);
+    assert_eq!(h.manager.pending_confirmations().len(), 0);
+    Ok(())
+}
+
+/// A website's link into the local network, by a name that resolves there or
+/// by an address, is declined before the app answers, so the browser keeps
+/// its download: also when the window would ask first or the queue is
+/// stopped, where the browser lets go of its copy as soon as the app answers
+/// (CORE-3, D39).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_websites_link_into_the_local_network_is_left_to_the_browser() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let links = || -> TestResult<[String; 2]> {
+        Ok([
+            by_name(server.url("report.pdf"))?,
+            server.url("report.pdf").to_string(),
+        ])
+    };
+    for link in links()? {
+        left_to_the_browser(&h, from_website(link)).await?;
+    }
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    for link in links()? {
+        left_to_the_browser(&h, from_website(link)).await?;
+    }
+    tune(&h.manager, |s| s.extension.ask_before_download = false)?;
+    let queue = h.manager.list_queues()[0].id;
+    h.manager.set_queue_paused(queue, true)?;
+    for link in links()? {
+        left_to_the_browser(&h, from_website(link)).await?;
+    }
     assert!(
         server.stats.seen().is_empty(),
         "the local server was contacted"
@@ -984,40 +1027,52 @@ async fn a_captured_link_whose_name_answers_local_is_left_to_the_browser() -> Te
     Ok(())
 }
 
-/// A captured link on an address (which the engine lets through, D34.4)
-/// cannot redirect into the local network by name.
+/// A page on the person's network may send Wirecatch to another device there:
+/// one whose own address says so, or a site the person listed (D39).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_captured_link_cannot_redirect_into_the_local_network() -> TestResult {
-    let inside = fast_server(1024).await?;
-    let local = by_name(inside.url("report.pdf"))?;
-    let outside = capture_server(1024, |c| {
-        c.redirect = Some(("/report.pdf".into(), local));
-    })
-    .await;
+async fn a_page_on_the_network_may_lead_to_it() -> TestResult {
+    let server = fast_server(1024).await?;
     let h = Harness::new().await?;
-    let error = h
+    let added = h
         .manager
-        .add_capture(capture(outside.url("report.pdf").to_string()))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, wirecatch_core::CoreError::NotStarted(_)),
-        "{error:?}"
-    );
-    assert!(
-        inside.stats.seen().is_empty(),
-        "the local server was contacted"
-    );
+        .add_capture(capture_from(
+            "http://nas/files",
+            by_name(server.url("report.pdf"))?,
+        ))
+        .await?;
+    h.wait_status(added.id.unwrap(), DownloadStatus::Completed)
+        .await;
+
+    let intranet = || -> TestResult<NewDownload> {
+        Ok(capture_from(
+            "https://wiki.corp.example.com/files",
+            by_name(server.url("other.pdf"))?,
+        ))
+    };
+    left_to_the_browser(&h, intranet()?).await?;
+    tune(&h.manager, |s| {
+        s.local_sites = vec!["corp.example.com".into()];
+    })?;
+    let added = h.manager.add_capture(intranet()?).await?;
+    h.wait_status(added.id.unwrap(), DownloadStatus::Completed)
+        .await;
     Ok(())
 }
 
-/// A link the person adds themselves may name a server on their own network.
+/// A link the person adds themselves may name a server on their own network,
+/// also after the app restarts.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_link_the_person_adds_may_name_a_server_on_their_network() -> TestResult {
     let server = fast_server(1024).await?;
-    let h = Harness::new().await?;
+    let mut h = Harness::new().await?;
     let row = h.add(by_name(server.url("report.pdf"))?).await?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
+    let later = h
+        .add_with(by_name(server.url("later.pdf"))?, |r| r.start = false)
+        .await?;
+    h.restart().await?;
+    h.manager.resume(later.id)?;
+    h.wait_status(later.id, DownloadStatus::Completed).await;
     Ok(())
 }
 
@@ -1431,7 +1486,7 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
     }
     assert!(stored.contains("Accept-Language"), "{stored}");
     assert!(
-        stored.contains("example.com/page"),
+        stored.contains("intranet.test/page"),
         "the referrer went: {stored}"
     );
 
@@ -1503,7 +1558,7 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
     // A capture waiting for an answer shows the hidden form, and downloads the real link.
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
     let mut asked = capture(secret_url("asked.bin"));
-    asked.page_url = Some("https://ada:pagepass@example.com/page".into());
+    asked.page_url = Some("https://ada:pagepass@intranet.test/page".into());
     h.manager.add_capture(asked).await.unwrap();
     let pending = h.manager.pending_confirmations().remove(0);
     assert!(
@@ -1513,7 +1568,7 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
     );
     assert_eq!(
         pending.page_url.as_deref(),
-        Some("https://ada:***@example.com/page")
+        Some("https://ada:***@intranet.test/page")
     );
     h.manager
         .confirm_capture(pending.id, CaptureConfirmation::default())

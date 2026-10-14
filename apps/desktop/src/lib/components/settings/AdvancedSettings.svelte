@@ -1,10 +1,15 @@
 <script lang="ts">
-  // Advanced: connections per download and downloads at once, within the core's limits.
-  import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+  // Advanced: connections per download and downloads at once, within the core's limits, and the person's sites on their network (D39).
+  import {
+    MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONNECTIONS_PER_DOWNLOAD,
+    normalizeSite,
+  } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { concurrentDownloads, connectionsPerDownload } from '$lib/limits';
   import { commitNumber } from '$lib/number-field';
   import type { SettingIn } from '$lib/settings-schema';
+  import ListEditor from '../ListEditor.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -13,6 +18,7 @@
   const controls: Record<SettingIn<'advanced'>, Snippet<[Row]>> = {
     connections_per_download: connections,
     max_concurrent_downloads: concurrent,
+    local_sites: localSites,
   };
 </script>
 
@@ -53,6 +59,17 @@
         show: String,
         save: (v) => save((d) => void (d.max_concurrent_downloads = v)),
       })}
+  />
+{/snippet}
+
+{#snippet localSites({ def, s, helpId }: Row)}
+  <ListEditor
+    label={def.label}
+    describedby={helpId}
+    placeholder="wiki.example.com"
+    items={s.local_sites}
+    normalize={(typed: string) => normalizeSite(typed) ?? ''}
+    onchange={(sites: string[]) => save((d) => void (d.local_sites = sites))}
   />
 {/snippet}
 

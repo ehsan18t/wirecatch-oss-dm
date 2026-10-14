@@ -237,6 +237,8 @@ export class Hub {
       // What the browser itself would send (strict-origin-when-cross-origin), never more.
       referrer: refererFor(url, page),
       page_url: click.pageUrl ?? null,
+      // The document the link is in chose it, a frame from another site included.
+      ...(page === null ? {} : { frame_url: page }),
       suggested_name: null,
       mime: null,
       size_hint: null,
@@ -278,6 +280,8 @@ export class Hub {
       url: target.url,
       referrer: refererFor(target.url, request.referrer),
       page_url: request.pageUrl,
+      // The document that requested the media chose its address; left out when unknown.
+      ...(target.requestedBy === null ? {} : { frame_url: target.requestedBy }),
       suggested_name: null,
       mime: target.mime,
       size_hint: target.size,

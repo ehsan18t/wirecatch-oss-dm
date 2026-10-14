@@ -29,8 +29,15 @@ pub struct NewDownload {
     pub url: String,
     /// Value for the `Referer` header of the app's requests.
     pub referrer: Option<String>,
-    /// The page the download started from.
+    /// The page the download started from: the tab's address.
     pub page_url: Option<String>,
+    /// The full address of the document the capture started in: the frame
+    /// it is in, or the page itself when it is in none. Absent when the
+    /// extension does not know it, as for a browser download, whose referrer
+    /// comes from that document. An app from before this field ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub frame_url: Option<String>,
     /// Name the browser or page suggested; the server's name wins if this is absent.
     pub suggested_name: Option<String>,
     /// The MIME type the browser saw, for example `video/mp4`; tells audio from video for
@@ -70,6 +77,7 @@ impl fmt::Debug for NewDownload {
             url,
             referrer,
             page_url,
+            frame_url,
             suggested_name,
             mime,
             size_hint,
@@ -85,6 +93,7 @@ impl fmt::Debug for NewDownload {
             .field("url", url)
             .field("referrer", referrer)
             .field("page_url", page_url)
+            .field("frame_url", frame_url)
             .field("suggested_name", suggested_name)
             .field("mime", mime)
             .field("size_hint", size_hint)
@@ -661,6 +670,7 @@ mod tests {
             url: "https://example.com/f".into(),
             referrer: None,
             page_url: None,
+            frame_url: None,
             suggested_name: None,
             mime: None,
             size_hint: None,

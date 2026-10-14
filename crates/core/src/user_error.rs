@@ -6,6 +6,7 @@ use std::path::Path;
 use wirecatch_engine::Error as EngineError;
 use wirecatch_protocol::app::{FixAction, UserError};
 
+use crate::local_network::ChosenBy;
 use crate::store::Recovery;
 
 /// Raw OS codes for a full disk, in case the standard library does not classify them.
@@ -52,12 +53,12 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         // reaches a person is that the server sent something other than the file
         // the browser saw: a fresh link from the page is the way out.
         EngineError::TargetRejected(reason) => fix(reason.message(), FixAction::RefreshLink),
-        // Only a link a website gave is refused this way (D34.5); one the
-        // person pastes themselves may reach their own network.
-        EngineError::PrivateNetwork { .. } => fix(
-            "This link leads to a device on your own network, which Wirecatch does not reach for a link a website gave it. If you trust it, refresh the link by pasting it yourself.",
-            FixAction::RefreshLink,
-        ),
+        // Who chose the link decides the words and the fix: a download's run
+        // uses `private_network`; this is for requests no one link stands for.
+        EngineError::PrivateNetwork { .. } => UserError {
+            message: "Wirecatch did not follow this address to a device on your own network, which it blocks for safety.".into(),
+            fix: None,
+        },
         EngineError::Internal(detail) => fix(
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
@@ -108,6 +109,42 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         ),
     }
 }
+
+/// Why a link was refused for leading to a device on the person's own network,
+/// in the words for whoever chose it (D34.5, D39).
+pub(crate) fn private_network(chosen_by: ChosenBy) -> UserError {
+    match chosen_by {
+        // Pasting the same link makes it the person's own, which may reach
+        // their network: the one way out, and it does not loop.
+        ChosenBy::Website => UserError {
+            message: "This link leads to a device on your own network, and Wirecatch does not follow a link a website gave it there. If you trust this link, give the download a new link and paste the same one: a link you paste yourself may reach your own network.".into(),
+            fix: Some(FixAction::RefreshLink),
+        },
+        // The link itself was allowed; somewhere on the internet it was sent
+        // on into the local network, which pasting it again would not change.
+        ChosenBy::Person | ChosenBy::LocalPage => UserError {
+            message: "This link sent Wirecatch on from the internet to a device on your own network, which Wirecatch does not follow. Use the device's own address on your network instead.".into(),
+            fix: None,
+        },
+    }
+}
+
+/// [`describe`] for a download's own run, whose link `chosen_by` chose.
+pub(crate) fn describe_run(
+    error: &EngineError,
+    folder: &Path,
+    previously_worked: bool,
+    chosen_by: ChosenBy,
+) -> UserError {
+    match error {
+        EngineError::PrivateNetwork { .. } => private_network(chosen_by),
+        other => describe(other, folder, previously_worked),
+    }
+}
+
+/// Why a website's link to the local network is not taken over, for the
+/// browser's notice: there is no download in the app to act on.
+pub(crate) const CAPTURE_TO_OWN_NETWORK: &str = "It leads to a device on your own network, which Wirecatch does not reach for a link a website gave.";
 
 /// Something the person should know about how Wirecatch started, shown once as a notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -573,6 +610,38 @@ mod tests {
             action(&EngineError::Internal("bug".into()), false),
             Some(FixAction::Retry)
         );
+    }
+
+    #[test]
+    fn a_refused_link_says_who_can_open_it() {
+        let error = EngineError::PrivateNetwork { url: "u".into() };
+        let website = describe_run(&error, Path::new("/d"), false, ChosenBy::Website);
+        assert_eq!(website.fix, Some(FixAction::RefreshLink));
+        assert!(
+            website.message.contains("a website gave"),
+            "{}",
+            website.message
+        );
+        // The fix is named as the person meets it: the row's button gives a
+        // download a new link ("Get a fresh link", "New link"); no button is
+        // called "Refresh link".
+        assert!(
+            website.message.contains("a new link") && !website.message.contains("Refresh link"),
+            "{}",
+            website.message
+        );
+        for own in [ChosenBy::Person, ChosenBy::LocalPage] {
+            let refused = describe_run(&error, Path::new("/d"), false, own);
+            assert_eq!(refused.fix, None, "pasting it again would not help");
+            assert!(!refused.message.contains("website"), "{}", refused.message);
+        }
+        for text in [
+            website.message,
+            private_network(ChosenBy::Person).message,
+            CAPTURE_TO_OWN_NETWORK.into(),
+        ] {
+            assert!(!text.contains('\u{2014}') && text.ends_with('.'), "{text}");
+        }
     }
 
     #[test]

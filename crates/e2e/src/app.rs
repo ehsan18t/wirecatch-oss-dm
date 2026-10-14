@@ -265,6 +265,7 @@ pub fn capture(url: &str, handover_id: &str) -> NewDownload {
         url: url.to_string(),
         referrer: Some("http://127.0.0.1/page".into()),
         page_url: Some("http://127.0.0.1/page".into()),
+        frame_url: None,
         suggested_name: None,
         mime: Some("application/octet-stream".into()),
         size_hint: None,

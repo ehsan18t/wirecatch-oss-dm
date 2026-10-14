@@ -168,7 +168,7 @@ fn restore_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chosen_by::ChosenBy;
+    use crate::local_network::ChosenBy;
     use crate::store::{LastIds, NameChoice};
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};

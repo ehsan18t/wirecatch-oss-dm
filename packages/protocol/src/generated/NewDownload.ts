@@ -23,9 +23,16 @@ export type NewDownload = {
    */
   referrer: string | null;
   /**
-   * The page the download started from.
+   * The page the download started from: the tab's address.
    */
   page_url: string | null;
+  /**
+   * The full address of the document the capture started in: the frame
+   * it is in, or the page itself when it is in none. Absent when the
+   * extension does not know it, as for a browser download, whose referrer
+   * comes from that document. An app from before this field ignores it.
+   */
+  frame_url?: string;
   /**
    * Name the browser or page suggested; the server's name wins if this is absent.
    */

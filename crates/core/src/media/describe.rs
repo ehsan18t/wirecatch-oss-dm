@@ -12,6 +12,7 @@ use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
 use crate::addons::MediaTools;
+use crate::local_network::ChosenBy;
 use crate::user_error;
 
 fn retry(message: String) -> UserError {
@@ -66,8 +67,13 @@ pub(crate) fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
     }
 }
 
-/// Why a stream download or inspection failed, with the fix where one helps. An ffmpeg of the add-on (`tools`) that could not be started marks the add-on for a fresh look.
-pub(crate) fn stream(error: &StreamError, folder: &Path, tools: Option<&MediaTools>) -> UserError {
+/// Why a stream download or inspection failed, with the fix where one helps. An ffmpeg of the add-on (`tools`) that could not be started marks the add-on for a fresh look. `chosen_by` chose the stream's link, which words a refusal to reach the local network.
+pub(crate) fn stream(
+    error: &StreamError,
+    folder: &Path,
+    tools: Option<&MediaTools>,
+    chosen_by: ChosenBy,
+) -> UserError {
     use StreamError as E;
     if let (E::FfmpegMissing(_) | E::FfmpegRun(RunError::Start { .. }), Some(tools)) =
         (error, tools)
@@ -83,11 +89,11 @@ pub(crate) fn stream(error: &StreamError, folder: &Path, tools: Option<&MediaToo
         E::Io(e) => user_error::disk(e, folder),
         // A track that is not a real video or audio file: the link most likely does not point at the video any more.
         E::UnknownFormat { role } => unknown_format(*role),
+        E::PrivateNetwork => user_error::private_network(chosen_by),
         // A fresh link lists as many segments, as long.
         E::Live
         | E::Drm(_)
         | E::Unsupported(_)
-        | E::PrivateNetwork
         | E::NothingChosen
         | E::TooManySegments
         | E::TooLarge => with(None),
@@ -276,7 +282,7 @@ mod tests {
             (E::TooLarge, None),
             (E::NeedsFfmpeg, Some(FixAction::Retry)),
             (E::Ffmpeg("bad".into()), Some(FixAction::Retry)),
-            (E::PrivateNetwork, None),
+            (E::PrivateNetwork, Some(FixAction::RefreshLink)),
             (
                 E::Unsupported(wirecatch_streams::Feature::SeveralPeriods),
                 None,
@@ -288,7 +294,7 @@ mod tests {
             ),
         ];
         for (error, fix) in errors {
-            let user = stream(&error, folder, None);
+            let user = stream(&error, folder, None, ChosenBy::Website);
             assert_eq!(user.fix, fix, "{error:?}");
             assert!(user.message.ends_with('.'), "{}", user.message);
             assert!(!user.message.contains('\u{2014}'));
@@ -300,6 +306,7 @@ mod tests {
             }),
             folder,
             None,
+            ChosenBy::Website,
         );
         assert_eq!(network.fix, Some(FixAction::RefreshLink));
     }
@@ -316,7 +323,7 @@ mod tests {
             StreamError::FfmpegRun(start()),
         ] {
             let tools = tools();
-            stream(&error, folder, Some(&tools));
+            stream(&error, folder, Some(&tools), ChosenBy::Website);
             assert!(tools.is_broken(), "{error:?}");
         }
         // ffmpeg that started and then stalled is not a broken add-on.
@@ -328,6 +335,7 @@ mod tests {
             }),
             folder,
             Some(&tools),
+            ChosenBy::Website,
         );
         assert!(!tools.is_broken());
     }

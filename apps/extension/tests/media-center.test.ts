@@ -431,6 +431,28 @@ describe('media button messages', () => {
     ]);
   });
 
+  it('names the document that requested the media, which chose its address, apart from the tab', async () => {
+    const { app, center, registry, tabs } = await setup();
+    registry.add(1, HLS, 3, 'https://player.example.net');
+    await center.handleContentMessage(
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
+      fromTab(1, tabs),
+    );
+    expect(lastAdd(app)).toMatchObject({
+      url: HLS.url,
+      page_url: 'https://example.com/watch',
+      frame_url: 'https://player.example.net',
+    });
+    // Unknown (a list from an earlier version): left out, and the app takes the stricter answer.
+    registry.clearTab(1);
+    registry.add(1, HLS);
+    await center.handleContentMessage(
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
+      fromTab(1, tabs),
+    );
+    expect(lastAdd(app)).not.toHaveProperty('frame_url');
+  });
+
   it('sends the page itself on a well-known video site, for the media add-on', async () => {
     const { app, center, tabs } = await setup();
     const answer = await center.handleContentMessage(
@@ -440,6 +462,8 @@ describe('media button messages', () => {
     expect(answer).toMatchObject({ ok: true });
     expect(lastAdd(app)).toMatchObject({
       url: 'https://www.youtube.com/watch?v=abc',
+      // The page is its own document.
+      frame_url: 'https://www.youtube.com/watch?v=abc',
       source: 'media_button',
       media: { kind: 'page', title: 'Some talk' },
     });
@@ -844,13 +868,14 @@ describe('popup media list', () => {
 
   it('sends a picked item, and explains when it is gone or the tab is private', async () => {
     const { app, center, registry } = await setup();
-    registry.add(1, FILE);
+    registry.add(1, FILE, 2, 'https://ads.example.net/slot');
     expect(await center.download(1, `direct:${FILE.url}`)).toEqual({
       ok: true,
       message: 'Sent to Wirecatch.',
     });
     expect(lastAdd(app)).toMatchObject({
       url: FILE.url,
+      frame_url: 'https://ads.example.net/slot',
       referrer: 'https://example.com/',
       mime: 'video/mp4',
       size_hint: 5_242_880,

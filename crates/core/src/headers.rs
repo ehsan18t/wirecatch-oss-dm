@@ -5,17 +5,19 @@
 //! them would break or confuse downloads.
 
 use tracing::warn;
-use wirecatch_engine::DownloadOptions;
 use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
+use wirecatch_engine::{DownloadOptions, PrivateNetwork};
 use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
 
 /// The engine's request options as the app sends them when no browser handed over its own
 /// user agent: the app's name and version (`<name>/<version>`), never the engine library's
-/// default, which names the library.
-pub(crate) fn download_options() -> DownloadOptions {
+/// default, which names the library. Every request names its rule for the local network,
+/// so none runs under the engine's default (`Allow`) by being forgotten (D34.9).
+pub(crate) fn download_options(private_network: PrivateNetwork) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.user_agent = format!("{PRODUCT_NAME}/{PRODUCT_VERSION}");
+    options.private_network = private_network;
     options
 }
 
@@ -147,7 +149,7 @@ mod tests {
 
     #[test]
     fn requests_name_the_app_not_the_engine() {
-        let agent = download_options().user_agent;
+        let agent = download_options(PrivateNetwork::Block).user_agent;
         assert_eq!(agent, app_agent());
         assert_ne!(agent, DownloadOptions::default().user_agent);
     }

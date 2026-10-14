@@ -26,6 +26,12 @@ export interface MediaItem extends Detection {
   seenAt: number;
   /** The frame that loaded it (0 for the tab's page). */
   frameId: number;
+  /**
+   * The document that requested it, which chose its address: the address of the frame or
+   * the tab's page (Firefox), or only its origin (Chromium). Null when the browser did not
+   * say, it was too long to keep, or the list was saved by an earlier version.
+   */
+  requestedBy: string | null;
   /** When it, or for HLS a playlist of the same stream, was last requested. */
   lastActive: number;
 }
@@ -77,21 +83,26 @@ export function itemKey(kind: DetectedKind, url: string): string {
   return `${kind}:${p === null ? url : p.origin + p.path}`;
 }
 
-/** A saved item; `frameId` and `lastActive` may be missing in lists saved by an earlier version. */
-type SavedItem = Omit<MediaItem, 'frameId' | 'lastActive'> & {
+/** A saved item; `frameId`, `requestedBy` and `lastActive` may be missing in lists saved by an earlier version. */
+type SavedItem = Omit<MediaItem, 'frameId' | 'requestedBy' | 'lastActive'> & {
   frameId?: number;
+  requestedBy?: string | null;
   lastActive?: number;
 };
 
+/** An address short enough to keep, the same limit as the media's own. */
+const isKeptUrl = refine(isString, (url) => url.length <= MAX_MEDIA_URL_LENGTH);
+
 const isSavedItem = fields<SavedItem>({
   kind: member<SavedItem['kind']>({ hls: true, dash: true, direct: true }),
-  url: refine(isString, (url) => url.length <= MAX_MEDIA_URL_LENGTH),
+  url: isKeptUrl,
   key: refine(isString, (key) => key.length <= MAX_MEDIA_URL_LENGTH + KEY_PREFIX_ROOM),
   seenAt: isNumber,
   audio: isBoolean,
   mime: nullable(isString),
   size: nullable(isNumber),
   frameId: optional(isNumber),
+  requestedBy: optional(nullable(isKeptUrl)),
   lastActive: optional(isNumber),
 });
 
@@ -115,7 +126,12 @@ function extendsStream(list: readonly MediaItem[], frameId: number, now: number)
 }
 
 function fromSaved(item: SavedItem): MediaItem {
-  return { ...item, frameId: item.frameId ?? 0, lastActive: item.lastActive ?? item.seenAt };
+  return {
+    ...item,
+    frameId: item.frameId ?? 0,
+    requestedBy: item.requestedBy ?? null,
+    lastActive: item.lastActive ?? item.seenAt,
+  };
 }
 
 /**
@@ -162,8 +178,16 @@ export class MediaRegistry {
     return this.items(tabId);
   }
 
-  /** Records a detection from a frame of the tab; returns true when the tab's list changed. */
-  add(tabId: number, detection: Detection, frameId = 0): boolean {
+  /**
+   * Records a detection from a frame of the tab, requested by the document at
+   * `requestedBy` (see `MediaItem.requestedBy`); returns true when the tab's list changed.
+   */
+  add(
+    tabId: number,
+    detection: Detection,
+    frameId = 0,
+    requestedBy: string | null = null,
+  ): boolean {
     if (detection.url.length > MAX_MEDIA_URL_LENGTH) return false;
     const now = this.#now();
     const list = this.#tabs.get(tabId) ?? [];
@@ -173,7 +197,12 @@ export class MediaRegistry {
     if (detection.kind === 'hls' && extendsStream(list, frameId, now)) return false;
     const kept =
       list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
-    this.#set(tabId, [...kept, { ...detection, key, seenAt: now, frameId, lastActive: now }]);
+    const document =
+      requestedBy !== null && requestedBy.length <= MAX_MEDIA_URL_LENGTH ? requestedBy : null;
+    this.#set(tabId, [
+      ...kept,
+      { ...detection, key, seenAt: now, frameId, requestedBy: document, lastActive: now },
+    ]);
     return true;
   }
 

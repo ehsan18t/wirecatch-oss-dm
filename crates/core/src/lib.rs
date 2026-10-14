@@ -8,17 +8,18 @@
 //! [`serve_connection`] speaks the local protocol (D14) over any byte stream.
 
 mod addons;
-mod chosen_by;
 mod clock;
 mod discard;
 mod error;
 mod folders;
 mod headers;
+mod local_network;
 mod manager;
 mod media;
 mod naming;
 mod owner_only;
 mod profile;
+mod public_suffix;
 mod schedule;
 mod server;
 mod settings;

@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_engine::{
-    AddressKind, CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError,
-    Outcome, PrivateNetwork, Progress, Url,
+    CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
+    PrivateNetwork, Progress, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
@@ -30,8 +30,8 @@ use super::media::{addon_missing, cookie_header, media_options};
 use super::run::{Bandwidth, MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::{Check, MediaTools};
-use crate::chosen_by::ChosenBy;
 use crate::clock::Clock;
+use crate::local_network::{self, ChosenBy};
 use crate::media::convert;
 use crate::media::describe;
 use crate::media::ffmpeg::{FfmpegError, Finished};
@@ -96,7 +96,12 @@ impl Manager {
                 return;
             }
         };
-        let mut options = media_options(&entry.origin);
+        if local_network::refuses_address(entry.chosen_by, &url) {
+            let error = user_error::private_network(entry.chosen_by);
+            self.fail_to_start(state, id, error);
+            return;
+        }
+        let mut options = media_options(&entry.origin, entry.chosen_by.private_network());
         options.connections = bandwidth.connections.max(1);
         options.rate_limiters = bandwidth.limiters;
         let tools = state.addon.tools.clone();
@@ -200,11 +205,7 @@ async fn run_stream(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     let staged = work.join(job.output.file_name().unwrap_or_else(|| "stream".as_ref()));
-    let mut request = StreamRequest::new(job.url.clone(), &staged, job.chosen_by.private_network());
-    request.video = choice(video);
-    request.audio = choice(audio);
-    request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
-    request.options = job.options.clone();
+    let request = stream_request(job, &staged, video, audio);
     let stream = Arc::new(StreamProgress::default());
     progress.add_stream(stream.clone());
     match wirecatch_streams::download(request, stream, cancel.clone()).await {
@@ -216,8 +217,19 @@ async fn run_stream(
             &e,
             job.output.parent().unwrap_or(Path::new("")),
             job.tools.as_ref(),
+            job.chosen_by,
         )),
     }
+}
+
+/// What stream job `job` asks of `wirecatch-streams`, saving at `staged`.
+fn stream_request(job: &Job, staged: &Path, video: Pick, audio: Pick) -> StreamRequest {
+    let mut request = StreamRequest::new(job.url.clone(), staged, job.chosen_by.private_network());
+    request.video = choice(video);
+    request.audio = choice(audio);
+    request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
+    request.options = job.options.clone();
+    request
 }
 
 /// A part's role, which names its file in the work folder.
@@ -930,7 +942,9 @@ async fn fetch_part(
         match Box::pin(wirecatch_streams::download(request, stream, cancel.clone())).await {
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
-            Err(e) => return Err(describe::stream(&e, work, job.tools.as_ref()).into()),
+            Err(e) => {
+                return Err(describe::stream(&e, work, job.tools.as_ref(), job.chosen_by).into());
+            }
         }
     } else {
         let path = part;
@@ -946,6 +960,9 @@ async fn fetch_part(
                 let folder = job.output.parent().unwrap_or(Path::new(""));
                 // A format address that was refused or has expired: a
                 // fresh one from the page usually works.
+                if let EngineError::PrivateNetwork { .. } = e {
+                    return Err(user_error::private_network(job.chosen_by).into());
+                }
                 let error = user_error::describe(&e, folder, true);
                 if error.fix == Some(FixAction::RefreshLink) {
                     let status = match e {
@@ -1164,78 +1181,42 @@ async fn network_rule(
     if page_is_local(chosen_by, page).await {
         return Ok(PrivateNetwork::Allow);
     }
-    format_rule(&addresses(format).await)
+    format_rule(chosen_by, &local_network::addresses(format, LOOKUP).await)
 }
+
+/// How long the early check waits for a format's name to resolve.
+const LOOKUP: Duration = Duration::from_secs(10);
 
 /// Whether a video page is on the local network. A page the person chose is
 /// where its name leads for them, as [`PrivateNetwork::Auto`] decides for a
-/// link they typed. A website's page counts only when its link is written as
-/// a local address: where its name resolves is for the site's owner to answer,
-/// who could make it answer local for this one lookup (CORE-3).
+/// link they typed. A page on their network by its own address or their list
+/// of sites (D39) is. A website's page never is: where its name resolves is
+/// for the site's owner to answer, who could make it answer local for this
+/// one lookup (CORE-3).
 async fn page_is_local(chosen_by: ChosenBy, page: &Url) -> bool {
     match chosen_by {
         ChosenBy::Person => {
-            let found = addresses(page).await;
-            !found.is_empty() && found.into_iter().all(is_local)
+            let found = local_network::addresses(page, LOOKUP).await;
+            !found.is_empty() && found.into_iter().all(local_network::is_local)
         }
-        ChosenBy::Website => address_in(page).is_some_and(is_local),
+        ChosenBy::LocalPage => true,
+        ChosenBy::Website => false,
     }
 }
 
-/// The rule for a format of a page on the internet whose host has the
-/// addresses `found`.
-fn format_rule(found: &[IpAddr]) -> Result<PrivateNetwork, UserError> {
+/// The rule for a format of a page on the internet, chosen by `chosen_by`,
+/// whose host has the addresses `found`.
+fn format_rule(chosen_by: ChosenBy, found: &[IpAddr]) -> Result<PrivateNetwork, UserError> {
     if found.is_empty() {
         return Err(UserError {
             message: "The server of this video's file could not be found, so Wirecatch could not check where it is and did not download it. Check your connection, then try again.".into(),
             fix: Some(FixAction::Retry),
         });
     }
-    if found.iter().copied().any(is_local) {
-        return Err(UserError {
-            message:
-                "This video points to a device on your own network, which Wirecatch blocks for safety."
-                    .into(),
-            fix: None,
-        });
+    if found.iter().copied().any(local_network::is_local) {
+        return Err(user_error::private_network(chosen_by));
     }
     Ok(PrivateNetwork::Block)
-}
-
-/// The address `url`'s host is written as, if it is one.
-fn address_in(url: &Url) -> Option<IpAddr> {
-    let host = url.host_str()?;
-    host.trim_start_matches('[')
-        .trim_end_matches(']')
-        .parse()
-        .ok()
-}
-
-/// The addresses of `url`'s host: the address itself, or what its name
-/// resolves to (nothing if it does not resolve).
-async fn addresses(url: &Url) -> Vec<IpAddr> {
-    if let Some(ip) = address_in(url) {
-        return vec![ip];
-    }
-    let Some(name) = url.host_str() else {
-        return Vec::new();
-    };
-    let port = url.port_or_known_default().unwrap_or(443);
-    match tokio::time::timeout(
-        Duration::from_secs(10),
-        tokio::net::lookup_host((name, port)),
-    )
-    .await
-    {
-        Ok(Ok(addrs)) => addrs.map(|a| a.ip()).collect(),
-        _ => Vec::new(),
-    }
-}
-
-/// Whether `ip` is on the local network, by the engine's own table, so the
-/// two never disagree (CORE-2).
-fn is_local(ip: IpAddr) -> bool {
-    !AddressKind::of(ip).is_public()
 }
 
 /// The error once every automatic try with fresh addresses was refused too.
@@ -1271,9 +1252,9 @@ mod tests {
     async fn formats_of_a_page_on_the_internet_stay_on_the_internet() {
         let url = |u: &str| Url::parse(u).unwrap();
         let public_page = url("http://93.184.215.14/watch");
-        // A page at home may point anywhere, also a website's link when it is
-        // written as a local address.
-        for chosen_by in [ChosenBy::Person, ChosenBy::Website] {
+        // A page at home may point anywhere: one the person chose, or one on
+        // their network by its own address (D39).
+        for chosen_by in [ChosenBy::Person, ChosenBy::LocalPage] {
             assert_eq!(
                 network_rule(
                     chosen_by,
@@ -1328,6 +1309,26 @@ mod tests {
         );
     }
 
+    /// A website's page gets no exception for being written as a local
+    /// address: whether the page is local was decided where it was captured,
+    /// from the page it came from (D39).
+    #[tokio::test]
+    async fn a_websites_page_is_never_local() {
+        let url = |u: &str| Url::parse(u).unwrap();
+        let error = network_rule(
+            ChosenBy::Website,
+            &url("http://127.0.0.1:9/watch"),
+            &url("http://192.168.1.10/v.mp4"),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.message.contains("your own network"),
+            "{}",
+            error.message
+        );
+    }
+
     /// Where a page's name resolves counts only for a page the person chose:
     /// a website's owner decides what its name answers (CORE-3).
     #[tokio::test]
@@ -1359,7 +1360,7 @@ mod tests {
         let url = |u: &str| Url::parse(u).unwrap();
         assert_eq!(
             network_rule(
-                ChosenBy::Website,
+                ChosenBy::Person,
                 &url("http://100.100.100.100/watch"),
                 &url("http://192.168.1.10/v.mp4")
             )
@@ -1381,9 +1382,10 @@ mod tests {
     }
 
     /// A format's name that answered public to the early check and answers
-    /// local when the engine connects (DNS rebinding) is still refused: the
-    /// early check only refuses, and the rule it hands on blocks the
-    /// connection itself.
+    /// local when the engine looks again is still refused, by the engine
+    /// under the rule core hands on: the early check only ever refuses. (The
+    /// refusal at the connection itself is the engine's own test,
+    /// `net_guard::tests::a_download_cannot_be_rebound_to_the_local_network`.)
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_format_rebound_to_the_local_network_after_the_check_is_refused() {
         let server = wirecatch_test_support::files::FileServer::start().await;
@@ -1391,7 +1393,7 @@ mod tests {
         let mut format = server.url("v.mp4");
         format.set_host(Some("localhost")).unwrap();
         // What the check saw: a public address.
-        let rule = format_rule(&["93.184.215.15".parse().unwrap()]).unwrap();
+        let rule = format_rule(ChosenBy::Website, &["93.184.215.15".parse().unwrap()]).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let mut request = DownloadRequest::new(format, dir.path());
         request.options.private_network = rule;
@@ -1406,6 +1408,32 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(server.requests("v.mp4"), 0);
+    }
+
+    /// A stream job runs under the rule of whoever chose its link.
+    #[test]
+    fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
+        for (chosen_by, rule) in [
+            (ChosenBy::Website, PrivateNetwork::Block),
+            (ChosenBy::LocalPage, PrivateNetwork::Auto),
+            (ChosenBy::Person, PrivateNetwork::Auto),
+        ] {
+            let job = Job {
+                output: PathBuf::from("/v/out.mp4"),
+                url: Url::parse("https://videos.example.com/master.m3u8").unwrap(),
+                origin: Origin::default(),
+                chosen_by,
+                tools: None,
+                options: DownloadOptions::default(),
+                temp_dir: PathBuf::new(),
+                timeout: Duration::from_secs(1),
+                refresh_delays: Arc::new([]),
+                clock: Arc::new(crate::clock::SystemClock),
+                reserve: Arc::new(|_: &Path, _| true),
+            };
+            let request = stream_request(&job, Path::new("/v/w/out"), Pick::Auto, Pick::Auto);
+            assert_eq!(request.private_network, rule, "{chosen_by:?}");
+        }
     }
 
     #[test]

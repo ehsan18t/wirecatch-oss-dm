@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 use wirecatch_engine::{Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{AddRequest, DownloadStatus};
+use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_test_support::PATIENCE;
 
@@ -20,21 +20,25 @@ use super::settle::ServerAnswer;
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
+use wirecatch_engine::PrivateNetwork;
 
 /// A media download without a browser's agent names the app, never the engine
 /// library's default; with one, it is the browser's.
 #[test]
 fn media_requests_name_the_app_or_the_browser() {
     let mut origin = crate::store::Origin::default();
-    let agent = super::media::media_options(&origin).user_agent;
-    assert_eq!(agent, crate::headers::download_options().user_agent);
+    let agent = super::media::media_options(&origin, PrivateNetwork::Block).user_agent;
+    assert_eq!(
+        agent,
+        crate::headers::download_options(PrivateNetwork::Block).user_agent
+    );
     assert_ne!(
         agent,
         wirecatch_engine::DownloadOptions::default().user_agent
     );
     origin.user_agent = Some("TestBrowser/1".into());
     assert_eq!(
-        super::media::media_options(&origin).user_agent,
+        super::media::media_options(&origin, PrivateNetwork::Block).user_agent,
         "TestBrowser/1"
     );
 }
@@ -72,6 +76,7 @@ fn capture(url: &str) -> NewDownload {
         url: url.into(),
         referrer: None,
         page_url: None,
+        frame_url: None,
         suggested_name: Some("report.pdf".into()),
         mime: None,
         size_hint: None,
@@ -482,4 +487,59 @@ async fn refuses_to_restart_split(manager: &Manager, id: DownloadId, elsewhere: 
     let entry = &state.downloads[&id];
     assert!(entry.run.is_none(), "the download started again");
     assert_eq!(entry.row.status, DownloadStatus::Failed);
+}
+
+/// Every way a link arrives runs under its own rule for the local network: a
+/// website's, confirmed in the window, under `Block`; the same link refreshed
+/// by the person under `Auto`; and one from a page on the person's network
+/// under `Auto` (D34.9, D39).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn every_way_a_link_arrives_runs_under_its_own_rule() {
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let record = seen.clone();
+    let (manager, _dir) = manager_with(
+        move |run| {
+            record.lock().unwrap().push(run.private_network);
+            Box::pin(async move {
+                run.cancel.cancelled().await;
+                Err(EngineError::Cancelled)
+            })
+        },
+        PATIENCE,
+        PATIENCE,
+    )
+    .await;
+    let mut settings = manager.get_settings();
+    settings.extension.ask_before_download = true;
+    manager.update_settings(settings).unwrap();
+    let rules = |n: usize| {
+        let seen = seen.clone();
+        async move {
+            wait_until("the run starts", || seen.lock().unwrap().len() == n).await;
+            seen.lock().unwrap().clone()
+        }
+    };
+    let confirmed = |page: &str, link: &str| {
+        let mut capture = capture(link);
+        capture.page_url = Some(page.into());
+        let manager = manager.clone();
+        async move {
+            manager.add_capture(capture).await.unwrap();
+            let asked = manager.pending_confirmations().remove(0);
+            manager
+                .confirm_capture(asked.id, CaptureConfirmation::default())
+                .await
+                .unwrap()
+        }
+    };
+
+    let id = confirmed("https://example.com/page", "http://93.184.215.14/a.pdf").await;
+    assert_eq!(rules(1).await, [PrivateNetwork::Block]);
+    manager
+        .refresh_link(id, "http://93.184.215.14/a.pdf")
+        .unwrap();
+    assert_eq!(rules(2).await[1], PrivateNetwork::Auto);
+    confirmed("http://nas/files", "http://93.184.215.15/b.pdf").await;
+    assert_eq!(rules(3).await[2], PrivateNetwork::Auto);
+    manager.shutdown().await;
 }
