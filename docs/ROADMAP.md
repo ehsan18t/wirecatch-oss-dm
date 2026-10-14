@@ -23,8 +23,6 @@ As of 2026-10-15 (main at e18e845f) the code quality audit has W0 to W5, W7, W8 
 
 For the maintainer:
 
-- Confirm that D44.6 is carried to W13. It was part of the approved Public Suffix List design but needs the protocol and the extension to change, so W4 landed without it.
-- Acrylic on Windows 10 and the solid background on Linux were never seen in the real app (REVAMP, "Not seen working yet").
 - Left for release, as before: the GitHub organization, code signing, the updater signing key and the extension store listings.
 
 ## Phase 1 acceptance checklist
