@@ -11,6 +11,7 @@ import { noMagicNumbers } from './rules/no-magic-numbers.js';
 import { noSilentCatch } from './rules/no-silent-catch.js';
 import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
+import { tokensOnly } from './rules/tokens-only.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
 
 /** Rules of our own, used as `wirecatch/<name>`. */
@@ -23,6 +24,7 @@ const plugin = {
     'no-silent-catch': noSilentCatch,
     'no-type-argument-assertion': noTypeArgumentAssertion,
     'no-value-of-type': noValueOfType,
+    'tokens-only': tokensOnly,
     'use-ui-primitives': useUiPrimitives,
   },
 };
@@ -44,6 +46,8 @@ const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts'];
 /** What an `untyped` pattern must end with: a JavaScript extension, so it can never match TypeScript or Svelte. */
 const UNTYPED_PATTERN = /\.[mc]?js$/;
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
+/** Where an app keeps the screens rebuilt on the design system (`@wirecatch/ui`); they style themselves through its tokens only. */
+const DESIGN_SYSTEM_FILES = ['src/ui/**'];
 
 /** The rules every package follows, on top of the recommended and strict sets. */
 const BASELINE_RULES = {
@@ -122,6 +126,7 @@ const BASELINE_RULES = {
  * @param {object} [options.svelteConfig] The package's `svelte.config.js`, when it has one.
  * @param {import('eslint').Linter.Config[]} [options.layers] Import rules that keep each layer of the package from reaching into the wrong one.
  * @param {string[]} [options.untyped] More JavaScript files linted without type information, like the scripts and configuration files every package has. Each pattern must end in `.js`, `.mjs` or `.cjs`: TypeScript and Svelte are always type-checked.
+ * @param {string[]} [options.designSystem] Files built on the design system, which style themselves through its tokens only (`wirecatch/tokens-only`); `src/ui/**` by default, the folder every app keeps its redesigned screens in.
  * @returns {import('eslint').Linter.Config[]}
  */
 export function wirecatch({
@@ -131,6 +136,7 @@ export function wirecatch({
   svelteConfig,
   layers = [],
   untyped = [],
+  designSystem = DESIGN_SYSTEM_FILES,
 }) {
   const typed = untyped.filter((pattern) => !UNTYPED_PATTERN.test(pattern));
   if (typed.length > 0) {
@@ -187,6 +193,12 @@ export function wirecatch({
         'wirecatch/no-brand-assertion': 'off',
         'wirecatch/no-type-argument-assertion': 'off',
       },
+    },
+    {
+      // Every colour, size and step comes from the tokens; the rule says what it reports.
+      files: designSystem,
+      ignores: TEST_FILES,
+      rules: { 'wirecatch/tokens-only': 'error' },
     },
     ...layers,
   );

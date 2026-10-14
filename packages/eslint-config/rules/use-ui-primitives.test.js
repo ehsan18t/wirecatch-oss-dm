@@ -24,6 +24,8 @@ const primitiveClass = (code) => ({
   errors: [{ messageId: 'primitiveClass' }],
 });
 const directIcon = (code) => ({ code, options, filename, errors: [{ messageId: 'directIcon' }] });
+/** Options adding a module icons come from, as a package with icons of its own would. */
+const ownIcons = [{ ...options[0], extraIconSources: ['@wirecatch/ui/icons'] }];
 
 tester.run('use-ui-primitives', useUiPrimitives, {
   valid: [
@@ -60,6 +62,19 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     valid(
       `${script("import Dialog from './Dialog.svelte';\nfunction pick() { const Close = Dialog; return Close; }\nimport X from '@lucide/svelte/icons/x';\nconst Close = Dialog;\nvoid X; void pick;")}<Close />`,
     ),
+    // Icons drawn through Icon, from unplugin-icons and from a module the options name.
+    valid(
+      `${script("import X from '~icons/lucide/x';\nimport Icon from './Icon.svelte';")}<Icon icon={X} size="sm" />`,
+    ),
+    // A module that only starts like an icon source is another module.
+    valid(`${script("import Panel from '~iconsets/panel';")}<Panel />`),
+    valid(`${script("import Badge from '@lucide/svelte-extras/badge';")}<Badge />`),
+    // With its own icon module added, a package's other modules are still not icons.
+    {
+      code: `${script("import Panel from '@wirecatch/ui/panel';")}<Panel />`,
+      options: ownIcons,
+      filename,
+    },
     // A class name from a name that holds another class.
     valid(`${script("const cls = 'btn-row';")}<button type="button" class={cls}>Row</button>`),
     // A name destructured from a const is its own property, not the whole object.
@@ -90,6 +105,36 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     directIcon(`${script("import { Pause } from '@lucide/svelte';")}<Pause aria-hidden="true" />`),
     directIcon(`${script("import X from '@lucide/svelte/icons/x';")}<X strokeWidth={1.5} />`),
     directIcon(`${script("import * as L from '@lucide/svelte';")}<L.X size={14} />`),
+    // Icons unplugin-icons serves, and those of a module the options name.
+    directIcon(`${script("import X from '~icons/lucide/x';")}<X class="size-4" />`),
+    directIcon(`${script("import X from '~icons/lucide/x';")}<svelte:component this={X} />`),
+    directIcon(`${script("import X from 'virtual:icons/lucide/x';")}<X />`),
+    directIcon(`${script("import X from 'virtual/icons/lucide/x';")}<X />`),
+    // Adding a package's own icon module keeps Lucide and unplugin-icons counting as icons.
+    {
+      code: `${script("import X from '@lucide/svelte/icons/x';")}<X />`,
+      options: ownIcons,
+      filename,
+      errors: [{ messageId: 'directIcon' }],
+    },
+    {
+      code: `${script("import X from '~icons/lucide/x';")}<X />`,
+      options: ownIcons,
+      filename,
+      errors: [{ messageId: 'directIcon' }],
+    },
+    {
+      code: `${script("import X from '@wirecatch/ui/icons/x';")}<X />`,
+      options: ownIcons,
+      filename,
+      errors: [{ messageId: 'directIcon' }],
+    },
+    {
+      code: `${script("import { X } from '@wirecatch/ui/icons';")}<X />`,
+      options: ownIcons,
+      filename,
+      errors: [{ messageId: 'directIcon' }],
+    },
     // The markup may come before the script.
     directIcon(`<X />\n${script("import X from '@lucide/svelte/icons/x';")}`),
     // Through a name it was given, in the script or the markup.

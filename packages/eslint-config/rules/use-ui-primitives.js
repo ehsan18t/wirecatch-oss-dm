@@ -1,21 +1,26 @@
 // Keeps buttons and icons going through a package's primitives once it has them.
 //
-// A Svelte package that has a text button, an icon button and an icon component (the desktop app's Button, IconButton and Icon) turns this rule on everywhere except in those files. It then reports the two patterns the primitives replaced:
+// A Svelte package that has a text button, an icon button and an icon component (the desktop app's Button, IconButton and Icon, wherever they live) turns this rule on everywhere except in those files, and names them and their classes in its options. It then reports the two patterns the primitives replaced:
 //
 // - an element that carries one of the primitives' own classes (`btn`, `icon-btn`), which copies the primitive by hand instead of using it. Buttons with styles of their own, such as menu items and switches, stay plain buttons.
-// - a Lucide icon rendered directly, with or without a size or stroke of its own, instead of through the icon component and its scale: as its own tag or with `<svelte:component this={X}>`.
+// - an icon rendered directly, with or without a size or stroke of its own, instead of through the icon component and its scale: as its own tag or with `<svelte:component this={X}>`. Icons are what Lucide's Svelte package exports and what unplugin-icons serves (`~icons/...`, `virtual:icons/...`), plus the modules a package adds in `extraIconSources`, such as its own icon set; naming more never stops the defaults from counting.
 //
 // Classes and icons are followed through what svelte-values.js follows within the file: names, runes, members, choices, objects, arrays and `{#each}` items of a list written in the file. Left to review: a value passed in as a prop or returned by a function, class helpers such as `clsx`, spread attributes, and class names built from pieces of a template string.
 
 import { SvelteValues } from './svelte-values.js';
 
-/** Where Lucide's Svelte icons come from: the package itself or one icon of it. */
-const LUCIDE_SOURCE = /^@lucide\/svelte(?:\/|$)/;
+/** The modules icons always come from: Lucide's Svelte package, and the Iconify sets unplugin-icons serves under each prefix it resolves (`~icons/lucide/x`, `virtual:icons/lucide/x`, `virtual/icons/lucide/x`). */
+const ICON_SOURCES = ['@lucide/svelte', '~icons', 'virtual:icons', 'virtual/icons'];
 
-/** Whether an import brings in a Lucide icon that can be rendered (not a type). */
-function isLucideImport({ declaration, specifier }) {
+/** Whether `source` is one of `sources` or a module inside one (`@lucide/svelte/icons/x`), never one that only starts with the same letters. */
+function fromIconSource(source, sources) {
+  return sources.some((root) => source === root || source.startsWith(`${root}/`));
+}
+
+/** Whether an import brings in an icon that can be rendered (not a type). */
+function isIconImport({ declaration, specifier }, sources) {
   return (
-    LUCIDE_SOURCE.test(String(declaration.source.value)) &&
+    fromIconSource(String(declaration.source.value), sources) &&
     declaration.importKind !== 'type' &&
     specifier.importKind !== 'type'
   );
@@ -30,12 +35,12 @@ const ICON_HOLDERS = {
   ArrayExpression: (node, again) => node.elements.some((e) => e !== null && again(e)),
 };
 
-/** Whether `expression` may evaluate to a Lucide icon. */
-function holdsIcon(expression, values, seen = new Set()) {
+/** Whether `expression` may evaluate to an icon from one of `sources`. */
+function holdsIcon(expression, values, sources, seen = new Set()) {
   return values.of(expression, seen).some((value) => {
-    if (value.kind === 'import') return isLucideImport(value);
+    if (value.kind === 'import') return isIconImport(value, sources);
     const holder = ICON_HOLDERS[value.type];
-    return holder !== undefined && holder(value, (part) => holdsIcon(part, values, seen));
+    return holder !== undefined && holder(value, (part) => holdsIcon(part, values, sources, seen));
   });
 }
 
@@ -123,6 +128,14 @@ export const useUiPrimitives = {
             additionalProperties: { type: 'string' },
           },
           icon: { type: 'string', description: 'The component that renders icons.' },
+          extraIconSources: {
+            type: 'array',
+            description:
+              'More modules icons are imported from, on top of Lucide and unplugin-icons, which always count; a module inside one counts too.',
+            items: { type: 'string', minLength: 1 },
+            minItems: 1,
+            uniqueItems: true,
+          },
         },
         required: ['buttonClasses', 'icon'],
         additionalProperties: false,
@@ -131,16 +144,17 @@ export const useUiPrimitives = {
     messages: {
       primitiveClass: 'The class `{{name}}` belongs to {{component}}: use {{component}} instead.',
       directIcon:
-        'Render Lucide icons through {{icon}} (`<{{icon}} icon={...} size="sm" />`), which sets their size and stroke.',
+        'Render icons through {{icon}} (`<{{icon}} icon={...} size="sm" />`), which sets their size and stroke.',
     },
   },
   create(context) {
-    const [{ buttonClasses: primitives, icon }] = context.options;
+    const [{ buttonClasses: primitives, icon, extraIconSources = [] }] = context.options;
+    const iconSources = [...ICON_SOURCES, ...extraIconSources];
     const values = new SvelteValues(context.sourceCode);
     return {
       SvelteElement(node) {
         const component = renderedComponent(node);
-        if (component !== null && holdsIcon(component, values)) {
+        if (component !== null && holdsIcon(component, values, iconSources)) {
           context.report({ node: node.startTag, messageId: 'directIcon', data: { icon } });
         }
         if (node.kind === 'component') return;
