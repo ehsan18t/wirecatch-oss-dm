@@ -70,6 +70,36 @@ for (const theme of ['light', 'dark'] as const) {
       await page.screenshot({ path: `${dir}/${theme}-08-add-from-paste.png` });
     });
 
+    test('add several links, one line left out, a folder chosen', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.keyboard.press('Control+N');
+      const dialog = page.getByRole('dialog', { name: /^Add/ });
+      await dialog
+        .getByRole('textbox', { name: 'Links' })
+        .fill(
+          [
+            'https://download.example.org/releases/app-2.4.1-x64.msi',
+            'https://cdn.example.net/media/holiday-video-2026-final-cut.mp4',
+            'from the release notes',
+            'https://files.example.com/archive/backup-october.zip',
+          ].join('\n'),
+        );
+      await dialog.getByRole('button', { name: 'Change' }).click();
+      await dialog.getByRole('button', { name: 'Use default' }).waitFor();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-21-add-several-links.png` });
+    });
+
+    test('add with no link', async ({ page }) => {
+      await open(page, 'capture=0', { theme });
+      await page.keyboard.press('Control+N');
+      const dialog = page.getByRole('dialog', { name: /^Add/ });
+      await dialog.getByRole('textbox', { name: 'Links' }).fill('my notes');
+      await dialog.getByRole('button', { name: 'Download' }).click();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${dir}/${theme}-22-add-no-link.png` });
+    });
+
     test('queue editor', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.getByRole('button', { name: /^Overnight/ }).hover();

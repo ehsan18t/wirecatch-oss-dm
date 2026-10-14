@@ -21,7 +21,10 @@ describe('picking a folder', () => {
     const dialog = within(screen.getByRole('dialog'));
     await fireEvent.click(dialog.getByRole('button', { name: 'Change' }));
     await settle();
-    expect(screen.getByRole('alert')).toHaveTextContent(NO_PICKER);
+    // In the dialog itself, which covers the window's notes (beside its live regions for them, empty).
+    const said = dialog.getAllByRole('alert').filter((el) => el.textContent.trim() !== '');
+    expect(said).toHaveLength(1);
+    expect(said[0]).toHaveTextContent(NO_PICKER);
   });
 
   it('says why on the settings screen', async () => {

@@ -527,7 +527,14 @@ export class MockBackend implements Backend {
 
   pickFolder(current?: string) {
     return this.#call(() => {
-      const options = [`${HOME}\\Videos`, `${DOWNLOADS}\\Later`, `D:\\Media`, `${HOME}\\Desktop`];
+      // The last is long, for the layout checks; later picks reach it.
+      const options = [
+        `${HOME}\\Videos`,
+        `${DOWNLOADS}\\Later`,
+        `D:\\Media`,
+        `${HOME}\\Desktop`,
+        `D:\\Projects\\Customer deliveries\\2026\\October\\Raw footage from the second shoot, unedited and not yet sorted`,
+      ];
       const next = () => options[this.#folderPick++ % options.length] ?? DOWNLOADS;
       const first = next();
       return first === current ? next() : first;

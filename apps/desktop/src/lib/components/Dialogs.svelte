@@ -3,7 +3,7 @@
   // so a new kind cannot open the wrong dialog or none.
   import type { Snippet } from 'svelte';
   import { getApp, type Dialog } from '$lib/state/app.svelte';
-  import AddDialog from './AddDialog.svelte';
+  import AddDialog from '../../ui/add/AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
   import RemoveAddonDialog from './RemoveAddonDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
@@ -42,8 +42,8 @@
   {/key}
 {/if}
 
-{#snippet addView(d: DialogOf<'add'>)}
-  <AddDialog urls={d.urls} queue={d.queue} />
+{#snippet addView(_: DialogOf<'add'>)}
+  {#if app.addDraft}<AddDialog draft={app.addDraft} />{/if}
 {/snippet}
 
 {#snippet removeView(d: DialogOf<'remove'>)}

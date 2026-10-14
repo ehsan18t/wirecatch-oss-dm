@@ -8,12 +8,15 @@ import { RUNNING, stop, type MockState } from './state';
 
 const NOT_A_LINK = 'That does not look like a link. Copy the full address, starting with https://.';
 
+/** A link the core takes; one on the reserved `.invalid` domain stands for a link it refuses. */
 function requireLink(url: string) {
+  let host: string;
   try {
-    new URL(url);
+    host = new URL(url).hostname;
   } catch {
     throw new BackendError(NOT_A_LINK);
   }
+  if (host.endsWith('.invalid')) throw new BackendError(NOT_A_LINK);
 }
 
 /** Puts `row` back in line and clears its error, then reports it. */

@@ -5,12 +5,19 @@
 // settings and the core's events.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
-import type { AppSettings, DownloadId, DownloadSummary, UiEvent } from '@wirecatch/protocol';
+import type {
+  AppSettings,
+  DownloadId,
+  DownloadSummary,
+  QueueId,
+  UiEvent,
+} from '@wirecatch/protocol';
 import { createContext, untrack } from 'svelte';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import type { SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
+import { AddDraft } from './add-draft.svelte';
 import { Addons } from './addons.svelte';
 import { Appearance } from './appearance.svelte';
 import { SuffixList } from './suffix-list.svelte';
@@ -121,6 +128,8 @@ export class AppState {
   detailsOpen = $state(false);
 
   dialog = $state<Dialog | null>(null);
+  /** The Add dialog's form, while it is open. */
+  addDraft = $state.raw<AddDraft | null>(null);
   paletteOpen = $state(false);
   /** Saving the download list failed; shown in a banner until dealt with. */
   storageProblem = $state<string | null>(null);
@@ -278,7 +287,7 @@ export class AppState {
     }
   }
 
-  /** Links from the command line (`wirecatch-app https://...`) open the Add dialog. */
+  /** Links from the command line (`wirecatch-app https://...`) open the Add dialog, or join it when it is open. */
   async #takeLaunchLinks(): Promise<void> {
     let links: string[];
     try {
@@ -287,9 +296,8 @@ export class AppState {
       return;
     }
     if (links.length === 0) return;
-    const open = this.dialog;
-    const urls = open?.kind === 'add' ? [...open.urls, ...links] : links;
-    this.openDialog({ kind: 'add', urls });
+    if (this.addDraft) this.addDraft.append(links);
+    else this.openDialog({ kind: 'add', urls: links });
   }
 
   #teardown(): void {
@@ -341,10 +349,32 @@ export class AppState {
   openDialog(dialog: Dialog): void {
     this.paletteOpen = false;
     this.dialog = dialog;
+    this.addDraft = dialog.kind === 'add' ? this.#addDraft(dialog.urls, dialog.queue) : null;
+  }
+
+  /** A new Add form with `urls`, for `queue`, else the queue on screen, else the default one. */
+  #addDraft(urls: string[], queue: QueueId | undefined): AddDraft {
+    const onScreen = this.view.kind === 'queue' ? this.view.id : undefined;
+    const draft: AddDraft = new AddDraft(
+      {
+        add: (requests) => this.actions.add(requests),
+        pickFolder: (current) => this.#backend.pickFolder(current),
+        added: (ids) => {
+          const [first] = ids;
+          if (first !== undefined) this.selection.only(first);
+        },
+        close: () => {
+          if (this.addDraft === draft) this.closeDialog();
+        },
+      },
+      { urls, queue: queue ?? onScreen ?? this.queues.defaultQueue?.id ?? null },
+    );
+    return draft;
   }
 
   closeDialog(): void {
     this.dialog = null;
+    this.addDraft = null;
     // A settings file previewed but not imported is left as it was.
     this.transfer.cancelImport();
   }

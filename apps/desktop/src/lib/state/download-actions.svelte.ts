@@ -9,7 +9,7 @@ import type { DownloadStore } from './downloads.svelte';
 import { nudged, placed } from './order';
 import { canPause, canResume, canRetry } from './row-actions';
 import type { Queues } from './queues.svelte';
-import type { Runner } from './runner';
+import { errorMessage, type Runner } from './runner';
 import type { Dialog } from './screens';
 import type { Selection } from './selection.svelte';
 import type { Toasts } from './toasts.svelte';
@@ -28,6 +28,12 @@ export interface DownloadActionsHost {
   place: () => { view: View; sort: SortKey };
 }
 
+/** What adding gave: the new downloads, and each link that did not become one, with why. */
+export interface Added {
+  ids: DownloadId[];
+  failed: { url: string; error: string }[];
+}
+
 /** What Space did: which action it took, and on how many downloads it succeeded. `verb` is null when nothing in the selection could take either. */
 export interface Toggled {
   verb: 'pause' | 'resume' | null;
@@ -41,18 +47,23 @@ export class DownloadActions {
     this.#host = host;
   }
 
-  async add(requests: AddRequest[]): Promise<DownloadId[]> {
+  /** Adds the downloads one after another, in the order given (a queue keeps it), and notes how many were added. What failed is given back with why, for the form that asked to show. */
+  async add(requests: AddRequest[]): Promise<Added> {
     const ids: DownloadId[] = [];
+    const failed: Added['failed'] = [];
     for (const r of requests) {
-      const id = await this.#host.runner.run(() => this.#host.backend().addDownload(r));
-      if (id !== undefined) ids.push(id);
+      try {
+        ids.push(await this.#host.backend().addDownload(r));
+      } catch (err) {
+        failed.push({ url: r.url, error: errorMessage(err) });
+      }
     }
     if (ids.length > 0) {
       this.#host.toasts.notify(
         ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`,
       );
     }
-    return ids;
+    return { ids, failed };
   }
 
   async pause(ids: DownloadId[] = this.#host.selection.list): Promise<void> {

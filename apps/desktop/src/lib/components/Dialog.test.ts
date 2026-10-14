@@ -15,7 +15,7 @@ async function setup() {
 describe('dialogs', () => {
   it('wrap Tab and Shift+Tab around their own buttons', async () => {
     const { app } = await setup();
-    app.openDialog({ kind: 'add', urls: [] });
+    app.openDialog({ kind: 'queue', id: null });
     await settle();
     const dialog = screen.getByRole('dialog');
     const buttons = within(dialog).getAllByRole('button');
