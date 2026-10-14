@@ -131,7 +131,7 @@ fn exit_code(ending: Ending, written: io::Result<()>) -> ExitCode {
 
 /// Turns the command line into an engine request, refusing combinations the engine cannot honour.
 fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
-    let url = Url::parse(&args.url).with_context(|| format!("not a valid URL: {}", args.url))?;
+    let url = Url::parse(&args.url).with_context(|| refused_link(&args.url))?;
     let is_ftp = match url.scheme() {
         "http" | "https" => false,
         "ftp" | "ftps" | "ftpes" => true,
@@ -161,16 +161,32 @@ fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     Ok(request)
 }
 
-/// Parses one `-H "Name: value"` argument.
+/// Why a link was refused. The link is repeated only when it cannot hold a password
+/// (`user:password@host`), since error text reaches the terminal and bug reports.
+fn refused_link(raw: &str) -> String {
+    if raw.contains('@') {
+        "not a valid URL (it is not repeated here, since it may hold a password)".into()
+    } else {
+        format!("not a valid URL: {raw}")
+    }
+}
+
+/// Parses one `-H "Name: value"` argument. Errors name the header but never repeat its
+/// value, which is often a password or a token.
 fn parse_header(raw: &str) -> anyhow::Result<(HeaderName, HeaderValue)> {
     let (name, value) = raw
         .split_once(':')
-        .with_context(|| format!("header must look like 'Name: value': {raw}"))?;
-    let name = HeaderName::from_bytes(name.trim().as_bytes())
-        .with_context(|| format!("bad header name in {raw}"))?;
-    let value = HeaderValue::from_str(value.trim())
-        .with_context(|| format!("bad header value in {raw}"))?;
-    Ok((name, value))
+        .context("a -H header must look like 'Name: value'")?;
+    let name = name.trim();
+    let header = HeaderName::from_bytes(name.as_bytes()).ok().context(
+        "a -H header name may hold only letters, digits and the characters !#$%&'*+-.^_`|~",
+    )?;
+    let value = HeaderValue::from_str(value.trim()).map_err(|_| {
+        anyhow::anyhow!(
+            "bad value for header {name}: it may hold only visible characters, spaces and tabs"
+        )
+    })?;
+    Ok((header, value))
 }
 
 /// The first Ctrl+C pauses (the engine saves its place); a second one quits at once.
@@ -302,6 +318,39 @@ mod tests {
     #[test]
     fn header_without_colon_is_refused() {
         assert!(parse_header("Cookie a=b").is_err());
+    }
+
+    /// The whole error, its context and every cause, as `main` prints it.
+    fn printed(error: &anyhow::Error) -> String {
+        format!("{error:?} / {error:#}")
+    }
+
+    // A header value is often a password or a token, and error text reaches the terminal,
+    // shell history tools and bug reports (IPB-11).
+    #[test]
+    fn a_refused_header_is_named_without_its_value() {
+        let bad_value = parse_header("Authorization: Bearer tok\u{7f}en-secret").unwrap_err();
+        let shown = printed(&bad_value);
+        assert!(!shown.contains("en-secret"), "{shown}");
+        assert!(shown.contains("Authorization"), "{shown}");
+
+        let no_colon = parse_header("Authorization Bearer token-secret").unwrap_err();
+        let shown = printed(&no_colon);
+        assert!(!shown.contains("token-secret"), "{shown}");
+
+        let bad_name = parse_header("Bad Name: token-secret").unwrap_err();
+        let shown = printed(&bad_name);
+        assert!(!shown.contains("token-secret"), "{shown}");
+    }
+
+    #[test]
+    fn a_refused_link_is_not_repeated_when_it_may_hold_a_password() {
+        let args = Args::parse_from(["wirecatch", "ftp://me:pass-secret@[bad/a.zip"]);
+        let shown = printed(&build_request(args).unwrap_err());
+        assert!(!shown.contains("pass-secret"), "{shown}");
+        let args = Args::parse_from(["wirecatch", "not a link"]);
+        let shown = printed(&build_request(args).unwrap_err());
+        assert!(shown.contains("not a link"), "{shown}");
     }
 
     #[test]

@@ -97,7 +97,7 @@ impl Manager {
     /// folder does not resolve; [`CoreError::Invalid`] for a file name that cannot be
     /// used; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn add_download(&self, request: AddRequest) -> Result<DownloadId> {
-        let url = parse_url(&request.url)?;
+        let url = parse_url(request.url.as_str())?;
         let queue = match request.queue {
             Some(queue) => queue,
             None => self.lock_open()?.default_queue(),

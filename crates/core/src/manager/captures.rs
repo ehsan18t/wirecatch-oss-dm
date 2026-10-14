@@ -17,7 +17,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
-use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
 
 use super::Manager;
 use super::downloads::{NewEntry, capture_action, parse_url};
@@ -590,7 +590,7 @@ pub(super) fn origin_of(capture: &NewDownload) -> Origin {
         user_agent: capture.user_agent.clone(),
         headers: headers::for_capture(
             capture.referrer.as_deref(),
-            capture.cookies.as_deref(),
+            capture.cookies.as_ref().map(Secret::expose),
             &capture.extra_headers,
         ),
         forgot_sign_in: false,

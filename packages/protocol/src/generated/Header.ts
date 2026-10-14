@@ -9,7 +9,8 @@ export type Header = {
    */
   name: string;
   /**
-   * The header's value.
+   * The header's value, which may grant access (`Authorization`, `Cookie`, a token in a
+   * custom header).
    */
   value: string;
 };

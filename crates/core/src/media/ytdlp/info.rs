@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_engine::units::{GIB, KIB};
+use wirecatch_protocol::Secret;
 
 /// What yt-dlp says about a page (the fields Wirecatch reads).
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -111,7 +112,7 @@ where
 }
 
 /// Reads a map of text values, leaving out any entry whose value is not text.
-fn text_map<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+fn text_map<'de, D>(deserializer: D) -> Result<HashMap<String, Secret>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -121,7 +122,7 @@ where
     Ok(map
         .into_iter()
         .filter_map(|(name, value)| match value {
-            serde_json::Value::String(text) => Some((name, text)),
+            serde_json::Value::String(text) => Some((name, Secret::from(text))),
             _ => None,
         })
         .collect())
@@ -138,7 +139,7 @@ pub(crate) struct SubtitleFile {
     #[serde(default, deserialize_with = "lenient")]
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
-    pub http_headers: HashMap<String, String>,
+    pub http_headers: HashMap<String, Secret>,
 }
 
 /// One chapter of a video.
@@ -254,7 +255,7 @@ pub(crate) struct Format {
     #[serde(default, deserialize_with = "lenient")]
     pub filesize_approx: Option<f64>,
     #[serde(default, deserialize_with = "text_map")]
-    pub http_headers: HashMap<String, String>,
+    pub http_headers: HashMap<String, Secret>,
     /// `true`, `false` or `"maybe"`.
     #[serde(default)]
     pub has_drm: Option<serde_json::Value>,
@@ -395,6 +396,18 @@ mod tests {
         assert!(f.iter().all(|f| f.request_limit().is_none()));
     }
 
+    // yt-dlp hands each format the page's cookies in its headers.
+    #[test]
+    fn a_format_never_prints_its_header_values() {
+        let info: Info = serde_json::from_str(
+            r#"{"title":"T","formats":[{"format_id":"a","http_headers":{"Cookie":"sid=cookie-that-must-not-print"}}]}"#,
+        )
+        .unwrap();
+        let printed = format!("{:?}", info.all_formats());
+        assert!(!printed.contains("must-not-print"), "{printed}");
+        assert!(printed.contains("Cookie"), "{printed}");
+    }
+
     /// One extractor writing a number where yt-dlp usually writes another kind never makes the whole page unreadable, and a format that cannot be read at all is left out alone.
     #[test]
     fn odd_format_fields_never_make_the_page_unreadable() {
@@ -414,7 +427,7 @@ mod tests {
         assert_eq!(a.filesize, Some(1_500_000));
         assert_eq!(a.fps, None);
         assert_eq!(a.ext, None);
-        assert_eq!(a.http_headers.get("Referer").map(String::as_str), Some("r"));
+        assert_eq!(a.http_headers.get("Referer").map(Secret::expose), Some("r"));
         assert!(!a.http_headers.contains_key("X-Count"));
         assert_eq!(formats[1].height, None);
     }

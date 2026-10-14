@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
+use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
 
 /// One row of the download list.
@@ -1016,7 +1017,7 @@ pub struct SettingsProfile {
 #[ts(export)]
 pub struct AddRequest {
     /// The address to download.
-    pub url: String,
+    pub url: Link,
     /// Default queue if absent.
     pub queue: Option<QueueId>,
     /// Absolute folder; the category rule decides if absent.
@@ -1242,6 +1243,26 @@ impl Question {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A link pasted into the app may carry a sign-in (`ftp://me:pw@host`), and printing the
+    // request printed it (W4I review L2).
+    #[test]
+    fn a_pasted_link_prints_without_its_sign_in() {
+        let request = AddRequest {
+            url: "ftp://me:password-that-must-not-print@files.example/a.zip".into(),
+            queue: None,
+            folder: None,
+            file_name: None,
+            start: true,
+        };
+        let printed = format!("{request:?}");
+        assert!(!printed.contains("must-not-print"), "{printed}");
+        assert!(printed.contains("files.example/a.zip"), "{printed}");
+        // The wire keeps the whole link.
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["url"], request.url.as_str());
+        assert_eq!(serde_json::from_value::<AddRequest>(json).unwrap(), request);
+    }
 
     /// A profile from a newer Wirecatch may name an add-on this build does not know; the rest
     /// of it still reads.

@@ -20,9 +20,9 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, Url,
 };
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
 use wirecatch_protocol::extension::Header;
+use wirecatch_protocol::{DownloadId, Secret};
 use wirecatch_streams::{Choice, Role, StreamProgress, StreamRequest};
 
 use super::Manager;
@@ -654,7 +654,7 @@ enum Fetch {
 async fn fetch_small(
     job: &Job,
     url: &Url,
-    own_headers: &HashMap<String, String>,
+    own_headers: &HashMap<String, Secret>,
     path: &Path,
     limit: u64,
     cancel: &CancellationToken,
@@ -1068,7 +1068,7 @@ fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> DownloadOpt
         .http_headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
-        .map(|(_, v)| v.clone())
+        .map(|(_, v)| v.expose().to_owned())
     {
         options.user_agent = agent;
     }

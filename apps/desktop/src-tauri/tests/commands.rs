@@ -54,7 +54,7 @@ fn saved_folder(sandbox: &Sandbox) -> TestResult<PathBuf> {
 
 fn request(server: &TestServer, path: &str, folder: &Path, start: bool) -> AddRequest {
     AddRequest {
-        url: server.url(path).to_string(),
+        url: server.url(path).to_string().into(),
         queue: None,
         folder: Some(folder.to_string_lossy().into_owned()),
         file_name: None,

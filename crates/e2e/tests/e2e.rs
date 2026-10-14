@@ -309,7 +309,7 @@ fn popup_controls_reach_the_app() {
         let id = app
             .manager
             .add_download(AddRequest {
-                url: server.url("popup.bin").to_string(),
+                url: server.url("popup.bin").to_string().into(),
                 queue: None,
                 folder: None,
                 file_name: None,

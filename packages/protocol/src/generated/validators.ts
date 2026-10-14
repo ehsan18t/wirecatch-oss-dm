@@ -48,6 +48,7 @@ import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { IsProgramArgs } from './IsProgramArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
+import type { Link } from './Link';
 import type { MediaChoice } from './MediaChoice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
@@ -130,7 +131,7 @@ export function isAddDownloadArgs(value: unknown): value is AddDownloadArgs {
 export function isAddRequest(value: unknown): value is AddRequest {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    typeof value1['url'] === 'string' &&
+    isLink(value1['url']) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
     (typeof value1['folder'] === 'string' || value1['folder'] === null) &&
     (typeof value1['file_name'] === 'string' || value1['file_name'] === null) &&
@@ -617,6 +618,11 @@ export function isKeepOriginalArgs(value: unknown): value is KeepOriginalArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
+/** Whether `value` has the shape of a {@link Link}; fields it does not name are not checked. */
+export function isLink(value: unknown): value is Link {
+  return typeof value === 'string';
+}
+
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */
 export function isMediaChoice(value: unknown): value is MediaChoice {
   return ((value1: unknown): boolean =>
@@ -948,7 +954,7 @@ export function isQueueSummary(value: unknown): value is QueueSummary {
 /** Whether `value` has the shape of a {@link RefreshLinkArgs}; fields it does not name are not checked. */
 export function isRefreshLinkArgs(value: unknown): value is RefreshLinkArgs {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isDownloadId(value1['id']) && typeof value1['url'] === 'string')(value);
+    isRecord(value1) && isDownloadId(value1['id']) && isLink(value1['url']))(value);
 }
 
 /** Whether `value` has the shape of a {@link RejectCaptureArgs}; fields it does not name are not checked. */

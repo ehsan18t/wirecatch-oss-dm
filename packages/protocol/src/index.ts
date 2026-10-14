@@ -54,6 +54,7 @@ export type { ImportedFolder } from './generated/ImportedFolder';
 export type { InstallAddonArgs } from './generated/InstallAddonArgs';
 export type { IsProgramArgs } from './generated/IsProgramArgs';
 export type { KeepOriginalArgs } from './generated/KeepOriginalArgs';
+export type { Link } from './generated/Link';
 export type { MediaChoice } from './generated/MediaChoice';
 export type { MediaDefaults } from './generated/MediaDefaults';
 export type { MediaDefaultsPatch } from './generated/MediaDefaultsPatch';

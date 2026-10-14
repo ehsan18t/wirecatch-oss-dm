@@ -889,7 +889,7 @@ pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
         .headers
         .iter()
         .find(|h| h.name.trim().eq_ignore_ascii_case("cookie"))
-        .map(|h| h.value.clone())
+        .map(|h| h.value.expose().to_owned())
 }
 
 pub(super) fn addon_missing() -> UserError {

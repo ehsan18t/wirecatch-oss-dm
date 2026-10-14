@@ -17,6 +17,7 @@ use crate::app::{
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
     PendingCapture, Question, Queue,
 };
+use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
 
 crate::exported::exported_consts! {
@@ -170,7 +171,7 @@ commands! {
         /// The download.
         id: DownloadId,
         /// The new link.
-        url: String,
+        url: Link,
     } -> ();
     /// Saves a video whose conversion failed as it was downloaded instead (D24).
     keep_original: KeepOriginalArgs {

@@ -8,6 +8,7 @@
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
 //! - [`version`]: the protocol versions each end speaks, and the one a connection agrees on.
+//! - [`secret`]: values that grant access, which cross the wire but never print.
 //! - [`secrets`]: what a secret is, for the log's redaction and the extension's.
 
 mod exported;
@@ -16,10 +17,12 @@ pub mod app;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
+pub mod secret;
 pub mod secrets;
 pub mod version;
 pub mod wire;
 
+pub use secret::{Link, Secret};
 pub use version::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
 use serde::{Deserialize, Serialize};

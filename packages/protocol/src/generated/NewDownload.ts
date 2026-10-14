@@ -5,7 +5,7 @@ import type { MediaHint } from './MediaHint';
 import type { QueueId } from './QueueId';
 
 /**
- * A download captured in the browser. Its `Debug` hides the cookies, and the values of the headers that may carry a sign-in (see [`Header`]).
+ * A download captured in the browser. Its `Debug` hides the cookies, the values of the headers that may carry a sign-in (see [`Header`]) and any sign-in in its addresses.
  */
 export type NewDownload = {
   /**
@@ -30,7 +30,8 @@ export type NewDownload = {
    * The full address of the document the capture started in: the frame
    * it is in, or the page itself when it is in none. Absent when the
    * extension does not know it, as for a browser download, whose referrer
-   * comes from that document. An app from before this field ignores it.
+   * comes from that document. Added in protocol version 2 (D32.5); an app
+   * from before it ignores it.
    */
   frame_url?: string;
   /**

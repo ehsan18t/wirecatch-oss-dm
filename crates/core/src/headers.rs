@@ -58,7 +58,7 @@ pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
     headers
         .iter()
         .find(|h| h.name.trim().eq_ignore_ascii_case("referer"))
-        .map(|h| h.value.as_str())
+        .map(|h| h.value.expose())
 }
 
 /// `headers` without the sign-in they carry, or `None` when they carry none: cookies, `Authorization` and any other header that may hold a token are dropped (see [`Header::may_carry_sign_in`]); the referring page and the harmless headers of [`HEADERS_SAFE_FOR_ANY_SITE`](wirecatch_protocol::extension::HEADERS_SAFE_FOR_ANY_SITE) stay.
@@ -125,8 +125,11 @@ pub(crate) fn to_map(headers: &[Header]) -> HeaderMap {
     for header in headers.iter().filter(|h| is_allowed(&h.name)) {
         if let (Ok(name), Ok(value)) = (
             HeaderName::from_bytes(header.name.trim().as_bytes()),
-            HeaderValue::from_str(header.value.trim()),
+            HeaderValue::from_str(header.value.expose().trim()),
         ) {
+            // Every value came out of a `Secret`, so the engine's `Debug` prints none of them.
+            let mut value = value;
+            value.set_sensitive(true);
             if SINGLE.contains(&name.as_str()) && map.contains_key(&name) {
                 continue;
             }
@@ -159,6 +162,21 @@ mod tests {
             name: name.into(),
             value: value.into(),
         }
+    }
+
+    // The values left the protocol's `Secret` here, and the engine's options print their
+    // header map, so a cookie printed again one layer down (W4I review L2).
+    #[test]
+    fn the_engine_never_prints_a_header_value() {
+        let map = to_map(&[
+            header("Cookie", "sid=cookie-that-must-not-print"),
+            header("Authorization", "Bearer token-that-must-not-print"),
+        ]);
+        let mut options = download_options(PrivateNetwork::Auto);
+        options.headers = map;
+        let printed = format!("{options:?}");
+        assert!(!printed.contains("must-not-print"), "{printed}");
+        assert!(printed.to_ascii_lowercase().contains("cookie"), "{printed}");
     }
 
     #[test]

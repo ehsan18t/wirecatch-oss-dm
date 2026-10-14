@@ -171,7 +171,7 @@ impl Harness {
         change: impl FnOnce(&mut AddRequest),
     ) -> TestResult<DownloadSummary> {
         let mut request = AddRequest {
-            url: url.as_ref().to_string(),
+            url: url.as_ref().into(),
             queue: None,
             folder: None,
             file_name: None,

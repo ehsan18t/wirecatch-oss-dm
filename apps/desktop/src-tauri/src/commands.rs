@@ -90,7 +90,7 @@ pub async fn refresh_link(
     args: contract::refresh_link::Args,
 ) -> CommandResult<contract::refresh_link::Output> {
     let RefreshLinkArgs { id, url } = args;
-    api::refresh_link(core.manager().await?, id, &url)
+    api::refresh_link(core.manager().await?, id, url.as_str())
 }
 
 #[tauri::command]

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::secret::{Address, OptionalAddress, Secret};
 use crate::secrets::HIDDEN;
 use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
 
@@ -17,7 +18,7 @@ crate::exported::exported_consts! {
     pub const MAX_SITE_CHARS: usize = 253;
 }
 
-/// A download captured in the browser. Its `Debug` hides the cookies, and the values of the headers that may carry a sign-in (see [`Header`]).
+/// A download captured in the browser. Its `Debug` hides the cookies, the values of the headers that may carry a sign-in (see [`Header`]) and any sign-in in its addresses.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct NewDownload {
@@ -34,7 +35,8 @@ pub struct NewDownload {
     /// The full address of the document the capture started in: the frame
     /// it is in, or the page itself when it is in none. Absent when the
     /// extension does not know it, as for a browser download, whose referrer
-    /// comes from that document. An app from before this field ignores it.
+    /// comes from that document. Added in protocol version 2 (D32.5); an app
+    /// from before it ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub frame_url: Option<String>,
@@ -50,7 +52,8 @@ pub struct NewDownload {
     #[ts(type = "number | null")]
     pub size_hint: Option<u64>,
     /// Value for the `Cookie` header, so downloads behind a login keep working.
-    pub cookies: Option<String>,
+    #[ts(as = "Option<String>")]
+    pub cookies: Option<Secret>,
     /// The browser's `User-Agent`; the app sends it instead of its own.
     pub user_agent: Option<String>,
     /// Further request headers the download needs. The app drops those that belong to the
@@ -69,9 +72,10 @@ pub struct NewDownload {
     pub media: Option<MediaHint>,
 }
 
+/// Leaves out the cookies, header values and any sign-in in the addresses.
 impl fmt::Debug for NewDownload {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Taken apart, so a field added later does not compile until it is written here too.
+        // Destructured, so a field added later cannot be left out of this list unseen.
         let Self {
             handover_id,
             url,
@@ -90,14 +94,14 @@ impl fmt::Debug for NewDownload {
         } = self;
         f.debug_struct("NewDownload")
             .field("handover_id", handover_id)
-            .field("url", url)
-            .field("referrer", referrer)
-            .field("page_url", page_url)
-            .field("frame_url", frame_url)
+            .field("url", &Address(url))
+            .field("referrer", &OptionalAddress(referrer.as_deref()))
+            .field("page_url", &OptionalAddress(page_url.as_deref()))
+            .field("frame_url", &OptionalAddress(frame_url.as_deref()))
             .field("suggested_name", suggested_name)
             .field("mime", mime)
             .field("size_hint", size_hint)
-            .field("cookies", &cookies.as_ref().map(|_| HIDDEN))
+            .field("cookies", cookies)
             .field("user_agent", user_agent)
             .field("extra_headers", extra_headers)
             .field("source", source)
@@ -141,8 +145,10 @@ pub const HEADERS_SAFE_FOR_ANY_SITE: &[&str] = &["accept", "accept-language"];
 pub struct Header {
     /// The header's name, for example `Authorization`.
     pub name: String,
-    /// The header's value.
-    pub value: String,
+    /// The header's value, which may grant access (`Authorization`, `Cookie`, a token in a
+    /// custom header).
+    #[ts(as = "String")]
+    pub value: Secret,
 }
 
 impl Header {
@@ -164,10 +170,12 @@ impl Header {
 
 impl fmt::Debug for Header {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let shown = Address(self.value.expose());
         let value: &dyn fmt::Debug = if self.may_carry_sign_in() {
             &HIDDEN
         } else {
-            &self.value
+            // `Referer` is an address, which may carry a sign-in of its own.
+            &shown
         };
         f.debug_struct("Header")
             .field("name", &self.name)
@@ -645,6 +653,79 @@ pub(crate) fn apply_cases() -> Vec<(ExtensionSettings, ExtensionSettingsPatch)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::{Call, Message};
+
+    const COOKIE: &str = "sid=cookie-that-must-not-print";
+    const TOKEN: &str = "Bearer token-that-must-not-print";
+    const PASSWORD: &str = "password-that-must-not-print";
+
+    /// A capture holding a session cookie, an `Authorization` header and an FTP password in
+    /// each address it carries.
+    fn capture_with_secrets() -> NewDownload {
+        let with_password = |path: &str| format!("ftp://user:{PASSWORD}@files.example/{path}");
+        NewDownload {
+            handover_id: "h-1".into(),
+            url: with_password("a.zip"),
+            referrer: Some(with_password("page")),
+            page_url: Some(with_password("page")),
+            frame_url: Some(with_password("frame")),
+            suggested_name: None,
+            mime: None,
+            size_hint: None,
+            cookies: Some(COOKIE.into()),
+            user_agent: None,
+            extra_headers: vec![Header {
+                name: "Authorization".into(),
+                value: TOKEN.into(),
+            }],
+            source: CaptureSource::BrowserDownload,
+            queue: None,
+            media: None,
+        }
+    }
+
+    // Debug output reaches logs, panic messages and failed assertions, so a capture printed
+    // anywhere used to hand over the person's sign-in (IPB-11).
+    #[test]
+    fn printing_a_capture_never_shows_its_secrets() {
+        let capture = capture_with_secrets();
+        let call = Call::AddDownload(capture.clone());
+        let message = Message::Request {
+            id: 1,
+            call: call.clone(),
+        };
+        for printed in [
+            format!("{capture:?}"),
+            format!("{capture:#?}"),
+            format!("{call:?}"),
+            format!("{message:?}"),
+            format!("{:?}", capture.extra_headers[0]),
+        ] {
+            for secret in [
+                "cookie-that-must-not-print",
+                "token-that-must-not-print",
+                PASSWORD,
+            ] {
+                assert!(!printed.contains(secret), "{secret} printed in {printed}");
+            }
+        }
+        let printed = format!("{capture:?}");
+        assert!(printed.contains("files.example/a.zip"), "{printed}");
+        assert!(printed.contains("Authorization"), "{printed}");
+    }
+
+    // Redacting the printed form must not change what crosses the wire.
+    #[test]
+    fn secrets_cross_the_wire_unchanged() {
+        let capture = capture_with_secrets();
+        let json = serde_json::to_value(&capture).unwrap();
+        assert_eq!(json["cookies"], COOKIE);
+        assert_eq!(json["extra_headers"][0]["value"], TOKEN);
+        assert_eq!(
+            serde_json::from_value::<NewDownload>(json).unwrap(),
+            capture
+        );
+    }
 
     fn header(name: &str, value: &str) -> Header {
         Header {
@@ -665,6 +746,15 @@ mod tests {
         for name in ["Referer", " accept ", "Accept-Language"] {
             assert!(format!("{:?}", header(name, "shown")).contains("\"shown\""));
         }
+        let referer = format!(
+            "{:?}",
+            header("Referer", "https://me:SECRET4@example.com/page")
+        );
+        assert!(
+            !referer.contains("SECRET4") && !referer.contains("//me"),
+            "{referer}"
+        );
+        assert!(referer.contains("example.com/page"), "{referer}");
         let download = NewDownload {
             handover_id: "h".into(),
             url: "https://example.com/f".into(),

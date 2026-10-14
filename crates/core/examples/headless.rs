@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     for url in urls {
         let request = AddRequest {
-            url,
+            url: url.into(),
             queue: None,
             folder: None,
             file_name: None,
