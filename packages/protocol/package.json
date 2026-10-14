@@ -12,13 +12,10 @@
   "scripts": {
     "generate": "node scripts/generate.mjs",
     "check": "tsc --noEmit",
-    "lint": "eslint . --max-warnings 0 && prettier --check .",
-    "format": "prettier --write .",
     "test": "node --test \"scripts/*.test.mjs\" && vitest run src"
   },
   "devDependencies": {
     "@wirecatch/eslint-config": "workspace:*",
-    "eslint": "catalog:",
     "prettier": "catalog:",
     "prettier-plugin-svelte": "catalog:",
     "typescript": "catalog:",

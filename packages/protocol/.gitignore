@@ -1,2 +1,0 @@
-# The generator's working folders next to src/generated (scripts/generate.mjs); they exist only while it runs, or after it was interrupted.
-src/generated.*/

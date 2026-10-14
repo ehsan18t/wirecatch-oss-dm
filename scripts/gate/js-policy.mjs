@@ -1,4 +1,4 @@
-// `js-policy`: every workspace package, and the repository's own scripts, are linted with the shared configuration at its full strength, with no warnings allowed, and format-checked.
+// `js-policy`: every workspace package, and the repository's own scripts, are linted with the shared configuration at its full strength, with no warnings allowed, and format-checked, all by the one root `lint` script.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { capture, GateError, ROOT } from './process.mjs';
@@ -6,13 +6,16 @@ import { capture, GateError, ROOT } from './process.mjs';
 /** Sources that make a package subject to the shared ESLint configuration. */
 const LINTED_SOURCE = /\.(ts|mts|cts|svelte|js|mjs|cjs)$/;
 const ESLINT_CONFIG_PACKAGE = '@wirecatch/eslint-config';
-/** The one lint script: the whole package, no warnings allowed, then its formatting. Anything added to it (a `--rule`, an `|| true`) could weaken it, so it is compared exactly. */
-const LINT_SCRIPT = 'eslint . --max-warnings 0 && prettier --check .';
-/** The root package's lint script: every package's, then the repository's own scripts, which the root eslint.config.js covers. */
-const ROOT_LINT_SCRIPT =
-  'pnpm -r --if-present lint && eslint scripts eslint.config.js --max-warnings 0 && prettier --check scripts eslint.config.js';
+/** The folder of the repository's own scripts, which the root lints and formats besides the workspace packages. */
+const ROOT_FOLDERS = ['scripts'];
+/** What the root lints: its scripts and the eslint.config.js that covers them. */
+const ROOT_LINTED = [...ROOT_FOLDERS, 'eslint.config.js'];
 /** The root package's sources: what its lint script lints, and its configuration. */
 const ROOT_SOURCES = /^(scripts\/|eslint\.config\.js$)/;
+/** Scripts only the root has: lint and format run once over the whole repository, so a package has no way of its own to run them. */
+const ROOT_ONLY_SCRIPTS = ['lint', 'format'];
+/** Prettier, run from the root, reads only the root's ignore files, so one anywhere else would be silently unused. */
+const IGNORE_FILE = /(^|\/)\.(gitignore|prettierignore)$/;
 /**
  * The only tracked sources a package configuration may ignore, each for a reason: the types ts-rs generates from crates/protocol (their source is linted as Rust, and tsc checks them), and the file the rule tests lint with code of their own.
  */
@@ -23,48 +26,74 @@ const MAY_BE_IGNORED = [
 /** JavaScript every package may lint without type information (`untyped` in wirecatch()), so the baseline for a JavaScript file is the untyped one. */
 const UNTYPED_JAVASCRIPT = ['**/*.js', '**/*.cjs'];
 
-/** The workspace package folders, from the `packages` globs in pnpm-workspace.yaml (each a `folder/*`). */
-function workspacePackages() {
+/** The folders that hold the workspace packages, from the `packages` globs in pnpm-workspace.yaml (each a `folder/*`). */
+function workspaceParents() {
   const manifest = readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8');
   const list = /^packages:\s*\n((?:\s+-\s+.*\n)+)/m.exec(manifest);
   if (!list) throw new GateError('pnpm-workspace.yaml has no `packages` list.');
   const globs = [...list[1].matchAll(/-\s+["']?([^"'\s]+)["']?/g)].map((m) => m[1]);
-  return globs.flatMap((glob) => {
+  return globs.map((glob) => {
     if (!glob.endsWith('/*')) {
       throw new GateError(
-        `The workspace glob ${glob} is not of the form folder/*; teach workspacePackages in scripts/gate/js-policy.mjs to read it.`,
+        `The workspace glob ${glob} is not of the form folder/*; teach workspaceParents in scripts/gate/js-policy.mjs to read it.`,
       );
     }
-    const parent = glob.slice(0, -2);
-    return readdirSync(join(ROOT, parent), { withFileTypes: true })
+    return glob.slice(0, -2);
+  });
+}
+
+/** The workspace package folders. */
+function workspacePackages() {
+  return workspaceParents().flatMap((parent) =>
+    readdirSync(join(ROOT, parent), { withFileTypes: true })
       .filter(
         (entry) =>
           entry.isDirectory() && existsSync(join(ROOT, parent, entry.name, 'package.json')),
       )
-      .map((entry) => `${parent}/${entry.name}`);
-  });
+      .map((entry) => `${parent}/${entry.name}`),
+  );
+}
+
+/**
+ * The root `lint` and `format` scripts. `lint` runs ESLint in every workspace package, then on the root's own sources, no warnings allowed, then Prettier once over all of them; `format` writes what that Prettier run checks. Anything added to `lint` (a `--rule`, an `|| true`) could weaken it, and a folder left out of either would go unchecked or unformatted, so both are compared exactly.
+ *
+ * ESLint runs once per package, in that package's folder, never once over the whole repository: in one process, linting a file of one package first takes the type information of `.svelte` files in another (D42).
+ */
+function rootScripts() {
+  const formatted = [...workspaceParents(), ...ROOT_LINTED].join(' ');
+  const root = ROOT_LINTED.join(' ');
+  return {
+    lint: `pnpm -r exec eslint . --max-warnings 0 && eslint ${root} --max-warnings 0 && prettier --check ${formatted}`,
+    format: `prettier --write ${formatted}`,
+  };
+}
+
+/** Files git tracks or would track (untracked and not ignored) under the given paths, read NUL-separated so a name git would quote comes through as it is. */
+function gitFiles(...paths) {
+  return capture('git', [
+    'ls-files',
+    '-z',
+    '--cached',
+    '--others',
+    '--exclude-standard',
+    '--',
+    ...paths,
+  ])
+    .out.split('\0')
+    .filter((file) => file !== '');
 }
 
 /** The package's files, relative to its folder, tracked and untracked (not ignored). */
 function packageFiles(folder) {
   const prefix = folder === '.' ? '' : `${folder}/`;
-  const files = capture('git', [
-    'ls-files',
-    '--cached',
-    '--others',
-    '--exclude-standard',
-    '--',
-    folder,
-  ])
-    .out.split('\n')
-    .filter((file) => file !== '' && file.startsWith(prefix))
+  const files = gitFiles(folder)
+    .filter((file) => file.startsWith(prefix))
     .map((file) => file.slice(prefix.length));
   return folder === '.' ? files.filter((file) => ROOT_SOURCES.test(file)) : files;
 }
 
-/** What is wrong with the package's configuration file and lint script, or an empty list. */
+/** What is wrong with the package's configuration file and scripts, or an empty list. */
 function setupProblems(folder, manifest) {
-  const script = folder === '.' ? ROOT_LINT_SCRIPT : LINT_SCRIPT;
   const where = folder === '.' ? 'the root package' : folder;
   const problems = [];
   const configPath = join(ROOT, folder, 'eslint.config.js');
@@ -75,12 +104,33 @@ function setupProblems(folder, manifest) {
       `${where}: eslint.config.js must build its configuration with \`wirecatch()\` from '${source}'.`,
     );
   }
-  if (manifest.scripts?.lint !== script) {
-    problems.push(
-      `${where}: package.json needs exactly \`"lint": "${script}"\`, so \`pnpm lint\` lints and format-checks it with nothing switched off.`,
-    );
+  if (folder !== '.') {
+    const own = ROOT_ONLY_SCRIPTS.filter((name) => manifest.scripts?.[name] !== undefined);
+    for (const name of own) {
+      problems.push(
+        `${where}: package.json has a \`${name}\` script, but ${name} runs once from the root (\`pnpm ${name}\`); remove it.`,
+      );
+    }
+  } else {
+    for (const [name, script] of Object.entries(rootScripts())) {
+      if (manifest.scripts?.[name] !== script) {
+        problems.push(
+          `the root package: package.json needs exactly \`"${name}": "${script}"\`, so \`pnpm ${name}\` covers every package and the root's scripts with nothing switched off.`,
+        );
+      }
+    }
   }
   return problems;
+}
+
+/** Ignore files inside the folders the root `lint` script format-checks, which Prettier run from the root never reads. */
+function strayIgnoreFiles() {
+  return gitFiles(...workspaceParents(), ...ROOT_FOLDERS)
+    .filter((file) => IGNORE_FILE.test(file))
+    .map(
+      (file) =>
+        `${file}: Prettier runs from the root and reads only the root .gitignore and .prettierignore; move its rules there, with the folder in front.`,
+    );
 }
 
 /** How a baseline rule setting differs in `effective`, or null when it does not: a lower severity or other options. A higher severity is no difference. */
@@ -154,9 +204,9 @@ async function configProblems(folder, files) {
   }
 }
 
-/** Every workspace package with sources ESLint reads is linted with the shared configuration at full strength, allows no warnings, and is format-checked. Package layers may add rules; they may not weaken one. */
+/** Every workspace package with sources ESLint reads is linted with the shared configuration at full strength, allows no warnings, and is format-checked, by the root `lint` script. Package layers may add rules; they may not weaken one. */
 export async function jsPolicy() {
-  const problems = [];
+  const problems = strayIgnoreFiles();
   // The root package lints the repository's own scripts.
   for (const folder of [...workspacePackages(), '.']) {
     const files = packageFiles(folder);

@@ -1,8 +1,0 @@
-node_modules
-build
-.svelte-kit
-src-tauri
-test-results
-playwright-report
-docs/screenshots
-eslint-suppressions.json

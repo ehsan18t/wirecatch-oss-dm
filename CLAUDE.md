@@ -44,6 +44,7 @@ pnpm gate
 That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm gate rust` or `pnpm gate js` runs a group). The supply-chain checks need two cargo tools: `node scripts/gate.mjs --install-tools`. Run it yourself before reporting a change done, and report its real output, failures included. The definition of done is D18 in `docs/DECISIONS.md`.
 
 - Install once with `pnpm install`; it also turns on the commit-msg hook.
+- Lint and format from the root only (`pnpm lint`, `pnpm format`); packages have no lint or format scripts, and list ESLint or Prettier only when their own code imports it (D42).
 - Build the desktop interface (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app itself; the gate compiles the desktop crate against a placeholder page when it is missing.
 - Changing `crates/protocol` means running `pnpm protocol:generate` and committing the generated files; the gate fails otherwise.
 - Changing `config/product.toml` or `config/templates/` means running `pnpm product:generate` and committing the generated files; the gate fails otherwise. Before a release, `node scripts/gate.mjs publish` must pass: no identity value may still be a `TODO-PRODUCT-` placeholder.
