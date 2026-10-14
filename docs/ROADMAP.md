@@ -9,7 +9,7 @@
 5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno, pinned by SHA-256, yt-dlp updates verified by signature and a two-day delay (D20, D21). Done; smoke-tested end to end against a real Wikimedia Commons video.
 6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
 7. **Release readiness.** Done: final security review and fixes, Linux suite green in Docker, quiet-machine benchmark, Windows installer built (5.2 MiB), commit history cleaned. Left for the maintainer: GitHub organization, code signing, the updater signing key, store listings for the extension (which also gives Chromium browsers a trusted extension id), and the user actions in D21.
-8. **Interface revamp.** In progress: one design system for the desktop app and the extension, in two phases. See [REVAMP](REVAMP.md).
+8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 rebuilds the rest after the maintainer's review. See [REVAMP](REVAMP.md).
 
 ## Phase 1 acceptance checklist
 

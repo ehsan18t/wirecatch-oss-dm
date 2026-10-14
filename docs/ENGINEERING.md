@@ -35,9 +35,9 @@ Every literal that encodes a decision gets a name and a doc comment saying why i
 - A value two packages need lives in its one home (section 1); it is never copied.
 - Literals that read as themselves need no name: `0`, `1`, `2`, `-1`, an empty string, an index.
 - Units are part of the name or the type: `Duration` and `PROGRESS_REFRESH`, never `100` and a comment.
-- UI values come from design tokens in `app.css`, never raw pixels or colors in a component.
+- UI values come from the design tokens in `packages/ui/src/tokens.css` (D36), never raw pixels or colors in a component. The screens not yet rebuilt on the design system still take theirs from `apps/desktop/src/app.css`, until they move.
 
-Enforced by: gate for TypeScript (`wirecatch/no-magic-numbers`, which reports every number except those that build the value of a module-level `const`, so `const MAX_URL_LENGTH = 8 * 1024` is fine), review for Rust and CSS.
+Enforced by: gate for TypeScript (`wirecatch/no-magic-numbers`, which reports every number except those that build the value of a module-level `const`, so `const MAX_URL_LENGTH = 8 * 1024` is fine) and for the code built on the design system (`wirecatch/tokens-only`, on `packages/ui` and each app's `src/ui/`, which reports a colour, length, opacity or duration written out instead of named), review for Rust and CSS.
 
 ## 3. Reuse before writing
 

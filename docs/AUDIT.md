@@ -173,8 +173,19 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 | W11 | later |
 | W12 | later. Most of it folds into the interface revamp; the findings that survive a redesign are listed under W12 |
 | W13 | later |
-| Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 this round: main window, add-download flow, download window, extension popup and options. Phase 2 later: settings pages, add-ons, dialogs, command palette, in-page media button, tray, installer, and the additions from other workstreams |
+| Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 done (2026-10-14) and independently reviewed screen by screen and as a whole: the stack and `packages/ui`, theme and accent settings, the frameless window shell with its material, the main window, the add-download flow, the download window, and the extension's popup and options page. Never seen in the real app: Acrylic on Windows 10 and the solid background on Linux (REVAMP, for the maintainer). Phase 2 later, after the maintainer's review: settings pages, add-ons, dialogs, command palette, in-page media button, tray, installer, and the additions from other workstreams. What phase 1 left open is listed below |
 | W15 | later, last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
+
+Parts of the interface revamp's phase 1 carried into later work:
+
+- The theme review's open lows. The remembered look wins over the settings the shell knows, so after a reset or a moved data folder every new window first paints the old look, then switches (`apps/desktop/src/lib/first-paint.js`; send whether the shell read real settings and prefer the remembered look only when it did not). A main page reloaded on waking from the tray loses a capture's toast, seen in a development build only (mark the page as not listening in `wake_main` and take the held captures again on resync, then check in a release build). Per-window state outlives a closed window (`frame.rs` `Frames::sends` creates its entry again, `maximize_overlay.rs` never removes a window's overlay). The window's theme following the setting (`match_stored_theme`) and the quiet reveal (`show_quietly`) have no automated test, and download windows never call `match_stored_theme`. Phase 2, with the shell's windows.
+- The material has no automated check in the real app; that WebView2 draws no backdrop blur over Mica (D36.2) was found by hand (phase 2).
+- With `overflow-anchor` off in the desktop's download list, the rows on screen may shift by one when a row above the visible part leaves or joins the list (suspected, not reproduced; phase 2, or W12).
+- In the extension popup while the app is offline, a label cut short shows only the offline reason in its tooltip, not the whole label (`apps/extension/src/ui/cut-label.ts`; W13).
+- `same()` in `apps/desktop/src/lib/state/downloads.svelte.ts` compares a row's state proxy with a plain value, so Svelte warns `state_proxy_equality_mismatch` about 50 times a run in development (the structural fallback still answers correctly; W12).
+- Real-app checks attached through Playwright's `connectOverCDP` see a light `prefers-color-scheme` whatever the system's; check the theme or take screenshots through raw CDP or with `colorScheme: null`.
+- The protocol's doc of `remove`'s `delete_file` should say that an unfinished download's partial files always go (W9).
+- Proposed checks (W6): no literal product name in the desktop's rebuilt screens outside comments, beside D29's for the rest; an extension preview flag that makes every button and label about 2.5 times longer, with one check over every page that no cut text lacks a tooltip; and the gate's `e2e-desktop` description naming every spec it runs (`add.spec.ts` and `download-window.spec.ts` besides `a11y.spec.ts` and `layout.spec.ts`).
 
 Parts of W4 carried into later work:
 
@@ -183,7 +194,7 @@ Parts of W4 carried into later work:
 
 Parts of W5 carried into later workstreams:
 
-- EXT-7: the popup's "Copy diagnostics" action comes with the popup's redesign: it copies `readDiagnostics(browser.storage.session)` with the connection status, the browser and the extension version. Until then the buffer is read only from the browser's developer tools (W13).
+- EXT-7: the popup's "Copy diagnostics" action, which phase 1 of the revamp left for phase 2 ([REVAMP](REVAMP.md)): it copies `readDiagnostics(browser.storage.session)` with the connection status, the browser and the extension version. Until then the buffer is read only from the browser's developer tools (W13).
 - EXT-7: content scripts keep their entries in memory only, where nothing reads them; they should send `warn` and `error` entries to the background, which validates them and logs them under the `page` scope (W13).
 - `wirecatch/no-silent-catch` is on for the extension only; the shared baseline takes it once the desktop's 14 sites and protocol's one are handled (W12, with the desktop's logging). The gate checks W5 proposed are listed under W6.
 - Review rule, proposed: a decode error of a message from another process (`crates/core/src/server.rs`, where `serde_json` quotes the offending value) is logged without its text, since no redaction can tell a secret in such a value (W9).
@@ -223,7 +234,7 @@ Parts of W2 carried into later workstreams:
 
 Parts of the W1 review carried into later workstreams:
 
-- CORE-1: the start-up notice (a damaged list set aside, downloads hidden) reaches the person only as a system notification, which is lost when notifications are off; the main window should show it too (W12).
+- CORE-1: the start-up notice (a damaged list set aside, downloads hidden) reaches the person only as a system notification, which is lost when notifications are off; the main window should show it too. Done (interface revamp): the main window shows each start-up notice until it is dismissed.
 - EXT-1: with an empty display cache, the first browser download is judged against capture-everything, so it may start the app only for the app to decline it; the extension needs the app's default settings, generated from `crates/protocol`. Done (W3): it judges against `DEFAULT_EXTENSION_SETTINGS`, and a core test holds the app's defaults equal to it.
 - DUI-2: applying an `ExtensionSettingsPatch` is written twice in TypeScript, in the extension (`lib/protocol.ts`) and the desktop mock (`state/settings-changes.svelte.ts`); it belongs once in `@wirecatch/protocol`. Done (W3): `applyExtensionSettingsPatch` in `packages/protocol/src/extension-settings.ts`, tested against fixtures the Rust `ExtensionSettings::apply` writes.
 - EXT-2: the media content script is injected into every frame even with the button off, where it does one storage read and nothing else; registering it only while the setting is on needs the `scripting` permission (W13).
