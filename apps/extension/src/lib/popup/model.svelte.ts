@@ -36,8 +36,9 @@ const RESTARTED: Result = {
 };
 
 /**
- * The popup's view of the background state. Setting changes show at once (an
- * optimistic overlay) and settle when the app confirms them; a refusal rolls them back.
+ * The view of the background state the extension's own pages share: the popup and the options
+ * page. Setting changes show at once (an optimistic overlay) and settle when the app confirms
+ * them; a refusal rolls them back.
  */
 export class PopupModel {
   snapshot = $state<Snapshot | null>(null);
@@ -63,6 +64,8 @@ export class PopupModel {
 
   readonly #channel: Channel<PopupRequest, unknown>;
   readonly #requests = new Requests<Result>();
+  /** Pages waiting for what they show first; see `loaded`. */
+  #waiting: { media: boolean; resolve: () => void }[] = [];
 
   constructor(channel: Channel<PopupRequest, unknown>) {
     this.#channel = channel;
@@ -72,6 +75,24 @@ export class PopupModel {
     channel.onDisconnect.addListener(() => {
       this.#requests.settleAll(RESTARTED);
     });
+  }
+
+  /**
+   * Resolves once what a page shows first is in: the snapshot, and with `media` the active tab's
+   * media list as well. A page mounts after it, so it opens at its final size.
+   */
+  loaded(media: boolean): Promise<void> {
+    return new Promise((resolve) => {
+      this.#waiting.push({ media, resolve });
+      this.#settleWaiting();
+    });
+  }
+
+  #settleWaiting(): void {
+    if (this.snapshot === null) return;
+    const ready = this.#waiting.filter((w) => !w.media || this.media !== null);
+    this.#waiting = this.#waiting.filter((w) => !ready.includes(w));
+    for (const w of ready) w.resolve();
   }
 
   /** Sends a settings change to the app. Resolves with true once the app accepted it. */
@@ -153,10 +174,12 @@ export class PopupModel {
   #receive(message: BackgroundMessage): void {
     if (message.type === 'snapshot') {
       this.snapshot = message.snapshot;
+      this.#settleWaiting();
       return;
     }
     if (message.type === 'media') {
       this.media = message.view;
+      this.#settleWaiting();
       return;
     }
     this.#requests.settle(

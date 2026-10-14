@@ -7,7 +7,7 @@ const NATIVE_ONLY =
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: { ...globals.browser, ...globals.webextensions },
-  ignores: ['.output/', '.wxt/'],
+  ignores: ['.output/', '.wxt/', 'test-results/', 'playwright-report/'],
   svelteConfig,
   layers: [
     {

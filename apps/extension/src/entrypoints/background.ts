@@ -131,7 +131,8 @@ export default defineBackground(() => {
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {
-    // Only the popup itself, never a content script that knows the port name.
+    // Only the extension's own pages (the popup and the options page), never a content script
+    // that knows the port name.
     if (!acceptsPopupPort(port, browser.runtime.id, browser.runtime.getURL('/'))) return;
     hub.addPopup(port);
   });

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { NATIVE_HOST_NAME } from '@wirecatch/product';
 import { isOutcome, queueId, type ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,6 @@ import {
 import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
-import popupCss from '../src/entrypoints/popup/style.css?raw';
 import { asPopupRequest, isNotice, type Notice } from '../src/lib/messages';
 import {
   classifyDisconnect,
@@ -24,6 +24,7 @@ import { patchOf } from '../src/lib/protocol';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, matchingSite, siteForPage } from '../src/lib/sites';
+import { TOKENS_CSS } from '../build-values';
 import { DEFAULT_SETTINGS } from './fakes';
 
 describe('sites', () => {
@@ -387,13 +388,15 @@ describe('notices kept in session storage', () => {
 });
 
 describe('toolbarBadge', () => {
-  it('shows a message on the badge in the popup warning color', () => {
+  it("shows a message on the badge in the design system's warning colour", () => {
     fakeBrowser.reset();
     const setColor = vi
       .spyOn(fakeBrowser.action, 'setBadgeBackgroundColor')
       .mockResolvedValue(undefined);
     toolbarBadge().set('!', 'Wirecatch has a message for you.');
-    expect(setColor).toHaveBeenCalledWith({ color: cssColor(BADGE_TOKEN, popupCss) });
+    expect(setColor).toHaveBeenCalledWith({
+      color: cssColor(BADGE_TOKEN, readFileSync(TOKENS_CSS, 'utf8')),
+    });
   });
 });
 

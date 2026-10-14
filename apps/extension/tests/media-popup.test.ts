@@ -6,13 +6,13 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/svelt
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
-import App from '../src/components/App.svelte';
 import { Hub } from '../src/lib/hub/hub';
 import { MediaCenter, type TabInfo } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import { PopupModel } from '../src/lib/popup/model.svelte';
+import Popup from '../src/ui/popup/Popup.svelte';
 import { FakeApp, FakeDownloads, MemoryCache, channelPair, flush } from './fakes';
 
 const TABS = new Map<number, TabInfo>([
@@ -89,7 +89,7 @@ async function openPopup(
   const model = new PopupModel(popupEnd);
   model.watchMedia(tabId);
   await flush();
-  const { container } = render(App, {
+  const { container } = render(Popup, {
     props: {
       model,
       currentUrl: TABS.get(tabId)?.url ?? null,
@@ -116,25 +116,50 @@ describe('Media on this page', () => {
     const region = section();
     expect(within(region).getByText(/No video or audio found on this page yet/)).toBeTruthy();
     expect(
-      within(region).getByText(/Turn it off with "Show download button on videos" below/),
+      within(region).getByText(/A Download button also appears over videos on web pages/),
     ).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Turn it off in settings' })).toBeTruthy();
 
     await model.update({ show_media_button: false });
     await waitFor(() =>
       expect(
-        within(section()).getByText(/Turn on "Show download button on videos" below/),
+        within(section()).getByText(/The Download button over videos on web pages is off/),
       ).toBeTruthy(),
     );
+    expect(within(section()).getByRole('button', { name: 'Turn it on in settings' })).toBeTruthy();
     expect(app.settings.show_media_button).toBe(false);
   });
 
   it('names the keyboard shortcut and the list as ways to download without the button', async () => {
-    await openPopup(1, { shortcut: 'Alt+Shift+D' });
+    const { registry } = await openPopup(1, { shortcut: 'Alt+Shift+D' });
+    const hint = (): string =>
+      within(section())
+        .getByText(/^On a page, press/)
+        .textContent.replace(/\s+/g, ' ')
+        .trim();
+    // An empty list has no Download buttons to point at.
+    expect(hint()).toMatch(
+      /^On a page, press Alt ?\+ ?Shift ?\+ ?D to send its video or audio to Wirecatch\.$/,
+    );
     expect(
-      within(section()).getByText(
-        'On a page, press Alt+Shift+D to send its video or audio to Wirecatch, or use the Download buttons in this list.',
+      [
+        ...within(section())
+          .getByText(/^On a page, press/)
+          .querySelectorAll('kbd kbd'),
+      ].map((key) => key.textContent),
+    ).toEqual(['Alt', 'Shift', 'D']);
+    registry.add(1, {
+      kind: 'hls',
+      url: 'https://cdn.example.com/v/master.m3u8',
+      mime: null,
+      size: null,
+      audio: false,
+    });
+    await waitFor(() =>
+      expect(hint()).toMatch(
+        /^On a page, press Alt ?\+ ?Shift ?\+ ?D to send its video or audio to Wirecatch, or use the Download buttons in this list\.$/,
       ),
-    ).toBeTruthy();
+    );
     cleanup();
     await openPopup(1, { shortcut: null });
     expect(
@@ -163,6 +188,8 @@ describe('Media on this page', () => {
     await waitFor(() => expect(within(section()).getAllByRole('listitem')).toHaveLength(2));
     const region = section();
     expect(within(region).getByText('Video stream (HLS)')).toBeTruthy();
+    // With items to send, the list's own buttons do the job: the media button is taught only while it is empty.
+    expect(within(region).queryByText(/Download button also appears/)).toBeNull();
     expect(within(region).getByText('song.mp3, 3.50 MB')).toBeTruthy();
     expect(
       within(region).getByRole('button', { name: 'Download Video stream (HLS): cdn.example.com' }),
@@ -170,6 +197,26 @@ describe('Media on this page', () => {
     expect(
       within(region).getByRole('button', { name: 'Download Audio file: song.mp3' }),
     ).toBeTruthy();
+  });
+
+  it('counts many items and lists every one, each with its own button', async () => {
+    const { registry } = await openPopup(1);
+    for (let i = 1; i <= 12; i += 1) {
+      registry.add(1, {
+        kind: 'direct',
+        url: `https://cdn.example.com/a/track-${String(i)}.mp3`,
+        mime: 'audio/mpeg',
+        size: null,
+        audio: true,
+      });
+    }
+    await waitFor(() => expect(within(section()).getAllByRole('listitem')).toHaveLength(12));
+    expect(within(section()).getByText('12')).toBeTruthy();
+    expect(within(section()).getAllByRole('button', { name: /^Download Audio file/ })).toHaveLength(
+      12,
+    );
+    // The list scrolls inside the popup, between the header and the footer, which stay in view.
+    expect(screen.getByRole('main').className).toContain('overflow-y-auto');
   });
 
   it('sends an item with the keyboard alone and says it was sent', async () => {

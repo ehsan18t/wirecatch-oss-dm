@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox --mv3",
+    "preview": "vite --config preview/vite.config.ts",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:dev": "wxt build --mode development",
     "build:store": "node ../../scripts/gate.mjs publish-extension && wxt zip --mode store",
@@ -16,6 +17,7 @@
     "zip": "wxt zip && wxt zip -b firefox --mv3",
     "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "test": "vitest run",
+    "e2e": "playwright test",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -26,7 +28,9 @@
     "tldts": "7.4.18"
   },
   "devDependencies": {
+    "@fontsource/dejavu-sans": "5.3.0",
     "@iconify-json/lucide": "catalog:",
+    "@playwright/test": "1.64.0",
     "@sveltejs/vite-plugin-svelte": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@testing-library/svelte": "catalog:",
@@ -41,6 +45,7 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "unplugin-icons": "catalog:",
+    "vite": "catalog:",
     "vitest": "catalog:",
     "web-ext": "10.7.0",
     "wxt": "0.21.4"

@@ -28,7 +28,7 @@ import {
   variants,
 } from './validate';
 
-/** Name of the `runtime.connect` port the popup opens to the background script. */
+/** Name of the `runtime.connect` port the extension's pages (popup and options) open to the background script. */
 export const POPUP_PORT_NAME = 'wirecatch-popup';
 
 /** What `runtime.onConnect` says about a port. */
@@ -38,8 +38,8 @@ export interface PortInfo {
 }
 
 /**
- * True only for the popup's own port: the right name, this extension, and opened by
- * one of the extension's pages (`extensionBaseUrl` is `runtime.getURL('/')`). A content
+ * True only for a port of the extension's own pages: the right name, this extension, and opened
+ * by one of the extension's pages (`extensionBaseUrl` is `runtime.getURL('/')`). A content
  * script also belongs to this extension and can use the name, but runs on a web page,
  * so it cannot change settings or send downloads through the popup's commands.
  */

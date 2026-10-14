@@ -384,9 +384,15 @@ importers:
         specifier: 7.4.18
         version: 7.4.18
     devDependencies:
+      '@fontsource/dejavu-sans':
+        specifier: 5.3.0
+        version: 5.3.0
       '@iconify-json/lucide':
         specifier: 'catalog:'
         version: 1.2.142
+      '@playwright/test':
+        specifier: 1.64.0
+        version: 1.64.0
       '@sveltejs/vite-plugin-svelte':
         specifier: 'catalog:'
         version: 7.3.1(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
@@ -429,6 +435,9 @@ importers:
       unplugin-icons:
         specifier: 'catalog:'
         version: 24.0.0(esbuild@0.28.2)(rolldown@1.2.13)(rollup@4.64.5)(svelte@5.57.2(@typescript-eslint/types@8.71.1))(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
+      vite:
+        specifier: 'catalog:'
+        version: 8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
         version: 5.0.3(@types/node@24.19.2)(jsdom@30.1.2)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0))
@@ -941,6 +950,9 @@ packages:
 
   '@fontsource-variable/instrument-sans@5.3.0':
     resolution: {integrity: sha512-u4gKbDBTNFGkg997tfQn3eHOhHuquWUFTRT/rwzuKtrxX5P2ekfs2x+LgBPP4P32+cC+vUwF1Cr+IdRoPQbrGw==}
+
+  '@fontsource/dejavu-sans@5.3.0':
+    resolution: {integrity: sha512-F/tV+7S31Mo8jtGUhj857XfUzcDCl9JJC8bzMtZ0wcTuOm89dG4FPjAOHOesMfmoChYVQ3eg5fHafdhxFrQIxQ==}
 
   '@fregante/relaxed-json@2.0.0':
     resolution: {integrity: sha512-PyUXQWB42s4jBli435TDiYuVsadwRHnMc27YaLouINktvTWsL3FcKrRMGawTayFk46X+n5bE23RjUTWQwrukWw==}
@@ -4053,6 +4065,8 @@ snapshots:
   '@fluent/syntax@0.19.0': {}
 
   '@fontsource-variable/instrument-sans@5.3.0': {}
+
+  '@fontsource/dejavu-sans@5.3.0': {}
 
   '@fregante/relaxed-json@2.0.0': {}
 

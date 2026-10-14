@@ -38,7 +38,7 @@ Superseded in part by D23: a captured download now opens its own window first by
 - The App is the only store. The Extension reads and writes settings through the Bridge; nothing is kept in browser storage except a cache for display.
 - A change made in the Extension appears in the App immediately, and the reverse. Because every browser talks to the same App, a change made in Chrome also shows up in Firefox.
 - The Bridge starts the Engine when needed, so the Extension does not have an "App not running" state in normal use.
-- Settings exposed in the Extension popup (the relevant subset): capture on/off, show a window before each download (D23), show the media download button on videos, sites to ignore, file types to capture, minimum file size to capture, default queue, pause/resume all.
+- Settings the Extension edits (the relevant subset), split between its two pages since the interface revamp (D36): the popup has what people reach for first, capture on/off, this site (ignore it or stop ignoring it), the page's media, show a window before each download (D23, which D4 keeps reachable from the popup) and pause/resume all; the Extension's options page has the rest, show the media download button on videos, sites to ignore, file types to capture, minimum file size to capture and default queue, one click from the popup.
 - Everything else (queues, schedules, connection tuning, folders, Add-ons) is App-only.
 
 ### D6. Settings import and export

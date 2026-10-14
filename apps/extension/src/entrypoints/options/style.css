@@ -1,0 +1,6 @@
+/*
+ * The options page's stylesheet: the design system, and the extension's own components as its sources. It loads in the head, so the first paint already has the browser's scheme and the tokens' colours.
+ */
+@import '@wirecatch/ui/tokens.css';
+@import '@wirecatch/ui/base.css';
+@source '../../ui';

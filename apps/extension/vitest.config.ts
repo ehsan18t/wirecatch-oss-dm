@@ -1,11 +1,13 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'vitest/config';
 import { WxtVitest } from 'wxt/testing/vitest-plugin';
 import { buildDefines } from './build-values';
 
 export default defineConfig({
-  // WxtVitest does not run the Svelte module's Vite setup, so the Svelte plugin is added here.
-  plugins: [WxtVitest(), svelte()],
+  // WxtVitest does not run the Svelte module's Vite setup or wxt.config.ts's plugins, so the Svelte
+  // plugin and the icons the design system's components import are added here.
+  plugins: [WxtVitest(), svelte(), Icons({ compiler: 'svelte', autoInstall: false })],
   // WxtVitest does not apply wxt.config.ts's `vite.define`, so the same values are given here.
   define: buildDefines(),
   resolve: {
@@ -15,9 +17,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['./tests/setup.ts'],
     restoreMocks: true,
-    // tests/theme.test.ts reads colors from the text of the popup's stylesheet, so tests need the
-    // real file.
-    css: { include: [/\/popup\/style\.css/] },
   },
 });

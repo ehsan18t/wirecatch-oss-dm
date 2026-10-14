@@ -1,0 +1,20 @@
+/*
+ * The preview page's stylesheet: the pages' own (the design system and the extension's components), and a frame that shows the popup's edge as a browser would.
+ */
+@import '@wirecatch/ui/tokens.css';
+@import '@wirecatch/ui/base.css';
+@import '@fontsource/dejavu-sans/latin-400.css';
+@import '@fontsource/dejavu-sans/latin-700.css';
+@source '../src/ui';
+
+/* `&font=dejavu`: DejaVu Sans, the sans Ubuntu and Debian give a page that asks for Segoe UI, and one of the widest a person on Linux gets. It comes with the page, so the layout checks measure the same text on every machine. */
+:root[data-font='dejavu'] {
+  --font-sans: 'DejaVu Sans';
+  --font-display: 'DejaVu Sans';
+}
+
+@layer components {
+  .popup-frame {
+    @apply m-6 inline-block overflow-hidden rounded-md border border-line bg-window shadow-flyout;
+  }
+}

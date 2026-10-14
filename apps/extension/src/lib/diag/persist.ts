@@ -2,8 +2,8 @@
  * Keeping diagnostics past a sleeping background script, and catching what nothing else did.
  *
  * The background script is stopped whenever it is idle, which would take its entries with it, so
- * the background and the popup each keep theirs in `storage.session` under a key of their own
- * (two writers on one key would overwrite each other). Session storage is cleared when the browser
+ * the background and each of the extension's pages (the popup and the options page) keep theirs in
+ * `storage.session` under a key of their own (two writers on one key would overwrite each other). Session storage is cleared when the browser
  * closes and never leaves the machine. Content scripts keep theirs in memory only: they cannot
  * read session storage, and the page is theirs, not ours, to listen to.
  */
@@ -21,7 +21,7 @@ import {
 /** The storage key prefix; each context adds its name. */
 export const DIAG_KEY_PREFIX = 'wirecatch.diag.v1.';
 
-export type DiagContext = 'background' | 'popup';
+export type DiagContext = 'background' | 'popup' | 'options';
 
 /** The part of a `storage` area this needs. */
 export interface DiagStore {
@@ -39,7 +39,7 @@ const isEntry = fields<DiagEntry>({
   private: isBoolean,
 });
 
-const CONTEXTS: readonly DiagContext[] = ['background', 'popup'];
+const CONTEXTS: readonly DiagContext[] = ['background', 'popup', 'options'];
 const keyOf = (context: DiagContext): string => `${DIAG_KEY_PREFIX}${context}`;
 
 /**
@@ -115,7 +115,7 @@ export async function readDiagnostics(store: DiagStore): Promise<DiagEntry[]> {
   return saved.flat().sort((a, b) => a.at - b.at);
 }
 
-/** The part of the global scope the error events come from: `self` in the background, `window` in the popup. */
+/** The part of the global scope the error events come from: `self` in the background, `window` in a page. */
 export interface ErrorEvents {
   addEventListener(
     type: 'error',

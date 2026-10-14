@@ -25,5 +25,8 @@ apps/desktop/build-gallery/
 # The extension's web-ext local settings and its bundle size report.
 apps/extension/web-ext.config.ts
 apps/extension/stats.html
+# The extension's browser test reports.
+apps/extension/test-results/
+apps/extension/playwright-report/
 # The protocol generator's working folders next to src/generated (packages/protocol/scripts/generate.mjs); they exist only while it runs, or after it was interrupted.
 packages/protocol/src/generated.*/

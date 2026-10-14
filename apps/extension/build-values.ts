@@ -4,14 +4,14 @@
  * same values in both, and a source that is missing stops either at once.
  */
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { BADGE_TOKEN, cssColor } from './src/lib/theme';
 
-/** The toolbar badge's color, read from the popup's stylesheet; a missing token stops the build here. */
-const badgeColor = cssColor(
-  BADGE_TOKEN,
-  readFileSync(fileURLToPath(new URL('src/entrypoints/popup/style.css', import.meta.url)), 'utf8'),
-);
+/** The design system's tokens, where every colour of the extension comes from. */
+export const TOKENS_CSS = createRequire(import.meta.url).resolve('@wirecatch/ui/tokens.css');
+
+/** The toolbar badge's colour, read from the tokens; a missing token stops the build here. */
+const badgeColor = cssColor(BADGE_TOKEN, readFileSync(TOKENS_CSS, 'utf8'));
 
 /** The globals `src/env.d.ts` declares, as Vite's `define` takes them. */
 export function buildDefines(): Record<string, string> {

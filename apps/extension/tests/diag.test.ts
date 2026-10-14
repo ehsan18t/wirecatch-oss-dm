@@ -135,7 +135,7 @@ describe('Diagnostics', () => {
 /** An entry as a context saved it. */
 function saved(
   at: number,
-  scope: 'hub' | 'popup',
+  scope: 'hub' | 'popup' | 'settings',
   message = String(at),
   isPrivate = false,
 ): DiagEntry {
@@ -183,11 +183,12 @@ describe('persistDiagnostics', () => {
     expect(diag.entries()).toHaveLength(3);
   });
 
-  it('reads every context, oldest first', async () => {
+  it('reads every context, the options page included, oldest first', async () => {
     const store = new MemoryStore();
-    store.items.set(`${DIAG_KEY_PREFIX}background`, [saved(1, 'hub'), saved(3, 'hub')]);
+    store.items.set(`${DIAG_KEY_PREFIX}background`, [saved(1, 'hub'), saved(4, 'hub')]);
     store.items.set(`${DIAG_KEY_PREFIX}popup`, [saved(2, 'popup')]);
-    expect((await readDiagnostics(store)).map((e) => e.at)).toEqual([1, 2, 3]);
+    store.items.set(`${DIAG_KEY_PREFIX}options`, [saved(3, 'settings')]);
+    expect((await readDiagnostics(store)).map((e) => e.at)).toEqual([1, 2, 3, 4]);
   });
 
   it('keeps what an earlier run saved when an entry comes before it is read back', async () => {
@@ -210,9 +211,13 @@ describe('persistDiagnostics', () => {
     const own = [saved(1, 'hub'), saved(2, 'hub', 'p', true)];
     store.items.set(`${DIAG_KEY_PREFIX}background`, own);
     store.items.set(`${DIAG_KEY_PREFIX}popup`, [saved(3, 'popup'), saved(4, 'popup', 'p', true)]);
+    store.items.set(`${DIAG_KEY_PREFIX}options`, [
+      saved(5, 'settings'),
+      saved(6, 'settings', 'p', true),
+    ]);
     await forgetPrivate(store, 'background');
     expect(store.items.get(`${DIAG_KEY_PREFIX}background`)).toBe(own);
-    expect((await readDiagnostics(store)).map((e) => e.at)).toEqual([1, 2, 3]);
+    expect((await readDiagnostics(store)).map((e) => e.at)).toEqual([1, 2, 3, 5]);
   });
 });
 

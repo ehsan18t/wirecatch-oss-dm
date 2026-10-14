@@ -36,7 +36,7 @@ function followPrivateWindows(
             diagnostics.log(
               'warn',
               'diag',
-              'Could not forget the private entries of the popup',
+              "Could not forget the private entries of the extension's pages",
               error,
             );
           });
@@ -56,12 +56,12 @@ function followPrivateWindows(
 }
 
 /**
- * Decides whether the popup is part of a private session from the window it was opened in. Its
- * process does not tell: in Chromium's default "spanning" mode a popup opened from an incognito
- * window runs in the regular profile, where `extension.inIncognitoContext` is false. Until the
- * window answers, and when it cannot, the popup is taken as private.
+ * Decides whether a page (the popup or the options page) is part of a private session from the
+ * window it is in. Its process does not tell: in Chromium's default "spanning" mode a popup opened
+ * from an incognito window runs in the regular profile, where `extension.inIncognitoContext` is
+ * false. Until the window answers, and when it cannot, the page is taken as private.
  */
-function followPopupWindow(diagnostics: Diagnostics): void {
+function followPageWindow(diagnostics: Diagnostics): void {
   if (browser.extension.inIncognitoContext) {
     diagnostics.setPrivateSession(true);
     return;
@@ -81,7 +81,7 @@ function followPopupWindow(diagnostics: Diagnostics): void {
 /**
  * Sets up this context's diagnostics: everything uncaught is logged, entries are kept in session
  * storage when the browser has it, and entries made for private windows do not outlive them.
- * Called first thing in the background and the popup, with this context's `diagnostics`.
+ * Called first thing in the background and in each page, with this context's `diagnostics`.
  */
 export function installDiagnostics(
   context: DiagContext,
@@ -91,7 +91,7 @@ export function installDiagnostics(
   logUncaught(scope, context);
   const area = sessionArea();
   if (context === 'background') followPrivateWindows(diagnostics, area);
-  // A popup opened in a private window is part of that session as a whole.
-  else followPopupWindow(diagnostics);
+  // A page in a private window is part of that session as a whole.
+  else followPageWindow(diagnostics);
   if (area !== undefined) void persistDiagnostics(diagnostics, area, context);
 }
