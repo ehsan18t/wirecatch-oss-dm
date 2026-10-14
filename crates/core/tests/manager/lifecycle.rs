@@ -275,6 +275,24 @@ async fn removing_an_unfinished_download_never_deletes_someone_elses_file() -> T
     Ok(())
 }
 
+/// A download window cancels by removing without the file, so a download that finished before
+/// the window heard keeps its file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_a_finished_download_without_its_file_keeps_the_file() -> TestResult {
+    let server = fast_server(8 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("keep.bin")).await?;
+    let row = h.wait_status(row.id, DownloadStatus::Completed).await;
+
+    h.manager.remove(&[row.id], false).await.unwrap();
+    assert!(exists(&row.path), "the finished file was deleted");
+    assert_eq!(
+        h.manager.list_downloads(),
+        [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_waiting_download_can_be_cancelled_and_removed() -> TestResult {
     let h = Harness::new().await?;
