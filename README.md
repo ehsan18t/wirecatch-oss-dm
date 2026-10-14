@@ -1,94 +1,120 @@
 # Wirecatch
 
-A fast, efficient, open-source download manager for Windows and Linux, with browser integration for Chromium-based and Firefox-based browsers. It aims to be what Internet Download Manager is, without the hidden features: every option is visible, queues are in plain sight, and errors tell you how to fix them.
+**The fast, free download manager you can trust.** Wirecatch speeds up your downloads, catches them straight from your browser, grabs video and streams, and keeps queues, schedules and speed limits in plain sight. Open source, private, and built for Windows and Linux.
 
-License: GPL-3.0-only. Decisions behind the design are in [docs/DECISIONS.md](docs/DECISIONS.md); how the work is organised is in [docs/PLAN.md](docs/PLAN.md).
+<!-- Hero screenshot: the main window with a few downloads and a queue, a download window in front. -->
+
+- **Fast:** splits every file across up to 64 connections and keeps them all busy until the last byte.
+- **Never loses a download:** pause, crash or power cut, it picks up exactly where it stopped. A download caught from the browser ends up in one place, never two, never none.
+- **Video included:** HLS and DASH streams built in, and sites like YouTube through an optional one-click add-on.
+- **Free for real:** no ads, no bundled offers, no paid tier, no tracking. GPL-3.0.
+
+> Wirecatch is in early development (0.1.0). Installers and store listings are on the way.
+
+## Why Wirecatch
+
+| | Wirecatch | IDM | Free Download Manager | AB Download Manager | JDownloader 2 | Motrix |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Free | ✓ | Paid | ✓ | ✓ | ✓ | ✓ |
+| Open source | ✓ | ✗ | ✗ | ✓ | Partly | ✓ |
+| Windows and Linux | ✓ | Windows only | ✓ | ✓ | ✓ | ✓ |
+| No ads, bundled offers or analytics | ✓ | ✓ | Analytics | ✓ | Installer offers | ? |
+| Browser link with no open network port | ✓ | ✓ | ✓ | ✗ | Vendor cloud | ✓ |
+| HLS and DASH streams built in | ✓ | ✓ | Partly | Partly | Plugins | Plugin |
+| Video sites like YouTube | ✓ | ✓ | Add-on | ✗ | Plugins | Plugin |
+| Queues and schedules | ✓ | ✓ | Scheduler | ✓ | ? | ? |
+| Proxy settings | ✓ | ✓ | ✓ | ✓ | ✓ | ? |
+
+<sub>As of October 2026, from each project's own website, store listing or repository. "?" means we could not confirm it. Motrix refers to its version 2. Spotted a mistake? Please open an issue.</sub>
+
+What sets Wirecatch apart:
+
+- **Correct when things go wrong.** Resume survives a crash or a power cut, and if the file changed on the server, Wirecatch starts over cleanly instead of stitching together a broken file.
+- **Nothing else can reach it.** The browser talks to Wirecatch through a private channel only your user account can open. There is no network port for other programs or other computers to find.
+- **Your cookies stay where they belong.** Sign-ins and cookies go only to the site they came from, never to a site the link redirects to.
+- **Safer media.** The video add-on's programs are verified before they run, and their updates are checked against a signature.
+- **Honest about what it downloads.** Live streams and DRM-protected video are not downloaded.
+
+Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 
 ## Features
 
-- **Fast downloads.** Several parallel connections per file, each its own TCP connection; when a connection finishes its part it takes over half of the largest remaining part, so there is no slow tail. Speed scales almost linearly with connections against servers that cap each connection.
-- **Resume anything resumable.** Pause, quit, crash or lose power: the download continues where it stopped. A file that changed on the server starts over cleanly instead of producing a corrupt file. Expired links can be refreshed without losing the downloaded part.
-- **Browser integration.** The extension takes over downloads from Chrome, Edge, Brave, Vivaldi, Opera, Chromium and Firefox, with your cookies so downloads behind a login work. If the app does not confirm, the browser keeps the download: nothing is ever lost.
-- **A window for each download.** Every download caught from the browser opens its own small window in front of the browser: change the name, folder or queue, then Download now or Download later (a video asks for its quality there). The same window then shows the download's progress, with Pause, Cancel and, once finished, Open and Show in folder. Files can also start without asking.
-- **Video and audio.** HLS and DASH streams (including AES-128), direct media, and a download button over videos. Sites such as YouTube work with the optional one-click Media add-on (yt-dlp, ffmpeg and Deno, pinned and verified by checksum).
-- **Save videos the way you want.** Keep the site's own format, or save a video as MP4, MKV or WebM and audio as MP3, M4A, Opus, FLAC or WAV, with the video's subtitles (inside the file or as `.srt` files) and chapters. Wirecatch takes the streams that already fit the format, so most choices are a quick copy; when a video must be converted it says so before you start, and uses your graphics card's encoder when it has one. The window remembers your last choices.
-- **Queues and scheduling.** Queues live in the sidebar with their schedule, speed limit and running count visible. Every waiting download says why it waits.
-- **Protocols.** HTTP/1.1, HTTP/2, FTP and FTPS (implicit and explicit). HTTP/3 is available as an experimental option.
-- **Safe by default.** Credentials only go to the site they belong to, downloaded programs are marked as coming from the internet on Windows, the browser bridge only accepts the Wirecatch extension and only your user account can talk to the app.
-- **Settings you can carry.** Export your settings to one file and import them on another computer, even across Windows and Linux.
+### Downloads
 
-## Components
+- Multi-connection downloads that rebalance as parts finish, so a slow tail never holds you up.
+- Pause and resume anything the server allows, even after a restart.
+- Refresh an expired link and keep everything already downloaded.
+- Automatic retries that respect what the server asks for.
+- HTTP, HTTPS, FTP and FTPS, with HTTP/3 as an option.
+- Proxy support: use your system's proxy, or set an HTTP or SOCKS proxy of your own.
+- Never overwrites a file: a free name like `file (1).zip` is used instead.
+- Files sorted into folders by type: videos, music, archives and more.
 
-| Path | What it is |
-|---|---|
-| `crates/engine` | `wirecatch-engine`: the download engine library (HTTP, FTP, segmented, resumable). Published to crates.io. |
-| `crates/streams` | `wirecatch-streams`: HLS and DASH download and joining. |
-| `crates/core` | `wirecatch-core`: the download manager (queues, schedules, persistence, settings, add-ons, protocol server). |
-| `crates/protocol` | Every type that crosses a process boundary; TypeScript is generated from it. |
-| `crates/ipc` | The per-user local connection between the app and the bridge. |
-| `crates/bridge` | `wirecatch-bridge`: the native messaging host browsers start. |
-| `crates/cli` | `wirecatch`: a command-line downloader built on the engine. |
-| `crates/e2e` | End-to-end tests over the real bridge, socket and manager. |
-| `apps/desktop` | The desktop app (Tauri 2, Svelte 5, Vite). |
-| `apps/extension` | The browser extension (WXT, Svelte 5) for Chromium and Firefox. |
-| `packages/protocol` | Generated TypeScript types. |
-| `packages/eslint-config` | The one ESLint configuration every package uses. |
-| `packages/ui` | The design system both apps share: tokens, themes, motion and primitives. |
+### Browser
 
-## Getting started (development)
+- Works with Chrome, Edge, Brave, Vivaldi, Opera, Arc, Firefox and their relatives.
+- Takes over your browser's downloads automatically, with your cookies, so downloads behind a login work.
+- Right-click any link, image, video or audio and choose **Download with Wirecatch**.
+- A download button over videos on the page.
+- Installers and other programs stay with the browser by default, so its own safety checks still apply.
+- One set of settings for every browser and the app.
 
-Requirements: rustup (it installs the Rust release named in `rust-toolchain.toml`), Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
+### A window for each download
 
-```bash
-pnpm install
-```
+- A small window opens for every download from the browser: check the name, folder and queue, then **Download now** or **Download later**.
+- Pick the video quality right there.
+- Watch progress, speed and time left, then **Open** or **Show in folder** when it's done.
+- Prefer no windows? Downloads can start straight away with a quiet notice instead.
 
-Run every check (the same ones CI runs):
+### Video and audio
 
-```bash
-pnpm gate
-```
+- HLS (including encrypted) and DASH streams, downloaded in parallel and joined without re-encoding.
+- Sites like YouTube through the optional Media add-on, installed in one click the first time you need it.
+- Save as MP4, MKV or WebM, or audio as MP3, M4A, Opus, FLAC or WAV, with subtitles, chapters and cover art.
+- Hardware encoding when a conversion is needed, and a heads-up before it happens.
 
-Run the desktop app in development mode:
+### Queues and schedules
 
-```bash
-pnpm --filter @wirecatch/desktop tauri dev
-```
+- Queues in the sidebar, each with its own schedule, speed limit and number of downloads at once.
+- Drag downloads between queues.
+- Every waiting download tells you why it is waiting.
 
-Try the interface in a normal browser with realistic sample data:
+### The app
 
-```bash
-pnpm --filter @wirecatch/desktop dev:mock
-```
+- Paste a link anywhere in the window to add it.
+- Command palette (Ctrl+K) and searchable settings.
+- Errors that explain themselves and offer the fix as a button.
+- Light, dark or system theme, accent colours, and Mica or Acrylic on Windows.
+- Keeps downloading from the tray, starts with your computer if you like, and tells you when a download finishes.
+- Fully usable with the keyboard, and smooth with thousands of downloads.
+- Export your settings and queues to a file and import them on another computer, even from Windows to Linux.
 
-Build the extension for both browsers (output in `apps/extension/.output`):
+### Command line
+
+The `wirecatch` command downloads a link from a terminal with the same engine:
 
 ```bash
-pnpm --filter @wirecatch/extension build
+wirecatch https://example.com/file.iso
+wirecatch -o ~/Downloads -c 16 https://example.com/file.iso
 ```
 
-Download from the command line:
+## Privacy
 
-```bash
-cargo run --release -p wirecatch-cli -- https://example.com/file.iso
-```
+- No telemetry, no analytics, no account.
+- Your downloads and settings stay on your computer, readable only by you.
+- Logs never contain passwords, cookies or tokens.
+- Saved sign-ins for unfinished downloads are forgotten after a week.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the quality gates, conventions and how to send changes.
+## Installation
 
-## Benchmark
+Installers for Windows (`.exe`) and Linux (`.deb`, `.rpm` and AppImage) will be on the [releases page](https://github.com/ehsan18t/wirecatch-oss-dm/releases). The browser extension will be in the Chrome Web Store and on Firefox Add-ons.
 
-`cargo run --release -p wirecatch-engine --example bench_local` downloads a 256 MiB file from a local server that caps each connection at 16 MiB/s, the way many file hosts do. Measured on Windows 11:
+Want to try it today? [Build it from source](CONTRIBUTING.md).
 
-| Connections | MiB/s | Speedup |
-|---:|---:|---:|
-| 1 | 12.8 | 1.0x |
-| 2 | 25.3 | 2.0x |
-| 4 | 49.8 | 3.9x |
-| 8 | 95.5 | 7.5x |
-| 16 | 180.8 | 14.2x |
+## Security
 
-Without the cap, the engine moves about 900 to 930 MiB/s over localhost with 8 connections, well above any real internet link. Measured on a quiet machine after all v0.1 hardening (credential binding, private network guard, retries, FTP and HTTP/3 support), so none of it cost speed.
+Found a security problem? Please report it privately, as described in [SECURITY.md](SECURITY.md), never in a public issue.
 
-## Status
+## License
 
-Version 0.1 is in development; see [docs/ROADMAP.md](docs/ROADMAP.md). Not yet released: no installers are published and the browser extension is not in the stores yet.
+Wirecatch is free software under the [GNU General Public License v3.0 only](LICENSE). The Media add-on's programs (yt-dlp, ffmpeg and Deno) come from their own projects under their own licenses.

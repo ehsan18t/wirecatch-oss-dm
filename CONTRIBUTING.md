@@ -4,7 +4,70 @@ Thanks for helping. Quality comes before speed here: a change is done only when 
 
 ## Before you start
 
-Read [docs/DECISIONS.md](docs/DECISIONS.md) (why things are the way they are) and, for larger work, [docs/PLAN.md](docs/PLAN.md). Types that cross a process boundary live in `crates/protocol`; change them there and regenerate the TypeScript with `pnpm protocol:generate`, committing the generated files.
+Read [docs/DECISIONS.md](docs/DECISIONS.md) (why things are the way they are) and, for larger work, [docs/PLAN.md](docs/PLAN.md) and [docs/ROADMAP.md](docs/ROADMAP.md). Types that cross a process boundary live in `crates/protocol`; change them there and regenerate the TypeScript with `pnpm protocol:generate`, committing the generated files. Product identity (name, ids, links) lives in `config/product.toml`; change it there and run `pnpm product:generate`, committing the generated files.
+
+## Getting started
+
+Requirements: rustup (it installs the Rust release named in `rust-toolchain.toml`), Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
+
+```bash
+pnpm install
+```
+
+Run the desktop app in development mode (build the interface once first, see the notes under Quality gates):
+
+```bash
+pnpm --filter @wirecatch/desktop tauri dev
+```
+
+Try the interface in a normal browser with realistic sample data:
+
+```bash
+pnpm --filter @wirecatch/desktop dev:mock
+```
+
+Build the extension for both browsers (output in `apps/extension/.output`):
+
+```bash
+pnpm --filter @wirecatch/extension build
+```
+
+Download from the command line:
+
+```bash
+cargo run --release -p wirecatch-cli -- https://example.com/file.iso
+```
+
+Run the benchmark, which downloads a 256 MiB file from a local server that caps each connection at 16 MiB/s (the README has the latest numbers; measure on a quiet machine):
+
+```bash
+cargo run --release -p wirecatch-engine --example bench_local
+```
+
+## Repository layout
+
+| Path | What it is |
+|---|---|
+| `crates/engine` | `wirecatch-engine`: the download engine library (HTTP, FTP, segmented, resumable), for crates.io. Its public API is documented and kept stable. |
+| `crates/streams` | `wirecatch-streams`: HLS and DASH download and joining. |
+| `crates/core` | `wirecatch-core`: the download manager (queues, schedules, persistence, settings, media, add-ons, protocol server). |
+| `crates/protocol` | Every type, name and limit that crosses a process boundary; TypeScript is generated from it. |
+| `crates/ipc` | The per-user local connection between the app and the bridge (named pipe on Windows, Unix socket on Linux). |
+| `crates/bridge` | `wirecatch-bridge`: the native messaging host browsers start. |
+| `crates/cli` | `wirecatch`: a command-line downloader built on the engine. |
+| `crates/logging` | `wirecatch-logging`: the one logging setup every binary uses, with capped files and redaction (D40). |
+| `crates/e2e` | End-to-end tests over the real bridge, socket and manager. |
+| `crates/product` | Product identity constants, generated from `config/product.toml`. Never edit `src` by hand. |
+| `crates/test-support` | Unpublished test servers and helpers every crate's tests share (D26). |
+| `apps/desktop` | The desktop app (Tauri 2, Svelte 5, Vite); its Rust side is `apps/desktop/src-tauri`. |
+| `apps/extension` | The browser extension (WXT, Svelte 5) for Chromium and Firefox. |
+| `packages/protocol` | Generated TypeScript types. Never edit `src/generated` by hand. |
+| `packages/product` | Product identity for TypeScript, generated from `config/product.toml`. Never edit `src` by hand. |
+| `packages/ui` | The design system both apps share: tokens, themes, motion and primitives. |
+| `packages/units` | Byte units, and how sizes and speeds are shown and typed, for both apps. |
+| `packages/eslint-config` | The one ESLint configuration every package uses, and the `wirecatch/*` rules. |
+| `config/` | Product identity (`product.toml`) and the templates everything else that carries identity is generated from (D29). |
+| `scripts/gate.mjs` | Every quality check: the runner, with the checks in `scripts/gate/`. |
 
 ## Quality gates
 
@@ -18,6 +81,7 @@ pnpm gate
 
 Notes:
 
+- Lint and format from the root only (`pnpm lint`, `pnpm format`); packages have no lint or format scripts of their own (D42).
 - `pnpm install` also turns on a commit-msg hook that checks your commit messages (unless you already use another hooks folder; it says so).
 - Build the desktop interface once (`pnpm --filter @wirecatch/desktop build`) before building or running the desktop app; the gate compiles the desktop crate against a placeholder page when it is missing.
 - The desktop crate's tests run with every other crate's, in one build. Cargo builds of the desktop crate link the Visual C++ runtime dynamically; packaging builds, which merge `tauri.bundle.conf.json`, link it statically (D33).
