@@ -19,6 +19,7 @@ use crate::options::DownloadOptions;
 use crate::progress::Progress;
 use crate::request::RequestContext;
 use crate::segment::{self, SharedTable};
+use crate::storage::Finish;
 use crate::target::{self, Described, Destination, Prepared, Target};
 use crate::transport::{self, Opened, Remote};
 use crate::url::without_password;
@@ -118,6 +119,34 @@ pub struct DownloadRequest {
     pub resolve_path: Option<PathResolver>,
     /// Connection count, retries, headers, speed limits and other tuning.
     pub options: DownloadOptions,
+    /// What happens when a file is already at [`exact_path`](Self::exact_path),
+    /// or the path [`resolve_path`](Self::resolve_path) chose, as the download
+    /// finishes: [`ExistingFile::Replace`] (the default) or
+    /// [`ExistingFile::Refuse`]. A download into [`dest_dir`](Self::dest_dir)
+    /// never replaces anything, whatever this says.
+    pub if_exists: ExistingFile,
+}
+
+/// What a download that saves to a path of the caller's does with a file that
+/// is already there when it finishes. See [`DownloadRequest::if_exists`].
+///
+/// New variants may be added in minor releases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ExistingFile {
+    /// Replace it with the finished file.
+    #[default]
+    Replace,
+    /// Keep it, and end with [`Error::TargetTaken`]. The finished data stays
+    /// in the part file next to a resume file that says it is complete.
+    /// Running the request again once the path is free, or after moving both
+    /// files to another path and asking for that one, then only finishes it
+    /// when the server gave the size and takes ranges, as for any resume;
+    /// otherwise that run downloads it again.
+    /// Taking the path and keeping it are one step on Windows and on Linux file
+    /// systems that support it (see
+    /// [`naming::move_to_free_name`](crate::naming::move_to_free_name)).
+    Refuse,
 }
 
 impl std::fmt::Debug for DownloadRequest {
@@ -132,6 +161,7 @@ impl std::fmt::Debug for DownloadRequest {
                 &self.resolve_path.as_ref().map(|_| "<resolver>"),
             )
             .field("options", &self.options)
+            .field("if_exists", &self.if_exists)
             .finish()
     }
 }
@@ -146,6 +176,7 @@ impl DownloadRequest {
             exact_path: None,
             resolve_path: None,
             options: DownloadOptions::default(),
+            if_exists: ExistingFile::Replace,
         }
     }
 }
@@ -477,17 +508,27 @@ fn finish(
     };
 
     if complete {
+        if matches!(target.finish, Finish::Refuse) {
+            // A finish refused because the name is taken leaves a resume file that says the data is all there, so a later run that can resume only finishes.
+            saver.save()?;
+        }
         // Closing waits for a checkpoint still flushing, during which the owner may drop the download and start another run on the same files.
         saver.close();
         #[cfg(test)]
         abandoned.slow_step_done();
         abandoned.check()?;
-        storage::finalize(&target.part, &target.file, file_len, abandoned)?;
+        let path = storage::finalize(
+            &target.part,
+            &target.file,
+            &target.finish,
+            file_len,
+            abandoned,
+        )?;
         abandoned.check()?;
         target::discard(&target.state);
-        info!(path = %target.file.display(), bytes = file_len, "completed");
+        info!(path = %path.display(), bytes = file_len, "completed");
         return Ok(Outcome::Completed {
-            path: target.file,
+            path,
             bytes: file_len,
             resumed_from,
         });

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, PathRejected, PrivateNetwork, Progress,
-    RemoteFile, download,
+    CancellationToken, DownloadRequest, Error, ExistingFile, Outcome, PathRejected, PrivateNetwork,
+    Progress, RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
@@ -914,5 +914,127 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
     let req = request(&site, "video.mp4", &dir, 2);
     assert!(matches!(run(req).await.unwrap(), Outcome::Completed { .. }));
     assert!(!device.stats.seen().is_empty());
+    dir.remove().unwrap();
+}
+
+/// Runs `req` on a task, and once `at_least` bytes arrived, saves "theirs" at `taken` the way another program would, then waits for the download's end.
+async fn another_program_saves_meanwhile(
+    req: DownloadRequest,
+    at_least: u64,
+    taken: PathBuf,
+) -> TestResult<wirecatch_engine::Result<Outcome>> {
+    let progress = Arc::new(Progress::default());
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
+    while progress.done() < at_least {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        !taken.exists(),
+        "a file is at the final name before the download finished"
+    );
+    std::fs::write(&taken, b"theirs")?;
+    Ok(task.await?)
+}
+
+/// A slow server with a 2 MiB file, so a download is still running when another program saves its file.
+async fn slow_server() -> TestServer {
+    TestServer::start(
+        test_data(2 * MIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(MIB),
+            etag: Some("\"v1\"".into()),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_file_another_program_saves_meanwhile_is_never_replaced() {
+    let server = slow_server().await;
+    let dir = private_dir("taken-meanwhile").unwrap();
+    let outcome = another_program_saves_meanwhile(
+        request(&server, "t.bin", &dir, 2),
+        256 * KIB,
+        dir.join("t.bin"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let Outcome::Completed { path, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(path, dir.join("t (1).bin"));
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert_eq!(std::fs::read(dir.join("t.bin")).unwrap(), b"theirs");
+    assert_eq!(files_in(&dir), ["t (1).bin", "t.bin"]);
+    dir.remove().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_continued_download_never_replaces_a_file_saved_meanwhile() {
+    let server = slow_server().await;
+    let dir = private_dir("taken-continued").unwrap();
+    let paused = pause_midway(request(&server, "t.bin", &dir, 2), 256 * KIB)
+        .await
+        .unwrap();
+    assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
+    assert_eq!(files_in(&dir), ["t.bin.wcpart", "t.bin.wcstate"]);
+    let outcome = another_program_saves_meanwhile(
+        request(&server, "t.bin", &dir, 2),
+        768 * KIB,
+        dir.join("t.bin"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let Outcome::Completed {
+        path, resumed_from, ..
+    } = outcome
+    else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert!(
+        resumed_from >= 256 * KIB,
+        "the paused run was not continued"
+    );
+    assert_eq!(path, dir.join("t (1).bin"));
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert_eq!(std::fs::read(dir.join("t.bin")).unwrap(), b"theirs");
+    dir.remove().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_exact_path_that_refuses_to_replace_keeps_the_data_for_later() {
+    let server = slow_server().await;
+    let dir = private_dir("taken-exact").unwrap();
+    let path = dir.join("exact.bin");
+    let refusing = || {
+        let mut req = request(&server, "t.bin", &dir, 2);
+        req.exact_path = Some(path.clone());
+        req.if_exists = ExistingFile::Refuse;
+        req
+    };
+    let error = another_program_saves_meanwhile(refusing(), 256 * KIB, path.clone())
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        matches!(&error, Error::TargetTaken { path: taken, .. } if *taken == path),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
+
+    // Once the name is free, running the request again finishes from the data already there.
+    std::fs::remove_file(&path).unwrap();
+    let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
+    let outcome = run(refusing()).await.unwrap();
+    let Outcome::Completed { resumed_from, .. } = outcome else {
+        panic!("not completed: {outcome:?}")
+    };
+    assert_eq!(resumed_from, server.data.len() as u64);
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert!(server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before < MIB);
     dir.remove().unwrap();
 }

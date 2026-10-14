@@ -64,7 +64,7 @@ http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn", "wirecatch-test-support/http3"]
 all-features = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

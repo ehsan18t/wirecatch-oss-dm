@@ -17,17 +17,23 @@ use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::SegmentTable;
 use crate::state::{LoadError, ResumeState};
+use crate::storage::Finish;
 use crate::transport::Opened;
 use crate::url::without_password;
-use crate::{naming, storage};
+use crate::{ExistingFile, naming, storage};
 
 /// Where the file goes, before anything is on disk.
 pub(crate) enum Destination {
     /// Exactly this path: the caller's own, or the one its resolver picked. An
-    /// earlier run there is continued whatever its URL was.
-    Exact(PathBuf),
-    /// `name` in `dir`, or the first free name after it (`name (1)`...). An
-    /// earlier run under `name` is continued only if it had the same URL.
+    /// earlier run there is continued whatever its URL was. A file at the path
+    /// when the download finishes is replaced or kept as the caller said.
+    Exact(PathBuf, ExistingFile),
+    /// `name` in `dir`, or the first free name after it (`name (1)`...), taken
+    /// by creating its part file ([`naming::create_free_part`]), so no other
+    /// download can take it; nothing is at the final name until the download
+    /// finishes, and a file another program saved there meanwhile is never
+    /// replaced ([`Finish::FreeName`]). An earlier run under `name` is
+    /// continued only if it had the same URL.
     InFolder { dir: PathBuf, name: String },
 }
 
@@ -46,6 +52,8 @@ pub(crate) struct Target {
     pub part: PathBuf,
     /// The resume file.
     pub state: PathBuf,
+    /// What happens to a file already at `file` when the download finishes.
+    pub finish: Finish,
 }
 
 impl Target {
@@ -76,7 +84,7 @@ impl Destination {
     /// Does no I/O itself; the resolver is the caller's, which must not block.
     pub fn choose(request: &DownloadRequest, opened: &Opened) -> Result<Self> {
         match (&request.exact_path, &request.resolve_path) {
-            (Some(path), _) => Ok(Self::Exact(path.clone())),
+            (Some(path), _) => Ok(Self::Exact(path.clone(), request.if_exists)),
             (None, Some(resolve)) => {
                 let remote = RemoteFile {
                     suggested_name: suggested_name(None, opened, &request.url),
@@ -86,7 +94,7 @@ impl Destination {
                     resumable: opened.ranged,
                 };
                 let path = resolve(&remote).map_err(Error::TargetRejected)?;
-                Ok(Self::Exact(path))
+                Ok(Self::Exact(path, request.if_exists))
             }
             (None, None) => Ok(Self::InFolder {
                 dir: request.dest_dir.clone(),
@@ -105,41 +113,63 @@ impl Destination {
         min_split: u64,
         abandoned: &Abandoned,
     ) -> Result<Prepared> {
-        let (target, resume) = match self {
-            Self::Exact(path) => {
+        let plan = match self {
+            Self::Exact(path, existing) => {
                 if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
                     std::fs::create_dir_all(parent).context(IoAction::CreateFolder, parent)?;
                 }
-                plan_exact(path, file)
+                let finish = match existing {
+                    ExistingFile::Refuse => Finish::Refuse,
+                    _ => Finish::Replace,
+                };
+                let (target, resume) = plan_exact(path, finish, file);
+                Plan::Planned(target, resume.map(Box::new))
             }
             Self::InFolder { dir, name } => {
                 std::fs::create_dir_all(&dir).context(IoAction::CreateFolder, &dir)?;
-                plan_in_folder(&dir, &name, saved_url, file)
+                plan_in_folder(dir, name, saved_url, file)
             }
         };
         #[cfg(test)]
         abandoned.slow_step_done();
         abandoned.check()?;
-        if let Some(saved) = resume {
-            let table = SegmentTable::from_remaining(&saved.remaining, min_split);
-            // `can_resume` checked that the ranges fit inside the size.
-            let kept = file
-                .total
-                .unwrap_or(0)
-                .saturating_sub(table.remaining_bytes());
-            info!(kept, "resuming");
-            return Ok(Prepared {
-                target,
-                table,
-                resumed: true,
-                resumed_from: kept,
-            });
-        }
-        // Whatever is left there cannot continue: start over.
-        discard(&target.part);
-        discard(&target.state);
-        storage::create_part(&target.part, file.total)
-            .context(IoAction::CreateFile, &target.part)?;
+        let target = match plan {
+            Plan::Planned(target, Some(saved)) => {
+                let table = SegmentTable::from_remaining(&saved.remaining, min_split);
+                // `can_resume` checked that the ranges fit inside the size.
+                let kept = file
+                    .total
+                    .unwrap_or(0)
+                    .saturating_sub(table.remaining_bytes());
+                info!(kept, "resuming");
+                return Ok(Prepared {
+                    target,
+                    table,
+                    resumed: true,
+                    resumed_from: kept,
+                });
+            }
+            Plan::Planned(target, None) => {
+                // Whatever is left there cannot continue: start over.
+                discard(&target.part);
+                discard(&target.state);
+                storage::create_part(&target.part, file.total)
+                    .context(IoAction::CreateFile, &target.part)?;
+                target
+            }
+            Plan::FreeName { dir, name } => {
+                let (path, part) = naming::create_free_part(&dir, &name)
+                    .context(IoAction::CreateFile, &dir.join(&name))?;
+                let target = self::target(path, Finish::FreeName { dir, name });
+                if let Err(e) = storage::size_part(&part, file.total) {
+                    drop(part);
+                    // Nothing was downloaded under the name: give it back.
+                    discard(&target.part);
+                    return Err(e).context(IoAction::CreateFile, &target.part);
+                }
+                target
+            }
+        };
         let table = SegmentTable::new(file.total, min_split);
         Ok(Prepared {
             target,
@@ -167,41 +197,56 @@ fn suggested_name(chosen: Option<String>, probe: &Opened, url: &Url) -> String {
     )
 }
 
-/// The paths for `final_path`.
-fn target(file: PathBuf) -> Target {
+/// The paths for `final_path`, finished as `finish` says.
+fn target(file: PathBuf, finish: Finish) -> Target {
     let (part, state) = naming::part_paths(&file);
-    Target { file, part, state }
+    Target {
+        file,
+        part,
+        state,
+        finish,
+    }
 }
 
 /// [`Destination::Exact`]: the URL is not compared, only what the server says about the file.
-fn plan_exact(path: PathBuf, file: &Described) -> (Target, Option<ResumeState>) {
-    let target = target(path);
+fn plan_exact(path: PathBuf, finish: Finish, file: &Described) -> (Target, Option<ResumeState>) {
+    let target = target(path, finish);
     let resume = saved_state(&target.state).filter(|saved| continues(saved, &target, file));
     (target, resume)
 }
 
+/// What [`Destination::prepare`] does once the folder is there.
+enum Plan {
+    /// These files, continuing the earlier run when there is a resume state
+    /// (boxed: it is most of the plan's size and rarely there).
+    Planned(Target, Option<Box<ResumeState>>),
+    /// The first free name of `name` in `dir` ([`naming::create_free_part`]).
+    FreeName { dir: PathBuf, name: String },
+}
+
 /// [`Destination::InFolder`]: `name`, continuing an earlier run of the same URL
 /// there or starting it over, else the first free name.
-fn plan_in_folder(
-    dir: &Path,
-    name: &str,
-    url: &str,
-    file: &Described,
-) -> (Target, Option<ResumeState>) {
-    let preferred = target(dir.join(name));
+fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Plan {
+    let preferred = target(
+        dir.join(&name),
+        Finish::FreeName {
+            dir: dir.clone(),
+            name: name.clone(),
+        },
+    );
     if let Some(saved) = saved_state(&preferred.state)
         && same_download(&saved.url, url)
         && !preferred.file.exists()
     {
         if continues(&saved, &preferred, file) {
-            return (preferred, Some(saved));
+            return Plan::Planned(preferred, Some(Box::new(saved)));
         }
         // Same download, but it cannot continue (file changed, or no range support):
         // start over under the same name.
         info!("previous partial download cannot be resumed; starting over");
-        return (preferred, None);
+        return Plan::Planned(preferred, None);
     }
-    (target(naming::unique_path(dir, name)), None)
+    Plan::FreeName { dir, name }
 }
 
 /// Whether `saved` can continue as the download `file` describes, with its part
@@ -261,6 +306,86 @@ mod tests {
     use super::*;
     use crate::abandon::Abandonment;
 
+    fn in_folder(dir: &Path) -> Destination {
+        Destination::InFolder {
+            dir: dir.to_path_buf(),
+            name: "f.bin".into(),
+        }
+    }
+
+    /// What a server said about a ten-byte file that takes ranges.
+    fn ten_bytes() -> Described {
+        Described {
+            ranged: true,
+            total: Some(10),
+            validators: Validators::default(),
+        }
+    }
+
+    /// Downloads given one name in one folder each take their own part file, and nothing appears under the final names until a download finishes.
+    #[test]
+    fn downloads_of_one_name_in_one_folder_never_share_a_file() {
+        let dir = wirecatch_test_support::private_dir("prepare-reserve").unwrap();
+        let abandonment = Abandonment::new();
+        let first = in_folder(&dir)
+            .prepare("https://a/f.bin", &ten_bytes(), 1, &abandonment.flag())
+            .unwrap();
+        let second = in_folder(&dir)
+            .prepare("https://b/f.bin", &ten_bytes(), 1, &abandonment.flag())
+            .unwrap();
+        assert_eq!(first.target.file, dir.join("f.bin"));
+        assert_eq!(second.target.file, dir.join("f (1).bin"));
+        assert_eq!(
+            wirecatch_test_support::files_in(&dir),
+            ["f (1).bin.wcpart", "f.bin.wcpart"]
+        );
+        dir.remove().unwrap();
+    }
+
+    #[test]
+    fn a_paused_download_into_a_folder_is_continued() {
+        let dir = wirecatch_test_support::private_dir("prepare-continue").unwrap();
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        let url = "https://a/f.bin";
+        let first = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        ResumeState::new(
+            url,
+            file.total,
+            file.ranged,
+            &file.validators,
+            first.table.remaining(),
+        )
+        .save(&first.target.state)
+        .unwrap();
+        let again = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(again.resumed);
+        assert_eq!(again.target.file, first.target.file);
+        dir.remove().unwrap();
+    }
+
+    /// A download whose part file cannot be sized gives its name back.
+    #[test]
+    fn a_part_file_that_cannot_be_made_leaves_nothing_behind() {
+        let dir = wirecatch_test_support::private_dir("prepare-no-room").unwrap();
+        let abandonment = Abandonment::new();
+        let file = Described {
+            total: Some(u64::MAX),
+            ..ten_bytes()
+        };
+        let error = in_folder(&dir)
+            .prepare("https://a/f.bin", &file, 1, &abandonment.flag())
+            .err()
+            .expect("no file system takes a part file of u64::MAX bytes");
+        assert!(matches!(error, Error::Io { .. }), "{error:?}");
+        assert_eq!(wirecatch_test_support::files_in(&dir), Vec::<String>::new());
+        dir.remove().unwrap();
+    }
+
     /// Dropped while its folder was being created, a download deletes and creates nothing: the files may already be a restarted run's.
     #[test]
     fn a_download_dropped_while_its_folder_is_made_touches_no_file() {
@@ -277,7 +402,12 @@ mod tests {
             total: Some(10),
             validators: Validators::default(),
         };
-        let prepared = Destination::Exact(path).prepare("https://x/f", &file, 1, &abandoned);
+        let prepared = Destination::Exact(path, ExistingFile::Replace).prepare(
+            "https://x/f",
+            &file,
+            1,
+            &abandoned,
+        );
         assert!(matches!(prepared, Err(Error::Cancelled)));
         assert_eq!(std::fs::read(&part).unwrap(), b"other run");
         assert_eq!(std::fs::read(&state).unwrap(), b"other run");

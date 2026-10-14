@@ -94,12 +94,8 @@ async fn mux(
         match ffmpeg::run(program, &args, &muxed, cancel).await {
             Ok(true) => {
                 let output = output.to_path_buf();
-                let target = blocking(move || {
-                    let target = free_target(&output, extension)?;
-                    fs::rename(muxed, &target)?;
-                    Ok(target)
-                })
-                .await?;
+                let target =
+                    blocking(move || move_to_free_name(&muxed, &output, extension)).await?;
                 return Ok(Some(target));
             }
             Ok(false) => return Ok(None),
@@ -148,9 +144,7 @@ async fn move_single_track(work: &WorkDir, output: &Path) -> Result<PathBuf> {
         let extension = InputFormat::detect(&from)?
             .unwrap_or(FALLBACK_FORMAT)
             .extension();
-        let target = free_target(&output, extension)?;
-        fs::rename(&from, &target)?;
-        Ok(target)
+        move_to_free_name(&from, &output, extension)
     })
     .await
 }
@@ -169,22 +163,25 @@ fn failure_summary(failures: &[(Container, String)]) -> String {
     }
 }
 
-/// `output` with `extension`. Never an unrelated file: when the extension
-/// changed the name and a file by the new name exists, the first free name
-/// such as `video (1).mkv` instead. Blocks on the file system.
-fn free_target(output: &Path, extension: &str) -> io::Result<PathBuf> {
+/// Moves `from` to `output` with `extension`, and returns where it went. Onto
+/// `output` itself when the extension leaves it unchanged, since that is the
+/// caller's own path. Otherwise never onto another file: onto the first free
+/// name such as `video (1).mkv` ([`naming::move_to_free_name`]). Blocks on the
+/// file system.
+fn move_to_free_name(from: &Path, output: &Path, extension: &str) -> io::Result<PathBuf> {
     let target = with_extension(output, extension);
-    if target == output || !target.exists() {
+    if target == output {
+        fs::rename(from, &target)?;
         return Ok(target);
     }
     let (Some(dir), Some(name)) = (target.parent(), target.file_name().and_then(|n| n.to_str()))
     else {
         return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("{} already exists", target.display()),
+            io::ErrorKind::InvalidInput,
+            format!("{} names no file in a folder", target.display()),
         ));
     };
-    Ok(naming::unique_path(dir, name))
+    naming::move_to_free_name(from, dir, name)
 }
 
 /// The container the tracks of `plan` are copied into (see [`Container::for_copy`]).
@@ -254,6 +251,59 @@ mod tests {
     use crate::codec::Codec;
     use crate::download::fetch::queue;
     use crate::plan::{Piece, Track};
+
+    /// Streams finishing at once with the same name each land on their own file, and a file already there stays.
+    #[test]
+    fn streams_moved_beside_one_output_never_replace_each_other() {
+        const RACERS: usize = 8;
+        let dir = wirecatch_test_support::private_dir("join-free-name").unwrap();
+        // The caller's own name has another extension, so each move needs a free name.
+        let output = dir.join("video.mp4");
+        std::fs::write(dir.join("video.mkv"), b"already there").unwrap();
+        let start = std::sync::Barrier::new(RACERS);
+        let moved: Vec<PathBuf> = std::thread::scope(|scope| {
+            let racers: Vec<_> = (0..RACERS)
+                .map(|i| {
+                    let (dir, output, start) = (&dir, &output, &start);
+                    scope.spawn(move || {
+                        let from = dir.join(format!("muxed-{i}"));
+                        std::fs::write(&from, i.to_string()).unwrap();
+                        start.wait();
+                        move_to_free_name(&from, output, "mkv").unwrap()
+                    })
+                })
+                .collect();
+            racers.into_iter().map(|r| r.join().unwrap()).collect()
+        });
+        let mut contents: Vec<String> = moved
+            .iter()
+            .map(|path| std::fs::read_to_string(path).unwrap())
+            .collect();
+        contents.sort();
+        let expected: Vec<String> = (0..RACERS).map(|i| i.to_string()).collect();
+        assert_eq!(contents, expected, "{moved:?}");
+        assert_eq!(
+            std::fs::read(dir.join("video.mkv")).unwrap(),
+            b"already there"
+        );
+        dir.remove().unwrap();
+    }
+
+    /// A media name core cut to length, with ` (1)` added, still takes the container's extension: a long title in Cyrillic takes two bytes a letter.
+    #[test]
+    fn a_long_name_moves_when_the_container_changes_its_extension() {
+        let dir = wirecatch_test_support::private_dir("join-long-name").unwrap();
+        let stem = naming::sanitize(&"ж".repeat(150));
+        for name in [format!("{stem}.mp4"), format!("{stem} (1).mp4")] {
+            let output = dir.join(&name);
+            let from = dir.join("muxed");
+            std::fs::write(&from, b"joined").unwrap();
+            let moved = move_to_free_name(&from, &output, "mkv").unwrap();
+            assert_eq!(moved, output.with_extension("mkv"));
+            assert_eq!(std::fs::read(&moved).unwrap(), b"joined");
+        }
+        dir.remove().unwrap();
+    }
 
     #[test]
     fn container_follows_the_codecs() {

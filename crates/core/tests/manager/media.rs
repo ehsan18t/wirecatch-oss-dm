@@ -211,6 +211,68 @@ async fn joining_separate_audio_needs_the_add_on() -> TestResult {
     Ok(())
 }
 
+/// A stream with separate H.264 video and Opus audio, which the join puts in MKV.
+fn hls_for_mkv(server: &FileServer) {
+    server.put(
+        "mkv/master.m3u8",
+        "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",DEFAULT=YES,URI=\"audio/index.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS=\"avc1.4d401f,opus\",AUDIO=\"aud\"\n720/index.m3u8\n",
+    );
+    for track in ["720", "audio"] {
+        server.put(
+            &format!("mkv/{track}/index.m3u8"),
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n",
+        );
+        // Starts like an MPEG-TS packet, so the join hands it to (the fake) ffmpeg.
+        let mut segment = test_data(SEGMENT);
+        segment[0] = 0x47;
+        server.put(&format!("mkv/{track}/seg0.ts"), segment);
+    }
+}
+
+/// A typed name that core cut to length and then numbered, because a file had the name, still finishes when the join changes its extension: it is longer than the names the engine makes itself. Chinese takes three bytes a character but one UTF-16 unit, so the work folders under its name stay within what Windows starts a program in.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> TestResult {
+    let server = FileServer::start().await;
+    hls_for_mkv(&server);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            server.url("mkv/master.m3u8"),
+            MediaKind::Hls,
+            None,
+        ))
+        .await
+        .unwrap();
+    let choice = choice_requested(&mut ui).await;
+    let video = choice.options.iter().find(|o| !o.audio_only).unwrap();
+    let typed = format!("{}.mp4", "中".repeat(150));
+    let folder = Path::new(&choice.folder);
+    std::fs::create_dir_all(folder)?;
+    let taken = folder.join(wirecatch_engine::naming::sanitize(&typed));
+    std::fs::write(&taken, b"theirs")?;
+    let mut selection = select(&video.id);
+    selection.file_name = Some(typed);
+    h.manager.choose_media(choice.id, selection).await.unwrap();
+    let row = h.manager.list_downloads().remove(0);
+    assert!(row.file_name.ends_with(" (1).mp4"), "{}", row.file_name);
+    let done = wait_until("the download to end", || {
+        h.manager
+            .list_downloads()
+            .into_iter()
+            .find(|r| r.id == row.id)
+            .filter(|r| matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed))
+    })
+    .await;
+    assert_eq!(done.status, DownloadStatus::Completed, "{:?}", done.error);
+    let finished = Path::new(&done.path);
+    assert_eq!(finished, Path::new(&row.path).with_extension("mkv"));
+    assert!(finished.is_file());
+    assert_eq!(std::fs::read(&taken)?, b"theirs");
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_live_stream_says_so_in_the_list() -> TestResult {
     let server = FileServer::start().await;

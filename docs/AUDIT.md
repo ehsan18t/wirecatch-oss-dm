@@ -173,6 +173,10 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 | Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 this round: main window, add-download flow, download window, extension popup and options. Phase 2 later: settings pages, add-ons, dialogs, command palette, in-page media button, tray, installer, and the additions from other workstreams |
 | W15 | later, last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
+Parts of W4 carried into later work:
+
+- ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
+
 Parts of W5 carried into later workstreams:
 
 - EXT-7: the popup's "Copy diagnostics" action comes with the popup's redesign: it copies `readDiagnostics(browser.storage.session)` with the connection status, the browser and the extension version. Until then the buffer is read only from the browser's developer tools (W13).
@@ -231,8 +235,8 @@ Parts of W7 carried into later workstreams:
 - A check for history words ("used to", "no longer", "previously") in Rust comments (W15).
 - ENG-6: the comparison of each partial answer's validators belongs in `http::check_partial`, used by HTTP/1.1, HTTP/2, HTTP/3 and the Fetcher (W4).
 - ENG-9: the address classifier core needs is `net_guard::is_private`, ready to be made public (W4).
-- ENG-11: `naming::unique_path` stays public only because `crates/streams` uses it; it goes private, or becomes a reserving API, with the name reservation (D30.6) (W4).
 - XC-14 is done: the engine names itself (W7) and core sets the app's own user agent from `wirecatch-product` (W2), checked on the download, add-on and media paths.
+- ENG-11 in core: core picks a download's name when it is added (`crates/core/src/naming.rs` `unique_path`, its in-process `Claimed` set and `is_free_on_disk`) and hands the engine that exact path much later, so the finish replaces a file another program saved under the name meanwhile. Core must not create files when a download is queued; instead it sets `if_exists: ExistingFile::Refuse` and, on `Error::TargetTaken`, picks the next name with its `Claimed` set in the settle step (`crates/core/src/manager/settle.rs`), moves the part and resume files there and finishes again (D30.7). Core's own "plain name" checks (`crates/core/src/folders.rs`, `crates/core/src/manager/media_run.rs`) should use the engine's single definition, `naming::is_safe_name`, with it (W9); not `sanitize(name) == name`, which refuses core's own media names longer than `sanitize`'s 200 bytes.
 
 Parts of W8 carried into later workstreams:
 

@@ -138,6 +138,17 @@ pub enum Error {
     #[error("the download was not saved: {0}")]
     TargetRejected(crate::PathRejected),
 
+    /// The download finished, but a file was already at its path and
+    /// [`ExistingFile::Refuse`](crate::ExistingFile::Refuse) kept it. The data
+    /// is in the part file, which a later run only finishes when it can resume
+    /// (see [`ExistingFile::Refuse`](crate::ExistingFile::Refuse)).
+    #[error("the download was not saved: {} already exists", path.display())]
+    #[non_exhaustive]
+    TargetTaken {
+        /// The path that was taken.
+        path: std::path::PathBuf,
+    },
+
     /// A [`Fetcher`](crate::Fetcher) answer was larger than the size limit the
     /// caller set for it, so it was not read to the end.
     #[error(

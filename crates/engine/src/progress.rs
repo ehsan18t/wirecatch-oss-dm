@@ -67,7 +67,11 @@ impl Progress {
     /// with the name the server suggested and any ` (1)` suffix already applied,
     /// so it can be saved and passed as
     /// [`DownloadRequest::exact_path`](crate::DownloadRequest::exact_path) on a
-    /// later run. It stays `None` if the first request fails.
+    /// later run. It stays `None` if the first request fails. In a download
+    /// into a folder, a file another program saves under that name before the
+    /// download finishes keeps it, and the download takes the next free name:
+    /// [`Outcome::Completed`](crate::Outcome::Completed) says where the file
+    /// went.
     pub fn path(&self) -> Option<PathBuf> {
         self.target().as_ref().map(|t| t.path.clone())
     }

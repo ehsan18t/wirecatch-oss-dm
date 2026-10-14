@@ -82,11 +82,18 @@
 //! The file name comes from [`DownloadRequest::file_name`], then the server's
 //! `Content-Disposition`, then the URL, and is made safe for Windows and Linux
 //! (see [`naming`]). An existing file is never overwritten: a free name such as
-//! `report (1).pdf` is used instead. Set [`DownloadRequest::exact_path`] to own
-//! the naming yourself, or [`DownloadRequest::resolve_path`] to pick the path
-//! from the server's answer (its suggested name, size and type) once it arrives.
-//! [`Progress::path`] tells where the file goes as soon as the server has
-//! answered.
+//! `report (1).pdf` is used instead. The name is taken by creating its part
+//! file, so no other download takes it, and nothing appears under the name
+//! itself until the file is complete. The finished file is moved there in a
+//! step that refuses to replace anything (see [`naming::move_to_free_name`]),
+//! so if another program saved a file under the name meanwhile, that file
+//! stays and the download takes the next free name. Set
+//! [`DownloadRequest::exact_path`] to own the naming yourself, or
+//! [`DownloadRequest::resolve_path`] to pick the path from the server's answer
+//! (its suggested name, size and type) once it arrives;
+//! [`DownloadRequest::if_exists`] then says whether a file at that path is
+//! replaced. [`Progress::path`] tells where the file goes as soon as the server
+//! has answered.
 //!
 //! # Pausing and resuming
 //!
@@ -240,7 +247,9 @@ mod writer;
 /// HTTP header names and values, for [`DownloadOptions::headers`].
 pub use ::http::header;
 pub use ::url::Url;
-pub use download::{DownloadRequest, Outcome, PathRejected, PathResolver, RemoteFile, download};
+pub use download::{
+    DownloadRequest, ExistingFile, Outcome, PathRejected, PathResolver, RemoteFile, download,
+};
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use limiter::RateLimiter;

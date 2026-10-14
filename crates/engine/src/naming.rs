@@ -1,13 +1,24 @@
 //! Picking a safe, non-clashing file name for a download.
 
+use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use percent_encoding::percent_decode_str;
 use url::Url;
 
-use crate::storage::{PART_EXT, STATE_EXT};
+use crate::storage::{self, PART_EXT, STATE_EXT};
 
-const MAX_NAME_BYTES: usize = 200;
+/// Most bytes in one file name on Linux (`NAME_MAX`). Windows counts 255
+/// UTF-16 units instead, which a name of at most 255 bytes never exceeds.
+const SYSTEM_NAME_BYTES: usize = 255;
+/// Most bytes in a name the engine takes: its part and resume files, named
+/// after it, fit too.
+const MAX_NAME_BYTES: usize = SYSTEM_NAME_BYTES - longer(PART_EXT, STATE_EXT).len();
+/// Most bytes [`sanitize`] leaves, short of [`MAX_NAME_BYTES`] by room for
+/// what is added to a name after it: ` (1)` to make it free, or a caller's
+/// extension, such as a stream's container.
+const SANITIZED_NAME_BYTES: usize = 200;
 const FALLBACK_NAME: &str = "download";
 /// Longest text after the last dot that still counts as an extension and is
 /// kept whole when a name is shortened. Real extensions are a few bytes; a
@@ -70,12 +81,42 @@ pub fn from_url(url: &Url) -> Option<String> {
     (!decoded.trim().is_empty()).then(|| decoded.into_owned())
 }
 
-/// Makes a name safe on both Windows and Linux.
+/// Makes a name safe on both Windows and Linux, and at most 200 bytes long,
+/// which leaves room for ` (1)` or another extension within every system's
+/// limit. Whatever it returns, it returns unchanged when given it again, and
+/// [`is_safe_name`] takes it.
 #[must_use]
 pub fn sanitize(name: &str) -> String {
+    let cut = truncate_keeping_extension(&clean(name), SANITIZED_NAME_BYTES);
+    // After the cut, which can leave a device name: `CON` followed by spaces.
+    if is_windows_reserved(&cut) {
+        truncate_keeping_extension(&format!("_{cut}"), SANITIZED_NAME_BYTES)
+    } else {
+        cut
+    }
+}
+
+/// Whether `name` is one ordinary file in a folder on Windows and on Linux,
+/// so the engine takes it as it is: no folder part, no character or ending
+/// [`sanitize`] replaces or trims (such as a `:`, which names a stream inside
+/// another file on Windows, or a trailing dot or space, which Windows drops),
+/// not a Windows device such as `NUL` or `COM1.txt`, and short enough that the
+/// system takes it with the engine's part and resume files beside it. Any
+/// length up to that is taken, unlike what `sanitize` returns: a caller adds
+/// ` (1)` or another extension to its names.
+#[must_use]
+pub fn is_safe_name(name: &str) -> bool {
+    name.len() <= MAX_NAME_BYTES && !is_windows_reserved(name) && clean(name) == name
+}
+
+/// `name` without a folder part, with every character Windows or Linux refuses
+/// in a name, or that disguises one, replaced, and without the leading
+/// whitespace and trailing dots and spaces Windows drops; `download` when
+/// nothing is left. At any length, and possibly a device name.
+fn clean(name: &str) -> String {
     // Drop any directory part a server may have sent.
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    let mut out: String = base
+    let out: String = base
         .chars()
         .map(|c| match c {
             '<' | '>' | ':' | '"' | '|' | '?' | '*' => '_',
@@ -85,22 +126,13 @@ pub fn sanitize(name: &str) -> String {
             c => c,
         })
         .collect();
-
     // Windows rejects trailing dots and spaces.
-    let trimmed_len = out.trim_end_matches(['.', ' ']).len();
-    out.truncate(trimmed_len);
-    let out = out.trim_start().to_string();
-
-    let mut out = if out.is_empty() || out == "." || out == ".." {
+    let out = out.trim_end_matches(['.', ' ']).trim_start();
+    if out.is_empty() || out == "." || out == ".." {
         FALLBACK_NAME.to_string()
     } else {
-        out
-    };
-
-    if is_windows_reserved(&out) {
-        out.insert(0, '_');
+        out.to_string()
     }
-    truncate_keeping_extension(&out, MAX_NAME_BYTES)
 }
 
 /// Whether `c` is a Unicode format character (general category Cf): the bidirectional marks,
@@ -203,22 +235,123 @@ pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
     (PathBuf::from(part), PathBuf::from(state))
 }
 
-/// First of `name`, `name (1)`, `name (2)`... whose final, part and state files are all absent.
+/// Moves the finished file `from` onto the first free name of `name`,
+/// `name (1)`, `name (2)`... in `dir`, and returns where it went. Never
+/// replaces anything: the move itself refuses a name that is taken (see
+/// below), so a file another program saves under the name at the same moment,
+/// or another caller racing for it, is never lost, and each racer lands on its
+/// own name. A name is also passed over while a download's part or resume file
+/// for it is there ([`part_paths`]). Every name passed over belongs to
+/// something in `dir`, so the search ends after at most one more try than
+/// `dir` has entries. Blocks on the file system.
 ///
-/// Every name tried before the free one belongs to a file in `dir`, so the
-/// search ends after at most one more try than `dir` has entries.
-#[must_use]
-pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
-    let (stem, ext) = split_ext(name);
-    let mut candidate = dir.join(name);
-    let mut n: u64 = 0;
+/// The move is one step that fails when the name exists: `MoveFileExW` without
+/// `MOVEFILE_REPLACE_EXISTING` on Windows, and `renameat2` with
+/// `RENAME_NOREPLACE` on Linux, which local file systems take, FAT32 and exFAT
+/// included. Where the kernel or the file system refuses that flag (some
+/// network and FUSE file systems, or a sandbox that blocks the call), and on
+/// other Unix systems, a hard link to the new name, which fails when the name
+/// exists, then the old name removed. Where hard links are missing too (an SMB
+/// mount without Unix extensions, some FUSE file systems), the name is checked
+/// and then the file renamed, which leaves a moment in which a file saved under
+/// the name is replaced. `from` and `dir` must be on the same volume.
+///
+/// # Errors
+///
+/// [`io::ErrorKind::InvalidInput`] when [`is_safe_name`] refuses `name`: it is
+/// then not one ordinary file in `dir` on every system, so it could not be
+/// taken reliably. Otherwise the error moving the file, such as `from` missing
+/// or a folder that cannot be written; `from` is then where it was.
+pub fn move_to_free_name(from: &Path, dir: &Path, name: &str) -> io::Result<PathBuf> {
+    check_name(name)?;
+    let mut candidates = candidates(dir, name);
     loop {
-        let (part, state) = part_paths(&candidate);
-        if !candidate.exists() && !part.exists() && !state.exists() {
-            return candidate;
+        let candidate = candidates.next_name();
+        if held_by_download(&candidate) {
+            continue;
         }
-        n += 1;
-        candidate = dir.join(format!("{stem} ({n}){ext}"));
+        match storage::rename_no_replace(from, &candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Creates, empty, the part file of the first name of `name`, `name (1)`... in
+/// `dir` that has no file, part file or resume file, and returns that name's
+/// final path with the open part file. The part file is created only if it is
+/// not there yet (`create_new`), so downloads racing for a name, in this
+/// process or another, each get their own. Blocks on the file system.
+pub(crate) fn create_free_part(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
+    check_name(name)?;
+    let mut candidates = candidates(dir, name);
+    loop {
+        let candidate = candidates.next_name();
+        let (part, state) = part_paths(&candidate);
+        if fs::symlink_metadata(&candidate).is_ok() || fs::symlink_metadata(&state).is_ok() {
+            continue;
+        }
+        match OpenOptions::new().write(true).create_new(true).open(&part) {
+            Ok(file) => return Ok((candidate, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// `InvalidInput` unless [`is_safe_name`] takes `name`.
+fn check_name(name: &str) -> io::Result<()> {
+    if is_safe_name(name) {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name:?} is not a safe file name"),
+        ))
+    }
+}
+
+/// The longer of `a` and `b`.
+const fn longer<'a>(a: &'a str, b: &'a str) -> &'a str {
+    if a.len() >= b.len() { a } else { b }
+}
+
+/// Whether a download's part or resume file for `path` is there.
+fn held_by_download(path: &Path) -> bool {
+    let (part, state) = part_paths(path);
+    fs::symlink_metadata(part).is_ok() || fs::symlink_metadata(state).is_ok()
+}
+
+/// The paths `name`, `name (1)`, `name (2)`... in a folder.
+struct Candidates<'a> {
+    dir: &'a Path,
+    name: &'a str,
+    next: u64,
+}
+
+fn candidates<'a>(dir: &'a Path, name: &'a str) -> Candidates<'a> {
+    Candidates { dir, name, next: 0 }
+}
+
+impl Candidates<'_> {
+    fn next_name(&mut self) -> PathBuf {
+        let n = self.next;
+        self.next += 1;
+        if n == 0 {
+            return self.dir.join(self.name);
+        }
+        let (stem, ext) = match split_ext(self.name) {
+            (stem, ext) if ext.len() <= MAX_EXTENSION_BYTES => (stem, ext),
+            _ => (self.name, ""),
+        };
+        // A name near the limit gives up the end of its stem to the number.
+        let ending = format!(" ({n}){ext}");
+        let mut cut = MAX_NAME_BYTES.saturating_sub(ending.len()).min(stem.len());
+        while !stem.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        self.dir.join(format!("{}{ending}", &stem[..cut]))
     }
 }
 
@@ -326,7 +459,7 @@ mod tests {
     fn sanitize_truncates_but_keeps_extension() {
         let long = format!("{}.mp4", "x".repeat(400));
         let out = sanitize(&long);
-        assert!(out.len() <= MAX_NAME_BYTES);
+        assert!(out.len() <= SANITIZED_NAME_BYTES);
         assert_eq!(Path::new(&out).extension(), Some("mp4".as_ref()));
     }
 
@@ -340,7 +473,7 @@ mod tests {
         ] {
             let out = sanitize(&name);
             assert!(
-                (1..=MAX_NAME_BYTES).contains(&out.len()),
+                (1..=SANITIZED_NAME_BYTES).contains(&out.len()),
                 "{} bytes",
                 out.len()
             );
@@ -348,15 +481,192 @@ mod tests {
         // An ordinary extension is still kept whole.
         let kept = sanitize(&format!("{}.tar.gz", "n".repeat(300)));
         assert_eq!(Path::new(&kept).extension(), Some("gz".as_ref()));
-        assert!(kept.len() <= MAX_NAME_BYTES);
+        assert!(kept.len() <= SANITIZED_NAME_BYTES);
+    }
+
+    /// A file of `contents` in `dir`, to be moved.
+    fn finished(dir: &Path, leaf: &str, contents: &str) -> PathBuf {
+        let path = dir.join(leaf);
+        std::fs::write(&path, contents).unwrap();
+        path
     }
 
     #[test]
-    fn unique_path_skips_existing_files() {
-        let dir = wirecatch_test_support::private_dir("naming").unwrap();
-        std::fs::write(dir.join("f.zip"), b"x").unwrap();
-        std::fs::write(dir.join("f (1).zip.wcpart"), b"x").unwrap();
-        assert_eq!(unique_path(&dir, "f.zip"), dir.join("f (2).zip"));
+    fn racing_moves_onto_one_name_each_land_on_their_own() {
+        const RACERS: usize = 16;
+        let dir = wirecatch_test_support::private_dir("move-race").unwrap();
+        let start = std::sync::Barrier::new(RACERS);
+        let moved: Vec<PathBuf> = std::thread::scope(|scope| {
+            let racers: Vec<_> = (0..RACERS)
+                .map(|i| {
+                    let (dir, start) = (&dir, &start);
+                    scope.spawn(move || {
+                        let from = finished(dir, &format!("from-{i}"), &i.to_string());
+                        start.wait();
+                        move_to_free_name(&from, dir, "f.zip").unwrap()
+                    })
+                })
+                .collect();
+            racers.into_iter().map(|r| r.join().unwrap()).collect()
+        });
+        let mut contents: Vec<usize> = moved
+            .iter()
+            .map(|path| std::fs::read_to_string(path).unwrap().parse().unwrap())
+            .collect();
+        contents.sort_unstable();
+        assert_eq!(contents, (0..RACERS).collect::<Vec<_>>(), "{moved:?}");
         dir.remove().unwrap();
+    }
+
+    #[test]
+    fn a_move_passes_over_files_and_downloads_in_progress() {
+        let dir = wirecatch_test_support::private_dir("move-skip").unwrap();
+        std::fs::write(dir.join("f.zip"), b"theirs").unwrap();
+        std::fs::write(dir.join("f (1).zip.wcpart"), b"x").unwrap();
+        std::fs::write(dir.join("f (2).zip.wcstate"), b"x").unwrap();
+        let from = finished(&dir, "from", "mine");
+        let moved = move_to_free_name(&from, &dir, "f.zip").unwrap();
+        assert_eq!(moved, dir.join("f (3).zip"));
+        assert_eq!(std::fs::read(&moved).unwrap(), b"mine");
+        assert_eq!(std::fs::read(dir.join("f.zip")).unwrap(), b"theirs");
+        assert!(!from.exists());
+        dir.remove().unwrap();
+    }
+
+    #[test]
+    fn a_failed_move_leaves_no_file_behind() {
+        let dir = wirecatch_test_support::private_dir("move-failed").unwrap();
+        let error = move_to_free_name(&dir.join("missing"), &dir, "f.zip").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        dir.remove().unwrap();
+    }
+
+    /// Only a name that is one ordinary file in the folder on every system is taken: `NUL` is a device, `f.zip:x` is a stream inside another file on Windows, and Windows drops a trailing dot or space.
+    #[test]
+    fn only_a_safe_name_is_taken() {
+        let dir = wirecatch_test_support::private_dir("move-plain").unwrap();
+        std::fs::write(dir.join("f.zip"), b"theirs").unwrap();
+        let from = finished(&dir, "from", "mine");
+        for name in [
+            "",
+            ".",
+            "..",
+            "../f.zip",
+            "sub/f.zip",
+            "/f.zip",
+            r"sub\f.zip",
+            "C:f.zip",
+            "NUL",
+            "CON.txt",
+            "com1",
+            "f.zip:x",
+            "f.zip.",
+            "f.zip ",
+            "a\u{202E}b.txt",
+        ] {
+            let refused = move_to_free_name(&from, &dir, name).unwrap_err();
+            assert_eq!(refused.kind(), io::ErrorKind::InvalidInput, "{name:?}");
+        }
+        assert_eq!(std::fs::read(&from).unwrap(), b"mine");
+        assert_eq!(std::fs::read(dir.join("f.zip")).unwrap(), b"theirs");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        dir.remove().unwrap();
+    }
+
+    /// A name longer than `sanitize` leaves is still taken: core adds an extension and ` (1)` to names `sanitize` already cut, and a stream's container can change the extension after every byte arrived.
+    #[test]
+    fn a_long_name_that_sanitize_would_cut_is_taken() {
+        let dir = wirecatch_test_support::private_dir("move-long").unwrap();
+        let stem = sanitize(&"ж".repeat(150));
+        let long = format!("{stem}.mkv");
+        assert!(long.len() > SANITIZED_NAME_BYTES, "{} bytes", long.len());
+        let numbered = format!("{stem} (1).mkv");
+        let longest = format!("{}.mkv", "n".repeat(MAX_NAME_BYTES - 4));
+        for name in [&long, &numbered, &longest] {
+            let from = finished(&dir, "from", "mine");
+            let moved = move_to_free_name(&from, &dir, name).unwrap();
+            assert_eq!(moved, dir.join(name));
+            assert_eq!(std::fs::read(&moved).unwrap(), b"mine");
+            // Its part and resume files fit beside it too.
+            let (part, state) = part_paths(&moved);
+            for leftover in [part, state] {
+                std::fs::write(&leftover, b"x").unwrap();
+                std::fs::remove_file(&leftover).unwrap();
+            }
+        }
+        let too_long = format!("{}.mkv", "n".repeat(MAX_NAME_BYTES - 3));
+        let from = finished(&dir, "from", "mine");
+        let refused = move_to_free_name(&from, &dir, &too_long).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+        dir.remove().unwrap();
+    }
+
+    /// A taken name as long as the engine takes gives up the end of its stem, on a character boundary, for its number.
+    #[test]
+    fn a_taken_name_at_the_limit_is_numbered_within_it() {
+        let dir = wirecatch_test_support::private_dir("move-long-taken").unwrap();
+        let name = format!("{}n.mkv", "ж".repeat(121));
+        assert_eq!(name.len(), MAX_NAME_BYTES);
+        std::fs::write(dir.join(&name), b"theirs").unwrap();
+        let from = finished(&dir, "from", "mine");
+        let moved = move_to_free_name(&from, &dir, &name).unwrap();
+        assert_eq!(moved, dir.join(format!("{} (1).mkv", "ж".repeat(119))));
+        assert_eq!(std::fs::read(&moved).unwrap(), b"mine");
+        assert_eq!(std::fs::read(dir.join(&name)).unwrap(), b"theirs");
+        dir.remove().unwrap();
+    }
+
+    /// Every Windows device name, in any case, with or without an extension, and also when a cut to length is what leaves it.
+    #[test]
+    fn sanitize_never_returns_a_device_name() {
+        let mut devices: Vec<String> = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        for prefix in ["COM", "LPT"] {
+            for digit in ('0'..='9').chain(['\u{B9}', '\u{B2}', '\u{B3}']) {
+                devices.push(format!("{prefix}{digit}"));
+            }
+        }
+        for device in &devices {
+            for name in [
+                device.clone(),
+                device.to_lowercase(),
+                format!("{device}.txt"),
+                format!("{}.tar.gz", device.to_lowercase()),
+                format!("{device} .txt"),
+                // The cut to length drops everything after the device name.
+                format!("{device}{}x", " ".repeat(300)),
+                format!("{device}{}x.txt", ".".repeat(300)),
+            ] {
+                let safe = sanitize(&name);
+                assert!(!is_windows_reserved(&safe), "{name:?} gave {safe:?}");
+                assert!(is_safe_name(&safe), "{name:?} gave {safe:?}");
+                assert_eq!(sanitize(&safe), safe, "{name:?}");
+            }
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(1024))]
+
+        /// Whatever a server sends, `sanitize` returns a name it keeps as it is, that is never a device, fits its budget and is one the engine takes.
+        #[test]
+        fn sanitize_returns_a_name_it_keeps(
+            device in proptest::sample::select(vec!["", "CON", "nul", "Com1", "LPT\u{B9}", "conout$"]),
+            middle in "[CONULPRTAXI1$¹. \u{2003}/\\\\:é中\u{202E}a_-]{0,4}",
+            padding in proptest::sample::select(vec![' ', '.']),
+            padding_len in 0usize..260,
+            tail in "[a-zé. ]{0,4}",
+        ) {
+            let padding = padding.to_string().repeat(padding_len);
+            let name = format!("{device}{middle}{padding}{tail}");
+            let safe = sanitize(&name);
+            proptest::prop_assert_eq!(&sanitize(&safe), &safe);
+            proptest::prop_assert!(!is_windows_reserved(&safe), "{:?}", safe);
+            proptest::prop_assert!((1..=SANITIZED_NAME_BYTES).contains(&safe.len()));
+            proptest::prop_assert!(is_safe_name(&safe), "{:?}", safe);
+        }
     }
 }
