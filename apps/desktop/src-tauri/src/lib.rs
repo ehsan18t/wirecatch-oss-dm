@@ -358,6 +358,42 @@ mod tests {
         assert!(checked >= 2, "the main and download window capabilities");
     }
 
+    /// The pages are the app's own and load nothing else, so the policy closes every way an
+    /// injected tag could reach further: no other scripts, plugins, frames, base address or form
+    /// target; and frozen prototypes, so an injected script cannot pollute what the IPC bridge
+    /// reads (DRS-18).
+    #[test]
+    fn the_content_security_policy_closes_what_the_pages_do_not_use() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let security = &config["app"]["security"];
+        assert_eq!(security["freezePrototype"], serde_json::json!(true));
+        let csp = security["csp"].as_str().expect("a content security policy");
+        let directives: std::collections::HashMap<&str, Vec<&str>> = csp
+            .split(';')
+            .filter_map(|directive| {
+                let mut words = directive.split_whitespace();
+                Some((words.next()?, words.collect()))
+            })
+            .collect();
+        for (name, sources) in [
+            ("default-src", vec!["'self'"]),
+            ("script-src", vec!["'self'"]),
+            ("object-src", vec!["'none'"]),
+            ("base-uri", vec!["'none'"]),
+            ("form-action", vec!["'none'"]),
+            ("frame-ancestors", vec!["'none'"]),
+        ] {
+            assert_eq!(directives.get(name), Some(&sources), "{name} in {csp}");
+        }
+        let bundle: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.bundle.conf.json")).unwrap();
+        assert!(
+            bundle["app"]["security"].is_null(),
+            "packaging builds keep the same policy"
+        );
+    }
+
     #[test]
     fn the_unavailable_notice_names_the_running_app() {
         assert_eq!(
