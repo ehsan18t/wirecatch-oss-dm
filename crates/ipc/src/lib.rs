@@ -19,10 +19,17 @@
 //!   user and whose protected DACL has a single entry granting the current user
 //!   full access. Nobody else, not even SYSTEM or Administrators, is granted
 //!   anything (SYSTEM and administrators can take ownership of any object anyway,
-//!   so listing them would add exposure without adding anything we need). The
-//!   connector reads the owner of the pipe it opened and refuses it unless it is
-//!   the current user; it also opens the pipe at the identification impersonation
-//!   level so a hostile server cannot act as the client.
+//!   so listing them would add exposure without adding anything we need). A
+//!   mandatory label at the listener's own integrity level keeps out programs
+//!   running with fewer rights. The listener does not rely on the descriptor alone:
+//!   it reads each client's token and refuses one that is another user, runs at a
+//!   lower integrity level than the listener or in a sandbox (a restricted or
+//!   `AppContainer` token), or hides who it is: a client must open the pipe at the
+//!   identification level, as [`connect`] does, and one that opens it anonymously or
+//!   without naming a level is refused. The connector
+//!   reads the owner of the pipe it opened and refuses it unless it is the current
+//!   user; it opens the pipe at the identification impersonation level, so the
+//!   listener can tell who it is but a hostile server cannot act as the client.
 //! - **Linux**: the endpoint is `$XDG_RUNTIME_DIR/wirecatch/app.sock` (`app-dev.sock`
 //!   for debug builds), or
 //!   `/tmp/wirecatch-<uid>/app.sock` when `XDG_RUNTIME_DIR` is unset. The folder is
@@ -130,11 +137,14 @@ pub enum IpcError {
         /// Who holds it, as far as could be told.
         owner: String,
     },
-    /// A client from a different user account tried to connect and was refused.
-    /// The listener stays usable; keep calling [`Listener::accept`].
-    #[error("Refused a connection from another user account ({peer}).")]
+    /// A client that is not the current user, or (Windows) runs with fewer rights
+    /// than the listener or would not say who it is, tried to connect and was
+    /// refused. The listener stays usable; keep calling [`Listener::accept`].
+    #[error("Refused a connection from {peer}.")]
     PeerRefused {
-        /// The other user (a uid on Linux).
+        /// Who tried, as far as could be told: another user account with its uid
+        /// (Linux) or SID (Windows), a program of the user's own at a lower integrity
+        /// level, or a client that would not say who it is.
         peer: String,
     },
     /// The folder that holds the socket is not private to the current user.
@@ -266,8 +276,9 @@ impl Listener {
     ///
     /// # Errors
     ///
-    /// [`IpcError::PeerRefused`] when a client of another user account was turned
-    /// away, and [`IpcError::Io`] when a client failed to connect. An error concerns
+    /// [`IpcError::PeerRefused`] when a client was turned away for not being the
+    /// current user (see the variant), and [`IpcError::Io`] when a client failed to
+    /// connect or who it is could not be read. An error concerns
     /// only that one attempt: the listener stays usable, so keep calling `accept`.
     pub async fn accept(&mut self) -> Result<Connection, IpcError> {
         self.inner.accept().await

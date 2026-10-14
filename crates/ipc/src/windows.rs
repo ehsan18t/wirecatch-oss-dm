@@ -14,22 +14,26 @@ use std::time::Duration;
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, PipeMode, ServerOptions};
 use tokio::time::{Instant, sleep};
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_PIPE_BUSY, ERROR_SUCCESS, HANDLE, LocalFree,
-    WIN32_ERROR,
+    ERROR_ACCESS_DENIED, ERROR_CANNOT_IMPERSONATE, ERROR_CANT_OPEN_ANONYMOUS, ERROR_FILE_NOT_FOUND,
+    ERROR_PIPE_BUSY, ERROR_SUCCESS, HANDLE, LocalFree, TRUE, WIN32_ERROR,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
     SDDL_REVISION_1, SE_KERNEL_OBJECT,
 };
 use windows_sys::Win32::Security::{
-    CopySid, GetLengthSid, GetTokenInformation, IsValidSid, OWNER_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, SID_AND_ATTRIBUTES, TOKEN_ELEVATION,
-    TOKEN_ELEVATION_TYPE, TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenElevationType,
-    TokenElevationTypeDefault as SINGLE_TOKEN, TokenElevationTypeFull as FULL_TOKEN,
-    TokenElevationTypeLimited as LIMITED_TOKEN, TokenIntegrityLevel, TokenUser,
+    CopySid, GetLengthSid, GetTokenInformation, IsTokenRestricted, IsValidSid,
+    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, RevertToSelf, SECURITY_ATTRIBUTES,
+    SID_AND_ATTRIBUTES, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_INFORMATION_CLASS,
+    TOKEN_QUERY, TokenElevation, TokenElevationType, TokenElevationTypeDefault as SINGLE_TOKEN,
+    TokenElevationTypeFull as FULL_TOKEN, TokenElevationTypeLimited as LIMITED_TOKEN,
+    TokenIntegrityLevel, TokenIsAppContainer, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Pipes::ImpersonateNamedPipeClient;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken,
+};
 use wirecatch_product::Channel;
 
 use crate::{Connection, Elevation, Endpoint, Inner, IpcError, paths};
@@ -83,14 +87,30 @@ pub(crate) struct Sid {
 impl Sid {
     /// The user the current process runs as.
     pub(crate) fn current_user() -> Result<Self, IpcError> {
-        process_token_sid(TokenUser)
+        process_token()
+            .and_then(|token| token_sid(&token, TokenUser))
             .map_err(|e| IpcError::io("Could not read your user account", e))
     }
 
     /// The integrity level the current process runs at, as its mandatory label SID: `S-1-16-8192` for a normal (medium) process, `S-1-16-12288` for an elevated (high) one.
     pub(crate) fn current_integrity() -> Result<Self, IpcError> {
-        process_token_sid(TokenIntegrityLevel)
+        process_token()
+            .and_then(|token| token_sid(&token, TokenIntegrityLevel))
             .map_err(|e| IpcError::io("Could not read how this program was started", e))
+    }
+
+    /// The level a mandatory label SID names (`S-1-16-<level>`: 4096 low, 8192
+    /// medium, 12288 high), or `None` for any other SID. Read from the SID's layout:
+    /// a revision byte, a sub-authority count byte, a six-byte big-endian identifier
+    /// authority, then the sub-authorities.
+    fn integrity_level(&self) -> Option<u32> {
+        const MANDATORY_LABEL_AUTHORITY: [u8; 6] = [0, 0, 0, 0, 0, 16];
+        let [head, authority_tail, level] = self.words[..] else {
+            return None;
+        };
+        let [_revision, count, a0, a1] = head.to_le_bytes();
+        let [a2, a3, a4, a5] = authority_tail.to_le_bytes();
+        (count == 1 && [a0, a1, a2, a3, a4, a5] == MANDATORY_LABEL_AUTHORITY).then_some(level)
     }
 
     /// Copies the SID at `psid`.
@@ -193,10 +213,10 @@ fn process_token() -> io::Result<OwnedHandle> {
     Ok(unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) })
 }
 
-/// The SID that a token information class names. `TokenUser` gives a `TOKEN_USER` and `TokenIntegrityLevel` a `TOKEN_MANDATORY_LABEL`; both are a single `SID_AND_ATTRIBUTES`, so one reader serves both.
-fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
+/// The SID that a token information class names in `token`, which must be open for
+/// `TOKEN_QUERY`. `TokenUser` gives a `TOKEN_USER` and `TokenIntegrityLevel` a `TOKEN_MANDATORY_LABEL`; both are a single `SID_AND_ATTRIBUTES`, so one reader serves both.
+fn token_sid(token: &OwnedHandle, class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
     debug_assert!(class == TokenUser || class == TokenIntegrityLevel);
-    let token = process_token()?;
     let handle = token.as_raw_handle() as HANDLE;
 
     let mut needed = 0u32;
@@ -232,6 +252,133 @@ fn process_token_sid(class: TOKEN_INFORMATION_CLASS) -> io::Result<Sid> {
     let entry = unsafe { &*buf.as_ptr().cast::<SID_AND_ATTRIBUTES>() };
     // SAFETY: see above.
     unsafe { Sid::copy_from(entry.Sid) }
+}
+
+/// The token the client at the other end of `pipe` connected with, for reading only.
+///
+/// Reads it by impersonating the client for the length of one call on this thread
+/// and reverting before returning, with no `.await` in between, so nothing else
+/// ever runs on the thread as the client.
+///
+/// A client hides its token two ways: by opening the pipe at the anonymous level,
+/// which fails here with `ERROR_CANT_OPEN_ANONYMOUS`, or by opening it without a
+/// security quality of service, whose token Windows hands over only once the client
+/// has written (`ERROR_CANNOT_IMPERSONATE` until then). The connector names the
+/// identification level when it opens the pipe, so its token is there at once.
+fn client_token(pipe: &NamedPipeServer) -> io::Result<OwnedHandle> {
+    // SAFETY: `pipe` is a connected server instance whose handle stays open for the
+    // call; on success this thread impersonates the client until the guard reverts.
+    if unsafe { ImpersonateNamedPipeClient(pipe.as_raw_handle() as HANDLE) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let impersonating = Impersonating;
+    let mut raw: HANDLE = ptr::null_mut();
+    // SAFETY: GetCurrentThread returns a pseudo handle that needs no closing; on
+    // success `raw` is a new token handle that we own. `OpenAsSelf` checks the
+    // access against this process's own token, not the client's.
+    let opened = unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &raw mut raw) };
+    // Read before reverting, which may set the thread's last error again.
+    let error = io::Error::last_os_error();
+    drop(impersonating);
+    if opened == 0 {
+        return Err(error);
+    }
+    // SAFETY: `raw` is a valid handle we own and nothing else closes it.
+    Ok(unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) })
+}
+
+/// Ends the current thread's impersonation of a pipe client when dropped.
+struct Impersonating;
+
+impl Drop for Impersonating {
+    fn drop(&mut self) {
+        // SAFETY: a plain call with no arguments; it ends the impersonation this
+        // thread started in `client_token`.
+        if unsafe { RevertToSelf() } == 0 {
+            // The thread would go on running as the client, and every task the
+            // runtime puts on it with it. Nothing may run that way.
+            std::process::abort();
+        }
+    }
+}
+
+/// Who a client is: the user and the integrity level of the token it connected with.
+#[derive(Debug)]
+struct ClientIdentity {
+    user: Sid,
+    integrity: Sid,
+    /// The token is restricted (its access is also checked against restricting SIDs) or an
+    /// `AppContainer`'s: a sandbox, whatever its user and level.
+    sandboxed: bool,
+}
+
+impl ClientIdentity {
+    fn of(pipe: &NamedPipeServer) -> io::Result<Self> {
+        let token = client_token(pipe)?;
+        let mut app_container = 0u32;
+        // SAFETY: TokenIsAppContainer fills a DWORD.
+        unsafe { read_token_value(&token, TokenIsAppContainer, &mut app_container) }?;
+        // SAFETY: `token` is open for `TOKEN_QUERY` for the duration of the call.
+        let restricted = unsafe { IsTokenRestricted(token.as_raw_handle() as HANDLE) } != 0;
+        Ok(Self {
+            user: token_sid(&token, TokenUser)?,
+            integrity: token_sid(&token, TokenIntegrityLevel)?,
+            sandboxed: restricted || app_container != 0,
+        })
+    }
+}
+
+/// Serves a client only when it is `user` at `integrity` or above, outside any sandbox,
+/// which is who the pipe's descriptor lets in; this check holds even if the descriptor does
+/// not.
+///
+/// A client must open the pipe at the identification level, as [`connect`] does. One that
+/// opens without saying at which level it may be identified (plain `CreateFile`, .NET's
+/// `NamedPipeClientStream` by default) hands the server its token only once it has
+/// written, and serving it would mean reading from a client nobody has checked, so it is
+/// refused with a message that says how to open the pipe.
+fn check_client(
+    user: &Sid,
+    integrity: &Sid,
+    client: io::Result<ClientIdentity>,
+) -> Result<(), IpcError> {
+    let refused = |peer: String| Err(IpcError::PeerRefused { peer });
+    let client = match client {
+        Ok(client) => client,
+        Err(e) if is_os_error(&e, ERROR_CANT_OPEN_ANONYMOUS) => {
+            return refused(
+                "a client that opened the connection anonymously, so it would not say who it is"
+                    .into(),
+            );
+        }
+        Err(e) if is_os_error(&e, ERROR_CANNOT_IMPERSONATE) => {
+            return refused(
+                "a client that did not say at which level it may be identified (open the connection at the identification level, as wirecatch_ipc::connect does)"
+                    .into(),
+            );
+        }
+        Err(e) => return Err(IpcError::io("Could not check who is connecting", e)),
+    };
+    if &client.user != user {
+        return refused(format!("another user account ({})", client.user));
+    }
+    let at_least_ours = match (
+        client.integrity.integrity_level(),
+        integrity.integrity_level(),
+    ) {
+        (Some(theirs), Some(ours)) => theirs >= ours,
+        _ => false,
+    };
+    if !at_least_ours {
+        return refused(format!(
+            "a program of yours running with fewer rights than Wirecatch (integrity level {})",
+            client.integrity
+        ));
+    }
+    if client.sandboxed {
+        return refused("a program of yours running in a sandbox".into());
+    }
+    Ok(())
 }
 
 /// How the current process holds administrator rights.
@@ -429,6 +576,9 @@ fn classify_taken(endpoint: &Endpoint, user: &Sid, probe: io::Result<Sid>) -> Ip
 pub(crate) struct PipeListener {
     endpoint: Endpoint,
     descriptor: OwnerOnlyDescriptor,
+    /// Who may connect: this user, at this integrity level or above.
+    user: Sid,
+    integrity: Sid,
     next: NamedPipeServer,
 }
 
@@ -443,6 +593,28 @@ impl PipeListener {
         let descriptor = OwnerOnlyDescriptor::new(&user, integrity).map_err(|e| {
             IpcError::io("Could not prepare the access rules for the connection", e)
         })?;
+        Self::bind_with(endpoint, user, integrity.clone(), descriptor)
+    }
+
+    /// Listens behind `sddl` instead of the owner-only descriptor: a stand-in for a
+    /// descriptor that regressed, to show what the listener's own check still refuses.
+    #[cfg(test)]
+    fn bind_behind(endpoint: &Endpoint, sddl: &str) -> Result<Self, IpcError> {
+        let descriptor = OwnerOnlyDescriptor::from_sddl(sddl).unwrap();
+        Self::bind_with(
+            endpoint,
+            Sid::current_user()?,
+            Sid::current_integrity()?,
+            descriptor,
+        )
+    }
+
+    fn bind_with(
+        endpoint: &Endpoint,
+        user: Sid,
+        integrity: Sid,
+        descriptor: OwnerOnlyDescriptor,
+    ) -> Result<Self, IpcError> {
         let next = match create_instance(endpoint, &descriptor, true) {
             Ok(next) => next,
             // FILE_FLAG_FIRST_PIPE_INSTANCE fails this way when the name already
@@ -456,6 +628,8 @@ impl PipeListener {
         Ok(Self {
             endpoint: endpoint.clone(),
             descriptor,
+            user,
+            integrity,
             next,
         })
     }
@@ -469,6 +643,9 @@ impl PipeListener {
         }
         let fresh = self.new_instance()?;
         let connected = mem::replace(&mut self.next, fresh);
+        // Dropping a refused instance disconnects its client before anything is read
+        // or written.
+        check_client(&self.user, &self.integrity, ClientIdentity::of(&connected))?;
         Ok(Connection {
             inner: Inner::PipeServer(connected),
         })
@@ -589,7 +766,9 @@ mod tests {
         SetTokenInformation, TOKEN_ADJUST_DEFAULT, TOKEN_DUPLICATE, TOKEN_IMPERSONATE,
         TOKEN_MANDATORY_LABEL, TokenImpersonation, TokenIntegrityLevel,
     };
-    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_ALL_ACCESS, OPEN_EXISTING};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ALL_ACCESS, OPEN_EXISTING, SECURITY_SQOS_PRESENT,
+    };
     use windows_sys::Win32::System::SystemServices::{
         ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, SE_GROUP_INTEGRITY,
         SYSTEM_MANDATORY_LABEL_ACE_TYPE, SYSTEM_MANDATORY_LABEL_NO_READ_UP,
@@ -794,8 +973,10 @@ mod tests {
     }
 
     /// Opens the pipe from a thread impersonating the anonymous logon, a
-    /// different security principal than the current user.
-    fn open_as_anonymous(endpoint: &Endpoint, access: u32) -> Result<(), u32> {
+    /// different security principal than the current user, and returns the open
+    /// client end. Opens at the identification level, as the connector does, so the
+    /// server can tell who it is.
+    fn open_as_anonymous(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
         let name = to_wide(endpoint.as_os_str());
         std::thread::spawn(move || {
             // SAFETY: impersonation only affects this short-lived thread and is
@@ -809,7 +990,7 @@ mod tests {
                     0,
                     ptr::null(),
                     OPEN_EXISTING,
-                    0,
+                    SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
                     ptr::null_mut(),
                 )
             };
@@ -820,9 +1001,8 @@ mod tests {
             if handle == INVALID_HANDLE_VALUE {
                 Err(error)
             } else {
-                // SAFETY: `handle` is a valid handle we own.
-                unsafe { CloseHandle(handle) };
-                Ok(())
+                // SAFETY: `handle` is a valid handle we own and nothing else closes.
+                Ok(unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) })
             }
         })
         .join()
@@ -838,23 +1018,24 @@ mod tests {
             .first_pipe_instance(true)
             .create(control.as_os_str())
             .unwrap();
-        assert_eq!(open_as_anonymous(&control, GENERIC_READ), Ok(()));
+        assert_eq!(open_as_anonymous(&control, GENERIC_READ).map(drop), Ok(()));
 
         let endpoint = unique_endpoint();
         let _listener = PipeListener::bind(&endpoint).unwrap();
         assert_eq!(
-            open_as_anonymous(&endpoint, GENERIC_READ),
+            open_as_anonymous(&endpoint, GENERIC_READ).map(drop),
             Err(ERROR_ACCESS_DENIED)
         );
         assert_eq!(
-            open_as_anonymous(&endpoint, GENERIC_READ | GENERIC_WRITE),
+            open_as_anonymous(&endpoint, GENERIC_READ | GENERIC_WRITE).map(drop),
             Err(ERROR_ACCESS_DENIED)
         );
     }
 
     /// Opens the pipe from a thread running as the current user but at low
-    /// integrity, like a sandboxed browser process.
-    fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<(), u32> {
+    /// integrity, like a sandboxed browser process, and returns the open client end.
+    /// Opens at the identification level, as the connector does.
+    fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
         let name = to_wide(endpoint.as_os_str());
         std::thread::spawn(move || {
             let low = Sid::parse("S-1-16-4096").unwrap();
@@ -906,7 +1087,7 @@ mod tests {
                     0,
                     ptr::null(),
                     OPEN_EXISTING,
-                    0,
+                    SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
                     ptr::null_mut(),
                 );
                 let error = GetLastError();
@@ -915,8 +1096,7 @@ mod tests {
                 if handle == INVALID_HANDLE_VALUE {
                     Err(error)
                 } else {
-                    CloseHandle(handle);
-                    Ok(())
+                    Ok(OwnedHandle::from_raw_handle(handle as RawHandle))
                 }
             }
         })
@@ -933,18 +1113,272 @@ mod tests {
         let unlabeled =
             OwnerOnlyDescriptor::from_sddl(&format!("O:{user}D:P(A;;FA;;;{user})")).unwrap();
         let _control_pipe = create_instance(&control, &unlabeled, true).unwrap();
-        assert_eq!(open_at_low_integrity(&control, GENERIC_READ), Ok(()));
+        assert_eq!(
+            open_at_low_integrity(&control, GENERIC_READ).map(drop),
+            Ok(())
+        );
 
         let endpoint = unique_endpoint();
         let _listener = PipeListener::bind(&endpoint).unwrap();
         assert_eq!(
-            open_at_low_integrity(&endpoint, GENERIC_READ),
+            open_at_low_integrity(&endpoint, GENERIC_READ).map(drop),
             Err(ERROR_ACCESS_DENIED)
         );
         assert_eq!(
-            open_at_low_integrity(&endpoint, GENERIC_READ | GENERIC_WRITE),
+            open_at_low_integrity(&endpoint, GENERIC_READ | GENERIC_WRITE).map(drop),
             Err(ERROR_ACCESS_DENIED)
         );
+    }
+
+    /// A descriptor that lets everyone in at any integrity level (an untrusted
+    /// label): what the listener would have if its own descriptor ever regressed.
+    const REGRESSED: &str = "D:P(A;;FA;;;WD)(A;;FA;;;AN)S:(ML;;NW;;;S-1-16-0)";
+
+    /// Accepts the client that `open` connects, and expects it refused.
+    async fn expect_refused<Client>(
+        endpoint: &Endpoint,
+        listener: &mut PipeListener,
+        open: impl FnOnce(&Endpoint) -> Client,
+    ) -> String {
+        let client = open(endpoint);
+        let refused = listener.accept().await;
+        drop(client);
+        match refused {
+            Err(IpcError::PeerRefused { peer }) => peer,
+            other => panic!("expected PeerRefused, got {other:?}"),
+        }
+    }
+
+    // The listener used to take whoever the descriptor let in, so a descriptor that
+    // regressed (as the label once did, IPB-1) left nothing else to stop another
+    // principal (IPB-9).
+    #[tokio::test]
+    async fn the_listener_refuses_another_principal_its_descriptor_let_in() {
+        let endpoint = unique_endpoint();
+        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
+            open_as_anonymous(endpoint, GENERIC_READ | GENERIC_WRITE).unwrap()
+        })
+        .await;
+        assert!(
+            peer.contains("S-1-5-7"),
+            "names the anonymous logon: {peer}"
+        );
+
+        // The refusal concerns that client only: the listener still serves the user.
+        let user = Sid::current_user().unwrap();
+        let (client, server) = tokio::join!(connect(&endpoint, &user), listener.accept());
+        client.unwrap();
+        server.unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_listener_refuses_a_lower_integrity_program_of_the_same_user() {
+        let endpoint = unique_endpoint();
+        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
+            open_at_low_integrity(endpoint, GENERIC_READ | GENERIC_WRITE).unwrap()
+        })
+        .await;
+        assert!(peer.contains("S-1-16-4096"), "names the low level: {peer}");
+    }
+
+    /// Opens the pipe from a thread running as the current user at the current integrity
+    /// level but on a restricted token (one whose access is also checked against a list of
+    /// restricting SIDs, here only Everyone), the kind a browser's sandbox uses below its
+    /// `AppContainer`. Returns the open client end.
+    fn open_with_restricted_token(endpoint: &Endpoint) -> Result<OwnedHandle, u32> {
+        use windows_sys::Win32::Security::{CreateRestrictedToken, TOKEN_ALL_ACCESS};
+
+        let name = to_wide(endpoint.as_os_str());
+        std::thread::spawn(move || {
+            let everyone = Sid::parse("S-1-1-0").unwrap();
+            let restricting = SID_AND_ATTRIBUTES {
+                Sid: everyone.as_psid(),
+                Attributes: 0,
+            };
+            let mut process_token: HANDLE = ptr::null_mut();
+            let mut restricted: HANDLE = ptr::null_mut();
+            let mut token: HANDLE = ptr::null_mut();
+            // SAFETY: plain Win32 calls on handles opened and closed here; `restricting`
+            // and the SID it points at outlive the call that reads them; the
+            // impersonation only affects this thread and is reverted.
+            unsafe {
+                assert_ne!(
+                    OpenProcessToken(
+                        GetCurrentProcess(),
+                        TOKEN_DUPLICATE | TOKEN_QUERY,
+                        &raw mut process_token
+                    ),
+                    0
+                );
+                assert_ne!(
+                    CreateRestrictedToken(
+                        process_token,
+                        0,
+                        0,
+                        ptr::null(),
+                        0,
+                        ptr::null(),
+                        1,
+                        &raw const restricting,
+                        &raw mut restricted,
+                    ),
+                    0
+                );
+                CloseHandle(process_token);
+                assert_ne!(
+                    DuplicateTokenEx(
+                        restricted,
+                        TOKEN_ALL_ACCESS,
+                        ptr::null(),
+                        SecurityImpersonation,
+                        TokenImpersonation,
+                        &raw mut token,
+                    ),
+                    0
+                );
+                CloseHandle(restricted);
+                assert_ne!(SetThreadToken(ptr::null(), token), 0);
+                let handle = CreateFileW(
+                    name.as_ptr(),
+                    GENERIC_READ | GENERIC_WRITE,
+                    0,
+                    ptr::null(),
+                    OPEN_EXISTING,
+                    SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
+                    ptr::null_mut(),
+                );
+                let error = GetLastError();
+                RevertToSelf();
+                CloseHandle(token);
+                if handle == INVALID_HANDLE_VALUE {
+                    Err(error)
+                } else {
+                    Ok(OwnedHandle::from_raw_handle(handle as RawHandle))
+                }
+            }
+        })
+        .join()
+        .unwrap()
+    }
+
+    // A restricted token keeps the user's SID and level, so behind a descriptor that let it
+    // in, the user and level checks served it (W4I review L4).
+    #[tokio::test]
+    async fn the_listener_refuses_a_sandboxed_program_of_the_same_user() {
+        let endpoint = unique_endpoint();
+        let mut listener = PipeListener::bind_behind(&endpoint, REGRESSED).unwrap();
+        let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
+            open_with_restricted_token(endpoint).unwrap()
+        })
+        .await;
+        assert!(peer.contains("sandbox"), "{peer}");
+    }
+
+    // A client may open the pipe at the anonymous level, which hides who it is from
+    // the server; a client that will not say who it is is not served.
+    #[tokio::test]
+    async fn the_listener_refuses_a_client_that_will_not_say_who_it_is() {
+        use windows_sys::Win32::Storage::FileSystem::SECURITY_ANONYMOUS;
+
+        let endpoint = unique_endpoint();
+        let mut listener = PipeListener::bind(&endpoint).unwrap();
+        let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
+            ClientOptions::new()
+                .security_qos_flags(SECURITY_ANONYMOUS)
+                .open(endpoint.as_os_str())
+                .unwrap()
+        })
+        .await;
+        assert!(peer.contains("anonymously"), "{peer}");
+    }
+
+    // Without a security quality of service, Windows hands the server the client's
+    // token only after the client writes; until then the server cannot tell who it is.
+    #[tokio::test]
+    async fn the_listener_refuses_a_client_that_has_not_said_who_it_is_yet() {
+        let endpoint = unique_endpoint();
+        let mut listener = PipeListener::bind(&endpoint).unwrap();
+        let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
+            let name = to_wide(endpoint.as_os_str());
+            // SAFETY: `name` is NUL-terminated; the handle is owned by the result.
+            let handle = unsafe {
+                CreateFileW(
+                    name.as_ptr(),
+                    GENERIC_READ | GENERIC_WRITE,
+                    0,
+                    ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    ptr::null_mut(),
+                )
+            };
+            assert_ne!(handle, INVALID_HANDLE_VALUE);
+            // SAFETY: a valid handle we own and nothing else closes.
+            unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) }
+        })
+        .await;
+        assert!(peer.contains("identification level"), "{peer}");
+    }
+
+    #[test]
+    fn a_client_is_served_only_as_the_user_at_the_servers_level_or_above() {
+        let user = Sid::current_user().unwrap();
+        let other = Sid::parse("S-1-5-21-1111111111-2222222222-3333333333-1001").unwrap();
+        let level = |text: &str| Sid::parse(text).unwrap();
+        let client = |user: &Sid, integrity: &str| {
+            Ok(ClientIdentity {
+                user: user.clone(),
+                integrity: level(integrity),
+                sandboxed: false,
+            })
+        };
+        let medium = level("S-1-16-8192");
+        assert!(check_client(&user, &medium, client(&user, "S-1-16-8192")).is_ok());
+        assert!(check_client(&user, &medium, client(&user, "S-1-16-12288")).is_ok());
+        for (who, integrity) in [
+            (&other, "S-1-16-8192"),
+            (&user, "S-1-16-4096"),
+            (&user, "S-1-16-0"),
+            // Not a mandatory label at all.
+            (&user, "S-1-5-18"),
+        ] {
+            assert!(
+                matches!(
+                    check_client(&user, &medium, client(who, integrity)),
+                    Err(IpcError::PeerRefused { .. })
+                ),
+                "{who} at {integrity}"
+            );
+        }
+        let sandboxed = Ok(ClientIdentity {
+            user: user.clone(),
+            integrity: level("S-1-16-8192"),
+            sandboxed: true,
+        });
+        assert!(matches!(
+            check_client(&user, &medium, sandboxed),
+            Err(IpcError::PeerRefused { .. })
+        ));
+        // An elevated server serves only elevated clients.
+        let high = level("S-1-16-12288");
+        assert!(check_client(&user, &high, client(&user, "S-1-16-8192")).is_err());
+        // Failing to read the client for another reason is an error, not a refusal.
+        assert!(matches!(
+            check_client(&user, &medium, Err(os_error(ERROR_ACCESS_DENIED))),
+            Err(IpcError::Io { .. })
+        ));
+    }
+
+    #[test]
+    fn only_a_mandatory_label_has_an_integrity_level() {
+        let level = |text: &str| Sid::parse(text).unwrap().integrity_level();
+        assert_eq!(level("S-1-16-4096"), Some(4096));
+        assert_eq!(level("S-1-16-12288"), Some(12288));
+        assert_eq!(level("S-1-5-18"), None);
+        assert_eq!(level("S-1-5-21-1-2-3-1001"), None);
+        assert_eq!(level("S-1-15-8192"), None);
     }
 
     #[test]

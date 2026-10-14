@@ -144,7 +144,7 @@ impl SocketListener {
         // that does not depend on file permissions.
         if peer != self.uid {
             return Err(IpcError::PeerRefused {
-                peer: format!("uid {peer}"),
+                peer: format!("another user account (uid {peer})"),
             });
         }
         Ok(Connection {

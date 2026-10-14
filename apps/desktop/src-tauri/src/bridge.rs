@@ -15,6 +15,25 @@ pub use wirecatch_product::BRIDGE_FILE_NAME;
 /// Pause after a failed accept, so a persistent error cannot spin.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
+/// Logs a failed accept and pauses before the next one, unless the failure concerned only
+/// that client.
+async fn after_failed_accept(error: &IpcError) {
+    tracing::warn!("refused a browser connection: {error}");
+    if let Some(pause) = backoff_after(error) {
+        tokio::time::sleep(pause).await;
+    }
+}
+
+/// How long to wait after a failed accept. A refused client (another account, a sandboxed
+/// program) says nothing about the next one, so the next accept starts at once; any other
+/// failure may repeat, and a pause keeps it from spinning.
+fn backoff_after(error: &IpcError) -> Option<Duration> {
+    match error {
+        IpcError::PeerRefused { .. } => None,
+        _ => Some(ACCEPT_BACKOFF),
+    }
+}
+
 /// Starts listening on this build's endpoint (see [`crate::host::endpoint`]). Must run inside
 /// the async runtime.
 ///
@@ -40,10 +59,7 @@ pub async fn serve(mut listener: Listener, manager: Manager) {
                     }
                 });
             }
-            Err(e) => {
-                tracing::warn!("refused a browser connection: {e}");
-                tokio::time::sleep(ACCEPT_BACKOFF).await;
-            }
+            Err(e) => after_failed_accept(&e).await,
         }
     }
 }
@@ -61,10 +77,7 @@ pub async fn serve_unavailable(mut listener: Listener, reason: String) {
                     }
                 });
             }
-            Err(e) => {
-                tracing::warn!("refused a browser connection: {e}");
-                tokio::time::sleep(ACCEPT_BACKOFF).await;
-            }
+            Err(e) => after_failed_accept(&e).await,
         }
     }
 }
@@ -232,6 +245,21 @@ pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The pause was meant for errors that repeat; a refused client made the next one wait
+    // too (W4I review N3).
+    #[test]
+    fn a_refused_client_does_not_pause_the_next_accept() {
+        let refused = IpcError::PeerRefused {
+            peer: "another user account (uid 1001)".into(),
+        };
+        assert_eq!(backoff_after(&refused), None);
+        let failed = IpcError::Io {
+            context: "A client failed to connect".into(),
+            source: std::io::Error::from(std::io::ErrorKind::BrokenPipe),
+        };
+        assert_eq!(backoff_after(&failed), Some(ACCEPT_BACKOFF));
+    }
 
     #[test]
     fn the_bridge_sits_next_to_the_app() {
