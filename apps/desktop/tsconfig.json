@@ -32,6 +32,7 @@
     "playwright.config.ts",
     "playwright.perf.config.ts",
     "playwright.gallery.config.ts",
+    "playwright.screenshots.config.ts",
     "vitest-setup.ts"
   ]
 }

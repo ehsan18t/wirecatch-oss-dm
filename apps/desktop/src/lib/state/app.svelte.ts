@@ -30,6 +30,7 @@ import { Selection } from './selection.svelte';
 import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import { SettingsTransfer } from './settings-transfer.svelte';
 import { Toasts } from './toasts.svelte';
+import { WindowFrameControls } from './window-frame';
 import { countRows, visibleIds, type SortKey, type View } from './view';
 
 export type { Dialog, Screen } from './screens';
@@ -51,7 +52,7 @@ export class AppState {
   readonly #connection: Connection;
   readonly downloads = new DownloadStore();
   readonly hints = new Hints();
-  readonly toasts = new Toasts();
+  readonly toasts = new Toasts({ reveal: (id) => this.openDetails(id) });
   /** The time schedule labels follow. */
   readonly clock = new Clock();
   readonly #runner = new Runner((text) => this.toasts.fail(text));
@@ -60,6 +61,8 @@ export class AppState {
     row: (id) => this.downloads.get(id),
   });
   readonly questions = new Questions({ backend: () => this.#backend });
+  /** What the title bar's caption buttons call: this window, through the backend once it has loaded. */
+  readonly windowControls = new WindowFrameControls(() => this.#connection.load());
   /** The window's theme and accent on its page (D36); the shell components apply the settings to it. */
   readonly appearance = new Appearance();
   #stopAppearance: (() => void) | null = null;
@@ -114,10 +117,8 @@ export class AppState {
   search = $state('');
   sort = $state<SortKey>('queue');
 
-  /** The window is wide enough for the detail panel to have its own column. */
-  wide = $state(true);
-  /** In a wide window, whether the detail panel column is shown. */
-  detailsOpen = $state(true);
+  /** Whether the details of the selection show, in the panel that slides over the list. */
+  detailsOpen = $state(false);
 
   dialog = $state<Dialog | null>(null);
   paletteOpen = $state(false);
@@ -195,6 +196,7 @@ export class AppState {
     // None is needed for the list, so none holds it up.
     void this.#followSystem(current);
     void this.#takeCaptured();
+    void this.#takeStartupNotices();
     void this.addons.load();
     void this.suffixList.load();
     void this.#takeLaunchLinks();
@@ -262,6 +264,20 @@ export class AppState {
     for (const row of rows) this.toasts.captured(row);
   }
 
+  /** How the app started, when the person must know: the system notification may be long gone, or off (CORE-1). */
+  async #takeStartupNotices(): Promise<void> {
+    const notices = await this.#backend.startupNotices().catch(() => []);
+    for (const notice of notices) this.toasts.notice(notice, () => void this.#showSetAsideList());
+  }
+
+  async #showSetAsideList(): Promise<void> {
+    try {
+      await this.#backend.showSetAsideList();
+    } catch (error) {
+      this.toasts.fail(errorMessage(error));
+    }
+  }
+
   /** Links from the command line (`wirecatch-app https://...`) open the Add dialog. */
   async #takeLaunchLinks(): Promise<void> {
     let links: string[];
@@ -286,6 +302,7 @@ export class AppState {
   dispose(): void {
     this.#generation += 1;
     this.#teardown();
+    this.toasts.dispose();
   }
 
   readonly #handlers = mainWindowEvents(this);
@@ -300,6 +317,19 @@ export class AppState {
     this.view = view;
     this.screen = 'downloads';
     this.selection.clear();
+    this.detailsOpen = false;
+  }
+
+  /** Shows the details of `id` (selecting it alone unless it is already selected), or of the selection. */
+  openDetails(id?: DownloadId): void {
+    if (id !== undefined && !this.selection.has(id)) this.selection.only(id);
+    this.screen = 'downloads';
+    this.paletteOpen = false;
+    this.detailsOpen = true;
+  }
+
+  closeDetails(): void {
+    this.detailsOpen = false;
   }
 
   openSettings(focus: SettingId | null = null): void {
@@ -335,6 +365,11 @@ export class AppState {
   /** Asks for a folder, starting at `current`; null when none was picked or the picker failed. */
   async pickFolder(current?: string): Promise<string | null> {
     return (await this.#runner.run(() => this.#backend.pickFolder(current))) ?? null;
+  }
+
+  /** A caption button's call to the window failed: the window stays as it was, and the person learns why. */
+  windowFailed(error: unknown): void {
+    this.toasts.fail(`The window did not respond: ${errorMessage(error)}`);
   }
 
   /** Tells the shell the first view is drawn, so it shows the window; without a backend, nothing. */

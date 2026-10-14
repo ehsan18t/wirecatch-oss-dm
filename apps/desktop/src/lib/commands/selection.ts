@@ -82,8 +82,8 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
   },
   {
     id: 'sel.refresh',
-    title: (s) => `Give ${s.n} a fresh link`,
-    keywords: 'refresh link expired url',
+    title: (s) => `Get a new link for ${s.n}`,
+    keywords: 'refresh fresh link expired url',
     run: (s) => s.app.openDialog({ kind: 'refresh', id: s.only.id }),
   },
   {
@@ -111,6 +111,23 @@ const ORDER: readonly CommandSpec<Selected>[] = [
   },
 ];
 
+const DETAILS: CommandSpec<Selected> = {
+  id: 'sel.details',
+  title: (s) => `Show the details of ${s.n}`,
+  keywords: 'info properties panel',
+  key: 'details',
+  run: (s) => s.app.openDetails(),
+};
+
+/** Escape closes the details before it clears the selection they show. */
+const CLOSE_DETAILS: CommandSpec<AppState> = {
+  id: 'sel.closedetails',
+  title: 'Close the details',
+  key: 'escape',
+  when: (app) => app.screen === 'downloads' && app.detailsOpen,
+  run: (app) => app.closeDetails(),
+};
+
 const CLEAR: CommandSpec<AppState> = {
   id: 'sel.clear',
   title: 'Clear the selection',
@@ -121,7 +138,7 @@ const CLEAR: CommandSpec<AppState> = {
 };
 
 export function selectionCommands(app: AppState): Command[] {
-  const clear = commandsFrom(GROUP, [CLEAR], app);
+  const clear = commandsFrom(GROUP, [CLOSE_DETAILS, CLEAR], app);
   const rows = app.selection.rows;
   const first = rows[0];
   if (!first) return clear;
@@ -135,6 +152,7 @@ export function selectionCommands(app: AppState): Command[] {
   return [
     ...commandsFrom(GROUP, ACTIONS, s),
     ...app.queues.list.flatMap((queue) => commandsFrom(GROUP, [MOVE], { ...s, queue })),
+    ...commandsFrom(GROUP, [DETAILS], s),
     ...(only ? commandsFrom(GROUP, ONE, { ...s, only }) : []),
     ...commandsFrom(GROUP, ORDER, s),
     ...clear,

@@ -16,6 +16,7 @@ import {
   shownAccent,
   SYSTEM_ACCENT_PROPERTY,
 } from '../first-paint.js';
+import { pageStorage } from './page-storage';
 
 export {
   DARK_QUERY,
@@ -34,15 +35,6 @@ export type AppearanceSource = Pick<Backend, 'systemAppearance' | 'onSystemAppea
 /** The system's light or dark preference as a media query, where the page can ask for one. */
 function darkQuery(): MediaQueryList | null {
   return typeof window.matchMedia === 'function' ? window.matchMedia(DARK_QUERY) : null;
-}
-
-/** The page's own storage, where the page may use it (a private window may refuse it). */
-function pageStorage(): Storage | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
 }
 
 export class Appearance {

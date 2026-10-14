@@ -5,11 +5,14 @@ import { defineConfig } from '@playwright/test';
 //
 // Playwright starts its own server on a port of its own, so it never talks to a stray dev
 // server. Set PW_REUSE=1 to reuse one that is already running on that port.
+//
+// The checks the gate runs (`pnpm e2e`): accessibility and layout. They write nothing to the
+// tree; `pnpm e2e:screenshots` (playwright.screenshots.config.ts) takes the pictures for review.
 const PORT = 4317;
 
 export default defineConfig({
   testDir: 'e2e',
-  testIgnore: ['performance.spec.ts', 'gallery.spec.ts'],
+  testIgnore: ['performance.spec.ts', 'gallery.spec.ts', 'screenshots.spec.ts'],
   timeout: 90_000,
   fullyParallel: false,
   workers: 1,

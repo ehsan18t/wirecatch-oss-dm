@@ -7,12 +7,13 @@ import type { Backend } from '../backend';
 import { linkForDisplay } from '../format';
 import type { DownloadStore } from './downloads.svelte';
 import { nudged, placed } from './order';
+import { canPause, canResume, canRetry } from './row-actions';
 import type { Queues } from './queues.svelte';
 import type { Runner } from './runner';
 import type { Dialog } from './screens';
 import type { Selection } from './selection.svelte';
 import type { Toasts } from './toasts.svelte';
-import { isUnderWay, type SortKey, type View } from './view';
+import type { SortKey, View } from './view';
 
 /** What the actions need from the window they run in. */
 export interface DownloadActionsHost {
@@ -25,6 +26,12 @@ export interface DownloadActionsHost {
   openDialog: (dialog: Dialog) => void;
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
   place: () => { view: View; sort: SortKey };
+}
+
+/** What Space did: which action it took, and on how many downloads it succeeded. `verb` is null when nothing in the selection could take either. */
+export interface Toggled {
+  verb: 'pause' | 'resume' | null;
+  done: number;
 }
 
 export class DownloadActions {
@@ -56,17 +63,26 @@ export class DownloadActions {
     await this.#host.runner.bulk(ids, 'resume', (id) => this.#host.backend().resume(id));
   }
 
-  /** Space bar: pause what runs, resume what does not. */
-  async togglePause(ids: DownloadId[] = this.#host.selection.list): Promise<void> {
+  /** Space bar: pause what runs, or else resume what stopped, each download only if it takes the action. Says what it did, so nothing claims a change that did not happen. */
+  async togglePause(ids: DownloadId[] = this.#host.selection.list): Promise<Toggled> {
     const rows = ids.flatMap((id) => this.#host.downloads.get(id) ?? []);
-    if (rows.some((r) => isUnderWay(r.status))) {
-      await this.pause(ids);
-      return;
+    const backend = this.#host.backend();
+    const running = rows.filter(canPause).map((r) => r.id);
+    if (running.length > 0) {
+      const done = await this.#host.runner.bulk(running, 'pause', (id) => backend.pause(id));
+      return { verb: 'pause', done };
     }
+    const stopped = rows.filter((r) => canResume(r) || canRetry(r));
+    if (stopped.length === 0) return { verb: null, done: 0 };
     // A cancelled download has no partial file left; it starts over.
-    const cancelled = rows.filter((r) => r.status === 'cancelled').map((r) => r.id);
-    await this.retry(cancelled);
-    await this.resume(ids.filter((id) => !cancelled.includes(id)));
+    const cancelled = stopped.filter((r) => r.status === 'cancelled').map((r) => r.id);
+    // One bulk action, so a failure is said once and every success is counted.
+    const done = await this.#host.runner.bulk(
+      stopped.map((r) => r.id),
+      'resume',
+      (id) => (cancelled.includes(id) ? backend.retry(id) : backend.resume(id)),
+    );
+    return { verb: 'resume', done };
   }
 
   async retry(ids: DownloadId[] = this.#host.selection.list): Promise<void> {

@@ -6,6 +6,7 @@ import type { Backend, ShellSignal } from '../backend';
 
 export class Connection {
   #loaded: Backend | null = null;
+  #loading: Promise<Backend> | null = null;
   readonly #load: () => Promise<Backend>;
   #stop: (() => void) | null = null;
 
@@ -30,10 +31,19 @@ export class Connection {
     return this.#loaded;
   }
 
-  /** Loads the backend, once. */
-  async load(): Promise<Backend> {
-    this.#loaded ??= await this.#load();
-    return this.#loaded;
+  /** Loads the backend, once: a second call while the first is still loading waits for the same backend rather than loading another. A load that failed is tried again by the next call (Try again). */
+  load(): Promise<Backend> {
+    this.#loading ??= this.#load().then(
+      (backend) => {
+        this.#loaded = backend;
+        return backend;
+      },
+      (err: unknown) => {
+        this.#loading = null;
+        throw err;
+      },
+    );
+    return this.#loading;
   }
 
   /**

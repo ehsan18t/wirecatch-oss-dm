@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from './backend/mock';
 import { buildCommands, searchCommands } from './commands';
+import { ASSUMED_ROW_HEIGHT as ROW_HEIGHT } from '../ui/list/viewport';
 import {
   appState,
   downloadWindow,
@@ -26,6 +27,12 @@ async function setup(options: Parameters<typeof renderApp>[0] = {}) {
 }
 
 const button = (name: RegExp | string) => screen.getByRole('button', { name });
+/** The details panel, open for the download whose name starts with `name`. */
+const details = (name: string) =>
+  within(screen.getByRole('dialog', { name: new RegExp(`^${name}`) }));
+/** Opens a download's details with the row's own button. */
+const showDetails = (name: string) =>
+  within(rowByName(name)).getByRole('button', { name: 'Show details' });
 
 describe('2. the list does not jump back to the keyboard row', () => {
   it('keeps the scroll position when a status changes elsewhere', async () => {
@@ -42,7 +49,7 @@ describe('2. the list does not jump back to the keyboard row', () => {
     // Moving the keyboard row still brings it into view.
     app.selection.move(1, false);
     await settle();
-    expect(writes).toHaveBeenCalledWith(44);
+    expect(writes).toHaveBeenCalledWith(ROW_HEIGHT);
   });
 });
 
@@ -74,9 +81,11 @@ describe('3. closing a download window keeps the download waiting', () => {
 describe('4 and 12. destructive actions ask first, with focus on the safe choice', () => {
   it('cancel asks, focuses Keep downloading, and only then discards', async () => {
     const { app, click } = await setup();
-    await click(rowByName('LibreOffice'));
+    await click(showDetails('LibreOffice'));
     const id = app.selection.rows[0]!.id;
-    await click(button('Cancel and discard the partial file'));
+    await click(
+      details('LibreOffice').getByRole('button', { name: 'Cancel and discard the partial file' }),
+    );
     expect(document.activeElement).toBe(button('Keep downloading'));
     expect(app.downloads.get(id)?.status).not.toBe('cancelled');
     await click(button('Cancel and delete the partial file'));
@@ -85,19 +94,21 @@ describe('4 and 12. destructive actions ask first, with focus on the safe choice
 
   it('remove focuses Keep', async () => {
     const { click } = await setup();
-    await click(rowByName('LibreOffice'));
-    await click(button('Remove'));
+    await click(showDetails('LibreOffice'));
+    await click(details('LibreOffice').getByRole('button', { name: 'Remove' }));
     expect(document.activeElement).toBe(button('Keep'));
   });
 });
 
 describe('5. waiting downloads say why', () => {
-  it('in the row (short) and the detail panel (full)', async () => {
+  it('in the row (short) and the details (full)', async () => {
     const { app, click } = await setup();
     const debian = rowByName('debian-13.1.0');
     expect(debian).toHaveTextContent('Starts 01:00');
-    await click(debian);
-    expect(screen.getByText('Waiting for Overnight, which starts at 01:00.')).toBeInTheDocument();
+    await click(showDetails('debian-13.1.0'));
+    expect(
+      details('debian-13.1.0').getByText('Waiting for Overnight, which starts at 01:00.'),
+    ).toBeInTheDocument();
     const reasons = app.visible.map((id) => app.downloads.get(id)?.waiting?.type).filter(Boolean);
     expect(reasons).toContain('queue_full');
     expect(reasons).toContain('in_line');
@@ -132,7 +143,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
   it('starts a scheduled queue now and shows it runs outside its hours', async () => {
     const { app, backend, click } = await setup();
     expect(app.queues.isOutsideSchedule(app.queues.byId(queueId(2)) as never)).toBe(true);
-    await click(button('Start now'));
+    await click(button('Start Overnight now, outside its hours'));
     expect(app.queues.byId(queueId(2))?.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
       'Started by hand, outside its hours',
@@ -238,11 +249,13 @@ describe('10. the palette', () => {
 describe('11. Pause all and Resume all only work when they would do something', () => {
   it('are disabled with nothing to pause or resume', async () => {
     const { click } = await setup();
-    expect(button('Resume all')).toBeEnabled();
+    // Disabled but still focusable, so it can say why.
+    const off = (name: string) => expect(button(name)).toHaveAttribute('aria-disabled', 'true');
+    expect(button('Resume all')).not.toHaveAttribute('aria-disabled');
     await click(button('Pause all'));
-    expect(button('Pause all')).toBeDisabled();
+    off('Pause all');
     await click(button('Resume all'));
-    expect(button('Resume all')).toBeDisabled();
+    off('Resume all');
   });
 });
 
@@ -322,21 +335,20 @@ describe('20. a link dropped on the window', () => {
 describe('21. right-click menu on rows', () => {
   it('mirrors the visible actions, by mouse and by keyboard', async () => {
     const { app, user, click } = await setup();
-    await fireEvent.contextMenu(rowByName('LibreOffice'));
+    // A right press, as a mouse makes it: the list takes the focus, then the menu opens.
+    await user.pointer({ keys: '[MouseRight]', target: rowByName('LibreOffice') });
     await settle();
     const menu = screen.getByRole('menu');
-    const labels = within(menu)
-      .getAllByRole('menuitem')
-      .map((m) => m.textContent.trim());
-    expect(labels).toEqual(
-      expect.arrayContaining([
-        'Pause',
-        'Show in folder',
-        'Copy link',
-        'Move to Work files',
-        'Remove',
-      ]),
-    );
+    for (const name of [
+      'Pause',
+      'Show details',
+      'Show in folder',
+      'Copy link',
+      'Move to Work files',
+      'Remove',
+    ]) {
+      expect(within(menu).getByRole('menuitem', { name })).toBeInTheDocument();
+    }
     expect(document.activeElement).toBe(within(menu).getAllByRole('menuitem')[0]);
     await user.keyboard('{Escape}');
     await settle();
@@ -353,7 +365,7 @@ describe('21. right-click menu on rows', () => {
 });
 
 describe('a password in a link is never shown or copied', () => {
-  it('the detail panel and Copy link use the hidden form', async () => {
+  it('the details and Copy link use the hidden form', async () => {
     const { app, backend, click } = await setup({ empty: true });
     // The clipboard is the one user-event puts in place for the test and takes away after it;
     // restoreMocks puts the spied method back.
@@ -366,7 +378,7 @@ describe('a password in a link is never shown or copied', () => {
       start: false,
     });
     await settle();
-    app.selection.only(id);
+    app.openDetails(id);
     await settle();
     expect(screen.getByText('https://ada:***@example.com/files/locked.zip')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('s3cret');

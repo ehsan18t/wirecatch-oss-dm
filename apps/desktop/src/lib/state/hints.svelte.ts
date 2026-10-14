@@ -3,6 +3,7 @@
 
 import { SvelteSet } from 'svelte/reactivity';
 import { shortcutLabel } from '../keymap';
+import { readStored, writeStored } from './page-storage';
 
 export type HintId = 'palette' | 'drag-to-queue' | 'reorder' | 'paste';
 
@@ -16,18 +17,13 @@ export const HINT_TEXT: Record<HintId, string> = {
 
 const KEY = 'wirecatch.hints.dismissed';
 
-/** The webview's storage, or null where there is none (tests, and pages without a window). */
-function storage(): Storage | null {
-  return 'localStorage' in globalThis ? globalThis.localStorage : null;
-}
-
 function isHintId(value: unknown): value is HintId {
   return typeof value === 'string' && Object.hasOwn(HINT_TEXT, value);
 }
 
 function load(): HintId[] {
   try {
-    const raw = storage()?.getItem(KEY) ?? null;
+    const raw = readStored(KEY);
     const parsed: unknown = raw === null ? [] : JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter(isHintId) : [];
   } catch {
@@ -44,10 +40,7 @@ export class Hints {
 
   dismiss(id: HintId): void {
     this.dismissed.add(id);
-    try {
-      storage()?.setItem(KEY, JSON.stringify([...this.dismissed]));
-    } catch {
-      // Storage can be unavailable; the hint just shows again next time.
-    }
+    // Where storage is unavailable, the hint just shows again next time.
+    writeStored(KEY, JSON.stringify([...this.dismissed]));
   }
 }

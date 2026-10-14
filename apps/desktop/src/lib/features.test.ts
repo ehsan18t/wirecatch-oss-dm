@@ -19,7 +19,18 @@ async function setup() {
 }
 
 const button = (name: RegExp | string) => screen.getByRole('button', { name });
-const dialog = () => screen.getByRole('dialog');
+/** The open dialog; the details panel, a dialog that keeps the list usable beside it, is not one. */
+const dialog = () => {
+  const found = screen.getAllByRole('dialog').filter((d) => d.tagName !== 'SECTION');
+  const last = found.at(-1);
+  if (!last) throw new Error('no dialog');
+  return last;
+};
+/** A row's own button, shown while the pointer is on the row. */
+const inRow = (name: string, label: string) =>
+  within(rowByName(name)).getByRole('button', { name: label });
+/** The details panel, open for the download whose name starts with `name`. */
+const details = (name: string) => screen.getByRole('dialog', { name: new RegExp(`^${name}`) });
 
 describe('feature paths (visible in the interface, and in the palette)', () => {
   it('add a download: Add download button, 1 click', async () => {
@@ -43,27 +54,26 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(app.downloads.size).toBe(before + 1);
   });
 
-  it('pause and resume one download: row, then Pause or Resume, 2 clicks', async () => {
+  it("pause and resume one download: the row's own Pause or Resume, 1 click", async () => {
     const { app, click, palette } = await setup();
+    const id = downloadId(Number(rowByName('ubuntu-24.04.3').dataset.id));
+    await click(inRow('ubuntu-24.04.3', 'Pause'));
+    expect(app.downloads.get(id)?.status).toBe('paused');
+    await click(inRow('ubuntu-24.04.3', 'Resume'));
+    expect(app.downloads.get(id)?.status).toBe('queued');
     await click(rowByName('ubuntu-24.04.3'));
-    await click(button('Pause'));
-    expect(app.selection.rows[0]?.status).toBe('paused');
-    expect(palette('sel.pause')).toBe(true);
-    await click(button('Resume'));
-    expect(app.selection.rows[0]?.status).toBe('queued');
-    expect(palette('sel.resume')).toBe(true);
+    expect(palette('sel.pause') && palette('sel.resume')).toBe(true);
   });
 
-  it('error fixes: the fix button in the row, 1 click (also in the detail panel)', async () => {
+  it('error fixes: the fix button in the row, 1 click (also in the details)', async () => {
     const { app, click, palette } = await setup();
-    const inRow = (name: string, fix: string) =>
-      within(rowByName(name)).getByRole('button', { name: fix });
 
-    await click(inRow('Conference keynote', 'New link'));
-    expect(within(dialog()).getByText('Give it a fresh link')).toBeInTheDocument();
-    expect(palette('sel.refresh')).toBe(true);
+    await click(inRow('Conference keynote', 'Get a new link'));
+    expect(within(dialog()).getByText('Get a new link')).toBeInTheDocument();
     app.closeDialog();
     await settle();
+    await click(rowByName('Conference keynote'));
+    expect(palette('sel.refresh')).toBe(true);
 
     const nightly = rowByName('nightly-build');
     await click(within(nightly).getByRole('button', { name: 'Try again' }));
@@ -76,32 +86,33 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(climateRow?.status).toBe('queued');
     expect(palette('sel.choosefolder')).toBe(true);
 
-    // The detail panel shows the same message and fix.
-    await click(rowByName('win11-dev'));
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent('Drive C: is full');
-    expect(
-      within(alert).getByRole('button', { name: 'Open the folder to free space' }),
-    ).toBeInTheDocument();
+    // The details show the same message and fix.
+    await click(inRow('win11-dev', 'Show details'));
+    const panel = details('win11-dev');
+    expect(panel).toHaveTextContent('Drive C: is full');
+    expect(within(panel).getByRole('button', { name: 'Open folder' })).toBeInTheDocument();
     expect(palette('sel.retry')).toBe(true);
   });
 
-  it('remove, cancel, show in folder, copy link: row, then the button, 2 clicks', async () => {
+  it("remove, cancel, show in folder, copy link: the row's details, then the button, 2 clicks", async () => {
     const { click, palette } = await setup();
-    await click(rowByName('LibreOffice'));
-    expect(button('Show in folder')).toBeInTheDocument();
-    expect(button('Copy link')).toBeInTheDocument();
-    expect(button('Cancel and discard the partial file')).toBeInTheDocument();
-    await click(button('Remove'));
+    await click(inRow('LibreOffice', 'Show details'));
+    const panel = within(details('LibreOffice'));
+    expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
+    expect(
+      panel.getByRole('button', { name: 'Cancel and discard the partial file' }),
+    ).toBeInTheDocument();
+    await click(panel.getByRole('button', { name: 'Remove' }));
     expect(within(dialog()).getByText(/Remove "LibreOffice/)).toBeInTheDocument();
     for (const id of ['sel.remove', 'sel.cancel', 'sel.folder']) expect(palette(id)).toBe(true);
   });
 
-  it('move to another queue: row, then the Queue menu, 2 clicks (or drag onto the queue)', async () => {
-    const { app, click, user, palette } = await setup();
-    await click(rowByName('LibreOffice'));
-    await user.selectOptions(screen.getByLabelText('Queue'), 'Work files');
-    await settle();
+  it('move to another queue: the details, then the Queue menu (or the context menu, or a drag onto the queue)', async () => {
+    const { app, click, palette } = await setup();
+    await click(inRow('LibreOffice', 'Show details'));
+    await click(within(details('LibreOffice')).getByRole('combobox', { name: 'Queue' }));
+    await click(screen.getByRole('option', { name: 'Work files' }));
     expect(app.selection.rows[0]?.queue).toBe(3);
     expect(palette('sel.move.2')).toBe(true);
   });
@@ -184,18 +195,19 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     ).toBeInTheDocument();
   });
 
-  it('browser capture without a window: toast with Change and Open folder, 1 click each', async () => {
+  it('browser capture without a window: a toast, whose Show details offers the folder, 2 clicks', async () => {
     const { app, backend, click } = await setup();
     await app.setAskBeforeDownload(false);
     backend.simulateCapture();
     await settle();
     const toasts = screen.getByRole('region', { name: 'Notifications' });
-    expect(within(toasts).getByText(/^Downloading/)).toBeInTheDocument();
-    const inToast = (name: string) => within(toasts).getByRole('button', { name });
-    expect(inToast('Open folder')).toBeInTheDocument();
-    expect(inToast('Show a window first next time')).toBeInTheDocument();
-    await click(inToast('Change'));
-    expect(screen.getByText(/Saving to/)).toBeInTheDocument();
+    expect(within(toasts).getByText(/^Downloading to/)).toBeInTheDocument();
+    await click(within(toasts).getByRole('button', { name: 'Show details' }));
+    const name = app.selection.rows[0]?.file_name ?? '';
+    const panel = within(details(name));
+    expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
+    await click(panel.getByRole('button', { name: 'Change folder' }));
+    expect(within(toasts).getByText(/^Saving to/)).toBeInTheDocument();
   });
 
   it('a browser file opens its own window, which then shows its progress, 1 click', async () => {
@@ -214,11 +226,12 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(window.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
-  it('a progress window for any download: row, then Show progress window, 2 clicks', async () => {
+  it('a progress window for any download: its details, then Show progress window, 2 clicks', async () => {
     const { click, palette } = await setup();
-    await click(rowByName('ubuntu-24.04.3'));
+    await click(inRow('ubuntu-24.04.3', 'Show details'));
     expect(palette('sel.progress')).toBe(true);
-    await click(button('Show progress window'));
+    const panel = within(details('ubuntu-24.04.3'));
+    await click(panel.getByRole('button', { name: 'Show progress window' }));
     const window = within(await downloadWindow());
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent('ubuntu-24.04.3');
   });

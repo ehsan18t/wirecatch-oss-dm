@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import '@wirecatch/ui/testing/jsdom';
 import { afterAll, afterEach, vi } from 'vitest';
 
 // Test files share one jsdom window per worker (`isolate: false` in vite.config.ts), so each file
@@ -19,33 +20,8 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-// jsdom leaves out a few browser features the interface uses. The DOM types declare every one of
-// them, so a truthiness check reads as always true to the type checker; they are checked with `in`
-// or `typeof` instead.
-if (!('ResizeObserver' in globalThis)) {
-  class ResizeObserverStub {
-    observe = vi.fn();
-    unobserve = vi.fn();
-    disconnect = vi.fn();
-  }
-  Object.assign(globalThis, { ResizeObserver: ResizeObserverStub });
-}
-
-if (typeof Element !== 'undefined' && !('scrollIntoView' in Element.prototype)) {
-  Object.assign(Element.prototype, { scrollIntoView: vi.fn() });
-}
-
-if (typeof HTMLDialogElement !== 'undefined' && !('showModal' in HTMLDialogElement.prototype)) {
-  Object.assign(HTMLDialogElement.prototype, {
-    showModal(this: HTMLDialogElement) {
-      this.setAttribute('open', '');
-    },
-    close(this: HTMLDialogElement) {
-      this.removeAttribute('open');
-    },
-  });
-}
-
+// The design system's jsdom.ts adds the browser features jsdom leaves out; this adds what only the
+// app's tests need.
 // The test environment copies jsdom's window keys onto the global, `matchMedia` among them with no
 // value, so here the check is for a function.
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {

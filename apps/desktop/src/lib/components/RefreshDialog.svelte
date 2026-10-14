@@ -26,7 +26,7 @@
 </script>
 
 <Dialog
-  title="Give it a fresh link"
+  title="Get a new link"
   description="Links from some sites stop working after a while. Start the download again on the page it came from, copy the new link and paste it here. Everything already downloaded is kept."
   onclose={() => app.closeDialog()}
   size="wide"

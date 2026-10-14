@@ -1,0 +1,31 @@
+/*
+ * The main window's stylesheet: the design system, with the screens not yet rebuilt on it (settings, add-ons, dialogs, the command palette) still styled by app.css.
+ *
+ * app.css sits in a layer of its own, below the design system's components and utilities: unlayered, its element rules would beat every utility, and its opaque body would hide the window's material. The components layer gives the body back to the design system.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import '@wirecatch/ui/tokens.css';
+@import '@wirecatch/ui/base.css';
+@import '../app.css' layer(legacy);
+@source '../ui';
+
+@layer components {
+  html,
+  body {
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-variation-settings: normal;
+    @apply text-body;
+  }
+
+  :focus-visible {
+    outline-color: var(--color-ring);
+  }
+}

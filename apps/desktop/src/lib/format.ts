@@ -363,22 +363,13 @@ export function displayPath(path: string): string {
   return path.replace(/^\{(\w+)\}/, '$1');
 }
 
-/** The button text for each fix an error can offer. */
+/** The words for each fix an error can offer, the same on the row, in its menu and in the details, so one action never reads as two. Short enough for a list row. */
 export const FIX_LABEL: Record<FixAction, string> = {
   retry: 'Try again',
-  refresh_link: 'Get a fresh link',
-  choose_folder: 'Choose another folder',
-  free_disk_space: 'Open the folder to free space',
-  keep_original: 'Keep the original',
-};
-
-/** Shorter button text for the fix inside a list row, where room is tight. */
-export const FIX_SHORT: Record<FixAction, string> = {
-  retry: 'Try again',
-  refresh_link: 'New link',
+  refresh_link: 'Get a new link',
   choose_folder: 'Change folder',
   free_disk_space: 'Open folder',
-  keep_original: 'Keep original',
+  keep_original: 'Keep the original',
 };
 
 /** What ffmpeg does to a downloaded video, in a couple of words (D24). */

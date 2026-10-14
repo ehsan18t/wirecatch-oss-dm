@@ -126,12 +126,17 @@ export class MockBackend implements Backend {
     if (!options.empty) populate(this.#state, options.count ?? SEEDS.length, options.active ?? 0);
     // Work out what runs and why the rest waits before anyone asks.
     this.tick(0);
-    if (options.autoTick ?? true) {
-      this.#timer = setInterval(() => this.tick(), options.tickMs ?? DEFAULT_TICK_MS);
-    }
-    if (options.autoCapture) {
-      this.#after(AUTO_CAPTURE_MS, () => this.simulateCapture());
-    }
+    this.#startTimers(options);
+  }
+
+  /** The simulation's clock, and the sample capture a few seconds after start, as the options ask. */
+  #startTimers({
+    autoTick = true,
+    tickMs = DEFAULT_TICK_MS,
+    autoCapture = false,
+  }: MockOptions): void {
+    if (autoTick) this.#timer = setInterval(() => this.tick(), tickMs);
+    if (autoCapture) this.#after(AUTO_CAPTURE_MS, () => this.simulateCapture());
   }
 
   /** Stops the timers, including answers still on their way back; those never arrive. */

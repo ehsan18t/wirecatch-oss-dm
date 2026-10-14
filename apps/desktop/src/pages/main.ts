@@ -1,5 +1,4 @@
-import '@wirecatch/ui/tokens.css';
-import '../app.css';
+import './main.css';
 import { mount } from 'svelte';
 import MainPage from './MainPage.svelte';
 

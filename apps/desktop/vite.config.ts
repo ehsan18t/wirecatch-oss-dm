@@ -107,7 +107,7 @@ export default defineConfig(({ mode }) => ({
     // and the lint config bans module mocks, which would leak through the shared module registry.
     unstubGlobals: true,
     unstubEnvs: true,
-    // src/lib/layout.ts reads its lengths from the text of app.css, so tests need the real file.
-    css: { include: [/\/src\/app\.css/] },
+    // src/lib/layout.ts reads its lengths from the text of the design system's tokens.css, so tests need the real file.
+    css: { include: [/\/packages\/ui\/src\/tokens\.css/] },
   },
 }));

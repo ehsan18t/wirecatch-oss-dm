@@ -3,7 +3,7 @@
 
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { open, row } from './helpers';
+import { open, row, showDetails } from './helpers';
 
 async function audit(page: Page, label: string) {
   const result = await new AxeBuilder({ page })
@@ -23,15 +23,16 @@ for (const theme of ['light', 'dark'] as const) {
   test(`axe finds no WCAG AA problems, ${theme} theme`, async ({ page }) => {
     await open(page, 'capture=0', { theme, hints: true });
     await audit(page, 'main');
-    await row(page, 'Conference keynote').click();
-    await audit(page, 'error selected');
+    await showDetails(page, 'Conference keynote');
+    await audit(page, 'error in the details');
     await row(page, 'android-studio').click();
-    await audit(page, 'paused selected');
+    await audit(page, 'paused in the details');
+    await page.keyboard.press('Escape');
     await row(page, 'LibreOffice').click({ button: 'right' });
     await audit(page, 'context menu');
     await page.keyboard.press('Escape');
-    await row(page, 'LibreOffice').click();
-    await page.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+    const details = await showDetails(page, 'LibreOffice');
+    await details.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
     await audit(page, 'cancel confirmation');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+K');
@@ -43,6 +44,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: /^Settings/ }).click();
     await audit(page, 'settings');
     await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: /^Overnight/ }).hover();
     await page.getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }).click();
     await audit(page, 'queue editor');
     await page.keyboard.press('Escape');
@@ -136,7 +138,10 @@ test('keyboard only: every stop shows a visible focus ring', async ({ page }) =>
       if (!el || el === document.body) return null;
       const s = getComputedStyle(el);
       const ring = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
-      const shadow = s.boxShadow !== 'none';
+      // A text field of the design system shows focus on its box, with an accent line (as e2e/gallery.spec.ts reads it).
+      const box = el.matches('input, textarea') ? el.parentElement : null;
+      const shadow =
+        s.boxShadow !== 'none' || (box !== null && getComputedStyle(box).boxShadow !== 'none');
       return {
         name: el.getAttribute('aria-label') ?? (el.textContent.trim().slice(0, 30) || el.tagName),
         visible: ring || shadow,
@@ -147,4 +152,29 @@ test('keyboard only: every stop shows a visible focus ring', async ({ page }) =>
     expect(info.visible, `no visible focus on "${info.name}"`).toBe(true);
   }
   expect(seen.length).toBeGreaterThan(20);
+});
+
+test('keyboard only: the navigation is two Tab stops, so the list is near the top', async ({
+  page,
+}) => {
+  await open(page, 'capture=0');
+  const grid = page.getByRole('grid', { name: 'Downloads' });
+  const inNav: string[] = [];
+  let presses = 0;
+  while (!(await grid.evaluate((el) => el === document.activeElement)) && presses < 40) {
+    await page.keyboard.press('Tab');
+    presses++;
+    const name = await page.evaluate(() => {
+      const el = document.activeElement;
+      return el?.closest('nav') ? el.textContent.trim() : null;
+    });
+    if (name !== null) inNav.push(name);
+  }
+  // Add download, then the place shown; the arrows reach the rest.
+  expect(inNav, 'Tab stops in the navigation').toEqual([
+    expect.stringMatching(/Add download/),
+    expect.stringMatching(/^All downloads/),
+  ]);
+  // The title bar's controls, those two, and the list's tools.
+  expect(presses, 'Tab stops before the list').toBeLessThanOrEqual(14);
 });

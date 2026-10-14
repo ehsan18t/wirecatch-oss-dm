@@ -528,6 +528,11 @@
   app-region: no-drag;
 }
 
+/* A scroller whose own code places its content, as a virtual list does: the browser's scroll anchoring would otherwise move it again each time the drawn rows change, undoing the scroll that brought a row into view. */
+@utility overflow-anchor-none {
+  overflow-anchor: none;
+}
+
 /* A pressed control sinks by half a motion step. */
 @utility scale-pressed {
   scale: calc(1 - var(--motion-scale-delta) / 2);

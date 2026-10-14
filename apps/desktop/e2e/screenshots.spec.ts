@@ -1,9 +1,9 @@
 // Screenshots of the main states for review, in both themes. Saved to docs/screenshots.
 
 import { expect, test } from '@playwright/test';
-import { open, row } from './helpers';
+import { open, row, rows, SCREENSHOTS, showDetails } from './helpers';
 
-const dir = 'docs/screenshots';
+const dir = SCREENSHOTS;
 
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme} theme`, () => {
@@ -15,7 +15,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('error with its fix', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await row(page, 'Conference keynote').click();
+      await showDetails(page, 'Conference keynote');
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/${theme}-02-error-with-fix.png` });
     });
@@ -72,6 +72,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('queue editor', async ({ page }) => {
       await open(page, 'capture=0', { theme });
+      await page.getByRole('button', { name: /^Overnight/ }).hover();
       await page.getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }).click();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/${theme}-09-queue-editor.png` });
@@ -86,14 +87,15 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('cancel asks first', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await row(page, 'LibreOffice').click();
-      await page.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+      const details = await showDetails(page, 'LibreOffice');
+      await details.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-13-cancel-confirmation.png` });
     });
 
     test('paused queue and start now', async ({ page }) => {
       await open(page, 'capture=0', { theme });
+      await page.getByRole('button', { name: /^Main/ }).hover();
       await page.getByRole('button', { name: 'Pause the Main queue' }).click();
       await page.getByRole('button', { name: /^Overnight/ }).click();
       await page.waitForTimeout(800);
@@ -119,7 +121,10 @@ for (const theme of ['light', 'dark'] as const) {
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-16-addon-prompt.png` });
       await page.getByRole('button', { name: 'Install', exact: true }).click();
-      await page.getByRole('progressbar').waitFor();
+      await page
+        .getByRole('region', { name: /^Wirecatch download window/ })
+        .getByRole('progressbar')
+        .waitFor();
       await page.waitForTimeout(1200);
       await page.screenshot({ path: `${dir}/${theme}-17-addon-installing.png` });
       // Once installed, the page that asked for it continues with the quality list, in its window.
@@ -145,15 +150,20 @@ for (const theme of ['light', 'dark'] as const) {
       // the media add-on: it installs first, then the video downloads by itself.
       await page.getByRole('radio', { name: /1080p/ }).check();
       await page.getByRole('button', { name: 'Install add-on and download' }).click();
-      await page.getByRole('progressbar').waitFor();
+      await page
+        .getByRole('region', { name: /^Wirecatch download window/ })
+        .getByRole('progressbar')
+        .waitFor();
       await page.waitForTimeout(1200);
       await page.screenshot({ path: `${dir}/${theme}-20-addon-for-a-quality.png` });
       await page.getByRole('dialog').waitFor({ state: 'hidden', timeout: 15_000 });
       await page.getByRole('searchbox', { name: 'Search downloads' }).fill('Northern lights');
-      await row(page, 'Northern lights').click();
-      await expect(row(page, 'Northern lights')).toContainText('Joining video and audio', {
-        timeout: 60_000,
-      });
+      // The new download, not the sample one of the same video that failed earlier.
+      const video = rows(page)
+        .filter({ hasText: 'Northern lights' })
+        .filter({ hasNotText: 'Needs attention' });
+      await video.click();
+      await expect(video).toContainText('Joining video and audio', { timeout: 60_000 });
       await page.screenshot({ path: `${dir}/${theme}-19-joining.png` });
     });
 

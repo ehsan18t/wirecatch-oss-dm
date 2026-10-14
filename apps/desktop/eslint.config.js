@@ -21,6 +21,8 @@ export default wirecatch({
   globals: { ...globals.browser },
   ignores: ['build/', 'build-gallery/', 'src-tauri/', 'test-results/', 'playwright-report/'],
   svelteConfig,
+  // Redesigned screens live in src/ui. The gallery's components are held to the tokens too; its sample data (sample.ts) stands in for what the OS and the backend send, such as the system accent colour.
+  designSystem: ['src/ui/**', 'src/gallery/**/*.svelte'],
   layers: [
     {
       files: ['src/**'],
@@ -103,7 +105,7 @@ export default wirecatch({
     },
     {
       // Nor do components and windows hold the backend through state (`app.backend`), a prop or a helper; wirecatch/no-value-of-type says what it can follow and what is left to review.
-      files: ['src/lib/components/**', 'src/lib/window/**/*.svelte'],
+      files: ['src/lib/components/**', 'src/lib/window/**/*.svelte', 'src/ui/**'],
       ignores: ['src/**/*.test.ts'],
       rules: {
         'wirecatch/no-value-of-type': [
@@ -143,7 +145,8 @@ export default wirecatch({
     },
     {
       // Components show state and report what the person did; the state classes call the backend, and the pages wire the two together.
-      files: ['src/lib/components/**'],
+      files: ['src/lib/components/**', 'src/ui/**'],
+      ignores: ['src/**/*.test.ts'],
       rules: {
         'no-restricted-imports': [
           'error',

@@ -96,10 +96,11 @@
   {onclick}
 >
   <div class="panel">
-    <header>
+    <!-- Not a header element: inside a dialog it would be a second banner beside the window's title bar. -->
+    <div class="head">
       <h2 id="{uid}-title">{title}</h2>
       <IconButton icon={X} size="md" label="Close" onclick={onclose} />
-    </header>
+    </div>
     {#if description}
       <p id="{uid}-desc" class="description">{description}</p>
     {/if}
@@ -138,7 +139,7 @@
     max-height: calc(100vh - 66px);
   }
 
-  header {
+  .head {
     display: flex;
     align-items: center;
     justify-content: space-between;

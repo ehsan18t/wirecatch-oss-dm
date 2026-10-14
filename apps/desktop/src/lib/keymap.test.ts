@@ -30,6 +30,8 @@ const EVERY_COMMAND: Record<KeyCommand, true> = {
   settings: true,
   escape: true,
   help: true,
+  'next-region': true,
+  'previous-region': true,
   down: true,
   up: true,
   'extend-down': true,
@@ -41,6 +43,7 @@ const EVERY_COMMAND: Record<KeyCommand, true> = {
   'select-all': true,
   'pause-resume': true,
   open: true,
+  details: true,
   remove: true,
   'nudge-up': true,
   'nudge-down': true,
@@ -131,10 +134,12 @@ describe('keymap', () => {
       ['Ctrl+A', 'Select every download in the list'],
       ['Space', 'Pause or resume the selected downloads'],
       ['Enter', 'Open the selected file when it is finished'],
+      ['Alt+Enter', 'Show the details of the selected downloads'],
       ['Delete', 'Remove the selected downloads'],
       ['Alt+Up, Alt+Down', 'Move the selection up or down in its queue'],
-      ['Escape', 'Close a dialog or clear the selection'],
+      ['Escape', 'Close a dialog or the details, or clear the selection'],
       ['F1', 'Show these shortcuts'],
+      ['F6, Shift+F6', 'Move between the title bar, the navigation, the list and the details'],
     ]);
   });
 });

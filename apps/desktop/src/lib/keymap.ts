@@ -3,7 +3,16 @@
 // toolbar show them, so a shortcut is changed in one place.
 
 /** Shortcuts that work anywhere in the main window. */
-export type WindowKey = 'palette' | 'paste' | 'add' | 'search' | 'settings' | 'escape' | 'help';
+export type WindowKey =
+  | 'palette'
+  | 'paste'
+  | 'add'
+  | 'search'
+  | 'settings'
+  | 'escape'
+  | 'help'
+  | 'next-region'
+  | 'previous-region';
 
 /** Shortcuts of the download list, while it has the keyboard. */
 export type ListKey =
@@ -18,6 +27,7 @@ export type ListKey =
   | 'select-all'
   | 'pause-resume'
   | 'open'
+  | 'details'
   | 'remove'
   | 'nudge-up'
   | 'nudge-down'
@@ -91,7 +101,15 @@ export const KEYMAP: readonly KeyBinding[] = [
     scope: 'list',
     command: 'open',
     key: 'Enter',
+    alt: false,
     help: 'Open the selected file when it is finished',
+  },
+  {
+    scope: 'list',
+    command: 'details',
+    key: 'Enter',
+    alt: true,
+    help: 'Show the details of the selected downloads',
   },
   { scope: 'list', command: 'remove', key: 'Delete', help: 'Remove the selected downloads' },
   { scope: 'list', command: 'nudge-up', key: 'ArrowUp', alt: true, help: NUDGE },
@@ -101,9 +119,23 @@ export const KEYMAP: readonly KeyBinding[] = [
     command: 'escape',
     key: 'Escape',
     outsideFields: true,
-    help: 'Close a dialog or clear the selection',
+    help: 'Close a dialog or the details, or clear the selection',
   },
   { scope: 'window', command: 'help', key: 'F1', help: 'Show these shortcuts' },
+  {
+    scope: 'window',
+    command: 'next-region',
+    key: 'F6',
+    shift: false,
+    help: 'Move between the title bar, the navigation, the list and the details',
+  },
+  {
+    scope: 'window',
+    command: 'previous-region',
+    key: 'F6',
+    shift: true,
+    help: 'Move between the title bar, the navigation, the list and the details',
+  },
   // Shift on the paging keys extends the selection, as it does on the arrows.
   { scope: 'list', command: 'page-up', key: 'PageUp' },
   { scope: 'list', command: 'page-down', key: 'PageDown' },
