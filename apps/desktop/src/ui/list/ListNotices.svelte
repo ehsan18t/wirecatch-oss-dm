@@ -1,6 +1,6 @@
 <script lang="ts">
   // Notices above the list: that the download list could not be saved, and one hint at a time, at the moment it is useful.
-  import { Button, Callout } from '@wirecatch/ui';
+  import { Button, Callout, expand } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
   import { HINT_TEXT, type HintId } from '$lib/state/hints.svelte';
 
@@ -28,25 +28,30 @@
 </script>
 
 {#if app.storageProblem !== null || hint !== null}
-  <div class="flex shrink-0 flex-col gap-2 px-5 pb-3">
+  <div class="flex shrink-0 flex-col gap-2 px-5 pb-3" transition:expand>
     {#if app.storageProblem}
-      <Callout tone="danger" title="{app.name} could not save its download list" live="assertive">
-        {app.storageProblem} Recent changes may be lost when {app.name} closes.
-        {#snippet actions()}
-          <Button size="sm" loading={retrying} onclick={retry}>Try again</Button>
-          <Button size="sm" variant="ghost" onclick={() => app.dismissStorageProblem()}
-            >Dismiss</Button
-          >
-        {/snippet}
-      </Callout>
+      <div transition:expand>
+        <Callout tone="danger" title="{app.name} could not save its download list" live="assertive">
+          {app.storageProblem} Recent changes may be lost when {app.name} closes.
+          {#snippet actions()}
+            <Button size="sm" loading={retrying} onclick={retry}>Try again</Button>
+            <Button size="sm" variant="ghost" onclick={() => app.dismissStorageProblem()}
+              >Dismiss</Button
+            >
+          {/snippet}
+        </Callout>
+      </div>
     {/if}
     {#if hint}
-      <Callout tone="info">
-        {HINT_TEXT[hint]}
-        {#snippet actions()}
-          <Button size="sm" variant="ghost" onclick={() => app.hints.dismiss(hint)}>Got it</Button>
-        {/snippet}
-      </Callout>
+      <div transition:expand>
+        <Callout tone="info">
+          {HINT_TEXT[hint]}
+          {#snippet actions()}
+            <Button size="sm" variant="ghost" onclick={() => app.hints.dismiss(hint)}>Got it</Button
+            >
+          {/snippet}
+        </Callout>
+      </div>
     {/if}
   </div>
 {/if}

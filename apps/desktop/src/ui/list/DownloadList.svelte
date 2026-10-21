@@ -2,6 +2,7 @@
   // The download list: a grid of every download the view shows, drawing only the rows on screen. The keyboard moves through it and selects as a file list does (one, a range with Shift, one more with Ctrl), the focus stays on the grid and points at its row, and the context menu offers what the selection can do. In a queue sorted by its order, rows drag up and down to reorder it; dragged onto a queue in the sidebar, they move there.
   import { isDownloadId, type DownloadId } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { cn, ContextMenu, FOCUS_RING_INSET } from '@wirecatch/ui';
   import { getDragIds, isDownloadDrag, setDragIds } from '$lib/dnd';
   import { dataIdAt } from '$lib/dom';
@@ -49,6 +50,24 @@
   });
   const range = $derived(rowRange(viewport, ids.length));
   const shown = $derived(ids.slice(range.start, range.end));
+
+  // A drawn row that joins the list while it shows the same view and search pops in (D46); a row that only scrolls into sight, or a new view's or search's rows, do not. Each row's flag clears when its animation ends.
+  const fresh = new SvelteSet<DownloadId>();
+  let before: { scope: string; ids: SvelteSet<DownloadId> } | null = null;
+  $effect(() => {
+    const now = ids;
+    const scope = JSON.stringify([app.view, app.search]);
+    untrack(() => {
+      if (before?.scope === scope) {
+        const was = before.ids;
+        const drawn = new SvelteSet(shown);
+        for (const id of now) if (!was.has(id) && drawn.has(id)) fresh.add(id);
+      } else {
+        fresh.clear();
+      }
+      before = { scope, ids: new SvelteSet(now) };
+    });
+  });
   // Only a row that is drawn can be pointed at (DUI-9): the keyboard row may have scrolled out of the drawn ones.
   const activeId = $derived.by(() => {
     const active = app.selection.active;
@@ -194,20 +213,20 @@
     ondragend={() => (dropIndex = null)}
     {ondrop}
   >
-    <div
-      role="rowgroup"
-      bind:borderBoxSize={headerBox}
-      class="sticky top-0 z-sticky border-b border-line bg-layer px-2 glass"
-    >
-      <div role="row" aria-rowindex={1} class="flex h-control-sm items-center gap-3 px-3">
-        {#each COLUMNS as column (column.id)}
-          <span
-            role="columnheader"
-            class={cn(CELL[column.id], 'text-caption font-semibold text-ink-subtle')}
-          >
-            {#if column.hidden}<span class="sr-only">{column.label}</span>{:else}{column.label}{/if}
-          </span>
-        {/each}
+    <!-- The base under the content layer's tone, so rows never show through the header. -->
+    <div role="rowgroup" bind:borderBoxSize={headerBox} class="sticky top-0 z-sticky bg-base">
+      <div class="border-b border-line bg-layer px-2">
+        <div role="row" aria-rowindex={1} class="flex h-control-sm items-center gap-3 px-3">
+          {#each COLUMNS as column (column.id)}
+            <span
+              role="columnheader"
+              class={cn(CELL[column.id], 'text-caption font-semibold text-ink-subtle')}
+            >
+              {#if column.hidden}<span class="sr-only">{column.label}</span
+                >{:else}{column.label}{/if}
+            </span>
+          {/each}
+        </div>
       </div>
     </div>
     <div
@@ -226,7 +245,12 @@
         style:transform="translateY({range.start * rowHeight}px)"
       >
         {#each shown as id, i (id)}
-          <DownloadRow {id} index={range.start + i} />
+          <div
+            class={fresh.has(id) ? 'animate-pop-in' : undefined}
+            onanimationend={() => fresh.delete(id)}
+          >
+            <DownloadRow {id} index={range.start + i} />
+          </div>
         {/each}
       </div>
       {#if dropIndex !== null}

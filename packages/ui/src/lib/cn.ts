@@ -48,7 +48,7 @@ export const THEME_NAMES = {
   ],
   radius: ['xs', 'sm', 'md', 'lg', 'xl'],
   shadow: ['control', 'raised', 'flyout', 'dialog', 'thumb', 'focus-line', 'invalid-line'],
-  blur: ['scrim', 'overlay', 'panel'],
+  blur: ['scrim'],
   container: [
     'menu',
     'dialog-sm',
@@ -64,6 +64,7 @@ export const THEME_NAMES = {
   breakpoint: ['sm', 'md', 'lg', 'nav'],
   ease: ['out', 'in', 'in-out', 'spring'],
   animate: [
+    'appearance',
     'fade-in',
     'fade-out',
     'reveal',

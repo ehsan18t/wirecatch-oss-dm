@@ -82,7 +82,7 @@
 <GallerySection
   id="overlays"
   title="Layers"
-  description="Everything that floats: frosted glass over the content, motion in and out, focus taken in and handed back, and Escape closing the nearest layer first."
+  description="Everything that floats: solid surfaces over the content, motion in and out, focus taken in and handed back, and Escape closing the nearest layer first."
 >
   <div class="grid gap-4 md:grid-cols-2">
     <Specimen title="Dialogs">

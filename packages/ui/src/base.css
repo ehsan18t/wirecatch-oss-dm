@@ -93,11 +93,21 @@
     transition-timing-function: var(--ease-out);
   }
 
-  /* Set for one frame while the scheme or accent changes, so every colour switches at once instead of fading one by one. */
+  /* Set while the scheme or accent changes, so every colour switches at once instead of fading one by one, and the page crossfades into them. */
   :root[data-appearance-changing] *,
   :root[data-appearance-changing] *::before,
   :root[data-appearance-changing] *::after {
     transition: none !important;
+  }
+
+  :root[data-appearance-changing]::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-index-popover);
+    pointer-events: none;
+    background: inherit;
+    animation: var(--animate-appearance);
   }
 
   details::details-content {

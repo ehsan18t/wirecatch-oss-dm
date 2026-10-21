@@ -29,15 +29,24 @@ describe('appearance', () => {
     expect(isScheme('system')).toBe(false);
   });
 
-  it('writes the contract onto the element', () => {
-    vi.useFakeTimers();
+  it('writes the contract onto the element, with no crossfade on the first paint', () => {
     applyAppearance(html, { scheme: 'dark', accent: 'system', systemAccent: '#0078d4' });
     expect(html.dataset.scheme).toBe('dark');
     expect(html.dataset.accent).toBe('system');
     expect(html.style.getPropertyValue(SYSTEM_ACCENT_PROPERTY)).toBe('#0078d4');
+    expect(html.hasAttribute('data-appearance-changing')).toBe(false);
+  });
+
+  it('crossfades a real change for one beat, and not a repeat of the same look', () => {
+    vi.useFakeTimers();
+    applyAppearance(html, { scheme: 'dark', accent: 'green' });
+    applyAppearance(html, { scheme: 'dark', accent: 'green' });
+    expect(html.hasAttribute('data-appearance-changing')).toBe(false);
+    applyAppearance(html, { scheme: 'light', accent: 'green' });
     expect(html.hasAttribute('data-appearance-changing')).toBe(true);
     vi.runAllTimers();
     expect(html.hasAttribute('data-appearance-changing')).toBe(false);
+    vi.useRealTimers();
   });
 
   it('leaves out a system accent that is not a colour, so the accent falls back to cyan', () => {

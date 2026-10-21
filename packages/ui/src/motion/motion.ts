@@ -130,6 +130,16 @@ export function glide(
   );
 }
 
+/** Plays `rise-in` on an element that stays mounted, as a new view shows in it: it fades in from a little below. Keeping the element (no `{#key}`) keeps its focus, scroll and state. */
+export function rise(node: Element): void {
+  const time = duration('slow');
+  if (time === 0) return;
+  node.animate(
+    { opacity: [0, 1], translate: [`0 ${String(distance('md'))}px`, '0 0'] },
+    { duration: time, easing: token('--ease-out') || 'ease-out' },
+  );
+}
+
 /** `animate:` for keyed lists whose siblings move when one is added or removed. */
 export function reflow(node: Element, rects: { from: DOMRect; to: DOMRect }): AnimationConfig {
   return flip(node, rects, { duration: duration('normal'), easing: easing('out') });

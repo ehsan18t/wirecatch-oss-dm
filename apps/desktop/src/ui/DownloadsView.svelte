@@ -1,7 +1,8 @@
 <script lang="ts">
   // The downloads screen: what the list shows and its tools, then the list (with its notices, or what it says when it is empty) and the details of the selection. In wide content the details are a column beside the list, under its tools, so neither covers the other; in narrow content they open over the list with a veil.
   import Unplug from '~icons/lucide/unplug';
-  import { Button, EmptyState } from '@wirecatch/ui';
+  import { untrack } from 'svelte';
+  import { Button, EmptyState, rise } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
   import DetailsPanel from './details/DetailsPanel.svelte';
   import DownloadList from './list/DownloadList.svelte';
@@ -16,6 +17,19 @@
   let beside = $state(0);
   // Where nothing is laid out (unit tests) both are 0, and the details sit beside the list.
   const docked = $derived(width >= beside);
+  let header = $state<HTMLElement>();
+  let column = $state<HTMLElement>();
+  // A new view rises in (D46), in place: the list keeps its focus and state.
+  let shownView: string | null = null;
+  $effect(() => {
+    const view = JSON.stringify(app.view);
+    untrack(() => {
+      if (shownView !== null && view !== shownView) {
+        for (const node of [header, column]) if (node) rise(node);
+      }
+      shownView = view;
+    });
+  });
 </script>
 
 {#if app.loadError}
@@ -38,9 +52,9 @@
       aria-hidden="true"
       bind:clientWidth={beside}
     ></div>
-    <ListHeader />
+    <div bind:this={header}><ListHeader /></div>
     <div class="flex min-h-0 flex-1">
-      <div class="flex min-w-0 flex-1 flex-col">
+      <div bind:this={column} class="flex min-w-0 flex-1 flex-col">
         <ListNotices />
         {#if app.visible.length > 0}
           <DownloadList />

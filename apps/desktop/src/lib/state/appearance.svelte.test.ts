@@ -82,6 +82,16 @@ describe('the look of a window', () => {
     expect(root.dataset.accent).toBe('orange');
   });
 
+  it('crossfades a change of look, but not the settings confirming the first paint (D46)', () => {
+    const root = page();
+    Object.assign(root.dataset, { scheme: 'dark', accent: 'green' });
+    const look = new Appearance(root, systemPreference(false).query);
+    look.apply({ theme: 'dark', accent: 'green' });
+    expect(root.hasAttribute('data-appearance-changing')).toBe(false);
+    look.apply({ theme: 'light', accent: 'green' });
+    expect(root.hasAttribute('data-appearance-changing')).toBe(true);
+  });
+
   it('keeps what the shell set before the first paint until the settings load', () => {
     const root = page();
     Object.assign(root.dataset, { scheme: 'dark', accent: 'green' });

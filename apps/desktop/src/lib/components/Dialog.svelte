@@ -129,8 +129,10 @@
     animation: rise 160ms var(--ease);
   }
 
+  /* The design system's one blur, behind every dialog (D46). */
   dialog::backdrop {
     background: var(--scrim);
+    backdrop-filter: blur(var(--blur-scrim));
   }
 
   .panel {

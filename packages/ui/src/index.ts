@@ -15,6 +15,7 @@ export {
   pop,
   reducedMotion,
   reflow,
+  rise,
   settle,
   shift,
   type Curve,

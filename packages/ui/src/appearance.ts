@@ -1,5 +1,6 @@
 // The contract between the theme settings and the tokens: which attributes on `<html>` mean what. tokens.css defines a rule for each value listed here, and tokens.test.ts holds the two to each other.
 import { ACCENTS, isAccent, type Accent } from '@wirecatch/protocol';
+import { timeToken } from './lib/css-token';
 
 /** The resolved colour schemes: the settings turn "system" into one of these. */
 export const SCHEMES = ['light', 'dark'] as const;
@@ -32,20 +33,40 @@ function setAttribute(element: HTMLElement, name: string, value: string | null):
   else element.setAttribute(name, value);
 }
 
+/** The shortest hold: two frames, so the frozen transitions cover the frame the new colours are drawn in. */
+const SHORTEST_HOLD_MS = 32;
+const holds = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+
 /**
- * Puts `appearance` on `element` (`<html>` for a window) in the form tokens.css reads. Colour transitions are held off until the next frame has painted, so a scheme change does not fade every control separately.
+ * Crossfades `element` (`<html>`) into the scheme and accent it is about to take (D46): colour transitions are held off, so every control switches at once rather than fading on its own, and base.css lifts a veil of the new background off the page. Nothing happens on the first paint (no accent set yet) or when nothing changes. Call it just before setting the attributes.
+ */
+export function markAppearanceChange(
+  element: HTMLElement,
+  next: { scheme: string | null; accent: string },
+): void {
+  const now = element.dataset;
+  if (now.accent === undefined) return;
+  if ((now.scheme ?? null) === next.scheme && now.accent === next.accent) return;
+  element.setAttribute(CHANGING_ATTRIBUTE, '');
+  clearTimeout(holds.get(element));
+  const hold = Math.max(timeToken('--transition-duration-normal'), SHORTEST_HOLD_MS);
+  holds.set(
+    element,
+    setTimeout(() => {
+      element.removeAttribute(CHANGING_ATTRIBUTE);
+    }, hold),
+  );
+}
+
+/**
+ * Puts `appearance` on `element` (`<html>` for a window) in the form tokens.css reads, crossfading into it.
  */
 export function applyAppearance(element: HTMLElement, appearance: Appearance): void {
-  element.setAttribute(CHANGING_ATTRIBUTE, '');
+  markAppearanceChange(element, appearance);
   setAttribute(element, 'data-scheme', appearance.scheme);
   element.setAttribute('data-accent', appearance.accent);
   const asked = appearance.accent === 'system' ? (appearance.systemAccent ?? null) : null;
   const systemAccent = asked !== null && CSS.supports('color', asked) ? asked : null;
   if (systemAccent === null) element.style.removeProperty(SYSTEM_ACCENT_PROPERTY);
   else element.style.setProperty(SYSTEM_ACCENT_PROPERTY, systemAccent);
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      element.removeAttribute(CHANGING_ATTRIBUTE);
-    }),
-  );
 }

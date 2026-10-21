@@ -30,7 +30,7 @@
 </script>
 
 <div
-  class="sticky top-0 z-sticky flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-line bg-overlay px-8 py-3 glass"
+  class="sticky top-0 z-sticky flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-line bg-overlay px-8 py-3"
 >
   <SegmentedControl
     label="Scheme"

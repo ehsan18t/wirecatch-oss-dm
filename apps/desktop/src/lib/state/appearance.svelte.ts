@@ -7,6 +7,7 @@
 // first paint.
 
 import type { AppSettings, SystemAppearance } from '@wirecatch/protocol';
+import { markAppearanceChange } from '@wirecatch/ui';
 import type { Backend, Unsubscribe } from '../backend';
 import {
   DARK_QUERY,
@@ -67,8 +68,11 @@ export class Appearance {
   apply(look: Look | null | undefined): void {
     if (!look) return;
     const root = this.#root;
-    root.dataset.scheme = resolveScheme(look.theme, this.systemDark);
-    root.dataset.accent = shownAccent(look.accent, this.systemAccent);
+    const scheme = resolveScheme(look.theme, this.systemDark);
+    const accent = shownAccent(look.accent, this.systemAccent);
+    markAppearanceChange(root, { scheme, accent });
+    root.dataset.scheme = scheme;
+    root.dataset.accent = accent;
     if (this.systemAccent === null) root.style.removeProperty(SYSTEM_ACCENT_PROPERTY);
     else root.style.setProperty(SYSTEM_ACCENT_PROPERTY, this.systemAccent);
     rememberLook(this.#storage, look);

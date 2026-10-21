@@ -7,7 +7,7 @@
     { name: 'base', note: 'The window, solid', class: 'bg-base' },
     { name: 'layer', note: 'The content', class: 'bg-layer' },
     { name: 'raised', note: 'Cards and rows', class: 'bg-raised' },
-    { name: 'overlay', note: 'Menus, dialogs, toasts', class: 'bg-overlay glass' },
+    { name: 'overlay', note: 'Menus, dialogs, toasts', class: 'bg-overlay' },
     { name: 'control', note: 'Buttons', class: 'bg-control' },
     { name: 'field', note: 'Text fields', class: 'bg-field' },
     { name: 'wash', note: 'Hover', class: 'bg-wash' },
@@ -62,8 +62,8 @@
   const DEPTH = [
     { name: 'control', class: 'shadow-control bg-control' },
     { name: 'raised', class: 'shadow-raised bg-raised' },
-    { name: 'flyout', class: 'shadow-flyout bg-overlay glass' },
-    { name: 'dialog', class: 'shadow-dialog bg-overlay glass' },
+    { name: 'flyout', class: 'shadow-flyout bg-overlay' },
+    { name: 'dialog', class: 'shadow-dialog bg-overlay' },
   ];
 </script>
 
@@ -72,7 +72,7 @@
   title="Foundations"
   description="Graphite on cool paper, one accent for what moves and where you are, and layers that read as layers. Every value comes from tokens.css; the components use nothing else."
 >
-  <Specimen title="Surfaces" note="Translucent layers over the window base">
+  <Specimen title="Surfaces" note="Layers over the window base; what floats is solid">
     <div class="grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
       {#each SURFACES as surface (surface.name)}
         <div class="flex flex-col gap-1.5">
@@ -135,7 +135,7 @@
     </Specimen>
   </div>
 
-  <Specimen title="Glass" note="Backdrop blur behind everything that floats">
+  <Specimen title="Scrim" note="The one backdrop blur: the veil behind a dialog (D46)">
     <div class="relative h-36 w-full overflow-hidden rounded-md border border-line">
       <div class="absolute inset-0 grid grid-cols-6" aria-hidden="true">
         <div class="bg-accent"></div>
@@ -145,10 +145,11 @@
         <div class="bg-info"></div>
         <div class="bg-ink"></div>
       </div>
+      <div class="absolute inset-0 bg-scrim backdrop-blur-scrim"></div>
       <div
-        class="absolute inset-x-8 inset-y-6 flex items-center justify-center rounded-lg border border-line bg-overlay text-body font-medium text-ink shadow-flyout glass"
+        class="absolute inset-x-8 inset-y-6 flex items-center justify-center rounded-lg border border-line bg-overlay text-body font-medium text-ink shadow-dialog"
       >
-        A flyout over the content
+        A dialog over the blurred content
       </div>
     </div>
   </Specimen>

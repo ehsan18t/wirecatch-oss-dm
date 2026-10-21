@@ -47,7 +47,7 @@
     <span class="text-small text-ink-muted tabular-nums">{detail}</span>
   </div>
   <div
-    class="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 rounded-sm border border-line bg-overlay p-0.5 opacity-0 shadow-raised glass transition group-focus-within:opacity-100 group-hover:opacity-100"
+    class="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 rounded-sm border border-line bg-overlay p-0.5 opacity-0 shadow-raised transition group-focus-within:opacity-100 group-hover:opacity-100"
   >
     {#if state === 'active'}
       <IconButton icon={Pause} label="Pause" size="sm" />

@@ -26,9 +26,8 @@
     --wc-base: light-dark(#eceef2, #12151b);
     --wc-layer: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.035));
     --wc-raised: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.06));
-    /* Menus, popovers, dialogs and toasts: the scheme's overlay tone, nearly opaque, with the backdrop blur behind them. */
-    --wc-overlay-tone: light-dark(rgb(249 250 252), rgb(32 36 44));
-    --wc-overlay: --alpha(var(--wc-overlay-tone) / 86%);
+    /* Menus, popovers, dialogs and toasts: the scheme's overlay tone, solid, lifted by their shadow (D46). */
+    --wc-overlay: light-dark(rgb(249 250 252), rgb(32 36 44));
     --wc-control: light-dark(rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.07));
     --wc-control-hover: light-dark(rgb(250 251 252 / 0.96), rgb(255 255 255 / 0.11));
     --wc-field: light-dark(rgb(255 255 255 / 0.75), rgb(0 0 0 / 0.2));
@@ -39,7 +38,7 @@
     --wc-track: light-dark(rgb(21 26 35 / 0.12), rgb(255 255 255 / 0.12));
     /* The opaque ring of a slider's thumb. */
     --wc-thumb: light-dark(#ffffff, #454b56);
-    /* The lit top edge of a glass surface. */
+    /* The lit top edge of a floating surface. */
     --wc-edge: light-dark(rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.07));
 
     --wc-ink: light-dark(#151a23, #e6e9ef);
@@ -314,7 +313,7 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
 
-  /* Depth: a lit top edge on glass, and soft shadows that grow with the layer. */
+  /* Depth: a lit top edge on what floats, and soft shadows that grow with the layer. */
   --shadow-control: 0 1px 0 light-dark(rgb(21 26 35 / 0.07), rgb(0 0 0 / 0.3));
   --shadow-raised:
     0 1px 2px light-dark(rgb(21 26 35 / 0.06), rgb(0 0 0 / 0.3)),
@@ -345,11 +344,8 @@
   /* The highlight that runs along a moving progress bar. */
   --opacity-sheen: 35%;
 
-  /* Backdrop blur by layer: a light veil behind dialogs, frosted glass for everything that floats. */
-  --blur-scrim: 4px;
-  --blur-overlay: 28px;
-  --blur-panel: 40px;
-  --backdrop-saturate-glass: 1.6;
+  /* The one backdrop blur in the app: the veil behind a dialog (D46). Everything that floats is solid. */
+  --blur-scrim: 6px;
 
   /* Stacking, lowest first. Dialogs and flyouts render in the browser's top layer and need no index. */
   --z-index-raised: 10;
@@ -412,6 +408,17 @@
   --animate-flow: flow var(--transition-duration-flow) linear infinite;
   --animate-spin: spin var(--transition-duration-spin) linear infinite;
   --animate-pulse: pulse var(--transition-duration-flow) var(--ease-in-out) infinite;
+  --animate-appearance: appearance-veil var(--transition-duration-normal) var(--ease-out) forwards;
+
+  /* A theme or accent change: a veil of the new background lifts off the page, so the switch reads as a crossfade, not a cut (D46). */
+  @keyframes appearance-veil {
+    from {
+      opacity: 0.3;
+    }
+    to {
+      opacity: 0;
+    }
+  }
 
   @keyframes fade-in {
     from {
@@ -516,15 +523,6 @@
 /* A pressed control sinks by half a motion step. */
 @utility scale-pressed {
   scale: calc(1 - var(--motion-scale-delta) / 2);
-}
-
-/* Frosted glass behind floating surfaces. */
-@utility glass {
-  backdrop-filter: blur(var(--blur-overlay)) saturate(var(--backdrop-saturate-glass));
-}
-
-@utility glass-panel {
-  backdrop-filter: blur(var(--blur-panel)) saturate(var(--backdrop-saturate-glass));
 }
 
 /* A slider's track: the accent up to the value (`--slider-fill`, a percentage), the track colour after it. */
