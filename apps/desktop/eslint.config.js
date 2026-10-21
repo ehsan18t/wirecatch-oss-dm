@@ -19,7 +19,15 @@ const NO_TAURI_DYNAMIC_IMPORT = {
 export default wirecatch({
   tsconfigRootDir: import.meta.dirname,
   globals: { ...globals.browser },
-  ignores: ['build/', 'build-gallery/', 'src-tauri/', 'test-results/', 'playwright-report/'],
+  // `.svelte-kit/` is what SvelteKit left in checkouts that built the app before D36; git ignores it too.
+  ignores: [
+    'build/',
+    'build-gallery/',
+    'src-tauri/',
+    'test-results/',
+    'playwright-report/',
+    '.svelte-kit/',
+  ],
   svelteConfig,
   // Redesigned screens live in src/ui. The gallery's components are held to the tokens too; its sample data (sample.ts) stands in for what the OS and the backend send, such as the system accent colour.
   designSystem: ['src/ui/**', 'src/gallery/**/*.svelte'],
