@@ -7551,7 +7551,6 @@ dependencies = [
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",
- "windows-version",
  "winreg 0.10.1",
  "wirecatch-core",
  "wirecatch-engine",

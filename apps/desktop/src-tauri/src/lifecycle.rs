@@ -223,24 +223,26 @@ pub fn closing_quits(label: &str, has_tray: bool, close_to_tray: Option<bool>) -
     label == MAIN_WINDOW && !keeps_running(has_tray, close_to_tray)
 }
 
+/// An exit was asked for. Our own, after the manager stopped, goes ahead; any other waits for the
+/// manager. A `code` of `None` means the last window closed, which is handled when the main window
+/// is destroyed ([`on_run_event`]); anything else is a request to exit.
+fn exit_requested<R: Runtime>(app: &AppHandle<R>, code: Option<i32>, api: &tauri::ExitRequestApi) {
+    let finished = app
+        .try_state::<Lifecycle>()
+        .is_some_and(|life| life.finished.load(Ordering::SeqCst));
+    if finished {
+        return;
+    }
+    api.prevent_exit();
+    if code.is_some() {
+        quit(app);
+    }
+}
+
 /// Handles the app's run events.
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
     match event {
-        RunEvent::ExitRequested { code, api, .. } => {
-            let finished = app
-                .try_state::<Lifecycle>()
-                .is_some_and(|life| life.finished.load(Ordering::SeqCst));
-            if finished {
-                // Our own exit, after the manager stopped.
-                return;
-            }
-            api.prevent_exit();
-            // `None` means the last window closed, which is handled when the main window is
-            // destroyed (below); anything else is a request to exit.
-            if code.is_some() {
-                quit(app);
-            }
-        }
+        RunEvent::ExitRequested { code, api, .. } => exit_requested(app, code, &api),
         RunEvent::WindowEvent {
             label,
             event: WindowEvent::CloseRequested { api, .. },
@@ -280,9 +282,10 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             }
         }
         RunEvent::WindowEvent {
+            label,
             event: WindowEvent::ThemeChanged(_),
             ..
-        } => crate::appearance::refresh_system_accent(app),
+        } => crate::appearance::system_theme_changed(app, &label),
         RunEvent::WindowEvent {
             label,
             event: WindowEvent::Destroyed,

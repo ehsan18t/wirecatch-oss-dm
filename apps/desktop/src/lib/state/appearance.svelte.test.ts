@@ -84,17 +84,13 @@ describe('the look of a window', () => {
 
   it('keeps what the shell set before the first paint until the settings load', () => {
     const root = page();
-    Object.assign(root.dataset, { scheme: 'dark', accent: 'green', material: 'mica' });
+    Object.assign(root.dataset, { scheme: 'dark', accent: 'green' });
     const look = new Appearance(root, systemPreference(false).query);
     look.apply(undefined);
     expect(Object.fromEntries(Object.entries(root.dataset))).toEqual({
       scheme: 'dark',
       accent: 'green',
-      material: 'mica',
     });
-    look.apply({ theme: 'dark', accent: 'red' });
-    // The material is the shell's alone.
-    expect(root.dataset.material).toBe('mica');
   });
 
   it('follows the system turning dark and its accent colour changing, until stopped', async () => {

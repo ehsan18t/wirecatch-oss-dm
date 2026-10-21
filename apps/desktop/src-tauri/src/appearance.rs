@@ -1,69 +1,104 @@
 //! How every window looks before its page draws, and while the settings and the system change
-//! (D36): frameless, with the system's material behind it, in the theme and accent the person
-//! chose.
+//! (D45): frameless and opaque, in the theme and accent the person chose.
 //!
-//! - **Material**: Mica on Windows 11, Acrylic on Windows 10, nothing on Linux, where the page
-//!   paints a solid background. A window with a material is transparent, and its page says so
-//!   with `data-material` on its root element.
+//! - **Background**: every window and its web view are painted in the base colour of the scheme
+//!   they show (`--wc-base` in the design tokens) from the moment they exist, so nothing else is
+//!   ever on screen before the page draws. No window is see-through: Windows paints a system
+//!   material (Mica, Acrylic) only after the window is shown, so one always flashes.
 //! - **First paint**: each window gets a script that runs before its page, setting
 //!   `data-scheme` (`light` or `dark`, "system" resolved by `prefers-color-scheme`),
-//!   `data-accent`, `data-material` and `--accent-system` on the root element, so the first
-//!   frame is already right. From then on the page follows the settings itself.
-//! - **Live**: a theme change sets the windows' own theme too, so the material and the web
-//!   view's `prefers-color-scheme` match it; the system's accent colour is read again when a
-//!   window gains the focus or the system theme changes, and sent on
+//!   `data-accent` and `--accent-system` on the root element, so the first frame is already
+//!   right. From then on the page follows the settings itself.
+//! - **Live**: a theme change sets the windows' own theme and background too, so the web view's
+//!   `prefers-color-scheme` and the colour at a resizing edge match it; the system's accent colour
+//!   is read again when a window gains the focus or the system theme changes, and sent on
 //!   [`SYSTEM_APPEARANCE_EVENT`] when it changed.
 
 #![forbid(unsafe_code)]
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::{LazyLock, Mutex, PoisonError};
 
 use serde::Serialize;
-use tauri::window::{Effect, EffectsBuilder};
-use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindowBuilder};
+use tauri::window::Color;
+use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindow, WebviewWindowBuilder};
 use wirecatch_protocol::app::{ACCENTS, Accent, AppSettings, THEMES, Theme};
 use wirecatch_protocol::desktop::{SYSTEM_APPEARANCE_EVENT, SystemAppearance};
 
 use crate::host::Core;
 use crate::window::warn_if_failed;
 
-/// The system's background effect behind a window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Material {
-    /// Windows 11's.
-    Mica,
-    /// Windows 10's.
-    Acrylic,
+/// The design tokens, where the base colour of each scheme has its one home.
+const TOKENS: &str = include_str!("../../../../packages/ui/src/tokens.css");
+
+/// The light and dark base colours, `light-dark(#rrggbb, #rrggbb)` in the `--wc-base` declaration
+/// of `tokens`; `None` when it is missing or not in that form.
+fn base_colours(tokens: &str) -> Option<(Color, Color)> {
+    let declaration = tokens.split("--wc-base:").nth(1)?.split(';').next()?;
+    let pair = declaration
+        .trim()
+        .strip_prefix("light-dark(")?
+        .strip_suffix(')')?;
+    let (light, dark) = pair.split_once(',')?;
+    Some((hex(light.trim())?, hex(dark.trim())?))
 }
 
-/// The first Windows 11 build.
-const WINDOWS_11_BUILD: u32 = 22_000;
-/// Windows 10 version 1809, the first that blurs a window behind with Acrylic.
-const WINDOWS_10_ACRYLIC_BUILD: u32 = 17_763;
+/// An opaque colour written `#rrggbb`.
+fn hex(text: &str) -> Option<Color> {
+    let digits = text.strip_prefix('#').filter(|d| d.len() == 6)?;
+    let channel = |at: usize| u8::from_str_radix(digits.get(at..at + 2)?, 16).ok();
+    Some(Color(channel(0)?, channel(2)?, channel(4)?, u8::MAX))
+}
 
-/// The material for Windows build `build`: none before Acrylic existed.
+/// The colour a window and its web view show before the page draws: the base of `scheme`.
+/// `None` only if the tokens lost their `--wc-base` pair, which a test rules out.
 #[must_use]
-pub fn material_for_windows(build: u32) -> Option<Material> {
-    if build >= WINDOWS_11_BUILD {
-        Some(Material::Mica)
-    } else if build >= WINDOWS_10_ACRYLIC_BUILD {
-        Some(Material::Acrylic)
+pub fn window_background(scheme: tauri::Theme) -> Option<Color> {
+    static BASE: LazyLock<Option<(Color, Color)>> = LazyLock::new(|| base_colours(TOKENS));
+    let (light, dark) = (*BASE)?;
+    Some(if scheme == tauri::Theme::Dark {
+        dark
     } else {
-        None
+        light
+    })
+}
+
+/// Light or dark, for the theme setting and whether the system is dark now.
+#[must_use]
+pub fn scheme(theme: Theme, system_dark: bool) -> tauri::Theme {
+    match theme {
+        Theme::Dark => tauri::Theme::Dark,
+        Theme::System if system_dark => tauri::Theme::Dark,
+        Theme::Light | Theme::System => tauri::Theme::Light,
     }
 }
 
-/// The material this system puts behind windows.
-#[must_use]
-pub fn material() -> Option<Material> {
-    #[cfg(windows)]
-    {
-        material_for_windows(windows_version::OsVersion::current().build)
-    }
-    #[cfg(not(windows))]
-    {
-        None
+/// Whether Windows is set to dark apps: the text colour it gives apps is light then.
+#[cfg(windows)]
+fn system_is_dark() -> bool {
+    use windows::UI::ViewManagement::{UIColorType, UISettings};
+    UISettings::new()
+        .and_then(|settings| settings.GetColorValue(UIColorType::Foreground))
+        .is_ok_and(|text| u16::from(text.R) + u16::from(text.G) + u16::from(text.B) > 3 * 128)
+}
+
+/// Linux has no one answer before a window exists; [`paint_background`] corrects the guess from
+/// the window's own theme as soon as it is built.
+#[cfg(not(windows))]
+fn system_is_dark() -> bool {
+    false
+}
+
+/// Paints `window` in the base colour of the scheme it shows now: after it is built, which settles
+/// the system's light or dark on every platform, and after each theme change.
+/// When its theme cannot be read, the window keeps the colour it has.
+pub fn paint_background<R: Runtime>(window: &WebviewWindow<R>) {
+    let label = window.label();
+    match window.theme() {
+        Ok(shown) => warn_if_failed(
+            format_args!("paint the background of the window {label}"),
+            window.set_background_color(window_background(shown)),
+        ),
+        Err(e) => tracing::warn!("could not read the theme of the window {label}: {e}"),
     }
 }
 
@@ -85,8 +120,6 @@ pub struct FirstPaint {
     pub theme: Theme,
     /// The accent setting.
     pub accent: Accent,
-    /// `data-material`, when there is one.
-    pub material: Option<Material>,
     /// `--accent-system`, when the system has an accent colour.
     pub system_accent: Option<String>,
     /// Every theme this build has, to check the look the page remembered against.
@@ -106,7 +139,6 @@ impl FirstPaint {
         Self {
             theme,
             accent,
-            material: material(),
             system_accent,
             themes: THEMES,
             accents: ACCENTS,
@@ -146,52 +178,21 @@ fn current_settings<R: Runtime>(app: &AppHandle<R>) -> Option<AppSettings> {
         .and_then(|core| core.get().map(wirecatch_core::Manager::get_settings))
 }
 
-/// How a window shows the material behind its page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Backing {
-    /// The web view is see-through wherever the page paints nothing.
-    see_through: bool,
-    /// The window keeps a drawing surface of its own, under the web view's. Over a material it
-    /// must not: whatever is drawn there shows through the page, and the web view's hidden child
-    /// window draws there, at the least the box between its scroll bars, a white square in the
-    /// bottom-right corner (D36, item 2).
-    own_surface: bool,
-}
-
-impl Backing {
-    const fn for_material(material: Option<Material>) -> Self {
-        let see_through = material.is_some();
-        Self {
-            see_through,
-            own_surface: !see_through,
-        }
-    }
-}
-
-/// Makes `builder` a frameless window with the system's material, in the current theme, with
-/// the first-paint script. Every window is built through this.
+/// Makes `builder` a frameless, opaque window in the current theme, painted in its scheme's base
+/// colour, with the first-paint script. Every window is built through this; call
+/// [`paint_background`] once it is built.
 pub fn frameless<'a, R: Runtime, M: tauri::Manager<R>>(
     app: &AppHandle<R>,
     builder: WebviewWindowBuilder<'a, R, M>,
 ) -> WebviewWindowBuilder<'a, R, M> {
     let settings = current_settings(app);
     let first_paint = FirstPaint::new(settings.as_ref(), last_system_accent(app));
-    let backing = Backing::for_material(first_paint.material);
     let builder = builder
         .decorations(false)
         .theme(window_theme(first_paint.theme))
-        .initialization_script(first_paint.script())
-        .transparent(backing.see_through)
-        .no_redirection_bitmap(!backing.own_surface);
-    match first_paint.material {
-        Some(material) => builder.effects(
-            EffectsBuilder::new()
-                .effect(match material {
-                    Material::Mica => Effect::Mica,
-                    Material::Acrylic => Effect::Acrylic,
-                })
-                .build(),
-        ),
+        .initialization_script(first_paint.script());
+    match window_background(scheme(first_paint.theme, system_is_dark())) {
+        Some(colour) => builder.background_color(colour),
         None => builder,
     }
 }
@@ -217,6 +218,16 @@ impl SystemAccent {
 pub fn last_system_accent<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     app.try_state::<SystemAccent>()
         .and_then(|state| state.with(|known| known.clone()))
+}
+
+/// The system turned light or dark under the window `label`: a window following the system takes
+/// its new background at once, and the system's accent colour, which may change with it, is read
+/// again.
+pub fn system_theme_changed<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        paint_background(&window);
+    }
+    refresh_system_accent(app);
 }
 
 /// Reads the system's accent colour again, off the window thread, and tells every window when
@@ -253,7 +264,7 @@ impl AppliedTheme {
     }
 }
 
-/// Gives every open window the theme `theme`, so its material and its web view's
+/// Gives every open window the theme `theme`, so its background and its web view's
 /// `prefers-color-scheme` follow the setting; nothing when they already have it. Called when the
 /// download list opens (a window built before then got the system's theme) and whenever the
 /// settings change. A window built later gets it when it is built ([`frameless`]).
@@ -269,6 +280,7 @@ pub fn follow_theme<R: Runtime>(app: &AppHandle<R>, theme: Theme) {
             format_args!("change the theme of the window {}", window.label()),
             window.set_theme(window_theme(theme)),
         );
+        paint_background(window);
     }
 }
 
@@ -281,6 +293,7 @@ pub fn match_stored_theme<R: Runtime>(window: &tauri::WebviewWindow<R>) {
             format_args!("give the window {} its theme", window.label()),
             window.set_theme(window_theme(settings.theme)),
         );
+        paint_background(window);
     }
 }
 
@@ -314,23 +327,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn windows_11_gets_mica_and_windows_10_acrylic() {
-        assert_eq!(material_for_windows(26_100), Some(Material::Mica));
-        assert_eq!(material_for_windows(22_000), Some(Material::Mica));
-        assert_eq!(material_for_windows(19_045), Some(Material::Acrylic));
-        assert_eq!(material_for_windows(17_763), Some(Material::Acrylic));
-        assert_eq!(material_for_windows(17_134), None);
+    fn every_window_is_opaque_in_its_schemes_base_colour() {
+        let light = window_background(tauri::Theme::Light).expect("tokens.css declares --wc-base");
+        let dark = window_background(tauri::Theme::Dark).expect("tokens.css declares --wc-base");
+        assert_eq!((light.3, dark.3), (u8::MAX, u8::MAX), "never see-through");
+        assert_ne!(light, dark);
     }
 
     #[test]
-    fn a_window_over_a_material_has_no_surface_of_its_own_to_show_through() {
-        for material in [Material::Mica, Material::Acrylic] {
-            let backing = Backing::for_material(Some(material));
-            assert!(backing.see_through, "{material:?}");
-            assert!(!backing.own_surface, "{material:?}");
-        }
-        let solid = Backing::for_material(None);
-        assert!(!solid.see_through && solid.own_surface);
+    fn the_base_colours_are_the_tokens_light_dark_pair() {
+        assert_eq!(
+            base_colours("a { --wc-base: light-dark(#eceef2, #12151B); }"),
+            Some((Color(0xec, 0xee, 0xf2, 0xff), Color(0x12, 0x15, 0x1b, 0xff)))
+        );
+        assert_eq!(base_colours("a { --wc-base: #eceef2; }"), None);
+        assert_eq!(
+            base_colours("a { --wc-base: light-dark(#ecee, #12151b); }"),
+            None
+        );
+        assert_eq!(
+            base_colours("a { --wc-other: light-dark(#eceef2, #12151b); }"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_scheme_follows_the_setting_and_the_system_only_when_asked() {
+        assert_eq!(scheme(Theme::Light, true), tauri::Theme::Light);
+        assert_eq!(scheme(Theme::Dark, false), tauri::Theme::Dark);
+        assert_eq!(scheme(Theme::System, true), tauri::Theme::Dark);
+        assert_eq!(scheme(Theme::System, false), tauri::Theme::Light);
     }
 
     #[test]
@@ -381,18 +407,17 @@ mod tests {
     /// writes the file again and fails once, so the new file is committed with the change.
     #[test]
     fn the_scripts_the_page_tests_run_are_current() {
-        let case = |theme, accent, material, system_accent: Option<&str>| FirstPaint {
+        let case = |theme, accent, system_accent: Option<&str>| FirstPaint {
             theme,
             accent,
-            material,
             system_accent: system_accent.map(str::to_owned),
             themes: THEMES,
             accents: ACCENTS,
         };
         let cases = serde_json::json!({
-            "dark_green_on_mica": case(Theme::Dark, Accent::Green, Some(Material::Mica), Some("#0078d4")).script(),
-            "system_accent_on_acrylic": case(Theme::Light, Accent::System, Some(Material::Acrylic), Some("#a94dc1")).script(),
-            "system_accent_on_linux": case(Theme::System, Accent::System, None, None).script(),
+            "dark_green": case(Theme::Dark, Accent::Green, Some("#0078d4")).script(),
+            "system_accent_on_windows": case(Theme::Light, Accent::System, Some("#a94dc1")).script(),
+            "system_accent_on_linux": case(Theme::System, Accent::System, None).script(),
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../src/lib/first-paint.generated.json");

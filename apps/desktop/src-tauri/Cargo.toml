@@ -57,10 +57,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
-# The versions Tauri already uses: the accent colour chosen in Windows, and which Windows this is
-# (Mica on 11, Acrylic on 10; D36).
+# The version Tauri already uses: the accent colour chosen in Windows, and whether it is set to dark
+# apps, for a new window's background (D45).
 windows = { version = "0.62.2", features = ["UI", "UI_ViewManagement"] }
-windows-version = "0.1.7"
 
 # The versions Tauri already uses, to put the hidden main window's web view to sleep (D13).
 webview2-com = "0.39.1"

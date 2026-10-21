@@ -5,7 +5,6 @@
   // Literal class names, so Tailwind sees each one in the source.
   const SURFACES = [
     { name: 'base', note: 'The window, solid', class: 'bg-base' },
-    { name: 'window', note: 'The window over the material', class: 'bg-window' },
     { name: 'layer', note: 'The content', class: 'bg-layer' },
     { name: 'raised', note: 'Cards and rows', class: 'bg-raised' },
     { name: 'overlay', note: 'Menus, dialogs, toasts', class: 'bg-overlay glass' },
@@ -73,10 +72,7 @@
   title="Foundations"
   description="Graphite on cool paper, one accent for what moves and where you are, and layers that read as layers. Every value comes from tokens.css; the components use nothing else."
 >
-  <Specimen
-    title="Surfaces"
-    note="Translucent layers over the window base, so they work over the OS material too"
-  >
+  <Specimen title="Surfaces" note="Translucent layers over the window base">
     <div class="grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
       {#each SURFACES as surface (surface.name)}
         <div class="flex flex-col gap-1.5">

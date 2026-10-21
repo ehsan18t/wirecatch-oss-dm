@@ -3,7 +3,7 @@
  *
  * Each app imports this file once. A page built on the design system imports base.css after it, from a stylesheet of its own that names its sources with `@source`; today's screens import this file alone, so their own base styles stay in charge. Utilities are generated only from this package's sources and from what a page names, never by scanning the apps, whose existing class names (`hidden`, `truncate`) would otherwise pick up Tailwind's rules. Tailwind's default theme is not loaded: a component can only reach these tokens.
  *
- * The contract with the theme settings: `<html data-scheme="light|dark" data-accent="<name>" data-material="mica|acrylic">`, and `--accent-system` (any CSS colour) on `<html>` while the accent is `system`. Without `data-scheme` the page follows the system scheme. Any element may carry `data-scheme` or `data-accent` to restyle its subtree: every colour token is declared again on such an element, so it resolves there.
+ * The contract with the theme settings: `<html data-scheme="light|dark" data-accent="<name>">`, and `--accent-system` (any CSS colour) on `<html>` while the accent is `system`. Without `data-scheme` the page follows the system scheme. Any element may carry `data-scheme` or `data-accent` to restyle its subtree: every colour token is declared again on such an element, so it resolves there.
  */
 @layer theme, base, components, utilities;
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
@@ -22,10 +22,8 @@
    */
   :root,
   [data-scheme] {
-    /* Graphite on cool paper. The window background is the base; the content sits on a translucent layer, so the same values work over a solid colour and over the OS material. */
+    /* Graphite on cool paper. The window background is the base, and the desktop shell paints every window in it before its page draws (D45, `window_background` in appearance.rs reads it from here). */
     --wc-base: light-dark(#eceef2, #12151b);
-    /* The window's own background: the base, or what lets the OS material through (below). */
-    --wc-window: var(--wc-base);
     --wc-layer: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.035));
     --wc-raised: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.06));
     /* Menus, popovers, dialogs and toasts: the scheme's overlay tone, nearly opaque, with the backdrop blur behind them. */
@@ -71,24 +69,6 @@
 
   [data-scheme='dark'] {
     color-scheme: dark;
-  }
-
-  /* With the OS material behind the window, the window's background lets it through; the layer above keeps text on a known tone. Only the window changes: the base stays solid wherever a part of the page uses it. */
-  :root[data-material='mica'],
-  :root[data-material='mica'] [data-scheme] {
-    --wc-window: transparent;
-  }
-
-  /* Over the OS material the webview draws no backdrop blur at all: its page root is transparent so the material shows, and Chromium then draws no backdrop-filter (D36.2). Menus, dialogs, toasts and the slide-over take the scheme's overlay tone nearly opaque instead, readable without the blur. */
-  :root[data-material],
-  :root[data-material] [data-scheme] {
-    --wc-overlay: --alpha(var(--wc-overlay-tone) / 97%);
-  }
-
-  /* Acrylic lets more of the desktop through than Mica, so the window keeps most of the base's tone over it. */
-  :root[data-material='acrylic'],
-  :root[data-material='acrylic'] [data-scheme] {
-    --wc-window: light-dark(rgb(236 238 242 / 0.7), rgb(18 21 27 / 0.72));
   }
 
   /*
@@ -172,7 +152,6 @@
 
 /* Colours, resolved where they are used, so a subtree's scheme and accent apply to it. */
 @theme inline {
-  --color-window: var(--wc-window);
   --color-base: var(--wc-base);
   --color-layer: var(--wc-layer);
   --color-raised: var(--wc-raised);
@@ -506,8 +485,6 @@
 
 /* An aria-disabled control (focusable, so it can say why) reacts no more than a natively disabled one. */
 @custom-variant enabled (&:enabled:not([aria-disabled='true']));
-/* Inside a window that shows the OS material behind it. */
-@custom-variant material (&:where([data-material] *));
 /* While the window is not the one in front, the title bar quiets, as Windows does. */
 @custom-variant inactive (&:where([data-inactive] *, [data-inactive]));
 

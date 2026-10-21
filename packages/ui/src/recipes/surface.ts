@@ -26,7 +26,7 @@ export const card = tv({
       raised: 'border-line bg-raised shadow-raised',
       /** Outlined only, for groups that should not compete with the content. */
       outline: 'border-line bg-transparent',
-      /** Frosted, for cards over imagery or the material. */
+      /** Frosted, for cards over imagery. */
       glass: 'border-line bg-overlay shadow-flyout glass',
     },
     padding: {

@@ -84,7 +84,7 @@ Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 - Paste a link anywhere in the window to add it.
 - Command palette (Ctrl+K) and searchable settings.
 - Errors that explain themselves and offer the fix as a button.
-- Light, dark or system theme, accent colours, and Mica or Acrylic on Windows.
+- Light, dark or system theme, and a choice of accent colours.
 - Keeps downloading from the tray, starts with your computer if you like, and tells you when a download finishes.
 - Fully usable with the keyboard, and smooth with thousands of downloads.
 - Export your settings and queues to a file and import them on another computer, even from Windows to Linux.

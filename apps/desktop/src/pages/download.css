@@ -1,5 +1,5 @@
 /*
- * The download window's stylesheet: the design system alone. The window shows the system's material through the page's transparent root (base.css), under its title bar.
+ * The download window's stylesheet: the design system alone.
  */
 @layer theme, base, components, utilities;
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The main window: the frameless title bar, the navigation beside the content, and the layers over them (dialogs, the command palette, toasts). The content sits on a translucent layer, so the window's material shows through around it. Settings, the dialogs and the palette are today's screens, shown as they are until they are rebuilt.
+  // The main window: the frameless title bar, the navigation beside the content, and the layers over them (dialogs, the command palette, toasts). Settings, the dialogs and the palette are today's screens, shown as they are until they are rebuilt.
   import Download from '~icons/lucide/download';
   import { Icon, provideToaster, SidebarState, ToastRegion } from '@wirecatch/ui';
   import CommandPalette from '$lib/components/CommandPalette.svelte';

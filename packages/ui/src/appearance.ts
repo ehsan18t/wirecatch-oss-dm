@@ -10,10 +10,6 @@ export { ACCENTS, isAccent, type Accent };
 
 export const DEFAULT_ACCENT: Accent = 'cyan';
 
-/** The OS window materials the shell can show through; with none (Linux), the window has a solid background. */
-export const MATERIALS = ['mica', 'acrylic'] as const;
-export type Material = (typeof MATERIALS)[number];
-
 /** The custom property that carries the OS accent colour while the accent is `system`. */
 export const SYSTEM_ACCENT_PROPERTY = '--accent-system';
 
@@ -22,15 +18,11 @@ const CHANGING_ATTRIBUTE = 'data-appearance-changing';
 
 export const isScheme = (value: unknown): value is Scheme =>
   SCHEMES.some((scheme) => scheme === value);
-export const isMaterial = (value: unknown): value is Material =>
-  MATERIALS.some((material) => material === value);
 
 export interface Appearance {
   /** Null follows the system scheme through CSS alone. */
   scheme: Scheme | null;
   accent: Accent;
-  /** Null when the window has no material behind it. */
-  material: Material | null;
   /** Any CSS colour; read only while `accent` is `system`. Anything else is left out, and the accent falls back to cyan: an invalid colour would leave `--wc-accent` unset, and every accent fill with it. */
   systemAccent?: string | null;
 }
@@ -47,7 +39,6 @@ export function applyAppearance(element: HTMLElement, appearance: Appearance): v
   element.setAttribute(CHANGING_ATTRIBUTE, '');
   setAttribute(element, 'data-scheme', appearance.scheme);
   element.setAttribute('data-accent', appearance.accent);
-  setAttribute(element, 'data-material', appearance.material);
   const asked = appearance.accent === 'system' ? (appearance.systemAccent ?? null) : null;
   const systemAccent = asked !== null && CSS.supports('color', asked) ? asked : null;
   if (systemAccent === null) element.style.removeProperty(SYSTEM_ACCENT_PROPERTY);

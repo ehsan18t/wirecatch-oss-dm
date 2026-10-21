@@ -1,5 +1,5 @@
 // @ts-check
-// The look of a window (D36), as one set of rules for both moments that need it. Before a page
+// The look of a window (D36, D45), as one set of rules for both moments that need it. Before a page
 // draws, the desktop shell runs this file in every window, with `export` taken off each line that
 // starts with it, and calls `paintFirst` with what it knows (`apps/desktop/src-tauri/src/appearance.rs`;
 // `first-paint.generated.json` holds the exact scripts, which the tests run). After the page
@@ -11,10 +11,9 @@
 /** @typedef {{ theme: Theme, accent: Accent }} Look */
 /**
  * What the shell knows when it builds a window: the settings (the defaults while the download list
- * is still opening), the system's material and accent colour, and every theme and accent this
- * build has, to check a remembered look against.
+ * is still opening), the system's accent colour, and every theme and accent this build has, to
+ * check a remembered look against.
  * @typedef {Look & {
- *   material: 'mica' | 'acrylic' | null,
  *   systemAccent: string | null,
  *   themes: readonly Theme[],
  *   accents: readonly Accent[],
@@ -98,9 +97,9 @@ export function rememberedLook(storage, themes, accents) {
 
 /**
  * Sets the page's look on its root element before anything is drawn: `data-scheme`,
- * `data-accent`, `data-material` and `--accent-system`. The look the page last showed wins over
- * the shell's, which is fixed when the window is built and so is older after a change; the
- * material and the system's colour are the shell's alone. The root element may not exist yet
+ * `data-accent` and `--accent-system`. The look the page last showed wins over the shell's, which
+ * is fixed when the window is built and so is older after a change; the system's colour is the
+ * shell's alone. The root element may not exist yet
  * when this runs, so it waits for it; the parser adds it before anything can be drawn.
  * @param {ShellLook} shell
  * @param {Document} doc
@@ -120,7 +119,6 @@ export function paintFirst(shell, doc, win) {
   const apply = (root) => {
     root.dataset.scheme = resolveScheme(look.theme, systemDark);
     root.dataset.accent = shownAccent(look.accent, shell.systemAccent);
-    if (shell.material !== null) root.dataset.material = shell.material;
     if (shell.systemAccent !== null) {
       root.style.setProperty(SYSTEM_ACCENT_PROPERTY, shell.systemAccent);
     }

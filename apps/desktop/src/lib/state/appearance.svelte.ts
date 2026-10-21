@@ -2,8 +2,7 @@
 // system's styles read them. `data-scheme` is `light` or `dark` ("system" resolved by the system's
 // preference), `data-accent` names the accent, and `--accent-system` holds the system's accent
 // colour for the "system" accent. The desktop shell sets all of them before the page's first paint
-// (and `data-material`, which never changes for a window) with the rules in `first-paint.js`, so
-// nothing flashes; this keeps them in step with the settings, the system's light or dark and the
+// with the rules in `first-paint.js`, so nothing flashes; this keeps them in step with the settings, the system's light or dark and the
 // system's accent colour from then on, with the same rules, and remembers the look for the next
 // first paint.
 

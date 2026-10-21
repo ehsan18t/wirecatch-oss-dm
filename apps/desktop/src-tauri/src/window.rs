@@ -231,6 +231,7 @@ pub fn show_main_window_with<R: Runtime>(app: &AppHandle<R>, focus: Focus) {
         .and_then(|b| crate::appearance::frameless(app, b).visible(false).build());
     match built {
         Ok(window) => {
+            crate::appearance::paint_background(&window);
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(REVEAL_PATIENCE).await;
                 reveal_main(&window);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One download's window (D23, D36): the frameless title bar with its close button, over the window's material, then its question, then its progress, on the content layer. Escape and Close close the window, which never answers the question: it stays open in the core and the main window counts it.
+  // One download's window (D23, D36): the frameless title bar with its close button, then its question, then its progress, on the content layer. Escape and Close close the window, which never answers the question: it stays open in the core and the main window counts it.
   import { AppMark, Button, TitleBar } from '@wirecatch/ui';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { getFitWindow, setFitWindow } from '$lib/window/fit';

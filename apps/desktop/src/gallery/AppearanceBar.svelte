@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The gallery's own appearance switches: scheme, accent and material. In the app these are settings (the theme unit's); here they write the same attributes on <html>.
+  // The gallery's own appearance switches: scheme and accent. In the app these are settings (the theme unit's); here they write the same attributes on <html>.
   import Monitor from '~icons/lucide/monitor';
   import Moon from '~icons/lucide/moon';
   import Sun from '~icons/lucide/sun';
@@ -8,32 +8,22 @@
     FOCUS_RING,
     Icon,
     SegmentedControl,
-    Select,
     cn,
     tooltip,
     type Accent,
-    type Material,
     type Scheme,
   } from '@wirecatch/ui';
 
   interface Props {
     scheme: Scheme;
     accent: Accent;
-    material: Material | null;
     /** What the OS would report as its accent colour, for the system swatch. */
     systemAccent: string;
     onscheme: (scheme: Scheme) => void;
     onaccent: (accent: Accent) => void;
-    onmaterial: (material: Material | null) => void;
   }
 
-  let { scheme, accent, material, systemAccent, onscheme, onaccent, onmaterial }: Props = $props();
-
-  const MATERIALS = [
-    { value: 'none', label: 'Solid (Linux)' },
-    { value: 'mica', label: 'Mica (Windows 11)' },
-    { value: 'acrylic', label: 'Acrylic (Windows 10)' },
-  ] as const;
+  let { scheme, accent, systemAccent, onscheme, onaccent }: Props = $props();
 
   const accentName = (name: Accent) =>
     name === 'system' ? 'System accent' : `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
@@ -79,17 +69,5 @@
         </span>
       </button>
     {/each}
-  </div>
-
-  <div class="ml-auto w-56">
-    <Select
-      label="Window material"
-      size="sm"
-      value={material ?? 'none'}
-      options={MATERIALS}
-      onchange={(value: Material | 'none') => {
-        onmaterial(value === 'none' ? null : value);
-      }}
-    />
   </div>
 </div>

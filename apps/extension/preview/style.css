@@ -15,6 +15,6 @@
 
 @layer components {
   .popup-frame {
-    @apply m-6 inline-block overflow-hidden rounded-md border border-line bg-window shadow-flyout;
+    @apply m-6 inline-block overflow-hidden rounded-md border border-line bg-base shadow-flyout;
   }
 }

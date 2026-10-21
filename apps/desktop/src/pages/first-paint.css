@@ -1,4 +1,4 @@
-/* Linked from each page's head, so the right background is painted before any script runs and a window never flashes white. The shell sets `data-scheme` before the page loads (D36); without it (the sample app in a browser) the system's preference decides. A window with the system's material behind it stays clear, so the material shows. */
+/* Linked from each page's head, so the right background is painted before any script runs. It is the design tokens' base (`--wc-base`), the colour the shell already paints the window and its web view (D45), so nothing changes when the page draws; first-paint.test.ts holds the two together. The shell sets `data-scheme` before the page loads (D36); without it (the sample app in a browser) the system's preference decides. */
 html {
   background: #eceef2;
 }
@@ -11,8 +11,4 @@ html {
 
 html[data-scheme='dark'] {
   background: #12151b;
-}
-
-html[data-material] {
-  background: transparent;
 }

@@ -13,7 +13,6 @@
     applyAppearance,
     DEFAULT_ACCENT,
     isAccent,
-    isMaterial,
     isScheme,
     IconButton,
     Input,
@@ -28,7 +27,6 @@
     type Accent,
     type CaptionAction,
     type IconComponent,
-    type Material,
     type Scheme,
     type WindowControls,
   } from '@wirecatch/ui';
@@ -51,17 +49,12 @@
   const toaster = new Toaster();
   provideToaster(toaster);
   const sidebar = new SidebarState();
-  // The address can set the look (`?scheme=dark&accent=amber&material=mica`), so a review can link to one.
+  // The address can set the look (`?scheme=dark&accent=amber`), so a review can link to one.
   const query = new URLSearchParams(window.location.search);
-  const asked = {
-    scheme: query.get('scheme'),
-    accent: query.get('accent'),
-    material: query.get('material'),
-  };
+  const asked = { scheme: query.get('scheme'), accent: query.get('accent') };
   const systemScheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   let scheme = $state<Scheme>(isScheme(asked.scheme) ? asked.scheme : systemScheme);
   let accent = $state<Accent>(isAccent(asked.accent) ? asked.accent : DEFAULT_ACCENT);
-  let material = $state<Material | null>(isMaterial(asked.material) ? asked.material : null);
   let current = $state('foundations');
   let search = $state('');
 
@@ -69,7 +62,6 @@
     applyAppearance(document.documentElement, {
       scheme,
       accent,
-      material,
       systemAccent: SYSTEM_ACCENT_SAMPLE,
     });
   });
@@ -151,11 +143,9 @@
       <AppearanceBar
         {scheme}
         {accent}
-        {material}
         systemAccent={SYSTEM_ACCENT_SAMPLE}
         onscheme={(next: Scheme) => (scheme = next)}
         onaccent={(next: Accent) => (accent = next)}
-        onmaterial={(next: Material | null) => (material = next)}
       />
       <div class="mx-auto flex max-w-page flex-col gap-14 px-8 pt-6 pb-24">
         <FoundationsSection />

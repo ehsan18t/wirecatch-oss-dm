@@ -563,7 +563,10 @@ fn create<R: Runtime>(app: &AppHandle<R>, open: &OpenWindow) {
         .disable_drag_drop_handler()
         .build();
     let window = match built {
-        Ok(window) => window,
+        Ok(window) => {
+            crate::appearance::paint_background(&window);
+            window
+        }
         Err(e) => {
             tracing::error!("could not open a download window: {e}");
             update(app, |r| r.failed(&open.label));

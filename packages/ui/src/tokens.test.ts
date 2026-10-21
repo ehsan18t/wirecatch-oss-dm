@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ACCENTS, MATERIALS, SCHEMES } from './appearance';
+import { ACCENTS, SCHEMES } from './appearance';
 import { GROUP_NAMES, THEME_NAMES } from './lib/cn';
 import { MOTION_TOKENS } from './motion/motion';
 import { contrast, mixOklab, over, parseColor, withAlpha, type Rgba } from './testing/color';
@@ -56,18 +56,8 @@ describe('the appearance contract', () => {
     expect(css).toContain(`[data-accent='${accent}']`);
   });
 
-  it.each(MATERIALS)('has a rule for the %s material', (material) => {
-    expect(css).toContain(`[data-material='${material}']`);
-  });
-
-  it('keeps floating surfaces readable on their own under a material, where the webview draws no blur behind them (D36.2), in the scheme’s own overlay tone', () => {
-    const value = rule(':root[data-material],').get('--wc-overlay');
-    const overMaterial = pair('--wc-overlay', value);
-    const tone = pair('--wc-overlay-tone');
-    for (const side of [0, 1] as const) {
-      expect(overMaterial[side].a).toBeGreaterThanOrEqual(0.95);
-      expect({ ...overMaterial[side], a: 1 }).toEqual(tone[side]);
-    }
+  it('reads no window material, since every window is opaque (D45)', () => {
+    expect(css).not.toContain('data-material');
   });
 
   it('keeps Wirecatch’s cyan exactly, as the default', () => {

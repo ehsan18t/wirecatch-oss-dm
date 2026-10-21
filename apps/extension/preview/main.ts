@@ -19,7 +19,6 @@ if (params.get('font') === 'dejavu') document.documentElement.dataset.font = 'de
 applyAppearance(document.documentElement, {
   scheme: isScheme(scheme) ? scheme : null,
   accent: isAccent(accent) ? accent : DEFAULT_ACCENT,
-  material: null,
 });
 
 const model = sampleModel(isSampleState(state) ? state : 'connected');

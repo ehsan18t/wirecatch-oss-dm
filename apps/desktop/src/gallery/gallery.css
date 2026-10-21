@@ -2,28 +2,3 @@
 @import '@wirecatch/ui/tokens.css';
 @import '@wirecatch/ui/base.css';
 @source './';
-
-/*
- * Stands in for what the OS draws behind the window while the gallery shows a material: a desktop wallpaper, tinted as Mica (heavily) and Acrylic (less) tint it, under the window's own background, so the translucency can be judged in a browser. Not design values: in the app the OS draws all but the base.
- */
-@layer base {
-  :root[data-material] {
-    --gallery-wallpaper:
-      radial-gradient(circle at 15% 20%, oklch(0.72 0.16 250), transparent 45%),
-      radial-gradient(circle at 85% 30%, oklch(0.75 0.15 330), transparent 40%),
-      radial-gradient(circle at 50% 90%, oklch(0.8 0.14 160), transparent 50%),
-      linear-gradient(oklch(0.6 0.05 260), oklch(0.6 0.05 260));
-    background:
-      linear-gradient(var(--wc-window), var(--wc-window)),
-      linear-gradient(var(--gallery-tint), var(--gallery-tint)), var(--gallery-wallpaper);
-    background-attachment: fixed;
-  }
-
-  :root[data-material='mica'] {
-    --gallery-tint: light-dark(rgb(243 243 243 / 0.86), rgb(32 32 32 / 0.88));
-  }
-
-  :root[data-material='acrylic'] {
-    --gallery-tint: light-dark(rgb(243 243 243 / 0.55), rgb(32 32 32 / 0.6));
-  }
-}

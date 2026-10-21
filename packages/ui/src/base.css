@@ -19,7 +19,7 @@
   }
 
   html {
-    @apply bg-window font-sans text-ink antialiased;
+    @apply bg-base font-sans text-ink antialiased;
     interpolate-size: allow-keywords;
   }
 
