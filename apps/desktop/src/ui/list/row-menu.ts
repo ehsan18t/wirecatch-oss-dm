@@ -18,7 +18,7 @@ import type { IconComponent, MenuAction, MenuEntry } from '@wirecatch/ui';
 import { FIX_LABEL } from '$lib/format';
 import { shortcutParts } from '$lib/keymap';
 import type { AppState } from '$lib/state/app.svelte';
-import { applicable, canRefreshLink } from '$lib/state/row-actions';
+import { applicable, canMoveTo, offersNewLink } from '$lib/state/row-actions';
 
 const FIX_ICON: Record<FixAction, IconComponent> = {
   retry: RotateCw,
@@ -116,7 +116,8 @@ function oneEntries(app: AppState): MenuAction[] {
       icon: Copy,
       onselect: () => void app.actions.copyLink(only.id),
     },
-    ...(canRefreshLink(only)
+    // A failure whose fix is a new link offers it first, as its fix.
+    ...(offersNewLink(only) && only.error?.fix !== 'refresh_link'
       ? [
           {
             id: 'refresh',
@@ -134,7 +135,7 @@ function moveEntries(app: AppState): MenuAction[] {
   const rows = app.selection.rows;
   const ids = rows.map((r) => r.id);
   return app.queues.list
-    .filter((q) => rows.some((r) => r.queue !== q.id))
+    .filter((q) => canMoveTo(rows, q.id))
     .map((q) => ({
       id: `move-${String(q.id)}`,
       label: `Move to ${q.name}`,

@@ -68,8 +68,12 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(app.downloads.get(id)?.status).toBe('paused');
     await click(inRow('ubuntu-24.04.3', 'Resume'));
     expect(app.downloads.get(id)?.status).toBe('queued');
+    // The palette offers what applies to the selection: a waiting download pauses, a paused one resumes.
     await click(rowByName('ubuntu-24.04.3'));
-    expect(palette('sel.pause') && palette('sel.resume')).toBe(true);
+    expect(palette('sel.pause')).toBe(true);
+    expect(palette('sel.resume')).toBe(false);
+    await click(inRow('ubuntu-24.04.3', 'Pause'));
+    expect(palette('sel.resume')).toBe(true);
   });
 
   it('error fixes: the fix button in the row, 1 click (also in the details)', async () => {

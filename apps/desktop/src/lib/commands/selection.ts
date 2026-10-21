@@ -3,6 +3,13 @@
 
 import type { DownloadId, DownloadSummary, Queue } from '@wirecatch/protocol';
 import type { AppState } from '../state/app.svelte';
+import {
+  applicable,
+  canChangeFolder,
+  canMoveTo,
+  offersNewLink,
+  type Applicable,
+} from '../state/row-actions';
 import { commandsFrom, type Command, type CommandSpec } from './table';
 
 /** The selection the commands act on. */
@@ -13,6 +20,9 @@ interface Selected {
   n: string;
   /** The one selected download, when exactly one is. */
   only: DownloadSummary | undefined;
+  /** What the selection offers: an action shows when at least one of its downloads takes it. */
+  can: Applicable;
+  rows: readonly DownloadSummary[];
 }
 
 const GROUP = 'Selected downloads';
@@ -22,24 +32,28 @@ const ACTIONS: readonly CommandSpec<Selected>[] = [
     id: 'sel.pause',
     title: (s) => `Pause ${s.n}`,
     keywords: 'stop hold',
+    when: (s) => s.can.pause,
     run: (s) => s.app.actions.pause(s.ids),
   },
   {
     id: 'sel.resume',
     title: (s) => `Resume ${s.n}`,
     keywords: 'start continue',
+    when: (s) => s.can.resume,
     run: (s) => s.app.actions.resume(s.ids),
   },
   {
     id: 'sel.retry',
     title: (s) => `Try ${s.n} again`,
     keywords: 'retry restart',
+    when: (s) => s.can.retry,
     run: (s) => s.app.actions.retry(s.ids),
   },
   {
     id: 'sel.cancel',
     title: (s) => `Cancel ${s.n} and discard the partial file`,
     keywords: 'stop abort',
+    when: (s) => s.can.cancel,
     run: (s) => s.app.openDialog({ kind: 'cancel', ids: s.ids }),
   },
   {
@@ -55,6 +69,7 @@ const MOVE: CommandSpec<Selected & { queue: Queue }> = {
   id: (s) => `sel.move.${s.queue.id}`,
   title: (s) => `Move ${s.n} to ${s.queue.name}`,
   keywords: 'queue transfer',
+  when: (s) => canMoveTo(s.rows, s.queue.id),
   run: (s) => s.app.actions.moveToQueue(s.ids, s.queue.id),
 };
 
@@ -84,12 +99,14 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
     id: 'sel.refresh',
     title: (s) => `Get a new link for ${s.n}`,
     keywords: 'refresh fresh link expired url',
+    when: (s) => offersNewLink(s.only),
     run: (s) => s.app.openDialog({ kind: 'refresh', id: s.only.id }),
   },
   {
     id: 'sel.choosefolder',
     title: (s) => `Save ${s.n} to a different folder`,
     keywords: 'change folder location',
+    when: (s) => canChangeFolder(s.only),
     run: (s) => s.app.actions.chooseFolderFor(s.only.id),
   },
 ];
@@ -148,6 +165,8 @@ export function selectionCommands(app: AppState): Command[] {
     ids: rows.map((r) => r.id),
     n: only ? `"${only.file_name}"` : `${rows.length} downloads`,
     only,
+    can: applicable(rows),
+    rows,
   };
   return [
     ...commandsFrom(GROUP, ACTIONS, s),

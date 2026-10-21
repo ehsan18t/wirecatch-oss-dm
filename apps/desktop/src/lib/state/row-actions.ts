@@ -1,6 +1,6 @@
 // Which actions apply to a download, decided once: the list's hover buttons, its context menu and the details panel all ask here, so no place offers what another refuses.
 
-import type { DownloadSummary } from '@wirecatch/protocol';
+import type { DownloadSummary, QueueId } from '@wirecatch/protocol';
 import { isUnderWay } from './view';
 
 type Row = Pick<DownloadSummary, 'status'>;
@@ -23,6 +23,16 @@ export const canCancel = (row: Row): boolean =>
 /** A fresh link stands in for an expired one while bytes are still to come from it. */
 export const canRefreshLink = (row: Row): boolean =>
   canCancel(row) && row.status !== 'failed' && row.status !== 'processing';
+
+/** A new link is offered for what still downloads from its link, and for a failure whose fix is one. */
+export const offersNewLink = (row: Pick<DownloadSummary, 'status' | 'error'>): boolean =>
+  canRefreshLink(row) || row.error?.fix === 'refresh_link';
+
+/** Moving to `queue` is offered while some of the downloads are in another queue. */
+export const canMoveTo = (
+  rows: readonly Pick<DownloadSummary, 'queue'>[],
+  queue: QueueId,
+): boolean => rows.some((r) => r.queue !== queue);
 
 /** The link may be why a download is stuck: it is paused (a link often expires while it waits), or the server turned it away. Only then do the details ask whether it expired; the action stays in the context menu either way. */
 export const linkMayHaveExpired = (row: Pick<DownloadSummary, 'status' | 'waiting'>): boolean =>
