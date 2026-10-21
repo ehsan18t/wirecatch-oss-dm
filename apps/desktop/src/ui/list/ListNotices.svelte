@@ -9,7 +9,7 @@
   let retrying = $state(false);
 
   const count = $derived(app.visible.length);
-  const canReorder = $derived(app.view.kind === 'queue' && app.sort === 'queue');
+  const canReorder = $derived(app.sort.column === 'position');
   // One hint at a time, and only one that applies to what is on screen.
   const hint = $derived.by((): HintId | null => {
     if (count === 0) return null;

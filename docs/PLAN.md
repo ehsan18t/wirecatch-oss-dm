@@ -83,7 +83,7 @@ Acceptance checklist:
 
 Tauri 2, Svelte 5 with Vite (D36). In Wave 1 the UI talks to a mock backend behind one interface, so it can be designed, reviewed and tested in a normal browser; Wave 2 swaps in the real core.
 
-Builds the D3 principles: queues in the sidebar with schedule and limits visible, drag downloads between queues; a virtualized list; paste a link anywhere to add it; the toast after a capture (D4) and the confirmation dialog when asked; a command palette (Ctrl+K); searchable plain-language settings with an Advanced section; errors with fix buttons; empty states that teach; light, dark and system themes; settings export and import screens.
+Builds the D3 principles: queues in the sidebar with schedule and limits visible, drag downloads between queues; a virtualized list; paste a link anywhere to add it; the toast after a capture (D4) and the confirmation dialog when asked; a command palette (Ctrl+K at the time; Ctrl+Shift+P since D47); searchable plain-language settings with an Advanced section; errors with fix buttons; empty states that teach; light, dark and system themes; settings export and import screens.
 
 Acceptance checklist:
 1. Every feature is reachable from visible UI along the path that feels natural to the person, and from the command palette (D36 retired the earlier two-click limit). The report includes the feature-to-path table that proves it.

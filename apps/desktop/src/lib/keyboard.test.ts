@@ -74,7 +74,7 @@ describe('keyboard only', () => {
 
   it('runs any action from the command palette', async () => {
     const { app, press } = await setup();
-    await press('{Control>}k{/Control}');
+    await press('{Control>}{Shift>}p{/Shift}{/Control}');
     const input = screen.getByRole('combobox', { name: 'Type an action or setting' });
     expect(document.activeElement).toBe(input);
     await press('dark theme');
@@ -86,7 +86,7 @@ describe('keyboard only', () => {
 
   it('jumps from the palette straight to a setting and focuses it', async () => {
     const { app, press } = await setup();
-    await press('{Control>}k{/Control}');
+    await press('{Control>}{Shift>}p{/Shift}{/Control}');
     await press('window before');
     const option = screen
       .getAllByRole('option')
@@ -115,7 +115,7 @@ describe('keyboard only', () => {
     await press('{F1}');
     expect(app.dialog?.kind).toBe('shortcuts');
     await press('{Escape}');
-    await press('{Control>}f{/Control}');
+    await press('{Control>}k{/Control}');
     expect(document.activeElement).toBe(
       screen.getByRole('searchbox', { name: 'Search downloads' }),
     );
@@ -133,7 +133,7 @@ describe('keyboard only', () => {
     const { app, press } = await setup();
     app.openSettings();
     await settle();
-    await press('{Control>}f{/Control}');
+    await press('{Control>}k{/Control}');
     const settingsSearch = screen.getByRole('searchbox', { name: 'Search settings' });
     expect(document.activeElement).toBe(settingsSearch);
     settingsSearch.blur();
@@ -170,7 +170,7 @@ describe('keyboard only', () => {
     app.openSettings('theme');
     await settle();
     const group = screen.getByRole('radiogroup', { name: 'Appearance' });
-    within(group).getByRole('radio', { name: 'Match system' }).focus();
+    within(group).getByRole('radio', { name: 'System' }).focus();
     await press('{ArrowRight}');
     expect(app.settings?.theme).toBe('light');
     expect(document.activeElement).toBe(within(group).getByRole('radio', { name: 'Light' }));

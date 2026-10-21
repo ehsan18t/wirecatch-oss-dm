@@ -74,10 +74,11 @@ describe('keymap', () => {
   });
 
   it('reads window shortcuts, with Ctrl or Command, in either case', () => {
-    expect(windowCommand(press('k', { ctrlKey: true }))).toBe('palette');
+    expect(windowCommand(press('P', { ctrlKey: true, shiftKey: true }))).toBe('palette');
+    expect(windowCommand(press('p', { ctrlKey: true }))).toBeNull();
     expect(windowCommand(press('N', { ctrlKey: true, shiftKey: true }))).toBe('add');
     expect(windowCommand(press(',', { metaKey: true }))).toBe('settings');
-    expect(windowCommand(press('f', { ctrlKey: true }))).toBe('search');
+    expect(windowCommand(press('k', { ctrlKey: true }))).toBe('search');
     expect(windowCommand(press('F1'))).toBe('help');
     expect(windowCommand(press('n'))).toBeNull();
   });
@@ -118,28 +119,29 @@ describe('keymap', () => {
     expect(shortcutLabel('nudge-down')).toBe('Alt+Down');
     expect(shortcutLabel('pause-resume')).toBe('Space');
     expect(ariaShortcut('add')).toBe('Control+N');
-    expect(ariaShortcut('search')).toBe('Control+F');
+    expect(ariaShortcut('search')).toBe('Control+K');
+    expect(shortcutLabel('palette')).toBe('Ctrl+Shift+P');
   });
 
   it('lists each shortcut once in the dialog, keys with one meaning on one line', () => {
     const lines = shortcutHelp().map((l) => [l.keys.map((k) => k.join('+')).join(', '), l.what]);
     expect(lines).toEqual([
-      ['Ctrl+K', 'Find any action or setting'],
+      ['Ctrl+Shift+P', 'Find any action or setting'],
       ['Ctrl+V', 'Download the link you copied'],
       ['Ctrl+N', 'Add a download'],
-      ['Ctrl+F', 'Search the list'],
+      ['Ctrl+K', 'Search the list'],
       ['Ctrl+,', 'Open settings'],
       ['Up, Down', 'Move through the list'],
       ['Shift+Up, Shift+Down', 'Select several downloads'],
       ['Ctrl+A', 'Select every download in the list'],
       ['Space', 'Pause or resume the selected downloads'],
       ['Enter', 'Open the selected file when it is finished'],
-      ['Alt+Enter', 'Show the details of the selected downloads'],
+      ['Alt+Enter', 'Show the details of the selected download'],
       ['Delete', 'Remove the selected downloads'],
       ['Alt+Up, Alt+Down', 'Move the selection up or down in its queue'],
-      ['Escape', 'Close a dialog or the details, or clear the selection'],
+      ['Escape', 'Close a dialog, or clear the selection'],
       ['F1', 'Show these shortcuts'],
-      ['F6, Shift+F6', 'Move between the title bar, the navigation, the list and the details'],
+      ['F6, Shift+F6', 'Move between the title bar, the navigation and the list'],
     ]);
   });
 });

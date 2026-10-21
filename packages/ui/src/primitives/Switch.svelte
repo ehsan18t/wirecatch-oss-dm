@@ -12,6 +12,8 @@
     hideLabel?: boolean;
     /** A second line under the label. */
     description?: string | undefined;
+    /** The id of help shown elsewhere (a settings row's), in place of `description`. */
+    describedby?: string | undefined;
     /** Waiting for the change to land: the thumb shows a spinner and the switch takes no input. */
     loading?: boolean;
     disabled?: boolean;
@@ -28,6 +30,7 @@
     label,
     hideLabel = false,
     description,
+    describedby,
     loading = false,
     disabled = false,
     labelSide = 'end',
@@ -59,7 +62,7 @@
     role="switch"
     aria-checked={checked}
     aria-labelledby={labelId}
-    aria-describedby={description ? hintId : undefined}
+    aria-describedby={describedby ?? (description ? hintId : undefined)}
     aria-busy={loading || undefined}
     {disabled}
     class={cn(

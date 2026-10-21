@@ -24,7 +24,7 @@ async function audit(page: Page, label: string) {
   expect(problems, problems.join('\n')).toEqual([]);
 }
 
-const addDialog = (page: Page) => page.getByRole('dialog', { name: /^Add/ });
+const addDialog = (page: Page) => page.getByRole('dialog', { name: /new downloads?$/i });
 const linksBox = (page: Page) => addDialog(page).getByRole('textbox', { name: 'Links' });
 
 /** Opens the dialog the way the keyboard does, from anywhere in the window. */
@@ -204,7 +204,7 @@ for (const { scale, root, width, height } of SCALES) {
         (_, i) => `${LINKS[i % LINKS.length] ?? ''}?part=${i}`,
       );
       await linksBox(page).fill(many.join('\n'));
-      await expect(addDialog(page)).toHaveAccessibleName('Add 12 downloads');
+      await expect(addDialog(page)).toHaveAccessibleName('12 new downloads');
       await checkFits(page, 'twelve links');
     });
 

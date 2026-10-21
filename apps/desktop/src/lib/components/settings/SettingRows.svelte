@@ -21,58 +21,26 @@
   {@const helpId = `help-${def.id}`}
   {@const labelId = `label-${def.id}`}
   {@const control = controls[def.id]}
-  <div class="setting" class:flash={flash === def.id} id={settingAnchor(def.id)}>
-    <div class="text">
-      <span class="label" id={labelId}>{def.label}</span>
-      <span class="help" id={helpId}>{def.help}</span>
+  <div
+    class={[
+      'setting flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line px-4 py-3 transition-colors duration-slower ease-out first:border-t-0 has-[table]:flex-col has-[table]:items-stretch has-[.list-editor]:flex-col has-[.list-editor]:items-stretch',
+      flash === def.id && 'flash bg-accent-soft',
+    ]}
+    id={settingAnchor(def.id)}
+  >
+    <div class="flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+      <span class="font-medium text-ink" id={labelId}>{def.label}</span>
+      <span class="max-w-prose text-small text-ink-subtle" id={helpId}>{def.help}</span>
     </div>
-    <div class="control">
+    <div
+      class="control flex flex-wrap items-center justify-end gap-2 [:has(>.list-editor,>table)]:justify-start"
+    >
       {#if control}{@render control({ def, s: settings, labelId, helpId })}{/if}
     </div>
   </div>
 {/each}
 
 <style>
-  .setting {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.2fr);
-    align-items: center;
-    gap: 8px 28px;
-    margin: 0 -10px;
-    padding: 10px;
-    border-radius: var(--radius-m);
-    transition: background 400ms var(--ease);
-  }
-
-  .setting.flash {
-    background: var(--accent-soft);
-  }
-
-  .setting:has(:global(table)) {
-    grid-template-columns: 1fr;
-  }
-
-  .text {
-    display: grid;
-    gap: 2px;
-  }
-
-  .label {
-    font-weight: 600;
-  }
-
-  .help {
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-  }
-
-  .control {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
-
   /* Shared by the controls the sections pass in. */
   .control :global(.path),
   .control :global(.unit) {

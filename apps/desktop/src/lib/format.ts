@@ -510,3 +510,8 @@ export function waitLong(w: WaitReason, queueName: string): string {
       return `The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again by itself at ${clockTime(w.data.retry_at)} and keeps what was already downloaded.`;
   }
 }
+
+/** Where a waiting download stands in its queue's line: "Next in Main", "3rd to start in Main". `ahead` counts the downloads that wait before it. */
+export function lineNote(ahead: number, queueName: string): string {
+  return ahead === 0 ? `Next in ${queueName}` : `${ordinal(ahead + 1)} to start in ${queueName}`;
+}

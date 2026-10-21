@@ -6,6 +6,11 @@ import { renderApp, settle } from '$lib/testing/setup';
 const main = () => screen.getByRole('main', { name: 'Downloads' });
 
 describe('the list header', () => {
+  it('says what is happening now: how many download, how fast, and about how long', async () => {
+    await renderApp();
+    expect(within(main()).getByText(/^\d+ downloading at .+ · about .+ left$/)).toBeInTheDocument();
+  });
+
   it('says how many downloads match a search, in words spaced as written', async () => {
     const { app } = await renderApp();
     app.search = 'zzzz';
@@ -17,9 +22,14 @@ describe('the list header', () => {
     ).toBe('0 downloads matching "zzzz"');
   });
 
-  it('leaves out its tools and count on first run, where there is nothing to act on', async () => {
+  it('offers only New download on first run, where there is nothing else to act on', async () => {
     await renderApp({ empty: true });
-    expect(within(main()).queryByRole('group', { name: 'List tools' })).toBeNull();
+    const tools = within(main()).getByRole('group', { name: 'List tools' });
+    expect(
+      within(tools)
+        .getAllByRole('button')
+        .map((b) => b.textContent.trim()),
+    ).toEqual(['New download']);
     expect(within(main()).queryByText(/^0 downloads/)).toBeNull();
     expect(within(main()).getByRole('heading', { level: 1 })).toBeInTheDocument();
   });
@@ -30,7 +40,7 @@ describe('the list header', () => {
     app.search = 'zzzz';
     await settle();
     expect(within(main()).getByRole('group', { name: 'List tools' })).toBeInTheDocument();
-    await user.click(within(main()).getByRole('button', { name: 'Details' }));
-    expect(app.detailsOpen).toBe(true);
+    await user.click(within(main()).getByRole('button', { name: 'New download' }));
+    expect(app.dialog).toEqual({ kind: 'add', urls: [] });
   });
 });

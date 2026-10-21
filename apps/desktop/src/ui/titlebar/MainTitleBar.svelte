@@ -1,13 +1,22 @@
 <script lang="ts">
-  // The main window's title bar: the navigation toggle, the app's name, the search through the list, how fast everything moves, the way to every action, and the caption buttons. The bar drags the window; Windows 11's snap layouts open over its maximize button.
-  import SquareTerminal from '~icons/lucide/square-terminal';
+  // The main window's title bar: the navigation toggle, the app's name, the search through the view on screen (its scope shows as a chip, and clearing the chip searches everything), how fast everything moves, and the caption buttons. The bar drags the window; Windows 11's snap layouts open over its maximize button.
   import PanelLeft from '~icons/lucide/panel-left';
   import Search from '~icons/lucide/search';
   import X from '~icons/lucide/x';
-  import { AppMark, Badge, IconButton, Input, TitleBar, type SidebarState } from '@wirecatch/ui';
+  import {
+    AppMark,
+    Badge,
+    IconButton,
+    Input,
+    Kbd,
+    TitleBar,
+    type SidebarState,
+  } from '@wirecatch/ui';
+  import { CATEGORY_LABEL } from '$lib/format';
   import { runKey } from '$lib/commands';
-  import { ariaShortcut, shortcutLabel } from '$lib/keymap';
+  import { ariaShortcut, shortcutParts } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
+  import { STATUS_GROUP_LABEL } from '$lib/state/view';
   import SpeedReadout from './SpeedReadout.svelte';
 
   let { sidebar, ontoggle }: { sidebar: SidebarState; ontoggle: () => void } = $props();
@@ -21,6 +30,21 @@
         : 'Collapse the navigation'
       : 'Open the navigation',
   );
+
+  /** The view the search is limited to, by name; null when it searches everything. */
+  const scope = $derived.by(() => {
+    const v = app.view;
+    switch (v.kind) {
+      case 'all':
+        return null;
+      case 'status':
+        return STATUS_GROUP_LABEL[v.group];
+      case 'queue':
+        return app.queues.byId(v.id)?.name ?? 'Queue';
+      case 'category':
+        return CATEGORY_LABEL[v.category];
+    }
+  });
 
   /** Typing a search shows the list it searches. */
   function searchFor(text: string) {
@@ -67,14 +91,33 @@
       type="search"
       size="sm"
       icon={Search}
-      label="Search downloads"
-      placeholder="Search names and links ({shortcutLabel('search')})"
+      label={scope ? `Search ${scope}` : 'Search downloads'}
+      placeholder={scope ? `Search ${scope}` : 'Search downloads'}
       aria-keyshortcuts={ariaShortcut('search')}
       value={app.search}
       onchange={searchFor}
       {onkeydown}
     >
       {#snippet trailing()}
+        {#if scope}
+          <span
+            class="flex h-5.5 shrink-0 items-center gap-0.5 rounded-full bg-accent-soft pr-0.5 pl-2 text-small text-ink"
+          >
+            {scope}
+            <IconButton
+              icon={X}
+              label="Search everything"
+              size="xs"
+              class="size-4.5 rounded-full"
+              onclick={() => {
+                app.show({ kind: 'all' });
+                document.getElementById('list-search')?.focus();
+              }}
+            />
+          </span>
+        {:else if !app.search}
+          <Kbd keys={shortcutParts('search')} class="shrink-0" />
+        {/if}
         {#if app.search}
           <IconButton
             icon={X}
@@ -95,12 +138,5 @@
     {#if app.sampleData}
       <Badge tone="warning" size="sm">Sample data</Badge>
     {/if}
-    <IconButton
-      icon={SquareTerminal}
-      label="Find any action"
-      tooltip="Find any action or setting ({shortcutLabel('palette')})"
-      aria-keyshortcuts={ariaShortcut('palette')}
-      onclick={() => (app.paletteOpen = true)}
-    />
   {/snippet}
 </TitleBar>

@@ -4,7 +4,17 @@
 import type { Category, Queue } from '@wirecatch/protocol';
 import { CATEGORIES, CATEGORY_LABEL } from '../format';
 import type { AppState } from '../state/app.svelte';
-import { STATUS_GROUPS, STATUS_GROUP_LABEL, type StatusGroup } from '../state/view';
+import {
+  GROUP_ORDER,
+  QUEUE_ORDER,
+  sameSort,
+  STATUS_GROUPS,
+  STATUS_GROUP_LABEL,
+  type Sort,
+  type SortColumn,
+  type StatusGroup,
+} from '../state/view';
+import { keysOf } from '../keys';
 import { commandsFrom, type Command, type CommandSpec } from './table';
 
 /**
@@ -87,6 +97,46 @@ const SHOW_CATEGORY: CommandSpec<{ app: AppState; category: Category }> = {
   keywords: 'filter category type',
   run: ({ app, category }) => app.show({ kind: 'category', category }),
 };
+
+/** A group of the list on screen, folded away or opened: what the click on its heading does. */
+const FOLD_GROUP: CommandSpec<{ app: AppState; group: StatusGroup }> = {
+  id: ({ group }) => `list.fold.${group}`,
+  title: ({ app, group }) =>
+    `${app.folded.has(group) ? 'Open' : 'Fold'} the ${STATUS_GROUP_LABEL[group]} group`,
+  keywords: 'fold unfold collapse expand hide show group heading',
+  when: ({ app, group }) =>
+    app.screen === 'downloads' && app.layout.sections.some((s) => s.group === group),
+  run: ({ app, group }) => app.toggleGroup(group),
+};
+
+/** How each sort reads, ascending and descending, in words. */
+const SORT_WORDS: Record<Exclude<SortColumn, 'position'>, [string, string]> = {
+  name: ['by name, A to Z', 'by name, Z to A'],
+  progress: ['by progress, least done first', 'by progress, most done first'],
+  size: ['by size, smallest first', 'by size, largest first'],
+  speed: ['by speed, slowest first', 'by speed, fastest first'],
+  left: ['by time left, shortest first', 'by time left, longest first'],
+};
+
+/** A sort of the list inside its groups: what a click on a column heading does. */
+const SORT_LIST: CommandSpec<{ app: AppState; sort: Sort }> = {
+  id: ({ sort }) => `list.sort.${sort.column}${sort.descending ? '.descending' : ''}`,
+  title: ({ sort }) =>
+    sort.column === 'position'
+      ? 'Sort the list in queue order'
+      : `Sort the list ${SORT_WORDS[sort.column][sort.descending ? 1 : 0]}`,
+  keywords: 'sort order column ascending descending',
+  when: ({ app, sort }) => app.screen === 'downloads' && !sameSort(app.sort, sort),
+  run: ({ app, sort }) => (app.sort = sort),
+};
+
+const SORTS: readonly Sort[] = [
+  QUEUE_ORDER,
+  ...keysOf(SORT_WORDS).flatMap((column) => [
+    { column, descending: false },
+    { column, descending: true },
+  ]),
+];
 
 const NEW_QUEUE: CommandSpec<AppState> = {
   id: 'queue.new',
@@ -171,6 +221,8 @@ export function viewCommands(app: AppState): Command[] {
     ...commandsFrom('Show', [BACK, SHOW_ALL], app),
     ...STATUS_GROUPS.flatMap((group) => commandsFrom('Show', [SHOW_STATUS], { app, group })),
     ...CATEGORIES.flatMap((category) => commandsFrom('Show', [SHOW_CATEGORY], { app, category })),
+    ...GROUP_ORDER.flatMap((group) => commandsFrom('Show', [FOLD_GROUP], { app, group })),
+    ...SORTS.flatMap((sort) => commandsFrom('Show', [SORT_LIST], { app, sort })),
     ...commandsFrom('Queues', [NEW_QUEUE], app),
     ...app.queues.list.flatMap((q) => commandsFrom('Queues', QUEUE, { app, q })),
   ];

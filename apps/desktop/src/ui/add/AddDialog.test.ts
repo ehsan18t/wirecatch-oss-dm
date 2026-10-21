@@ -21,27 +21,27 @@ async function setup(options: Parameters<typeof renderApp>[0] = {}) {
   return { ...r, user, press, click };
 }
 
-const dialog = () => screen.getByRole('dialog', { name: /^Add/ });
+const dialog = () => screen.getByRole('dialog', { name: /new downloads?$/i });
 const inDialog = () => within(dialog());
 const linksBox = () => inDialog().getByRole('textbox', { name: 'Links' });
-const sidebarAdd = () =>
-  within(screen.getByRole('navigation', { name: 'Views and queues' })).getByRole('button', {
-    name: 'Add download',
+const headerAdd = () =>
+  within(screen.getByRole('group', { name: 'List tools' })).getByRole('button', {
+    name: 'New download',
   });
 
 describe('the Add dialog', () => {
   it('opens on the links box, and Escape gives the focus back to what opened it', async () => {
     const { click, press } = await setup();
-    await click(sidebarAdd());
-    expect(dialog()).toHaveAccessibleName('Add a download');
+    await click(headerAdd());
+    expect(dialog()).toHaveAccessibleName('New download');
     expect(dialog()).toHaveAttribute('aria-modal', 'true');
     expect(linksBox()).toHaveFocus();
     expect(linksBox()).toHaveAccessibleDescription(
       'One link per line. Ctrl+Enter downloads them all.',
     );
     await press('{Escape}');
-    expect(screen.queryByRole('dialog', { name: /^Add/ })).toBeNull();
-    expect(sidebarAdd()).toHaveFocus();
+    expect(screen.queryByRole('dialog', { name: /new downloads?$/i })).toBeNull();
+    expect(headerAdd()).toHaveFocus();
   });
 
   it('downloads every link with Ctrl+Enter in the links box, and shows the first selected', async () => {
@@ -51,10 +51,10 @@ describe('the Add dialog', () => {
     await settle();
     await user.type(linksBox(), 'https://a.example/one.zip{Enter}https://a.example/two.zip');
     await settle();
-    expect(dialog()).toHaveAccessibleName('Add 2 downloads');
+    expect(dialog()).toHaveAccessibleName('2 new downloads');
     expect(inDialog().getByRole('button', { name: 'Download 2' })).toBeInTheDocument();
     await press('{Control>}{Enter}{/Control}');
-    expect(screen.queryByRole('dialog', { name: /^Add/ })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: /new downloads?$/i })).toBeNull();
     expect(app.downloads.size).toBe(before + 2);
     expect(app.selection.rows.map((r) => r.url)).toEqual(['https://a.example/one.zip']);
   });
@@ -203,7 +203,7 @@ describe('the Add dialog', () => {
     expect(paused).toHaveAttribute('aria-busy', 'true');
     release();
     await settle();
-    expect(screen.queryByRole('dialog', { name: /^Add/ })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: /new downloads?$/i })).toBeNull();
   });
 
   it('keeps what was typed when links from a second launch arrive (DUI-8)', async () => {

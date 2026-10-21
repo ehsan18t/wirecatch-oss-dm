@@ -12,7 +12,7 @@ export const HINT_TEXT: Record<HintId, string> = {
   palette: `Press ${shortcutLabel('palette')} to find any action or setting by typing a few letters.`,
   'drag-to-queue':
     'Drag downloads onto a queue in the sidebar to move them. Each queue has its own limits and schedule.',
-  reorder: `Drag downloads up or down to change the order this queue runs them in. ${shortcutLabel('nudge-up')} and ${shortcutLabel('nudge-down')} work too.`,
+  reorder: `Drag a download by its number to change its place in its queue. ${shortcutLabel('nudge-up')} and ${shortcutLabel('nudge-down')} work too.`,
 };
 
 const KEY = 'wirecatch.hints.dismissed';

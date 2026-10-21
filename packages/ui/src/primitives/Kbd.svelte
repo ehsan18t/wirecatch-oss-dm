@@ -14,7 +14,7 @@
   {#each keys as key, index (index)}
     {#if index > 0}<span class="text-caption text-ink-subtle" aria-hidden="true">+</span>{/if}
     <kbd
-      class="inline-flex h-5 min-w-5 items-center justify-center rounded-xs border font-sans border-line border-b-line-strong/quiet bg-raised px-1.5 text-caption font-medium text-ink-muted shadow-control"
+      class="inline-flex h-5 min-w-5 items-center justify-center rounded-xs border font-sans border-line border-b-line-strong/quiet bg-raised px-1.5 text-caption font-medium text-ink shadow-control"
       >{key}</kbd
     >
   {/each}

@@ -9,6 +9,7 @@
 @import '@wirecatch/ui/base.css';
 @import '../app.css' layer(legacy);
 @source '../ui';
+@source '../lib/components';
 
 @layer components {
   html,

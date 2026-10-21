@@ -1,6 +1,9 @@
 <script lang="ts" module>
   import type { DialogSize } from './dialog';
 
+  /** The longest a double click takes, near enough: a press this soon after opening finishes the click that opened it. */
+  const DOUBLE_CLICK = 500;
+
   const WIDTH: Record<DialogSize, string> = {
     sm: 'max-w-dialog-sm',
     md: 'max-w-dialog-md',
@@ -31,6 +34,10 @@
     /** False keeps the dialog open on Escape and on a click outside, for one that must be answered. */
     dismissible?: boolean;
     onclose?: () => void;
+    /** Before the title: a picture of what the dialog is about. */
+    leading?: Snippet;
+    /** After the title, before the close button: its state. */
+    meta?: Snippet;
     /** The buttons at the bottom, the main action last. */
     footer?: Snippet;
     class?: string | undefined;
@@ -45,6 +52,8 @@
     role = 'dialog',
     dismissible = true,
     onclose,
+    leading,
+    meta,
     footer,
     class: className,
     children,
@@ -56,8 +65,11 @@
   let panel = $state<HTMLElement | null>(null);
   // A drag that starts inside (selecting text) and ends on the veil is not a click outside.
   let pressedVeil = false;
+  /** When it opened: the second click of the double click that opened it is not a click outside. */
+  let shownAt = 0;
 
   function show(dialog: HTMLDialogElement) {
+    shownAt = performance.now();
     const opener = focusedElement();
     if (!dialog.open) dialog.showModal();
     initialFocus(dialog).focus();
@@ -101,7 +113,9 @@
       class={cn('absolute inset-0', SCRIM)}
       aria-hidden="true"
       transition:fade
-      onpointerdown={(event) => (pressedVeil = event.target === event.currentTarget)}
+      onpointerdown={(event) =>
+        (pressedVeil =
+          event.target === event.currentTarget && performance.now() - shownAt > DOUBLE_CLICK)}
       onclick={() => {
         if (pressedVeil && dismissible) onclose?.();
         pressedVeil = false;
@@ -118,13 +132,23 @@
       )}
       transition:settle
     >
-      <header class={cn('flex items-start gap-3 px-6 pt-5 pb-2', dismissible && 'pr-14')}>
+      <header
+        class={cn(
+          'flex gap-3 px-6 pt-5 pb-2',
+          leading ? 'items-center' : 'items-start',
+          dismissible && 'pr-14',
+        )}
+      >
+        {@render leading?.()}
         <div class="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 id={titleId} class="font-display text-headline font-semibold text-ink">{title}</h2>
+          <h2 id={titleId} class="font-display text-headline font-semibold wrap-anywhere text-ink">
+            {title}
+          </h2>
           {#if description}
             <p id={descriptionId} class="text-body text-ink-muted">{description}</p>
           {/if}
         </div>
+        {@render meta?.()}
       </header>
       {#if children}
         <div class="min-h-0 flex-1 overflow-y-auto px-6 py-3 text-body">{@render children()}</div>

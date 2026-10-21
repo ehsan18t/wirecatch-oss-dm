@@ -26,7 +26,7 @@ async function pretend(page: Page, words: string) {
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
-  await page.keyboard.press('Control+K');
+  await page.keyboard.press('Control+Shift+P');
   await page.keyboard.type(words);
   await page.keyboard.press('Enter');
 }

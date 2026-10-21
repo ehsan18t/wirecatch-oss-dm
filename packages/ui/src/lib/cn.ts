@@ -35,6 +35,7 @@ export const THEME_NAMES = {
     'scrollbar',
     'scrollbar-gap',
     'row',
+    'group',
     'icon-xs',
     'icon-sm',
     'icon-md',
@@ -48,18 +49,7 @@ export const THEME_NAMES = {
   radius: ['xs', 'sm', 'md', 'lg', 'xl'],
   shadow: ['control', 'raised', 'flyout', 'dialog', 'thumb', 'focus-line', 'invalid-line'],
   blur: ['scrim'],
-  container: [
-    'menu',
-    'dialog-sm',
-    'dialog-md',
-    'dialog-lg',
-    'prose',
-    'page',
-    'list-narrow',
-    'list-size',
-    'list-speed',
-    'list-eta',
-  ],
+  container: ['menu', 'dialog-sm', 'dialog-md', 'dialog-lg', 'prose', 'page'],
   breakpoint: ['sm', 'md', 'lg', 'nav'],
   ease: ['out', 'in', 'in-out', 'spring'],
   animate: [
@@ -79,7 +69,7 @@ export const THEME_NAMES = {
 
 /** Scales Tailwind keys outside the theme groups above. */
 export const GROUP_NAMES = {
-  w: ['sidebar', 'drawer', 'slide-over', 'toast', 'details-beside', 'popup'],
+  w: ['sidebar', 'drawer', 'slide-over', 'toast', 'popup'],
   z: [
     'raised',
     'sticky',
@@ -94,7 +84,18 @@ export const GROUP_NAMES = {
   ],
   duration: ['fast', 'normal', 'slow', 'slower', 'highlight', 'activity', 'flow', 'spin'],
   delay: ['reveal', 'settle', 'tooltip', 'linger'],
-  opacity: ['disabled', 'busy', 'quiet', 'tint', 'soft', 'rim', 'hover', 'pressed', 'sheen'],
+  opacity: [
+    'disabled',
+    'busy',
+    'quiet',
+    'tint',
+    'soft',
+    'lift',
+    'rim',
+    'hover',
+    'pressed',
+    'sheen',
+  ],
 } as const;
 
 const twMergeConfig = {

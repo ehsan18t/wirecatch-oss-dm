@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
+import { QUEUE_ORDER } from './view';
 
 async function make() {
   const backend = mockBackend();
@@ -115,11 +116,41 @@ describe('AppState', () => {
     expect(app.downloads.idsInQueue(queueId(1)).at(-1)).toBe(q[3]);
   });
 
-  it('only nudges inside a queue view', async () => {
+  it('nudges only in queue order, and only within one queue', async () => {
     const { app } = await make();
-    app.selection.only(app.visible[1]!);
+    const q = app.downloads.idsInQueue(queueId(1));
+    app.selection.only(q[1]!);
     await app.actions.nudge(-1);
-    expect(app.toasts.items.at(-1)?.message).toMatch(/Open a queue/);
+    expect(app.downloads.idsInQueue(queueId(1))[0]).toBe(q[1]);
+    app.sort = { column: 'name', descending: false };
+    await app.actions.nudge(1);
+    expect(app.toasts.items.at(-1)?.message).toMatch(/Sort the list by #/);
+    app.sort = QUEUE_ORDER;
+    const other = app.downloads.idsInQueue(queueId(2))[0]!;
+    app.selection.toggle(other);
+    await app.actions.nudge(1);
+    expect(app.toasts.items.at(-1)?.message).toMatch(/one queue/);
+  });
+
+  it('nudges a download only among the downloads of its own group', async () => {
+    const { app } = await make();
+    const line = app.downloads.idsInQueue(queueId(1));
+    const firstWaiting = line.find((id) => app.downloads.get(id)?.status === 'queued')!;
+    const ahead = line.slice(0, line.indexOf(firstWaiting));
+    expect(ahead.length).toBeGreaterThan(0);
+    app.selection.only(firstWaiting);
+    await app.actions.nudge(-1);
+    expect(app.downloads.idsInQueue(queueId(1))).toEqual(line);
+  });
+
+  it('closes the details of a download that is removed', async () => {
+    const { app, backend } = await make();
+    const id = app.visible[0]!;
+    app.openDetails(id);
+    expect(app.detailsOpen).toBe(true);
+    await backend.remove([id], false);
+    await vi.waitFor(() => expect(app.downloads.get(id)).toBeUndefined());
+    expect(app.details).toBeNull();
   });
 
   it('turns pasted text into the Add dialog, or explains why not', async () => {
@@ -224,6 +255,16 @@ describe('commands', () => {
     expect(buildCommands(app).some((c) => c.group === 'Selected downloads')).toBe(false);
     app.selection.only(app.visible[0]!);
     expect(buildCommands(app).some((c) => c.id === 'sel.pause')).toBe(true);
+  });
+
+  it('sort the list from the keyboard, as the column headings do', async () => {
+    const { app } = await make();
+    const sort = buildCommands(app).find((c) => c.id === 'list.sort.size.descending');
+    expect(sort?.title).toBe('Sort the list by size, largest first');
+    await sort?.run();
+    expect(app.sort).toEqual({ column: 'size', descending: true });
+    expect(buildCommands(app).some((c) => c.id === 'list.sort.size.descending')).toBe(false);
+    expect(buildCommands(app).some((c) => c.id === 'list.sort.position')).toBe(true);
   });
 
   it('rank good matches first and are plain language', async () => {

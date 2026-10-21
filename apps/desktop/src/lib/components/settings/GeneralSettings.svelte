@@ -1,9 +1,10 @@
 <script lang="ts">
   // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files.
+  import Check from '~icons/lucide/check';
   import { ACCENTS, type Accent, type Theme } from '@wirecatch/protocol';
-  import { tick, type Snippet } from 'svelte';
+  import type { Snippet } from 'svelte';
+  import { cn, Icon, SegmentedControl, tooltip } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
-  import { offeredValue } from '$lib/select-value';
   import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
   import Toggle from '../Toggle.svelte';
@@ -20,12 +21,12 @@
   }
 
   const THEMES: { value: Theme; label: string }[] = [
-    { value: 'system', label: 'Match system' },
+    { value: 'system', label: 'System' },
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ];
 
-  /** What each accent is called in the menu; the design unit's settings page replaces it with swatches. */
+  /** What each accent is called, for screen readers and the swatch's tooltip. */
   const ACCENT_NAMES: Record<Accent, string> = {
     cyan: 'Cyan',
     purple: 'Purple',
@@ -40,16 +41,17 @@
     system: 'Match system',
   };
 
-  /** Arrow keys move the theme choice along, as in any group of radio buttons. */
-  function onThemeKey(e: KeyboardEvent & { currentTarget: HTMLElement }, current: Theme) {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  /** Arrow keys move the accent along, as in any group of radio buttons. */
+  function onAccentKey(e: KeyboardEvent & { currentTarget: HTMLElement }, current: Accent) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (step === undefined) return;
     e.preventDefault();
-    const i = THEMES.findIndex((x) => x.value === current);
-    const next = THEMES[(i + (e.key === 'ArrowRight' ? 1 : THEMES.length - 1)) % THEMES.length];
+    const offered = offeredAccents(current);
+    const next = offered[(offered.indexOf(current) + step + offered.length) % offered.length];
     if (!next) return;
-    save((d) => void (d.theme = next.value));
+    save((d) => void (d.accent = next));
     const group = e.currentTarget.parentElement;
-    void tick().then(() => findElement(group, '[aria-checked="true"]')?.focus());
+    queueMicrotask(() => findElement(group, `[data-accent="${next}"]`)?.focus());
   }
 
   const controls: Record<SettingIn<'general'>, Snippet<[Row]>> = {
@@ -63,38 +65,44 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet theme({ s, labelId, helpId }: Row)}
-  <div class="segmented" role="radiogroup" aria-labelledby={labelId} aria-describedby={helpId}>
-    {#each THEMES as t (t.value)}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={s.theme === t.value}
-        tabindex={s.theme === t.value ? 0 : -1}
-        onclick={() => save((d) => void (d.theme = t.value))}
-        onkeydown={(e) => onThemeKey(e, s.theme)}
-      >
-        {t.label}
-      </button>
-    {/each}
-  </div>
+{#snippet theme({ def, s }: Row)}
+  <SegmentedControl
+    value={s.theme}
+    options={THEMES}
+    label={def.label}
+    size="sm"
+    onchange={(value: Theme) => save((d) => void (d.theme = value))}
+  />
 {/snippet}
 
 {#snippet accent({ s, labelId, helpId }: Row)}
-  <select
-    class="field"
+  <div
+    role="radiogroup"
     aria-labelledby={labelId}
     aria-describedby={helpId}
-    value={s.accent}
-    onchange={(e) => {
-      const chosen = offeredValue(offeredAccents(s.accent), e.currentTarget.value);
-      if (chosen) save((d) => void (d.accent = chosen));
-    }}
+    class="flex flex-wrap items-center gap-2"
   >
     {#each offeredAccents(s.accent) as a (a)}
-      <option value={a}>{ACCENT_NAMES[a]}</option>
+      {@const on = s.accent === a}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={on}
+        aria-label={ACCENT_NAMES[a]}
+        tabindex={on ? 0 : -1}
+        data-accent={a}
+        class={cn(
+          'flex size-5.5 items-center justify-center rounded-full bg-accent text-accent-fg ring-offset-2 ring-offset-raised transition duration-fast ease-out active:scale-pressed',
+          on ? 'ring-2 ring-ink' : 'ring-1 ring-line-strong hover:ring-ink-muted',
+        )}
+        {@attach tooltip(() => ACCENT_NAMES[a])}
+        onclick={() => save((d) => void (d.accent = a))}
+        onkeydown={(e) => onAccentKey(e, s.accent)}
+      >
+        {#if on}<Icon icon={Check} size="xs" />{/if}
+      </button>
     {/each}
-  </select>
+  </div>
 {/snippet}
 
 {#snippet startWithSystem({ def, s, helpId }: Row)}
@@ -123,31 +131,3 @@
     onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
   />
 {/snippet}
-
-<style>
-  .segmented {
-    display: inline-flex;
-    padding: 2px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-m);
-    background: var(--surface-2);
-  }
-
-  .segmented button {
-    height: 26px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  .segmented button[aria-checked='true'] {
-    background: var(--surface);
-    color: var(--ink);
-    font-weight: 600;
-    box-shadow: 0 0 0 1px var(--line-strong);
-  }
-</style>

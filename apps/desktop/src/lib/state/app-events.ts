@@ -1,6 +1,6 @@
 // What the main window does with each of the core's events.
 
-import type { AppSettings } from '@wirecatch/protocol';
+import type { AppSettings, DownloadId } from '@wirecatch/protocol';
 import type { Addons } from './addons.svelte';
 import type { DownloadStore } from './downloads.svelte';
 import { ignore, type UiEventHandlers } from './events';
@@ -16,6 +16,9 @@ import type { View } from './view';
 export interface MainWindowEventsHost {
   readonly downloads: Pick<DownloadStore, 'apply' | 'remove'>;
   readonly selection: Pick<Selection, 'forget'>;
+  /** The download whose details show; they close when it is removed. */
+  readonly details: DownloadId | null;
+  closeDetails: () => void;
   readonly queues: Pick<Queues, 'list'>;
   view: View;
   settings: AppSettings | null;
@@ -36,6 +39,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     downloads_removed: (e) => {
       app.downloads.remove(e.data);
       app.selection.forget(e.data);
+      if (app.details !== null && e.data.includes(app.details)) app.closeDetails();
     },
     queues_changed: (e) => {
       app.queues.list = e.data;

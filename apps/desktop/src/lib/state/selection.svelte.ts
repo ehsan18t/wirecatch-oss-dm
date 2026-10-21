@@ -2,6 +2,7 @@
 // the order the list shows.
 
 import type { DownloadId, DownloadSummary } from '@wirecatch/protocol';
+import { untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 
 /** What the selection needs from the list it selects in. */
@@ -107,9 +108,25 @@ export class Selection {
     else this.only(id);
   }
 
+  /** Keeps only the downloads in `shown`: what is folded away, filtered out or gone is no longer selected, nor the keyboard row. */
+  keepOnly(shown: readonly DownloadId[]): void {
+    const kept = new SvelteSet(shown);
+    const gone = this.list.filter((id) => !kept.has(id));
+    if (this.active !== null && !kept.has(this.active)) gone.push(this.active);
+    if (gone.length > 0) this.forget(gone);
+  }
+
   /** Downloads that left the list are no longer selected, nor the keyboard row. */
   forget(ids: readonly DownloadId[]): void {
     for (const id of ids) this.ids.delete(id);
     if (this.active !== null && ids.includes(this.active)) this.active = null;
   }
+}
+
+/** Keeps the selection to the rows the list shows, from the component that shows it: a download folded away, filtered out or gone lets go, so no action reaches one nobody can see. */
+export function keepToShown(selection: Selection, shown: () => readonly DownloadId[]): void {
+  $effect(() => {
+    const ids = shown();
+    untrack(() => selection.keepOnly(ids));
+  });
 }

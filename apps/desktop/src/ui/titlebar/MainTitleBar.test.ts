@@ -115,10 +115,18 @@ describe('the title bar', () => {
     expect(app.screen).toBe('downloads');
   });
 
-  it('opens the command palette and says it runs on sample data', async () => {
-    const { app, user } = await setup();
+  it('says it runs on sample data', async () => {
+    await setup();
     expect(within(bar()).getByText('Sample data')).toBeInTheDocument();
-    await user.click(within(bar()).getByRole('button', { name: 'Find any action' }));
-    expect(app.paletteOpen).toBe(true);
+  });
+
+  it('searches the view on screen, and searches everything once its chip goes', async () => {
+    const { app, user } = await setup();
+    app.show({ kind: 'status', group: 'paused' });
+    await settle();
+    expect(within(bar()).getByRole('searchbox', { name: 'Search Paused' })).toBeInTheDocument();
+    await user.click(within(bar()).getByRole('button', { name: 'Search everything' }));
+    expect(app.view).toEqual({ kind: 'all' });
+    expect(within(bar()).getByRole('searchbox', { name: 'Search downloads' })).toHaveFocus();
   });
 });

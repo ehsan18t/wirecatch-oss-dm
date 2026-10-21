@@ -13,9 +13,10 @@ import type {
   UiEvent,
 } from '@wirecatch/protocol';
 import { createContext, untrack } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
-import type { SettingId } from '../settings-schema';
+import { SETTINGS, type SectionId, type SettingId } from '../settings-schema';
 import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
 import { AddDraft } from './add-draft.svelte';
 import { Addons } from './addons.svelte';
@@ -38,7 +39,18 @@ import { changeSettings, SettingsWriter } from './settings-changes.svelte';
 import { SettingsTransfer } from './settings-transfer.svelte';
 import { Toasts } from './toasts.svelte';
 import { WindowFrameControls } from './window-frame';
-import { countRows, visibleIds, type SortKey, type View } from './view';
+import {
+  countRows,
+  FOLDED_GROUPS,
+  groupOf,
+  isGrouped,
+  listLayout,
+  placesOf,
+  QUEUE_ORDER,
+  type Sort,
+  type StatusGroup,
+  type View,
+} from './view';
 
 export type { Dialog, Screen } from './screens';
 export type { Toast } from './toasts.svelte';
@@ -106,7 +118,7 @@ export class AppState {
     selection: this.selection,
     queues: this.queues,
     openDialog: (dialog) => this.openDialog(dialog),
-    place: () => ({ view: this.view, sort: this.sort }),
+    sort: () => this.sort,
   });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>
@@ -120,12 +132,18 @@ export class AppState {
   screen = $state<Screen>('downloads');
   /** The setting to scroll to and focus when the settings screen opens. */
   settingsFocus = $state<SettingId | null>(null);
+  /** The settings section shown, one at a time. */
+  settingsSection = $state<SectionId>('general');
+  /** What the settings are searched for, across every section; empty shows the section. */
+  settingsQuery = $state('');
   view = $state<View>({ kind: 'all' });
   search = $state('');
-  sort = $state<SortKey>('queue');
+  sort = $state<Sort>(QUEUE_ORDER);
+  /** Groups of the list folded under their heading. */
+  readonly folded = new SvelteSet<StatusGroup>(FOLDED_GROUPS);
 
-  /** Whether the details of the selection show, in the panel that slides over the list. */
-  detailsOpen = $state(false);
+  /** The download whose details show, in a dialog over the list. */
+  details = $state<DownloadId | null>(null);
 
   dialog = $state<Dialog | null>(null);
   /** The Add dialog's form, while it is open. */
@@ -169,11 +187,26 @@ export class AppState {
 
   readonly #get = (id: DownloadId) => this.downloads.get(id);
 
-  /** Ids the list shows. Rebuilt only when membership, view, search or sort change. */
-  visible = $derived.by(() => {
+  /** The list's groups and rows. Rebuilt only when membership, view, search, sort, the folded groups or the queues change. */
+  layout = $derived.by(() => {
     const order = this.downloads.order;
-    const options = { view: this.view, search: this.search, sort: this.sort };
-    return untrack(() => visibleIds(order, this.#get, options));
+    const options = {
+      view: this.view,
+      search: this.search,
+      sort: this.sort,
+      folded: [...this.folded],
+      queues: this.queues.list.map((q) => q.id),
+    };
+    return untrack(() => listLayout(order, this.#get, options));
+  });
+
+  /** Ids the list draws, in display order. */
+  visible = $derived(this.layout.ids);
+
+  /** Where each download stands in its queue. */
+  places = $derived.by(() => {
+    const order = this.downloads.order;
+    return untrack(() => placesOf(order, this.#get));
   });
 
   counts = $derived.by(() => {
@@ -325,25 +358,51 @@ export class AppState {
     this.view = view;
     this.screen = 'downloads';
     this.selection.clear();
-    this.detailsOpen = false;
+    this.details = null;
   }
 
-  /** Shows the details of `id` (selecting it alone unless it is already selected), or of the selection. */
+  get detailsOpen(): boolean {
+    return this.details !== null;
+  }
+
+  /** Shows the details of `id`, else of the keyboard row or the first selected download; it stays selected, and its group opens. */
   openDetails(id?: DownloadId): void {
-    if (id !== undefined && !this.selection.has(id)) this.selection.only(id);
+    const target = id ?? this.selection.active ?? this.selection.list[0];
+    if (target === undefined) return;
+    if (this.selection.has(target)) this.selection.active = target;
+    else this.selection.only(target);
+    const row = this.downloads.get(target);
+    if (row && isGrouped(this.view)) this.folded.delete(groupOf(row.status));
     this.screen = 'downloads';
     this.paletteOpen = false;
-    this.detailsOpen = true;
+    this.details = target;
   }
 
   closeDetails(): void {
-    this.detailsOpen = false;
+    this.details = null;
+  }
+
+  /** Folds a group of the list under its heading, or opens it. */
+  toggleGroup(group: StatusGroup): void {
+    if (this.folded.has(group)) this.folded.delete(group);
+    else this.folded.add(group);
   }
 
   openSettings(focus: SettingId | null = null): void {
     this.screen = 'settings';
     this.settingsFocus = focus;
+    if (focus !== null) {
+      this.settingsQuery = '';
+      this.settingsSection = SETTINGS.find((s) => s.id === focus)?.section ?? this.settingsSection;
+    }
     this.paletteOpen = false;
+  }
+
+  /** Shows one settings section, leaving any search. */
+  openSettingsSection(section: SectionId): void {
+    this.screen = 'settings';
+    this.settingsQuery = '';
+    this.settingsSection = section;
   }
 
   openDialog(dialog: Dialog): void {

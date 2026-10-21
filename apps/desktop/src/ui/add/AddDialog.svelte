@@ -2,7 +2,7 @@
   // Adding downloads by hand: links pasted or typed, one per line, then where they are saved, in which queue, and whether they start now. The form is state (AddDraft), so links that reach the window while it is open join it. Opened with links, it starts on Download, so Enter sends them as they are; opened empty, on the links box.
   import DownloadIcon from '~icons/lucide/download';
   import type { QueueId } from '@wirecatch/protocol';
-  import { Button, Callout, Dialog, Field, type FieldControl, TextArea } from '@wirecatch/ui';
+  import { Button, Callout, Dialog, Field, type FieldControl, Kbd, TextArea } from '@wirecatch/ui';
   import { fileNameFromUrl } from '$lib/format';
   import { type AddDraft, linksHint } from '$lib/state/add-draft.svelte';
   import { getApp } from '$lib/state/app.svelte';
@@ -57,7 +57,7 @@
 <Dialog
   open
   size="lg"
-  title={count > 1 ? `Add ${String(count)} downloads` : 'Add a download'}
+  title={count > 1 ? `${String(count)} new downloads` : 'New download'}
   onclose={() => app.closeDialog()}
 >
   <form
@@ -118,6 +118,9 @@
   </form>
 
   {#snippet footer()}
+    <span class="mr-auto flex items-center gap-1.5 text-small text-ink-muted">
+      <Kbd keys={['Ctrl', 'Enter']} /> to download
+    </span>
     <Button
       disabled={draft.busy && sending !== 'paused'}
       loading={sending === 'paused'}

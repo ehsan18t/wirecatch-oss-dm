@@ -22,6 +22,8 @@ export const button = tv({
       secondary:
         'border-line bg-control text-ink shadow-control enabled:hover:bg-control-hover enabled:active:bg-wash-strong',
       ghost: QUIET,
+      /** The page's own main action, tinted rather than filled, so it leads without shouting (New download). */
+      soft: 'bg-accent-soft font-semibold text-accent enabled:hover:bg-accent/lift enabled:active:bg-accent/lift',
       danger:
         'bg-danger text-on-fill shadow-control enabled:hover:bg-danger/hover enabled:active:bg-danger/pressed',
       /** Text that acts, inline with other text. */

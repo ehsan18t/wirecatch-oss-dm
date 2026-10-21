@@ -13,6 +13,7 @@ describe('settings schema', () => {
     for (const f of fields) expect(ids, `missing setting for ${f}`).toContain(f);
     expect(ids).toContain('export');
     expect(ids).toContain('import');
+    expect(ids).toContain('queues');
   });
 
   it('is written in plain language with one-line help', () => {

@@ -66,12 +66,19 @@ const NUDGE = 'Move the selection up or down in its queue';
  * matches two lines (a test holds this), so the order never decides what a key does.
  */
 export const KEYMAP: readonly KeyBinding[] = [
-  { scope: 'window', command: 'palette', key: 'k', ctrl: true, help: 'Find any action or setting' },
+  {
+    scope: 'window',
+    command: 'palette',
+    key: 'p',
+    ctrl: true,
+    shift: true,
+    help: 'Find any action or setting',
+  },
   // Ctrl+V is the browser's paste, which the window reads as a `paste` event, so pasting from a
   // menu works too. Listed for the dialog; `keyCommand` never returns it.
   { scope: 'window', command: 'paste', key: 'v', ctrl: true, help: 'Download the link you copied' },
   { scope: 'window', command: 'add', key: 'n', ctrl: true, help: 'Add a download' },
-  { scope: 'window', command: 'search', key: 'f', ctrl: true, help: 'Search the list' },
+  { scope: 'window', command: 'search', key: 'k', ctrl: true, help: 'Search the list' },
   { scope: 'window', command: 'settings', key: ',', ctrl: true, help: 'Open settings' },
   { scope: 'list', command: 'up', key: 'ArrowUp', shift: false, alt: false, help: MOVE },
   { scope: 'list', command: 'down', key: 'ArrowDown', shift: false, alt: false, help: MOVE },
@@ -109,7 +116,7 @@ export const KEYMAP: readonly KeyBinding[] = [
     command: 'details',
     key: 'Enter',
     alt: true,
-    help: 'Show the details of the selected downloads',
+    help: 'Show the details of the selected download',
   },
   { scope: 'list', command: 'remove', key: 'Delete', help: 'Remove the selected downloads' },
   { scope: 'list', command: 'nudge-up', key: 'ArrowUp', alt: true, help: NUDGE },
@@ -119,7 +126,7 @@ export const KEYMAP: readonly KeyBinding[] = [
     command: 'escape',
     key: 'Escape',
     outsideFields: true,
-    help: 'Close a dialog or the details, or clear the selection',
+    help: 'Close a dialog, or clear the selection',
   },
   { scope: 'window', command: 'help', key: 'F1', help: 'Show these shortcuts' },
   {
@@ -127,14 +134,14 @@ export const KEYMAP: readonly KeyBinding[] = [
     command: 'next-region',
     key: 'F6',
     shift: false,
-    help: 'Move between the title bar, the navigation, the list and the details',
+    help: 'Move between the title bar, the navigation and the list',
   },
   {
     scope: 'window',
     command: 'previous-region',
     key: 'F6',
     shift: true,
-    help: 'Move between the title bar, the navigation, the list and the details',
+    help: 'Move between the title bar, the navigation and the list',
   },
   // Shift on the paging keys extends the selection, as it does on the arrows.
   { scope: 'list', command: 'page-up', key: 'PageUp' },

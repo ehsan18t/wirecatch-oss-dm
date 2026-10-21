@@ -1,45 +1,36 @@
-/* Wirecatch design tokens.
-   Graphite on cool paper, with one signal color (fiber teal) that only ever means "moving data"
-   or "you are here". Every download's progress is a wire along the bottom of its row. */
-
-@import '@fontsource-variable/instrument-sans/wdth.css';
+/* What the screens not yet rebuilt on the design system (dialogs, the command palette, add-ons) are styled by. Their colours are the design system's tokens under their old names, so they follow the theme and the accent, and there is one palette (D47). */
 
 :root {
-  color-scheme: light;
-  --bg: #eceef2;
-  --surface: #ffffff;
-  --surface-2: #f4f5f8;
-  --surface-3: #e2e5eb;
-  --ink: #151a23;
-  --ink-2: #434c5e;
-  --ink-3: #576173;
-  --line: #d9dde4;
-  --line-strong: #7a8393;
-  --accent: #0a6b70;
-  --accent-ink: #ffffff;
-  --accent-soft: #d9eeee;
-  --accent-text: #075a5e;
-  --warn: #855000;
-  --warn-wire: #c4861a;
-  --danger: #b3261e;
-  --danger-soft: #fbe9e7;
-  --wire-track: #dde1e7;
-  --wire-done: #a3abb8;
-  --focus: #0a6b70;
-  --shadow: 0 1px 2px rgb(21 26 35 / 6%), 0 8px 24px rgb(21 26 35 / 10%);
-  --scrim: rgb(21 26 35 / 32%);
+  --bg: var(--color-base);
+  --surface: var(--color-raised);
+  --surface-2: var(--color-layer);
+  --surface-3: var(--color-wash-strong);
+  --ink: var(--color-ink);
+  --ink-2: var(--color-ink-muted);
+  --ink-3: var(--color-ink-subtle);
+  --line: var(--color-line);
+  --line-strong: var(--color-line-strong);
+  --accent: var(--color-accent);
+  --accent-ink: var(--color-accent-fg);
+  --accent-soft: var(--color-accent-soft);
+  --accent-text: var(--color-accent);
+  --warn-wire: var(--color-warning);
+  --danger: var(--color-danger);
+  --wire-track: var(--color-track);
+  --wire-done: var(--color-progress-done);
+  --focus: var(--color-ring);
+  --shadow: var(--shadow-dialog);
+  --scrim: var(--color-scrim);
 
-  --font: 'Instrument Sans Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font: var(--font-sans);
   --text-xs: 11.5px;
   --text-sm: 12.5px;
   --text-md: 13.5px;
   --text-lg: 16px;
-  --text-xl: 21px;
-  --text-readout: 30px;
-  --radius-s: 4px;
-  --radius-m: 7px;
-  --radius-l: 11px;
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --radius-s: var(--radius-xs);
+  --radius-m: var(--radius-sm);
+  --radius-l: var(--radius-lg);
+  --ease: var(--ease-out);
 
   /* Icons come in four sizes (see Icon.svelte); file type pictures use the thinner stroke. */
   --icon-xs: 12px;
@@ -52,60 +43,6 @@
   --dialog-narrow: 460px;
   --dialog-medium: 500px;
   --dialog-wide: 540px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-scheme='light']) {
-    color-scheme: dark;
-    --bg: #12151b;
-    --surface: #181c23;
-    --surface-2: #1f242d;
-    --surface-3: #2a303b;
-    --ink: #e6e9ef;
-    --ink-2: #b1b8c4;
-    --ink-3: #959eac;
-    --line: #2a303a;
-    --line-strong: #667084;
-    --accent: #4fd1c7;
-    --accent-ink: #06292b;
-    --accent-soft: #143738;
-    --accent-text: #6fdcd3;
-    --warn: #f0b54a;
-    --warn-wire: #d79b2e;
-    --danger: #ff8b80;
-    --danger-soft: #3a1c1b;
-    --wire-track: #2a303a;
-    --wire-done: #556070;
-    --focus: #4fd1c7;
-    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 0 0 / 45%);
-    --scrim: rgb(0 0 0 / 55%);
-  }
-}
-
-:root[data-scheme='dark'] {
-  color-scheme: dark;
-  --bg: #12151b;
-  --surface: #181c23;
-  --surface-2: #1f242d;
-  --surface-3: #2a303b;
-  --ink: #e6e9ef;
-  --ink-2: #b1b8c4;
-  --ink-3: #959eac;
-  --line: #2a303a;
-  --line-strong: #667084;
-  --accent: #4fd1c7;
-  --accent-ink: #06292b;
-  --accent-soft: #143738;
-  --accent-text: #6fdcd3;
-  --warn: #f0b54a;
-  --warn-wire: #d79b2e;
-  --danger: #ff8b80;
-  --danger-soft: #3a1c1b;
-  --wire-track: #2a303a;
-  --wire-done: #556070;
-  --focus: #4fd1c7;
-  --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 32px rgb(0 0 0 / 45%);
-  --scrim: rgb(0 0 0 / 55%);
 }
 
 *,
@@ -127,7 +64,6 @@ body {
   font-family: var(--font);
   font-size: var(--text-md);
   line-height: 1.4;
-  font-variation-settings: 'wdth' 100;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -175,24 +111,29 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  height: var(--spacing-control);
+  padding: 0 14px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-m);
-  background: var(--surface);
+  background: var(--color-control);
+  box-shadow: var(--shadow-control);
   color: var(--ink);
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    background-color var(--transition-duration-fast) var(--ease),
+    scale var(--transition-duration-fast) var(--ease);
 }
 
 .btn:hover {
-  background: var(--surface-2);
+  background: var(--color-control-hover);
 }
 
 .btn:active {
   background: var(--surface-3);
+  scale: var(--scale-pressed, 0.98);
 }
 
 .btn:disabled {
@@ -207,7 +148,7 @@ textarea {
 }
 
 .btn.primary:hover {
-  filter: brightness(1.08);
+  background: var(--color-accent-hover);
 }
 
 .btn.danger {
@@ -218,6 +159,7 @@ textarea {
 .btn.ghost {
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
 }
 
 .btn.ghost:hover {
@@ -225,8 +167,8 @@ textarea {
 }
 
 .btn.small {
-  height: 26px;
-  padding: 0 9px;
+  height: var(--spacing-control-sm);
+  padding: 0 10px;
 }
 
 .icon-btn {
@@ -272,11 +214,11 @@ textarea {
 }
 
 .field {
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--line-strong);
+  height: var(--spacing-control);
+  padding: 0 10px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-m);
-  background: var(--surface);
+  background: var(--color-field);
   color: var(--ink);
   font-size: var(--text-sm);
   min-width: 0;
@@ -326,7 +268,7 @@ kbd {
   display: inline-block;
   min-width: 18px;
   padding: 0 5px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--radius-s);
   background: var(--surface);

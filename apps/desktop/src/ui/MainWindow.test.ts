@@ -75,8 +75,8 @@ describe('the main window', () => {
     expect(within(notPrivate).queryByRole('button', { name: 'Show in folder' })).toBeNull();
   });
 
-  it('moves between the title bar, the navigation, the list and the details with F6', async () => {
-    const { app } = await renderApp();
+  it('moves between the title bar, the navigation and the list with F6', async () => {
+    await renderApp();
     const user = userEvent.setup();
     const search = screen.getByRole('searchbox', { name: 'Search downloads' });
     const grid = screen.getByRole('grid', { name: 'Downloads' });
@@ -89,16 +89,10 @@ describe('the main window', () => {
     expect(document.activeElement).toBe(current);
     await user.keyboard('{F6}');
     expect(document.activeElement).toBe(grid);
-    app.selection.only(app.visible[0]!);
-    app.openDetails();
-    await settle();
-    grid.focus();
-    await user.keyboard('{F6}');
-    expect(document.activeElement).toBe(screen.getByRole('dialog'));
     await user.keyboard('{F6}');
     expect(document.activeElement).toBe(search);
     await user.keyboard('{Shift>}{F6}{/Shift}');
-    expect(document.activeElement).toBe(screen.getByRole('dialog'));
+    expect(document.activeElement).toBe(grid);
   });
 
   it('shows where a link dragged over the window will go, until it is dropped or leaves', async () => {

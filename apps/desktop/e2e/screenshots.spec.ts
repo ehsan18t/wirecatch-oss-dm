@@ -23,7 +23,7 @@ for (const theme of ['light', 'dark'] as const) {
     test('command palette', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await row(page, 'ubuntu-24.04.3').click();
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('pause');
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-03-command-palette.png` });
@@ -41,7 +41,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('capture toast', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('pretend the browser sent a download');
       await page.keyboard.press('Enter');
       await page.waitForTimeout(1500);
@@ -50,7 +50,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('ask before download confirmation', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('asks first');
       await page.keyboard.press('Enter');
       await page.waitForTimeout(500);
@@ -59,7 +59,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('download window progress', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('asks first');
       await page.keyboard.press('Enter');
       const window = page.getByRole('region', { name: /^Wirecatch download window/ });
@@ -87,7 +87,7 @@ for (const theme of ['light', 'dark'] as const) {
     test('add several links, one line left out, a folder chosen', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.keyboard.press('Control+N');
-      const dialog = page.getByRole('dialog', { name: /^Add/ });
+      const dialog = page.getByRole('dialog', { name: /new downloads?$/i });
       await dialog
         .getByRole('textbox', { name: 'Links' })
         .fill(
@@ -107,7 +107,7 @@ for (const theme of ['light', 'dark'] as const) {
     test('add with no link', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.keyboard.press('Control+N');
-      const dialog = page.getByRole('dialog', { name: /^Add/ });
+      const dialog = page.getByRole('dialog', { name: /new downloads?$/i });
       await dialog.getByRole('textbox', { name: 'Links' }).fill('my notes');
       await dialog.getByRole('button', { name: 'Download' }).click();
       await page.waitForTimeout(300);
@@ -132,7 +132,7 @@ for (const theme of ['light', 'dark'] as const) {
     test('cancel asks first', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       const details = await showDetails(page, 'LibreOffice');
-      await details.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+      await details.getByRole('button', { name: 'Cancel', exact: true }).click();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-13-cancel-confirmation.png` });
     });
@@ -148,7 +148,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('quality picker', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('several qualities');
       await page.keyboard.press('Enter');
       await page.getByRole('heading', { name: 'Pick a quality' }).waitFor();
@@ -158,7 +158,7 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('add-on prompt and install progress', async ({ page }) => {
       await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('needs the media add-on');
       await page.keyboard.press('Enter');
       await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
@@ -187,7 +187,7 @@ for (const theme of ['light', 'dark'] as const) {
       await open(page, 'capture=0', { theme });
       // Room in the queue, so the video starts at once.
       await page.getByRole('button', { name: 'Pause all' }).click();
-      await page.keyboard.press('Control+K');
+      await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('several qualities');
       await page.keyboard.press('Enter');
       // 1080p comes as separate video and audio, so it is joined after downloading. That needs

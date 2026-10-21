@@ -6,7 +6,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { MockBackend } from './backend/mock';
 import { buildCommands, searchCommands } from './commands';
-import { ASSUMED_ROW_HEIGHT as ROW_HEIGHT } from '../ui/list/viewport';
+import {
+  ASSUMED_GROUP_HEIGHT as GROUP_HEIGHT,
+  ASSUMED_ROW_HEIGHT as ROW_HEIGHT,
+} from '../ui/list/viewport';
 import {
   appState,
   downloadWindow,
@@ -27,12 +30,11 @@ async function setup(options: Parameters<typeof renderApp>[0] = {}) {
 }
 
 const button = (name: RegExp | string) => screen.getByRole('button', { name });
-/** The details panel, open for the download whose name starts with `name`. */
+/** The details dialog, open for the download whose name starts with `name`. */
 const details = (name: string) =>
   within(screen.getByRole('dialog', { name: new RegExp(`^${name}`) }));
-/** Opens a download's details with the row's own button. */
-const showDetails = (name: string) =>
-  within(rowByName(name)).getByRole('button', { name: 'Show details' });
+/** Opens a download's details: a click on its row. */
+const showDetails = (name: string) => rowByName(name);
 
 describe('2. the list does not jump back to the keyboard row', () => {
   it('keeps the scroll position when a status changes elsewhere', async () => {
@@ -42,14 +44,18 @@ describe('2. the list does not jump back to the keyboard row', () => {
     const grid = screen.getByRole('grid', { name: 'Downloads' });
     const writes = vi.fn();
     Object.defineProperty(grid, 'scrollTop', { configurable: true, get: () => 2000, set: writes });
-    const running = app.visible.find((id) => app.downloads.get(id)?.status === 'downloading');
+    // Another running download, not the keyboard row: it moves to the Paused group.
+    const running = app.visible.find(
+      (id, i) => i > 1 && app.downloads.get(id)?.status === 'downloading',
+    );
     await backend.pause(running!);
     await settle();
     expect(writes).not.toHaveBeenCalled();
     // Moving the keyboard row still brings it into view.
     app.selection.move(1, false);
     await settle();
-    expect(writes).toHaveBeenCalledWith(ROW_HEIGHT);
+    // Under the first group's heading.
+    expect(writes).toHaveBeenCalledWith(GROUP_HEIGHT + ROW_HEIGHT);
   });
 });
 
@@ -83,9 +89,7 @@ describe('4 and 12. destructive actions ask first, with focus on the safe choice
     const { app, click } = await setup();
     await click(showDetails('LibreOffice'));
     const id = app.selection.rows[0]!.id;
-    await click(
-      details('LibreOffice').getByRole('button', { name: 'Cancel and discard the partial file' }),
-    );
+    await click(details('LibreOffice').getByRole('button', { name: 'Cancel' }));
     expect(document.activeElement).toBe(button('Keep downloading'));
     expect(app.downloads.get(id)?.status).not.toBe('cancelled');
     await click(button('Cancel and delete the partial file'));

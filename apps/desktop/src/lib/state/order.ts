@@ -53,3 +53,21 @@ export function nudged(
   const i = after === undefined ? -1 : rest.indexOf(after);
   return { chosen, before: i < 0 ? null : (rest[i + 1] ?? null) };
 }
+
+/**
+ * Where rows dropped at `index` of `shown` (the rows on screen around the drop) go in their queue's `line`: before the first row of the line at or after the drop, else just after the last one above it (`null` is the end). `undefined` when no other row of the line is in `shown`, so the drop says nothing about the order.
+ */
+export function dropTarget(
+  shown: readonly DownloadId[],
+  index: number,
+  line: readonly DownloadId[],
+  moving: ReadonlySet<DownloadId>,
+): DownloadId | null | undefined {
+  const inLine = new Set(line);
+  const counts = (id: DownloadId) => inLine.has(id) && !moving.has(id);
+  const below = shown.slice(index).find(counts);
+  if (below !== undefined) return below;
+  const above = shown.slice(0, index).findLast(counts);
+  if (above === undefined) return undefined;
+  return line.slice(line.indexOf(above) + 1).find((id) => !moving.has(id)) ?? null;
+}

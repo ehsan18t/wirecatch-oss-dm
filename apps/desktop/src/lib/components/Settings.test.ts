@@ -5,7 +5,7 @@ import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
 import { describe, expect, it, vi } from 'vitest';
-import { settingAnchor } from '$lib/settings-schema';
+import { settingAnchor, type SectionId } from '$lib/settings-schema';
 import { renderApp, settle } from '$lib/testing/setup';
 import { FLASH_MS } from './Settings.svelte';
 
@@ -14,9 +14,9 @@ const MANY_AT_ONCE = 50;
 /** A little over half the time a setting opened from elsewhere stays highlighted. */
 const FLASH_HALF = FLASH_MS / 2 + 100;
 
-async function openSettings() {
+async function openSettings(section: SectionId = 'general') {
   const r = await renderApp();
-  r.app.openSettings();
+  r.app.openSettingsSection(section);
   await settle();
   return r;
 }
@@ -28,7 +28,7 @@ async function change(field: HTMLElement, value: string) {
 
 describe('the settings screen', () => {
   it('runs as many downloads at once as the core allows', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('advanced');
     const field = screen.getByLabelText('Downloads at the same time');
     expect(field).toHaveAttribute('max', String(MAX_CONCURRENT_DOWNLOADS));
     await change(field, String(MANY_AT_ONCE));
@@ -39,7 +39,7 @@ describe('the settings screen', () => {
   });
 
   it('shows the downloads at once it kept when what was typed reads as the same', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('advanced');
     const field = screen.getByLabelText('Downloads at the same time');
     await change(field, '1');
     for (const typed of ['0', '-3', '1.2']) {
@@ -53,7 +53,7 @@ describe('the settings screen', () => {
   });
 
   it('keeps the downloads at once when the field is emptied', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('advanced');
     const field = screen.getByLabelText('Downloads at the same time');
     await change(field, String(MANY_AT_ONCE));
     await change(field, '');
@@ -62,7 +62,7 @@ describe('the settings screen', () => {
   });
 
   it('reads the smallest file to catch in the unit shown', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('browser');
     await change(screen.getByLabelText('Skip files smaller than'), '1.5');
     expect(app.settings?.extension.min_capture_size).toBe(1.5 * KB);
     await change(screen.getByLabelText('Unit'), 'MB');
@@ -71,7 +71,7 @@ describe('the settings screen', () => {
   });
 
   it('shows the smallest file to catch it kept when what was typed reads as the same', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('browser');
     const field = screen.getByLabelText('Skip files smaller than');
     await change(field, '0');
     await change(field, '-5');
@@ -80,7 +80,7 @@ describe('the settings screen', () => {
   });
 
   it('reads the total speed limit in megabytes per second', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('speed');
     await fireEvent.click(screen.getByRole('switch', { name: 'Limit total speed' }));
     await settle();
     const field = screen.getByLabelText('Speed limit in megabytes per second');
@@ -94,7 +94,7 @@ describe('the settings screen', () => {
   });
 
   it('keeps a site on the network as its host, the way the app keeps it', async () => {
-    const { app } = await openSettings();
+    const { app } = await openSettings('advanced');
     const field = screen.getByLabelText('Add to your sites on your network');
     await fireEvent.input(field, { target: { value: 'https://Wiki.Corp.Example.com/start' } });
     await fireEvent.keyDown(field, { key: 'Enter' });
@@ -110,8 +110,8 @@ describe('the settings screen', () => {
     const search = screen.getByRole('searchbox', { name: 'Search settings' });
     await fireEvent.input(search, { target: { value: 'zzzz' } });
     await settle();
-    expect(screen.getByText('No setting matches "zzzz".')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByText(/^No setting matches "zzzz"./)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear the search' }));
     await settle();
     expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
   });

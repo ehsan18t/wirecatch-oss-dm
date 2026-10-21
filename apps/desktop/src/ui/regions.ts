@@ -1,4 +1,4 @@
-// The main window's regions, in the order F6 visits them, as Windows apps do: the title bar's search, the navigation's place, the list (or what the content shows instead), and the details when they are open. Shift+F6 goes back.
+// The main window's regions, in the order F6 visits them, as Windows apps do: the title bar's search, the navigation's place, and the list (or what the content shows instead). Shift+F6 goes back. A download's details are a modal dialog, which keeps the keyboard to itself.
 
 interface Region {
   /** Whether the focus is in this region now. */
@@ -12,18 +12,12 @@ function element(selector: string, root: ParentNode = document): HTMLElement | n
   return found instanceof HTMLElement ? found : null;
 }
 
-/** The details, beside the list or over it. */
-const details = () => element('main [role="dialog"][data-layer]');
-
 /** What the content takes the keyboard with: the list, or else its first control (settings, an empty list's action). */
 function contentTarget(): HTMLElement | null {
   const list = element('#download-list');
   if (list) return list;
   const main = element('main');
-  const first = main
-    ? element('input, select, textarea, button, a[href], [tabindex="0"]', main)
-    : null;
-  return first && !details()?.contains(first) ? first : null;
+  return main ? element('input, select, textarea, button, a[href], [tabindex="0"]', main) : null;
 }
 
 const REGIONS: readonly Region[] = [
@@ -36,12 +30,8 @@ const REGIONS: readonly Region[] = [
     target: () => element('nav [data-nav-stop][tabindex="0"]'),
   },
   {
-    holds: (el) => el.closest('main') !== null && !(details()?.contains(el) ?? false),
+    holds: (el) => el.closest('main') !== null,
     target: contentTarget,
-  },
-  {
-    holds: (el) => details()?.contains(el) ?? false,
-    target: details,
   },
 ];
 

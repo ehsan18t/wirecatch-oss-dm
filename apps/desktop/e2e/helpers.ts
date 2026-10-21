@@ -92,9 +92,11 @@ export function rows(page: Page) {
   return page.getByRole('grid', { name: 'Downloads' }).locator('[role="row"][data-id]');
 }
 
-/** Opens a download's details with the row's own button, as the pointer does. */
+/** Opens a download's details with a click on its row, as the pointer does. */
 export async function showDetails(page: Page, name: string) {
-  await row(page, name).hover();
-  await row(page, name).getByRole('button', { name: 'Show details' }).click();
+  await row(page, name)
+    .getByRole('gridcell')
+    .nth(2)
+    .click({ position: { x: 8, y: 8 } });
   return page.getByRole('dialog', { name: new RegExp(`^${name}`) });
 }

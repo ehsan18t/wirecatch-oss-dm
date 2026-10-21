@@ -13,7 +13,7 @@ import { errorMessage, type Runner } from './runner';
 import type { Dialog } from './screens';
 import type { Selection } from './selection.svelte';
 import type { Toasts } from './toasts.svelte';
-import type { SortKey, View } from './view';
+import { groupOf, isInLine, type Sort } from './view';
 
 /** What the actions need from the window they run in. */
 export interface DownloadActionsHost {
@@ -25,7 +25,8 @@ export interface DownloadActionsHost {
   queues: Queues;
   openDialog: (dialog: Dialog) => void;
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
-  place: () => { view: View; sort: SortKey };
+  /** The list's sort: a queue's order changes only while the list shows it. */
+  sort: () => Sort;
 }
 
 /** What adding gave: the new downloads, and each link that did not become one, with why. */
@@ -208,20 +209,40 @@ export class DownloadActions {
     }
   }
 
-  /** Alt+Up and Alt+Down: nudge the selection one place within its queue. */
+  /** Alt+Up and Alt+Down: nudge the selection one place up or down among the downloads of its queue in its own group, as the list shows them. */
   async nudge(delta: -1 | 1): Promise<void> {
-    const { view, sort } = this.#host.place();
-    if (view.kind !== 'queue' || sort !== 'queue') {
-      this.#host.toasts.notify('Open a queue in the sidebar to change its order.');
+    if (this.#host.sort().column !== 'position') {
+      this.#host.toasts.notify('Sort the list by # to change the order of a queue.');
       return;
     }
-    const queue = view.id;
-    const move = nudged(
-      this.#host.downloads.idsInQueue(queue),
-      (id) => this.#host.selection.has(id),
-      delta,
-    );
-    if (move) await this.placeInQueue(queue, move.chosen, move.before);
+    const rows = this.#host.selection.rows.filter((r) => isInLine(r.status));
+    const first = rows[0];
+    if (first === undefined) return;
+    const group = groupOf(first.status);
+    if (rows.some((r) => r.queue !== first.queue || groupOf(r.status) !== group)) {
+      this.#host.toasts.notify(
+        'Select downloads of one queue and one group to change their order.',
+      );
+      return;
+    }
+    const line = this.#host.downloads
+      .idsInQueue(first.queue)
+      .filter((id) => isInLine(this.#host.downloads.get(id)?.status ?? 'completed'));
+    const inGroup = line.filter((id) => {
+      const status = this.#host.downloads.get(id)?.status;
+      return status !== undefined && groupOf(status) === group;
+    });
+    const move = nudged(inGroup, (id) => this.#host.selection.has(id), delta);
+    if (!move) return;
+    // Past the group's last download: just after it in the whole line, ahead of the next group's.
+    const lastOfGroup = inGroup.at(-1);
+    const before =
+      move.before ??
+      (lastOfGroup === undefined
+        ? null
+        : (line.slice(line.indexOf(lastOfGroup) + 1).find((id) => !move.chosen.includes(id)) ??
+          null));
+    await this.placeInQueue(first.queue, move.chosen, before);
   }
 
   async pauseAll(): Promise<void> {

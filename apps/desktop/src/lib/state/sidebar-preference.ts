@@ -1,4 +1,4 @@
-// Whether the person collapsed the main window's sidebar to its rail, and whether they folded its File types away: display preferences of this window, kept in its page storage like the hints.
+// Whether the person collapsed the main window's sidebar to its rail: a display preference of this window, kept in its page storage like the hints.
 
 import { readStored, writeStored } from './page-storage';
 
@@ -12,17 +12,4 @@ export function sidebarCollapsed(): boolean {
 
 export function keepSidebarCollapsed(collapsed: boolean): void {
   writeStored(KEY, String(collapsed));
-}
-
-const FILE_TYPES_KEY = 'wirecatch.sidebar.file-types';
-const SHOWN = 'true';
-
-/** Whether File types shows its places: as the person left it, or, when they never chose, whether the window is tall enough for every section open. */
-export function fileTypesShown(tallWindow: boolean): boolean {
-  const kept = readStored(FILE_TYPES_KEY);
-  return kept === null ? tallWindow : kept === SHOWN;
-}
-
-export function keepFileTypesShown(shown: boolean): void {
-  writeStored(FILE_TYPES_KEY, String(shown));
 }

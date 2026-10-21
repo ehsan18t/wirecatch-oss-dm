@@ -82,7 +82,7 @@ Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 ### The app
 
 - Paste a link anywhere in the window to add it.
-- Command palette (Ctrl+K) and searchable settings.
+- Command palette (Ctrl+Shift+P) and searchable settings.
 - Errors that explain themselves and offer the fix as a button.
 - Light, dark or system theme, and a choice of accent colours.
 - Keeps downloading from the tray, starts with your computer if you like, and tells you when a download finishes.

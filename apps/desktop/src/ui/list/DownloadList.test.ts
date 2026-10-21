@@ -33,12 +33,15 @@ describe('the download list', () => {
     const { app } = await setup();
     const list = grid();
     expect(list).toHaveAttribute('aria-multiselectable', 'true');
-    expect(list).toHaveAttribute('aria-rowcount', String(app.visible.length + 1));
+    // Every download and every group heading, after the column headings.
+    const headings = app.layout.sections.filter((x) => x.group !== null).length;
+    expect(list).toHaveAttribute('aria-rowcount', String(app.visible.length + headings + 1));
     const headers = within(list)
       .getAllByRole('columnheader')
       .map((h) => h.textContent.trim());
-    expect(headers).toEqual(['Type', 'Name', 'Status', 'Size', 'Speed', 'Time left', 'Actions']);
-    expect(rendered()[0]).toHaveAttribute('aria-rowindex', '2');
+    expect(headers).toEqual(['#', 'Type', 'Name', 'Progress', 'Size', 'Speed', 'Left', 'Actions']);
+    // The first group's heading is the first row after the column headings.
+    expect(rendered()[0]).toHaveAttribute('aria-rowindex', '3');
   });
 
   it('moves and selects with the keyboard: arrows, Shift to extend, Home and End, Ctrl+A', async () => {
@@ -95,6 +98,8 @@ describe('the download list', () => {
 
   it('says nothing on Space when nothing in the selection can pause or resume', async () => {
     const { app, press } = await setup();
+    app.folded.clear();
+    await settle();
     const finished = app.visible.find((id) => app.downloads.get(id)?.status === 'completed');
     app.selection.only(finished!);
     grid().focus();
@@ -106,6 +111,8 @@ describe('the download list', () => {
 
   it('counts on Space only the downloads that took the action', async () => {
     const { app, backend, press } = await setup();
+    app.folded.clear();
+    await settle();
     const running = app.visible.filter((id) => app.downloads.get(id)?.status === 'downloading');
     const finished = app.visible.find((id) => app.downloads.get(id)?.status === 'completed');
     const [a, b, c] = running;
@@ -152,7 +159,10 @@ describe('the download list', () => {
     expect(app.downloads.get(idOf(libre))?.status).toBe('paused');
     expect(app.selection.list).toEqual(selected);
     // The buttons are for the pointer: the keys and the menu reach the same actions.
-    expect(within(libre).getByRole('button', { name: 'Remove' })).toHaveAttribute('tabindex', '-1');
+    expect(within(libre).getByRole('button', { name: 'More actions' })).toHaveAttribute(
+      'tabindex',
+      '-1',
+    );
   });
 
   it('opens its menu from the keyboard about the keyboard row', async () => {
@@ -171,6 +181,8 @@ describe('the download list', () => {
 
   it('draws only the rows on screen, and keeps a row that stays on screen while scrolling', async () => {
     const { app } = await setup({ count: 500 });
+    app.folded.clear();
+    await settle();
     expect(app.visible.length).toBe(500);
     const before = rendered();
     expect(before.length).toBeLessThan(40);
@@ -185,9 +197,11 @@ describe('the download list', () => {
     const far = 300;
     await scrollTo(far * ROW_HEIGHT);
     expect(rendered().map(idOf)).toContain(app.visible[far]);
-    // Each drawn row still says where it is in the whole list.
+    // Each drawn row still says where it is in the whole list, the headings above it counted.
     const top = rendered()[0]!;
-    expect(top).toHaveAttribute('aria-rowindex', String(app.visible.indexOf(idOf(top)) + 2));
+    const index = app.visible.indexOf(idOf(top));
+    const above = app.layout.sections.filter((x) => x.group !== null && x.start <= index).length;
+    expect(top).toHaveAttribute('aria-rowindex', String(index + above + 2));
   });
 
   it('points at the keyboard row only while it is drawn (DUI-9)', async () => {
@@ -224,5 +238,73 @@ describe('the download list', () => {
     await settle();
     observer.disconnect();
     expect([...touched]).toEqual([moving.id]);
+  });
+
+  it('groups by state under headings, Finished folded until opened', async () => {
+    const { app, user } = await setup();
+    const headings = within(grid())
+      .getAllByRole('button', { expanded: true })
+      .concat(within(grid()).getAllByRole('button', { expanded: false }))
+      .map((b) => b.textContent.trim().split(' ')[0]);
+    expect(headings).toContain('Downloading');
+    const finished = within(grid()).getByRole('button', { name: /^Finished/ });
+    expect(finished).toHaveAttribute('aria-expanded', 'false');
+    const done = app.downloads.order.filter((id) => app.downloads.get(id)?.status === 'completed');
+    expect(app.visible.some((id) => done.includes(id))).toBe(false);
+    await user.click(finished);
+    expect(finished).toHaveAttribute('aria-expanded', 'true');
+    expect(app.visible.filter((id) => done.includes(id))).toHaveLength(done.length);
+  });
+
+  it('sorts inside each group from a heading: ascending, descending, then back to queue order', async () => {
+    const { app, user } = await setup();
+    const name = within(grid()).getByRole('columnheader', { name: /Name/ });
+    await user.click(within(name).getByRole('button'));
+    expect(app.sort).toEqual({ column: 'name', descending: false });
+    expect(name).toHaveAttribute('aria-sort', 'ascending');
+    const downloading = app.layout.sections.find((x) => x.group === 'active')!;
+    const names = app.visible
+      .slice(downloading.start, downloading.start + downloading.size)
+      .map((id) => app.downloads.get(id)!.file_name);
+    expect(names).toEqual(
+      names.toSorted((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    );
+    await user.click(within(name).getByRole('button'));
+    expect(name).toHaveAttribute('aria-sort', 'descending');
+    await user.click(within(name).getByRole('button'));
+    expect(app.sort.column).toBe('position');
+  });
+
+  it("numbers each download by its place in its queue's line", async () => {
+    const { app } = await setup();
+    const first = app.visible[0]!;
+    const row = rowByName(app.downloads.get(first)!.file_name);
+    expect(within(row).getAllByRole('gridcell')[0]).toHaveTextContent(
+      String(app.places.position.get(first)),
+    );
+  });
+
+  it('opens the details of a row clicked, and keeps it selected', async () => {
+    const { app, user } = await setup();
+    const row = rendered()[0]!;
+    await user.click(row);
+    expect(app.details).toBe(idOf(row));
+    expect(app.selection.list).toEqual([idOf(row)]);
+    expect(
+      screen.getByRole('dialog', { name: app.downloads.get(idOf(row))!.file_name }),
+    ).toBeTruthy();
+  });
+
+  it('lets go of what a group folds away, so no action reaches a download nobody sees', async () => {
+    const { app } = await setup();
+    app.folded.clear();
+    await settle();
+    app.selection.all();
+    const done = app.visible.filter((id) => app.downloads.get(id)?.status === 'completed');
+    expect(done.length).toBeGreaterThan(0);
+    app.toggleGroup('finished');
+    await settle();
+    expect(app.selection.list.some((id) => done.includes(id))).toBe(false);
+    expect(app.selection.size).toBe(app.visible.length);
   });
 });

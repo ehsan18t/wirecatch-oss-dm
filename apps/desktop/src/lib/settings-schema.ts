@@ -4,7 +4,15 @@
 import { DEFAULT_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
 
 export type SectionId =
-  'general' | 'files' | 'browser' | 'media' | 'addons' | 'speed' | 'transfer' | 'advanced';
+  | 'general'
+  | 'files'
+  | 'browser'
+  | 'media'
+  | 'addons'
+  | 'speed'
+  | 'queues'
+  | 'transfer'
+  | 'advanced';
 
 export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
   { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
@@ -26,6 +34,12 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
     blurb: 'Optional extras. Wirecatch works without them and installs them only when you ask.',
   },
   { id: 'speed', title: 'Speed', blurb: 'Keep downloads from slowing everything else down.' },
+  {
+    id: 'queues',
+    title: 'Queues',
+    blurb:
+      'Each queue has its own schedule and limits. Downloads from the browser join the one chosen under Browser.',
+  },
   {
     id: 'transfer',
     title: 'Move to another PC',
@@ -279,6 +293,13 @@ const DEFS = [
     label: 'Keep the list of public domains up to date',
     help: 'The Public Suffix List tells Wirecatch which addresses belong to one owner, for example which of your sites count as on your network. Once a week while nothing downloads, or the next day after a check that failed, Wirecatch fetches it from publicsuffix.org. Privacy: the request names Wirecatch and its version and sends nothing about your downloads or browsing; publicsuffix.org sees your IP address.',
     keywords: 'public suffix list psl domains owner privacy update publicsuffix.org',
+  },
+  {
+    id: 'queues',
+    section: 'queues',
+    label: 'Your queues',
+    help: 'Edit a queue to change its name, when it runs, how many of its downloads run at once and its speed limit.',
+    keywords: 'queue queues schedule overnight limit at once concurrent',
   },
 ] as const satisfies readonly SettingText[];
 

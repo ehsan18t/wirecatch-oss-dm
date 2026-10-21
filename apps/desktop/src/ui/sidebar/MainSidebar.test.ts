@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DRAG_TYPE } from '$lib/dnd';
 import { renderApp, rowByName, settle } from '$lib/testing/setup';
-import { fileTypesShown, sidebarCollapsed } from '$lib/state/sidebar-preference';
+import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
@@ -19,9 +19,9 @@ describe('the sidebar', () => {
     expect(failed).toHaveTextContent(String(app.counts.status.failed));
     // Failures call for attention: their count is in the danger colour.
     expect(within(failed).getByText(String(app.counts.status.failed))).toHaveClass('text-danger');
-    await user.click(within(nav()).getByRole('button', { name: /^Video/ }));
-    expect(app.view).toEqual({ kind: 'category', category: 'video' });
-    expect(within(nav()).getByRole('button', { name: /^Video/ })).toHaveAttribute(
+    await user.click(within(nav()).getByRole('button', { name: /^Paused/ }));
+    expect(app.view).toEqual({ kind: 'status', group: 'paused' });
+    expect(within(nav()).getByRole('button', { name: /^Paused/ })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -79,7 +79,6 @@ describe('the sidebar', () => {
       .getAllByRole('button')
       .filter((b) => b.tabIndex === 0);
     expect(stops.map((b) => b.textContent.trim())).toEqual([
-      expect.stringMatching(/^Add download/),
       expect.stringMatching(/^All downloads/),
     ]);
     const all = within(nav()).getByRole('button', { name: /^All downloads/ });
@@ -90,7 +89,7 @@ describe('the sidebar', () => {
     );
     await user.keyboard('{End}');
     expect(document.activeElement).toBe(
-      within(nav()).getByRole('button', { name: /^Keyboard shortcuts/ }),
+      within(nav()).getByRole('button', { name: 'Keyboard shortcuts' }),
     );
     await user.keyboard('{Home}');
     expect(document.activeElement).toBe(all);
@@ -110,14 +109,47 @@ describe('the sidebar', () => {
     expect(document.activeElement).toBe(overnight);
   });
 
-  it('folds the file types away and remembers it', async () => {
-    await renderApp();
+  it('shows three queues, folds the rest away, and always the one on screen', async () => {
+    const { app } = await renderApp();
     const user = userEvent.setup();
-    const toggle = within(nav()).getByRole('button', { name: 'File types' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(nav()).queryByRole('button', { name: /^Video/ })).toBeNull();
-    expect(fileTypesShown(true)).toBe(false);
+    const [first] = app.queues.list;
+    app.queues.list = [
+      ...app.queues.list,
+      ...[10, 11].map((n) => ({
+        ...first!,
+        id: queueId(n),
+        name: `Extra ${String(n)}`,
+        is_default: false,
+      })),
+    ];
+    await settle();
+    expect(within(nav()).queryByRole('button', { name: /^Extra 11/ })).toBeNull();
+    const more = within(nav()).getByRole('button', { name: '2 more queues' });
+    await user.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(within(nav()).getByRole('button', { name: /^Extra 11/ })).toBeTruthy();
+    await user.click(more);
+    app.show({ kind: 'queue', id: queueId(11) });
+    await settle();
+    expect(within(nav()).getByRole('button', { name: /^Extra 11/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('becomes the list of settings sections, with the way back on top', async () => {
+    const { app } = await renderApp();
+    const user = userEvent.setup();
+    app.openSettings();
+    await settle();
+    const sections = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(within(sections).getByRole('button', { name: /^General/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await user.click(within(sections).getByRole('button', { name: /^Speed/ }));
+    expect(app.settingsSection).toBe('speed');
+    await user.click(within(sections).getByRole('button', { name: 'Back to downloads' }));
+    expect(app.screen).toBe('downloads');
   });
 });

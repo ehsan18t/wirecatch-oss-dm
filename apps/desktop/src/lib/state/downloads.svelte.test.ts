@@ -3,7 +3,7 @@ import { flushSync, untrack } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { DownloadStore } from './downloads.svelte';
 import { track } from './reactivity';
-import { visibleIds } from './view';
+import { listLayout, QUEUE_ORDER } from './view';
 
 function row(id: number, patch: Partial<DownloadSummary> = {}): DownloadSummary {
   return {
@@ -129,12 +129,15 @@ describe('DownloadStore', () => {
       const ids = $derived.by(() => {
         const order = store.order;
         rebuilds += 1;
-        return untrack(() =>
-          visibleIds(order, (id) => store.get(id), {
-            view: { kind: 'all' },
-            search: '',
-            sort: 'queue',
-          }),
+        return untrack(
+          () =>
+            listLayout(order, (id) => store.get(id), {
+              view: { kind: 'all' },
+              search: '',
+              sort: QUEUE_ORDER,
+              folded: [],
+              queues: [],
+            }).ids,
         );
       });
       $effect(() => {

@@ -1,6 +1,6 @@
 import { downloadId } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
-import { nudged, placed } from './order';
+import { dropTarget, nudged, placed } from './order';
 
 const ids = (...values: number[]) => values.map(downloadId);
 
@@ -39,5 +39,31 @@ describe('nudged', () => {
     expect(nudged(queue, selected([1, 3]), -1)).toBeNull();
     expect(nudged(queue, selected([5]), 1)).toBeNull();
     expect(nudged(queue, selected([]), 1)).toBeNull();
+  });
+});
+
+const [da, db, dc, dd, de] = [
+  downloadId(1),
+  downloadId(2),
+  downloadId(3),
+  downloadId(4),
+  downloadId(5),
+];
+
+describe('dropTarget', () => {
+  const line = [da, db, dc, dd];
+
+  it('goes before the first row of the line at or after the drop', () => {
+    expect(dropTarget([da, db, dc, dd], 1, line, new Set([dd]))).toBe(db);
+  });
+
+  it('goes after the last row above when none of the line follows on screen', () => {
+    // On screen: a, then a row of another queue; dropped at the end.
+    expect(dropTarget([da, de], 2, line, new Set([dc]))).toBe(db);
+    expect(dropTarget([dc, dd], 2, line, new Set([da]))).toBeNull();
+  });
+
+  it('says nothing when no other row of the line is on screen', () => {
+    expect(dropTarget([da, de], 1, line, new Set([da]))).toBeUndefined();
   });
 });

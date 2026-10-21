@@ -25,20 +25,22 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'main');
     await showDetails(page, 'Conference keynote');
     await audit(page, 'error in the details');
-    await row(page, 'android-studio').click();
+    await page.keyboard.press('Escape');
+    await showDetails(page, 'android-studio');
     await audit(page, 'paused in the details');
     await page.keyboard.press('Escape');
     await row(page, 'LibreOffice').click({ button: 'right' });
     await audit(page, 'context menu');
     await page.keyboard.press('Escape');
     const details = await showDetails(page, 'LibreOffice');
-    await details.getByRole('button', { name: 'Cancel and discard the partial file' }).click();
+    await details.getByRole('button', { name: 'Cancel', exact: true }).click();
     await audit(page, 'cancel confirmation');
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+Shift+P');
     await audit(page, 'palette');
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Add download' }).click();
+    await page.getByRole('button', { name: 'New download' }).click();
     await audit(page, 'add dialog');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /^Settings/ }).click();
@@ -48,18 +50,18 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }).click();
     await audit(page, 'queue editor');
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('asks first');
     await page.keyboard.press('Enter');
     await audit(page, 'confirmation');
     await page.getByRole('button', { name: 'Download now', exact: true }).click();
     // The window now shows progress; Escape closes it and the main window has the keys again.
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     // Files then start at once, with the toast.
     await page.keyboard.type('start browser downloads without asking');
     await page.keyboard.press('Enter');
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('pretend the browser sent a download');
     await page.keyboard.press('Enter');
     await page
@@ -73,7 +75,7 @@ for (const theme of ['light', 'dark'] as const) {
     await open(page, 'capture=0', { theme });
     const windows = page.getByRole('region', { name: /^Wirecatch download window/ });
 
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('several qualities');
     await page.keyboard.press('Enter');
     const picker = windows.filter({ hasText: 'Pick a quality' });
@@ -88,12 +90,12 @@ for (const theme of ['light', 'dark'] as const) {
 
     // Answered somewhere else: the window says so and the count goes.
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('answered somewhere else');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('button', { name: /Waiting for you/ })).toBeHidden();
 
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
     const prompt = windows.filter({ hasText: /needs the media add-on/ });
@@ -108,14 +110,14 @@ for (const theme of ['light', 'dark'] as const) {
 
   test(`media and add-on screens pass axe, ${theme} theme`, async ({ page }) => {
     await open(page, 'capture=0', { theme });
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('several qualities');
     await page.keyboard.press('Enter');
     await page.getByRole('heading', { name: 'Pick a quality' }).waitFor();
     await audit(page, 'quality picker');
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
@@ -170,11 +172,8 @@ test('keyboard only: the navigation is two Tab stops, so the list is near the to
     });
     if (name !== null) inNav.push(name);
   }
-  // Add download, then the place shown; the arrows reach the rest.
-  expect(inNav, 'Tab stops in the navigation').toEqual([
-    expect.stringMatching(/Add download/),
-    expect.stringMatching(/^All downloads/),
-  ]);
+  // The place shown; the arrows reach the rest, settings and the shortcuts at its foot too.
+  expect(inNav, 'Tab stops in the navigation').toEqual([expect.stringMatching(/^All downloads/)]);
   // The title bar's controls, those two, and the list's tools.
   expect(presses, 'Tab stops before the list').toBeLessThanOrEqual(14);
 });

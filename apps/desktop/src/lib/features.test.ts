@@ -5,6 +5,7 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { buildCommands } from './commands';
+import { SECTIONS, SETTINGS } from './settings-schema';
 import { downloadWindow, renderApp, rowByName, settle } from './testing/setup';
 
 async function setup() {
@@ -19,7 +20,13 @@ async function setup() {
 }
 
 const button = (name: RegExp | string) => screen.getByRole('button', { name });
-/** The open dialog; the details panel, a dialog that keeps the list usable beside it, is not one. */
+const nav = () => within(screen.getByRole('navigation'));
+/** Settings, open at the section titled `title`. */
+async function openSection(click: (el: HTMLElement) => Promise<void>, title: string) {
+  await click(button('Settings'));
+  await click(nav().getByRole('button', { name: new RegExp(`^${title}`) }));
+}
+/** The dialog opened last. */
 const dialog = () => {
   const found = screen.getAllByRole('dialog').filter((d) => d.tagName !== 'SECTION');
   const last = found.at(-1);
@@ -29,14 +36,14 @@ const dialog = () => {
 /** A row's own button, shown while the pointer is on the row. */
 const inRow = (name: string, label: string) =>
   within(rowByName(name)).getByRole('button', { name: label });
-/** The details panel, open for the download whose name starts with `name`. */
+/** The details dialog, open for the download whose name starts with `name`. */
 const details = (name: string) => screen.getByRole('dialog', { name: new RegExp(`^${name}`) });
 
 describe('feature paths (visible in the interface, and in the palette)', () => {
-  it('add a download: Add download button, 1 click', async () => {
+  it('add a download: New download button, 1 click', async () => {
     const { click, palette } = await setup();
-    await click(button('Add download'));
-    expect(within(dialog()).getByText('Add a download')).toBeInTheDocument();
+    await click(button('New download'));
+    expect(within(dialog()).getByRole('heading', { name: 'New download' })).toBeInTheDocument();
     expect(palette('dl.add')).toBe(true);
   });
 
@@ -87,7 +94,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(palette('sel.choosefolder')).toBe(true);
 
     // The details show the same message and fix.
-    await click(inRow('win11-dev', 'Show details'));
+    await click(rowByName('win11-dev'));
     const panel = details('win11-dev');
     expect(panel).toHaveTextContent('Drive C: is full');
     expect(within(panel).getByRole('button', { name: 'Open folder' })).toBeInTheDocument();
@@ -96,13 +103,11 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it("remove, cancel, show in folder, copy link: the row's details, then the button, 2 clicks", async () => {
     const { click, palette } = await setup();
-    await click(inRow('LibreOffice', 'Show details'));
+    await click(rowByName('LibreOffice'));
     const panel = within(details('LibreOffice'));
     expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
     expect(panel.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
-    expect(
-      panel.getByRole('button', { name: 'Cancel and discard the partial file' }),
-    ).toBeInTheDocument();
+    expect(panel.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     await click(panel.getByRole('button', { name: 'Remove' }));
     expect(within(dialog()).getByText(/Remove "LibreOffice/)).toBeInTheDocument();
     for (const id of ['sel.remove', 'sel.cancel', 'sel.folder']) expect(palette(id)).toBe(true);
@@ -110,7 +115,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('move to another queue: the details, then the Queue menu (or the context menu, or a drag onto the queue)', async () => {
     const { app, click, palette } = await setup();
-    await click(inRow('LibreOffice', 'Show details'));
+    await click(rowByName('LibreOffice'));
     await click(within(details('LibreOffice')).getByRole('combobox', { name: 'Queue' }));
     await click(screen.getByRole('option', { name: 'Work files' }));
     expect(app.selection.rows[0]?.queue).toBe(3);
@@ -152,32 +157,28 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     }
   });
 
-  it('status and file type filters: 1 click', async () => {
+  it('status filters: 1 click; file types from the palette', async () => {
     const { app, click, palette } = await setup();
-    await click(screen.getByRole('button', { name: /^Needs attention/ }));
+    await click(nav().getByRole('button', { name: /^Needs attention/ }));
     expect(app.visible.length).toBe(6);
-    await click(screen.getByRole('button', { name: /^Video/ }));
+    await buildCommands(app)
+      .find((c) => c.id === 'show.category.video')
+      ?.run();
+    await settle();
     expect(app.view).toEqual({ kind: 'category', category: 'video' });
     expect(palette('show.status.failed') && palette('show.category.video')).toBe(true);
   });
 
-  it('settings: 1 click to open, every setting visible there, export and import 2 clicks', async () => {
+  it('settings: 1 click to open, every setting in its section a click away, export and import 3 clicks', async () => {
     const { click, palette } = await setup();
-    await click(button(/^Settings/));
-    for (const label of [
-      'Appearance',
-      'Start Wirecatch when you sign in',
-      'Download folder',
-      'Folders by file type',
-      'Show a window before each download',
-      'Keep the window open to show progress',
-      'Sites to leave to the browser',
-      'Speed limit',
-      'Connections per download',
-      'Downloads at the same time',
-    ]) {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    await click(button('Settings'));
+    for (const section of SECTIONS) {
+      await click(nav().getByRole('button', { name: new RegExp(`^${section.title}`) }));
+      for (const def of SETTINGS.filter((d) => d.section === section.id)) {
+        expect(screen.getAllByText(def.label).length).toBeGreaterThan(0);
+      }
     }
+    await click(nav().getByRole('button', { name: /^Move to another PC/ }));
     await click(button('Export settings'));
     expect(within(dialog()).getByText('Saved in the file')).toBeInTheDocument();
     expect(palette('setting.export') && palette('setting.import') && palette('setting.theme')).toBe(
@@ -185,9 +186,10 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     );
   });
 
-  it('command palette and shortcuts: 1 click each', async () => {
-    const { click } = await setup();
-    await click(button(/Find any action/));
+  it('command palette from its key, shortcuts 1 click', async () => {
+    const { click, user } = await setup();
+    await user.keyboard('{Control>}{Shift>}p{/Shift}{/Control}');
+    await settle();
     expect(screen.getByRole('combobox', { name: 'Type an action or setting' })).toBeInTheDocument();
     await click(button(/Keyboard shortcuts/));
     expect(
@@ -206,7 +208,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const name = app.selection.rows[0]?.file_name ?? '';
     const panel = within(details(name));
     expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
-    await click(panel.getByRole('button', { name: 'Change folder' }));
+    await click(panel.getByRole('button', { name: 'Change' }));
     expect(within(toasts).getByText(/^Saving to/)).toBeInTheDocument();
   });
 
@@ -245,7 +247,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('a progress window for any download: its details, then Show progress window, 2 clicks', async () => {
     const { click, palette } = await setup();
-    await click(inRow('ubuntu-24.04.3', 'Show details'));
+    await click(rowByName('ubuntu-24.04.3'));
     expect(palette('sel.progress')).toBe(true);
     const panel = within(details('ubuntu-24.04.3'));
     await click(panel.getByRole('button', { name: 'Show progress window' }));
@@ -256,7 +258,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
   it('media add-on: Settings, then Install or Remove, 2 clicks', async () => {
     const { app, backend, click, palette } = await setup();
     expect(palette('addon.install.media')).toBe(true);
-    await click(button(/^Settings/));
+    await openSection(click, 'Add-ons');
     await click(button('Install'));
     expect(app.addons.list?.[0]?.state.type).toBe('installing');
     backend.tick(4500);
@@ -271,7 +273,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const { app, backend, click, palette } = await setup();
     await app.addons.install('media');
     backend.tick(4500);
-    await click(button(/^Settings/));
+    await openSection(click, 'Add-ons');
     expect(palette('addon.check.media')).toBe(true);
     const note = () => app.toasts.items.at(-1);
 
@@ -300,7 +302,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('the list of public domains: Settings, then Check now, 2 clicks; its date and the result in words', async () => {
     const { app, backend, click } = await setup();
-    await click(button(/^Settings/));
+    await openSection(click, 'Advanced');
     // The month as the system writes it short: "Sep", or "Sept" with newer locale data.
     expect(screen.getByText(/^List of 15 Sept? 2026, not checked yet\.$/)).toBeInTheDocument();
     const note = () => app.toasts.items.at(-1);
@@ -331,7 +333,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('the list of public domains: the weekly check shows on an open settings page', async () => {
     const { app, backend, click } = await setup();
-    await click(button(/^Settings/));
+    await openSection(click, 'Advanced');
     backend.simulateWeeklySuffixCheck('newer');
     await settle();
     expect(screen.getByText(/^List of 1 Oct 2026, checked today at /)).toBeInTheDocument();
@@ -343,7 +345,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
     const { app, backend, click } = await setup();
-    await click(button(/^Settings/));
+    await openSection(click, 'Add-ons');
     await click(button('Install'));
     await click(button('Stop installing the media add-on'));
     expect(app.addons.list?.[0]?.state.type).toBe('not_installed');

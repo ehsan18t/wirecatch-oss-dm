@@ -265,8 +265,10 @@
   /* A scrollbar's room, and the clear edge around its thumb inside it. */
   --spacing-scrollbar: 0.625rem;
   --spacing-scrollbar-gap: 0.125rem;
-  /* One download in the main list: the name, its status line and its progress. The list measures a drawn row to place the rows it renders, so this is the only place the height is set. */
-  --spacing-row: 3.5rem;
+  /* One download in the main list: its name over one line about it. The list measures a drawn row to place the rows it renders, so this is the only place the height is set. */
+  --spacing-row: 3.125rem;
+  /* A group's heading in the main list (Downloading, Needs attention), measured the same way. */
+  --spacing-group: 2.25rem;
   --spacing-icon-xs: 0.75rem;
   --spacing-icon-sm: 0.875rem;
   --spacing-icon-md: 1rem;
@@ -282,8 +284,6 @@
   --width-drawer: 17rem;
   --width-slide-over: 26rem;
   --width-toast: 22rem;
-  /* The content width from which a slide-over sits beside the content as a column of its own: its width, and the list beside it keeping room for a name and a status (`--container-list-narrow`). Narrower, it opens over the content with a veil. */
-  --width-details-beside: calc(var(--width-slide-over) + var(--container-list-narrow));
   /* The extension's popup, narrow enough to sit under the toolbar button. */
   --width-popup: 22.5rem;
 
@@ -294,11 +294,6 @@
   --container-prose: 36rem;
   /* A full page of content, such as settings, before it stops growing. */
   --container-page: 64rem;
-  /* The download list's widths from which each number column shows, the last to go first: Time left, then Speed, then Size, whose figures then move under the name. Each leaves the name at least 16rem, as does the narrowest list beside the details. */
-  --container-list-narrow: 36rem;
-  --container-list-size: 40rem;
-  --container-list-speed: 46rem;
-  --container-list-eta: 52rem;
 
   --breakpoint-sm: 40rem;
   --breakpoint-md: 48rem;
@@ -335,6 +330,8 @@
   /* A faint panel in a tone, its soft fill, and its rim. */
   --opacity-tint: 8%;
   --opacity-soft: 14%;
+  /* A soft tint lifted under the pointer. */
+  --opacity-lift: 22%;
   --opacity-rim: 35%;
   /* A solid fill under the pointer, and pressed. */
   --opacity-hover: 88%;
@@ -362,8 +359,6 @@
 /* Static: motion.ts and the sidebar read these at runtime, so they are emitted even when no utility uses them. Entrances decelerate (ease-out), exits accelerate (ease-in) and run a step faster. */
 @theme static {
   --breakpoint-nav: 63rem;
-  /* The window height from which the main window's navigation shows every section open without scrolling (its statuses, three queues and every file type, at --spacing-nav-item); shorter, File types starts folded. */
-  --height-nav-open: 61rem;
 
   --transition-duration-fast: 100ms;
   --transition-duration-normal: 150ms;
@@ -519,6 +514,11 @@
 }
 
 /* A pressed control sinks by half a motion step. */
+/* The download list's grid: the header and every row share the columns the list works out (`--list-columns`, set from its widths). */
+@utility grid-cols-list {
+  grid-template-columns: var(--list-columns);
+}
+
 @utility scale-pressed {
   scale: calc(1 - var(--motion-scale-delta) / 2);
 }
