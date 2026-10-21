@@ -9,7 +9,10 @@
   let retrying = $state(false);
 
   const count = $derived(app.visible.length);
-  const canReorder = $derived(app.sort.column === 'position');
+  /** In queue order, with downloads still in line on screen: only then does a drag change anything. */
+  const canReorder = $derived(
+    app.sort.column === 'position' && app.visible.some((id) => app.places.position.has(id)),
+  );
   // One hint at a time, and only one that applies to what is on screen.
   const hint = $derived.by((): HintId | null => {
     if (count === 0) return null;

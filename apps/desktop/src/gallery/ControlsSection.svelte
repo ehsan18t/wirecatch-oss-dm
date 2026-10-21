@@ -72,7 +72,7 @@
   description="Buttons, fields and choices. Each keeps a visible focus ring, follows its WAI-ARIA pattern, and falls back to system colours in Windows' high contrast themes."
 >
   <Specimen title="Buttons" note="The main action is the only filled one">
-    <Button variant="primary" icon={Plus}>Add download</Button>
+    <Button variant="primary" icon={Plus}>New download</Button>
     <Button icon={FolderOpen}>Open folder</Button>
     <Button variant="ghost" icon={Pause}>Pause all</Button>
     <Button variant="danger" icon={Trash}>Remove</Button>

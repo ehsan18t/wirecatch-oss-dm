@@ -58,7 +58,7 @@
         <Button
           variant="primary"
           icon={Plus}
-          onclick={() => app.openDialog({ kind: 'add', urls: [] })}>Add download</Button
+          onclick={() => app.openDialog({ kind: 'add', urls: [] })}>New download</Button
         >
         <Button onclick={() => (app.paletteOpen = true)}>See everything {app.name} can do</Button>
       {/snippet}

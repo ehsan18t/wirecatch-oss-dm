@@ -1,5 +1,5 @@
 <script lang="ts">
-  // What the selection can do, floating over the foot of the list while anything is selected: pause or resume it, move it to another queue, remove it, or let it go. It rises in, and its count pops each time it changes. Every action here is also in the list's context menu and keys (D3).
+  // What the selection can do, floating over the foot of the list while a selection is built up (several downloads, or one ticked on purpose; see `Selection.picked`): pause or resume it, move it to another queue, remove it, or let it go. It rises in, and its count pops each time it changes. Every action here is also in the list's context menu and keys (D3).
   import ArrowRightLeft from '~icons/lucide/arrow-right-left';
   import Pause from '~icons/lucide/pause';
   import Play from '~icons/lucide/play';
@@ -24,7 +24,8 @@
   );
 </script>
 
-{#if rows.length > 0 && !app.detailsOpen}
+<!-- A row only chosen (clicked, or the keyboard on it) has its details and its menu; the bar is for a selection built up on purpose. -->
+{#if (rows.length > 1 || (rows.length > 0 && app.selection.picked)) && !app.detailsOpen}
   <div
     role="toolbar"
     aria-label="Selected downloads"

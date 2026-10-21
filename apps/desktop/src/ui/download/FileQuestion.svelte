@@ -100,6 +100,7 @@
     >
     <Button
       variant="primary"
+      data-main
       type="submit"
       form={formId}
       icon={DownloadIcon}

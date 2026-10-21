@@ -135,6 +135,12 @@ describe('the sidebar', () => {
       'aria-current',
       'page',
     );
+    // Folded, only Extra 10 is out of sight.
+    expect(within(nav()).getByRole('button', { name: '1 more queue' })).toBeTruthy();
+    app.queues.list = app.queues.list.filter((q) => q.id !== queueId(10));
+    await settle();
+    // The one queue past three is on screen: nothing is folded away, so nothing offers more.
+    expect(within(nav()).queryByRole('button', { name: /more queue/ })).toBeNull();
   });
 
   it('becomes the list of settings sections, with the way back on top', async () => {

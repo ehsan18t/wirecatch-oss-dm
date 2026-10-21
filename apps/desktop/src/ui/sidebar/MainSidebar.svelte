@@ -151,7 +151,7 @@
           <QueueItem {queue} />
         </div>
       {/each}
-      {#if queues.length > QUEUES_SHOWN && sidebar.showLabels}
+      {#if (moreQueues || hiddenQueues > 0) && sidebar.showLabels}
         <button
           type="button"
           data-nav-stop

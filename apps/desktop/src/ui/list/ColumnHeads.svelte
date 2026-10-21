@@ -111,10 +111,10 @@
         aria-label="Resize {heading.label}"
         title="Drag to resize, double-click to reset"
         class={cn(
-          'absolute inset-y-1 -left-2.5 w-2 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-0.75 after:w-0.5 after:rounded-full after:transition after:duration-fast',
+          'absolute inset-y-1.5 -left-2 w-2 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-0.75 after:w-px after:transition after:duration-fast',
           dragging === resize
-            ? 'after:bg-accent after:opacity-100'
-            : 'after:bg-line-strong after:opacity-0 group-hover/heads:after:opacity-100 hover:after:bg-accent',
+            ? 'after:w-0.5 after:bg-accent'
+            : 'after:bg-line after:opacity-0 group-hover/heads:after:opacity-100 hover:after:w-0.5 hover:after:bg-accent',
         )}
         onpointerdown={(e) => startResize(e, resize)}
         ondblclick={() => onresize(resize, undefined, true)}

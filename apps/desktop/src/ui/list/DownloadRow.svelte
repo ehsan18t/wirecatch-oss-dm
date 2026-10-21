@@ -36,7 +36,7 @@
   import { rowProgress } from '../status';
   import { NUMBER, type Resizable } from './columns';
   import { rowMenu } from './row-menu';
-  import { rowLine } from './row-text';
+  import { finishedNote, rowLine } from './row-text';
 
   interface Props {
     id: DownloadId;
@@ -70,7 +70,15 @@
     return lineNote(app.places.ahead.get(id) ?? 0, queueName);
   });
   /** The line under the name: what went wrong, or where the file comes from and how it is going. */
-  const meta = $derived(row && group ? rowLine(row, group, waitNote, shown.has('progress')) : '');
+  const meta = $derived(
+    row && group
+      ? rowLine(row, group, {
+          waitNote,
+          progressShown: shown.has('progress'),
+          now: app.clock.now,
+        })
+      : '',
+  );
   /** The figures of the number columns the list has no room for. */
   const folded = $derived(
     [
@@ -137,14 +145,14 @@
         aria-checked={selected}
         aria-label="Select {row.file_name}"
         class={cn(
-          'absolute inset-0 flex items-center justify-center rounded-md border transition duration-fast ease-out',
+          'absolute flex items-center justify-center border transition duration-fast ease-out',
           selected
-            ? 'border-accent bg-accent text-accent-fg opacity-100'
-            : 'border-line-strong bg-raised text-transparent opacity-0 group-hover:opacity-100',
+            ? 'inset-0 rounded-md border-accent bg-accent text-accent-fg'
+            : '-top-1 -right-1 size-4.5 rounded-xs border-line-strong bg-overlay text-transparent opacity-0 shadow-control group-hover:opacity-100 hover:border-accent',
         )}
         onclick={() => app.selection.toggle(id)}
       >
-        <Icon icon={Check} size="sm" />
+        <Icon icon={Check} size={selected ? 'sm' : 'xs'} />
       </button>
     </span>
     <span role="gridcell" class="flex min-w-0 flex-col justify-center gap-0.5">
@@ -179,6 +187,8 @@
           <span class="truncate text-ink-muted" {@attach tooltip(() => textIfCut(waitNote))}
             >{waitNote}</span
           >
+        {:else if group === 'finished'}
+          <span class="truncate text-ink-muted">{finishedNote(row, app.clock.now)}</span>
         {:else if progress}
           <ProgressBar
             value={progress.value}
@@ -188,9 +198,7 @@
             valueText={progress.valueText}
             class="min-w-0 flex-1"
           />
-          <span class="w-9 shrink-0 text-right text-ink-muted"
-            >{group === 'finished' ? 'Done' : percent}</span
-          >
+          <span class="w-9 shrink-0 text-right text-ink-muted">{percent}</span>
         {/if}
       </span>
     {/if}
@@ -219,7 +227,7 @@
       <span
         class={cn(
           'flex items-center gap-0.5 transition-opacity duration-fast ease-out',
-          fix || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          group === 'failed' || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
           active && 'group-focus-visible/list:opacity-100',
         )}
       >

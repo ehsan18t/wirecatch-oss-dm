@@ -69,13 +69,17 @@
       {#if installing}
         <Button variant="ghost" onclick={() => void win.stopAddonInstall()}>Stop installing</Button>
       {/if}
-      <Button variant="primary" data-autofocus onclick={() => win.close()}>Hide</Button>
+      <Button variant="primary" data-main data-autofocus onclick={() => win.close()}>Hide</Button>
     {:else}
       <Button variant="ghost" onclick={() => void win.declineAddon()}
         >{forQuality ? 'Pick another quality' : 'Cancel'}</Button
       >
-      <Button variant="primary" data-autofocus loading={busy} onclick={() => void install()}
-        >{failed ? 'Try again' : 'Install'}</Button
+      <Button
+        variant="primary"
+        data-main
+        data-autofocus
+        loading={busy}
+        onclick={() => void install()}>{failed ? 'Try again' : 'Install'}</Button
       >
     {/if}
   {/snippet}

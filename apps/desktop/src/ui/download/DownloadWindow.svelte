@@ -57,7 +57,9 @@
           <WindowFrame title="Nothing to do here">
             <p class="text-body text-ink" role="status">{win.goneReason}</p>
             {#snippet footer()}
-              <Button variant="primary" data-autofocus onclick={() => win.close()}>Close</Button>
+              <Button variant="primary" data-main data-autofocus onclick={() => win.close()}
+                >Close</Button
+              >
             {/snippet}
           </WindowFrame>
         {:else if win.phase === 'progress' && win.row}

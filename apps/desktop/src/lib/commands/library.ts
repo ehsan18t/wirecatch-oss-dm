@@ -32,8 +32,8 @@ export function focusSearch(app: AppState): void {
 const DOWNLOADS: readonly CommandSpec<AppState>[] = [
   {
     id: 'dl.add',
-    title: 'Add a download',
-    keywords: 'new link url paste',
+    title: 'New download',
+    keywords: 'add new link url paste',
     key: 'add',
     run: (app) => app.openDialog({ kind: 'add', urls: [] }),
   },

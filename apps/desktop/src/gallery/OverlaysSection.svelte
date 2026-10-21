@@ -203,7 +203,7 @@
 
 <Dialog
   open={dialog}
-  title="Add a download"
+  title="New download"
   description="Paste a link, or several, one per line."
   onclose={() => (dialog = false)}
 >

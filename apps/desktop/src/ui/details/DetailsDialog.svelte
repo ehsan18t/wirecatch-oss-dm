@@ -116,14 +116,14 @@
             {#if r.status === 'completed'}
               {formatBytes(r.total ?? r.done)}
             {:else}
-              {formatSize(r.done, r.total, r.status)}{percent ? ` · ${percent}` : ''}
+              {formatSize(r.done, r.total, r.status)}{percent && r.done > 0 ? ` · ${percent}` : ''}
             {/if}
           </span>
           {#if live && r.eta_secs !== null && r.speed > 0}
             <span class="ml-auto text-small text-ink-muted">{formatEta(r.eta_secs)} left</span>
           {/if}
         </div>
-        {#if progress && group !== 'waiting'}
+        {#if progress && group !== 'waiting' && group !== 'finished'}
           <ProgressBar
             value={progress.value}
             state={progress.state}
@@ -156,7 +156,7 @@
             />
           </dd>
         </div>
-        {#each [['Place', position === undefined ? 'Not in line' : `${ordinal(position)} in line`], ['Size', r.total === null ? 'Unknown' : formatBytes(r.total)], ['Type', CATEGORY_LABEL[r.category]], ['Added', formatDate(r.added_at, app.clock.now)]] as [label, value] (label)}
+        {#each [r.completed_at !== null ? ['Finished', formatDate(r.completed_at, app.clock.now)] : ['Place', position === undefined ? 'Not in line' : `${ordinal(position)} in line`], ['Size', r.total === null ? 'Unknown' : formatBytes(r.total)], ['Type', CATEGORY_LABEL[r.category]], ['Added', formatDate(r.added_at, app.clock.now)]] as [label, value] (label)}
           <div class="flex min-w-0 flex-col gap-0.5 border-l border-line px-4 py-2.5">
             <dt class="text-caption text-ink-subtle">{label}</dt>
             <dd class="truncate text-small font-medium text-ink tabular-nums">{value}</dd>
@@ -166,7 +166,7 @@
 
       <div class="flex flex-col px-6 py-1.5">
         <div class="flex items-baseline gap-3 py-2 text-small">
-          <span class="flex w-24 shrink-0 items-center gap-1.5 self-center text-ink-subtle"
+          <span class="flex w-32 shrink-0 items-center gap-1.5 self-center text-ink-subtle"
             ><Icon icon={FolderOpen} size="sm" />Saved to</span
           >
           <span class="min-w-0 flex-1 font-medium wrap-anywhere text-ink select-text"
@@ -181,7 +181,7 @@
           {/if}
         </div>
         <div class="flex items-baseline gap-3 border-t border-dashed border-line py-2 text-small">
-          <span class="flex w-24 shrink-0 items-center gap-1.5 self-center text-ink-subtle"
+          <span class="flex w-32 shrink-0 items-center gap-1.5 self-center text-ink-subtle"
             ><Icon icon={Link} size="sm" />From</span
           >
           <span class="min-w-0 flex-1 font-medium wrap-anywhere text-ink select-text"
@@ -207,12 +207,14 @@
       >
         <h3 class="text-caption font-semibold tracking-caps text-ink-subtle uppercase">Activity</h3>
         <p class="flex gap-3 text-ink-muted">
-          <span class="w-24 shrink-0 text-ink-subtle">{formatDate(r.added_at, app.clock.now)}</span>
+          <span class="w-32 shrink-0 whitespace-nowrap text-ink-subtle"
+            >{formatDate(r.added_at, app.clock.now)}</span
+          >
           <span>Added from {hostOf(r.url)}</span>
         </p>
         {#if r.connections > 0}
           <p class="flex gap-3 text-ink-muted">
-            <span class="w-24 shrink-0 text-ink-subtle">Now</span>
+            <span class="w-32 shrink-0 text-ink-subtle">Now</span>
             <span
               >{r.connections} connection{r.connections === 1 ? '' : 's'} open{app.settings
                 ? `, up to ${String(app.settings.connections_per_download)}`
@@ -220,15 +222,9 @@
             >
           </p>
         {/if}
-        {#if r.status === 'failed' && r.error}
-          <p class="flex gap-3 text-ink-muted">
-            <span class="w-24 shrink-0 text-ink-subtle">Stopped</span>
-            <span class="text-danger">{r.error.message}</span>
-          </p>
-        {/if}
         {#if r.completed_at !== null}
           <p class="flex gap-3 text-ink-muted">
-            <span class="w-24 shrink-0 text-ink-subtle"
+            <span class="w-32 shrink-0 whitespace-nowrap text-ink-subtle"
               >{formatDate(r.completed_at, app.clock.now)}</span
             >
             <span>Finished</span>
@@ -260,8 +256,11 @@
           >
         {/if}
         {#if can.retry && r.status === 'cancelled'}
-          <Button variant="primary" icon={RotateCw} onclick={() => app.actions.retry([r.id])}
-            >Start over</Button
+          <Button
+            variant="primary"
+            icon={RotateCw}
+            data-autofocus
+            onclick={() => app.actions.retry([r.id])}>Start over</Button
           >
         {/if}
         <Button variant="ghost" icon={FolderOpen} onclick={() => app.actions.openFolder(r.id)}

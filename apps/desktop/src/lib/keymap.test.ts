@@ -128,7 +128,7 @@ describe('keymap', () => {
     expect(lines).toEqual([
       ['Ctrl+Shift+P', 'Find any action or setting'],
       ['Ctrl+V', 'Download the link you copied'],
-      ['Ctrl+N', 'Add a download'],
+      ['Ctrl+N', 'New download'],
       ['Ctrl+K', 'Search the list'],
       ['Ctrl+,', 'Open settings'],
       ['Up, Down', 'Move through the list'],

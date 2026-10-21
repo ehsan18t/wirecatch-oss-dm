@@ -77,7 +77,7 @@ export const KEYMAP: readonly KeyBinding[] = [
   // Ctrl+V is the browser's paste, which the window reads as a `paste` event, so pasting from a
   // menu works too. Listed for the dialog; `keyCommand` never returns it.
   { scope: 'window', command: 'paste', key: 'v', ctrl: true, help: 'Download the link you copied' },
-  { scope: 'window', command: 'add', key: 'n', ctrl: true, help: 'Add a download' },
+  { scope: 'window', command: 'add', key: 'n', ctrl: true, help: 'New download' },
   { scope: 'window', command: 'search', key: 'k', ctrl: true, help: 'Search the list' },
   { scope: 'window', command: 'settings', key: ',', ctrl: true, help: 'Open settings' },
   { scope: 'list', command: 'up', key: 'ArrowUp', shift: false, alt: false, help: MOVE },

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A download's speed over the last minute, while its details are open: sampled once a second from the row, drawn as one line in the accent. It is a picture of the figure written above it, so screen readers skip it.
+  // A download's speed over the last minute, while its details are open: sampled once a second from the row, drawn as a line in the accent over a tint of the area under it. It is a picture of the figure written above it, so screen readers skip it.
   import type { DownloadSummary } from '@wirecatch/protocol';
   import { untrack } from 'svelte';
 
@@ -30,33 +30,36 @@
     return () => clearInterval(timer);
   });
 
-  const path = $derived.by(() => {
-    if (samples.length < 2) return '';
+  /** The line, stretched across the whole width from the first sample to the last, and the area under it. */
+  const shape = $derived.by(() => {
+    if (samples.length < 2) return null;
     const most = Math.max(...samples, 1);
-    const step = WIDTH / (SAMPLES - 1);
-    const from = SAMPLES - samples.length;
-    return samples
-      .map((v, i) => {
-        const x = (from + i) * step;
-        const y = HEIGHT - BOTTOM - (v / most) * (HEIGHT - TOP - BOTTOM);
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
-      })
-      .join(' ');
+    const step = WIDTH / (samples.length - 1);
+    const points = samples.map((v, i) => {
+      const x = i * step;
+      const y = HEIGHT - BOTTOM - (v / most) * (HEIGHT - TOP - BOTTOM);
+      return `${x.toFixed(1)} ${y.toFixed(1)}`;
+    });
+    const line = `M${points.join(' L')}`;
+    return { line, area: `${line} L${String(WIDTH)} ${String(HEIGHT)} L0 ${String(HEIGHT)} Z` };
   });
 </script>
 
-<svg
-  viewBox="0 0 {WIDTH} {HEIGHT}"
-  preserveAspectRatio="none"
-  class="h-14 w-full overflow-visible text-accent"
-  aria-hidden="true"
->
-  <path
-    d={path}
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linejoin="round"
-    vector-effect="non-scaling-stroke"
-  />
-</svg>
+{#if shape}
+  <svg
+    viewBox="0 0 {WIDTH} {HEIGHT}"
+    preserveAspectRatio="none"
+    class="h-14 w-full overflow-visible text-accent"
+    aria-hidden="true"
+  >
+    <path d={shape.area} class="fill-accent/tint" stroke="none" />
+    <path
+      d={shape.line}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+      vector-effect="non-scaling-stroke"
+    />
+  </svg>
+{/if}

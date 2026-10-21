@@ -17,6 +17,8 @@ export class Selection {
   readonly ids = new SvelteSet<DownloadId>();
   /** The row the keyboard is on. */
   active = $state<DownloadId | null>(null);
+  /** The selection was built up on purpose (a box ticked, Ctrl or Shift, select all), not only one row chosen. */
+  picked = $state(false);
   /** Where a Shift range starts: the row last clicked or chosen. */
   #anchor: DownloadId | null = null;
   readonly #host: SelectionHost;
@@ -53,9 +55,11 @@ export class Selection {
     this.ids.add(id);
     this.#anchor = id;
     this.active = id;
+    this.picked = false;
   }
 
   toggle(id: DownloadId): void {
+    this.picked = true;
     if (this.ids.has(id)) this.ids.delete(id);
     else this.ids.add(id);
     this.#anchor = id;
@@ -78,14 +82,18 @@ export class Selection {
       if (x !== undefined) this.ids.add(x);
     }
     this.active = id;
+    // A range of one row is that row chosen, not a selection built up.
+    this.picked = (additive && this.picked) || this.ids.size > 1;
   }
 
   /** Selects every download the list shows. */
   all(): void {
+    this.picked = true;
     for (const id of this.#host.visible()) this.ids.add(id);
   }
 
   clear(): void {
+    this.picked = false;
     this.ids.clear();
     this.#anchor = null;
     this.active = null;

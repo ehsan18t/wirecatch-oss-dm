@@ -448,7 +448,7 @@ export function statusDetail(row: DownloadSummary, queueName: string): string | 
 }
 
 /** "today at 18:38", "yesterday at 09:05" or "on 3 Oct 2026". */
-function whenSaid(ms: number, now: Date): string {
+export function whenSaid(ms: number, now: Date): string {
   const { day, time } = relativeDay(ms, now);
   if (day === 'today') return `today at ${time}`;
   if (day === 'yesterday') return `yesterday at ${time}`;

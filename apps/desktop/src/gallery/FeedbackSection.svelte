@@ -115,7 +115,7 @@
         heading="h3"
       >
         {#snippet actions()}
-          <Button variant="primary" icon={Plus}>Add download</Button>
+          <Button variant="primary" icon={Plus}>New download</Button>
         {/snippet}
       </EmptyState>
     </Card>

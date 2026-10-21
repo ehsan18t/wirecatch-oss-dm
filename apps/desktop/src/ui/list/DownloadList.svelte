@@ -253,8 +253,12 @@
     ondragend={() => (drop = null)}
     {ondrop}
   >
-    <!-- The base under the content layer's tone, so rows never show through the header. -->
-    <div role="rowgroup" bind:borderBoxSize={headerBox} class="sticky top-0 z-sticky bg-base">
+    <!-- The base under the content layer's tone, so rows never show through the header; pinned a pixel high, so a list that starts between pixels shows no seam of rows above it. -->
+    <div
+      role="rowgroup"
+      bind:borderBoxSize={headerBox}
+      class="sticky -top-px z-sticky border-t border-transparent bg-base"
+    >
       <div class="border-b border-line bg-layer px-2">
         <div
           role="row"

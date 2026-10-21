@@ -307,4 +307,24 @@ describe('the download list', () => {
     expect(app.selection.list.some((id) => done.includes(id))).toBe(false);
     expect(app.selection.size).toBe(app.visible.length);
   });
+
+  it('shows the selection bar for a selection built on purpose, not for one row chosen', async () => {
+    const { app, user } = await setup();
+    const bar = () => screen.queryByRole('toolbar', { name: 'Selected downloads' });
+    const [a, b] = rendered();
+    if (!a || !b) throw new Error('too few rows');
+    await user.click(a);
+    app.closeDetails();
+    await settle();
+    expect(app.selection.size).toBe(1);
+    expect(bar()).toBeNull();
+    await user.click(within(b).getByRole('checkbox'));
+    await settle();
+    expect(bar()).not.toBeNull();
+    app.selection.clear();
+    await user.click(within(a).getByRole('checkbox'));
+    await settle();
+    expect(app.selection.size).toBe(1);
+    expect(bar()).not.toBeNull();
+  });
 });
