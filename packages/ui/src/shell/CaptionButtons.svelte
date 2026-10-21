@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Windows 11's caption buttons: flush with the window's top edge, 46px wide, the glyphs drawn on a 10px grid, close turning red. Window calls go through the injected controls. For snap layouts the window can take the pointer over the maximize button: the button then reports where it is and draws the look it is told.
+  // Windows 11's caption buttons: flush with the window's top edge, 46px wide, close turning red. The glyphs are Wirecatch's own "wire" set on a 12px grid: round-capped strokes, and maximize a loop of wire left open at one corner that closes under the pointer. Window calls go through the injected controls. For snap layouts the window can take the pointer over the maximize button: the button then reports where it is and draws the look it is told.
   import { cn } from '../lib/cn';
   import { tooltip } from '../attachments/tooltip.svelte';
   import { FOCUS_RING_INSET } from '../recipes/control';
@@ -82,8 +82,10 @@
     call().catch((error: unknown) => onerror?.(action, error));
   }
 
+  const GLYPH = 'size-3 fill-none stroke-current';
+
   const BUTTON = cn(
-    'flex h-full w-caption cursor-default items-center justify-center text-ink no-drag inactive:text-ink-subtle',
+    'group flex h-full w-caption cursor-default items-center justify-center text-ink no-drag inactive:text-ink-subtle',
     FOCUS_RING_INSET,
   );
 </script>
@@ -98,13 +100,14 @@
       onclick={() => run('minimize', () => controls.minimize())}
     >
       <svg
-        class="size-glyph"
-        viewBox="0 0 10 10"
-        fill="none"
-        stroke="currentColor"
+        class={GLYPH}
+        viewBox="0 0 12 12"
+        stroke-width="1.3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
       >
-        <path d="M0 5.5h10" />
+        <path d="M2.5 6h7" />
       </svg>
     </button>
     <button
@@ -122,17 +125,25 @@
       onclick={() => run('maximize', () => controls.toggleMaximize())}
     >
       <svg
-        class="size-glyph"
-        viewBox="0 0 10 10"
-        fill="none"
-        stroke="currentColor"
+        class={GLYPH}
+        viewBox="0 0 12 12"
+        stroke-width="1.3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
       >
         {#if maximized}
-          <rect x="0.5" y="2.5" width="7" height="7" rx="1.5" />
-          <path d="M2.5 0.5h5.5a1.5 1.5 0 0 1 1.5 1.5v5.5" />
+          <rect x="1.5" y="3.5" width="7" height="7" rx="1.5" />
+          <path d="M3.5 1.5H9A1.5 1.5 0 0 1 10.5 3v5.5" />
         {:else}
-          <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" />
+          <path
+            d="M4.5 1.5H9A1.5 1.5 0 0 1 10.5 3v6A1.5 1.5 0 0 1 9 10.5H3A1.5 1.5 0 0 1 1.5 9V4.5"
+          />
+          <!-- The loop's open corner, which closes under the pointer. -->
+          <path
+            d="M1.5 4.5V3A1.5 1.5 0 0 1 3 1.5h1.5"
+            class="opacity-0 transition-opacity duration-normal ease-out group-hover:opacity-100"
+          />
         {/if}
       </svg>
     </button>
@@ -148,13 +159,14 @@
     onclick={() => run('close', () => controls.close())}
   >
     <svg
-      class="size-glyph"
-      viewBox="0 0 10 10"
-      fill="none"
-      stroke="currentColor"
+      class={GLYPH}
+      viewBox="0 0 12 12"
+      stroke-width="1.3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
       aria-hidden="true"
     >
-      <path d="M0.5 0.5l9 9M9.5 0.5l-9 9" />
+      <path d="M2.75 2.75l6.5 6.5M9.25 2.75l-6.5 6.5" />
     </svg>
   </button>
 </div>

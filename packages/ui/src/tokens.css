@@ -275,8 +275,6 @@
   --spacing-icon-2xl: 1.5rem;
   --spacing-icon-3xl: 2rem;
   --spacing-icon-hero: 3rem;
-  /* Windows 11's caption glyphs, drawn on a 10px grid. */
-  --spacing-glyph: 0.625rem;
   /* The tallest an extension's popup can be: Chromium and Firefox both stop it at 600px and scroll the page. */
   --spacing-popup: 37.5rem;
 

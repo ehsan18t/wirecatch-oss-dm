@@ -43,7 +43,6 @@ export const THEME_NAMES = {
     'icon-2xl',
     'icon-3xl',
     'icon-hero',
-    'glyph',
     'popup',
   ],
   radius: ['xs', 'sm', 'md', 'lg', 'xl'],
