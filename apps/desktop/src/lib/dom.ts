@@ -10,16 +10,6 @@ export function findElement(
   return found instanceof HTMLElement ? found : null;
 }
 
-/** Every element under `root` that matches `selector` and is a `type`. */
-export function findAll<T extends Element>(
-  root: ParentNode | null | undefined,
-  selector: string,
-  type: abstract new () => T,
-): T[] {
-  if (!root) return [];
-  return [...root.querySelectorAll(selector)].filter((e): e is T => e instanceof type);
-}
-
 const DIGITS = /^\d+$/;
 
 /**

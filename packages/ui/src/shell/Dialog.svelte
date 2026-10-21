@@ -141,7 +141,10 @@
       >
         {@render leading?.()}
         <div class="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 id={titleId} class="font-display text-headline font-semibold wrap-anywhere text-ink">
+          <h2
+            id={titleId}
+            class="font-display text-headline font-semibold wrap-break-word text-ink"
+          >
             {title}
           </h2>
           {#if description}

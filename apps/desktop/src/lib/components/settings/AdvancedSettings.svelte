@@ -105,9 +105,11 @@
 {/snippet}
 
 <style>
+  /* Lined up with the other rows' controls, on the right. */
   .suffix-list {
     display: flex;
     flex-direction: column;
+    align-items: flex-end;
     gap: 6px;
   }
 
@@ -115,9 +117,11 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
     max-width: 320px;
     margin: 0;
+    text-align: right;
     color: var(--ink-2);
     font-size: var(--text-sm);
   }

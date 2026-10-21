@@ -13,14 +13,14 @@ async function setup() {
 }
 
 describe('dialogs', () => {
-  it('wrap Tab and Shift+Tab around their own buttons', async () => {
+  it('wrap Tab and Shift+Tab around their own controls', async () => {
     const { app } = await setup();
     app.openDialog({ kind: 'queue', id: null });
     await settle();
     const dialog = screen.getByRole('dialog');
-    const buttons = within(dialog).getAllByRole('button');
-    const first = buttons[0]!;
-    const last = buttons.at(-1)!;
+    // The first stop is the name to type; the last, the close button.
+    const first = within(dialog).getByLabelText('Name');
+    const last = within(dialog).getByRole('button', { name: 'Close' });
 
     last.focus();
     await fireEvent.keyDown(dialog, { key: 'Tab' });

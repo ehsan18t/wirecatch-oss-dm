@@ -23,10 +23,10 @@
   --scrim: var(--color-scrim);
 
   --font: var(--font-sans);
-  --text-xs: 11.5px;
-  --text-sm: 12.5px;
-  --text-md: 13.5px;
-  --text-lg: 16px;
+  --text-xs: var(--text-small);
+  --text-sm: var(--text-ui);
+  --text-md: var(--text-body);
+  --text-lg: var(--text-subtitle);
   --radius-s: var(--radius-xs);
   --radius-m: var(--radius-sm);
   --radius-l: var(--radius-lg);
@@ -38,11 +38,6 @@
   --icon-md: 16px;
   --icon-lg: 18px;
   --icon-stroke-thin: 1.75;
-
-  /* Dialogs come in three widths (see Dialog.svelte). */
-  --dialog-narrow: 460px;
-  --dialog-medium: 500px;
-  --dialog-wide: 540px;
 }
 
 *,
@@ -104,71 +99,6 @@ textarea {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* Buttons: one quiet style, one primary, one for danger. */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--spacing-control);
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  background: var(--color-control);
-  box-shadow: var(--shadow-control);
-  color: var(--ink);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--transition-duration-fast) var(--ease),
-    scale var(--transition-duration-fast) var(--ease);
-}
-
-.btn:hover {
-  background: var(--color-control-hover);
-}
-
-.btn:active {
-  background: var(--surface-3);
-  scale: var(--scale-pressed, 0.98);
-}
-
-.btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.btn.primary:hover {
-  background: var(--color-accent-hover);
-}
-
-.btn.danger {
-  color: var(--danger);
-  border-color: currentColor;
-}
-
-.btn.ghost {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.btn.ghost:hover {
-  background: var(--surface-3);
-}
-
-.btn.small {
-  height: var(--spacing-control-sm);
-  padding: 0 10px;
 }
 
 .icon-btn {
@@ -242,7 +172,7 @@ textarea.field {
 }
 
 .form-label {
-  font-size: var(--text-sm);
+  font-size: var(--text-ui);
   font-weight: 600;
 }
 

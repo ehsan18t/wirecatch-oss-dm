@@ -1,10 +1,14 @@
-<script lang="ts">
-  import X from '@lucide/svelte/icons/x';
-  import type { Snippet } from 'svelte';
-  import { onMount } from 'svelte';
-  import { findAll, findElement } from '$lib/dom';
-  import IconButton from './IconButton.svelte';
+<script lang="ts" module>
+  import type { DialogSize as Width } from '@wirecatch/ui';
   import type { DialogSize } from './scale';
+
+  const WIDTH: Record<DialogSize, Width> = { medium: 'md', wide: 'lg' };
+</script>
+
+<script lang="ts">
+  // A dialog for the screens styled by app.css: the design system's dialog (a solid panel over the one blur, its spacing, motion, focus and Escape), sized by name. What goes inside keeps the styles of the screen it belongs to.
+  import type { Snippet } from 'svelte';
+  import { Dialog } from '@wirecatch/ui';
 
   let {
     title,
@@ -19,166 +23,10 @@
     onclose: () => void;
     children: Snippet;
     footer?: Snippet;
-    /** One of the three dialog widths in app.css. */
     size?: DialogSize;
   } = $props();
-
-  const uid = $props.id();
-  let el = $state<HTMLDialogElement>();
-
-  onMount(() => {
-    const previous = document.activeElement;
-    if (el) {
-      if (typeof el.showModal === 'function') el.showModal();
-      else el.setAttribute('open', '');
-      // Focus the first field, or the main button, rather than the close button.
-      const target =
-        findElement(el, '[data-autofocus]') ?? findElement(el, 'input, select, textarea');
-      target?.focus();
-    }
-    return () => {
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-    };
-  });
-
-  function oncancel(e: Event) {
-    e.preventDefault();
-    onclose();
-  }
-
-  // Browsers turn Escape into a cancel event; handling the key too keeps behavior identical
-  // everywhere, including webviews and tests.
-  function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Tab') {
-      keepFocusInside(e);
-      return;
-    }
-    if (e.key !== 'Escape') return;
-    e.preventDefault();
-    e.stopPropagation();
-    onclose();
-  }
-
-  // A modal dialog makes the page behind it inert, but Tab from its last control still leaves
-  // the page (in a webview, to nowhere). Wrap around instead, both ways.
-  function keepFocusInside(e: KeyboardEvent) {
-    if (!el) return;
-    const focusable = findAll(
-      el,
-      'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])',
-      HTMLElement,
-    ).filter((f) => !f.hasAttribute('disabled') && !f.closest('[hidden], [inert]'));
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (!first || !last) return;
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
-
-  function onclick(e: MouseEvent) {
-    // A click on the dimmed area around the dialog closes it.
-    if (e.target === el) onclose();
-  }
 </script>
 
-<dialog
-  bind:this={el}
-  aria-labelledby="{uid}-title"
-  aria-describedby={description ? `${uid}-desc` : undefined}
-  style:--dialog-width="var(--dialog-{size})"
-  {oncancel}
-  {onkeydown}
-  {onclick}
->
-  <div class="panel">
-    <!-- Not a header element: inside a dialog it would be a second banner beside the window's title bar. -->
-    <div class="head">
-      <h2 id="{uid}-title">{title}</h2>
-      <IconButton icon={X} size="md" label="Close" onclick={onclose} />
-    </div>
-    {#if description}
-      <p id="{uid}-desc" class="description">{description}</p>
-    {/if}
-    <div class="body">
-      {@render children()}
-    </div>
-    {#if footer}
-      <footer>{@render footer()}</footer>
-    {/if}
-  </div>
-</dialog>
-
-<style>
-  dialog {
-    width: min(var(--dialog-width), calc(100vw - 32px));
-    max-height: calc(100vh - 64px);
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-l);
-    background: var(--surface);
-    color: var(--ink);
-    box-shadow: var(--shadow);
-  }
-
-  dialog[open] {
-    animation: rise 160ms var(--ease);
-  }
-
-  /* The design system's one blur, behind every dialog (D46). */
-  dialog::backdrop {
-    background: var(--scrim);
-    backdrop-filter: blur(var(--blur-scrim));
-  }
-
-  .panel {
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 66px);
-  }
-
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 16px 0 20px;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 620;
-  }
-
-  .description {
-    margin: 4px 20px 0;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    line-height: 1.5;
-  }
-
-  .body {
-    padding: 14px 20px 4px;
-    overflow-y: auto;
-  }
-
-  footer {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 14px 20px 18px;
-  }
-
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-  }
-</style>
+<Dialog open {title} {description} size={WIDTH[size]} {onclose} {footer}>
+  {@render children()}
+</Dialog>

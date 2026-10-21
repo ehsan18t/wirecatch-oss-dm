@@ -144,13 +144,16 @@
     padding: 0;
     border: 1px solid var(--line);
     border-radius: var(--radius-l);
-    background: var(--surface);
+    /* A floating surface: solid, as every layer over the window is (D46). */
+    background: var(--color-overlay);
     color: var(--ink);
     box-shadow: var(--shadow);
   }
 
+  /* The design system's one blur, behind every dialog (D46). */
   .palette::backdrop {
     background: var(--scrim);
+    backdrop-filter: blur(var(--blur-scrim));
   }
 
   .search {

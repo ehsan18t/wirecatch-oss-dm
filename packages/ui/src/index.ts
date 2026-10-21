@@ -24,6 +24,7 @@ export {
   type Side,
   type Speed,
 } from './motion/motion';
+export { button, type ButtonVariant } from './recipes/button';
 export { FOCUS_RING, FOCUS_RING_INSET, TONES, type Tone } from './recipes/control';
 
 export { default as VisuallyHidden } from './VisuallyHidden.svelte';

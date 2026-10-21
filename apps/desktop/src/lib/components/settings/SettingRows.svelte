@@ -23,7 +23,7 @@
   {@const control = controls[def.id]}
   <div
     class={[
-      'setting flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line px-4 py-3 transition-colors duration-slower ease-out first:border-t-0 has-[table]:flex-col has-[table]:items-stretch has-[.list-editor]:flex-col has-[.list-editor]:items-stretch',
+      'setting flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line px-4 py-3 transition-colors duration-slower ease-out first:border-t-0 has-[table]:flex-col has-[table]:items-stretch has-[table]:*:basis-auto has-[.list-editor]:flex-col has-[.list-editor]:items-stretch has-[.list-editor]:*:basis-auto',
       flash === def.id && 'flash bg-accent-soft',
     ]}
     id={settingAnchor(def.id)}

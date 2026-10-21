@@ -67,7 +67,11 @@ describe('the queue dialog', () => {
     if (!(start instanceof HTMLInputElement)) throw new Error('no start time field');
     await fireEvent.input(dialog.getByLabelText('Stop time'), { target: { value: start.value } });
     await save();
-    expect(dialog.getByRole('alert')).toHaveTextContent('The start and stop times are the same');
+    expect(
+      dialog
+        .getAllByRole('alert')
+        .some((a) => a.textContent.includes('The start and stop times are the same')),
+    ).toBe(true);
     expect(app.queues.list.some((q) => q.name === 'Never runs')).toBe(false);
   });
 

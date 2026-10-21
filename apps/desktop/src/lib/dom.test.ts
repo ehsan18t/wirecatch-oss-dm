@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dataIdAt, findAll, findElement } from './dom';
+import { dataIdAt, findElement } from './dom';
 
 function page(html: string): HTMLElement {
   const root = document.createElement('div');
@@ -22,11 +22,10 @@ describe('finding elements', () => {
     expect(dataIdAt(null)).toBeNull();
   });
 
-  it('finds HTML elements and elements of a type', () => {
+  it('finds HTML elements only', () => {
     const root = page('<svg><g class="x"></g></svg><button class="x">b</button>');
     expect(findElement(root, 'g.x')).toBeNull();
     expect(findElement(root, 'button')?.textContent).toBe('b');
-    expect(findAll(root, '.x', HTMLButtonElement)).toHaveLength(1);
-    expect(findAll(null, '.x', HTMLButtonElement)).toEqual([]);
+    expect(findElement(null, 'button')).toBeNull();
   });
 });
