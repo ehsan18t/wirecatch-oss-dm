@@ -171,7 +171,7 @@ jobs:
           WIRECATCH_REQUIRE_BROWSER: ${{ runner.os == 'Windows' && '1' || '' }}
         run: node scripts/gate.mjs js
 
-      # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main.
+      # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check
         if: runner.os == 'Linux'
         shell: bash
@@ -184,7 +184,11 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             range="$PR_BASE..$PR_HEAD"
           elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
-            range="$BEFORE..$GITHUB_SHA"
+            if git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch --quiet --no-tags origin "$BEFORE"; then
+              range="$BEFORE..$GITHUB_SHA"
+            else
+              range="$GITHUB_SHA~1..$GITHUB_SHA"
+            fi
           else
             range="origin/main..$GITHUB_SHA"
           fi
