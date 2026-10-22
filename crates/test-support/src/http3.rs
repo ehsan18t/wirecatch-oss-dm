@@ -3,9 +3,11 @@
 //! a UDP port that swallows every packet (QUIC blocked). All of them serve one
 //! byte buffer with range support and count what they serve.
 
+use std::collections::HashSet;
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -256,10 +258,47 @@ async fn respond(
 }
 
 /// A UDP port that receives and drops everything, the way a firewall that
-/// blocks QUIC looks from the client. Keep the socket alive while it is used.
-#[must_use]
-pub fn blackhole() -> (std::net::UdpSocket, u16) {
-    let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-    let port = socket.local_addr().unwrap().port();
-    (socket, port)
+/// blocks QUIC looks from the client. It notes every address that sent to it:
+/// each QUIC connection the engine tries comes from a UDP socket of its own,
+/// so the count is the number of attempts. Keep it alive while it is used.
+pub struct Blackhole {
+    /// The port to advertise.
+    pub port: u16,
+    senders: Arc<Mutex<HashSet<SocketAddr>>>,
+    reader: tokio::task::JoinHandle<()>,
+}
+
+impl Blackhole {
+    /// Binds a port on 127.0.0.1 and starts swallowing what arrives.
+    pub async fn start() -> Self {
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let senders = Arc::new(Mutex::new(HashSet::new()));
+        let reader = tokio::spawn({
+            let senders = senders.clone();
+            async move {
+                let mut packet = [0u8; 2048];
+                while let Ok((_, from)) = socket.recv_from(&mut packet).await {
+                    senders.lock().unwrap().insert(from);
+                }
+            }
+        });
+        Self {
+            port,
+            senders,
+            reader,
+        }
+    }
+
+    /// How many QUIC connections were tried.
+    #[must_use]
+    pub fn attempts(&self) -> usize {
+        self.senders.lock().unwrap().len()
+    }
+}
+
+impl Drop for Blackhole {
+    fn drop(&mut self) {
+        self.reader.abort();
+    }
 }

@@ -135,7 +135,7 @@ mod tests {
         assert!(tokio::time::timeout(short, &mut sleep).await.is_err());
 
         clock.advance(TimeDelta::minutes(20));
-        tokio::time::timeout(Duration::from_secs(5), sleep)
+        tokio::time::timeout(wirecatch_test_support::PATIENCE, sleep)
             .await
             .unwrap();
     }
@@ -143,8 +143,11 @@ mod tests {
     #[tokio::test]
     async fn manual_clock_past_deadline_returns_at_once() {
         let clock = ManualClock::new(at(2, 0));
-        tokio::time::timeout(Duration::from_secs(5), clock.sleep_until(at(1, 0)))
-            .await
-            .unwrap();
+        tokio::time::timeout(
+            wirecatch_test_support::PATIENCE,
+            clock.sleep_until(at(1, 0)),
+        )
+        .await
+        .unwrap();
     }
 }

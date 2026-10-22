@@ -51,7 +51,7 @@ windows-sys = { workspace = true, features = [
 libc.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process"] }
+tokio = { workspace = true, features = ["rt", "time", "sync", "io-util", "macros", "process", "test-util"] }
 # The plain helpers only, without the test servers' TLS stack.
 wirecatch-test-support = { path = "../test-support" }
 

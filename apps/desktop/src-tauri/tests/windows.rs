@@ -394,7 +394,7 @@ fn started_or_failed(
         }
     };
     tauri::async_runtime::block_on(async {
-        tokio::time::timeout(std::time::Duration::from_secs(20), changed).await?
+        tokio::time::timeout(wirecatch_test_support::PATIENCE, changed).await?
     })
 }
 

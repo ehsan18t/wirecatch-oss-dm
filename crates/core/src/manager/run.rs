@@ -473,8 +473,6 @@ fn engine_request(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
     use crate::{KnownFolders, ManagerConfig};
     use wirecatch_engine::PrivateNetwork;
@@ -579,7 +577,7 @@ mod tests {
             });
             state.downloads[&id].run.as_ref().unwrap().exited.clone()
         };
-        tokio::time::timeout(Duration::from_secs(5), exited.cancelled())
+        tokio::time::timeout(wirecatch_test_support::PATIENCE, exited.cancelled())
             .await
             .expect("waiters were never told the run ended");
         let state = manager.lock();

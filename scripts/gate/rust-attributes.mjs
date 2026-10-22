@@ -1,4 +1,4 @@
-// Reads the lint attributes in the Rust sources: every `#[allow]` and `#[expect]`, also inside `#[cfg_attr]`, however deeply nested.
+// Reads the lint attributes in the Rust sources: every `#[allow]` and `#[expect]`, also inside `#[cfg_attr]`, however deeply nested. Its reader for Rust code without comments and literals serves the other source checks too.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, ROOT } from './process.mjs';
@@ -54,7 +54,7 @@ function quotedEnd(text, open) {
 }
 
 /** `text` with its comments, strings and character literals blanked, so only code is left to read. */
-function codeOnly(text) {
+export function codeOnly(text) {
   const pieces = [];
   let kept = 0;
   let i = 0;
@@ -73,7 +73,7 @@ function codeOnly(text) {
 }
 
 /** The index just past the bracket that closes the one at `open`. */
-function closingBracket(code, open) {
+export function closingBracket(code, open) {
   let depth = 0;
   for (let i = open; i < code.length; i += 1) {
     if ('([{'.includes(code[i])) depth += 1;

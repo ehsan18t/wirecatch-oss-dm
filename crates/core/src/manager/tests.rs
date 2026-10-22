@@ -103,24 +103,38 @@ async fn wait_until(what: &str, mut check: impl FnMut() -> bool) {
 /// be answered before its attempt has finished stopping, not after.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_capture_is_answered_before_its_attempt_is_cleaned_up() {
-    let stop_timeout = Duration::from_secs(3);
-    let (manager, _dir) = manager_with(deaf, stop_timeout, Duration::from_millis(200)).await;
-    let asked = Instant::now();
-    let err = manager
-        .add_capture(capture("https://example.com/report.pdf"))
-        .await
-        .unwrap_err();
+    // The run ignores being asked to stop until the test lets it go, and the stop
+    // timeout outlasts the test: the attempt stops only when the test says.
+    let let_go = Arc::new(Notify::new());
+    let held = {
+        let let_go = let_go.clone();
+        move |_run: FakeRun| -> EngineFuture {
+            let let_go = let_go.clone();
+            Box::pin(async move {
+                let_go.notified().await;
+                Err(EngineError::Cancelled)
+            })
+        }
+    };
+    let (manager, _dir) = manager_with(held, 2 * PATIENCE, Duration::from_millis(200)).await;
+    let err = tokio::time::timeout(
+        PATIENCE,
+        manager.add_capture(capture("https://example.com/report.pdf")),
+    )
+    .await
+    .expect("answered while the attempt was still stopping")
+    .unwrap_err();
     assert!(matches!(err, CoreError::NotStarted(_)), "{err}");
     assert!(
-        asked.elapsed() < Duration::from_secs(2),
-        "answered only after {:?}",
-        asked.elapsed()
+        !manager.lock().downloads.is_empty(),
+        "the attempt stopped before the answer"
     );
     assert!(
         manager.list_downloads().is_empty(),
         "the attempt is still shown"
     );
     // The attempt is cleaned up in the background once its run gives up.
+    let_go.notify_one();
     wait_until("the attempt to be removed", || {
         manager.lock().downloads.is_empty()
     })

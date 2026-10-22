@@ -715,7 +715,7 @@ async fn links_that_are_not_streams_are_explained() {
 }
 
 #[tokio::test]
-async fn huge_playlists_are_refused_quickly_and_clearly() {
+async fn huge_playlists_are_refused_by_their_limits() {
     let server = FileServer::start().await;
     // 200 001 short segment lines: under the size limit, over the segment limit.
     let mut text = String::from("#EXTM3U\n");
@@ -730,24 +730,27 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
     }
     server.put_typed("big.m3u8", big, MPEGURL);
 
-    let start = std::time::Instant::now();
-    let error = inspect(
-        &server.url("many.m3u8"),
-        &options(),
-        PrivateNetwork::Auto,
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap_err();
+    // Each refusal is its own error, which only the limit can give; the bound
+    // catches a parse that never ends, not a slow machine.
+    let refusal = |playlist: &str| {
+        let url = server.url(playlist);
+        async move {
+            let options = options();
+            let inspected = inspect(
+                &url,
+                &options,
+                PrivateNetwork::Auto,
+                CancellationToken::new(),
+            );
+            tokio::time::timeout(PATIENCE, inspected)
+                .await
+                .expect("refused within PATIENCE")
+                .unwrap_err()
+        }
+    };
+    let error = refusal("many.m3u8").await;
     assert!(matches!(error, Error::TooManySegments), "{error}");
-    let error = inspect(
-        &server.url("big.m3u8"),
-        &options(),
-        PrivateNetwork::Auto,
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap_err();
+    let error = refusal("big.m3u8").await;
     assert!(
         matches!(
             error,
@@ -755,7 +758,6 @@ async fn huge_playlists_are_refused_quickly_and_clearly() {
         ),
         "{error}"
     );
-    assert!(start.elapsed() < Duration::from_secs(10));
 }
 
 #[tokio::test]
@@ -922,15 +924,12 @@ async fn speed_limits_apply_to_streams() {
     let total = u64::try_from(segments.iter().map(Vec::len).sum::<usize>()).unwrap();
     let dir = private_dir("hls-rate").unwrap();
 
-    let mut req = request(&server, "r/index.m3u8", &dir.join("fast.ts"));
-    req.options.connections = 4;
-    let start = std::time::Instant::now();
-    completed(run(req.clone()).await.unwrap());
-    let full_speed = start.elapsed();
-
     // 200 kB/s shared by all four connections: 300 kB takes 1.5 s, minus at
-    // most the limiter's quarter-second burst.
-    req.output = dir.join("slow.ts");
+    // most the limiter's quarter-second burst. Only this lower bound is
+    // checked: a busy machine makes any download slower, never a limited one
+    // faster.
+    let mut req = request(&server, "r/index.m3u8", &dir.join("slow.ts"));
+    req.options.connections = 4;
     let limiter = Arc::new(RateLimiter::new(Some(200_000)));
     req.options.rate_limiters = vec![limiter];
     let start = std::time::Instant::now();
@@ -941,10 +940,6 @@ async fn speed_limits_apply_to_streams() {
     assert!(
         capped >= expected.mul_f64(0.75),
         "{total} bytes took {capped:?} at 200 kB/s"
-    );
-    assert!(
-        full_speed < expected / 2,
-        "without a limit it took {full_speed:?}"
     );
     dir.remove().unwrap();
 }

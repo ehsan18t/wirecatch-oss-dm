@@ -29,7 +29,7 @@ use wirecatch_protocol::wire::{
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 
 use crate::PATIENCE;
-use crate::bridge::{self, ENDPOINT_VAR, LAUNCH_VAR};
+use crate::bridge::{self, ENDPOINT_VAR, LAUNCH_VAR, START_BUDGET_VAR};
 
 /// Who the browser says started the bridge.
 #[derive(Debug, Clone)]
@@ -86,6 +86,36 @@ pub struct FakeExtension {
     stdout_closed: bool,
 }
 
+/// The bridge's overrides for what it starts when nothing listens: the program, and for a real
+/// one as long as a busy machine needs to bring it up, since these tests are about what the
+/// bridge does, not about its 5 second budget.
+fn launch_overrides(launch: Launch) -> Vec<(&'static str, String)> {
+    match launch {
+        Launch::Nothing => {
+            let missing = std::env::temp_dir()
+                .join(format!(
+                    "wirecatch-e2e-no-such-app{}",
+                    std::env::consts::EXE_SUFFIX
+                ))
+                .into_os_string();
+            vec![(LAUNCH_VAR, program_json(&[missing]))]
+        }
+        Launch::Program(parts) => vec![
+            (LAUNCH_VAR, program_json(&parts)),
+            (START_BUDGET_VAR, PATIENCE.as_millis().to_string()),
+        ],
+    }
+}
+
+/// `parts` as the JSON array `[program, args...]` the bridge reads.
+fn program_json(parts: &[OsString]) -> String {
+    let parts: Vec<&str> = parts
+        .iter()
+        .map(|part| part.to_str().expect("launch arguments are text"))
+        .collect();
+    serde_json::to_string(&parts).expect("text is JSON")
+}
+
 impl FakeExtension {
     /// Starts the bridge as Chrome does for our extension, pointed at `endpoint`.
     #[must_use]
@@ -103,33 +133,11 @@ impl FakeExtension {
     /// `launch` if nothing listens there.
     #[must_use]
     pub fn start(endpoint: &Endpoint, caller: &Caller, launch: Launch) -> Self {
-        let launch = match launch {
-            Launch::Nothing => vec![
-                std::env::temp_dir()
-                    .join(format!(
-                        "wirecatch-e2e-no-such-app{}",
-                        std::env::consts::EXE_SUFFIX
-                    ))
-                    .into_os_string(),
-            ],
-            Launch::Program(parts) => parts,
-        };
-        let launch: Vec<String> = launch
-            .iter()
-            .map(|part| {
-                part.to_str()
-                    .expect("launch arguments are text")
-                    .to_string()
-            })
-            .collect();
         let mut command = Command::new(bridge::bridge_exe());
         command
             .args(caller.args(&std::env::temp_dir()))
             .env(ENDPOINT_VAR, endpoint.as_os_str())
-            .env(
-                LAUNCH_VAR,
-                serde_json::to_string(&launch).expect("text is JSON"),
-            )
+            .envs(launch_overrides(launch))
             .env(LOG_FOLDER_VARIABLE, log_folder())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

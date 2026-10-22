@@ -9,8 +9,8 @@ use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
-    Harness, Seen, SilentServer, TestResult, exists, fast_server, partial_files, throttled_server,
-    wait_until,
+    Harness, PATIENCE, Seen, SilentServer, TestResult, exists, fast_server, partial_files,
+    throttled_server, wait_until,
 };
 use wirecatch_engine::units::KIB;
 
@@ -117,7 +117,7 @@ async fn the_ui_hears_when_saving_keeps_failing() -> TestResult {
 
     h.add_with("https://example.com/a.bin", |r| r.start = false)
         .await?;
-    let error = tokio::time::timeout(Duration::from_secs(10), async {
+    let error = tokio::time::timeout(PATIENCE, async {
         loop {
             if let Ok(UiEvent::StorageFailed(error)) = events.recv().await {
                 return error;

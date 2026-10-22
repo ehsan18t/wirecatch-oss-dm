@@ -286,6 +286,7 @@ mod tests {
 
     use tokio::io::{AsyncReadExt, DuplexStream};
     use wirecatch_protocol::wire::{Call, Event, Reply};
+    use wirecatch_test_support::PATIENCE;
 
     fn request(id: u64) -> RawFrame {
         RawFrame::encode(&Message::Request {
@@ -394,7 +395,7 @@ mod tests {
         h.to_relay.send(request(1)).await.unwrap();
         h.to_relay.send(request(2)).await.unwrap();
         drop(h.to_relay);
-        let ended = tokio::time::timeout(Duration::from_secs(2), h.relay)
+        let ended = tokio::time::timeout(PATIENCE, h.relay)
             .await
             .expect("the relay must end while still connecting")
             .unwrap();

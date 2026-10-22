@@ -111,28 +111,22 @@ async fn time_download(queue_limit: u64, global_limit: u64) -> TestResult<Durati
     Ok(start.elapsed())
 }
 
-// 128 KiB at 64 KiB/s takes 2 s, less the limiter's 16 KiB burst allowance.
+// 128 KiB at 64 KiB/s takes 2 s, less the limiter's 16 KiB burst allowance;
+// the looser limit alone would take 1 s. Only this lower bound is checked: a
+// busy machine makes any download slower, never a limited one faster.
 const SLOWEST_FAIR: Duration = Duration::from_millis(1600);
-// Comfortably under what 32 KiB/s (half the stricter limit) would take.
-const FASTEST_UNFAIR: Duration = Duration::from_millis(3500);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_download_obeys_a_stricter_queue_limit() -> TestResult {
     let took = time_download(64 * KIB, 128 * KIB).await?;
-    assert!(
-        (SLOWEST_FAIR..FASTEST_UNFAIR).contains(&took),
-        "took {took:?}"
-    );
+    assert!(took >= SLOWEST_FAIR, "took {took:?}");
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_download_obeys_a_stricter_global_limit() -> TestResult {
     let took = time_download(128 * KIB, 64 * KIB).await?;
-    assert!(
-        (SLOWEST_FAIR..FASTEST_UNFAIR).contains(&took),
-        "took {took:?}"
-    );
+    assert!(took >= SLOWEST_FAIR, "took {took:?}");
     Ok(())
 }
 
@@ -140,19 +134,14 @@ async fn a_download_obeys_a_stricter_global_limit() -> TestResult {
 async fn limit_changes_apply_to_running_downloads() -> TestResult {
     let server = fast_server(512 * KIB).await?;
     let h = Harness::new().await?;
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(16 * KIB))?;
-    let start = Instant::now();
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(2 * KIB))?;
     let row = h.add(&server.url("f.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
-    // At 16 KiB/s this would take half a minute; lifting the limit finishes it now.
+    // At 2 KiB/s this would take over four minutes, longer than the wait below
+    // allows; lifting the limit finishes it now.
     set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = None)?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert!(
-        start.elapsed() < Duration::from_secs(10),
-        "{:?}",
-        start.elapsed()
-    );
     Ok(())
 }
 

@@ -26,6 +26,7 @@ import { GateError, options } from './gate/process.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
 import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
 import { TAURI_CHECKS } from './gate/tauri.mjs';
+import { TEST_TIMING_CHECKS } from './gate/test-timing.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
 /** A product check, its module loaded only when it runs: the generator behind it imports Prettier and smol-toml. */
@@ -39,6 +40,7 @@ function productCheck(name) {
 const CHECKS = {
   ...RUST_CHECKS,
   ...EXCEPTION_CHECKS,
+  ...TEST_TIMING_CHECKS,
   'clippy-linux': clippyLinux,
   ...JS_CHECKS,
   ...BROWSER_CHECKS,
@@ -57,6 +59,7 @@ const GROUPS = {
     'fmt',
     'lint-policy',
     'cfg-allow',
+    'test-timing',
     'clippy',
     'clippy-linux',
     'test',

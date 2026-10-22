@@ -1290,6 +1290,11 @@ fn restrict_to_owner(path: &Path) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use wirecatch_test_support::PATIENCE;
+
     use super::*;
     use wirecatch_protocol::app::{
         Accent, Category, DownloadStatus, FixAction, Schedule, Theme, TimeOfDay, UserError,
@@ -1343,6 +1348,18 @@ mod tests {
         }
     }
 
+    /// Waits, at most [`PATIENCE`], for the store to say it has closed.
+    fn wait_closed(closed: oneshot::Receiver<()>) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(async { tokio::time::timeout(PATIENCE, closed).await })
+            .expect("the store closed in time")
+            .expect("the store closed");
+    }
+
     fn ignore_failures() -> FailureHandler {
         Box::new(|_| {})
     }
@@ -1373,24 +1390,43 @@ mod tests {
 
     /// Closing waits for one more try of a failing write, not for every pause between its
     /// retries: an app that quits while the disk is busy quits at once.
-    #[tokio::test]
-    async fn closing_does_not_wait_out_the_pauses_between_retries() {
+    #[test]
+    fn closing_does_not_wait_out_the_pauses_between_retries() {
         let dir = tempfile::tempdir().unwrap();
-        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
-        store.save_downloads(vec![download(1)]);
-        store.flush().await;
+        // The writer stops at the start of its first back-off until the close is queued, so
+        // the close always arrives during that wait. Every back-off is counted: a writer that
+        // waited out its pauses would back off once per pause.
+        let back_offs = Arc::new(AtomicUsize::new(0));
+        let (entered_tx, entered) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let hook: BackOffHook = Box::new({
+            let back_offs = back_offs.clone();
+            move || {
+                if back_offs.fetch_add(1, Ordering::SeqCst) == 0 {
+                    entered_tx
+                        .send(())
+                        .expect("the test waits for the back-off");
+                    released.recv().expect("the test lets the writer go on");
+                }
+            }
+        });
+        let (store, _) = Store::open_watched(dir.path(), ignore_failures(), hook).unwrap();
 
         // Something outside the app breaks the database, so every try of the next write fails.
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         other.execute("DROP TABLE downloads", []).unwrap();
         store.save_downloads(vec![download(2)]);
-        let started = Instant::now();
-        store.close(Duration::from_secs(10)).await;
-        let took = started.elapsed();
-        let back_off: Duration = RETRY_PAUSES.iter().sum();
-        assert!(
-            took < back_off / 2,
-            "closing took {took:?}, waiting out the pauses between retries ({back_off:?})"
+        entered
+            .recv_timeout(PATIENCE)
+            .expect("the failed write backs off");
+        let (done, closed) = oneshot::channel();
+        store.send(Op::Close(done));
+        release.send(()).unwrap();
+        wait_closed(closed);
+        assert_eq!(
+            back_offs.load(Ordering::SeqCst),
+            1,
+            "closing waited out the pauses between retries"
         );
     }
 
@@ -1420,7 +1456,9 @@ mod tests {
             .unwrap();
 
         store.save_downloads(vec![download(2)]);
-        entered.recv().expect("the failed write backs off");
+        entered
+            .recv_timeout(PATIENCE)
+            .expect("the failed write backs off");
         store.save_downloads(vec![download(3)]);
         store.delete_downloads(vec![DownloadId(3)]);
         store.save_downloads(vec![download(1)]);
@@ -1431,7 +1469,7 @@ mod tests {
         release.send(()).unwrap();
         // A second back-off would find nobody to let it go on, and the close would fail.
         drop(release);
-        closed.blocking_recv().expect("the store closed");
+        wait_closed(closed);
         assert_eq!(stored_ids(&other), vec![1, 2]);
     }
 

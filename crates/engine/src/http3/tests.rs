@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use tokio_util::sync::CancellationToken;
@@ -114,14 +114,12 @@ fn test_data(len: usize) -> Bytes {
     )
 }
 
+/// How many connections each download here uses.
+const CONNECTIONS: usize = 4;
+
 /// Downloads from the TCP server on `tcp_port` with HTTP/3 switched on or off.
 /// No retries are allowed: falling back from HTTP/3 must never need one.
-async fn fetch(
-    cert: &TestCertificate,
-    tcp_port: u16,
-    http3: bool,
-    test: &str,
-) -> (Vec<u8>, Duration) {
+async fn fetch(cert: &TestCertificate, tcp_port: u16, http3: bool, test: &str) -> Vec<u8> {
     fetch_from(cert, "127.0.0.1", tcp_port, http3, test, |_| {}).await
 }
 
@@ -132,16 +130,15 @@ async fn fetch_from(
     http3: bool,
     test: &str,
     tune: impl FnOnce(&mut crate::options::DownloadOptions),
-) -> (Vec<u8>, Duration) {
+) -> Vec<u8> {
     let dir = private_dir(&format!("h3-{test}")).unwrap();
     let url = Url::parse(&format!("https://{host}:{tcp_port}/file.bin")).unwrap();
     let mut request = DownloadRequest::new(url, dir.path());
-    request.options.connections = 4;
+    request.options.connections = CONNECTIONS;
     request.options.http3 = http3;
     request.options.max_retries = 0;
     tune(&mut request.options);
     let clients = Clients::with_roots(&request.options, cert.roots());
-    let started = Instant::now();
     let outcome = download_with(
         request,
         Arc::new(Progress::default()),
@@ -150,13 +147,12 @@ async fn fetch_from(
     )
     .await
     .unwrap();
-    let took = started.elapsed();
     let Outcome::Completed { path, .. } = outcome else {
         panic!("expected Completed, got {outcome:?}");
     };
     let bytes = std::fs::read(&path).unwrap();
     dir.remove().unwrap();
-    (bytes, took)
+    bytes
 }
 
 /// A download over HTTP/3 from 127.0.0.1 while the environment `env` reads is
@@ -227,7 +223,7 @@ async fn downloads_over_http3_when_the_server_advertises_it() {
     let alt_svc = format!(r#"h3=":{h3_port}"; ma=3600"#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, _) = fetch(&cert, tcp_port, true, "used").await;
+    let bytes = fetch(&cert, tcp_port, true, "used").await;
 
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
@@ -244,15 +240,13 @@ async fn quic_goes_to_the_address_the_first_request_reached() {
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, took) = fetch_from(&cert, "localhost", tcp_port, true, "localhost", |_| {}).await;
+    let bytes = fetch_from(&cert, "localhost", tcp_port, true, "localhost", |_| {}).await;
 
+    // A handshake sent to the wrong address would time out and leave the rest
+    // to TCP.
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&tcp), 1, "only the first request went over TCP");
     assert!(requests(&h3) >= 3, "the other connections used HTTP/3");
-    assert!(
-        took < Duration::from_secs(3),
-        "no handshake timeout: {took:?}"
-    );
 }
 
 #[tokio::test]
@@ -263,7 +257,7 @@ async fn http3_is_not_used_unless_switched_on() {
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, _) = fetch(&cert, tcp_port, false, "off").await;
+    let bytes = fetch(&cert, tcp_port, false, "off").await;
 
     assert!(bytes == data, "downloaded bytes differ");
     assert_eq!(requests(&h3), 0);
@@ -279,16 +273,21 @@ async fn http3_is_not_used_unless_switched_on() {
 async fn falls_back_to_tcp_when_quic_is_blocked() {
     let data = test_data(8 * MIB_USIZE);
     let cert = TestCertificate::new();
-    let (_socket, blocked_port) = servers::blackhole();
-    let alt_svc = format!(r#"h3=":{blocked_port}""#);
+    let blocked = servers::Blackhole::start().await;
+    let alt_svc = format!(r#"h3=":{}""#, blocked.port);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, took) = fetch(&cert, tcp_port, true, "blocked").await;
+    let bytes = fetch(&cert, tcp_port, true, "blocked").await;
 
     assert!(bytes == data, "downloaded bytes differ");
     assert!(requests(&tcp) >= 2, "the other connections went over TCP");
-    // One handshake timeout (3 s), not one per connection or per range.
-    assert!(took < Duration::from_secs(10), "took {took:?}");
+    // The first handshake that times out ends HTTP/3 for every connection: at
+    // most one try each, those already under way, and never one per range.
+    let attempts = blocked.attempts();
+    assert!(
+        (1..=CONNECTIONS).contains(&attempts),
+        "{attempts} QUIC connections tried"
+    );
 }
 
 #[tokio::test]
@@ -300,7 +299,7 @@ async fn falls_back_to_tcp_when_an_http3_stream_breaks() {
     let alt_svc = format!(r#"h3=":{h3_port}""#);
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
-    let (bytes, _) = fetch(&cert, tcp_port, true, "broken").await;
+    let bytes = fetch(&cert, tcp_port, true, "broken").await;
 
     assert!(bytes == data, "downloaded bytes differ");
     assert!(requests(&h3) >= 1, "HTTP/3 was tried");
@@ -331,7 +330,7 @@ async fn falling_back_mid_stream_does_not_use_up_a_retry() {
 
     // Two connections, up to 8 MiB each, and parts too big to split again: the
     // TCP connection finishes its part and stops while HTTP/3 waits to break.
-    let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
+    let bytes = fetch_from(&cert, "127.0.0.1", tcp_port, true, "late-break", |o| {
         o.connections = 2;
         o.min_split = 4 * MIB;
     })
@@ -353,7 +352,7 @@ async fn http3_requests_keep_to_the_request_limit() {
     let (tcp_port, tcp) = servers::start_tcp(data.clone(), &cert, Some(alt_svc)).await;
 
     let limit = MIB / 2;
-    let (bytes, _) = fetch_from(&cert, "127.0.0.1", tcp_port, true, "limited", |o| {
+    let bytes = fetch_from(&cert, "127.0.0.1", tcp_port, true, "limited", |o| {
         o.max_request_bytes = Some(limit);
     })
     .await;

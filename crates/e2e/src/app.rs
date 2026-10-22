@@ -19,9 +19,9 @@ use wirecatch_test_support::{PrivateDir, private_dir};
 use crate::PATIENCE;
 
 /// How long the test app waits for a captured download's server before giving
-/// up. Shorter than the default so a test that hits it does not take long, and
-/// longer than any wait a passing test needs.
-pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(4);
+/// up: longer than any test waits for an answer, so a capture a test holds
+/// never ends on its own, however slow the machine.
+pub const CAPTURE_TIMEOUT: Duration = PATIENCE.saturating_mul(2);
 
 /// How long the test app lets a download take to stop.
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);

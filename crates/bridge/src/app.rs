@@ -34,6 +34,9 @@ pub(crate) const BACKGROUND_ARG: &str = "--background";
 ///   instead of the per-user endpoint.
 /// - `WIRECATCH_BRIDGE_TEST_LAUNCH`: a JSON array `[program, args...]` started
 ///   instead of the app.
+/// - `WIRECATCH_BRIDGE_TEST_START_BUDGET_MS`: how long to wait for a started app
+///   to listen, in place of [`START_BUDGET`], so a test can tell a wait the
+///   bridge cut short from one it sat out.
 ///
 /// Shipped builds must not enable the feature, so they always talk to the real
 /// per-user endpoint and start the real app. (The connector still checks that
@@ -44,6 +47,23 @@ pub(crate) mod test_overrides {
     pub(crate) const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
     /// See the module documentation.
     pub(crate) const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
+    /// See the module documentation.
+    pub(crate) const START_BUDGET_VAR: &str = "WIRECATCH_BRIDGE_TEST_START_BUDGET_MS";
+}
+
+/// How long to wait for a started app to listen.
+pub(crate) fn start_budget() -> Duration {
+    #[cfg(feature = "test-overrides")]
+    if let Ok(raw) = std::env::var(test_overrides::START_BUDGET_VAR) {
+        match raw.parse() {
+            Ok(ms) => return Duration::from_millis(ms),
+            Err(e) => tracing::error!(
+                "{} is not a number of milliseconds: {e}",
+                test_overrides::START_BUDGET_VAR
+            ),
+        }
+    }
+    START_BUDGET
 }
 
 /// The endpoint to connect to: the release app's, named with the key the app keeps (D41.4),
@@ -370,7 +390,7 @@ mod tests {
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use wirecatch_ipc::{Channel, Folders, Listener};
-    use wirecatch_test_support::{PrivateDir, private_dir};
+    use wirecatch_test_support::{PATIENCE, PrivateDir, private_dir};
 
     #[test]
     fn the_app_is_found_next_to_the_bridge() {
@@ -629,16 +649,10 @@ mod tests {
             delay: Duration::from_millis(400),
             launches: launches.clone(),
         };
-        let started = Instant::now();
-        let mut conn = connect_or_launch(
-            &|| Ok(endpoint.clone()),
-            &app,
-            START_BUDGET,
-            Start::IfNeeded,
-        )
-        .await
-        .unwrap();
-        assert!(started.elapsed() < START_BUDGET);
+        // A budget no machine runs out of: what is tested is the connection, not the budget.
+        let mut conn = connect_or_launch(&|| Ok(endpoint.clone()), &app, PATIENCE, Start::IfNeeded)
+            .await
+            .unwrap();
         assert_eq!(*launches.lock().unwrap(), 1);
         conn.write_all(b"x").await.unwrap();
         let mut byte = [0u8; 1];
@@ -708,19 +722,16 @@ mod tests {
     #[tokio::test]
     async fn gives_up_when_the_app_cannot_be_started() {
         let (endpoint, _dir) = test_endpoint();
-        let started = Instant::now();
-        let err = connect_or_launch(
-            &|| Ok(endpoint.clone()),
-            &FailingLauncher,
-            START_BUDGET,
-            Start::IfNeeded,
-        )
-        .await
-        .unwrap_err();
+        // A budget longer than the test waits: only giving up at once ends in time.
+        let find = || Ok(endpoint.clone());
+        let gave_up = connect_or_launch(&find, &FailingLauncher, 2 * PATIENCE, Start::IfNeeded);
+        let err = tokio::time::timeout(PATIENCE, gave_up)
+            .await
+            .expect("fails fast, without waiting out the budget")
+            .unwrap_err();
         // FailingLauncher reports NotFound: the advice is to reinstall.
         assert!(err.message.contains("could not find it"), "{err:?}");
         assert!(err.message.contains("Reinstall Wirecatch"), "{err:?}");
-        assert!(started.elapsed() < Duration::from_secs(1), "fails fast");
     }
 
     #[test]
@@ -746,7 +757,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    // On the paused clock the budget can be checked from both sides: time moves only while
+    // everything waits, so a slow machine cannot stretch it.
+    #[tokio::test(start_paused = true)]
     async fn gives_up_when_the_app_never_listens() {
         let (endpoint, _dir) = test_endpoint();
         let app = DelayedApp {
@@ -762,8 +775,8 @@ mod tests {
         assert_eq!(err, Unavailable::timed_out(budget));
         let waited = started.elapsed();
         assert!(
-            waited >= budget && waited < budget + Duration::from_millis(500),
-            "{waited:?}"
+            (budget..=budget + MAX_RETRY).contains(&waited),
+            "gave up after {waited:?}"
         );
     }
 }

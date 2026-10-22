@@ -6,7 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
@@ -1182,11 +1182,12 @@ async fn while_waiting_a_duplicate_shares_the_outcome_and_a_withdrawal_wins() ->
 
 /// One slow request must not hold up the others on the same connection: the
 /// extension's withdrawal, in particular, has to arrive while the capture it
-/// withdraws is still waiting for a silent server.
+/// withdraws is still waiting for a silent server. The capture waits longer than
+/// the client waits for any answer, so an answer held up behind it never comes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
     let silent = SilentServer::start().await;
-    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await?;
+    let h = Harness::with_capture_timeout(2 * PATIENCE).await?;
     let mut client = Client::connected(&h.manager).await?;
     let waiting = capture(silent.url("slow.pdf").to_string());
     let added = client.request(Call::AddDownload(waiting.clone())).await?;
@@ -1196,14 +1197,8 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
     })
     .await;
 
-    let asked = Instant::now();
     let reply = client.call(Call::ListQueues).await?.unwrap();
     assert!(matches!(reply, Reply::Queues(_)));
-    assert!(
-        asked.elapsed() < Duration::from_secs(1),
-        "ListQueues waited {:?} behind the capture",
-        asked.elapsed()
-    );
 
     let reply = client
         .call(Call::WithdrawDownload(WithdrawRequest {
@@ -1212,11 +1207,6 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
         .await?
         .unwrap();
     assert_eq!(reply, Reply::Withdrawn(WithdrawOutcome::Withdrawn));
-    assert!(
-        asked.elapsed() < Duration::from_secs(3),
-        "the withdrawal waited {:?} behind the capture",
-        asked.elapsed()
-    );
     let err = client.response(added).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::NotStarted);
     assert_eq!(
@@ -1231,7 +1221,9 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn requests_beyond_the_limit_are_refused() -> TestResult {
     let silent = SilentServer::start().await;
-    let h = Harness::with_capture_timeout(Duration::from_secs(5)).await?;
+    // The first capture must still be waiting when it is withdrawn below, however slow the
+    // machine: it waits longer than the test does.
+    let h = Harness::with_capture_timeout(2 * PATIENCE).await?;
     let mut client = Client::connected(&h.manager).await?;
     // The first add waits for the silent server; every repeat of it waits for the
     // first one's outcome.

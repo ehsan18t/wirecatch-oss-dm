@@ -140,7 +140,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
                 tracing::error!("{e:#}");
                 app::Unavailable::cannot_start(&format!("{e:#}"))
             })?;
-            app::connect_or_launch(&app::endpoint, &launcher, app::START_BUDGET, start).await
+            app::connect_or_launch(&app::endpoint, &launcher, app::start_budget(), start).await
         }
     }));
     if ended == relay::Ended::AppClosed {

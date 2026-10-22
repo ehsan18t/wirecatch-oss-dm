@@ -869,18 +869,22 @@ mod tests {
         .unwrap();
         let cancel = CancellationToken::new();
         let tools = tools(&ffmpeg);
-        let started = std::time::Instant::now();
-        let stopper = {
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(1500)).await;
-                cancel.cancel();
-            })
-        };
-        let result = ffmpeg::run(&tools, &args, &out, None, &cancel, |_| {}).await;
-        stopper.await.unwrap();
+        // Cancelled at its first progress report, so it is surely running. A run the cancel did
+        // not stop would end as done; one that waited for ffmpeg to finish on its own would
+        // pass on its last report, which says the conversion ended.
+        let mut reached_the_end = false;
+        let running = ffmpeg::run(&tools, &args, &out, None, &cancel, |line| {
+            reached_the_end |= line.trim() == "progress=end";
+            cancel.cancel();
+        });
+        let result = tokio::time::timeout(wirecatch_test_support::PATIENCE, running)
+            .await
+            .expect("the cancelled run ended");
         assert!(matches!(result, Ok(Finished::Cancelled)), "{result:?}");
-        assert!(started.elapsed() < Duration::from_secs(15), "ffmpeg ran on");
+        assert!(
+            !reached_the_end,
+            "ffmpeg ran on to the end after it was cancelled"
+        );
         ffmpeg::remove(&out).await;
         // The file can be removed (no ffmpeg holds it), and nothing writes it again.
         tokio::time::sleep(Duration::from_millis(500)).await;

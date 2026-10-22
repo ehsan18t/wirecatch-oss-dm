@@ -25,6 +25,10 @@ pub const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
 /// started instead of the app.
 pub const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
 
+/// Read by the bridge (with `test-overrides`): how long, in milliseconds, to
+/// wait for an app it started to listen.
+pub const START_BUDGET_VAR: &str = "WIRECATCH_BRIDGE_TEST_START_BUDGET_MS";
+
 /// The path of a bridge built with `test-overrides`, building it on first use.
 #[must_use]
 pub fn bridge_exe() -> &'static Path {

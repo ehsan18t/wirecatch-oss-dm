@@ -278,19 +278,24 @@ async fn cancelling_and_stalls_end_requests() {
     )
     .await;
     let cancel = CancellationToken::new();
-    let f = Fetcher::new(&server.url("k"), &options(), cancel.clone())
+    // No stall can end the request before the cancel, however long the machine takes to send it.
+    let mut patient = options();
+    patient.stall_timeout = 2 * PATIENCE;
+    let f = Fetcher::new(&server.url("k"), &patient, cancel.clone())
         .await
         .unwrap();
     let task = {
         let f = f.clone();
         tokio::spawn(async move { f.get(f.url(), None, 1000).await })
     };
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    let start = Instant::now();
+    server.wait_for_request("k", PATIENCE).await;
     cancel.cancel();
-    let result = task.await.unwrap();
+    // The server never answers, so only the cancel can end the request.
+    let result = tokio::time::timeout(PATIENCE, task)
+        .await
+        .expect("the cancelled request ended")
+        .unwrap();
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
-    assert!(start.elapsed() < Duration::from_secs(1));
 
     let mut options = options();
     options.stall_timeout = Duration::from_millis(300);
@@ -367,7 +372,6 @@ async fn the_local_network_is_blocked_when_asked() {
         "http://[fe80::1]/seg.ts".to_string(),
         "http://0.0.0.0/seg.ts".to_string(),
     ] {
-        let start = Instant::now();
         let error = f
             .get(&Url::parse(&target).unwrap(), None, 1000)
             .await
@@ -382,10 +386,7 @@ async fn the_local_network_is_blocked_when_asked() {
                 .ends_with("points to a device on your own network, which is blocked for safety"),
             "{error}"
         );
-        assert!(
-            start.elapsed() < Duration::from_secs(2),
-            "refused without retries"
-        );
+        assert!(!error.is_retryable(), "refused without retries");
     }
     assert!(
         device.stats.seen().is_empty(),
