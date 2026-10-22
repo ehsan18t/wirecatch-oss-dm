@@ -1,5 +1,7 @@
 <script lang="ts">
+  // A shortcut's keys as caps side by side, the way the keyboard shows them, with no plus between.
   import { cn } from '../lib/cn';
+  import { keyGlyph } from '../lib/keys';
 
   interface Props {
     /** The keys of one shortcut, pressed together: `['Ctrl', 'Shift', 'V']`. */
@@ -12,10 +14,11 @@
 
 <kbd class={cn('inline-flex items-center gap-0.5 font-sans', className)}>
   {#each keys as key, index (index)}
-    {#if index > 0}<span class="text-caption text-ink-subtle" aria-hidden="true">+</span>{/if}
+    <!-- The plus is read, not shown: a screen reader and a copy say "Alt+Shift+D", where the caps alone run together. -->
+    {#if index > 0}<span class="sr-only">+</span>{/if}
     <kbd
-      class="inline-flex h-5 min-w-5 items-center justify-center rounded-xs border font-sans border-line border-b-line-strong/quiet bg-raised px-1.5 text-caption font-medium text-ink shadow-control"
-      >{key}</kbd
+      class="inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-line bg-wash px-1.5 font-sans text-caption font-medium text-ink-muted"
+      >{keyGlyph(key)}</kbd
     >
   {/each}
 </kbd>

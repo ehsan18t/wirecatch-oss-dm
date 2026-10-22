@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keyValue, parseNumber, PAGE_STEPS, stepValue } from './number-input';
+import { committedValue, keyValue, parseNumber, PAGE_STEPS, stepValue } from './number-input';
 
 const range = { min: 0, max: 10, step: 1 };
 
@@ -18,6 +18,13 @@ describe('number input', () => {
     expect(keyValue('Home', 3, range)).toBe(0);
     expect(keyValue('End', 3, range)).toBe(10);
     expect(keyValue('a', 3, range)).toBeNull();
+  });
+
+  it('keeps what is typed to the step: whole numbers for a whole step, within range', () => {
+    expect(committedValue(1.2, { min: 1, max: 32, step: 1 })).toBe(1);
+    expect(committedValue(2.6, { min: 1, max: 32, step: 1 })).toBe(3);
+    expect(committedValue(99, { min: 1, max: 32, step: 1 })).toBe(32);
+    expect(committedValue(2.37, { min: 0.1, step: 0.5 })).toBe(2.4);
   });
 
   it('reads typed numbers with either decimal mark', () => {

@@ -8,6 +8,7 @@ import RemovedFieldHost from '../testing/RemovedFieldHost.svelte';
 import StrippingInputHost from '../testing/StrippingInputHost.svelte';
 import Checkbox from './Checkbox.svelte';
 import IconButton from './IconButton.svelte';
+import Kbd from './Kbd.svelte';
 import Input from './Input.svelte';
 import NumberInput from './NumberInput.svelte';
 import RadioGroup from './RadioGroup.svelte';
@@ -15,6 +16,7 @@ import ProgressBar from './ProgressBar.svelte';
 import SegmentedControl from './SegmentedControl.svelte';
 import Slider from './Slider.svelte';
 import Switch from './Switch.svelte';
+import TagInput from './TagInput.svelte';
 import Tabs from './Tabs.svelte';
 import TextArea from './TextArea.svelte';
 
@@ -387,5 +389,61 @@ describe('ProgressBar', () => {
   it('marks a paused or failed bar for its colour', () => {
     const { container } = render(ProgressBar, { value: 0.5, state: 'paused', label: 'Paused' });
     expect(container.querySelector('[data-state="paused"]')).toBeTruthy();
+  });
+});
+
+describe('TagInput', () => {
+  const site = (typed: string) => (/^[a-z0-9.-]+\.[a-z]+$/.test(typed) ? typed : null);
+
+  it('adds what is typed on Enter, a comma or a paste of several, once each', async () => {
+    const onchange = vi.fn();
+    render(TagInput, { values: ['a.com'], label: 'Sites', normalize: site, onchange });
+    const box = screen.getByRole('textbox', { name: 'Sites' });
+    await userEvent.type(box, 'b.com{Enter}');
+    expect(onchange).toHaveBeenLastCalledWith(['a.com', 'b.com']);
+    await userEvent.type(box, 'a.com,');
+    // Already in the list: nothing to add.
+    expect(onchange).toHaveBeenCalledTimes(1);
+    await userEvent.click(box);
+    await userEvent.paste('c.com d.com');
+    expect(onchange).toHaveBeenLastCalledWith(['a.com', 'c.com', 'd.com']);
+  });
+
+  it('keeps a word it cannot take in the box, marked, and takes the last chip back on Backspace', async () => {
+    const onchange = vi.fn();
+    render(TagInput, { values: ['a.com'], label: 'Sites', normalize: site, onchange });
+    const box = screen.getByRole('textbox', { name: 'Sites' });
+    await userEvent.type(box, 'nonsense{Enter}');
+    expect(onchange).not.toHaveBeenCalled();
+    expect((box as HTMLInputElement).value).toBe('nonsense');
+    expect(box.getAttribute('aria-invalid')).toBe('true');
+    // It says why, not only that something is wrong.
+    expect(box.getAttribute('aria-describedby')).toBeTruthy();
+    await userEvent.clear(box);
+    await userEvent.type(box, '{Backspace}');
+    expect(onchange).toHaveBeenLastCalledWith([]);
+    expect((box as HTMLInputElement).value).toBe('a.com');
+  });
+
+  it('removes a chip with its own button', async () => {
+    const onchange = vi.fn();
+    render(TagInput, { values: ['zip', 'iso'], label: 'File types', onchange });
+    // The chips are a list a screen reader can count, and a removal is said.
+    const list = screen.getByRole('list', { name: 'File types' });
+    expect(list.querySelectorAll('[role="listitem"]')).toHaveLength(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove zip from file types' }));
+    expect(onchange).toHaveBeenCalledWith(['iso']);
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('Removed zip.');
+  });
+});
+
+describe('Kbd', () => {
+  it('draws caps side by side, reads them joined by plus, and draws arrows as arrows', () => {
+    const { container } = render(Kbd, { keys: ['Alt', 'Up'] });
+    const caps = [...container.querySelectorAll('kbd kbd')].map((k) => k.textContent);
+    expect(caps).toEqual(['Alt', '↑']);
+    expect(container.textContent.replace(/\s+/g, '')).toBe('Alt+↑');
+    // The plus is for screen readers and copies, not drawn.
+    expect(container.querySelector('.sr-only')?.textContent).toBe('+');
   });
 });

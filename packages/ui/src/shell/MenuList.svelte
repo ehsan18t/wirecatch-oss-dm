@@ -3,6 +3,7 @@
   import Check from '~icons/lucide/check';
   import { onMount } from 'svelte';
   import { cn } from '../lib/cn';
+  import { shortcutText } from '../lib/keys';
   import { findElements } from '../lib/dom';
   import { topLayer } from '../lib/layer';
   import {
@@ -14,7 +15,6 @@
   } from '../lib/list-nav';
   import { pop } from '../motion/motion';
   import Icon from '../primitives/Icon.svelte';
-  import Kbd from '../primitives/Kbd.svelte';
   import { FLYOUT_SURFACE, TOP_LAYER } from '../recipes/surface';
   import {
     ariaKeyShortcut,
@@ -152,7 +152,9 @@
         <span class="min-w-0 flex-1 truncate">{entry.label}</span>
         {#if entry.kind !== 'checkbox' && entry.shortcut}
           <!-- Read through aria-keyshortcuts, not as part of the item's name. -->
-          <span class="ml-4 flex" aria-hidden="true"><Kbd keys={entry.shortcut} /></span>
+          <span class="ml-6 text-small text-ink-muted" aria-hidden="true"
+            >{shortcutText(entry.shortcut)}</span
+          >
         {/if}
       </div>
     {/if}

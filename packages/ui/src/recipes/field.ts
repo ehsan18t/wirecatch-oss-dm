@@ -6,11 +6,11 @@ import { DISABLED } from './control';
  */
 export const field = tv({
   base: [
-    // A hairline round the box and a stronger bottom edge, which gives the field its 3:1 outline.
-    'relative flex w-full min-w-0 items-center gap-2 rounded-sm border border-line border-b-line-strong bg-field text-ink',
+    // One even outline all round: a stronger bottom edge alone (Fluent's) reads as a lit, uneven rim on the dark theme.
+    'relative flex w-full min-w-0 items-center gap-2 rounded-sm border border-line-strong/quiet bg-field text-ink',
     'transition hover:bg-control-hover',
-    // The bottom accent line while focused, drawn as an inset shadow so the box does not move. It is the field's focus indicator, so the box draws no ring of its own (Select's trigger is the box).
-    'outline-none focus-within:border-b-accent focus-within:bg-raised focus-within:shadow-focus-line',
+    // Focused, the outline turns the accent with a soft halo, drawn as a shadow so the box does not move. It is the field's focus indicator, so the box draws no ring of its own (Select's trigger is the box).
+    'outline-none focus-within:border-accent focus-within:bg-raised focus-within:shadow-focus-field',
     // Forced colours drop the shadow and paint every border alike, so there the box shows focus with an outline. `outline-solid` because `outline-none` above set the style the width utility reads.
     'forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-solid forced-colors:focus-within:outline-sys-highlight',
     // A disabled control inside the box dims it; so does a box that is the control itself (Select's trigger).
@@ -24,7 +24,7 @@ export const field = tv({
       lg: 'h-control-lg px-3 text-body',
     },
     invalid: {
-      true: 'border-b-danger focus-within:border-b-danger focus-within:shadow-invalid-line',
+      true: 'border-danger focus-within:border-danger focus-within:shadow-invalid-field',
     },
     multiline: {
       true: 'h-auto items-stretch py-1.5',

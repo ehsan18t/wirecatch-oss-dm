@@ -4,6 +4,7 @@ export * from './appearance';
 
 export { cn, tv, type ClassValue, type VariantProps } from './lib/cn';
 export { token } from './lib/css-token';
+export { keyGlyph, shortcutText } from './lib/keys';
 export { textIfCut, tooltip, type TooltipText } from './attachments/tooltip.svelte';
 export {
   delay,
@@ -26,6 +27,7 @@ export {
 } from './motion/motion';
 export { button, type ButtonVariant } from './recipes/button';
 export { FOCUS_RING, FOCUS_RING_INSET, TONES, type Tone } from './recipes/control';
+export { DIALOG_SURFACE } from './recipes/surface';
 
 export { default as VisuallyHidden } from './VisuallyHidden.svelte';
 export { visuallyHidden, type VisuallyHiddenVariants } from './visually-hidden';
@@ -53,6 +55,8 @@ export { default as Skeleton } from './primitives/Skeleton.svelte';
 export { default as Slider } from './primitives/Slider.svelte';
 export { default as Spinner } from './primitives/Spinner.svelte';
 export { default as Switch } from './primitives/Switch.svelte';
+export { default as TagInput } from './primitives/TagInput.svelte';
+export { default as ToggleChip } from './primitives/ToggleChip.svelte';
 export { default as Tabs } from './primitives/Tabs.svelte';
 export { default as TextArea } from './primitives/TextArea.svelte';
 export { ICON_SIZES, type IconComponent, type IconSize } from './primitives/icon';

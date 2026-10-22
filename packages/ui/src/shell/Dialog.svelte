@@ -72,7 +72,9 @@
     shownAt = performance.now();
     const opener = focusedElement();
     if (!dialog.open) dialog.showModal();
-    initialFocus(dialog).focus();
+    // A dialog with nothing to answer but Close starts on its panel, so it opens without a ring on Close; Tab reaches Close from there.
+    const first = initialFocus(dialog);
+    (first.hasAttribute('data-dialog-close') && panel ? panel : first).focus();
     return () => {
       restoreFocus(opener, dialog);
     };
@@ -169,6 +171,7 @@
           icon={X}
           label="Close"
           size="sm"
+          data-dialog-close
           class="absolute top-4 right-4"
           onclick={() => onclose?.()}
         />

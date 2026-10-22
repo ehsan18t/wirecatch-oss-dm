@@ -11,6 +11,16 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
+      // Icons and form controls go through the design system's, as in the desktop app, so nothing draws the browser's own select, checkbox or time picker (D48).
+      files: ['src/**/*.svelte', 'entrypoints/**/*.svelte'],
+      rules: {
+        'wirecatch/use-ui-primitives': [
+          'error',
+          { buttonClasses: {}, icon: 'Icon', controls: true },
+        ],
+      },
+    },
+    {
       // Every caught error is logged, used or explained in place (docs/ENGINEERING.md, section 6);
       // `fallback` from the logger makes a handler that logs.
       files: ['src/**'],

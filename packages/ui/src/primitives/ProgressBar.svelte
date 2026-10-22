@@ -73,8 +73,12 @@
   class={styles.track({ class: className })}
 >
   {#if share === null}
+    <!-- Without motion a still third of the track would read as a third done: the whole track glows dimly instead, "under way, how far unknown". -->
     <div
-      class={cn(styles.fill(), 'w-1/3 animate-activity transition-none')}
+      class={cn(
+        styles.fill(),
+        'w-1/3 animate-activity transition-none motion-reduce:w-full motion-reduce:animate-none motion-reduce:opacity-quiet',
+      )}
       data-state={state}
     ></div>
   {:else}

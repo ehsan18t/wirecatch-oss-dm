@@ -6,7 +6,7 @@
   import { FIELD_INPUT, field, type FieldSize } from '../recipes/field';
   import { FOCUS_RING } from '../recipes/control';
   import Icon from './Icon.svelte';
-  import { clampToRange, keyValue, parseNumber, stepValue } from './number-input';
+  import { committedValue, keyValue, parseNumber, stepValue } from './number-input';
 
   interface Props extends Omit<
     HTMLInputAttributes,
@@ -73,7 +73,7 @@
     const parsed = parseNumber(draft);
     if (parsed === null) commit(optional ? null : value);
     else if (Number.isNaN(parsed)) draft = null;
-    else commit(clampToRange(parsed, range));
+    else commit(committedValue(parsed, range));
   }
 
   /** What a key steps from: the typed number, or the committed value while the text is not a number. */

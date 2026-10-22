@@ -104,6 +104,12 @@ describe.each(SIDES)('contrast in the %s scheme', (_scheme, side) => {
     },
   );
 
+  it('a destructive button carries white text', () => {
+    expect(contrast(at('--wc-on-danger-fill'), at('--wc-danger-fill'))).toBeGreaterThanOrEqual(
+      TEXT,
+    );
+  });
+
   it.each(['--wc-progress-done', '--wc-progress-queued', '--wc-warning', '--wc-danger'])(
     'the %s progress fill stands out from its track at 3:1 (WCAG 1.4.11)',
     (fill) => {

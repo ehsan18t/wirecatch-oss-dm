@@ -6,8 +6,16 @@ import DialogHost from '../testing/DialogHost.svelte';
 import MenuHost from '../testing/MenuHost.svelte';
 import PopoverHost from '../testing/PopoverHost.svelte';
 import SlideOverHost from '../testing/SlideOverHost.svelte';
+import Dialog from './Dialog.svelte';
 
 describe('Dialog', () => {
+  it('starts on its panel when Close is all there is to press, so Close opens without a ring', () => {
+    render(Dialog, { open: true, title: 'Keyboard shortcuts' });
+    const dialog = screen.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Close' }));
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   async function open(dismissible = true) {
     render(DialogHost, { dismissible });
     const opener = screen.getByRole('button', { name: 'Remove' });

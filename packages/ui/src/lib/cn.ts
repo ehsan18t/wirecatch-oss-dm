@@ -47,7 +47,7 @@ export const THEME_NAMES = {
     'popup',
   ],
   radius: ['xs', 'sm', 'md', 'lg', 'xl'],
-  shadow: ['control', 'raised', 'flyout', 'dialog', 'thumb', 'focus-line', 'invalid-line'],
+  shadow: ['control', 'raised', 'flyout', 'dialog', 'thumb', 'focus-field', 'invalid-field'],
   blur: ['scrim'],
   container: ['menu', 'dialog-sm', 'dialog-md', 'dialog-lg', 'prose', 'page'],
   breakpoint: ['sm', 'md', 'lg', 'nav'],

@@ -20,6 +20,11 @@ function tidy(value: number, step: number): number {
   return Number(value.toFixed(decimals));
 }
 
+/** A typed number as the field keeps it: to the step's precision (whole for a whole step, so a count is never 1.2) and within range. */
+export function committedValue(typed: number, range: NumberRange): number {
+  return clampToRange(tidy(typed, range.step), range);
+}
+
 /** `value` moved by `steps` steps, kept in range; an empty field starts from the minimum, else 0. */
 export function stepValue(value: number | null, steps: number, range: NumberRange): number {
   const start = value ?? range.min ?? 0;

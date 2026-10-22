@@ -45,7 +45,7 @@
       sync.typed(event.currentTarget.value);
       onchange?.(event.currentTarget.value);
     }}
-    class={cn(FIELD_INPUT, 'resize-y py-0.5 leading-normal', mono && 'font-mono text-small')}
+    class={cn(FIELD_INPUT, 'resize-none py-0.5 leading-normal', mono && 'font-mono text-small')}
     aria-invalid={invalid || undefined}
     {...rest}></textarea>
 </div>

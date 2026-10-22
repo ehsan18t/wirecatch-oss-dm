@@ -7,6 +7,7 @@ import {
   formatBytes,
   formatRate,
   formatSpeed,
+  formatSpeedShown,
   inUnit,
   splitKbOrMb,
   splitSize,
@@ -30,6 +31,8 @@ describe('formatBytes', () => {
 describe('formatSpeed and formatRate', () => {
   it('shows no speed as nothing', () => {
     expect(formatSpeed(0)).toBe('');
+    expect(formatSpeedShown(0)).toBe('0 B/s');
+    expect(formatSpeedShown(2 * MB)).toBe('2.00 MB/s');
     expect(formatSpeed(2 * MB)).toBe('2.00 MB/s');
   });
 

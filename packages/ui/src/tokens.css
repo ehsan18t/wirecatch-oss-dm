@@ -54,6 +54,9 @@
     --wc-info: light-dark(#1d5fb8, #7cb4ff);
     /* Text on a filled status or accent colour. */
     --wc-on-fill: light-dark(#ffffff, #0b0d12);
+    /* A destructive button: a deep red with white text in both themes, where the dark theme's pale danger (made to read as text) would fill it in pastel. */
+    --wc-danger-fill: light-dark(#b3261e, #c9372c);
+    --wc-on-danger-fill: light-dark(#ffffff, #ffffff);
     /* A finished download's wire: settled, so it leaves the accent to data that is still moving. A queued one's, waiting: a neutral a step stronger. Both stand out from the track at 3:1 (WCAG 1.4.11). */
     --wc-progress-done: light-dark(#6f7889, #8f98a7);
     --wc-progress-queued: light-dark(#5c6576, #a6aebb);
@@ -183,6 +186,8 @@
   --color-danger: var(--wc-danger);
   --color-info: var(--wc-info);
   --color-on-fill: var(--wc-on-fill);
+  --color-danger-fill: var(--wc-danger-fill);
+  --color-on-danger-fill: var(--wc-on-danger-fill);
 
   /* A download's progress: moving data is the accent; a pause, a failure and a finish each have their own. */
   --color-progress: var(--wc-accent);
@@ -318,9 +323,9 @@
     inset 0 1px 0 var(--wc-edge), 0 24px 64px light-dark(rgb(21 26 35 / 0.22), rgb(0 0 0 / 0.55)),
     0 4px 16px light-dark(rgb(21 26 35 / 0.08), rgb(0 0 0 / 0.3));
   --shadow-thumb: 0 1px 3px light-dark(rgb(21 26 35 / 0.3), rgb(0 0 0 / 0.5));
-  /* A focused field's bottom line, doubled inside the border so the box does not move. */
-  --shadow-focus-line: inset 0 -1px 0 var(--wc-accent);
-  --shadow-invalid-line: inset 0 -1px 0 var(--wc-danger);
+  /* A focused field's halo, and an invalid one's, round its outline. */
+  --shadow-focus-field: 0 0 0 3px color-mix(in srgb, var(--wc-accent) 22%, transparent);
+  --shadow-invalid-field: 0 0 0 3px color-mix(in srgb, var(--wc-danger) 22%, transparent);
 
   /* Opacity steps, for `opacity-*` and for a colour's alpha (`bg-danger/soft`). Named, so the same step means the same thing everywhere. */
   --opacity-disabled: 45%;

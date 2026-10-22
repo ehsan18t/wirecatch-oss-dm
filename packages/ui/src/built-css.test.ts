@@ -55,11 +55,11 @@ describe('the focus ring in the built CSS', () => {
     expect(computedValue(sheet, element, 'outline-style')).toBe('solid');
   });
 
-  it('leaves a field to its accent line, and gives it an outline in forced colours', () => {
+  it('leaves a field to its accent halo, and gives it an outline in forced colours', () => {
     const box = classes(field());
     const normal: ElementModel = { classes: box, states: ['focus-within'] };
     expect(computedValue(sheet, normal, 'outline-style')).toBe('none');
-    expect(computedValue(sheet, normal, '--tw-shadow')).toMatch(/^inset 0 -1px 0 /);
+    expect(computedValue(sheet, normal, '--tw-shadow')).toMatch(/^0 0 0 3px /);
     // Select's trigger is the box itself, focused from the keyboard.
     for (const states of [['focus-within'], ['focus-visible']] as const) {
       const forced: ElementModel = { classes: box, states, forcedColors: true };

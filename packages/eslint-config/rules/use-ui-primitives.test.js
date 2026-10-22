@@ -201,3 +201,35 @@ tester.run('use-ui-primitives', useUiPrimitives, {
     ),
   ],
 });
+
+/** Options that also report native form controls, as the desktop app's and the extension's do. */
+const withControls = [{ ...options[0], controls: true }];
+const nativeControl = (code) => ({
+  code,
+  options: withControls,
+  filename,
+  errors: [{ messageId: 'nativeControl' }],
+});
+
+tester.run('use-ui-primitives, native controls', useUiPrimitives, {
+  valid: [
+    // A text field with a role of its own, the design system's controls, and the option left off.
+    { code: '<input role="combobox" aria-expanded="true" />', options: withControls, filename },
+    { code: '<input type="search" />', options: withControls, filename },
+    {
+      code: '<Select value={v} options={o} /><Checkbox checked={on} />',
+      options: withControls,
+      filename,
+    },
+    valid('<select><option>a</option></select>'),
+  ],
+  invalid: [
+    nativeControl('<select><option>a</option></select>'),
+    nativeControl('<textarea></textarea>'),
+    nativeControl('<input type="checkbox" />'),
+    nativeControl('<input type="time" bind:value={t} />'),
+    nativeControl('<input class="field" type="number" min="1" />'),
+    nativeControl('<input type="range" />'),
+    nativeControl('<input type="Checkbox" />'),
+  ],
+});

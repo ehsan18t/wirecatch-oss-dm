@@ -84,6 +84,11 @@ export function formatSpeed(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`;
 }
 
+/** A speed for a place that always shows one, such as a download's own cell: `0 B/s` at a standstill. */
+export function formatSpeedShown(bytesPerSecond: number): string {
+  return `${formatBytes(Math.max(0, bytesPerSecond))}/s`;
+}
+
 /** A limit someone set, such as `4 MB/s`, `1.5 MB/s` or `512 KB/s`: one decimal at most and no trailing zeros. */
 export function formatRate(bytesPerSecond: number): string {
   const { value, unit } = scaled(bytesPerSecond);

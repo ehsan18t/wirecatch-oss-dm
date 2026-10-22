@@ -22,6 +22,8 @@
     /** Shows on hover and focus; while the button is disabled it is the reason, and the button stays focusable to say it. */
     tooltip?: string | null | undefined;
     class?: string | undefined;
+    /** The button element, for moving the focus to it from outside. */
+    ref?: HTMLButtonElement | null;
     children: Snippet;
   }
 
@@ -36,6 +38,7 @@
     disabled,
     type = 'button',
     class: className,
+    ref = $bindable(null),
     children,
     onclick,
     'aria-describedby': describedBy,
@@ -52,6 +55,7 @@
 </script>
 
 <button
+  bind:this={ref}
   {type}
   class={button({ variant, size, block, class: className })}
   disabled={(disabled === true && reason === null) || undefined}

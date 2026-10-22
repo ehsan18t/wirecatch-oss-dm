@@ -29,8 +29,8 @@ export default wirecatch({
     '.svelte-kit/',
   ],
   svelteConfig,
-  // Redesigned screens live in src/ui. The gallery's components are held to the tokens too; its sample data (sample.ts) stands in for what the OS and the backend send, such as the system accent colour.
-  designSystem: ['src/ui/**', 'src/gallery/**/*.svelte'],
+  // Every screen is built on the design system (D48): those in src/ui and the settings and dialogs in src/lib/components. The gallery's components are held to the tokens too; its sample data (sample.ts) stands in for what the OS and the backend send, such as the system accent colour.
+  designSystem: ['src/ui/**', 'src/lib/components/**/*.svelte', 'src/gallery/**/*.svelte'],
   layers: [
     {
       files: ['src/**'],
@@ -97,17 +97,12 @@ export default wirecatch({
       },
     },
     {
-      // Buttons and icons go through Button, IconButton and Icon, so their styles and sizes have one home.
+      // Icons and form controls go through the design system's Icon and controls, so their look has one home and nothing draws the browser's own select, checkbox or time picker (D48).
       files: ['src/**/*.svelte'],
-      ignores: [
-        'src/lib/components/Button.svelte',
-        'src/lib/components/IconButton.svelte',
-        'src/lib/components/Icon.svelte',
-      ],
       rules: {
         'wirecatch/use-ui-primitives': [
           'error',
-          { buttonClasses: { btn: 'Button', 'icon-btn': 'IconButton' }, icon: 'Icon' },
+          { buttonClasses: {}, icon: 'Icon', controls: true },
         ],
       },
     },

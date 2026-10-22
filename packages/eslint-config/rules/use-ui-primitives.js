@@ -1,11 +1,13 @@
-// Keeps buttons and icons going through a package's primitives once it has them.
+// Keeps buttons, icons and form controls going through a package's primitives once it has them.
 //
 // A Svelte package that has a text button, an icon button and an icon component (the desktop app's Button, IconButton and Icon, wherever they live) turns this rule on everywhere except in those files, and names them and their classes in its options. It then reports the two patterns the primitives replaced:
 //
 // - an element that carries one of the primitives' own classes (`btn`, `icon-btn`), which copies the primitive by hand instead of using it. Buttons with styles of their own, such as menu items and switches, stay plain buttons.
 // - an icon rendered directly, with or without a size or stroke of its own, instead of through the icon component and its scale: as its own tag or with `<svelte:component this={X}>`. Icons are what Lucide's Svelte package exports and what unplugin-icons serves (`~icons/...`, `virtual:icons/...`), plus the modules a package adds in `extraIconSources`, such as its own icon set; naming more never stops the defaults from counting.
 //
-// Classes and icons are followed through what svelte-values.js follows within the file: names, runes, members, choices, objects, arrays and `{#each}` items of a list written in the file. Left to review: a value passed in as a prop or returned by a function, class helpers such as `clsx`, spread attributes, and class names built from pieces of a template string.
+// - with `controls` on, a browser-native form control: `<select>`, `<textarea>`, and an `<input>` whose type draws a control of the browser's own (checkbox, radio, range, number, date and time pickers, colour). Each looks like the operating system's, not the app's, and the design system has its own (D48). A plain text, search or URL `<input>` stays allowed, for a field with a role of its own such as the command palette's combobox.
+//
+// Classes and icons are followed through what svelte-values.js follows within the file: names, runes, members, choices, objects, arrays and `{#each}` items of a list written in the file. Left to review: a value passed in as a prop or returned by a function, class helpers such as `clsx`, spread attributes, class names built from pieces of a template string, and an `<input>` whose `type` is an expression rather than written out.
 
 import { SvelteValues } from './svelte-values.js';
 
@@ -24,6 +26,38 @@ function isIconImport({ declaration, specifier }, sources) {
     declaration.importKind !== 'type' &&
     specifier.importKind !== 'type'
   );
+}
+
+/** The design system's control for each native one the `controls` option reports. */
+const NATIVE_CONTROLS = {
+  select: 'Select',
+  textarea: 'TextArea',
+  checkbox: 'Checkbox',
+  radio: 'RadioGroup',
+  range: 'Slider',
+  number: 'NumberInput',
+  date: 'a field from the design system',
+  'datetime-local': 'a field from the design system',
+  month: 'a field from the design system',
+  week: 'a field from the design system',
+  time: 'a field from the design system',
+  color: 'a picker from the design system',
+};
+
+/** The native control an element draws, by the key NATIVE_CONTROLS knows it under, or null. */
+function nativeControl(element) {
+  if (element.kind !== 'html') return null;
+  const tag = element.name.name;
+  if (tag === 'select' || tag === 'textarea') return tag;
+  if (tag !== 'input') return null;
+  const type = element.startTag.attributes.find(
+    (a) => a.type === 'SvelteAttribute' && a.key.name === 'type',
+  );
+  const literal =
+    type?.value.length === 1 && type.value[0].type === 'SvelteLiteral'
+      ? type.value[0].value.toLowerCase()
+      : null;
+  return literal !== null && Object.hasOwn(NATIVE_CONTROLS, literal) ? literal : null;
 }
 
 /** How each kind of value may hold an icon; `again` asks the same of a part. */
@@ -128,6 +162,10 @@ export const useUiPrimitives = {
             additionalProperties: { type: 'string' },
           },
           icon: { type: 'string', description: 'The component that renders icons.' },
+          controls: {
+            type: 'boolean',
+            description: 'Report browser-native form controls, which the design system replaces.',
+          },
           extraIconSources: {
             type: 'array',
             description:
@@ -145,10 +183,13 @@ export const useUiPrimitives = {
       primitiveClass: 'The class `{{name}}` belongs to {{component}}: use {{component}} instead.',
       directIcon:
         'Render icons through {{icon}} (`<{{icon}} icon={...} size="sm" />`), which sets their size and stroke.',
+      nativeControl:
+        'This draws the browser’s own {{control}} control: use {{component}} from the design system instead.',
     },
   },
   create(context) {
-    const [{ buttonClasses: primitives, icon, extraIconSources = [] }] = context.options;
+    const [{ buttonClasses: primitives, icon, extraIconSources = [], controls = false }] =
+      context.options;
     const iconSources = [...ICON_SOURCES, ...extraIconSources];
     const values = new SvelteValues(context.sourceCode);
     return {
@@ -158,6 +199,14 @@ export const useUiPrimitives = {
           context.report({ node: node.startTag, messageId: 'directIcon', data: { icon } });
         }
         if (node.kind === 'component') return;
+        const control = controls ? nativeControl(node) : null;
+        if (control !== null) {
+          context.report({
+            node: node.startTag,
+            messageId: 'nativeControl',
+            data: { control, component: NATIVE_CONTROLS[control] },
+          });
+        }
         const name = [...elementClasses(node, values)].find((c) => Object.hasOwn(primitives, c));
         if (name !== undefined) {
           context.report({
