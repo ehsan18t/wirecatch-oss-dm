@@ -115,6 +115,12 @@ export const DOWNLOAD_WINDOW_WIDTH = 460;
 export const DOWNLOAD_WINDOW_MIN_HEIGHT = 320;
 
 /**
+ * The most height a download window takes, in logical pixels, however much it shows: past
+ * it the window's body scrolls, so opening a folded group never makes a towering window.
+ */
+export const DOWNLOAD_WINDOW_MAX_HEIGHT = 680;
+
+/**
  * Every [`Theme`], in the order settings offer them.
  */
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];

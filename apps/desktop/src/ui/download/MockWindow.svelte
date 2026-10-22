@@ -1,8 +1,9 @@
 <script lang="ts">
-  // One of the sample app's download windows, floating in the page at its place in the cascade, as wide as a real one and as tall as its content, within the page.
+  // One of the sample app's download windows, floating in the page at its place in the cascade, as wide as a real one and as tall as its content, up to the most a real one takes and within the page.
   import { PRODUCT_NAME } from '@wirecatch/product';
   import {
     DOWNLOAD_WINDOW_CASCADE_STEP,
+    DOWNLOAD_WINDOW_MAX_HEIGHT,
     DOWNLOAD_WINDOW_MIN_HEIGHT,
     DOWNLOAD_WINDOW_WIDTH,
     type DownloadId,
@@ -50,7 +51,7 @@
 
   const width = $derived(Math.min(DOWNLOAD_WINDOW_WIDTH, pageWidth - offset - EDGE - FRAME));
   const height = $derived.by(() => {
-    const room = pageHeight - offset - EDGE - FRAME;
+    const room = Math.min(pageHeight - offset - EDGE - FRAME, DOWNLOAD_WINDOW_MAX_HEIGHT);
     return Math.min(room, Math.max(DOWNLOAD_WINDOW_MIN_HEIGHT, wanted ?? room));
   });
 

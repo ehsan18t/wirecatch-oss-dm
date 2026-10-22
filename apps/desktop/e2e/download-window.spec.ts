@@ -1,6 +1,7 @@
 // The download window in a real browser, as the sample app shows it (inside the page, as wide as a real one and as tall as its content): axe in both themes in each of its views, the file question by keyboard, and its layout at 100%, 125% and 150% display scale and with enlarged text: nothing scrolls sideways, every control stays within the window, the buttons at the bottom stay in view, and a window with room to spare is as tall as its content, title bar included.
 
 import AxeBuilder from '@axe-core/playwright';
+import { DOWNLOAD_WINDOW_MAX_HEIGHT } from '@wirecatch/protocol';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { open, settled } from './helpers';
 
@@ -221,8 +222,8 @@ async function checkFits(page: Page, window: Locator, label: string) {
       outer.x + outer.width + 0.5,
     );
   }
-  // The window grows to its content until it meets the page's edge; only then does the body scroll.
-  const room = view.height - outer.y;
+  // The window grows to its content until it meets the page's edge or the most a window takes; only then does the body scroll.
+  const room = Math.min(view.height - outer.y, DOWNLOAD_WINDOW_MAX_HEIGHT);
   const scrolls = await body.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
   if (outer.height < room - 32)
     expect(scrolls, `${label}: no scrolling with room to spare`).toBe(false);
@@ -238,14 +239,16 @@ for (const { scale, root, width, height } of SCALES) {
       await open(page, 'capture=0', { textSize: root });
       const file = await fileQuestion(page);
       await checkFits(page, file, 'file question');
-      // A larger text size while the window is open: the title bar grows as well as the frame, and the window with them until it meets the page's edge.
+      // A larger text size while the window is open: the title bar grows as well as the frame, and the window with them until it meets the page's edge or the most a window takes.
       const before = (await box(file)).height;
       await page.addStyleTag({ content: `html { font-size: ${root + 2}px !important; }` });
       await expect
         .poll(async () => {
           const now = await box(file);
           return (
-            now.height > before || now.y + now.height >= (page.viewportSize()?.height ?? 0) - 32
+            now.height > before ||
+            now.height >= DOWNLOAD_WINDOW_MAX_HEIGHT - 1 ||
+            now.y + now.height >= (page.viewportSize()?.height ?? 0) - 32
           );
         })
         .toBe(true);

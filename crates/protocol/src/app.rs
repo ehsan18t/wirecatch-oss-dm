@@ -940,6 +940,9 @@ crate::exported::exported_consts! {
     pub const DOWNLOAD_WINDOW_WIDTH: u32 = 460;
     /// The least height a download window keeps, in logical pixels, however little it shows.
     pub const DOWNLOAD_WINDOW_MIN_HEIGHT: u32 = 320;
+    /// The most height a download window takes, in logical pixels, however much it shows: past
+    /// it the window's body scrolls, so opening a folded group never makes a towering window.
+    pub const DOWNLOAD_WINDOW_MAX_HEIGHT: u32 = 680;
     /// Every [`Theme`], in the order settings offer them.
     pub const THEMES: &[Theme] = &[Theme::System, Theme::Light, Theme::Dark];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`

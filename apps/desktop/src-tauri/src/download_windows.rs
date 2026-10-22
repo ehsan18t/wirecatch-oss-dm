@@ -36,8 +36,8 @@ use tauri::{AppHandle, LogicalPosition, Manager as _, Runtime, WebviewUrl, Webvi
 use wirecatch_core::Manager;
 use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
 use wirecatch_protocol::app::{
-    AppSettingsPatch, DOWNLOAD_WINDOW_CASCADE_STEP, DOWNLOAD_WINDOW_MIN_HEIGHT,
-    DOWNLOAD_WINDOW_WIDTH, MAX_QUESTION_WINDOWS,
+    AppSettingsPatch, DOWNLOAD_WINDOW_CASCADE_STEP, DOWNLOAD_WINDOW_MAX_HEIGHT,
+    DOWNLOAD_WINDOW_MIN_HEIGHT, DOWNLOAD_WINDOW_WIDTH, MAX_QUESTION_WINDOWS,
 };
 use wirecatch_protocol::desktop::{DOWNLOAD_PARAMETER, DOWNLOAD_WINDOW_PAGE, QUESTION_PARAMETER};
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
@@ -57,19 +57,22 @@ pub const WINDOW_SIZE: (f64, f64) = (DOWNLOAD_WINDOW_WIDTH as f64, 600.0);
 /// The smallest a download window can be made, in logical pixels.
 pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, DOWNLOAD_WINDOW_MIN_HEIGHT as f64);
 
+/// The most a download window takes, in logical pixels: past it, its body scrolls.
+pub const MAX_WINDOW_HEIGHT: f64 = DOWNLOAD_WINDOW_MAX_HEIGHT as f64;
+
 /// The space kept free above and below a window that fits its content, in logical pixels.
 pub const SCREEN_MARGIN: f64 = 48.0;
 
 /// The height a download window takes for content `wanted` pixels tall: what it needs, never
-/// less than the smallest window and never taller than the screen it is on (`screen`, the
-/// height of its work area, when the system says). A height that is not a number gives the
+/// less than the smallest window and never taller than the most a window takes or the screen it
+/// is on (`screen`, the height of its work area, when the system says). A height that is not a number gives the
 /// smallest window.
 #[must_use]
 pub fn fitted_height(wanted: f64, screen: Option<f64>) -> f64 {
     let floor = MIN_WINDOW_SIZE.1;
-    let ceiling = screen
-        .filter(|h| h.is_finite())
-        .map_or(WINDOW_SIZE.1, |h| (h - 2.0 * SCREEN_MARGIN).max(floor));
+    let ceiling = screen.filter(|h| h.is_finite()).map_or(WINDOW_SIZE.1, |h| {
+        (h - 2.0 * SCREEN_MARGIN).min(MAX_WINDOW_HEIGHT).max(floor)
+    });
     if !wanted.is_finite() {
         return floor;
     }
@@ -679,10 +682,13 @@ mod tests {
         assert_eq!(fitted_height(431.2, Some(1040.0)), 432.0);
         // Never smaller than the smallest window.
         assert_eq!(fitted_height(120.0, Some(1040.0)), MIN_WINDOW_SIZE.1);
-        // A long quality list: as tall as the screen allows, with a margin; the body scrolls.
+        // A long quality list, or a group opened: never taller than the most a window takes;
+        // the body scrolls.
+        assert_eq!(fitted_height(2000.0, Some(1440.0)), MAX_WINDOW_HEIGHT);
+        // On a short screen, as tall as the screen allows, with a margin.
         assert_eq!(
-            fitted_height(2000.0, Some(1040.0)),
-            1040.0 - 2.0 * SCREEN_MARGIN
+            fitted_height(2000.0, Some(700.0)),
+            700.0 - 2.0 * SCREEN_MARGIN
         );
         // Unknown screen: no taller than the opening size.
         assert_eq!(fitted_height(900.0, None), WINDOW_SIZE.1);
