@@ -10,10 +10,10 @@
   import { getApp } from '$lib/state/app.svelte';
   import { dropTarget } from '$lib/state/order';
   import { track } from '$lib/state/reactivity';
-  import { groupOf, isInLine, type ListSection } from '$lib/state/view';
+  import { groupOf, isInLine, sectionOf, type ListSection } from '$lib/state/view';
   import { keepWidths, storedWidths } from './column-widths';
   import ColumnHeads from './ColumnHeads.svelte';
-  import { gridColumns, shownColumns, type Resizable, type Widths } from './columns';
+  import { gridColumns, shownColumns, viewColumns, type Resizable, type Widths } from './columns';
   import DownloadRow from './DownloadRow.svelte';
   import GroupHeading from './GroupHeading.svelte';
   import { listKeys } from './list-keys';
@@ -68,8 +68,16 @@
   const shown = $derived(items.flatMap((item) => (item.kind === 'row' ? [item.id] : [])));
 
   let widths = $state<Widths>(storedWidths());
-  const columns = $derived(shownColumns(width, widths));
-  const template = $derived(gridColumns(columns, widths));
+  /** Something in this view downloads, so Speed and Left have figures to show. */
+  const downloading = $derived.by(() => {
+    const v = app.view;
+    if (v.kind === 'queue') return (app.counts.queue.get(v.id)?.running ?? 0) > 0;
+    if (v.kind === 'status') return v.group === 'active';
+    return sectionOf(app.layout, v, 'active') !== undefined;
+  });
+  const viewCols = $derived(viewColumns(app.view, downloading));
+  const columns = $derived(shownColumns(width, widths, viewCols));
+  const template = $derived(gridColumns(columns, widths, viewCols.place));
 
   function onresize(column: Resizable, to: number | undefined, done: boolean) {
     const next: Widths = Object.fromEntries(
@@ -102,7 +110,8 @@
     const active = app.selection.active;
     return active !== null && shown.includes(active) ? `row-${String(active)}` : undefined;
   });
-  const canReorder = $derived(app.sort.column === 'position');
+  // Rows drag up and down their queue in the queue's own view, in queue order: the only list whose order is the queue's.
+  const canReorder = $derived(viewCols.place && app.sort.column === 'position');
   const menu = $derived(rowMenu(app));
 
   const keys = listKeys({ app, pageRows: () => pageRows(viewport), count: () => ids.length });
@@ -265,7 +274,14 @@
           aria-rowindex={1}
           class="group/heads grid h-control-sm grid-cols-list items-center gap-3 px-3"
         >
-          <ColumnHeads shown={columns} {onresize} />
+          <ColumnHeads
+            shown={columns}
+            place={viewCols.place}
+            progressLabel={app.view.kind === 'status' && app.view.group === 'finished'
+              ? 'Finished'
+              : 'Progress'}
+            {onresize}
+          />
         </div>
       </div>
     </div>
@@ -306,6 +322,7 @@
                 id={item.id}
                 rowIndex={range.start + i + 2}
                 shown={columns}
+                place={viewCols.place}
                 {canReorder}
               />
             </div>

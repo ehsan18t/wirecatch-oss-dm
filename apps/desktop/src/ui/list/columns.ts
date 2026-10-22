@@ -1,6 +1,6 @@
 // The download list's columns: the header and every row lay them out on one grid, from here.
 
-import type { SortColumn } from '$lib/state/view';
+import type { SortColumn, View } from '$lib/state/view';
 
 /** The columns whose width the person drags. */
 export type Resizable = 'progress' | 'size' | 'speed' | 'left';
@@ -22,6 +22,22 @@ export const MIN_WIDTH: Record<Resizable, number> = {
   left: 3,
 };
 
+/** The columns a view has: the place in the queue only in a queue's own view, where it is the order the queue runs in (elsewhere rows of several queues would repeat 1, 2, 3); and Speed and Left only while something in it downloads, the only rows that fill them. */
+export interface ViewColumns {
+  place: boolean;
+  offered: readonly Resizable[];
+}
+
+export function viewColumns(view: View, downloading: boolean): ViewColumns {
+  const offered = downloading ? RESIZABLE : STILL;
+  return { place: view.kind === 'queue', offered };
+}
+
+/** The number columns of a list where nothing downloads: no speed, no time left. */
+const STILL: readonly Resizable[] = ['progress', 'size'];
+
+const EVERY_COLUMN: ViewColumns = { place: true, offered: RESIZABLE };
+
 /** Widths in pixels the person set; columns not in it keep their default. */
 export type Widths = Partial<Record<Resizable, number>>;
 
@@ -32,8 +48,8 @@ const ACTIONS = 4.75;
 /** Between columns (`gap-3`), and around them: the row's padding (`px-3`) and the list's (`px-2`), both sides. */
 const GAP = 0.75;
 const PADDING = 2.5;
-/** The columns every row has: the place, the kind of file, the name and the buttons. */
-const FIXED_COLUMNS = 4;
+/** The columns every row has: the kind of file, the name and the buttons. */
+const FIXED_COLUMNS = 3;
 /** The least a download's name keeps. */
 const NAME = 16;
 /** The number columns in the order they give way when the list is narrow: the last to show first. */
@@ -47,13 +63,18 @@ function widthOf(column: Resizable, widths: Widths, rem: number): number {
 /**
  * The number columns a list `width` pixels wide has room for, at the widths they have, so the name keeps at least 16rem: Time left gives way first, then Speed, then Size, whose figures then show under the name, then the progress column, whose wire then runs under the name. Where nothing is laid out (unit tests), all of them.
  */
-export function shownColumns(width: number, widths: Widths): Set<Resizable> {
-  const shown = new Set(RESIZABLE);
+export function shownColumns(
+  width: number,
+  widths: Widths,
+  { place, offered }: ViewColumns = EVERY_COLUMN,
+): Set<Resizable> {
+  const shown = new Set(offered);
   if (width === 0) return shown;
   const rem = remInPixels();
+  const fixed = place ? PLACE : 0;
   const needs = () => {
-    const columns = FIXED_COLUMNS + shown.size;
-    let total = (PLACE + TILE + ACTIONS + PADDING + NAME + GAP * (columns - 1)) * rem;
+    const columns = FIXED_COLUMNS + (place ? 1 : 0) + shown.size;
+    let total = (fixed + TILE + ACTIONS + PADDING + NAME + GAP * (columns - 1)) * rem;
     for (const column of shown) total += widthOf(column, widths, rem);
     return total;
   };
@@ -64,14 +85,14 @@ export function shownColumns(width: number, widths: Widths): Set<Resizable> {
   return shown;
 }
 
-/** The grid every row and the header share: the place in the queue, the kind of file, the name, the shown number columns at their widths, and the row's buttons. */
-export function gridColumns(shown: ReadonlySet<Resizable>, widths: Widths): string {
+/** The grid every row and the header share: the place in the queue (when the view has it), the kind of file, the name, the shown number columns at their widths, and the row's buttons. */
+export function gridColumns(shown: ReadonlySet<Resizable>, widths: Widths, place = true): string {
   const numbers = RESIZABLE.filter((c) => shown.has(c)).map((c) => {
     const px = widths[c];
     return px === undefined ? `${String(DEFAULT_WIDTH[c])}rem` : `${String(px)}px`;
   });
   return [
-    `${String(PLACE)}rem`,
+    ...(place ? [`${String(PLACE)}rem`] : []),
     `${String(TILE)}rem`,
     'minmax(0, 1fr)',
     ...numbers,

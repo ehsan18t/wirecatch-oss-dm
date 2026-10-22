@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Which queue a download joins, the default one marked. The Add dialog uses it, and the download window's save question can.
+  // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). The Add dialog uses it, and the download window's save question can.
   import type { Queue, QueueId } from '@wirecatch/protocol';
   import { Field, type FieldControl, Select } from '@wirecatch/ui';
 
@@ -15,7 +15,11 @@
   let { queues, value, onchange, description, class: className }: Props = $props();
 
   const options = $derived(
-    queues.map((q) => ({ value: q.id, label: q.is_default ? `${q.name} (default)` : q.name })),
+    queues.map((q) => ({
+      value: q.id,
+      label: q.name,
+      description: q.is_default ? 'The default queue' : undefined,
+    })),
   );
 </script>
 

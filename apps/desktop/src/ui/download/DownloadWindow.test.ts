@@ -32,11 +32,12 @@ describe('a download window with the keyboard', () => {
     expect(screen.getByRole('combobox', { name: 'Queue' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument();
     expect(
-      screen.getByRole('checkbox', { name: 'Start downloads without asking' }),
+      screen.getByRole('checkbox', { name: 'Don’t ask again for files from the browser' }),
     ).not.toBeChecked();
+    // Worded as Settings words it: on, as it is by default.
     expect(
-      screen.getByRole('checkbox', { name: 'Close this window when downloads start' }),
-    ).not.toBeChecked();
+      screen.getByRole('checkbox', { name: 'Keep the window open to show progress' }),
+    ).toBeChecked();
     // Enter in the file name field downloads too.
     await userEvent.setup().type(screen.getByRole('textbox', { name: 'File name' }), '{Enter}');
     await settle();
@@ -79,13 +80,13 @@ describe('a download window with the keyboard', () => {
     const [asked] = await b.pendingConfirmations();
     const { win, host } = await show(b, { question: asked?.id ?? questionId(0) });
     const user = userEvent.setup();
-    const closeAfter = screen.getByRole('checkbox', {
-      name: 'Close this window when downloads start',
+    const keepOpen = screen.getByRole('checkbox', {
+      name: 'Keep the window open to show progress',
     });
-    closeAfter.focus();
+    keepOpen.focus();
     await user.keyboard(' ');
     await settle();
-    expect(closeAfter).toBeChecked();
+    expect(keepOpen).not.toBeChecked();
     expect(host.becameDownload).not.toHaveBeenCalled();
     await user.keyboard('{Enter}');
     await settle();
@@ -129,7 +130,7 @@ describe('a download window with the keyboard', () => {
     expect(host.close).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await settle();
-    await user.click(screen.getByRole('button', { name: 'Cancel and delete the partial file' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel download' }));
     await settle();
     expect(host.close).toHaveBeenCalledTimes(1);
     expect((await b.listDownloads()).some((r) => r.id === id)).toBe(false);

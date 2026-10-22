@@ -36,9 +36,7 @@ describe('the Add dialog', () => {
     expect(dialog()).toHaveAccessibleName('New download');
     expect(dialog()).toHaveAttribute('aria-modal', 'true');
     expect(linksBox()).toHaveFocus();
-    expect(linksBox()).toHaveAccessibleDescription(
-      'One link per line. Ctrl+Enter downloads them all.',
-    );
+    expect(linksBox()).toHaveAccessibleDescription('One link per line, or paste several at once.');
     await press('{Escape}');
     expect(screen.queryByRole('dialog', { name: /new downloads?$/i })).toBeNull();
     expect(headerAdd()).toHaveFocus();
@@ -122,7 +120,7 @@ describe('the Add dialog', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const saveTo = inDialog().getByRole('group', { name: 'Save to' });
-    expect(saveTo).toHaveTextContent('A folder picked by file type, as set in Settings');
+    expect(saveTo).toHaveTextContent('By file type, as set in Settings');
     expect(within(saveTo).queryByRole('button', { name: 'Use default' })).toBeNull();
     await click(within(saveTo).getByRole('button', { name: 'Change' }));
     expect(saveTo).toHaveTextContent('E:\\Media');
@@ -130,7 +128,7 @@ describe('the Add dialog', () => {
       'E:\\Media',
     );
     await click(within(saveTo).getByRole('button', { name: 'Use default' }));
-    expect(saveTo).toHaveTextContent('A folder picked by file type');
+    expect(saveTo).toHaveTextContent('By file type');
   });
 
   it('keeps the focus in the form when Use default goes with the folder', async () => {
@@ -152,9 +150,12 @@ describe('the Add dialog', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const queue = inDialog().getByRole('combobox', { name: 'Queue' });
-    expect(queue).toHaveTextContent('(default)');
+    // The default queue is chosen, and marked as the default in the list only.
+    expect(queue).toHaveTextContent('Main');
+    expect(queue).not.toHaveTextContent('default');
     await click(queue);
-    await click(screen.getByRole('option', { name: 'Overnight' }));
+    expect(screen.getByRole('option', { name: /^Main/ })).toHaveTextContent('The default queue');
+    await click(screen.getByRole('option', { name: /^Overnight/ }));
     await click(inDialog().getByRole('button', { name: 'Add paused' }));
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ queue: queueId(2), start: false }));
   });

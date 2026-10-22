@@ -15,15 +15,23 @@
 
   interface Props {
     shown: ReadonlySet<Resizable>;
+    /** The view numbers its rows by their place in the queue. */
+    place: boolean;
+    /** What the progress column holds in this view: in one of finished downloads, when each finished. */
+    progressLabel?: string;
     /** A column's new width in pixels, or undefined to put it back; `done` when the drag ends. */
     onresize: (column: Resizable, width: number | undefined, done: boolean) => void;
   }
 
-  let { shown, onresize }: Props = $props();
+  let { shown, place, progressLabel = 'Progress', onresize }: Props = $props();
 
   const app = getApp();
 
-  const headings = $derived(HEADINGS.filter((h) => h.resize === undefined || shown.has(h.resize)));
+  const headings = $derived(
+    HEADINGS.filter(
+      (h) => (h.resize === undefined || shown.has(h.resize)) && (place || h.id !== 'position'),
+    ),
+  );
 
   function ariaSort(column: SortColumn | undefined): 'ascending' | 'descending' | 'none' {
     if (column === undefined || app.sort.column !== column) return 'none';
@@ -87,11 +95,13 @@
           : `Sort by ${SORT_LABEL[sort].toLowerCase()}`}
         class={cn(
           'group/head -mx-1.5 flex h-control-xs min-w-0 items-center gap-0.5 rounded-sm px-1.5 text-caption whitespace-nowrap transition-colors duration-fast ease-out hover:bg-wash hover:text-ink',
+          // A number column's heading puts its arrow first, so its words end where the figures do.
+          heading.numeric && 'flex-row-reverse',
           on ? 'font-semibold text-ink' : 'text-ink-subtle',
         )}
         onclick={() => (app.sort = nextSort(app.sort, sort))}
       >
-        <span class="truncate">{heading.label}</span>
+        <span class="truncate">{heading.id === 'progress' ? progressLabel : heading.label}</span>
         <Icon
           icon={ChevronDown}
           size="xs"

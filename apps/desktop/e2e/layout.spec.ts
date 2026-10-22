@@ -27,7 +27,10 @@ async function oneLine(page: Page, selector: ReturnType<Page['locator']>) {
 async function checkLayout(page: Page) {
   const nameHeader = await page.getByRole('columnheader', { name: 'Name' }).boundingBox();
   expect(nameHeader?.width ?? 0, 'Name column width').toBeGreaterThanOrEqual(160);
-  const firstName = await rows(page).first().getByRole('gridcell').nth(2).boundingBox();
+  // The name's column by its heading: a queue's own view has "#" before it, the others do not.
+  const headings = await page.getByRole('columnheader').allInnerTexts();
+  const nameColumn = headings.findIndex((h) => h.trim() === 'Name');
+  const firstName = await rows(page).first().getByRole('gridcell').nth(nameColumn).boundingBox();
   expect(firstName?.width ?? 0, 'first row name width').toBeGreaterThanOrEqual(160);
 
   const tools = page.getByRole('group', { name: 'List tools' }).locator('> *');
@@ -83,7 +86,7 @@ for (const size of [SIZES[1], SIZES[2]]) {
     await target.hover();
     await expect.poll(() => figuresUnderButtons(target), 'figures under the buttons').toEqual([]);
     await expect(target.getByRole('button', { name: 'Pause' })).toBeVisible();
-    await expect(target.getByRole('gridcell').nth(5), 'the speed still shows').toContainText(
+    await expect(target.getByRole('gridcell').nth(4), 'the speed still shows').toContainText(
       /B\/s/,
     );
   });
@@ -236,12 +239,12 @@ for (const theme of ['light', 'dark'] as const) {
     }) => {
       await page.setViewportSize(size);
       await open(page, 'capture=0', { theme });
-      // Overnight is outside its hours at noon, so all three queue actions show.
+      // Overnight is outside its hours at noon, so all three queue actions show, with New download.
       await page.getByRole('button', { name: /^Overnight/ }).click();
       const actions = page.getByRole('group', { name: 'This queue' }).getByRole('button');
-      await expect(actions).toHaveCount(3);
+      await expect(actions).toHaveCount(4);
       expect(await oneLine(page, actions), 'queue actions on one line').toBe(0);
-      for (const name of ['Pause all', 'Resume all', 'New download']) {
+      for (const name of ['Start now', 'Pause queue', 'Edit queue', 'New download']) {
         const box = await page.getByRole('button', { name, exact: true }).boundingBox();
         expect(box?.width ?? 0, `${name} shows its label`).toBeGreaterThan(60);
       }

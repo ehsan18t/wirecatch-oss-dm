@@ -25,9 +25,7 @@
   const addonName = $derived(addon.name.toLowerCase());
   const title = $derived.by(() => {
     if (installed) return `${addon.name} is installed`;
-    return url
-      ? `Downloading from ${hostOf(url)} needs the ${addonName}`
-      : `This video needs the ${addonName}`;
+    return `Install the ${addonName}?`;
   });
   let busy = $state(false);
 
@@ -40,8 +38,12 @@
 </script>
 
 <WindowFrame {title} error={win.error}>
-  <div class="flex flex-col gap-3 text-body text-ink">
-    <p>{addon.description}</p>
+  <div class="flex flex-col gap-3 text-ui text-ink">
+    <p>
+      {url
+        ? `Downloading from ${hostOf(url)} needs it. `
+        : 'This video needs it. '}{addon.description}
+    </p>
     <!-- Always there, so a screen reader hears the start, the progress and the end (or the failure) of the install: a region added together with its text is often not read. -->
     <p class="sr-only" aria-live="polite" data-testid="addon-live">{addonAnnouncement(addon)}</p>
     {#if installed}
@@ -57,10 +59,7 @@
     {:else if failed}
       <Callout tone="danger" title="The add-on did not install">{addonStatus(addon)}</Callout>
     {:else}
-      <p class="text-ui text-ink-muted">
-        One click installs it{addon.size === null ? '' : ` (${formatBytes(addon.size)})`}, then your
-        download continues on its own.
-      </p>
+      <p class="text-ink-muted">Once it is installed, your download continues on its own.</p>
     {/if}
   </div>
 
@@ -69,17 +68,17 @@
       {#if installing}
         <Button variant="ghost" onclick={() => void win.stopAddonInstall()}>Stop installing</Button>
       {/if}
-      <Button variant="primary" data-main data-autofocus onclick={() => win.close()}>Hide</Button>
+      <Button variant="primary" data-autofocus onclick={() => win.close()}>Hide</Button>
     {:else}
       <Button variant="ghost" onclick={() => void win.declineAddon()}
         >{forQuality ? 'Pick another quality' : 'Cancel'}</Button
       >
-      <Button
-        variant="primary"
-        data-main
-        data-autofocus
-        loading={busy}
-        onclick={() => void install()}>{failed ? 'Try again' : 'Install'}</Button
+      <Button variant="primary" data-autofocus loading={busy} onclick={() => void install()}
+        >{failed
+          ? 'Try again'
+          : addon.size === null
+            ? 'Install'
+            : `Install (${formatBytes(addon.size)})`}</Button
       >
     {/if}
   {/snippet}

@@ -8,14 +8,30 @@
     /** The name the file gets when the field is left empty. */
     placeholder?: string | undefined;
     description?: string | undefined;
+    disabled?: boolean;
     class?: string | undefined;
   }
 
-  let { value, onchange, placeholder, description, class: className }: Props = $props();
+  let {
+    value,
+    onchange,
+    placeholder,
+    description,
+    disabled = false,
+    class: className,
+  }: Props = $props();
 </script>
 
 <Field label="File name" {description} class={className}>
   {#snippet children(control: FieldControl)}
-    <Input {...control} {value} {onchange} {placeholder} spellcheck="false" autocomplete="off" />
+    <Input
+      {...control}
+      {value}
+      {onchange}
+      {placeholder}
+      {disabled}
+      spellcheck="false"
+      autocomplete="off"
+    />
   {/snippet}
 </Field>

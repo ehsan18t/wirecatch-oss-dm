@@ -27,7 +27,7 @@ export function readLinks(text: string): LinksRead {
 
 /** The hint under the links box: how to use it, or what it leaves out. */
 export function linksHint({ ignored }: LinksRead): string {
-  if (ignored === 0) return 'One link per line. Ctrl+Enter downloads them all.';
+  if (ignored === 0) return 'One link per line, or paste several at once.';
   if (ignored === 1) return 'One line has no link in it and is left out.';
   return `${String(ignored)} lines have no link in them and are left out.`;
 }

@@ -29,7 +29,6 @@ import { DownloadActions } from './download-actions.svelte';
 import { DownloadStore } from './downloads.svelte';
 import { mainWindowEvents } from './app-events';
 import { dispatch, HeldEvents } from './events';
-import { Hints } from './hints.svelte';
 import { Questions } from './questions.svelte';
 import { Queues } from './queues.svelte';
 import { errorMessage, Runner } from './runner';
@@ -70,7 +69,6 @@ export function getApp(): AppState {
 export class AppState {
   readonly #connection: Connection;
   readonly downloads = new DownloadStore();
-  readonly hints = new Hints();
   readonly toasts = new Toasts({ reveal: (id) => this.openDetails(id) });
   /** The time schedule labels follow. */
   readonly clock = new Clock();

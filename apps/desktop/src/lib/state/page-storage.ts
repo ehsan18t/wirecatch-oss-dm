@@ -1,4 +1,4 @@
-// The webview's own storage, for the few display preferences that are this window's and not the app's settings: which hints were dismissed, the look last shown, whether the sidebar is collapsed.
+// The webview's own storage, for the few display preferences that are this window's and not the app's settings: the look last shown, whether the sidebar is collapsed.
 
 /** The page's storage, where the page may use it: none in tests without a window, and a private window may refuse it. */
 export function pageStorage(): Storage | undefined {

@@ -227,7 +227,7 @@
           <div class="flex flex-wrap justify-end gap-2">
             <Button {@attach focusNow} onclick={stopAsking}>Keep downloading</Button>
             <Button variant="danger" onclick={() => void win.progress.cancelDownload()}
-              >Cancel and delete the partial file</Button
+              >Cancel download</Button
             >
           </div>
         </div>
@@ -279,12 +279,12 @@
         <Button icon={FolderOpen} onclick={() => void win.progress.openFolder()}
           >Show in folder</Button
         >
-        <Button variant="primary" data-main onclick={() => void open()}>Open</Button>
+        <Button variant="primary" onclick={() => void open()}>Open</Button>
       {:else}
         <Button variant="ghost" onclick={() => win.close()}>Hide</Button>
         <Button aria-expanded={asking === 'cancel'} onclick={() => ask('cancel')}>Cancel</Button>
         {#if main}
-          <Button variant="primary" data-main onclick={() => void main.act()}>{main.label}</Button>
+          <Button variant="primary" onclick={() => void main.act()}>{main.label}</Button>
         {/if}
       {/if}
     {/snippet}

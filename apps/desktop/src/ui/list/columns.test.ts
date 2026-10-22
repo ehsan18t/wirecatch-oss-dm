@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_WIDTH, gridColumns, shownColumns } from './columns';
+import { queueId } from '@wirecatch/protocol';
+import { DEFAULT_WIDTH, gridColumns, shownColumns, viewColumns } from './columns';
 
 /** jsdom's root text size. */
 const REM = 16;
@@ -27,5 +28,17 @@ describe('the list columns', () => {
     expect(gridColumns(new Set(['progress', 'left']), { left: 90 })).toBe(
       '2rem 2.75rem minmax(0, 1fr) 10.5rem 90px 4.75rem',
     );
+  });
+
+  it("numbers the rows only in a queue's own view, and shows Speed and Left only while something downloads", () => {
+    expect(viewColumns({ kind: 'queue', id: queueId(1) }, true).place).toBe(true);
+    expect(viewColumns({ kind: 'all' }, true).place).toBe(false);
+    expect(viewColumns({ kind: 'status', group: 'finished' }, false).offered).toEqual([
+      'progress',
+      'size',
+    ]);
+    expect(viewColumns({ kind: 'queue', id: queueId(2) }, false).offered).not.toContain('left');
+    expect(viewColumns({ kind: 'status', group: 'active' }, true).offered).toContain('speed');
+    expect(gridColumns(new Set(['size']), {}, false)).toBe('2.75rem minmax(0, 1fr) 7.5rem 4.75rem');
   });
 });

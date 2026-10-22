@@ -28,18 +28,18 @@ describe('the sidebar', () => {
     expect(all).not.toHaveAttribute('aria-current');
   });
 
-  it('gives each queue what it is doing as a second line, and its own buttons', async () => {
+  it('gives each queue what it is doing as a second line, and one menu of its own actions', async () => {
     const { app } = await renderApp();
     const user = userEvent.setup();
     const overnight = within(nav()).getByRole('button', { name: /^Overnight/ });
     expect(overnight).toHaveTextContent(app.queues.status(app.queues.byId(queueId(2))!));
-    await user.click(within(nav()).getByRole('button', { name: 'Pause the Overnight queue' }));
+    await user.click(within(nav()).getByRole('button', { name: 'Actions for Overnight' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Pause the queue' }));
     await settle();
     expect(app.queues.byId(queueId(2))?.paused).toBe(true);
     expect(within(nav()).getByRole('button', { name: /^Overnight/ })).toHaveTextContent('Paused');
-    await user.click(
-      within(nav()).getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }),
-    );
+    await user.click(within(nav()).getByRole('button', { name: 'Actions for Overnight' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Edit name, hours and limits' }));
     expect(app.dialog).toEqual({ kind: 'queue', id: queueId(2) });
   });
 

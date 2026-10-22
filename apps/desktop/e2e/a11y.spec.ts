@@ -21,7 +21,7 @@ async function audit(page: Page, label: string) {
 
 for (const theme of ['light', 'dark'] as const) {
   test(`axe finds no WCAG AA problems, ${theme} theme`, async ({ page }) => {
-    await open(page, 'capture=0', { theme, hints: true });
+    await open(page, 'capture=0', { theme });
     await audit(page, 'main');
     await showDetails(page, 'Conference keynote');
     await audit(page, 'error in the details');
@@ -33,7 +33,8 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'context menu');
     await page.keyboard.press('Escape');
     const details = await showDetails(page, 'LibreOffice');
-    await details.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await details.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Cancel download' }).click();
     await audit(page, 'cancel confirmation');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
@@ -47,7 +48,8 @@ for (const theme of ['light', 'dark'] as const) {
     await audit(page, 'settings');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /^Overnight/ }).hover();
-    await page.getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }).click();
+    await page.getByRole('button', { name: 'Actions for Overnight' }).click();
+    await page.getByRole('menuitem', { name: 'Edit name, hours and limits' }).click();
     await audit(page, 'queue editor');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+Shift+P');
@@ -85,7 +87,7 @@ for (const theme of ['light', 'dark'] as const) {
     // Escape closes the window without answering; Waiting for you brings it back.
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();
-    await page.getByRole('button', { name: /Waiting for you/ }).click();
+    await page.getByRole('button', { name: /waiting for you/i }).click();
     await expect(picker).toBeVisible();
 
     // Answered somewhere else: the window says so and the count goes.
@@ -93,14 +95,14 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('answered somewhere else');
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: /Waiting for you/ })).toBeHidden();
+    await expect(page.getByRole('button', { name: /waiting for you/i })).toBeHidden();
 
     await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
-    const prompt = windows.filter({ hasText: /needs the media add-on/ });
+    const prompt = windows.filter({ hasText: /Install the media add-on/ });
     await prompt.waitFor();
-    await expect(prompt.getByRole('button', { name: 'Install', exact: true })).toBeFocused();
+    await expect(prompt.getByRole('button', { name: /^Install/ })).toBeFocused();
     // Enter on Install: the buttons change, and the focus moves to the new main button.
     await page.keyboard.press('Enter');
     await expect(prompt.getByRole('button', { name: 'Hide' })).toBeFocused();
@@ -120,7 +122,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Control+Shift+P');
     await page.keyboard.type('needs the media add-on');
     await page.keyboard.press('Enter');
-    await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
+    await page.getByRole('button', { name: /^Install \(/ }).waitFor();
     await audit(page, 'add-on prompt');
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 

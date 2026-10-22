@@ -1,4 +1,4 @@
-import { downloadId, type DownloadId } from '@wirecatch/protocol';
+import { downloadId, queueId, type DownloadId } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -39,7 +39,8 @@ describe('the download list', () => {
     const headers = within(list)
       .getAllByRole('columnheader')
       .map((h) => h.textContent.trim());
-    expect(headers).toEqual(['#', 'Type', 'Name', 'Progress', 'Size', 'Speed', 'Left', 'Actions']);
+    // No place in a queue outside a queue's own view: rows of several queues would repeat it.
+    expect(headers).toEqual(['Type', 'Name', 'Progress', 'Size', 'Speed', 'Left', 'Actions']);
     // The first group's heading is the first row after the column headings.
     expect(rendered()[0]).toHaveAttribute('aria-rowindex', '3');
   });
@@ -275,8 +276,11 @@ describe('the download list', () => {
     expect(app.sort.column).toBe('position');
   });
 
-  it("numbers each download by its place in its queue's line", async () => {
+  it("numbers each download by its place in its queue's line, in the queue's own view", async () => {
     const { app } = await setup();
+    app.show({ kind: 'queue', id: queueId(1) });
+    await settle();
+    expect(within(grid()).getAllByRole('columnheader')[0]).toHaveTextContent('#');
     const first = app.visible[0]!;
     const row = rowByName(app.downloads.get(first)!.file_name);
     expect(within(row).getAllByRole('gridcell')[0]).toHaveTextContent(

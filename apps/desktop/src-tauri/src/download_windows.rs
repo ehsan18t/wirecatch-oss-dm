@@ -3,7 +3,7 @@
 //! Every question the core asks about a browser download (confirm a file, the video being read,
 //! pick a quality, install the media add-on) opens its own small window in front, whatever the
 //! main window is doing. After Download now the same window becomes that download's progress
-//! window. "Show progress window" in the main list opens one for any download.
+//! window. "Open in its own window" in the main list opens one for any download.
 //!
 //! - **Labels**: `download-q<question id>` for a window opened for a question and
 //!   `download-d<download id>` for one opened for a download, so the two id spaces never meet. A
@@ -306,7 +306,7 @@ impl Registry {
         self.fill()
     }
 
-    /// "Show progress window" for download `id`: the window already showing it comes to the
+    /// "Open in its own window" for download `id`: the window already showing it comes to the
     /// front, or a new one opens. Not limited: the person asked for it.
     pub fn show_download(&mut self, id: DownloadId) -> Step {
         if let Some(window) = self.window_showing(Shows::Download(id)) {

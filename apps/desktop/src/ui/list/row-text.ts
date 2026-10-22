@@ -1,21 +1,31 @@
-// What a download's row says under its name, by the group it is in: what went wrong, how it is going, where it comes from, or where a finished file is.
+// What a download's row says under its name, by the group it is in: what went wrong, in a few words, or where it comes from and how it is going.
 
 import type { DownloadSummary } from '@wirecatch/protocol';
-import { folderOf, hostOf, STATUS_LABEL, statusShort, whenSaid } from '$lib/format';
+import { hostOf, STATUS_LABEL, statusShort, whenSaid } from '$lib/format';
 import type { StatusGroup } from '$lib/state/view';
 
-/** Where it comes from, and over how many connections while it downloads. */
+/** Where it comes from while it downloads; how many connections it uses is the details' to say. */
 function source(row: DownloadSummary): string {
-  if (row.status !== 'downloading') return statusShort(row);
-  const host = hostOf(row.url);
-  if (row.connections === 0) return host;
-  return `${host} · ${String(row.connections)} connection${row.connections === 1 ? '' : 's'}`;
+  return row.status === 'downloading' ? hostOf(row.url) : statusShort(row);
+}
+
+/** What went wrong in a few words: the first sentence of the error, whose rest (what to do) the details and the row's tooltip say. */
+export function failureShort(message: string): string {
+  const end = message.search(/[.!?](\s|$)/);
+  return end === -1 ? message : message.slice(0, end + 1);
 }
 
 /** When a finished download finished: "Finished today at 12:04", "Finished on 3 Oct 2026". */
 export function finishedNote(row: Pick<DownloadSummary, 'completed_at'>, now: Date): string {
   const done = STATUS_LABEL.completed;
   return row.completed_at === null ? done : `${done} ${whenSaid(row.completed_at, now)}`;
+}
+
+/** When a finished download finished, under a heading or in a column that already says Finished: "Today at 12:04", "3 Oct 2026". */
+export function finishedWhen(row: Pick<DownloadSummary, 'completed_at'>, now: Date): string {
+  if (row.completed_at === null) return STATUS_LABEL.completed;
+  const when = whenSaid(row.completed_at, now).replace(/^on /, '');
+  return `${when.charAt(0).toUpperCase()}${when.slice(1)}`;
 }
 
 /**
@@ -37,13 +47,13 @@ export function rowLine(
 ): string {
   switch (group) {
     case 'failed':
-      return row.error?.message ?? statusShort(row);
+      return row.error ? failureShort(row.error.message) : statusShort(row);
     case 'active':
       return source(row);
     case 'waiting':
       return progressShown ? hostOf(row.url) : waitNote;
     case 'finished':
-      return progressShown ? folderOf(row.path) : finishedNote(row, now);
+      return progressShown ? hostOf(row.url) : finishedNote(row, now);
     case 'cancelled':
       return statusShort(row);
     case 'paused':

@@ -75,14 +75,14 @@ describe('a browser file', () => {
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();
     const { win, host } = await open(b, { question: asked?.id ?? questionId(0) });
-    await win.setCloseWhenStarted(true);
+    await win.setKeepOpen(false);
     expect((await b.getSettings()).show_progress_windows).toBe(false);
     await win.confirm(keep, false);
     expect(host.close).toHaveBeenCalledTimes(1);
     expect(win.phase).toBe('ask');
   });
 
-  it('Start downloads without asking turns the window off for files', async () => {
+  it('Don’t ask again turns the window off for files', async () => {
     const b = backend();
     b.simulateConfirmation();
     const [asked] = await b.pendingConfirmations();

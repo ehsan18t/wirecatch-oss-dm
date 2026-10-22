@@ -43,13 +43,14 @@ describe('keyboard only', () => {
     expect(app.selection.size).toBe(3);
     await press('{End}');
     expect(app.selection.active).toBe(app.visible.at(-1));
-    await press('{Home}');
+    // The first downloading row: Needs attention comes first, and Space there tries again.
+    app.selection.only(app.visible.find((id) => app.downloads.get(id)?.status === 'downloading')!);
     await press(' ');
     expect(app.selection.rows[0]?.status).toBe('paused');
     await press('{Delete}');
-    expect(within(screen.getByRole('dialog')).getByText(/^Remove "/)).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog', { name: /^Remove/ })).toBeInTheDocument();
     await press('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(document.activeElement).toBe(list);
     await press('{Control>}a{/Control}');
     expect(app.selection.size).toBe(app.visible.length);

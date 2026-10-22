@@ -74,7 +74,7 @@ describe('3. closing a download window keeps the download waiting', () => {
     expect(app.questions.pending).toHaveLength(1);
     expect(reject).not.toHaveBeenCalled();
     expect(buildCommands(app).some((c) => c.id === 'questions.show')).toBe(true);
-    await click(button(/Waiting for you/));
+    await click(button(/waiting for you/i));
     const again = await downloadWindow();
     expect(again).toHaveTextContent('Download this file?');
     await click(within(again).getByRole('button', { name: 'Cancel' }));
@@ -85,14 +85,16 @@ describe('3. closing a download window keeps the download waiting', () => {
 });
 
 describe('4 and 12. destructive actions ask first, with focus on the safe choice', () => {
-  it('cancel asks, focuses Keep downloading, and only then discards', async () => {
+  it('cancel asks, focuses the choice to keep it, and only then discards', async () => {
     const { app, click } = await setup();
     await click(showDetails('LibreOffice'));
     const id = app.selection.rows[0]!.id;
-    await click(details('LibreOffice').getByRole('button', { name: 'Cancel' }));
-    expect(document.activeElement).toBe(button('Keep downloading'));
+    await click(details('LibreOffice').getByRole('button', { name: 'More actions' }));
+    await click(screen.getByRole('menuitem', { name: 'Cancel download' }));
+    // It waits in line, so nothing downloads to keep: the safe choice keeps it.
+    expect(document.activeElement).toBe(button('Keep it'));
     expect(app.downloads.get(id)?.status).not.toBe('cancelled');
-    await click(button('Cancel and delete the partial file'));
+    await click(button('Cancel download'));
     expect(app.downloads.get(id)?.status).toBe('cancelled');
   });
 
@@ -126,7 +128,8 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
   it('pauses the queue itself, then resumes it', async () => {
     const { app, backend, click } = await setup();
     const setPaused = vi.spyOn(backend, 'setQueuePaused');
-    await click(button('Pause the Main queue'));
+    await click(button('Actions for Main'));
+    await click(screen.getByRole('menuitem', { name: 'Pause the queue' }));
     expect(setPaused).toHaveBeenCalledWith(1, true);
     expect(app.queues.byId(queueId(1))?.paused).toBe(true);
     const main = screen.getByRole('button', { name: /^Main/ });
@@ -140,14 +143,16 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     expect(inMain.filter((r) => r?.status === 'paused').map((r) => r?.file_name)).toEqual([
       'android-studio-2026.1.1-windows.exe',
     ]);
-    await click(button('Resume the Main queue'));
+    await click(button('Actions for Main'));
+    await click(screen.getByRole('menuitem', { name: 'Resume the queue' }));
     expect(app.queues.byId(queueId(1))?.paused).toBe(false);
   });
 
   it('starts a scheduled queue now and shows it runs outside its hours', async () => {
     const { app, backend, click } = await setup();
     expect(app.queues.isOutsideSchedule(app.queues.byId(queueId(2)) as never)).toBe(true);
-    await click(button('Start Overnight now, outside its hours'));
+    await click(button('Actions for Overnight'));
+    await click(screen.getByRole('menuitem', { name: 'Start now, outside its hours' }));
     expect(app.queues.byId(queueId(2))?.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
       'Started by hand, outside its hours',
@@ -209,20 +214,28 @@ describe('7. Try again does not double the listeners', () => {
 });
 
 describe('8. the days picker says what it does', () => {
-  it('nothing picked means every day; picking limits to those days', async () => {
+  it('offers every day, weekdays and weekends, and single days starting from those it runs on', async () => {
     const { app, click } = await setup();
     app.openDialog({ kind: 'queue', id: queueId(2) });
     await settle();
+    const patterns = screen.getByRole('radiogroup', { name: 'Days' });
+    expect(within(patterns).getByRole('radio', { name: 'Every day' })).toBeChecked();
+    await click(within(patterns).getByRole('radio', { name: 'Pick days' }));
     const days = screen.getByRole('group', { name: 'Only on these days' });
-    expect(within(days).queryAllByRole('button', { pressed: true })).toHaveLength(0);
-    expect(screen.getByText('No days picked, so it runs every day.')).toBeInTheDocument();
-    await click(within(days).getByRole('button', { name: 'Mon' }));
+    // Every day, as single days, is all seven ticked.
+    expect(within(days).getAllByRole('button', { pressed: true })).toHaveLength(7);
+    expect(screen.getByText('Runs every day.')).toBeInTheDocument();
+    for (const day of ['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
+      await click(within(days).getByRole('button', { name: day }));
+    }
     expect(
       within(days)
         .getAllByRole('button', { pressed: true })
         .map((b) => b.textContent.trim()),
     ).toEqual(['Mon']);
     expect(screen.getByText('Runs only on Mon.')).toBeInTheDocument();
+    await click(within(days).getByRole('button', { name: 'Mon' }));
+    expect(screen.getByText('Pick at least one day.')).toBeInTheDocument();
   });
 });
 
@@ -250,16 +263,14 @@ describe('10. the palette', () => {
   });
 });
 
-describe('11. Pause all and Resume all only work when they would do something', () => {
-  it('are disabled with nothing to pause or resume', async () => {
+describe('11. Pause all and Resume all show only when they would do something', () => {
+  it('is one button: Pause all while anything runs, then Resume all', async () => {
     const { click } = await setup();
-    // Disabled but still focusable, so it can say why.
-    const off = (name: string) => expect(button(name)).toHaveAttribute('aria-disabled', 'true');
-    expect(button('Resume all')).not.toHaveAttribute('aria-disabled');
+    expect(screen.queryByRole('button', { name: 'Resume all' })).toBeNull();
     await click(button('Pause all'));
-    off('Pause all');
+    expect(screen.queryByRole('button', { name: 'Pause all' })).toBeNull();
     await click(button('Resume all'));
-    off('Resume all');
+    expect(button('Pause all')).toBeInTheDocument();
   });
 });
 
@@ -386,7 +397,12 @@ describe('a password in a link is never shown or copied', () => {
     await settle();
     expect(screen.getByText('https://ada:***@example.com/files/locked.zip')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('s3cret');
-    await click(button('Copy link'));
+    await click(
+      within(screen.getByRole('dialog', { name: /locked\.zip/ })).getByRole('button', {
+        name: 'More actions',
+      }),
+    );
+    await click(screen.getByRole('menuitem', { name: 'Copy link' }));
     expect(writeText).toHaveBeenLastCalledWith('https://ada:***@example.com/files/locked.zip');
 
     const selected = screen

@@ -126,7 +126,11 @@ export function formatPercent(done: number, total: number | null): string {
 
 /** Size column text: `1.2 GB of 4.7 GB`, `4.7 GB`, or what is known so far. */
 export function formatSize(done: number, total: number | null, status: DownloadStatus): string {
-  if (total === null) return done > 0 ? formatBytes(done) : 'Size not known yet';
+  if (total === null) {
+    if (done > 0) return formatBytes(done);
+    // A download that stopped before the server said its size will not learn it now.
+    return status === 'failed' || status === 'cancelled' ? '' : 'Size not known yet';
+  }
   if (status === 'completed' || done >= total) return formatBytes(total);
   if (done === 0) return formatBytes(total);
   return `${formatBytes(done)} of ${formatBytes(total)}`;
@@ -309,11 +313,13 @@ export function relativeDay(ms: number, now: Date): RelativeDay {
   return { day: 'earlier', time };
 }
 
+/** Months in three letters, the same for every one: the browser's own short names write September as "Sept". */
+const MONTH_SHORT = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+
 /** A day, for example `3 Oct 2026`. */
 function calendarDay(ms: number): string {
   const d = new Date(ms);
-  const month = d.toLocaleString('en-GB', { month: 'short' });
-  return `${d.getDate()} ${month} ${d.getFullYear()}`;
+  return `${String(d.getDate())} ${MONTH_SHORT[d.getMonth()] ?? ''} ${String(d.getFullYear())}`;
 }
 
 /** A date for the detail panel, for example `Today, 14:05` or `3 Oct 2026, 09:12`. */
@@ -387,7 +393,8 @@ export function waitShort(w: WaitReason): string {
     case 'queue_schedule':
       return w.data.starts_at ? `Starts ${formatTime(w.data.starts_at)}` : 'Outside its hours';
     case 'queue_full':
-      return 'Queue full';
+      // Said as waiting, not as a fault: the queue runs as many as it may, and this is next.
+      return 'Waiting for a slot';
     case 'global_limit':
       return 'Overall limit';
     case 'in_line':

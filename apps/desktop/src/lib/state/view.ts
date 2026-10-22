@@ -79,10 +79,10 @@ export const STATUS_GROUPS: readonly StatusGroup[] = [
   'cancelled',
 ];
 
-/** The list's order of its groups: what moves, then what needs the person, then what is next, then what is done. */
+/** The list's order of its groups: what needs the person first, so a few failures are never buried under many downloads; then what moves, what is next, and what is done. */
 export const GROUP_ORDER: readonly StatusGroup[] = [
-  'active',
   'failed',
+  'active',
   'waiting',
   'paused',
   'finished',
@@ -164,6 +164,21 @@ export function isGrouped(view: View): boolean {
   return view.kind !== 'status';
 }
 
+/** Work that is over: in a queue's own view these keep their groups below its line. */
+const OVER: ReadonlySet<StatusGroup> = new Set(['finished', 'cancelled']);
+
+/** The section a row goes in: none in an ungrouped view; in a queue's own view its line, in the order it runs, so its numbers read 1, 2, 3 down the list, with only work that is over in a group; else its state's group. */
+function sectionGroup(row: DownloadSummary, grouped: boolean, inLine: boolean): StatusGroup | null {
+  const status = groupOf(row.status);
+  return !grouped || (inLine && !OVER.has(status)) ? null : status;
+}
+
+/** The sections in the order they show. */
+function groupOrder(grouped: boolean, inLine: boolean): readonly (StatusGroup | null)[] {
+  if (!grouped) return [null];
+  return inLine ? [null, ...GROUP_ORDER.filter((g) => OVER.has(g))] : GROUP_ORDER;
+}
+
 /** What the list shows and in which order: the person's choices above the list. */
 export interface ListOptions {
   view: View;
@@ -178,7 +193,7 @@ export interface ListOptions {
 
 /** One group of the list: its heading, then its rows from `start` in `ListLayout.ids` (none while folded). */
 export interface ListSection {
-  /** Null in an ungrouped view, whose one section has no heading. */
+  /** Null in an ungrouped view, or where only one group has downloads: that one section has no heading. */
   group: StatusGroup | null;
   /** How many downloads the group holds, folded or not. */
   count: number;
@@ -248,6 +263,7 @@ export function listLayout(
   const queueIndex = new Map(queues.map((q, i) => [q, i]));
   const orderIndex = new Map<DownloadId, number>();
   const grouped = isGrouped(view);
+  const inLine = view.kind === 'queue';
   const byGroup = new Map<StatusGroup | null, DownloadSummary[]>();
   order.forEach((id, i) => {
     const row = get(id);
@@ -260,7 +276,7 @@ export function listLayout(
       return;
     }
     orderIndex.set(id, i);
-    const group = grouped ? groupOf(row.status) : null;
+    const group = sectionGroup(row, grouped, inLine);
     const rows = byGroup.get(group);
     if (rows) rows.push(row);
     else byGroup.set(group, [row]);
@@ -271,15 +287,20 @@ export function listLayout(
 
   const ids: DownloadId[] = [];
   const sections: ListSection[] = [];
-  for (const group of grouped ? GROUP_ORDER : [null]) {
+  const groups = groupOrder(grouped, inLine).filter((group) => byGroup.has(group));
+  // One group alone needs no heading saying so, and is never folded away behind one.
+  const headless = groups.length === 1;
+  for (const group of groups) {
     const rows = byGroup.get(group);
     if (!rows) continue;
     // A stable sort, so ties keep queue order.
-    rows.sort(place).sort(compareFor(sort, group, place));
+    // A queue's line is the order it runs in, whatever the sort; the sort orders the groups of work that is over.
+    const by = inLine && group === null ? QUEUE_ORDER : sort;
+    rows.sort(place).sort(compareFor(by, group, place));
     // A search shows everything it finds, folded or not.
-    const isFolded = group !== null && needle === '' && folded.includes(group);
+    const isFolded = !headless && group !== null && needle === '' && folded.includes(group);
     sections.push({
-      group,
+      group: headless ? null : group,
       count: rows.length,
       folded: isFolded,
       start: ids.length,

@@ -105,14 +105,19 @@ describe('the title bar', () => {
     expect(document.activeElement).toBe(search);
   });
 
-  it('shows the downloads when a search starts on another screen', async () => {
+  it('searches settings while they show, and downloads again once they close', async () => {
     const { app, user } = await setup();
     app.openSettings();
     await settle();
-    await user.click(screen.getByRole('searchbox', { name: 'Search downloads' }));
-    await user.keyboard('ubuntu');
+    await user.click(within(bar()).getByRole('searchbox', { name: 'Search settings' }));
+    await user.keyboard('proxy');
     await settle();
-    expect(app.screen).toBe('downloads');
+    expect(app.settingsQuery).toBe('proxy');
+    expect(app.search).toBe('');
+    expect(app.screen).toBe('settings');
+    app.screen = 'downloads';
+    await settle();
+    expect(within(bar()).getByRole('searchbox', { name: 'Search downloads' })).toHaveValue('');
   });
 
   it('says it runs on sample data', async () => {
@@ -120,13 +125,13 @@ describe('the title bar', () => {
     expect(within(bar()).getByText('Sample data')).toBeInTheDocument();
   });
 
-  it('searches the view on screen, and searches everything once its chip goes', async () => {
-    const { app, user } = await setup();
+  it('says which view it searches', async () => {
+    const { app } = await setup();
     app.show({ kind: 'status', group: 'paused' });
     await settle();
     expect(within(bar()).getByRole('searchbox', { name: 'Search Paused' })).toBeInTheDocument();
-    await user.click(within(bar()).getByRole('button', { name: 'Search everything' }));
-    expect(app.view).toEqual({ kind: 'all' });
-    expect(within(bar()).getByRole('searchbox', { name: 'Search downloads' })).toHaveFocus();
+    app.show({ kind: 'all' });
+    await settle();
+    expect(within(bar()).getByRole('searchbox', { name: 'Search downloads' })).toBeInTheDocument();
   });
 });

@@ -44,7 +44,7 @@ describe('reading the links box', () => {
 
   it('says what it leaves out, and how to send the rest', () => {
     expect(linksHint({ urls: [], ignored: 0 })).toBe(
-      'One link per line. Ctrl+Enter downloads them all.',
+      'One link per line, or paste several at once.',
     );
     expect(linksHint({ urls: ['https://a.org/x'], ignored: 1 })).toBe(
       'One line has no link in it and is left out.',

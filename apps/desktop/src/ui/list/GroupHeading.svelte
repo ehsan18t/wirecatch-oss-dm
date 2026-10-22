@@ -1,15 +1,9 @@
 <script lang="ts">
-  // A group's heading in the list: its name and how many it holds (and, for what downloads, how fast), and a click folds it away or opens it. Folding is for the pointer here; the command palette folds and opens each group from the keyboard.
+  // A group's heading in the list: its name and how many it holds (the speed is the title bar's to say), and a click folds it away or opens it. Folding is for the pointer here; the command palette folds and opens each group from the keyboard.
   import ChevronDown from '~icons/lucide/chevron-down';
-  import { formatSpeed } from '@wirecatch/units';
   import { cn, Icon } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
-  import {
-    sectionIds,
-    STATUS_GROUP_LABEL,
-    type ListSection,
-    type StatusGroup,
-  } from '$lib/state/view';
+  import { STATUS_GROUP_LABEL, type ListSection, type StatusGroup } from '$lib/state/view';
 
   let {
     section,
@@ -23,13 +17,6 @@
   } = $props();
 
   const app = getApp();
-  /** How fast the group's own downloads go: the view's, not every queue's. */
-  const speed = $derived.by(() => {
-    if (group !== 'active') return '';
-    let total = 0;
-    for (const id of sectionIds(app.layout, section)) total += app.downloads.get(id)?.speed ?? 0;
-    return formatSpeed(total);
-  });
   const note = $derived(
     group === 'waiting' && app.sort.column !== 'position' ? 'in queue order' : '',
   );
@@ -54,7 +41,7 @@
       />
       <span class="truncate">{STATUS_GROUP_LABEL[group]}</span>
       <span class="font-normal text-ink-subtle tabular-nums"
-        >{[String(section.count), speed, note].filter(Boolean).join(' · ')}</span
+        >{[String(section.count), note].filter(Boolean).join(' · ')}</span
       >
     </button>
   </span>

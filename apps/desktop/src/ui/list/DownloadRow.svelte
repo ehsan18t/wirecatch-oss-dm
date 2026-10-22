@@ -1,14 +1,16 @@
 <script lang="ts">
   // One download in the list, on the list's grid: its place in its queue, its kind of file (with a box that selects it), its name over one line about it, its progress, and how much, how fast and how long. Each row reads its own download, field by field, so a progress tick redraws only the rows whose numbers moved. A download that needs attention says what happened in that one line and offers its fix on the row.
   import Check from '~icons/lucide/check';
+  import CircleAlert from '~icons/lucide/circle-alert';
   import Ellipsis from '~icons/lucide/ellipsis';
   import FolderOpen from '~icons/lucide/folder-open';
   import GripVertical from '~icons/lucide/grip-vertical';
   import Pause from '~icons/lucide/pause';
   import Play from '~icons/lucide/play';
   import RotateCw from '~icons/lucide/rotate-cw';
-  import type { DownloadId } from '@wirecatch/protocol';
-  import { formatSpeed } from '@wirecatch/units';
+  import SquareArrowOutUpRight from '~icons/lucide/square-arrow-out-up-right';
+  import type { DownloadId, FixAction } from '@wirecatch/protocol';
+  import { formatSpeed, formatSpeedShown } from '@wirecatch/units';
   import {
     Button,
     cn,
@@ -27,8 +29,10 @@
     formatSize,
     lineNote,
     shownWait,
+    STATUS_LABEL,
     waitShort,
   } from '$lib/format';
+  import { shortcutLabel } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
   import { canPause, canResume, canRetry } from '$lib/state/row-actions';
   import { groupOf } from '$lib/state/view';
@@ -36,7 +40,7 @@
   import { rowProgress } from '../status';
   import { NUMBER, type Resizable } from './columns';
   import { rowMenu } from './row-menu';
-  import { finishedNote, rowLine } from './row-text';
+  import { finishedWhen, rowLine } from './row-text';
 
   interface Props {
     id: DownloadId;
@@ -44,11 +48,13 @@
     rowIndex: number;
     /** The number columns the list has room for; the rest show under the name. */
     shown: ReadonlySet<Resizable>;
+    /** The view numbers its rows by their place in the queue. */
+    place: boolean;
     /** The list is in queue order, so rows drag up and down their queue. */
     canReorder: boolean;
   }
 
-  let { id, rowIndex, shown, canReorder }: Props = $props();
+  let { id, rowIndex, shown, place, canReorder }: Props = $props();
 
   const app = getApp();
   const row = $derived(app.downloads.get(id));
@@ -62,6 +68,13 @@
   const size = $derived(row ? formatSize(row.done, row.total, row.status) : '');
   const speed = $derived(row && group === 'active' ? formatSpeed(row.speed) : '');
   const eta = $derived(row && group === 'active' ? formatEta(row.eta_secs) : '');
+  /** An active download's cells never stay empty: it says it is connecting, its speed even at nothing, and that its time left is not known yet. */
+  const speedCell = $derived.by(() => {
+    if (!row || group !== 'active') return '';
+    if (row.status === 'connecting') return STATUS_LABEL.connecting;
+    return formatSpeedShown(row.speed);
+  });
+  const etaCell = $derived(group === 'active' ? eta || 'Not known' : '');
   /** Why a waiting download waits, or where it stands in its queue's line. */
   const waitNote = $derived.by(() => {
     if (!row || group !== 'waiting') return '';
@@ -88,7 +101,11 @@
       !shown.has('left') && eta ? `${eta} left` : '',
     ].filter(Boolean),
   );
-  const fix = $derived(row?.status === 'failed' ? row.error?.fix : undefined);
+  /** What the row offers for a problem: the error's own fix, else trying again. */
+  const fix = $derived.by((): FixAction | undefined => {
+    if (row?.status !== 'failed') return undefined;
+    return row.error?.fix ?? (canRetry(row) ? 'retry' : undefined);
+  });
   const menu = $derived(rowMenu(app));
 
   /** The row's own buttons act on it alone. */
@@ -113,31 +130,43 @@
       active && !selected && 'group-focus-visible/list:bg-wash',
     )}
   >
-    <span
-      role="gridcell"
-      class={cn(
-        'relative flex h-full items-center justify-end pr-1 text-small tabular-nums',
-        selected ? 'font-semibold text-accent' : 'text-ink-muted',
-      )}
-    >
+    {#if place}
       <span
+        role="gridcell"
+        class={cn(
+          'relative flex h-full items-center justify-end pr-1 text-small tabular-nums',
+          selected ? 'font-semibold text-accent' : 'text-ink-muted',
+        )}
+      >
+        <span
+          class={cn(
+            'transition-opacity duration-fast',
+            canReorder && position !== undefined && 'group-hover:opacity-0',
+          )}>{position ?? ''}</span
+        >
+        {#if canReorder && position !== undefined}
+          <span
+            class="absolute inset-y-2 -right-1 -left-1 flex cursor-grab items-center justify-center rounded-sm text-ink-muted opacity-0 transition-opacity duration-fast group-hover:opacity-100 hover:bg-wash hover:text-ink"
+            aria-hidden="true"
+            {@attach tooltip(
+              () =>
+                `Drag to change its place in ${queueName} (${shortcutLabel('nudge-up')}, ${shortcutLabel('nudge-down')})`,
+            )}
+          >
+            <Icon icon={GripVertical} size="sm" />
+          </span>
+        {/if}
+      </span>
+    {/if}
+    <span role="gridcell" class="relative flex items-center">
+      <CategoryIcon
+        category={row.category}
         class={cn(
           'transition-opacity duration-fast',
-          canReorder && position !== undefined && 'group-hover:opacity-0',
-        )}>{position ?? ''}</span
-      >
-      {#if canReorder && position !== undefined}
-        <span
-          class="absolute inset-y-2 -right-1 -left-1 flex cursor-grab items-center justify-center rounded-sm text-ink-muted opacity-0 transition-opacity duration-fast group-hover:opacity-100 hover:bg-wash hover:text-ink"
-          aria-hidden="true"
-        >
-          <Icon icon={GripVertical} size="sm" />
-        </span>
-      {/if}
-    </span>
-    <span role="gridcell" class="relative flex items-center">
-      <CategoryIcon category={row.category} />
-      <!-- For the pointer: the keyboard selects with Space on the list's own keys and Ctrl and Shift with the arrows. -->
+          selected ? '*:opacity-0' : 'group-hover:*:opacity-0',
+        )}
+      />
+      <!-- The tile is the checkbox: under the pointer its picture gives way to an empty box, and a selected row fills it. For the pointer; the keyboard selects with Space on the list's own keys and Ctrl and Shift with the arrows. -->
       <button
         type="button"
         role="checkbox"
@@ -145,14 +174,21 @@
         aria-checked={selected}
         aria-label="Select {row.file_name}"
         class={cn(
-          'absolute flex items-center justify-center border transition duration-fast ease-out',
-          selected
-            ? 'inset-0 rounded-md border-accent bg-accent text-accent-fg'
-            : '-top-1 -right-1 size-4.5 rounded-xs border-line-strong bg-overlay text-transparent opacity-0 shadow-control group-hover:opacity-100 hover:border-accent',
+          'group/check absolute inset-0 flex items-center justify-center rounded-md transition duration-fast ease-out',
+          !selected && 'opacity-0 group-hover:opacity-100',
         )}
         onclick={() => app.selection.toggle(id)}
       >
-        <Icon icon={Check} size={selected ? 'sm' : 'xs'} />
+        <span
+          class={cn(
+            'flex size-4 items-center justify-center rounded-xs border transition-colors duration-fast',
+            selected
+              ? 'border-accent bg-accent text-accent-fg'
+              : 'border-line-strong bg-field group-hover/check:border-accent',
+          )}
+        >
+          {#if selected}<Icon icon={Check} size="xs" />{/if}
+        </span>
       </button>
     </span>
     <span role="gridcell" class="flex min-w-0 flex-col justify-center gap-0.5">
@@ -161,10 +197,15 @@
         data-menu-anchor
         {@attach tooltip(() => textIfCut(row.file_name))}>{row.file_name}</span
       >
-      <span class="flex min-w-0 gap-2 text-small">
+      <span class="flex min-w-0 items-start gap-1.5 text-small">
+        {#if group === 'failed'}
+          <Icon icon={CircleAlert} size="xs" class="mt-0.5 shrink-0 text-danger" />
+        {/if}
         <span
-          class={cn('truncate', group === 'failed' ? 'text-danger' : 'text-ink-muted')}
-          {@attach tooltip(() => textIfCut(meta))}>{meta}</span
+          class="truncate text-ink-muted"
+          {@attach tooltip(() =>
+            group === 'failed' && row.error ? row.error.message : textIfCut(meta),
+          )}>{meta}</span
         >
         {#if folded.length > 0}
           <span class="shrink-0 text-ink-muted tabular-nums">{folded.join(' · ')}</span>
@@ -188,7 +229,18 @@
             >{waitNote}</span
           >
         {:else if group === 'finished'}
-          <span class="truncate text-ink-muted">{finishedNote(row, app.clock.now)}</span>
+          <span class="truncate text-ink-muted">{finishedWhen(row, app.clock.now)}</span>
+        {:else if fix}
+          <Button
+            size="sm"
+            variant="secondary"
+            tabindex={-1}
+            class="max-w-full"
+            onclick={() => app.actions.fix(row.id, fix)}
+            ><span class="truncate">{FIX_LABEL[fix]}</span></Button
+          >
+        {:else if group === 'failed'}
+          <span class="truncate text-ink-muted">{STATUS_LABEL.failed}</span>
         {:else if progress}
           <ProgressBar
             value={progress.value}
@@ -209,21 +261,12 @@
         class={NUMBER}
         {@attach tooltip(() =>
           row.connections > 0 ? `${String(row.connections)} connections` : null,
-        )}>{speed}</span
+        )}>{speedCell}</span
       >
     {/if}
-    {#if shown.has('left')}<span role="gridcell" class={NUMBER}>{eta}</span>{/if}
+    {#if shown.has('left')}<span role="gridcell" class={NUMBER}>{etaCell}</span>{/if}
     <!-- For the pointer: the keyboard reaches the same through the list's keys and its context menu, so these take no place in the tab order. -->
     <span role="gridcell" class="flex items-center justify-end gap-0.5">
-      {#if fix}
-        <Button
-          size="sm"
-          variant="ghost"
-          class="absolute right-11 h-control-sm px-2.5 font-semibold text-accent"
-          tabindex={-1}
-          onclick={() => app.actions.fix(row.id, fix)}>{FIX_LABEL[fix]}</Button
-        >
-      {/if}
       <span
         class={cn(
           'flex items-center gap-0.5 transition-opacity duration-fast ease-out',
@@ -231,7 +274,7 @@
           active && 'group-focus-visible/list:opacity-100',
         )}
       >
-        {#if !fix}
+        {#if !fix || !shown.has('progress')}
           {#if canPause(row)}
             <IconButton
               icon={Pause}
@@ -249,6 +292,13 @@
               onclick={() => app.actions.resume([row.id])}
             />
           {:else if row.status === 'completed'}
+            <IconButton
+              icon={SquareArrowOutUpRight}
+              label="Open"
+              size="sm"
+              tabindex={-1}
+              onclick={() => app.actions.openFile(row.id)}
+            />
             <IconButton
               icon={FolderOpen}
               label="Show in folder"

@@ -91,12 +91,13 @@
     </Field>
 
     <div class="flex flex-wrap gap-4">
-      {#if draft.single}
+      <!-- There before a link is, so pasting one does not move the form; several links each keep their own name. -->
+      {#if count <= 1}
         <FileNameField
           class="flex-1 basis-64"
           value={draft.fileName}
           onchange={(name: string) => (draft.fileName = name)}
-          placeholder={fileNameFromUrl(draft.single)}
+          placeholder={draft.single ? fileNameFromUrl(draft.single) : ''}
           description="Leave empty for the name the server gives."
         />
       {/if}

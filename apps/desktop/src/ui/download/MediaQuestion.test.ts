@@ -78,12 +78,15 @@ describe('the quality window with output formats', () => {
       screen.getByText(/^No conversion: the video and audio are copied into MP4 as they are/),
     ).toBeVisible();
 
-    // Subtitles: human-written ones first, auto-generated ones marked, none ticked at first.
-    const english = screen.getByRole('checkbox', { name: 'English' });
-    const auto = screen.getByRole('checkbox', { name: 'English, auto-generated' });
-    expect(screen.getByRole('checkbox', { name: 'Spanish' })).not.toBeChecked();
-    expect(english).not.toBeChecked();
-    expect(auto).not.toBeChecked();
+    // Subtitles: human-written ones first, auto-generated ones marked, none picked at first.
+    const english = screen.getByRole('button', { name: 'English' });
+    const auto = screen.getByRole('button', { name: 'English (auto)' });
+    expect(screen.getByRole('button', { name: 'Spanish' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(english).toHaveAttribute('aria-pressed', 'false');
+    expect(auto).toHaveAttribute('aria-pressed', 'false');
     await user.click(english);
     await settle();
     expect(
@@ -145,7 +148,7 @@ describe('the quality window with output formats', () => {
     expect(screen.queryByRole('combobox', { name: 'Audio quality' })).toBeNull();
 
     // Subtitles go next to an audio file.
-    await user.click(screen.getByRole('checkbox', { name: 'Spanish' }));
+    await user.click(screen.getByRole('button', { name: 'Spanish' }));
     await settle();
     expect(screen.getByText('They are saved as .srt files next to the file.')).toBeVisible();
     expect(screen.queryByRole('checkbox', { name: "Add the video's chapters" })).toBeNull();
@@ -171,8 +174,11 @@ describe('the quality window with output formats', () => {
       await b.changeSettings({ media: settings.media });
     });
     expect(saveAs()).toHaveTextContent('MKV');
-    expect(screen.getByRole('checkbox', { name: 'English' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'English, auto-generated' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'English (auto)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
     expect(
       screen.getByRole('checkbox', { name: 'Save them as .srt files next to the video instead' }),
     ).toBeChecked();

@@ -7,7 +7,7 @@
     type OutputDefaults,
     type OutputFormat,
   } from '@wirecatch/protocol';
-  import { Checkbox, Field, type FieldControl, Select } from '@wirecatch/ui';
+  import { Checkbox, Field, type FieldControl, Select, ToggleChip } from '@wirecatch/ui';
   import {
     conversionNote,
     fitFor,
@@ -98,13 +98,11 @@
     {#if choice.subtitles.length > 0}
       <fieldset class="flex min-w-0 flex-col gap-2">
         <legend class="mb-2 text-ui font-medium text-ink">Subtitles</legend>
-        <div
-          class="flex max-h-32 flex-col gap-2 overflow-y-auto rounded-sm border border-line bg-field px-2.5 py-2"
-        >
+        <div class="flex flex-wrap gap-1.5">
           {#each choice.subtitles as subtitle (subtitle.id)}
-            <Checkbox
-              checked={output.subtitles.includes(subtitle.id)}
-              label={subtitle.auto ? `${subtitle.name}, auto-generated` : subtitle.name}
+            <ToggleChip
+              pressed={output.subtitles.includes(subtitle.id)}
+              label={subtitle.auto ? `${subtitle.name} (auto)` : subtitle.name}
               onchange={(on: boolean) => toggleSubtitle(subtitle.id, on)}
             />
           {/each}

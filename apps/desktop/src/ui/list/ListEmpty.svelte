@@ -67,11 +67,11 @@
     <EmptyState
       icon={SearchX}
       tone="neutral"
-      title={`Nothing matches "${search}"`}
+      title={`Nothing matches “${search}”`}
       description="The search looks at file names and links in this view."
     >
       {#snippet actions()}
-        <Button onclick={() => (app.search = '')}>Clear search</Button>
+        <Button onclick={() => (app.search = '')}>Clear the search</Button>
         {#if app.view.kind !== 'all'}
           <Button variant="ghost" onclick={() => app.show({ kind: 'all' })}
             >Search all downloads</Button

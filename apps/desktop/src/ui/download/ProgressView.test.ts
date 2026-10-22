@@ -43,7 +43,7 @@ describe('"Cancel this download?"', () => {
     const remove = vi.spyOn(b, 'remove');
     await finish(b, id);
     expect(screen.getByRole('status')).toHaveTextContent('Finished');
-    expect(screen.queryByRole('button', { name: 'Cancel and delete the partial file' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cancel download' })).toBeNull();
     expect(remove).not.toHaveBeenCalled();
     expect((await b.listDownloads()).some((r) => r.id === id)).toBe(true);
   });

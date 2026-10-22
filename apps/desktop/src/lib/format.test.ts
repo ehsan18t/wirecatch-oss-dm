@@ -24,6 +24,7 @@ import {
   scheduleAllows,
   statusDetail,
   statusShort,
+  formatDate,
 } from './format';
 
 describe('time', () => {
@@ -87,6 +88,7 @@ describe('progress', () => {
 
   it('describes size in plain words', () => {
     expect(formatSize(0, null, 'queued')).toBe('Size not known yet');
+    expect(formatSize(0, null, 'failed')).toBe('');
     expect(formatSize(1024, 4096, 'downloading')).toBe('1.00 KB of 4.00 KB');
     expect(formatSize(4096, 4096, 'completed')).toBe('4.00 KB');
   });
@@ -188,7 +190,7 @@ describe('a download already in the list (D23)', () => {
       'You downloaded this yesterday at 07:05.',
     );
     expect(earlierNote(row({ completed_at: new Date(2026, 8, 3, 9, 0).getTime() }), now)).toBe(
-      'You downloaded this on 3 Sept 2026.',
+      'You downloaded this on 3 Sep 2026.',
     );
     expect(earlierNote(row({ status: 'downloading' }), now)).toBe('This is already downloading.');
     expect(earlierNote(row({ status: 'processing' }), now)).toBe('This is already downloading.');
@@ -208,7 +210,7 @@ describe('a download already in the list (D23)', () => {
       status: 'queued',
       waiting: { type: 'queue_full', data: { running: 2, limit: 2 } },
     });
-    expect(statusShort(waiting)).toBe('Queue full');
+    expect(statusShort(waiting)).toBe('Waiting for a slot');
     expect(statusDetail(waiting, 'Main')).toBe(
       'Main is running 2 of 2. This starts when one of them finishes.',
     );
@@ -301,5 +303,13 @@ describe('the parts of a phrase that logic reads', () => {
       day: 'earlier',
       time: '07:00',
     });
+  });
+});
+
+describe('dates', () => {
+  it('names every month in three letters, September too', () => {
+    const now = new Date(2026, 9, 22, 12, 0);
+    expect(formatDate(new Date(2026, 8, 15, 9, 12).getTime(), now)).toBe('15 Sep 2026, 09:12');
+    expect(formatDate(new Date(2026, 5, 3, 9, 12).getTime(), now)).toBe('3 Jun 2026, 09:12');
   });
 });

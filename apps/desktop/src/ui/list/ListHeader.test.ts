@@ -6,9 +6,12 @@ import { renderApp, settle } from '$lib/testing/setup';
 const main = () => screen.getByRole('main', { name: 'Downloads' });
 
 describe('the list header', () => {
-  it('says what is happening now: how many download, how fast, and about how long', async () => {
+  it('says what is happening now: how many download, about how long, and how many are next', async () => {
     await renderApp();
-    expect(within(main()).getByText(/^\d+ downloading at .+ · about .+ left$/)).toBeInTheDocument();
+    // The speed is the title bar's to say.
+    expect(
+      within(main()).getByText(/^\d+ downloading · about .+ left · \d+ up next$/),
+    ).toBeInTheDocument();
   });
 
   it('says how many downloads match a search, in words spaced as written', async () => {
@@ -19,17 +22,14 @@ describe('the list header', () => {
       within(main())
         .getByText(/downloads? matching/)
         .textContent.trim(),
-    ).toBe('0 downloads matching "zzzz"');
+    ).toBe('0 downloads matching “zzzz”');
   });
 
-  it('offers only New download on first run, where there is nothing else to act on', async () => {
+  it('leaves New download to the empty list on first run, so the window offers it once', async () => {
     await renderApp({ empty: true });
     const tools = within(main()).getByRole('group', { name: 'List tools' });
-    expect(
-      within(tools)
-        .getAllByRole('button')
-        .map((b) => b.textContent.trim()),
-    ).toEqual(['New download']);
+    expect(within(tools).queryAllByRole('button')).toEqual([]);
+    expect(within(main()).getAllByRole('button', { name: 'New download' })).toHaveLength(1);
     expect(within(main()).queryByText(/^0 downloads/)).toBeNull();
     expect(within(main()).getByRole('heading', { level: 1 })).toBeInTheDocument();
   });

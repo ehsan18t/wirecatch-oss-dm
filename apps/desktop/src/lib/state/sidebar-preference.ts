@@ -1,4 +1,4 @@
-// Whether the person collapsed the main window's sidebar to its rail: a display preference of this window, kept in its page storage like the hints.
+// Whether the person collapsed the main window's sidebar to its rail: a display preference of this window, kept in its page storage.
 
 import { readStored, writeStored } from './page-storage';
 

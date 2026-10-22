@@ -133,12 +133,12 @@ describe('listLayout', () => {
   it('groups by state, in the order of what needs the person most', () => {
     const layout = listLayout(order, get, options);
     expect(layout.sections.map((s) => s.group)).toEqual([
-      'active',
       'failed',
+      'active',
       'waiting',
       'finished',
     ]);
-    expect(layout.ids).toEqual([1, 3, 4, 2]);
+    expect(layout.ids).toEqual([3, 1, 4, 2]);
   });
 
   it('leaves one view of one status ungrouped', () => {
@@ -151,7 +151,7 @@ describe('listLayout', () => {
 
   it('counts a folded group and draws none of its rows', () => {
     const layout = listLayout(order, get, { ...options, folded: ['finished'] });
-    expect(layout.ids).toEqual([1, 3, 4]);
+    expect(layout.ids).toEqual([3, 1, 4]);
     expect(layout.sections.at(-1)).toEqual({
       group: 'finished',
       count: 1,
@@ -164,9 +164,11 @@ describe('listLayout', () => {
   it('shows what a search finds even in a folded group', () => {
     const layout = listLayout(order, get, { ...options, search: 'a-doc', folded: ['finished'] });
     expect(layout.ids).toEqual([2]);
-    expect(layout.sections).toEqual([
-      { group: 'finished', count: 1, folded: false, start: 0, size: 1 },
-    ]);
+  });
+
+  it('gives one group alone no heading, and never folds it away', () => {
+    const layout = listLayout(order, get, { ...options, search: 'a-doc', folded: ['finished'] });
+    expect(layout.sections).toEqual([{ group: null, count: 1, folded: false, start: 0, size: 1 }]);
   });
 
   it('searches names and links, ignoring case', () => {
@@ -175,6 +177,7 @@ describe('listLayout', () => {
   });
 
   it('sorts inside each group, and never the groups themselves', () => {
+    // A queue's line keeps the order it runs in, whatever the sort.
     expect(
       ids({ view: { kind: 'queue', id: queueId(2) }, sort: { column: 'name', descending: true } }),
     ).toEqual([3, 4]);
@@ -184,6 +187,19 @@ describe('listLayout', () => {
         sort: { column: 'size', descending: true },
       }),
     ).toEqual([1]);
+  });
+
+  it("lists a queue's unfinished downloads as one line in its order, and only work that is over in groups", () => {
+    const layout = listLayout(order, get, { ...options, view: { kind: 'queue', id: queueId(2) } });
+    // A failed download and a waiting one, in the queue's order, under no heading.
+    expect(layout.ids).toEqual([3, 4]);
+    expect(layout.sections.map((x) => x.group)).toEqual([null]);
+    const first = listLayout(order, get, {
+      ...options,
+      view: { kind: 'queue', id: queueId(1) },
+      folded: [],
+    });
+    expect(first.sections.map((x) => x.group)).toEqual([null, 'finished']);
   });
 
   it('keeps Up next in queue order whatever the sort', () => {
@@ -202,7 +218,7 @@ describe('listLayout', () => {
     ).toEqual([4]);
     expect(
       ids({ view: { kind: 'all' }, queues: [queueId(2), queueId(1)], sort: QUEUE_ORDER }),
-    ).toEqual([1, 3, 4, 2]);
+    ).toEqual([3, 1, 4, 2]);
   });
 });
 

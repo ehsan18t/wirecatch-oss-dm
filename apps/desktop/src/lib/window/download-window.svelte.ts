@@ -438,14 +438,14 @@ export class DownloadWindowState {
     return changeSettings(this, change, this.#settingsWriter);
   }
 
-  /** "Start downloads without asking": the window before each browser file, inverted. */
+  /** "Don't ask again for files from the browser": the window before each browser file, inverted. */
   setStartWithoutAsking(on: boolean): Promise<void> {
     return this.#saveSettings((d) => void (d.extension.ask_before_download = !on));
   }
 
-  /** "Close this window when downloads start". */
-  setCloseWhenStarted(on: boolean): Promise<void> {
-    return this.#saveSettings((d) => void (d.show_progress_windows = !on));
+  /** "Keep the window open to show progress", worded as Settings words it. */
+  setKeepOpen(on: boolean): Promise<void> {
+    return this.#saveSettings((d) => void (d.show_progress_windows = on));
   }
 
   close(): void {

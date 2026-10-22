@@ -1,12 +1,20 @@
 <script lang="ts">
-  // One queue in the sidebar: what it is doing, and its own buttons (edit, pause or resume, start now outside its hours). Downloads dragged onto it move to it.
+  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit), which its view's header shows too. Downloads dragged onto it move to it.
+  import Ellipsis from '~icons/lucide/ellipsis';
   import ListOrdered from '~icons/lucide/list-ordered';
   import Pause from '~icons/lucide/pause';
   import Pencil from '~icons/lucide/pencil';
   import Play from '~icons/lucide/play';
   import type { Queue } from '@wirecatch/protocol';
   import { formatSpeed } from '@wirecatch/units';
-  import { cn, IconButton, SidebarItem } from '@wirecatch/ui';
+  import {
+    cn,
+    IconButton,
+    Menu,
+    SidebarItem,
+    type MenuEntry,
+    type MenuTriggerProps,
+  } from '@wirecatch/ui';
   import { getDragIds, isDownloadDrag } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
 
@@ -22,6 +30,31 @@
   const speed = $derived(app.downloads.queueSpeed[queue.id] ?? 0);
   const count = $derived(app.counts.queue.get(queue.id)?.total ?? 0);
   const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.paused);
+
+  const entries = $derived<MenuEntry[]>([
+    ...(outside
+      ? [
+          {
+            id: 'start',
+            label: 'Start now, outside its hours',
+            icon: Play,
+            onselect: () => void app.queues.startNow(queue.id),
+          },
+        ]
+      : []),
+    {
+      id: 'pause',
+      label: queue.paused ? 'Resume the queue' : 'Pause the queue',
+      icon: queue.paused ? Play : Pause,
+      onselect: () => void app.queues.setPaused(queue.id, !queue.paused),
+    },
+    {
+      id: 'edit',
+      label: 'Edit name, hours and limits',
+      icon: Pencil,
+      onselect: () => app.openDialog({ kind: 'queue', id: queue.id }),
+    },
+  ]);
 
   function ondragover(e: DragEvent) {
     if (!isDownloadDrag(e)) return;
@@ -63,29 +96,11 @@
       {/if}
     {/snippet}
     {#snippet actions()}
-      {#if outside}
-        <IconButton
-          icon={Play}
-          label="Start {queue.name} now, outside its hours"
-          tooltip="Start now"
-          size="xs"
-          onclick={() => app.queues.startNow(queue.id)}
-        />
-      {/if}
-      <IconButton
-        icon={queue.paused ? Play : Pause}
-        label={queue.paused ? `Resume the ${queue.name} queue` : `Pause the ${queue.name} queue`}
-        tooltip={queue.paused ? 'Resume this queue' : 'Pause this queue'}
-        size="xs"
-        onclick={() => app.queues.setPaused(queue.id, !queue.paused)}
-      />
-      <IconButton
-        icon={Pencil}
-        label="Edit {queue.name}: name, schedule and limits"
-        tooltip="Edit name, schedule and limits"
-        size="xs"
-        onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}
-      />
+      <Menu {entries} label="{queue.name} queue" align="start">
+        {#snippet trigger(props: MenuTriggerProps)}
+          <IconButton {...props} icon={Ellipsis} label="Actions for {queue.name}" size="xs" />
+        {/snippet}
+      </Menu>
     {/snippet}
   </SidebarItem>
 </div>

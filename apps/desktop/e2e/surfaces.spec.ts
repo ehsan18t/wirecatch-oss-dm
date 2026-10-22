@@ -32,7 +32,8 @@ for (const theme of ['light', 'dark'] as const) {
     await page.locator('dialog[open]').getByRole('button', { name: 'Remove' }).click();
     await expectSolid(topDialog(page), 'the remove question');
     await page.keyboard.press('Escape');
-    await page.locator('dialog[open]').getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.locator('dialog[open]').getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Cancel download' }).click();
     await expectSolid(topDialog(page), 'the cancel question');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
@@ -50,7 +51,12 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
 
     await page.keyboard.press('Control+Shift+P');
-    await expectSolid(page.locator('dialog.palette[open]'), 'the command palette');
+    await expectSolid(
+      page.locator('dialog[open]', {
+        has: page.getByRole('combobox', { name: 'Type an action or setting' }),
+      }),
+      'the command palette',
+    );
     await page.keyboard.press('Escape');
 
     await row(page, 'Distributed').click({ button: 'right' });
@@ -71,8 +77,9 @@ test('every settings row is as tall as what it holds, in each section', async ({
     await sections.getByRole('button', { name: new RegExp(`^${name}`) }).click();
     const slack = await page.locator('.setting').evaluateAll((rows) =>
       rows.map((r) => {
-        // Each part of the row (its name and help, its control) is no taller than what is in it.
-        const parts = [...r.children].map((part) => {
+        // Each part of the row (its name and help, its control) is no taller than what is in it. The row is the design system's setting row inside the anchor that flashes.
+        const row = r.firstElementChild ?? r;
+        const parts = [...row.children].map((part) => {
           const kids = [...part.children].map((k) => k.getBoundingClientRect());
           if (kids.length === 0) return 0;
           const top = Math.min(...kids.map((k) => k.top));

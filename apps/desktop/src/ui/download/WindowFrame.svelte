@@ -126,9 +126,8 @@
   {/if}
   {#if footer}
     <div
-      class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-wash px-5 py-3 [&>[data-main]]:grow"
+      class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-wash px-5 py-3"
     >
-      <!-- The main action (marked `data-main`) takes the room left: on a line of its own when the buttons wrap, it fills it rather than hanging at one end. -->
       {@render footer()}
     </div>
   {/if}

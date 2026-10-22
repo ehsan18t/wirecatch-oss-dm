@@ -1,7 +1,6 @@
 <script lang="ts">
-  // The main window's navigation. On the downloads screen: the downloads that wait for an answer, the list by state, and the queues (the first three, the rest folded away), each with how many it holds, and at its foot settings, every action and the shortcuts as icons. On the settings screen the same navigation becomes the list of settings sections, with the way back at its top (D47). Docked with labels in a wide window, as an icon rail when collapsed, and as a drawer in a narrow one.
+  // The main window's navigation. On the downloads screen: the list by state, and the queues (the first three, the rest folded away), each with how many it holds, and at its foot Settings, with every action and the shortcuts as icons. On the settings screen the same navigation becomes the list of settings sections, with the way back at its top (D47). Docked with labels in a wide window, as an icon rail when collapsed, and as a drawer in a narrow one.
   import Ban from '~icons/lucide/ban';
-  import Bell from '~icons/lucide/bell';
   import ChevronDown from '~icons/lucide/chevron-down';
   import ChevronLeft from '~icons/lucide/chevron-left';
   import CircleAlert from '~icons/lucide/circle-alert';
@@ -13,7 +12,7 @@
   import Layers from '~icons/lucide/layers';
   import Plus from '~icons/lucide/plus';
   import SlidersHorizontal from '~icons/lucide/sliders-horizontal';
-  import SquareTerminal from '~icons/lucide/square-terminal';
+  import TextSearch from '~icons/lucide/text-search';
   import {
     cn,
     expand,
@@ -67,7 +66,6 @@
       : queues.filter((q, i) => i < QUEUES_SHOWN || current({ kind: 'queue', id: q.id })),
   );
   const hiddenQueues = $derived(queues.length - shownQueues.length);
-  const waiting = $derived(app.questions.waitingCount);
 
   /** While settings are searched, how many settings of each section match. */
   const matches = $derived.by(() => {
@@ -86,15 +84,6 @@
         label="Back to downloads"
         icon={ChevronLeft}
         onclick={() => (app.screen = 'downloads')}
-      />
-    {:else if waiting > 0}
-      <!-- Each waiting download has its own window (D23); this brings them all back. -->
-      <SidebarItem
-        label="Waiting for you"
-        icon={Bell}
-        count={waiting}
-        countTone="warning"
-        onclick={() => app.showQuestionWindows()}
       />
     {/if}
   {/snippet}
@@ -124,16 +113,14 @@
       />
       {#each STATUS_GROUPS as group (group)}
         {@const count = app.counts.status[group]}
-        {#if group !== 'cancelled' || count > 0 || current({ kind: 'status', group })}
-          <SidebarItem
-            label={STATUS_GROUP_LABEL[group]}
-            icon={STATUS_ICON[group]}
-            active={current({ kind: 'status', group })}
-            {count}
-            countTone={group === 'failed' ? 'danger' : 'neutral'}
-            onclick={() => app.show({ kind: 'status', group })}
-          />
-        {/if}
+        <SidebarItem
+          label={STATUS_GROUP_LABEL[group]}
+          icon={STATUS_ICON[group]}
+          active={current({ kind: 'status', group })}
+          {count}
+          countTone={group === 'failed' && count > 0 ? 'danger' : 'neutral'}
+          onclick={() => app.show({ kind: 'status', group })}
+        />
       {/each}
     </SidebarSection>
 
@@ -173,23 +160,20 @@
   {/if}
 
   {#snippet footer()}
-    <div
-      class={cn('flex', sidebar.showLabels ? 'justify-around' : 'flex-col items-center gap-0.5')}
-    >
+    <div class={cn('flex items-center gap-0.5', !sidebar.showLabels && 'flex-col')}>
+      <div class={cn(sidebar.showLabels && 'min-w-0 flex-1')}>
+        {#if app.screen !== 'settings'}
+          <SidebarItem
+            label="Settings"
+            icon={SlidersHorizontal}
+            onclick={() => app.openSettings()}
+          />
+        {/if}
+      </div>
       <IconButton
-        icon={SlidersHorizontal}
+        icon={TextSearch}
         data-nav-stop
-        label="Settings"
-        tooltip="Settings ({shortcutLabel('settings')})"
-        active={app.screen === 'settings'}
-        aria-pressed={app.screen === 'settings'}
-        aria-keyshortcuts={ariaShortcut('settings')}
-        onclick={() =>
-          app.screen === 'settings' ? (app.screen = 'downloads') : app.openSettings()}
-      />
-      <IconButton
-        icon={SquareTerminal}
-        data-nav-stop
+        size="sm"
         label="Find any action"
         tooltip="Find any action or setting ({shortcutLabel('palette')})"
         aria-keyshortcuts={ariaShortcut('palette')}
@@ -198,6 +182,7 @@
       <IconButton
         icon={Keyboard}
         data-nav-stop
+        size="sm"
         label="Keyboard shortcuts"
         tooltip="Keyboard shortcuts ({shortcutLabel('help')})"
         onclick={() => app.openDialog({ kind: 'shortcuts' })}

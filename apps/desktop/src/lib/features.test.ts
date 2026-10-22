@@ -5,7 +5,7 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { buildCommands } from './commands';
-import { SECTIONS, SETTINGS } from './settings-schema';
+import { SECTIONS, SETTINGS, settingAnchor } from './settings-schema';
 import { downloadWindow, renderApp, rowByName, settle } from './testing/setup';
 
 async function setup() {
@@ -105,15 +105,20 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(palette('sel.retry')).toBe(true);
   });
 
-  it("remove, cancel, show in folder, copy link: the row's details, then the button, 2 clicks", async () => {
+  it("remove, show in folder: the row's details, then the button, 2 clicks; cancel, copy link: then More, 3 clicks", async () => {
     const { click, palette } = await setup();
     await click(rowByName('LibreOffice'));
     const panel = within(details('LibreOffice'));
     expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Copy link' })).toBeInTheDocument();
-    expect(panel.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    await click(panel.getByRole('button', { name: 'More actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Copy link' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Cancel download' })).toBeInTheDocument();
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await settle();
     await click(panel.getByRole('button', { name: 'Remove' }));
-    expect(within(dialog()).getByText(/Remove "LibreOffice/)).toBeInTheDocument();
+    // The question opens over the details, as an alert dialog.
+    const question = within(screen.getByRole('alertdialog', { name: 'Remove this download?' }));
+    expect(question.getByText(/^LibreOffice/)).toBeInTheDocument();
     for (const id of ['sel.remove', 'sel.cancel', 'sel.folder']) expect(palette(id)).toBe(true);
   });
 
@@ -140,13 +145,16 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await click(screen.getByRole('button', { name: /^Overnight/ }));
     expect(screen.getByRole('heading', { level: 1, name: 'Overnight' })).toBeInTheDocument();
     expect(button('Pause queue')).toBeInTheDocument();
-    await click(button('Edit Overnight: name, schedule and limits'));
+    await click(button('Edit queue'));
     const d = dialog();
     expect(within(d).getByLabelText('Only run at certain times')).toBeChecked();
     expect(within(d).getByLabelText("Limit this queue's speed")).toBeChecked();
-    expect(within(d).getByLabelText('Downloads at the same time')).toHaveValue(2);
+    expect(within(d).getByLabelText('Downloads at the same time')).toHaveAttribute(
+      'aria-valuenow',
+      '2',
+    );
     await click(within(d).getByRole('button', { name: 'Delete queue' }));
-    await click(within(d).getByRole('button', { name: /Delete it/ }));
+    await click(within(d).getByRole('button', { name: 'Delete Overnight' }));
     expect(app.queues.list.some((q) => q.name === 'Overnight')).toBe(false);
     await click(button('New queue'));
     expect(within(dialog()).getByText('New queue')).toBeInTheDocument();
@@ -183,8 +191,8 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
       }
     }
     await click(nav().getByRole('button', { name: /^Move to another PC/ }));
-    await click(button('Export settings'));
-    expect(within(dialog()).getByText('Saved in the file')).toBeInTheDocument();
+    await click(button('Export settings…'));
+    expect(within(dialog()).getByText('In the file')).toBeInTheDocument();
     expect(palette('setting.export') && palette('setting.import') && palette('setting.theme')).toBe(
       true,
     );
@@ -236,7 +244,9 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const { app, backend, click } = await setup();
     backend.simulateConfirmation();
     const window = within(await downloadWindow());
-    await click(window.getByRole('checkbox', { name: 'Start downloads without asking' }));
+    await click(
+      window.getByRole('checkbox', { name: 'Don’t ask again for files from the browser' }),
+    );
     expect(app.settings?.extension.ask_before_download).toBe(false);
     // The file it asked about still waits for its answer.
     await click(window.getByRole('button', { name: 'Download now' }));
@@ -249,12 +259,13 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(within(toasts).getByText(/^Downloading to/)).toBeInTheDocument();
   });
 
-  it('a progress window for any download: its details, then Show progress window, 2 clicks', async () => {
+  it('a progress window for any download: its details, then More, Open in its own window, 3 clicks', async () => {
     const { click, palette } = await setup();
     await click(rowByName('ubuntu-24.04.3'));
     expect(palette('sel.progress')).toBe(true);
     const panel = within(details('ubuntu-24.04.3'));
-    await click(panel.getByRole('button', { name: 'Show progress window' }));
+    await click(panel.getByRole('button', { name: 'More actions' }));
+    await click(screen.getByRole('menuitem', { name: 'Open in its own window' }));
     const window = within(await downloadWindow());
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent('ubuntu-24.04.3');
   });
@@ -263,7 +274,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const { app, backend, click, palette } = await setup();
     expect(palette('addon.install.media')).toBe(true);
     await openSection(click, 'Add-ons');
-    await click(button('Install'));
+    await click(button(/^Install/));
     expect(app.addons.list?.[0]?.state.type).toBe('installing');
     backend.tick(4500);
     await settle();
@@ -296,7 +307,9 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
       'A newer version came out today; Wirecatch installs it once it is two days old.';
     expect(note()).toMatchObject({ kind: 'info', message: waiting });
     expect(app.addons.list?.[0]?.state.type).toBe('installed');
-    expect(screen.getByText(waiting, { selector: 'p.note' })).toBeInTheDocument();
+    const card = document.getElementById(settingAnchor('media_addon'));
+    if (!card) throw new Error('no media add-on setting');
+    expect(within(card).getByText(waiting)).toBeInTheDocument();
 
     backend.nextUpdateCheck = 'newer';
     await click(button('Check for updates'));
@@ -350,11 +363,11 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
   it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
     const { app, backend, click } = await setup();
     await openSection(click, 'Add-ons');
-    await click(button('Install'));
+    await click(button(/^Install/));
     await click(button('Stop installing the media add-on'));
     expect(app.addons.list?.[0]?.state.type).toBe('not_installed');
 
-    await click(button('Install'));
+    await click(button(/^Install/));
     backend.tick(4500);
     await settle();
     const version = app.addons.list?.[0]?.installed_version;
@@ -392,7 +405,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const preview = within(dialog());
     expect(preview.getByText(/Nothing has changed yet/)).toBeInTheDocument();
     expect(preview.getByText(/is a system or startup folder/)).toBeInTheDocument();
-    expect(preview.getByRole('button', { name: 'Import' })).toHaveFocus();
+    expect(preview.getByRole('button', { name: 'Replace my settings' })).toHaveFocus();
     // Nothing changed yet; Cancel leaves it that way.
     expect(plain(app.settings)).toEqual(before);
     await click(preview.getByRole('button', { name: 'Cancel' }));
@@ -404,7 +417,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await settle();
     await click(button('Choose a settings file'));
     await settle();
-    await click(button('Import'));
+    await click(button('Replace my settings'));
     await settle();
     expect(app.settings.connections_per_download).toBe(3);
     expect(app.settings.default_folder).toBe('{Downloads}');
@@ -423,14 +436,14 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await settle();
     // First what the file would change; nothing is applied until Import.
     expect(within(dialog()).getByText(/Wirecatch offers it after the import/)).toBeInTheDocument();
-    await click(button('Import'));
+    await click(button('Replace my settings'));
     await settle();
     const offer = within(dialog());
     expect(offer.getByText(/The file lists the media add-on/)).toBeInTheDocument();
     expect(app.addons.list?.[0]?.state.type).toBe('not_installed');
     // The button that started the import is gone; Done has the focus.
     expect(offer.getByRole('button', { name: 'Done' })).toHaveFocus();
-    await click(offer.getByRole('button', { name: 'Install' }));
+    await click(offer.getByRole('button', { name: /^Install/ }));
     expect(app.addons.list?.[0]?.state.type).toBe('installing');
     // The same button now stops the install, so the focus stays on it.
     const stop = offer.getByRole('button', { name: 'Stop installing the media add-on' });
@@ -450,7 +463,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
     // Closing is not an answer: it waits, counted in the sidebar and offered in the palette.
     expect(palette('questions.show')).toBe(true);
-    await click(button(/Waiting for you/));
+    await click(button(/waiting for you/i));
     window = within(await downloadWindow());
     await click(window.getByRole('radio', { name: /720p/ }));
     const before = app.downloads.size;

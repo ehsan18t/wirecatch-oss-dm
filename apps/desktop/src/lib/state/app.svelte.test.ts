@@ -253,7 +253,7 @@ describe('commands', () => {
   it('cover the selection only when something is selected', async () => {
     const { app } = await make();
     expect(buildCommands(app).some((c) => c.group === 'Selected downloads')).toBe(false);
-    app.selection.only(app.visible[0]!);
+    app.selection.only(app.visible.find((id) => app.downloads.get(id)?.status === 'downloading')!);
     expect(buildCommands(app).some((c) => c.id === 'sel.pause')).toBe(true);
   });
 

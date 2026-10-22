@@ -1,7 +1,7 @@
 <script lang="ts">
   // Where a download is saved: the folder, or what decides it while none is chosen, with Change and, when the owner offers it, Use default. The owner asks for the folder and keeps it. The Add dialog uses it, and the download window's save question can.
   import FolderIcon from '~icons/lucide/folder';
-  import { Button, cn, Icon } from '@wirecatch/ui';
+  import { Button, Icon } from '@wirecatch/ui';
 
   interface Props {
     /** The folder chosen; null while the default decides. */
@@ -17,7 +17,7 @@
 
   let {
     folder,
-    fallback = 'A folder picked by file type, as set in Settings',
+    fallback = 'By file type, as set in Settings',
     label = 'Save to',
     onchoose,
     onreset,
@@ -40,12 +40,10 @@
   <div class="flex flex-wrap items-center gap-2">
     <p
       id={folderId}
-      class="flex min-h-control min-w-0 flex-1 basis-64 items-center gap-2 rounded-sm border border-line bg-wash px-2.5 py-1 text-ui"
+      class="flex min-h-control min-w-0 flex-1 basis-64 items-center gap-2 rounded-sm border border-line-strong/quiet bg-field px-2.5 py-1 text-ui text-ink"
     >
       <Icon icon={FolderIcon} size="sm" class="shrink-0 text-ink-subtle" />
-      <span class={cn('min-w-0 wrap-anywhere', folder === null ? 'text-ink-muted' : 'text-ink')}
-        >{folder ?? fallback}</span
-      >
+      <span class="min-w-0 wrap-anywhere">{folder ?? fallback}</span>
     </p>
     <div class="flex shrink-0 gap-2">
       <Button id={changeId} aria-describedby={folderId} onclick={onchoose}>Change</Button>

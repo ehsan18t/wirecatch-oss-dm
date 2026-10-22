@@ -1,5 +1,7 @@
 // The main window's regions, in the order F6 visits them, as Windows apps do: the title bar's search, the navigation's place, and the list (or what the content shows instead). Shift+F6 goes back. A download's details are a modal dialog, which keeps the keyboard to itself.
 
+import { SEARCH_ID } from '$lib/dom';
+
 interface Region {
   /** Whether the focus is in this region now. */
   holds: (el: Element) => boolean;
@@ -22,8 +24,8 @@ function contentTarget(): HTMLElement | null {
 
 const REGIONS: readonly Region[] = [
   {
-    holds: (el) => element('#list-search')?.closest('header')?.contains(el) ?? false,
-    target: () => element('#list-search'),
+    holds: (el) => element(`#${SEARCH_ID}`)?.closest('header')?.contains(el) ?? false,
+    target: () => element(`#${SEARCH_ID}`),
   },
   {
     holds: (el) => el.closest('nav') !== null,

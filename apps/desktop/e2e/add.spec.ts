@@ -73,7 +73,7 @@ test('the whole flow by keyboard: open, type, choose, download, and the focus co
   }
   expect(stops.slice(0, 6)).toEqual([
     'File name',
-    expect.stringMatching(/\(default\)/),
+    'Main',
     'Change',
     'Add paused',
     'Download',

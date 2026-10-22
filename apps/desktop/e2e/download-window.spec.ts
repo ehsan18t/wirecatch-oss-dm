@@ -81,9 +81,9 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(reading).toBeHidden();
 
     await pretend(page, 'needs the media add-on');
-    const addon = await windowWith(page, /needs the media add-on/);
+    const addon = await windowWith(page, /Install the media add-on/);
     await audit(page, 'add-on offer');
-    await addon.getByRole('button', { name: 'Install', exact: true }).click();
+    await addon.getByRole('button', { name: /^Install \(/ }).click();
     await expect(addon.getByRole('progressbar')).toBeVisible();
     await audit(page, 'add-on installing');
     // The install may finish meanwhile and the window move on, so it goes by its title bar's Close.
@@ -124,9 +124,9 @@ test('the file question by keyboard: the order of its controls, Enter to downloa
   expect(stops).toEqual([
     'Download later',
     'Cancel',
-    'Close this window when downloads start',
-    'Start downloads without asking',
-    expect.stringMatching(/\(default\)/),
+    'Keep the window open to show progress',
+    'Don’t ask again for files from the browser',
+    'Main',
     'Change',
     'File name',
     'Close',
@@ -269,7 +269,7 @@ for (const { scale, root, width, height } of SCALES) {
       await expect(quality).toBeHidden();
 
       await pretend(page, 'needs the media add-on');
-      const addon = await windowWith(page, /needs the media add-on/);
+      const addon = await windowWith(page, /Install the media add-on/);
       await checkFits(page, addon, 'add-on offer');
     });
   });

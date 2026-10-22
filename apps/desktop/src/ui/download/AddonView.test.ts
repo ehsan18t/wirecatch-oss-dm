@@ -13,13 +13,18 @@ describe('the add-on offer', () => {
     r.backend.simulateAddonRequired();
     const window = within(await downloadWindow());
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Downloading from www.youtube.com needs the media add-on',
+      'Install the media add-on?',
     );
+    expect(window.getByText(/^Downloading from www\.youtube\.com needs it\./)).toBeInTheDocument();
     const live = window.getByTestId('addon-live');
     expect(live).toHaveAttribute('aria-live', 'polite');
     expect(live.textContent.trim()).toBe('');
 
-    await userEvent.setup().click(window.getByRole('button', { name: /^Install$/ }));
+    // The button says what it downloads.
+    expect(window.getByRole('button', { name: /^Install/ })).toHaveTextContent(
+      /^Install \(\d+ MB\)$/,
+    );
+    await userEvent.setup().click(window.getByRole('button', { name: /^Install/ }));
     await settle();
     // The same element, now with the start of the install in it.
     expect(window.getByTestId('addon-live')).toBe(live);
@@ -30,11 +35,11 @@ describe('the add-on offer', () => {
     const r = await renderApp({ empty: true });
     r.backend.simulateAddonRequired();
     const window = within(await downloadWindow());
-    const install = window.getByRole('button', { name: /^Install$/ });
+    const install = window.getByRole('button', { name: /^Install/ });
     expect(install).toHaveFocus();
     await userEvent.setup().keyboard('{Enter}');
     await settle();
-    expect(window.queryByRole('button', { name: /^Install$/ })).toBeNull();
+    expect(window.queryByRole('button', { name: /^Install/ })).toBeNull();
     expect(window.getByRole('button', { name: 'Hide' })).toHaveFocus();
   });
 });

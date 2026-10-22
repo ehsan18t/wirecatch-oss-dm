@@ -25,3 +25,6 @@ export function dataIdAt(target: EventTarget | null): number | null {
   const id = Number(text);
   return Number.isSafeInteger(id) ? id : null;
 }
+
+/** The id of the title bar's one search field, which F6, Ctrl+K and its clear button all reach: downloads on the list, settings while they show. */
+export const SEARCH_ID = 'search';

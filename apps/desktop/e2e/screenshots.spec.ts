@@ -8,7 +8,7 @@ const dir = SCREENSHOTS;
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme} theme`, () => {
     test('main list', async ({ page }) => {
-      await open(page, 'capture=0', { theme, hints: true });
+      await open(page, 'capture=0', { theme });
       await page.waitForTimeout(1500);
       await page.screenshot({ path: `${dir}/${theme}-01-main-list.png` });
     });
@@ -117,7 +117,8 @@ for (const theme of ['light', 'dark'] as const) {
     test('queue editor', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.getByRole('button', { name: /^Overnight/ }).hover();
-      await page.getByRole('button', { name: 'Edit Overnight: name, schedule and limits' }).click();
+      await page.getByRole('button', { name: 'Actions for Overnight' }).click();
+      await page.getByRole('menuitem', { name: 'Edit name, hours and limits' }).click();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/${theme}-09-queue-editor.png` });
     });
@@ -140,7 +141,8 @@ for (const theme of ['light', 'dark'] as const) {
     test('paused queue and start now', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.getByRole('button', { name: /^Main/ }).hover();
-      await page.getByRole('button', { name: 'Pause the Main queue' }).click();
+      await page.getByRole('button', { name: 'Actions for Main' }).click();
+      await page.getByRole('menuitem', { name: 'Pause the queue' }).click();
       await page.getByRole('button', { name: /^Overnight/ }).click();
       await page.waitForTimeout(800);
       await page.screenshot({ path: `${dir}/${theme}-14-paused-queue-and-start-now.png` });
@@ -161,10 +163,10 @@ for (const theme of ['light', 'dark'] as const) {
       await page.keyboard.press('Control+Shift+P');
       await page.keyboard.type('needs the media add-on');
       await page.keyboard.press('Enter');
-      await page.getByRole('button', { name: 'Install', exact: true }).waitFor();
+      await page.getByRole('button', { name: /^Install \(/ }).waitFor();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${dir}/${theme}-16-addon-prompt.png` });
-      await page.getByRole('button', { name: 'Install', exact: true }).click();
+      await page.getByRole('button', { name: /^Install \(/ }).click();
       await page
         .getByRole('region', { name: /^Wirecatch download window/ })
         .getByRole('progressbar')

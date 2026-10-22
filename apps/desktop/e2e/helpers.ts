@@ -10,7 +10,7 @@ export async function keepScreenshot(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Opens the app with mock options and waits for the list. Hints start dismissed unless asked.
+ * Opens the app with mock options and waits for the list.
  * `textSize` is the root font size in px, as a larger text setting gives it: set before the page
  * loads, as a person's setting is, rather than changed under a drawn page, where every size in
  * rem moves to it through a transition the first measurements can race.
@@ -18,11 +18,7 @@ export async function keepScreenshot(page: Page, name: string): Promise<void> {
 export async function open(
   page: Page,
   query = 'capture=0',
-  {
-    theme = 'light',
-    hints = false,
-    textSize,
-  }: { theme?: 'light' | 'dark'; hints?: boolean; textSize?: number } = {},
+  { theme = 'light', textSize }: { theme?: 'light' | 'dark'; textSize?: number } = {},
 ): Promise<void> {
   await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
   if (textSize !== undefined) {
@@ -41,16 +37,6 @@ export async function open(
       }).observe(document, { childList: true });
     }, textSize);
   }
-  await page.addInitScript((showHints) => {
-    if (!showHints) {
-      localStorage.setItem(
-        'wirecatch.hints.dismissed',
-        JSON.stringify(['palette', 'drag-to-queue', 'reorder', 'paste']),
-      );
-    } else {
-      localStorage.removeItem('wirecatch.hints.dismissed');
-    }
-  }, hints);
   // A fixed sample clock (noon) keeps schedules, and so the screenshots, the same on every run.
   const at = query.includes('at=') ? '' : '&at=12:00';
   await page.goto(`/?${query}${at}`);
@@ -94,9 +80,10 @@ export function rows(page: Page) {
 
 /** Opens a download's details with a click on its row, as the pointer does. */
 export async function showDetails(page: Page, name: string) {
+  // The name's cell: the second, after the file's tile, in every view but a queue's own.
   await row(page, name)
     .getByRole('gridcell')
-    .nth(2)
+    .nth(1)
     .click({ position: { x: 8, y: 8 } });
   return page.getByRole('dialog', { name: new RegExp(`^${name}`) });
 }

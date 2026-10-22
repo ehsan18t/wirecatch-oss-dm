@@ -41,11 +41,7 @@
   }
 </script>
 
-<WindowFrame
-  title="Download this file?"
-  description="From your browser. Change anything you like."
-  error={win.error}
->
+<WindowFrame title="Download this file?" description="Caught from your browser." error={win.error}>
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Enter in any field, checkboxes included, is Download now: see keys.ts) -->
   <form
     id={formId}
@@ -100,7 +96,6 @@
     >
     <Button
       variant="primary"
-      data-main
       type="submit"
       form={formId}
       icon={DownloadIcon}
