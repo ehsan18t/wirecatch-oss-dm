@@ -41,6 +41,14 @@ pub(crate) struct Plan {
 /// One offered option and what it means.
 pub(crate) type Offer = (MediaOption, Plan);
 
+/// A file format by its name for a person, as Save as names it ("WebM", "Opus"), so a quality's
+/// label and the format menu never spell one format two ways; an extension the app has no name for
+/// is shown in capitals.
+pub(crate) fn format_name(ext: &str) -> String {
+    output::Container::from_ext(ext)
+        .map_or_else(|| ext.to_ascii_uppercase(), |c| c.label().to_owned())
+}
+
 fn offer(id: String, label: String, height: Option<u32>, size: Option<u64>, plan: Plan) -> Offer {
     let outputs = if plan.variants.is_empty() {
         // A stream: only as it comes, never changed.
@@ -308,7 +316,7 @@ pub(crate) fn from_stream(info: &StreamInfo, ffmpeg: Ffmpeg) -> Result<Vec<Offer
         };
         offers.push(offer(
             format!("s{n}"),
-            format!("{quality}, {}", ext.to_ascii_uppercase()),
+            format!("{quality}, {}", format_name(&ext)),
             video.height,
             size,
             plan,
@@ -351,7 +359,7 @@ fn audio_only_stream(
     };
     offer(
         "audio".into(),
-        format!("Audio only, {}", ext.to_ascii_uppercase()),
+        format!("Audio only, {}", format_name(&ext)),
         None,
         estimate(seconds, [audio.bandwidth, None]),
         plan,
@@ -505,7 +513,7 @@ fn video_offer(
         output: None,
         keep_ext: None,
     };
-    let label = format!("{quality}, {}", ext.to_ascii_uppercase());
+    let label = format!("{quality}, {}", format_name(&ext));
     let mut variants =
         output::video_variants(&at, audios, (video, audio), &ext, height, duration_ms);
     if let Some(first) = variants.first_mut() {
@@ -531,7 +539,7 @@ fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
     let variants = output::audio_variants(audios, audio, &ext, duration_ms);
     Some(offer(
         audio.id.to_string(),
-        format!("Audio only, {}", ext.to_ascii_uppercase()),
+        format!("Audio only, {}", format_name(&ext)),
         None,
         audio.size(),
         Plan {
@@ -611,7 +619,7 @@ mod tests {
         assert_eq!(
             labels,
             [
-                "2160p, 60 fps, WEBM",
+                "2160p, 60 fps, WebM",
                 "1080p, MP4",
                 "360p, MP4",
                 "Audio only, M4A"

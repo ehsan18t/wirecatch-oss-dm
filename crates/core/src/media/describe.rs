@@ -8,6 +8,7 @@ use wirecatch_protocol::app::{FixAction, UserError};
 use wirecatch_streams::process::RunError;
 use wirecatch_streams::{Error as StreamError, Role};
 
+use super::choice::format_name;
 use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
@@ -157,7 +158,7 @@ pub(crate) fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaT
         format!(
             "Wirecatch downloaded the {what}, but could not save it as {} ({error}). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
             output.container.label(),
-            output.original_ext.to_ascii_uppercase()
+            format_name(&output.original_ext)
         )
     };
     UserError {

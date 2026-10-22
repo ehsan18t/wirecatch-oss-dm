@@ -168,7 +168,7 @@ async fn a_page_offers_formats_subtitles_and_chapters() -> TestResult {
     assert!(choice.chapters);
     assert_eq!(choice.duration_ms, Some(2_000));
     let uhd = &choice.options[0];
-    assert_eq!(uhd.label, "2160p, WEBM");
+    assert_eq!(uhd.label, "2160p, WebM");
     assert_eq!(uhd.quality, "2160p");
     let mp4 = uhd
         .outputs
