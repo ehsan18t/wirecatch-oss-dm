@@ -13,10 +13,10 @@ const desktop = resolve(here, '..');
 const root = resolve(desktop, '..', '..');
 const release = process.argv.includes('--release');
 
-// A release carries the product identity into installers, so it must hold no placeholder (D29).
+// A release build carries the product identity into installers, so its generated files must be current; a placeholder is only warned about, since publishing refuses it (D29, D49).
 if (release) {
   try {
-    execFileSync(process.execPath, [join(root, 'scripts', 'gate.mjs'), 'publish'], {
+    execFileSync(process.execPath, [join(root, 'scripts', 'gate.mjs'), 'release-build'], {
       cwd: root,
       stdio: 'inherit',
     });
@@ -26,7 +26,7 @@ if (release) {
       typeof error === 'object' && error !== null && 'status' in error && error.status !== null;
     console.error(
       started
-        ? 'The product identity is not ready for a release; see the message above.'
+        ? 'The product identity is out of date; see the message above.'
         : `Could not run the release check: ${error instanceof Error ? error.message : String(error)}`,
     );
     process.exit(1);

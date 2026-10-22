@@ -9,6 +9,7 @@ import {
   crateMetadataProblems,
   handCopiedPlaceholders,
   placeholderReport,
+  placeholderWarning,
   remainingPlaceholders,
   staleOutputs,
   placeholderHits,
@@ -132,4 +133,11 @@ test('the release report lists only the kinds of placeholder that were found', (
   assert.match(copied, /written by hand elsewhere[^\n]*:\nsrc\/a\.rs:3:x/);
   assert.doesNotMatch(copied, /still placeholders/);
   assert.equal(placeholderReport({ values: [], lines: [], copied: [] }), null);
+});
+
+test('a release build with placeholders is warned that only publishing refuses it', () => {
+  const report = placeholderReport({ values: ['links.website'], lines: [], copied: [] });
+  const warning = placeholderWarning(report);
+  assert.match(warning, /^Warning: [^\n]*testing only[^\n]*gate\.mjs publish/);
+  assert.ok(warning.endsWith(report));
 });

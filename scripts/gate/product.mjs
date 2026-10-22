@@ -129,17 +129,33 @@ export function placeholderReport({ values, lines, copied }) {
   return parts.length > 0 ? parts.join('\n') : null;
 }
 
-async function noPlaceholders() {
+/** What a build that carries placeholders says before it goes on: what it carries, and that it is not for publishing (D49). */
+export function placeholderWarning(report) {
+  return `Warning: this build carries placeholder product identity, so it is for testing only; publishing it is refused (\`node scripts/gate.mjs publish\`).\n${report}`;
+}
+
+/** The report of every placeholder left in the repository, or null when none is. */
+async function foundPlaceholders() {
   const { values, lines } = await remainingPlaceholders(ROOT);
   const copied = handCopiedPlaceholders(
     placeholderHits(),
     outputs(ROOT).map((output) => output.path),
   );
-  const report = placeholderReport({ values, lines, copied });
+  return placeholderReport({ values, lines, copied });
+}
+
+async function noPlaceholders() {
+  const report = await foundPlaceholders();
   if (report !== null) throw new GateError(report);
+}
+
+async function warnOfPlaceholders() {
+  const report = await foundPlaceholders();
+  if (report !== null) console.warn(placeholderWarning(report));
 }
 
 export const PRODUCT_CHECKS = {
   product: productCurrent,
   'product-placeholders': noPlaceholders,
+  'product-placeholders-warn': warnOfPlaceholders,
 };

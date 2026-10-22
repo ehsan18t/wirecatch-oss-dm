@@ -11,7 +11,7 @@
     "preview": "vite --config preview/vite.config.ts",
     "build": "wxt build && wxt build -b firefox --mv3",
     "build:dev": "wxt build --mode development",
-    "build:store": "node ../../scripts/gate.mjs publish-extension && wxt zip --mode store",
+    "build:store": "node ../../scripts/gate.mjs release-build-extension && wxt zip --mode store",
     "build:firefox": "wxt build -b firefox --mv3",
     "sign:firefox": "node ../../scripts/gate.mjs publish-extension && node scripts/sign-firefox.mjs",
     "zip": "wxt zip && wxt zip -b firefox --mv3",

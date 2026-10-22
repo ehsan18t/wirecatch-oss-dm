@@ -5,6 +5,7 @@
 //   node scripts/gate.mjs rust js            named checks or groups (see GROUPS)
 //   node scripts/gate.mjs publish            what a release needs on top of DEFAULT
 //   node scripts/gate.mjs publish-extension  `publish` plus what a release of the browser extension needs
+//   node scripts/gate.mjs release-build      what a release build runs: `publish`, with placeholders only warned about
 //   node scripts/gate.mjs commit-msg FILE    check one commit message (the commit-msg hook)
 //   node scripts/gate.mjs --install-tools    install the cargo tools some checks need, at the versions in TOOLS (scripts/gate/rust.mjs)
 //   node scripts/gate.mjs --tool-specs       print those tools as name@version, for CI's prebuilt installer
@@ -47,6 +48,7 @@ const CHECKS = {
   ...SUFFIX_LIST_CHECKS,
   product: productCheck('product'),
   'product-placeholders': productCheck('product-placeholders'),
+  'product-placeholders-warn': productCheck('product-placeholders-warn'),
 };
 
 const GROUPS = {
@@ -78,10 +80,13 @@ const GROUPS = {
   ],
   repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
-  // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every release script runs this group before it builds anything.
+  // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],
-  // What the extension's release scripts run instead of `publish`: the extension alone ships the Public Suffix List, so only its releases wait on the list's age, which needs the registry and changes as the calendar moves (D35).
+  // What the extension's publishing step runs instead of `publish`: the extension alone ships the Public Suffix List, so only its releases wait on the list's age, which needs the registry and changes as the calendar moves (D35).
   'publish-extension': ['publish', 'suffix-list'],
+  // What a release build runs before it builds: the same checks, but a placeholder is only warned about, so installers and store packages can be built and tried before the publisher's details are decided; publishing still refuses them (D49).
+  'release-build': ['product', 'product-placeholders-warn'],
+  'release-build-extension': ['release-build', 'suffix-list'],
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */
