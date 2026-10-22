@@ -163,7 +163,8 @@ export class MockState {
 
   changed(rows: DownloadSummary[]): void {
     if (rows.length > 0)
-      this.emit({ type: 'downloads_changed', data: rows.map((r) => ({ ...r })) });
+      // Copies all the way down, as the real app's events are: a store must never hold an object this keeps changing.
+      this.emit({ type: 'downloads_changed', data: rows.map((r) => structuredClone(r)) });
   }
 
   queuesChanged(): void {

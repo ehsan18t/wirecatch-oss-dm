@@ -124,5 +124,5 @@ export function simulateCapture(state: MockState, index: number): void {
   }
   const row = state.create(url, { queue, start: true, size });
   state.changed([row]);
-  state.emit({ type: 'captured', data: { ...row } });
+  state.emit({ type: 'captured', data: structuredClone(row) });
 }
