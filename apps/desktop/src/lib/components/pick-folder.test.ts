@@ -31,8 +31,7 @@ describe('picking a folder', () => {
     const { app } = await withFailingPicker();
     app.openSettings('default_folder');
     await settle();
-    const [change] = screen.getAllByRole('button', { name: 'Change' });
-    if (!change) throw new Error('no Change button');
+    const change = screen.getByRole('button', { name: 'Change the download folder' });
     await fireEvent.click(change);
     await settle();
     expect(screen.getByRole('alert')).toHaveTextContent(NO_PICKER);

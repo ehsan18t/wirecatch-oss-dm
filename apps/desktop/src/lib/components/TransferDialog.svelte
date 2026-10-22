@@ -1,11 +1,12 @@
 <script lang="ts">
-  import Check from '@lucide/svelte/icons/check';
-  import X from '@lucide/svelte/icons/x';
+  // Saving settings to a file, or loading them from one: what goes in the file, then for an import what it would change before anything is applied, then what it did.
+  import Check from '~icons/lucide/check';
+  import CircleCheck from '~icons/lucide/circle-check';
+  import Minus from '~icons/lucide/minus';
+  import { Button, Callout, Dialog, Icon } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
   import AddonCard from './AddonCard.svelte';
-  import Button from './Button.svelte';
-  import Dialog from './Dialog.svelte';
-  import Icon from './Icon.svelte';
+  import FolderList, { type FolderRow } from './FolderList.svelte';
 
   let { mode }: { mode: 'export' | 'import' } = $props();
   const app = getApp();
@@ -31,12 +32,21 @@
       (id) => app.addons.list?.find((a) => a.id === id) ?? [],
     ),
   );
-  let doneButton = $state<HTMLButtonElement>();
+  let doneButton = $state<HTMLButtonElement | null>(null);
   // The button that started the import is gone once it is done; Done takes the focus.
   $effect(() => {
     if (done) doneButton?.focus();
   });
   const moved = $derived(summary?.folders.filter((f) => f.used !== f.requested) ?? []);
+
+  const movedRows = $derived(
+    moved.map((f): FolderRow => ({
+      setting: f.setting,
+      resolved: f.resolved,
+      note: f.reason ?? `The file asked for ${f.requested}, which is not here.`,
+      flagged: false,
+    })),
+  );
   const queuesLine = $derived.by(() => {
     if (!summary) return '';
     const plural = (n: number) => (n === 1 ? '1 queue' : `${n} queues`);
@@ -68,7 +78,19 @@
       (id) => app.addons.list?.find((a) => a.id === id) ?? [],
     ),
   );
-  let importButton = $state<HTMLButtonElement>();
+  const previewRows = $derived(
+    (preview?.folders ?? []).map((f): FolderRow => ({
+      setting: f.setting,
+      resolved: f.resolved,
+      note: f.reason
+        ? `${f.reason} Downloads go to the folder above instead.`
+        : f.outside_user_folders
+          ? 'This folder is outside your own folders. Check that you want downloads there.'
+          : null,
+      flagged: f.reason !== null || f.outside_user_folders,
+    })),
+  );
+  let importButton = $state<HTMLButtonElement | null>(null);
   // The button that chose the file is gone once the preview shows; Import takes the focus.
   $effect(() => {
     if (preview && !done && !busy) importButton?.focus();
@@ -84,230 +106,107 @@
 </script>
 
 <Dialog
+  open
+  size="lg"
   title={mode === 'export' ? 'Export settings' : 'Import settings'}
   description={mode === 'export'
-    ? 'Saves your setup to one file. Load it on another computer, Windows or Linux, with Import settings. Folders like Downloads are matched to that computer automatically.'
-    : 'Loads a file made with Export settings. It replaces your current settings and queues; your downloads stay as they are.'}
+    ? 'Saves your setup to one file, to load on another Windows or Linux computer. Folders like Downloads are matched to that computer.'
+    : 'Loads a file made with Export settings. You see what it changes before anything is replaced; your downloads stay as they are.'}
   onclose={() => app.closeDialog()}
-  size="wide"
 >
-  {#if done}
-    <p class="done" role="status">
-      <Icon icon={Check} size="md" />
-      <span>
-        {mode === 'export' ? 'Settings saved to' : 'Settings loaded from'}
-        <strong>{done}</strong>
-      </span>
-    </p>
-    {#if mode === 'import' && summary}
-      {#if queuesLine}
-        <p class="note">{queuesLine}</p>
+  <div class="flex flex-col gap-4 pb-1">
+    {#if done}
+      <p class="flex items-start gap-2 text-ui break-all text-ink" role="status">
+        <Icon icon={CircleCheck} size="md" class="mt-0.5 shrink-0 text-success" />
+        <span>
+          {mode === 'export' ? 'Settings saved to' : 'Settings loaded from'}
+          <strong class="font-medium">{done}</strong>
+        </span>
+      </p>
+      {#if mode === 'import' && summary}
+        {#if queuesLine}
+          <p class="text-ui text-ink-muted">{queuesLine}</p>
+        {/if}
+        {#each offered as addon (addon.id)}
+          <section class="flex flex-col gap-2 rounded-md border border-line p-3">
+            <h3 class="text-ui font-medium text-ink">{addon.name}</h3>
+            <p class="text-small text-ink-muted" id="offer-{addon.id}">
+              The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing
+              was downloaded. Install it now, or later from Settings, Add-ons.
+            </p>
+            <AddonCard {addon} align="start" describedby="offer-{addon.id}" />
+          </section>
+        {/each}
+        {#if moved.length > 0}
+          <section class="flex flex-col gap-1.5">
+            <h3 class="text-small font-semibold text-ink-muted">
+              Folders changed to fit this computer
+            </h3>
+            <FolderList rows={movedRows} />
+          </section>
+        {/if}
       {/if}
-      {#each offered as addon (addon.id)}
-        <div class="offer">
-          <h3>{addon.name}</h3>
-          <p class="note" id="offer-{addon.id}">
-            The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing was
-            downloaded. Install it now, or later from Settings, Add-ons.
-          </p>
-          <AddonCard {addon} describedby="offer-{addon.id}" />
-        </div>
+    {:else if preview}
+      <Callout tone="info"
+        >Nothing has changed yet. Importing this file replaces your settings like this.</Callout
+      >
+      <section class="flex flex-col gap-1.5">
+        <h3 class="text-small font-semibold text-ink-muted">Folders</h3>
+        <FolderList rows={previewRows} />
+      </section>
+      {#if previewQueues}
+        <p class="text-ui text-ink-muted">{previewQueues}</p>
+      {/if}
+      {#each previewAddons as addon (addon.id)}
+        <p class="text-ui text-ink-muted">
+          The file lists the {addon.name.toLowerCase()}, which is not installed here. {app.name} offers
+          it after the import; nothing is downloaded without you.
+        </p>
       {/each}
-      {#if moved.length > 0}
-        <div class="moved">
-          <h3>Folders changed to fit this computer</h3>
-          <ul>
-            {#each moved as folder (folder.setting)}
-              <li class="folder">
-                <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
-                <span class="was">
-                  {folder.reason ?? `The file asked for ${folder.requested}, which is not here.`}
-                </span>
+    {:else}
+      <div class="grid gap-4 sm:grid-cols-2">
+        <section class="flex flex-col gap-1.5">
+          <h3 class="text-small font-semibold text-ink-muted">
+            {mode === 'export' ? 'In the file' : 'Replaced from the file'}
+          </h3>
+          <ul class="flex flex-col gap-1.5">
+            {#each included as item (item)}
+              <li class="flex items-start gap-2 text-ui text-ink">
+                <Icon icon={Check} size="sm" class="mt-0.5 shrink-0 text-accent" />
+                {item}
               </li>
             {/each}
           </ul>
-        </div>
-      {/if}
+        </section>
+        <section class="flex flex-col gap-1.5">
+          <h3 class="text-small font-semibold text-ink-muted">Not included</h3>
+          <ul class="flex flex-col gap-1.5">
+            {#each excluded as item (item)}
+              <li class="flex items-start gap-2 text-ui text-ink-muted">
+                <Icon icon={Minus} size="sm" class="mt-0.5 shrink-0 text-ink-subtle" />
+                {item}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      </div>
     {/if}
-  {:else if preview}
-    <div class="preview">
-      <p class="note lead">
-        Nothing has changed yet. Importing this file replaces your settings like this:
-      </p>
-      <h3>Folders</h3>
-      <ul>
-        {#each preview.folders as folder (folder.setting)}
-          <li class="folder" class:flagged={folder.reason !== null || folder.outside_user_folders}>
-            <span>{folder.setting}: <strong>{folder.resolved}</strong></span>
-            {#if folder.reason}
-              <span class="was">{folder.reason} Downloads go to the folder above instead.</span>
-            {:else if folder.outside_user_folders}
-              <span class="was"
-                >This folder is outside your own folders. Check that you want downloads there.</span
-              >
-            {/if}
-          </li>
-        {/each}
-      </ul>
-      {#if previewQueues}
-        <p class="note">{previewQueues}</p>
-      {/if}
-      {#each previewAddons as addon (addon.id)}
-        <p class="note">
-          The file lists the {addon.name.toLowerCase()}, which is not installed here. Wirecatch
-          offers it after the import; nothing is downloaded without you.
-        </p>
-      {/each}
-    </div>
-  {:else}
-    <div class="lists">
-      <div>
-        <h3>{mode === 'export' ? 'Saved in the file' : 'Replaced from the file'}</h3>
-        <ul>
-          {#each included as item (item)}
-            <li><Icon icon={Check} size="sm" /> {item}</li>
-          {/each}
-        </ul>
-      </div>
-      <div>
-        <h3>Not included</h3>
-        <ul>
-          {#each excluded as item (item)}
-            <li class="no"><Icon icon={X} size="sm" /> {item}</li>
-          {/each}
-        </ul>
-      </div>
-    </div>
-  {/if}
+  </div>
 
   {#snippet footer()}
     {#if done}
-      <Button variant="primary" bind:element={doneButton} onclick={() => app.closeDialog()}
-        >Done</Button
+      <Button variant="primary" bind:ref={doneButton} onclick={() => app.closeDialog()}>Done</Button
       >
     {:else if preview}
       <Button onclick={() => app.closeDialog()}>Cancel</Button>
-      <Button variant="primary" bind:element={importButton} disabled={busy} onclick={run}
-        >Import</Button
+      <Button variant="primary" bind:ref={importButton} loading={busy} onclick={run}
+        >Replace my settings</Button
       >
     {:else}
       <Button onclick={() => app.closeDialog()}>Cancel</Button>
-      <Button variant="primary" data-autofocus disabled={busy} onclick={run}>
+      <Button variant="primary" data-autofocus loading={busy} onclick={run}>
         {mode === 'export' ? 'Choose where to save' : 'Choose a settings file'}
       </Button>
     {/if}
   {/snippet}
 </Dialog>
-
-<style>
-  .lists {
-    display: grid;
-    gap: 14px;
-  }
-
-  h3 {
-    margin: 0 0 6px;
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-
-  ul {
-    display: grid;
-    gap: 4px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-  }
-
-  li {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  li :global(svg) {
-    flex: none;
-    color: var(--accent-text);
-  }
-
-  li.no :global(svg) {
-    color: var(--ink-3);
-  }
-
-  .done {
-    display: flex;
-    gap: 8px;
-    margin: 0;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-  }
-
-  .note {
-    margin: 10px 0 0;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-  }
-
-  .moved {
-    margin-top: 14px;
-  }
-
-  .preview {
-    display: grid;
-    gap: 6px;
-  }
-
-  .preview .note {
-    margin: 4px 0 0;
-  }
-
-  .preview .lead {
-    margin: 0 0 6px;
-  }
-
-  li.folder.flagged strong {
-    color: var(--danger);
-  }
-
-  .offer {
-    display: grid;
-    gap: 6px;
-    margin-top: 14px;
-  }
-
-  .offer h3,
-  .offer .note {
-    margin: 0;
-  }
-
-  /* The card sits on the right in Settings; here it follows the text. */
-  .offer :global(.addon),
-  .offer :global(.status) {
-    justify-items: start;
-    text-align: left;
-  }
-
-  li.folder {
-    display: grid;
-    gap: 2px;
-    overflow-wrap: anywhere;
-  }
-
-  li.folder strong {
-    color: var(--ink);
-    font-weight: 500;
-  }
-
-  .was {
-    color: var(--ink-3);
-    font-size: var(--text-xs);
-  }
-
-  .done :global(svg) {
-    flex: none;
-    margin-top: 3px;
-    color: var(--accent-text);
-  }
-</style>

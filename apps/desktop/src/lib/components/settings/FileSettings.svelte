@@ -3,9 +3,10 @@
   import type { Category } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
+  import { typedExtension } from '$lib/file-names';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
-  import Button from '../Button.svelte';
+  import { Button, TagInput, textIfCut, tooltip } from '@wirecatch/ui';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -32,12 +33,7 @@
     if (picked) save((d) => void (d.default_folder = picked));
   }
 
-  /** Extensions as typed: separated by spaces, commas or semicolons, with or without a dot. */
-  function setExtensions(category: Category, typed: string) {
-    const exts = typed
-      .split(/[\s,;]+/)
-      .map((x) => x.trim().toLowerCase().replace(/^\./, ''))
-      .filter(Boolean);
+  function setExtensions(category: Category, exts: string[]) {
     save((d) => {
       const r = d.categories.find((x) => x.category === category);
       if (r) r.extensions = exts;
@@ -51,80 +47,61 @@
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows
+  {items}
+  {settings}
+  {flash}
+  {controls}
+  stacked={['categories']}
+  unlabelled={['default_folder', 'categories']}
+/>
 
-{#snippet defaultFolder({ s, helpId }: Row)}
-  <span class="path">{displayPath(s.default_folder)}</span>
-  <Button small aria-describedby={helpId} onclick={pickDefaultFolder}>Change</Button>
+{#snippet defaultFolder({ s, control }: Row)}
+  <span
+    class="max-w-72 truncate text-ui text-ink-muted"
+    {@attach tooltip(() => displayPath(s.default_folder))}>{displayPath(s.default_folder)}</span
+  >
+  <Button
+    size="sm"
+    aria-label="Change the download folder"
+    aria-describedby={control['aria-describedby']}
+    onclick={pickDefaultFolder}>Change</Button
+  >
 {/snippet}
 
-{#snippet categories(_: Row)}
-  <table class="rules">
-    <caption class="visually-hidden">Folders by file type</caption>
-    <thead>
-      <tr><th scope="col">Type</th><th scope="col">Extensions</th><th scope="col">Folder</th></tr>
-    </thead>
-    <tbody>
-      {#each CATEGORIES.filter((c) => c !== 'other') as category (category)}
-        {@const rule = ruleFor(category)}
-        <tr>
-          <th scope="row">{CATEGORY_LABEL[category]}</th>
-          <td>
-            <input
-              class="field"
-              aria-label="Extensions for {CATEGORY_LABEL[category].toLowerCase()}"
-              value={rule?.extensions.join(', ') ?? ''}
-              placeholder="none"
-              onchange={(e) => setExtensions(category, e.currentTarget.value)}
-            />
-          </td>
-          <td class="folder-cell">
-            <span class="path">{rule ? displayPath(rule.folder) : 'Download folder'}</span>
-            <Button
-              small
-              aria-label="Change folder for {CATEGORY_LABEL[category].toLowerCase()}"
-              onclick={() => pickCategoryFolder(category)}>Change</Button
-            >
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+{#snippet categories({ control }: Row)}
+  <div
+    role="group"
+    aria-label="Folders by file type"
+    aria-describedby={control['aria-describedby']}
+    class="flex w-full flex-col divide-y divide-line rounded-md border border-line"
+  >
+    {#each CATEGORIES.filter((c) => c !== 'other') as category (category)}
+      {@const rule = ruleFor(category)}
+      {@const name = CATEGORY_LABEL[category]}
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
+        <span class="w-32 shrink-0 truncate text-ui font-medium text-ink">{name}</span>
+        <TagInput
+          class="min-w-48 flex-1"
+          label="Extensions for {name.toLowerCase()}"
+          values={rule?.extensions ?? []}
+          placeholder="Add extensions"
+          normalize={typedExtension}
+          onchange={(exts: string[]) => setExtensions(category, exts)}
+        />
+        <span class="ml-auto flex w-56 min-w-0 items-center justify-end gap-2">
+          <span
+            class="truncate text-small text-ink-muted"
+            {@attach tooltip(() => textIfCut(rule ? displayPath(rule.folder) : 'Download folder'))}
+            >{rule ? displayPath(rule.folder) : 'Download folder'}</span
+          >
+          <Button
+            size="sm"
+            aria-label="Change folder for {name.toLowerCase()}"
+            onclick={() => pickCategoryFolder(category)}>Change</Button
+          >
+        </span>
+      </div>
+    {/each}
+  </div>
 {/snippet}
-
-<style>
-  .rules {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--text-sm);
-  }
-
-  .rules th,
-  .rules td {
-    padding: 5px 8px 5px 0;
-    text-align: left;
-    vertical-align: middle;
-  }
-
-  .rules thead th {
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-    font-weight: 600;
-  }
-
-  .rules tbody th {
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .rules input {
-    width: 100%;
-  }
-
-  .folder-cell {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-</style>

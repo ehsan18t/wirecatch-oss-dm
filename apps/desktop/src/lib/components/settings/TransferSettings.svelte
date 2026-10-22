@@ -1,9 +1,9 @@
 <script lang="ts">
-  // Move to another PC: settings saved to a file, and loaded from one.
+  // Move to another PC: settings saved to a file, and loaded from one (which shows what it would change first).
   import type { Snippet } from 'svelte';
+  import { Button } from '@wirecatch/ui';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
-  import Button from '../Button.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -17,16 +17,20 @@
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows {items} {settings} {flash} {controls} unlabelled={['export', 'import']} />
 
-{#snippet exportButton({ helpId }: Row)}
-  <Button aria-describedby={helpId} onclick={() => app.openDialog({ kind: 'export' })}
-    >Export settings</Button
+{#snippet exportButton({ control }: Row)}
+  <Button
+    size="sm"
+    aria-describedby={control['aria-describedby']}
+    onclick={() => app.openDialog({ kind: 'export' })}>Export settings…</Button
   >
 {/snippet}
 
-{#snippet importButton({ helpId }: Row)}
-  <Button aria-describedby={helpId} onclick={() => app.openDialog({ kind: 'import' })}
-    >Import settings</Button
+{#snippet importButton({ control }: Row)}
+  <Button
+    size="sm"
+    aria-describedby={control['aria-describedby']}
+    onclick={() => app.openDialog({ kind: 'import' })}>Import settings…</Button
   >
 {/snippet}

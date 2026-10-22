@@ -20,25 +20,27 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
   {
     id: 'browser',
     title: 'Browser',
-    blurb: 'What the browser extension catches. The extension popup changes these same settings.',
+    blurb: 'What the browser extension catches, and how it asks.',
   },
   {
     id: 'media',
     title: 'Media',
-    blurb:
-      'What the quality window for a video starts with. It remembers your last choices here, separately for videos and for audio only.',
+    blurb: 'What the quality window starts with for videos and for audio.',
   },
   {
     id: 'addons',
     title: 'Add-ons',
-    blurb: 'Optional extras. Wirecatch works without them and installs them only when you ask.',
+    blurb: 'Optional extras, installed only when you ask.',
   },
-  { id: 'speed', title: 'Speed', blurb: 'Keep downloads from slowing everything else down.' },
+  {
+    id: 'speed',
+    title: 'Speed and limits',
+    blurb: 'How fast, and how many at once, so the rest of your computer stays quick.',
+  },
   {
     id: 'queues',
     title: 'Queues',
-    blurb:
-      'Each queue has its own schedule and limits. Downloads from the browser join the one chosen under Browser.',
+    blurb: 'Each queue has its own hours and limits.',
   },
   {
     id: 'transfer',
@@ -48,7 +50,7 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
   {
     id: 'advanced',
     title: 'Advanced',
-    blurb: 'Tuning for people who want it. The defaults suit almost everyone.',
+    blurb: 'Rarely needed. The defaults suit almost everyone.',
   },
 ];
 
@@ -60,6 +62,8 @@ interface SettingText {
   help: string;
   /** Extra words people might search for. */
   keywords: string;
+  /** A heading the setting sits under within its section, for a section that holds two kinds of thing (Media: videos and audio only). */
+  group?: string;
 }
 
 const DEFS = [
@@ -123,14 +127,14 @@ const DEFS = [
     id: 'ask_before_download',
     section: 'browser',
     label: 'Show a window before each download',
-    help: 'Each file from the browser opens its own window first, so you can change its name, folder and queue, or download it later. Off: files start at once, and the main window comes forward with a note for each. Videos always ask for a quality.',
+    help: 'A window lets you rename the file, pick its folder and queue, or keep it for later. Videos always ask for a quality.',
     keywords: 'confirm prompt dialog question ask window start without asking',
   },
   {
     id: 'show_progress_windows',
     section: 'browser',
     label: 'Keep the window open to show progress',
-    help: 'After Download now, the download’s window stays and shows its progress. Off: the window closes when the download starts.',
+    help: 'After Download now, the window stays open with the progress.',
     keywords: 'progress window close speed popup',
   },
   {
@@ -172,22 +176,25 @@ const DEFS = [
     id: 'media',
     section: 'media',
     label: 'Save videos as',
-    help: 'Original keeps the format the site sends. MP4, MKV and WebM copy the video when it fits, and convert it only when the quality has no version in that format.',
+    help: 'Original keeps the site’s format. The others convert only when they must.',
     keywords: 'format container convert mp4 mkv webm save as video h264 vp9 av1',
+    group: 'Videos',
   },
   {
     id: 'media_subtitles',
     section: 'media',
     label: 'Subtitle languages for videos',
-    help: 'Ticked first when a video has them, for example en or fr.',
+    help: 'Picked first when a video has them. Type a language code, like en or fr.',
     keywords: 'subtitles captions cc languages srt',
+    group: 'Videos',
   },
   {
     id: 'media_auto_subtitles',
     section: 'media',
     label: 'Use auto-generated subtitles for videos',
-    help: 'When a language has no subtitles written by people, tick the ones made by speech recognition.',
+    help: 'For a language with no subtitles written by people.',
     keywords: 'subtitles captions automatic auto-generated speech recognition',
+    group: 'Videos',
   },
   {
     id: 'media_subtitle_files',
@@ -195,6 +202,7 @@ const DEFS = [
     label: 'Save subtitles as separate files',
     help: 'Puts subtitles next to a video as .srt files instead of inside it.',
     keywords: 'subtitles srt sidecar files embed',
+    group: 'Videos',
   },
   {
     id: 'media_chapters',
@@ -202,13 +210,15 @@ const DEFS = [
     label: 'Add chapters to videos',
     help: 'Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.',
     keywords: 'chapters markers sections',
+    group: 'Videos',
   },
   {
     id: 'media_audio',
     section: 'media',
     label: 'Save audio as',
-    help: 'For Audio only. Title, artist and the video’s picture go into MP3, M4A and FLAC files.',
+    help: 'Title, artist and cover picture go into MP3, M4A and FLAC files.',
     keywords: 'audio music mp3 m4a aac opus flac wav bitrate kbps quality format',
+    group: 'Audio only',
   },
   {
     id: 'media_audio_subtitles',
@@ -216,13 +226,15 @@ const DEFS = [
     label: 'Subtitle languages for audio',
     help: 'Saved as .srt files next to the audio file.',
     keywords: 'subtitles lyrics captions languages srt audio',
+    group: 'Audio only',
   },
   {
     id: 'media_audio_auto_subtitles',
     section: 'media',
     label: 'Use auto-generated subtitles for audio',
-    help: 'When a language has no subtitles written by people, tick the ones made by speech recognition.',
+    help: 'For a language with no subtitles written by people.',
     keywords: 'subtitles captions automatic auto-generated audio',
+    group: 'Audio only',
   },
   {
     id: 'media_audio_chapters',
@@ -230,12 +242,13 @@ const DEFS = [
     label: 'Add chapters to M4A audio',
     help: 'Adds a video’s chapters to M4A files.',
     keywords: 'chapters markers audio m4a',
+    group: 'Audio only',
   },
   {
     id: 'media_addon',
     section: 'addons',
     label: 'Media add-on',
-    help: 'Downloads video from streaming sites, YouTube and about 1,800 other sites. Includes yt-dlp, ffmpeg and Deno.',
+    help: 'Downloads video from YouTube and about 1,800 other sites.',
     keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
   },
   {
@@ -248,57 +261,57 @@ const DEFS = [
   {
     id: 'global_speed_limit',
     section: 'speed',
-    label: 'Speed limit',
-    help: 'Caps the total download speed so browsing and calls stay smooth.',
+    label: 'Limit total speed',
+    help: 'Keeps browsing and calls smooth while downloads run.',
     keywords: 'bandwidth throttle cap limit rate',
   },
   {
     id: 'export',
     section: 'transfer',
-    label: 'Export settings',
-    help: 'Saves settings, queues, schedules and folder rules to one file.',
+    label: 'Save to a file',
+    help: 'Settings, queues, schedules and folder rules, in one file.',
     keywords: 'backup save profile export migrate',
   },
   {
     id: 'import',
     section: 'transfer',
-    label: 'Import settings',
-    help: 'Loads a settings file and replaces your current settings and queues.',
+    label: 'Load from a file',
+    help: 'Shows what changes before it replaces your settings and queues.',
     keywords: 'restore load profile import migrate',
   },
   {
+    id: 'max_concurrent_downloads',
+    section: 'speed',
+    label: 'Downloads at the same time',
+    help: 'Across all queues. A queue can run fewer, set in the queue.',
+    keywords: 'concurrent simultaneous parallel limit',
+  },
+  {
     id: 'connections_per_download',
-    section: 'advanced',
+    section: 'speed',
     label: 'Connections per download',
     help: `More connections can be faster on servers that allow it. ${DEFAULT_CONNECTIONS_PER_DOWNLOAD} suits most servers.`,
     keywords: 'threads segments parts parallel connections speed',
   },
   {
-    id: 'max_concurrent_downloads',
-    section: 'advanced',
-    label: 'Downloads at the same time',
-    help: 'Across all queues together. Each queue also has its own limit.',
-    keywords: 'concurrent simultaneous parallel limit',
-  },
-  {
     id: 'local_sites',
     section: 'advanced',
-    label: 'Your sites on your network',
-    help: 'Links on pages from these sites may lead to devices on your network, like a NAS or a router. Pages at a network address, or with a one-word name, count without being listed.',
+    label: 'Sites on your own network',
+    help: 'Their pages may link to devices like a NAS or a router. Network addresses and one-word names count without being listed.',
     keywords: 'local network intranet nas router private lan trusted hosts',
   },
   {
     id: 'update_suffix_list',
     section: 'advanced',
     label: 'Keep the list of public domains up to date',
-    help: 'The Public Suffix List tells Wirecatch which addresses belong to one owner, for example which of your sites count as on your network. Once a week while nothing downloads, or the next day after a check that failed, Wirecatch fetches it from publicsuffix.org. Privacy: the request names Wirecatch and its version and sends nothing about your downloads or browsing; publicsuffix.org sees your IP address.',
+    help: 'Weekly from publicsuffix.org, while nothing downloads. It tells which sites share an owner. Only Wirecatch’s name and version are sent; the site sees your IP address.',
     keywords: 'public suffix list psl domains owner privacy update publicsuffix.org',
   },
   {
     id: 'queues',
     section: 'queues',
     label: 'Your queues',
-    help: 'Edit a queue to change its name, when it runs, how many of its downloads run at once and its speed limit.',
+    help: 'Edit a queue to change its name, hours and limits.',
     keywords: 'queue queues schedule overnight limit at once concurrent',
   },
 ] as const satisfies readonly SettingText[];

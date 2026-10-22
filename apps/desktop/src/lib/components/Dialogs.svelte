@@ -55,7 +55,7 @@
 {/snippet}
 
 {#snippet queueView(d: DialogOf<'queue'>)}
-  <QueueDialog id={d.id} />
+  <QueueDialog id={d.id} deleting={d.deleting ?? false} />
 {/snippet}
 
 {#snippet refreshView(d: DialogOf<'refresh'>)}

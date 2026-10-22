@@ -138,6 +138,7 @@ const ADDON: readonly CommandSpec<Addon>[] = [
   {
     id: ({ addon }) => `addon.remove.${addon.id}`,
     title: ({ name }) => `Remove the ${name}`,
+    danger: true,
     keywords: `${ADDON_KEYWORDS} uninstall delete`,
     when: ({ addon }) => isInstalled(addon),
     // Removing stops video downloads, so the palette asks first.

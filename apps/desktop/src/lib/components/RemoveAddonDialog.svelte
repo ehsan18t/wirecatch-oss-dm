@@ -1,8 +1,8 @@
 <script lang="ts">
+  // Removing an add-on: what stops working until it is installed again.
   import type { AddonId } from '@wirecatch/protocol';
+  import { Button, Dialog } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
-  import Button from './Button.svelte';
-  import Dialog from './Dialog.svelte';
 
   let { id }: { id: AddonId } = $props();
   const app = getApp();
@@ -18,8 +18,8 @@
   }
 </script>
 
-<Dialog title={`Remove the ${name}?`} onclose={() => app.closeDialog()}>
-  <p class="text">
+<Dialog open role="alertdialog" title={`Remove the ${name}?`} onclose={() => app.closeDialog()}>
+  <p class="text-ui text-ink-muted">
     Downloads from video sites, and videos whose sound and picture must be joined, stop working
     until you install it again. Your downloaded files stay.
   </p>
@@ -29,11 +29,3 @@
     <Button variant="danger" onclick={remove}>Remove</Button>
   {/snippet}
 </Dialog>
-
-<style>
-  .text {
-    margin: 0;
-    color: var(--ink-2);
-    line-height: 1.5;
-  }
-</style>

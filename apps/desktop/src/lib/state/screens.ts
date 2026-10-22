@@ -8,7 +8,8 @@ export type Dialog =
   | { kind: 'add'; urls: string[]; queue?: QueueId }
   | { kind: 'remove'; ids: DownloadId[] }
   | { kind: 'cancel'; ids: DownloadId[] }
-  | { kind: 'queue'; id: QueueId | null }
+  /** `deleting` opens it at the question whether to delete the queue. */
+  | { kind: 'queue'; id: QueueId | null; deleting?: boolean }
   | { kind: 'refresh'; id: DownloadId }
   | { kind: 'export' }
   | { kind: 'import' }

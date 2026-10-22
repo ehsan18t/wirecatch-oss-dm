@@ -25,14 +25,14 @@ describe('settings schema', () => {
     }
   });
 
-  it('puts tuning and the sites on the network under Advanced', () => {
-    const advanced = SETTINGS.filter((d) => d.section === 'advanced').map((d) => d.id);
-    expect(advanced).toEqual([
-      'connections_per_download',
+  it('puts every limit on speed together, and leaves Advanced to what is rarely needed', () => {
+    const in_ = (section: string) => SETTINGS.filter((d) => d.section === section).map((d) => d.id);
+    expect(in_('speed')).toEqual([
+      'global_speed_limit',
       'max_concurrent_downloads',
-      'local_sites',
-      'update_suffix_list',
+      'connections_per_download',
     ]);
+    expect(in_('advanced')).toEqual(['local_sites', 'update_suffix_list']);
   });
 
   it('says what keeping the list of public domains current sends, and where', () => {

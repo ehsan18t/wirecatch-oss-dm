@@ -16,6 +16,8 @@ export interface Command {
   shortcut?: string;
   /** The keymap's name for that key, so the key runs this command. */
   key?: KeyCommand;
+  /** It deletes or discards something: the palette shows it in the danger colour (it asks before acting). */
+  danger?: boolean;
   run: () => unknown;
 }
 
@@ -32,6 +34,7 @@ export interface CommandSpec<C> {
   key?: KeyCommand;
   /** Left out, the command always applies. */
   when?: (c: C) => boolean;
+  danger?: boolean;
   run: (c: C) => unknown;
 }
 
@@ -54,6 +57,7 @@ export function commandsFrom<C>(
       keywords: s.keywords === undefined ? undefined : read(s.keywords, c),
       shortcut: s.key === undefined ? undefined : shortcutLabel(s.key),
       key: s.key,
+      danger: s.danger,
       run: () => s.run(c),
     }));
 }

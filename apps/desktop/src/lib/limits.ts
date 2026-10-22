@@ -1,22 +1,12 @@
-// How many connections and downloads may run at once. The core owns these limits (crates/protocol generates them); this only applies them to what a person typed, so the settings screen and the queue dialog accept exactly what the core accepts.
+// How many connections and downloads may run at once. The core owns these limits (crates/protocol generates them); the fields take them as their range, and the queue dialog checks what it saves against them.
 
-import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 
-/** The number in `typed` as a whole number from 1 to `max`, or `null` when it holds no number. */
-function wholeUpTo(typed: string, max: number): number | null {
-  const value = typed.trim() === '' ? Number.NaN : Number(typed);
-  return Number.isFinite(value) ? Math.min(max, Math.max(1, Math.round(value))) : null;
-}
-
-/** Connections per download from what a person typed; `null` when it is not a number. */
-export function connectionsPerDownload(typed: string): number | null {
-  return wholeUpTo(typed, MAX_CONNECTIONS_PER_DOWNLOAD);
-}
-
-/** Downloads running at once across all queues from what a person typed; `null` when it is not a number. */
-export function concurrentDownloads(typed: string): number | null {
-  return wholeUpTo(typed, MAX_CONCURRENT_DOWNLOADS);
-}
+/** Where a speed limit field starts and how far each step goes, in each unit it is typed in: the queue dialog's and the total limit's. */
+export const SPEED_FIELD = {
+  KB: { min: 1, step: 50 },
+  MB: { min: 0.1, step: 0.5 },
+} as const;
 
 /** Why `typed` cannot be a queue's downloads at the same time, or `null` when it can. */
 export function queueConcurrentProblem(typed: number): string | null {

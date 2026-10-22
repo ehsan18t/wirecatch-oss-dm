@@ -1,21 +1,17 @@
-// What the settings sections share: what each setting's control is given, and what each
-// section is given.
+// What the settings sections share: what each setting's control is given, and what each section is given.
 
 import type { AppSettings } from '@wirecatch/protocol';
+import type { FieldControl } from '@wirecatch/ui';
 import type { SettingDef, SettingId } from '$lib/settings-schema';
 
 /** Changes settings, saving only what changed. */
 export type SaveSettings = (change: (draft: AppSettings) => void) => void;
 
-/**
- * What a setting's control is given: the setting, the settings now, and the ids of its label and
- * its help text, for `aria-labelledby` and `aria-describedby`.
- */
+/** What a setting's control is given: the setting, the settings now, and what labels and describes the control (spread it on the control, as with Field). */
 export interface Row {
   def: SettingDef;
   s: AppSettings;
-  labelId: string;
-  helpId: string;
+  control: FieldControl;
 }
 
 /** What a section is given. */

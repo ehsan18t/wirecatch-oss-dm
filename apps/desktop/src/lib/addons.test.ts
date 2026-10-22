@@ -24,7 +24,7 @@ describe('a missing add-on', () => {
 describe('add-on wording', () => {
   it('says where the add-on stands in plain words', () => {
     const a = mediaAddon();
-    expect(addonStatus(a)).toBe('Not installed. Download size 131 MB.');
+    expect(addonStatus(a)).toBe('Not installed.');
     expect(addonAction(a)).toBe('install');
 
     a.state = { type: 'installing', data: { done: 48 * 1024 * 1024, total: 96 * 1024 * 1024 } };

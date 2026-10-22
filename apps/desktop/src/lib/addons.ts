@@ -1,7 +1,6 @@
 // Add-ons in plain words: what state one is in and what the person can do about it.
 
 import type { AddonId, AddonInfo, AddonState } from '@wirecatch/protocol';
-import { formatBytes } from '@wirecatch/units';
 import { BackendError } from './backend';
 import { PERCENT_MAX, percentOf, roundDownTo } from './format';
 
@@ -37,9 +36,7 @@ export function addonStatus(addon: AddonInfo): string {
   const state = addon.state;
   switch (state.type) {
     case 'not_installed':
-      return addon.size === null
-        ? 'Not installed.'
-        : `Not installed. Download size ${formatBytes(addon.size)}.`;
+      return 'Not installed.';
     case 'installing': {
       const fraction = installFraction(state);
       if (fraction === null) return 'Installing.';

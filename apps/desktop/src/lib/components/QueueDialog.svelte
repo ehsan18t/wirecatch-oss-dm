@@ -1,4 +1,22 @@
+<script lang="ts" module>
+  import type { SelectOption } from '@wirecatch/ui';
+  import type { DayPattern } from '$lib/format';
+
+  const UNITS: readonly SelectOption<'KB' | 'MB'>[] = [
+    { value: 'KB', label: 'KB/s' },
+    { value: 'MB', label: 'MB/s' },
+  ];
+
+  const PATTERNS: readonly SelectOption<DayPattern>[] = [
+    { value: 'every', label: 'Every day' },
+    { value: 'weekdays', label: 'Weekdays' },
+    { value: 'weekends', label: 'Weekends' },
+    { value: 'custom', label: 'Pick days' },
+  ];
+</script>
+
 <script lang="ts">
+  // A queue's name, how many of its downloads run at once, its speed limit and its hours: each limit is a switch that opens its own fields, and the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
   import {
     MAX_CONCURRENT_DOWNLOADS,
     NEW_QUEUE_MAX_CONCURRENT,
@@ -8,15 +26,27 @@
     type Weekday,
   } from '@wirecatch/protocol';
   import { MB, splitKbOrMb, toBytes } from '@wirecatch/units';
-  import { daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
-  import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
-  import { queueConcurrentProblem } from '$lib/limits';
+  import {
+    Button,
+    Callout,
+    Checkbox,
+    Dialog,
+    Field,
+    Input,
+    NumberInput,
+    SegmentedControl,
+    Switch,
+    ToggleChip,
+    type FieldControl,
+  } from '@wirecatch/ui';
+  import { dayPattern, daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
+  import { DAYS_PER_WEEK, WEEKDAYS, WEEKEND, WORKDAYS } from '$lib/time';
+  import { queueConcurrentProblem, SPEED_FIELD } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
   import type { QueueChanges } from '$lib/state/queues.svelte';
-  import Button from './Button.svelte';
-  import Dialog from './Dialog.svelte';
+  import TimeInput from './TimeInput.svelte';
 
-  let { id }: { id: QueueId | null } = $props();
+  let { id, deleting = false }: { id: QueueId | null; deleting?: boolean } = $props();
   const app = getApp();
 
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
@@ -26,23 +56,64 @@
   const FIRST_SPEED_LIMIT = 2 * MB;
   const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
   const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
+  const formId = $props.id();
 
   let name = $state(original?.name ?? '');
   let maxConcurrent = $state(original?.max_concurrent ?? NEW_QUEUE_MAX_CONCURRENT);
   let limitOn = $state(original !== undefined && original.speed_limit !== null);
   const initialLimit = splitKbOrMb(original?.speed_limit ?? FIRST_SPEED_LIMIT);
   let limitUnit = $state(initialLimit.unit);
-  let limitValue = $state(initialLimit.value);
+  let limitValue = $state<number | null>(initialLimit.value);
   let scheduleOn = $state(original !== undefined && original.schedule !== null);
   let start = $state(formatTime(original?.schedule?.start ?? FIRST_START));
-  let stopOn = $state(original?.schedule ? original.schedule.stop !== null : true);
+  let untilEmpty = $state(original?.schedule ? original.schedule.stop === null : false);
   let stop = $state(formatTime(original?.schedule?.stop ?? FIRST_STOP));
   let days = $state<Weekday[]>(original?.schedule?.days ?? []);
+  // Picking single days is its own choice, kept while the days picked happen to make a pattern.
+  let pickingDays = $state(dayPattern(original?.schedule?.days ?? []) === 'custom');
   let error = $state('');
-  let confirmDelete = $state(false);
+  // Opened to delete the queue (from the palette), it starts at that question.
+  let confirmDelete = $state((() => deleting)());
   let busy = $state(false);
   /** A queue this dialog already created, so a retried save updates it instead of making another. */
   let created = $state<Queue>();
+
+  // The button pressed goes as the footer changes: the focus moves to the safe answer, and back to Delete queue on Keep it.
+  let keepButton = $state<HTMLButtonElement | null>(null);
+  let deleteButton = $state<HTMLButtonElement | null>(null);
+  let asked = (() => confirmDelete)();
+  $effect(() => {
+    // Waits for the new button to be there: it binds after the footer changes.
+    const target = confirmDelete ? keepButton : deleteButton;
+    if (confirmDelete === asked || !target) return;
+    asked = confirmDelete;
+    target.focus();
+  });
+
+  /** What deleting the queue does with its downloads. */
+  const movingLine = $derived.by(() => {
+    if (!original) return '';
+    const count = app.downloads.idsInQueue(original.id).length;
+    const to = app.queues.defaultQueue?.name ?? 'the default queue';
+    if (count === 0) return 'It holds no downloads.';
+    return count === 1
+      ? `Its download moves to ${to}.`
+      : `Its ${String(count)} downloads move to ${to}.`;
+  });
+
+  const pattern = $derived<DayPattern>(pickingDays ? 'custom' : dayPattern(days));
+  const DAYS_OF: Record<Exclude<DayPattern, 'custom'>, readonly Weekday[]> = {
+    every: [],
+    weekdays: WORKDAYS,
+    weekends: WEEKEND,
+  };
+
+  function choosePattern(next: DayPattern) {
+    pickingDays = next === 'custom';
+    // Picking days starts from the days it runs on now: every day is all seven ticked.
+    if (next === 'custom') days = days.length === 0 ? [...WEEKDAYS] : days;
+    else days = [...DAYS_OF[next]];
+  }
 
   // Picking days limits the queue to those days; picking none means every day.
   function toggleDay(d: Weekday) {
@@ -50,15 +121,15 @@
   }
 
   const daysHelp = $derived.by(() => {
-    if (days.length === 0 || days.length === DAYS_PER_WEEK)
-      return 'No days picked, so it runs every day.';
+    if (days.length === 0) return 'Pick at least one day.';
+    if (days.length === DAYS_PER_WEEK) return 'Runs every day.';
     return `Runs only on ${daysInPhrase(days)}.`;
   });
 
   /** The speed limit the form describes, or why it is not one. */
   function readLimit(): { limit: Queue['speed_limit'] } | string {
     if (!limitOn) return { limit: null };
-    const limit = toBytes(limitValue, limitUnit);
+    const limit = limitValue === null ? null : toBytes(limitValue, limitUnit);
     return limit === null || limit <= 0
       ? 'Enter a speed limit above zero, or turn the limit off.'
       : { limit };
@@ -68,11 +139,12 @@
   function readSchedule(): { schedule: Queue['schedule'] } | string {
     if (!scheduleOn) return { schedule: null };
     const s = parseTime(start);
-    const e = stopOn ? parseTime(stop) : null;
+    const e = untilEmpty ? null : parseTime(stop);
     if (!s) return `Enter a start time like ${formatTime(FIRST_START)}.`;
-    if (stopOn && !e) return `Enter a stop time like ${formatTime(FIRST_STOP)}.`;
+    if (!untilEmpty && !e) return `Enter a stop time like ${formatTime(FIRST_STOP)}.`;
     if (e?.hour === s.hour && e.minute === s.minute)
       return 'The start and stop times are the same. Pick a different stop time.';
+    if (pickingDays && days.length === 0) return 'Pick at least one day for the queue to run.';
     // Seven ticked days is the same as every day.
     const every = days.length === DAYS_PER_WEEK;
     return {
@@ -121,197 +193,169 @@
   }
 
   async function remove() {
-    if (!original) return;
-    if (!confirmDelete) {
-      confirmDelete = true;
-      return;
-    }
-    if (await app.queues.remove(original.id)) app.closeDialog();
+    if (original && (await app.queues.remove(original.id))) app.closeDialog();
   }
 </script>
 
 <Dialog
+  open
   title={original ? `Edit ${original.name}` : 'New queue'}
-  description="A queue runs its downloads in order, with its own limits and hours."
+  description={original
+    ? undefined
+    : 'A queue runs its downloads in order, with its own limits and hours.'}
   onclose={() => app.closeDialog()}
-  size="medium"
 >
   <form
-    id="queue-form"
+    id={formId}
+    class="flex flex-col gap-5 pb-1"
     onsubmit={(e) => {
       e.preventDefault();
       void save();
     }}
   >
-    <label class="form-stack">
-      <span class="form-label">Name</span>
-      <input class="field" bind:value={name} placeholder="For example: Overnight" required />
-    </label>
-
-    <div class="form-stack">
-      <label class="form-label" for="queue-max">Downloads at the same time</label>
-      <input
-        id="queue-max"
-        class="field narrow"
-        type="number"
-        min="1"
-        max={MAX_CONCURRENT_DOWNLOADS}
-        aria-describedby="queue-max-help"
-        bind:value={maxConcurrent}
-      />
-      <span id="queue-max-help" class="form-help">The rest wait their turn in order.</span>
+    <div class="flex flex-wrap items-start gap-4">
+      <Field label="Name" class="flex-1 basis-56">
+        {#snippet children(control: FieldControl)}
+          <Input
+            {...control}
+            value={name}
+            onchange={(value: string) => (name = value)}
+            placeholder="For example: Overnight"
+            required
+          />
+        {/snippet}
+      </Field>
+      <Field label="Downloads at the same time" description="The rest wait their turn.">
+        {#snippet children(control: FieldControl)}
+          <NumberInput
+            {...control}
+            class="w-28"
+            value={maxConcurrent}
+            min={1}
+            max={MAX_CONCURRENT_DOWNLOADS}
+            onchange={(value: number | null) => {
+              if (value !== null) maxConcurrent = value;
+            }}
+          />
+        {/snippet}
+      </Field>
     </div>
 
-    <fieldset>
-      <legend class="visually-hidden">Speed limit</legend>
-      <label class="form-check">
-        <input type="checkbox" bind:checked={limitOn} />
-        <span class="form-label">Limit this queue's speed</span>
-      </label>
+    <section class="flex flex-col gap-3 rounded-md border border-line bg-layer p-3">
+      <Switch
+        labelSide="start"
+        label="Limit this queue's speed"
+        description="Shared by everything running in this queue."
+        checked={limitOn}
+        onchange={(on: boolean) => (limitOn = on)}
+      />
       {#if limitOn}
-        <div class="inline">
-          <input
-            class="field narrow"
-            type="number"
-            min="0.1"
-            step="0.1"
-            aria-label="Speed limit"
-            bind:value={limitValue}
+        <div class="flex items-center gap-2">
+          <NumberInput
+            label="Speed limit"
+            class="w-28"
+            value={limitValue}
+            min={SPEED_FIELD[limitUnit].min}
+            step={SPEED_FIELD[limitUnit].step}
+            onchange={(value: number | null) => (limitValue = value)}
           />
-          <select class="field" aria-label="Unit" bind:value={limitUnit}>
-            <option value="KB">KB/s</option>
-            <option value="MB">MB/s</option>
-          </select>
-          <span class="form-help">Shared by everything running in this queue.</span>
+          <SegmentedControl
+            label="Unit"
+            size="sm"
+            value={limitUnit}
+            options={UNITS}
+            onchange={(unit: 'KB' | 'MB') => (limitUnit = unit)}
+          />
         </div>
       {/if}
-    </fieldset>
+    </section>
 
-    <fieldset>
-      <legend class="visually-hidden">Schedule</legend>
-      <label class="form-check">
-        <input type="checkbox" bind:checked={scheduleOn} />
-        <span class="form-label">Only run at certain times</span>
-      </label>
+    <section class="flex flex-col gap-3 rounded-md border border-line bg-layer p-3">
+      <Switch
+        labelSide="start"
+        label="Only run at certain times"
+        description="Outside these hours its downloads wait, unless you start the queue now."
+        checked={scheduleOn}
+        onchange={(on: boolean) => (scheduleOn = on)}
+      />
       {#if scheduleOn}
-        <div class="inline">
-          <label class="inline">From <input class="field" type="time" bind:value={start} /></label>
-          <label class="form-check">
-            <input type="checkbox" bind:checked={stopOn} />
-            <span>until</span>
-          </label>
-          {#if stopOn}
-            <input class="field" type="time" aria-label="Stop time" bind:value={stop} />
-          {:else}
-            <span class="form-help">the queue is empty</span>
+        <div class="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <Field label="Starts at">
+            {#snippet children(control: FieldControl)}
+              <TimeInput {...control} value={start} onchange={(value: string) => (start = value)} />
+            {/snippet}
+          </Field>
+          {#if !untilEmpty}
+            <Field label="Stops at">
+              {#snippet children(control: FieldControl)}
+                <TimeInput {...control} value={stop} onchange={(value: string) => (stop = value)} />
+              {/snippet}
+            </Field>
+          {/if}
+          <Checkbox
+            class="pb-2"
+            label="Run until the queue is empty"
+            checked={untilEmpty}
+            onchange={(on: boolean) => (untilEmpty = on)}
+          />
+        </div>
+        <div class="flex flex-col gap-2">
+          <span class="text-ui font-medium text-ink" aria-hidden="true">Days</span>
+          <SegmentedControl
+            label="Days"
+            size="sm"
+            value={pattern}
+            options={PATTERNS}
+            onchange={choosePattern}
+          />
+          {#if pattern === 'custom'}
+            <div
+              class="flex flex-wrap gap-1"
+              role="group"
+              aria-label="Only on these days"
+              aria-describedby="{formId}-days-help"
+            >
+              {#each WEEKDAYS as d (d)}
+                <ToggleChip
+                  pressed={days.includes(d)}
+                  label={WEEKDAY_SHORT[d]}
+                  onchange={() => toggleDay(d)}
+                />
+              {/each}
+            </div>
+            <p id="{formId}-days-help" class="text-small text-ink-muted">{daysHelp}</p>
           {/if}
         </div>
-        <div class="days-row">
-          <span class="form-label" id="queue-days-label">Only on these days</span>
-          <div
-            class="days"
-            role="group"
-            aria-labelledby="queue-days-label"
-            aria-describedby="queue-days-help"
-          >
-            {#each WEEKDAYS as d (d)}
-              <button
-                type="button"
-                class="day"
-                aria-pressed={days.includes(d)}
-                onclick={() => toggleDay(d)}
-              >
-                {WEEKDAY_SHORT[d]}
-              </button>
-            {/each}
-          </div>
-          <span id="queue-days-help" class="form-help">{daysHelp}</span>
-        </div>
       {/if}
-    </fieldset>
+    </section>
 
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error}
+      <Callout tone="danger" live="assertive">{error}</Callout>
+    {/if}
   </form>
 
   {#snippet footer()}
-    {#if original && !original.is_default}
-      <Button variant="danger" class="queue-delete" onclick={remove}>
-        {confirmDelete
-          ? `Delete it; downloads move to ${app.queues.defaultQueue?.name ?? 'the default queue'}`
-          : 'Delete queue'}
+    {#if confirmDelete && original}
+      <p class="mr-auto text-small text-ink-muted" role="status">
+        {movingLine}
+      </p>
+      <Button bind:ref={keepButton} data-autofocus onclick={() => (confirmDelete = false)}
+        >Keep it</Button
+      >
+      <Button variant="danger" onclick={remove}>Delete {original.name}</Button>
+    {:else}
+      {#if original && !original.is_default}
+        <Button
+          bind:ref={deleteButton}
+          variant="danger-quiet"
+          class="mr-auto"
+          onclick={() => (confirmDelete = true)}>Delete queue</Button
+        >
+      {/if}
+      <Button onclick={() => app.closeDialog()}>Cancel</Button>
+      <Button type="submit" form={formId} variant="primary" loading={busy}>
+        {original || created ? 'Save' : 'Create queue'}
       </Button>
     {/if}
-    <Button onclick={() => app.closeDialog()}>Cancel</Button>
-    <Button type="submit" form="queue-form" variant="primary" disabled={busy}>
-      {original || created ? 'Save' : 'Create queue'}
-    </Button>
   {/snippet}
 </Dialog>
-
-<style>
-  form {
-    display: grid;
-    gap: 16px;
-  }
-
-  fieldset {
-    display: grid;
-    gap: 8px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .narrow {
-    width: 90px;
-  }
-
-  .inline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--text-sm);
-  }
-
-  .days-row {
-    display: grid;
-    gap: 4px;
-  }
-
-  .days {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .day {
-    width: 42px;
-    height: 28px;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius-s);
-    background: var(--surface);
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-
-  .day[aria-pressed='true'] {
-    border-color: var(--accent);
-    background: var(--accent-soft);
-    color: var(--ink);
-    font-weight: 600;
-  }
-
-  .error {
-    margin: 0;
-    color: var(--danger);
-    font-size: var(--text-sm);
-  }
-
-  /* The delete button stands apart from Cancel and Save, at the start of the bar. */
-  :global(.queue-delete) {
-    margin-right: auto;
-  }
-</style>

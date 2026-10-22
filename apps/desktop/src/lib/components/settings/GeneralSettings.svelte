@@ -7,9 +7,9 @@
   import { findElement } from '$lib/dom';
   import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
-  import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
+  import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
   const app = getApp();
@@ -75,11 +75,11 @@
   />
 {/snippet}
 
-{#snippet accent({ s, labelId, helpId }: Row)}
+{#snippet accent({ def, s, control }: Row)}
   <div
     role="radiogroup"
-    aria-labelledby={labelId}
-    aria-describedby={helpId}
+    aria-label={def.label}
+    aria-describedby={control['aria-describedby']}
     class="flex flex-wrap items-center gap-2"
   >
     {#each offeredAccents(s.accent) as a (a)}
@@ -105,28 +105,28 @@
   </div>
 {/snippet}
 
-{#snippet startWithSystem({ def, s, helpId }: Row)}
-  <Toggle
+{#snippet startWithSystem({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.start_with_system}
     onchange={(v: boolean) => save((d) => void (d.start_with_system = v))}
   />
 {/snippet}
 
-{#snippet closeToTray({ def, s, helpId }: Row)}
-  <Toggle
+{#snippet closeToTray({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.close_to_tray}
     onchange={(v: boolean) => save((d) => void (d.close_to_tray = v))}
   />
 {/snippet}
 
-{#snippet notifyOnComplete({ def, s, helpId }: Row)}
-  <Toggle
+{#snippet notifyOnComplete({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.notify_on_complete}
     onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
   />

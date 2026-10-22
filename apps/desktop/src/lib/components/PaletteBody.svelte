@@ -1,9 +1,10 @@
 <script lang="ts">
-  import Search from '@lucide/svelte/icons/search';
+  // The command palette: every action and setting, found by typing; results stay grouped by kind, best group first.
+  import Search from '~icons/lucide/search';
   import { onMount } from 'svelte';
   import { buildCommands, groupCommands, searchCommands, type Command } from '$lib/commands';
   import { getApp } from '$lib/state/app.svelte';
-  import Icon from './Icon.svelte';
+  import { cn, DIALOG_SURFACE, Icon, Kbd } from '@wirecatch/ui';
 
   const app = getApp();
 
@@ -18,11 +19,8 @@
   let previous: Element | null = null;
 
   const results = $derived(searchCommands(commands, query));
-  // While searching, best matches come first; otherwise actions stay grouped.
-  const groups = $derived.by(() => {
-    if (query.trim()) return [{ name: 'Best matches', items: results }];
-    return groupCommands(results);
-  });
+  // Grouped by kind while searching too: the group of the best match first.
+  const groups = $derived(groupCommands(results));
   const flat = $derived(groups.flatMap((g) => g.items));
 
   onMount(() => {
@@ -76,7 +74,10 @@
 <!-- The keys work wherever the focus is in the palette, so they are handled on the dialog. -->
 <dialog
   bind:this={el}
-  class="palette"
+  class={cn(
+    DIALOG_SURFACE,
+    'mx-auto mt-24 w-full max-w-dialog-lg overflow-hidden p-0 backdrop:bg-scrim backdrop:backdrop-blur-scrim',
+  )}
   aria-label="Find an action or setting"
   oncancel={(e) => {
     e.preventDefault();
@@ -87,11 +88,12 @@
   }}
   {onkeydown}
 >
-  <div class="search">
+  <div class="flex items-center gap-2.5 border-b border-line px-4 text-ink-subtle">
     <Icon icon={Search} size="md" />
     <input
       bind:this={input}
       bind:value={query}
+      class="h-12 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-subtle"
       role="combobox"
       aria-expanded="true"
       aria-controls="palette-list"
@@ -104,127 +106,51 @@
       oninput={() => (index = 0)}
     />
   </div>
-  <div bind:this={list} id="palette-list" class="list" role="listbox" aria-label="Actions">
+  <div
+    bind:this={list}
+    id="palette-list"
+    class="max-h-96 overflow-y-auto p-1.5"
+    role="listbox"
+    aria-label="Actions"
+  >
     {#each groups as group (group.name)}
       <div role="group" aria-label={group.name}>
-        <div class="group" aria-hidden="true">{group.name}</div>
+        <div class="px-2.5 pt-2 pb-1 text-small font-semibold text-ink-muted" aria-hidden="true">
+          {group.name}
+        </div>
         {#each group.items as c (c.id)}
           {@const i = flat.indexOf(c)}
-          <!-- The search field keeps the focus and moves through the options (aria-activedescendant);
-               each option is a button, so a click runs it and it is a control in its own right. -->
+          <!-- The search field keeps the focus and moves through the options (aria-activedescendant); each option is a button, so a click runs it and it is a control in its own right. -->
           <button
             type="button"
             id="cmd-{i}"
             role="option"
             tabindex="-1"
             aria-selected={i === index}
-            class="item"
-            class:current={i === index}
+            class={cn(
+              'flex min-h-9 w-full items-center justify-between gap-3 rounded-sm px-2.5 text-left text-ui',
+              c.danger ? 'text-danger' : 'text-ink',
+              i === index && 'bg-accent-soft',
+            )}
             onclick={() => run(c)}
             onmousemove={() => (index = i)}
           >
-            <span>{c.title}</span>
-            {#if c.shortcut}<kbd>{c.shortcut}</kbd>{/if}
+            <span class="truncate">{c.title}</span>
+            {#if c.shortcut}
+              <span class="shrink-0 text-small text-ink-muted">{c.shortcut}</span>
+            {/if}
           </button>
         {/each}
       </div>
     {:else}
-      <p class="none">No action or setting matches "{query}". Try fewer letters.</p>
+      <p class="px-3 py-5 text-ui text-ink-muted">
+        No action or setting matches “{query}”. Try fewer letters.
+      </p>
     {/each}
   </div>
-  <p class="foot">
-    <kbd>Up</kbd> <kbd>Down</kbd> to move, <kbd>Enter</kbd> to run, <kbd>Esc</kbd> to close
+  <p class="flex items-center gap-4 border-t border-line px-4 py-2 text-small text-ink-muted">
+    <span class="flex items-center gap-1.5"><Kbd keys={['Up']} /><Kbd keys={['Down']} /> move</span>
+    <span class="flex items-center gap-1.5"><Kbd keys={['Enter']} /> run</span>
+    <span class="flex items-center gap-1.5"><Kbd keys={['Esc']} /> close</span>
   </p>
 </dialog>
-
-<style>
-  .palette {
-    width: min(600px, calc(100vw - 32px));
-    margin-top: 12vh;
-    padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-l);
-    /* A floating surface: solid, as every layer over the window is (D46). */
-    background: var(--color-overlay);
-    color: var(--ink);
-    box-shadow: var(--shadow);
-  }
-
-  /* The design system's one blur, behind every dialog (D46). */
-  .palette::backdrop {
-    background: var(--scrim);
-    backdrop-filter: blur(var(--blur-scrim));
-  }
-
-  .search {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 16px;
-    border-bottom: 1px solid var(--line);
-    color: var(--ink-3);
-  }
-
-  input {
-    flex: 1;
-    height: 50px;
-    border: 0;
-    background: transparent;
-    color: var(--ink);
-    font-size: var(--text-lg);
-    outline: none;
-  }
-
-  input::placeholder {
-    color: var(--ink-3);
-  }
-
-  .list {
-    max-height: min(420px, 56vh);
-    padding: 6px;
-    overflow-y: auto;
-  }
-
-  .group {
-    padding: 8px 10px 4px;
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-    font-weight: 600;
-  }
-
-  .item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    width: 100%;
-    min-height: 34px;
-    padding: 6px 10px;
-    border: 0;
-    border-radius: var(--radius-m);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .item.current {
-    background: var(--accent-soft);
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
-
-  .none {
-    margin: 0;
-    padding: 18px 12px;
-    color: var(--ink-2);
-  }
-
-  .foot {
-    margin: 0;
-    padding: 8px 14px;
-    border-top: 1px solid var(--line);
-    color: var(--ink-2);
-    font-size: var(--text-xs);
-  }
-</style>

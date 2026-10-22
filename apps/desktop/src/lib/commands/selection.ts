@@ -52,6 +52,7 @@ const ACTIONS: readonly CommandSpec<Selected>[] = [
   {
     id: 'sel.cancel',
     title: (s) => `Cancel ${s.n} and discard the partial file`,
+    danger: true,
     keywords: 'stop abort',
     when: (s) => s.can.cancel,
     run: (s) => s.app.openDialog({ kind: 'cancel', ids: s.ids }),
@@ -59,6 +60,7 @@ const ACTIONS: readonly CommandSpec<Selected>[] = [
   {
     id: 'sel.remove',
     title: (s) => `Remove ${s.n} from the list`,
+    danger: true,
     keywords: 'delete clear',
     key: 'remove',
     run: (s) => s.app.openDialog({ kind: 'remove', ids: s.ids }),
@@ -91,7 +93,7 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
   },
   {
     id: 'sel.progress',
-    title: (s) => `Show the progress window of ${s.n}`,
+    title: (s) => `Open ${s.n} in its own window`,
     keywords: 'window progress speed open',
     run: (s) => s.app.showProgressWindow(s.only.id),
   },

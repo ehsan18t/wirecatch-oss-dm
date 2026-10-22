@@ -242,11 +242,12 @@ export function ariaShortcut(command: KeyCommand): string {
   return [...mods, b.key.length === 1 ? b.key.toUpperCase() : b.key].join('+');
 }
 
-/** One line of the shortcuts dialog: its keys, and what they do. */
+/** One line of the shortcuts dialog: its keys, what they do, and where they work. */
 export interface ShortcutHelp {
   /** Each key that does it, as the keys pressed together. */
   keys: string[][];
   what: string;
+  scope: KeyBinding['scope'];
 }
 
 /** The shortcuts dialog's lines: keys with the same help text together, in table order. */
@@ -257,7 +258,7 @@ export function shortcutHelp(): ShortcutHelp[] {
     const parts = keyParts(b);
     const line = lines.find((l) => l.what === b.help);
     if (line) line.keys.push(parts);
-    else lines.push({ keys: [parts], what: b.help });
+    else lines.push({ keys: [parts], what: b.help, scope: b.scope });
   }
   return lines;
 }

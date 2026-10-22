@@ -1,14 +1,14 @@
 <script lang="ts">
-  // Add-ons: the media add-on, and whether it keeps itself up to date.
+  // Add-ons: the media add-on, and whether it keeps itself up to date (which only means something once it is installed).
   import type { Snippet } from 'svelte';
-  import { MEDIA_ADDON } from '$lib/addons';
+  import { Button } from '@wirecatch/ui';
+  import { isInstalled, MEDIA_ADDON } from '$lib/addons';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import AddonCard from '../AddonCard.svelte';
-  import Button from '../Button.svelte';
-  import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
+  import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
 
@@ -24,36 +24,23 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet mediaAddon({ helpId }: Row)}
+{#snippet mediaAddon({ control }: Row)}
   {#if addon}
-    <AddonCard {addon} describedby={helpId} />
+    <AddonCard {addon} describedby={control['aria-describedby']} />
   {:else if app.addons.error}
-    <p class="addon-note">
-      {app.addons.error}
-      <Button small onclick={() => app.addons.load()}>Check again</Button>
-    </p>
+    <span class="text-small text-danger">{app.addons.error}</span>
+    <Button size="sm" onclick={() => app.addons.load()}>Check again</Button>
   {:else}
-    <p class="addon-note">Checking.</p>
+    <span class="text-small text-ink-muted">Checking.</span>
   {/if}
 {/snippet}
 
-{#snippet autoUpdate({ def, s, helpId }: Row)}
-  <Toggle
+{#snippet autoUpdate({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.auto_update_addons}
+    disabled={!isInstalled(addon)}
     onchange={(v: boolean) => save((d) => void (d.auto_update_addons = v))}
   />
 {/snippet}
-
-<style>
-  .addon-note {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    max-width: 320px;
-    margin: 0;
-    color: var(--ink-2);
-    font-size: var(--text-sm);
-  }
-</style>

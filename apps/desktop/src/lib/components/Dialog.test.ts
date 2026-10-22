@@ -39,7 +39,7 @@ describe('dialogs', () => {
       .find((c) => c.id === 'addon.remove.media')
       ?.run();
     await settle();
-    const dialog = within(screen.getByRole('dialog', { name: 'Remove the media add-on?' }));
+    const dialog = within(screen.getByRole('alertdialog', { name: 'Remove the media add-on?' }));
     // Nothing is removed until the person says so.
     expect(app.addons.list?.[0]?.state.type).toBe('installed');
     await userEvent.setup().click(dialog.getByRole('button', { name: 'Remove' }));

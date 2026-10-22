@@ -3,6 +3,7 @@
 
 import type { Category, Queue } from '@wirecatch/protocol';
 import { CATEGORIES, CATEGORY_LABEL } from '../format';
+import { SEARCH_ID } from '../dom';
 import type { AppState } from '../state/app.svelte';
 import {
   GROUP_ORDER,
@@ -17,12 +18,9 @@ import {
 import { keysOf } from '../keys';
 import { commandsFrom, type Command, type CommandSpec } from './table';
 
-/**
- * Puts the keyboard in the search box of the screen shown (the list's or the settings'), with
- * what is typed there selected.
- */
-export function focusSearch(app: AppState): void {
-  const el = document.getElementById(app.screen === 'settings' ? 'settings-search' : 'list-search');
+/** Puts the keyboard in the title bar's search (the list's, or the settings' while they show), with what is typed there selected. */
+export function focusSearch(): void {
+  const el = document.getElementById(SEARCH_ID);
   if (el instanceof HTMLInputElement) {
     el.focus();
     el.select();
@@ -66,7 +64,7 @@ const DOWNLOADS: readonly CommandSpec<AppState>[] = [
     title: 'Search the list',
     key: 'search',
     keywords: 'find filter',
-    run: (app) => focusSearch(app),
+    run: () => focusSearch(),
   },
 ];
 
@@ -183,9 +181,10 @@ const QUEUE: readonly CommandSpec<{ app: AppState; q: Queue }>[] = [
   {
     id: ({ q }) => `queue.delete.${q.id}`,
     title: ({ q }) => `Delete the ${q.name} queue`,
+    danger: true,
     keywords: 'remove',
     when: ({ q }) => !q.is_default,
-    run: ({ app, q }) => app.openDialog({ kind: 'queue', id: q.id }),
+    run: ({ app, q }) => app.openDialog({ kind: 'queue', id: q.id, deleting: true }),
   },
 ];
 

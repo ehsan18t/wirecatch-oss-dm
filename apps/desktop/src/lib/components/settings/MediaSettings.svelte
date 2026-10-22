@@ -8,12 +8,11 @@
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
-  import { offeredKbps, offeredValue } from '$lib/select-value';
+  import { Select, TagInput, type SelectOption } from '@wirecatch/ui';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
-  import ListEditor from '../ListEditor.svelte';
-  import Toggle from '../Toggle.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
+  import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
 
@@ -45,12 +44,27 @@
     });
   }
 
-  /** A subtitle language as typed: lower case letters, digits, `_` and `-`. */
-  function language(typed: string): string {
-    return typed
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, '');
+  /** A subtitle language as typed: lower case letters, digits, `_` and `-`; null when none is left. */
+  function language(typed: string): string | null {
+    return (
+      typed
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '') || null
+    );
+  }
+
+  const formats = (list: readonly OutputFormat[]): SelectOption<OutputFormat>[] =>
+    list.map((f) => ({ value: f, label: formatName(f) }));
+  const VIDEO_FORMATS = formats(VIDEO_OUTPUT_FORMATS);
+  const AUDIO_FORMATS = formats(AUDIO_OUTPUT_FORMATS);
+
+  /** The bit rates a format offers, after the format's usual one (no number). */
+  function kbpsOptions(list: readonly number[]): SelectOption<number | 'usual'>[] {
+    return [
+      { value: 'usual', label: 'Usual quality' },
+      ...list.map((k) => ({ value: k, label: `${String(k)} kbps` })),
+    ];
   }
 
   const controls: Record<SettingIn<'media'>, Snippet<[Row]>> = {
@@ -68,90 +82,75 @@
 
 <SettingRows {items} {settings} {flash} {controls} />
 
-{#snippet videoFormat({ s, labelId, helpId }: Row)}
-  <select
-    class="field"
-    aria-labelledby={labelId}
-    aria-describedby={helpId}
+{#snippet videoFormat({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-44"
     value={s.media.video.format}
-    onchange={(e) => {
-      const format = offeredValue(VIDEO_OUTPUT_FORMATS, e.currentTarget.value);
-      if (format) save((d) => void (d.media.video.format = format));
-    }}
-  >
-    {#each VIDEO_OUTPUT_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
-  </select>
+    options={VIDEO_FORMATS}
+    onchange={(format: OutputFormat) => save((d) => void (d.media.video.format = format))}
+  />
 {/snippet}
 
-{#snippet audioFormat({ s, labelId, helpId }: Row)}
+{#snippet audioFormat({ s, control }: Row)}
   {@const audio = s.media.audio}
   {@const kbpsList = AUDIO_KBPS_CHOICES[audio.format]}
-  <select
-    class="field"
-    aria-labelledby={labelId}
-    aria-describedby={helpId}
+  <Select
+    {...control}
+    class="w-36"
     value={audio.format}
-    onchange={(e) => {
-      const format = offeredValue(AUDIO_OUTPUT_FORMATS, e.currentTarget.value);
-      if (format) setAudioFormat(format);
-    }}
-  >
-    {#each AUDIO_OUTPUT_FORMATS as f (f)}<option value={f}>{formatName(f)}</option>{/each}
-  </select>
+    options={AUDIO_FORMATS}
+    onchange={setAudioFormat}
+  />
   {#if kbpsList}
-    <select
-      class="field"
-      aria-label="Audio quality"
-      value={audio.audio_kbps === null ? '' : String(audio.audio_kbps)}
-      onchange={(e) => {
-        const kbps = offeredKbps(kbpsList, e.currentTarget.value, { usual: true });
-        if (kbps !== undefined) save((d) => void (d.media.audio.audio_kbps = kbps));
-      }}
-    >
-      <option value="">Usual quality</option>
-      {#each kbpsList as k (k)}
-        <option value={String(k)}>{k} kbps</option>
-      {/each}
-    </select>
+    <Select
+      label="Audio quality"
+      class="w-36"
+      value={audio.audio_kbps ?? 'usual'}
+      options={kbpsOptions(kbpsList)}
+      onchange={(kbps: number | 'usual') =>
+        save((d) => void (d.media.audio.audio_kbps = kbps === 'usual' ? null : kbps))}
+    />
   {/if}
 {/snippet}
 
-{#snippet subtitles({ def, s, helpId }: Row)}
+{#snippet subtitles({ def, s, control }: Row)}
   {@const kind = kindOf(def.id)}
-  <ListEditor
+  <TagInput
+    {...control}
+    class="w-64"
     label={def.label}
-    describedby={helpId}
-    placeholder="en, fr"
-    items={s.media[kind].subtitle_languages}
+    placeholder="Add a language, like en"
+    values={s.media[kind].subtitle_languages}
     normalize={language}
     onchange={(langs: string[]) => save((d) => void (d.media[kind].subtitle_languages = langs))}
   />
 {/snippet}
 
-{#snippet autoSubtitles({ def, s, helpId }: Row)}
+{#snippet autoSubtitles({ def, s, control }: Row)}
   {@const kind = kindOf(def.id)}
-  <Toggle
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.media[kind].auto_subtitles}
     onchange={(v: boolean) => save((d) => void (d.media[kind].auto_subtitles = v))}
   />
 {/snippet}
 
-{#snippet chapters({ def, s, helpId }: Row)}
+{#snippet chapters({ def, s, control }: Row)}
   {@const kind = kindOf(def.id)}
-  <Toggle
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.media[kind].chapters}
     onchange={(v: boolean) => save((d) => void (d.media[kind].chapters = v))}
   />
 {/snippet}
 
-{#snippet subtitleFiles({ def, s, helpId }: Row)}
-  <Toggle
+{#snippet subtitleFiles({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
     label={def.label}
-    describedby={helpId}
     checked={s.media.video.subtitle_files}
     onchange={(v: boolean) => save((d) => void (d.media.video.subtitle_files = v))}
   />
