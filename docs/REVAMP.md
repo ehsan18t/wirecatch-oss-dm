@@ -17,8 +17,6 @@ Built on `ws/ui-revamp`, reviewed screen by screen and as a whole, and joined wi
 
 Screenshots of every state on sample data are in `apps/desktop/docs/screenshots` (`pnpm e2e:screenshots`).
 
-The screens phase 2 rebuilds still read `apps/desktop/src/app.css` in the `legacy` layer ([ENGINEERING](ENGINEERING.md), section 2), so they keep the old teal accent whatever accent is chosen.
-
 ## Not seen working yet
 
 For the maintainer: these were built and compile, but nobody has seen them in the real app.
