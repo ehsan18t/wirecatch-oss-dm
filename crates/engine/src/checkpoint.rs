@@ -101,7 +101,7 @@ impl ResumeSaver {
                 &self.validators,
                 remaining,
             )
-            .save(&self.path)
+            .save(&self.path, &self.abandoned)
         })
     }
 

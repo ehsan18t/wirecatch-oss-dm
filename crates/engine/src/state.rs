@@ -7,6 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::abandon::Abandoned;
 use crate::error::{IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::ByteRange;
@@ -89,8 +90,9 @@ impl ResumeState {
     /// Writes to a temporary file first and flushes it to the disk before it
     /// replaces the old one, so neither a crash nor a power cut leaves a torn
     /// or empty resume file: at worst the previous one stays, which lists more
-    /// to fetch, never less.
-    pub fn save(&self, path: &Path) -> Result<()> {
+    /// to fetch, never less. A download `abandoned` during that flush replaces
+    /// nothing and removes its temporary file.
+    pub fn save(&self, path: &Path, abandoned: &Abandoned) -> Result<()> {
         let mut tmp = path.as_os_str().to_owned();
         tmp.push(".tmp");
         let write = || -> io::Result<()> {
@@ -99,6 +101,11 @@ impl ResumeState {
                 let mut file = File::create(&tmp)?;
                 file.write_all(&json)?;
                 file.sync_data()?;
+            }
+            #[cfg(test)]
+            abandoned.slow_step_done();
+            if abandoned.is_set() {
+                return std::fs::remove_file(&tmp);
             }
             std::fs::rename(&tmp, path)
         };
@@ -151,6 +158,7 @@ impl ResumeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abandon::Abandonment;
 
     fn validators(etag: Option<&str>) -> Validators {
         Validators {
@@ -168,8 +176,9 @@ mod tests {
             start: 10,
             end: 100,
         }];
+        let abandonment = Abandonment::new();
         ResumeState::new("https://x/f", Some(100), true, &v, remaining.clone())
-            .save(&path)
+            .save(&path, &abandonment.flag())
             .unwrap();
 
         let loaded = ResumeState::load(&path).unwrap();
@@ -179,6 +188,31 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(101), &v));
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
+        dir.remove().unwrap();
+    }
+
+    /// The owner of a download dropped while its resume file is flushed may already have deleted its files.
+    #[test]
+    fn a_download_dropped_while_its_resume_file_is_flushed_leaves_none() {
+        let dir = wirecatch_test_support::private_dir("state-dropped").unwrap();
+        let path = dir.path().join("f.bin.wcstate");
+        let abandonment = Abandonment::new();
+        let abandoned = abandonment.flag();
+        abandoned.drop_after_slow_step();
+        ResumeState::new(
+            "https://x/f",
+            Some(100),
+            true,
+            &validators(None),
+            Vec::new(),
+        )
+        .save(&path, &abandoned)
+        .unwrap();
+        assert_eq!(
+            wirecatch_test_support::files_in(dir.path()),
+            Vec::<String>::new(),
+            "a dropped download wrote its resume file"
+        );
         dir.remove().unwrap();
     }
 

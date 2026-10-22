@@ -358,7 +358,7 @@ mod tests {
             &file.validators,
             first.table.remaining(),
         )
-        .save(&first.target.state)
+        .save(&first.target.state, &abandonment.flag())
         .unwrap();
         let again = in_folder(&dir)
             .prepare(url, &file, 1, &abandonment.flag())

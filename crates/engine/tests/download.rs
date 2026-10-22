@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{
@@ -11,7 +11,7 @@ use wirecatch_engine::{
     Progress, RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::{TestResult, files_in, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
 
 mod common;
 use common::{request, run};
@@ -587,15 +587,21 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
         progress.clone(),
         CancellationToken::new(),
     ));
+    let deadline = Instant::now() + PATIENCE;
     while progress.done() < 64 * KIB {
+        assert!(Instant::now() < deadline, "the download never started");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
-    // Let a save that was already running finish, then delete the files, as a
-    // cancelled download's owner does.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // A save that passed its last check before the drop holds its temporary file until it has replaced the resume file; any other replaces nothing. Once none is held, delete the files, as a cancelled download's owner does.
     let (part, state) = (dir.join("d.bin.wcpart"), dir.join("d.bin.wcstate"));
+    let saving = dir.join("d.bin.wcstate.tmp");
+    let deadline = Instant::now() + PATIENCE;
+    while saving.exists() {
+        assert!(Instant::now() < deadline, "a save never finished");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     std::fs::remove_file(&part).unwrap();
     std::fs::remove_file(&state).unwrap();
 
