@@ -139,7 +139,10 @@ fn unpack_within(
                 .map_err(ArchiveError::UnreadableZip)?;
             for index in 0..zip.len() {
                 let mut entry = zip.by_index(index).map_err(ArchiveError::UnreadableZip)?;
-                let name = entry.name().replace('\\', "/");
+                let name = entry
+                    .name()
+                    .map_err(ArchiveError::UnreadableZip)?
+                    .replace('\\', "/");
                 let name = name.trim_start_matches("./").to_string();
                 let Some((target, executable)) = targets.get(name.as_str()) else {
                     continue;

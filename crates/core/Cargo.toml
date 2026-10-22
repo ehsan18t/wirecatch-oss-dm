@@ -35,7 +35,7 @@ tar = { version = "0.4.44", default-features = false }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "process"] }
 tracing.workspace = true
-zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
