@@ -469,6 +469,7 @@ describe('Disclosure', () => {
 describe('MultiSelect', () => {
   const languages = [
     { value: 'ar', label: 'Arabic' },
+    { value: 'bn', label: 'Bangla', keywords: 'Bengali' },
     { value: 'en', label: 'English' },
     { value: 'pt', label: 'Portuguese (Brazil)' },
     { value: 'es', label: 'Spanish' },
@@ -488,6 +489,10 @@ describe('MultiSelect', () => {
     ]);
     await userEvent.keyboard('{Enter}');
     expect(onchange).toHaveBeenLastCalledWith(['pt']);
+    // An option is found by words it does not show, too.
+    await userEvent.clear(search);
+    await userEvent.keyboard('bengali');
+    expect(screen.getAllByRole('option').map((o) => o.textContent.trim())).toEqual(['Bangla']);
   });
 
   it('lists what is picked first, says it on the field, and closes on Escape back to it', async () => {

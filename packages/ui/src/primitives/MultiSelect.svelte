@@ -17,7 +17,7 @@
   import { field, FIELD_INPUT, type FieldSize } from '../recipes/field';
   import { FLYOUT_SURFACE, TOP_LAYER } from '../recipes/surface';
   import Icon from './Icon.svelte';
-  import type { SelectOption } from './select';
+  import { searched, type SelectOption } from './select';
 
   interface Props {
     values: readonly T[];
@@ -67,13 +67,7 @@
   const anchored = new Anchored();
 
   const picked = $derived(options.filter((option) => values.includes(option.value)));
-  const shown = $derived.by(() => {
-    const words = query.trim().toLowerCase();
-    if (!words) return order;
-    return order.filter((option) =>
-      `${option.label} ${option.description ?? ''}`.toLowerCase().includes(words),
-    );
-  });
+  const shown = $derived(searched(order, query));
 
   async function show() {
     if (disabled || open) return;
