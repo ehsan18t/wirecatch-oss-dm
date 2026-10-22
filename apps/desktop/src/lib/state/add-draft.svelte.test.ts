@@ -283,3 +283,26 @@ describe('what changes while the form sends', () => {
     expect(next.text).toBe('https://typed.example/new.zip');
   });
 });
+
+describe('video pages in the Add dialog (D51)', () => {
+  it('reads a video page for its qualities and downloads every other link', async () => {
+    const { app, backend } = await make();
+    await app.updateSettings((d) => void (d.extension.video_sites = ['talks.example']));
+    const add = vi.spyOn(backend, 'addDownload');
+    const video = vi.spyOn(backend, 'addVideoPage');
+    app.openDialog({ kind: 'add', urls: [] });
+    const draft = draftOf(app);
+    draft.text = [
+      'https://www.youtube.com/watch?v=abc',
+      'https://www.talks.example/2026/keynote',
+      'https://files.example/setup.zip',
+    ].join('\n');
+    expect(await draft.submit(true)).toBe(true);
+    expect(video.mock.calls.map(([r]) => r.url)).toEqual([
+      'https://www.youtube.com/watch?v=abc',
+      'https://www.talks.example/2026/keynote',
+    ]);
+    expect(add.mock.calls.map(([r]) => r.url)).toEqual(['https://files.example/setup.zip']);
+    expect(app.addDraft).toBeNull();
+  });
+});

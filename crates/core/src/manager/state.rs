@@ -156,6 +156,10 @@ pub(super) struct Entry {
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
+    /// Added in the app itself: if the server first answers with a web page while
+    /// the media add-on is installed, that page is read for its video instead
+    /// (D51). Not saved, so a download restored after a restart is not checked.
+    pub video_check: bool,
 }
 
 /// What the browser saw of a captured download, so the app can tell when its own
@@ -226,6 +230,9 @@ pub(super) enum Stop {
     Remove,
     /// The app is closing; it continues on the next start.
     Shutdown,
+    /// The server answered with a web page, which is read for its video instead
+    /// of downloaded (D51).
+    ReadAsVideo,
 }
 
 impl Stop {
@@ -529,6 +536,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         moving: None,
         stranded: None,
         media_job: None,
+        video_check: false,
     }
 }
 
@@ -581,6 +589,7 @@ mod tests {
             moving: None,
             stranded: None,
             media_job: None,
+            video_check: false,
         }
     }
 

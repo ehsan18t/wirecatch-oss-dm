@@ -8,8 +8,8 @@ use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
-    AddDownloadArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs, ChooseMediaArgs,
-    ConfirmCaptureArgs, ControlWindowArgs, CreateQueueArgs, DeleteQueueArgs,
+    AddDownloadArgs, AddVideoPageArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs,
+    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateQueueArgs, DeleteQueueArgs,
     DismissMediaChoiceArgs, EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs,
     GetDownloadArgs, GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs,
     MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
@@ -48,6 +48,15 @@ pub async fn add_download(
 ) -> CommandResult<contract::add_download::Output> {
     let AddDownloadArgs { request } = args;
     api::add_download(core.manager().await?, request).await
+}
+
+#[tauri::command]
+pub async fn add_video_page(
+    core: CoreState<'_>,
+    args: contract::add_video_page::Args,
+) -> CommandResult<contract::add_video_page::Output> {
+    let AddVideoPageArgs { request } = args;
+    api::add_video_page(core.manager().await?, request)
 }
 
 #[tauri::command]
@@ -694,6 +703,7 @@ macro_rules! handler {
 handler![
     list_downloads,
     add_download,
+    add_video_page,
     pause,
     resume,
     cancel,

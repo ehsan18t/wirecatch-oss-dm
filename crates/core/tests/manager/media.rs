@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
-    AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FixAction, MediaChoice,
-    MediaSelection, OutputFormat, QualityFallback, UiEvent, VideoQuality, WaitReason,
+    AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FixAction,
+    MediaChoice, MediaSelection, OutputFormat, QualityFallback, UiEvent, VideoQuality, WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
@@ -459,6 +459,106 @@ fn page_info(server: &FileServer, video: &[u8], audio: &[u8]) -> String {
         ]
     })
     .to_string()
+}
+
+/// A link added in the app, started at once, to the default queue and folder.
+fn added(url: &impl ToString) -> AddRequest {
+    AddRequest {
+        url: url.to_string().into(),
+        queue: None,
+        folder: None,
+        file_name: None,
+        start: true,
+    }
+}
+
+/// D51: a video page added in the app (a known video site's link) is read for
+/// its qualities like a page from the browser, and the same page added again
+/// while it waits is the same question.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_video_page_added_in_the_app_asks_for_a_quality() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(
+        &h,
+        "info.json",
+        &page_info(&server, &mp4_data(1024), &mp4_data(1024)),
+    )?;
+    let mut ui = h.manager.subscribe();
+    let id = h.manager.add_video_page(added(&server.url("watch/7")))?;
+    let reading = next_event(&mut ui, "MediaAnalysing", |e| match e {
+        UiEvent::MediaAnalysing { id, .. } => Some(*id),
+        _ => None,
+    })
+    .await;
+    assert_eq!(reading, id);
+    let choice = choice_requested(&mut ui).await;
+    assert_eq!((choice.id, choice.title.as_str()), (id, "Cats: the movie"));
+    assert_eq!(h.manager.add_video_page(added(&server.url("watch/7")))?, id);
+    assert_eq!(h.manager.list_downloads(), []);
+    Ok(())
+}
+
+/// D51: a link added in the app whose server answers with a web page, while the
+/// media add-on is installed, gives way to reading that page for its video.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_added_link_that_answers_with_a_web_page_is_read_for_its_video() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(
+        &h,
+        "info.json",
+        &page_info(&server, &mp4_data(1024), &mp4_data(1024)),
+    )?;
+    server.put_typed(
+        "clip/9",
+        "<html><video></video></html>",
+        "text/html; charset=utf-8",
+    );
+    let mut ui = h.manager.subscribe();
+    h.manager.add_download(added(&server.url("clip/9"))).await?;
+    let choice = choice_requested(&mut ui).await;
+    assert_eq!(choice.title, "Cats: the movie");
+    // The plain download gave way to the question.
+    wait_until("the page's download gone", || {
+        h.manager.list_downloads().is_empty().then_some(())
+    })
+    .await;
+    Ok(())
+}
+
+/// D51: a page with no video on it downloads as the page it is, without a
+/// failed row; without the media add-on it is not read at all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_added_page_without_a_video_downloads_as_it_is() -> TestResult {
+    let page = "<html><p>No video here.</p></html>";
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "fail.txt", "[generic] Unsupported URL")?;
+    server.put_typed("about", page, "text/html");
+    h.manager.add_download(added(&server.url("about"))).await?;
+    let row = wait_until("the page's own download", || {
+        h.manager
+            .list_downloads()
+            .into_iter()
+            .find(|r| r.status == DownloadStatus::Completed)
+    })
+    .await;
+    assert_eq!(std::fs::read_to_string(&row.path)?, page);
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    assert_eq!(ytdlp_calls(&h)?.len(), 1);
+
+    let plain = Harness::new().await?;
+    let id = plain
+        .manager
+        .add_download(added(&server.url("about")))
+        .await?;
+    let done = plain.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(std::fs::read_to_string(&done.path)?, page);
+    Ok(())
 }
 
 /// Whether each yt-dlp call so far had the browser's cookies.

@@ -61,6 +61,8 @@ export interface Backend {
 
   listDownloads(): Promise<DownloadSummary[]>;
   addDownload(request: AddRequest): Promise<DownloadId>;
+  /** Reads a video page added in the app for its qualities (D51): its window asks, or it downloads with the saved choices. */
+  addVideoPage(request: AddRequest): Promise<QuestionId>;
   pause(id: DownloadId): Promise<void>;
   resume(id: DownloadId): Promise<void>;
   /** Stops the download and discards the partial file. The row stays so it can start again. */

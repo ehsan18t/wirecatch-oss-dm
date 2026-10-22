@@ -114,6 +114,7 @@ impl Manager {
                     name: capture.suggested_name.clone(),
                 }),
                 media: direct_media(&capture),
+                video_check: false,
                 category: direct_category(&capture),
                 url,
             })
@@ -504,6 +505,7 @@ impl Manager {
                     name: request.suggested_name.clone(),
                 }),
                 media: direct_media(request),
+                video_check: false,
                 category: direct_category(request),
             })
             .await?;

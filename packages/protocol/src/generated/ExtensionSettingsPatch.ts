@@ -42,4 +42,8 @@ export type ExtensionSettingsPatch = {
    * The new [`ExtensionSettings::default_queue`].
    */
   default_queue?: QueueId | null;
+  /**
+   * The new [`ExtensionSettings::video_sites`], replacing the whole list.
+   */
+  video_sites?: Array<string> | null;
 };

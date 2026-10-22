@@ -1,7 +1,6 @@
-import type { MediaKind } from '@wirecatch/protocol';
+import { videoSiteFor, type MediaKind } from '@wirecatch/protocol';
 import { fileNameFromUrl } from '../file-types';
 import { parseUrl } from '../url';
-import { pageSiteFor } from './page-sites';
 import type { MediaItem } from './registry';
 
 /** One thing that can be sent to the app: detected media, or the page itself. */
@@ -31,6 +30,8 @@ export interface ButtonContext {
   tabUrl: string | null;
   /** The frame the element is in (0 for the tab's page); its own media comes first. */
   frameId?: number | null;
+  /** Sites with video pages the person added to the ones the apps know (D51). */
+  videoSites?: readonly string[];
 }
 
 function fromItem(item: MediaItem): MediaTarget {
@@ -46,10 +47,14 @@ function fromItem(item: MediaItem): MediaTarget {
   };
 }
 
-/** The page itself, when it is on a site the media add-on may be able to read (the frame first, for embedded players). */
-export function pageTarget(frameUrl: string | null, tabUrl: string | null): MediaTarget | null {
+/** The page itself, when it is on a video site, listed or added by the person, that the media add-on may be able to read (the frame first, for embedded players). */
+export function pageTarget(
+  frameUrl: string | null,
+  tabUrl: string | null,
+  videoSites: readonly string[] = [],
+): MediaTarget | null {
   for (const url of [frameUrl, tabUrl]) {
-    const site = pageSiteFor(url);
+    const site = videoSiteFor(url, videoSites);
     if (site !== null && url !== null) {
       return {
         key: `page:${url}`,
@@ -105,13 +110,17 @@ export function chooseTarget(
     const file = list.find((i) => i.kind === 'direct');
     if (file !== undefined) return fromItem(file);
   }
-  return pageTarget(context.frameUrl, context.tabUrl);
+  return pageTarget(context.frameUrl, context.tabUrl, context.videoSites);
 }
 
-/** Everything the popup can offer for a tab: detected media, then the page on a well-known video site. */
-export function popupTargets(items: readonly MediaItem[], tabUrl: string | null): MediaTarget[] {
+/** Everything the popup can offer for a tab: detected media, then the page on a video site. */
+export function popupTargets(
+  items: readonly MediaItem[],
+  tabUrl: string | null,
+  videoSites: readonly string[] = [],
+): MediaTarget[] {
   const targets = items.map(fromItem);
-  const page = pageTarget(null, tabUrl);
+  const page = pageTarget(null, tabUrl, videoSites);
   if (page !== null) targets.push(page);
   return targets;
 }

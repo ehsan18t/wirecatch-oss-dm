@@ -91,6 +91,8 @@ export interface MediaCenterDeps {
   store?: MediaStore;
   /** The "sites to ignore" setting: no media button there. */
   ignoredSites?(): readonly string[];
+  /** Sites with video pages the person added to the ones the apps know (D51). */
+  videoSites?(): readonly string[];
   /**
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
@@ -224,6 +226,7 @@ export class MediaCenter {
       frameUrl,
       tabUrl,
       frameId: sender.frameId ?? null,
+      videoSites: this.#deps.videoSites?.() ?? [],
     });
   }
 
@@ -269,14 +272,16 @@ export class MediaCenter {
       return { tabId, page: 'other', entries: [] };
     }
     if (tab.incognito) return { tabId, page: 'private', entries: [] };
-    const entries = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).map(
-      (target) => ({
-        key: target.key,
-        kind: target.kind,
-        size: target.size,
-        ...describeTarget(target),
-      }),
-    );
+    const entries = popupTargets(
+      this.#deps.registry.itemsOn(tabId, tab.url),
+      tab.url,
+      this.#deps.videoSites?.() ?? [],
+    ).map((target) => ({
+      key: target.key,
+      kind: target.kind,
+      size: target.size,
+      ...describeTarget(target),
+    }));
     return { tabId, page: 'web', entries };
   }
 
@@ -313,6 +318,7 @@ export class MediaCenter {
       frameUrl: tab.url,
       tabUrl: tab.url,
       frameId: 0,
+      videoSites: this.#deps.videoSites?.() ?? [],
     });
     if (target === null) return { ok: false, message: NOTHING_FOUND };
     return this.#deps.send({
@@ -330,9 +336,11 @@ export class MediaCenter {
     const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (tab === null) return { ok: false, message: TAB_GONE };
     if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
-    const target = popupTargets(this.#deps.registry.itemsOn(tabId, tab.url), tab.url).find(
-      (t) => t.key === key,
-    );
+    const target = popupTargets(
+      this.#deps.registry.itemsOn(tabId, tab.url),
+      tab.url,
+      this.#deps.videoSites?.() ?? [],
+    ).find((t) => t.key === key);
     if (target === undefined) return { ok: false, message: ITEM_GONE };
     return this.#deps.send({
       target,

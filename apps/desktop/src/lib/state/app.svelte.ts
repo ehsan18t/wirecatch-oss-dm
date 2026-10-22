@@ -117,6 +117,8 @@ export class AppState {
     queues: this.queues,
     openDialog: (dialog) => this.openDialog(dialog),
     sort: () => this.sort,
+    videoSites: () => this.settings?.extension.video_sites ?? [],
+    videosAsk: () => this.settings?.media.ask_each_time ?? true,
   });
   /** Settings changes go to the app one after another, in the order they were made. */
   readonly #settingsWriter = new SettingsWriter((patch) =>

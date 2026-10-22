@@ -37,33 +37,8 @@ import { sampleCommands } from './sample-commands';
 import { SEEDS } from './seeds';
 import * as settings from './settings';
 import { DEFAULT_TICK_MS, step } from './simulator';
+import type { MockOptions } from './options';
 import { MockState } from './state';
-
-export interface MockOptions {
-  /** Total downloads. Beyond the hand-written samples, generated ones fill the list. */
-  count?: number;
-  /** How many generated downloads are running at once (for load testing the list). */
-  active?: number;
-  /** Start with no downloads at all, as on a first run. */
-  empty?: boolean;
-  /** Advance the simulation on a timer. Tests turn this off and call `tick` themselves. */
-  autoTick?: boolean;
-  tickMs?: number;
-  /** Simulate one browser capture a few seconds after start. */
-  autoCapture?: boolean;
-  seed?: number;
-  now?: () => number;
-  /**
-   * How long each answer takes to come back, in milliseconds, as a call to the real core does.
-   * Zero (the default) answers as soon as the call returns, as the mock always has; more lets
-   * answers arrive well after the events the call caused, which shows races in the interface.
-   */
-  latencyMs?: number;
-  /** Start as the app does after setting a damaged download list aside, with its notice. */
-  damagedList?: boolean;
-  /** Start as the app does when it could not make its data folder private, with its notice; after the damaged list's, as the core gives them. */
-  dataFolderNotPrivate?: boolean;
-}
 
 /** The seed of the sample data people and screenshots see. */
 const DEFAULT_SEED = 7;
@@ -200,6 +175,11 @@ export class MockBackend implements Backend {
 
   addDownload(request: AddRequest) {
     return this.#call(() => downloads.addDownload(this.#state, request));
+  }
+
+  /** Like the core: the page is read (a moment here), then asks or downloads with the saved choices. */
+  addVideoPage(request: AddRequest) {
+    return this.#call(() => this.#readSlowly(request.url));
   }
 
   pause(id: DownloadId) {
@@ -373,14 +353,17 @@ export class MockBackend implements Backend {
     media.simulateMediaChoice(this.#state, this.#mediaIndex++, page, id);
   }
 
-  /** Sample data only: a page that takes three seconds to read before its qualities show, unless it is cancelled first. */
+  /** Sample data only: a page that takes a while to read. */
   simulateSlowReading(): void {
-    const id = media.startReading(this.#state, media.SLOW_SAMPLE_PAGE);
-    this.#after(SLOW_READING_MS, () => {
-      if (this.#state.reading.some((r) => r.id === id)) {
-        this.simulateMediaChoice(media.SLOW_SAMPLE_PAGE, id);
-      }
-    });
+    this.#readSlowly(media.SLOW_SAMPLE_PAGE);
+  }
+
+  /** A page whose qualities show after three seconds, unless it is cancelled first. */
+  #readSlowly(page: string): QuestionId {
+    const id = media.startReading(this.#state, page);
+    const stillReading = () => this.#state.reading.some((r) => r.id === id);
+    this.#after(SLOW_READING_MS, () => stillReading() && this.simulateMediaChoice(page, id));
+    return id;
   }
 
   /** Sample data only: a page that needs the media add-on to download. */

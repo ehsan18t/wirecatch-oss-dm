@@ -36,4 +36,12 @@ export type ExtensionSettings = {
    * Queue captured downloads go to when the capture names none.
    */
   default_queue: QueueId;
+  /**
+   * Sites with video pages the person added to the ones the apps know (D51): the
+   * extension offers to send their pages, and a link to one added in the app is read
+   * for its video. Host names as [`normalize_site`] keeps them; each covers the names
+   * under it, and any page but the home page. Added in D51: settings from an app from
+   * before it have none, so the extension reads it as optional.
+   */
+  video_sites?: Array<string>;
 };

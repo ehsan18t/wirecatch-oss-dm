@@ -134,6 +134,9 @@ export class TauriBackend implements DownloadWindowBackend {
   addDownload(request: AddRequest) {
     return this.#call('add_download', { request });
   }
+  addVideoPage(request: AddRequest) {
+    return this.#call('add_video_page', { request });
+  }
   pause(id: DownloadId) {
     return this.#exec('pause', { id });
   }

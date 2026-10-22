@@ -44,6 +44,8 @@ pub(super) struct NewEntry {
     /// Video or audio: what the row shows and, for streams and pages, what to
     /// download. A media job's path is final from the start.
     pub media: Option<StoredMedia>,
+    /// See [`Entry::video_check`](super::state::Entry::video_check).
+    pub video_check: bool,
     /// The category, when the caller knows better than the file name.
     pub category: Option<Category>,
 }
@@ -132,6 +134,7 @@ impl Manager {
                 handover: None,
                 expect: None,
                 media: None,
+                video_check: true,
                 category: None,
             })
             .await?;
@@ -611,6 +614,7 @@ impl Manager {
             moving: None,
             stranded: None,
             media_job,
+            video_check: new.video_check,
         });
         self.save(state, id);
         self.reconcile(state);

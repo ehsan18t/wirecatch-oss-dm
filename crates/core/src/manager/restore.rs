@@ -141,6 +141,7 @@ fn restore_entry(
 ) -> (Entry, bool) {
     let mut entry = Entry {
         media_job: stored.media.and_then(|m| m.job),
+        video_check: false,
         row: stored.summary,
         position: stored.position,
         origin: stored.origin,

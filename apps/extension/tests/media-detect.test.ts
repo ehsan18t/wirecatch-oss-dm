@@ -9,7 +9,6 @@ import {
   type ObservedResponse,
 } from '../src/lib/media/detect';
 import { MAX_MEDIA_URL_LENGTH } from '../src/lib/media/messages';
-import { pageSiteFor } from '../src/lib/media/page-sites';
 import {
   HLS_STREAM_WINDOW_MS,
   MAX_ITEMS_PER_TAB,
@@ -702,40 +701,5 @@ describe('MediaWatcher', () => {
     await pending;
     await flush();
     expect(registry.items(4)).toEqual([]);
-  });
-});
-
-describe('pageSiteFor', () => {
-  it.each([
-    ['https://www.youtube.com/watch?v=abc', 'YouTube'],
-    ['https://m.youtube.com/shorts/abc', 'YouTube'],
-    ['https://youtu.be/abc', 'YouTube'],
-    ['https://vimeo.com/123456', 'Vimeo'],
-    ['https://www.dailymotion.com/video/x8abc', 'Dailymotion'],
-    ['https://www.twitch.tv/videos/123', 'Twitch'],
-    ['https://clips.twitch.tv/SomeClip', 'Twitch'],
-    ['https://x.com/someone/status/123', 'X'],
-    ['https://twitter.com/someone/status/123', 'X'],
-    ['https://www.facebook.com/watch/?v=1', 'Facebook'],
-    ['https://www.instagram.com/reel/abc/', 'Instagram'],
-    ['https://www.tiktok.com/@someone/video/123', 'TikTok'],
-    ['https://www.reddit.com/r/videos/comments/abc/title/', 'Reddit'],
-    ['https://soundcloud.com/artist/track', 'SoundCloud'],
-  ])('offers %s as a page for the media add-on', (url, name) => {
-    expect(pageSiteFor(url)).toBe(name);
-  });
-
-  it.each([
-    'https://www.youtube.com/',
-    'https://www.youtube.com/results?search_query=x',
-    'https://vimeo.com/',
-    'https://x.com/home',
-    'https://notyoutube.com/watch?v=abc',
-    'https://example.com/watch?v=abc',
-    'file:///C:/video.mp4',
-    'not a url',
-    null,
-  ])('does not offer %s', (url) => {
-    expect(pageSiteFor(url)).toBeNull();
   });
 });

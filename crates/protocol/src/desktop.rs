@@ -195,6 +195,12 @@ commands! {
         /// The download to add.
         request: AddRequest,
     } -> DownloadId;
+    /// Reads a video page added in the app for its qualities, as a page from the browser is
+    /// (D51): its window asks, or it downloads with the saved choices.
+    add_video_page: AddVideoPageArgs {
+        /// The page, with the queue, folder and whether to start it.
+        request: AddRequest,
+    } -> QuestionId;
     /// Pauses one download, keeping what it has downloaded.
     pause: PauseArgs {
         /// The download.

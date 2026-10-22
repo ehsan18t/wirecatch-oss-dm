@@ -2,7 +2,13 @@
 // opening their files, the fixes their errors offer, and their place in the queues. Each says
 // what went wrong in a note; a bulk action says it once.
 
-import type { AddRequest, DownloadId, FixAction, QueueId } from '@wirecatch/protocol';
+import {
+  videoSiteFor,
+  type AddRequest,
+  type DownloadId,
+  type FixAction,
+  type QueueId,
+} from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { linkForDisplay } from '../format';
 import type { DownloadStore } from './downloads.svelte';
@@ -27,11 +33,16 @@ export interface DownloadActionsHost {
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
   /** The list's sort: a queue's order changes only while the list shows it. */
   sort: () => Sort;
+  /** The video sites the person added to the ones the apps know (D51). */
+  videoSites: () => readonly string[];
+  /** Whether a video opens its quality window, which then shows it is being read (D50). */
+  videosAsk: () => boolean;
 }
 
-/** What adding gave: the new downloads, and each link that did not become one, with why. */
+/** What adding gave: the new downloads, how many video pages are being read, and each link that did not become one, with why. */
 export interface Added {
   ids: DownloadId[];
+  videos: number;
   failed: { url: string; error: string }[];
 }
 
@@ -48,13 +59,20 @@ export class DownloadActions {
     this.#host = host;
   }
 
-  /** Adds the downloads one after another, in the order given (a queue keeps it), and notes how many were added. What failed is given back with why, for the form that asked to show. */
+  /** Adds the downloads one after another, in the order given (a queue keeps it), and notes how many were added. A link to a video page is read for its qualities instead (D51), as a page from the browser is. What failed is given back with why, for the form that asked to show. */
   async add(requests: AddRequest[]): Promise<Added> {
     const ids: DownloadId[] = [];
     const failed: Added['failed'] = [];
+    let videos = 0;
+    const backend = this.#host.backend();
     for (const r of requests) {
       try {
-        ids.push(await this.#host.backend().addDownload(r));
+        if (videoSiteFor(r.url, this.#host.videoSites()) === null) {
+          ids.push(await backend.addDownload(r));
+        } else {
+          await backend.addVideoPage(r);
+          videos += 1;
+        }
       } catch (err) {
         failed.push({ url: r.url, error: errorMessage(err) });
       }
@@ -64,7 +82,15 @@ export class DownloadActions {
         ids.length === 1 ? 'Download added.' : `${ids.length} downloads added.`,
       );
     }
-    return { ids, failed };
+    // A video that asks shows its reading in its own window; one that does not would show nothing until it starts.
+    if (videos > 0 && !this.#host.videosAsk()) {
+      this.#host.toasts.notify(
+        videos === 1
+          ? 'Reading the video for its qualities.'
+          : `Reading ${videos} videos for their qualities.`,
+      );
+    }
+    return { ids, videos, failed };
   }
 
   async pause(ids: DownloadId[] = this.#host.selection.list): Promise<void> {

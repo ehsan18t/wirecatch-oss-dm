@@ -13,6 +13,7 @@
     "dialog:allow-save",
     "allow-list-downloads",
     "allow-add-download",
+    "allow-add-video-page",
     "allow-pause",
     "allow-resume",
     "allow-cancel",

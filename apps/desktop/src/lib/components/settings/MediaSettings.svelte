@@ -7,11 +7,18 @@
     type OutputFormat,
     type QualityFallback,
     type VideoQuality,
+    normalizeSite,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { languageOptions } from '$lib/languages';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
-  import { MultiSelect, SegmentedControl, Select, type SelectOption } from '@wirecatch/ui';
+  import {
+    MultiSelect,
+    SegmentedControl,
+    Select,
+    TagInput,
+    type SelectOption,
+  } from '@wirecatch/ui';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
@@ -111,6 +118,7 @@
     media_auto_subtitles: autoSubtitles,
     media_subtitle_files: subtitleFiles,
     media_chapters: chapters,
+    video_sites: videoSites,
     media_audio: audioFormat,
     media_audio_subtitles: subtitles,
     media_audio_auto_subtitles: autoSubtitles,
@@ -118,7 +126,18 @@
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows {items} {settings} {flash} {controls} stacked={['video_sites']} />
+
+{#snippet videoSites({ def, s, control }: Row)}
+  <TagInput
+    {...control}
+    label={def.label}
+    placeholder="Add a site, like example.com"
+    values={s.extension.video_sites ?? []}
+    normalize={normalizeSite}
+    onchange={(sites: string[]) => save((d) => void (d.extension.video_sites = sites))}
+  />
+{/snippet}
 
 {#snippet asking({ def, s }: Row)}
   <SegmentedControl

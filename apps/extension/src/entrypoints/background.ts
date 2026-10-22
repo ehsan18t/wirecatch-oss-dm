@@ -100,6 +100,7 @@ export default defineBackground(() => {
     send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
     store: mediaStore(),
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
+    videoSites: () => hub.knownSettings()?.video_sites ?? [],
     liveTabs,
   });
   // Started before any listener can fire, so every response waits for the restored lists.

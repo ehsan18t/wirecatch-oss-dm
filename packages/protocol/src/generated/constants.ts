@@ -265,6 +265,11 @@ export const SAFE_EXTENSIONS: readonly string[] = [
 export const MAX_IGNORED_SITES = 1000;
 
 /**
+ * Most sites the person can add to the video sites the apps know (D51).
+ */
+export const MAX_VIDEO_SITES = 200;
+
+/**
  * Longest site in the list of sites to ignore, in characters: the longest host name DNS allows.
  */
 export const MAX_SITE_CHARS = 253;
@@ -500,4 +505,5 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   ignored_sites: [],
   min_capture_size: 0,
   show_media_button: true,
+  video_sites: [],
 };

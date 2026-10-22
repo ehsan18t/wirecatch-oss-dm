@@ -244,6 +244,15 @@ async function setup(
     ],
     [3, { url: 'about:blank', title: 'New tab', incognito: false, cookieStoreId: null }],
     [
+      5,
+      {
+        url: 'https://talks.example.org/watch/42',
+        title: 'A talk',
+        incognito: false,
+        cookieStoreId: null,
+      },
+    ],
+    [
       4,
       {
         url: 'https://www.youtube.com/watch?v=abc',
@@ -270,6 +279,7 @@ async function setup(
     },
     saveDelayMs: 5,
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
+    videoSites: () => hub.knownSettings()?.video_sites ?? [],
   });
   const hub: Hub = new Hub({
     client,
@@ -466,6 +476,21 @@ describe('media button messages', () => {
       frame_url: 'https://www.youtube.com/watch?v=abc',
       source: 'media_button',
       media: { kind: 'page', title: 'Some talk' },
+    });
+  });
+
+  it('sends the page itself on a site the person added to the video sites (D51)', async () => {
+    const { app, center, tabs } = await setup({
+      configure: (a) => (a.settings = { ...a.settings, video_sites: ['example.org'] }),
+    });
+    const answer = await center.handleContentMessage(
+      { type: MEDIA_DOWNLOAD, src: null, audio: false, title: 'A talk' },
+      fromTab(5, tabs),
+    );
+    expect(answer).toMatchObject({ ok: true });
+    expect(lastAdd(app)).toMatchObject({
+      url: 'https://talks.example.org/watch/42',
+      media: { kind: 'page', title: 'A talk' },
     });
   });
 

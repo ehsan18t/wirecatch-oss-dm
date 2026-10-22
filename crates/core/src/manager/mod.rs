@@ -1,6 +1,7 @@
 //! The download manager: owns every download, queue and setting, decides what runs,
 //! and tells the UI and socket clients about changes.
 
+mod added_pages;
 mod addons;
 mod captures;
 mod downloads;

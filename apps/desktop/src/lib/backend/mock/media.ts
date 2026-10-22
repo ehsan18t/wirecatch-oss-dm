@@ -84,11 +84,13 @@ export function simulateMediaChoice(
   state.emit({ type: 'media_choice_requested', data: structuredClone(choice) });
 }
 
-/** Sample data only: a page starts being read; returns its id. */
+/** Sample data only: a page starts being read, without a window when videos do not ask (D50); returns its id. */
 export function startReading(state: MockState, page: string): QuestionId {
   const id = state.newQuestionId();
   state.reading.push({ id, url: page });
-  state.emit({ type: 'media_analysing', data: { id, url: page } });
+  if (state.settings.media.ask_each_time) {
+    state.emit({ type: 'media_analysing', data: { id, url: page } });
+  }
   return id;
 }
 

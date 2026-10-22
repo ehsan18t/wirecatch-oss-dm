@@ -4,6 +4,7 @@ import type { Accent } from './Accent';
 import type { AddAction } from './AddAction';
 import type { AddDownloadArgs } from './AddDownloadArgs';
 import type { AddRequest } from './AddRequest';
+import type { AddVideoPageArgs } from './AddVideoPageArgs';
 import type { AddedDownload } from './AddedDownload';
 import type { AddonId } from './AddonId';
 import type { AddonInfo } from './AddonInfo';
@@ -163,6 +164,11 @@ export function isAddRequest(value: unknown): value is AddRequest {
     (typeof value1['folder'] === 'string' || value1['folder'] === null) &&
     (typeof value1['file_name'] === 'string' || value1['file_name'] === null) &&
     typeof value1['start'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link AddVideoPageArgs}; fields it does not name are not checked. */
+export function isAddVideoPageArgs(value: unknown): value is AddVideoPageArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isAddRequest(value1['request']))(value);
 }
 
 /** Whether `value` has the shape of a {@link AddedDownload}; fields it does not name are not checked. */
@@ -520,7 +526,9 @@ export function isExtensionSettings(value: unknown): value is ExtensionSettings 
     isArrayOf(value1['ignored_sites'], (value2: unknown) => typeof value2 === 'string') &&
     isArrayOf(value1['capture_extensions'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['min_capture_size'] === 'number' &&
-    isQueueId(value1['default_queue']))(value);
+    isQueueId(value1['default_queue']) &&
+    (value1['video_sites'] === undefined ||
+      isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string')))(value);
 }
 
 /** Whether `value` has the shape of a {@link ExtensionSettingsPatch}; fields it does not name are not checked. */
@@ -553,7 +561,10 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
       value1['min_capture_size'] === null) &&
     (value1['default_queue'] === undefined ||
       isQueueId(value1['default_queue']) ||
-      value1['default_queue'] === null))(value);
+      value1['default_queue'] === null) &&
+    (value1['video_sites'] === undefined ||
+      isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string') ||
+      value1['video_sites'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link FitDownloadWindowArgs}; fields it does not name are not checked. */
@@ -1356,6 +1367,8 @@ export const COMMAND_OUTPUTS: {
     isArrayOf(value, isDownloadSummary),
   add_download: (value: unknown): value is CommandMap['add_download']['output'] =>
     isDownloadId(value),
+  add_video_page: (value: unknown): value is CommandMap['add_video_page']['output'] =>
+    isQuestionId(value),
   pause: (value: unknown): value is CommandMap['pause']['output'] => value === null,
   resume: (value: unknown): value is CommandMap['resume']['output'] => value === null,
   cancel: (value: unknown): value is CommandMap['cancel']['output'] => value === null,

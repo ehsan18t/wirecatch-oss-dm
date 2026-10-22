@@ -15,7 +15,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
 
 use super::Manager;
-use super::state::{Entry, Expectation, State};
+use super::state::{Entry, Expectation, State, Stop};
 use crate::{naming, settings};
 
 /// What the server said about the file, as far as choosing its path goes.
@@ -100,6 +100,9 @@ impl Manager {
         remote: &ServerAnswer,
         free_on_disk: &dyn Fn(&Path) -> bool,
     ) -> Result<PathBuf, String> {
+        if self.read_as_video(id, run_id, remote)? {
+            return Err(READ_AS_VIDEO.into());
+        }
         let (dir, name, category, provisional) = {
             let state = self.lock();
             let entry = current_run(&state, id, run_id)?;
@@ -178,12 +181,51 @@ impl Manager {
         entry.row.category = category;
         entry.naming.settled = true;
         entry.expect = None;
+        entry.video_check = false;
         self.save(state, id);
         Ok(path)
     }
 }
 
 const REMOVED: &str = "The download was removed before the server answered.";
+/// Ends a run whose web page is read for its video instead (D51); never shown,
+/// as the download is removed.
+const READ_AS_VIDEO: &str = "The link is a web page, read for its video instead.";
+
+impl Manager {
+    /// Whether download `id`, added in the app, answered run `run_id` with a web
+    /// page that the media add-on can read for its video (D51); if so its run is
+    /// stopped for that, so the download is removed once it has ended and the
+    /// page read instead (see `finish`).
+    fn read_as_video(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+    ) -> Result<bool, String> {
+        let mut state = self.lock();
+        let installed = state.addon.tools.is_some();
+        current_run(&state, id, run_id)?;
+        let Some(entry) = state.downloads.get_mut(&id) else {
+            return Err(REMOVED.into());
+        };
+        if !(entry.video_check && installed && is_web_page(remote)) {
+            return Ok(false);
+        }
+        if let Some(run) = &mut entry.run {
+            run.stop = Some(Stop::ReadAsVideo);
+        }
+        Ok(true)
+    }
+}
+
+/// Whether the server answered with a web page rather than a file.
+fn is_web_page(remote: &ServerAnswer) -> bool {
+    remote
+        .content_type
+        .as_deref()
+        .is_some_and(|t| t.trim().to_ascii_lowercase().starts_with("text/html"))
+}
 
 /// The download if run `run_id` is still its run and may still take a path.
 fn current_run(state: &State, id: DownloadId, run_id: u64) -> Result<&Entry, String> {
@@ -212,10 +254,7 @@ fn check_expectation(expect: &Expectation, remote: &ServerAnswer) -> Result<(), 
             "The server sent a different file than the browser saw ({got} bytes instead of {seen}). Open the page again and refresh the link."
         ));
     }
-    let is_page = remote
-        .content_type
-        .as_deref()
-        .is_some_and(|t| t.trim().to_ascii_lowercase().starts_with("text/html"));
+    let is_page = is_web_page(remote);
     let page_expected = expect
         .name
         .as_deref()

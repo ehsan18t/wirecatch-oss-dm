@@ -61,13 +61,8 @@ function normalizedSites(list: readonly string[]): string[] {
   return [...sites];
 }
 
-/**
- * `settings` with `patch` applied the way the app applies it (`ExtensionSettings::apply`): the whole list of ignored sites first, then additions, then removals, each site taken the way `normalizeSite` keeps it; a field that is null or left out keeps its value.
- */
-export function applyExtensionSettingsPatch(
-  settings: ExtensionSettings,
-  patch: ExtensionSettingsPatch,
-): ExtensionSettings {
+/** The ignored sites once `patch` is applied: the whole list first, then additions, then removals. */
+function ignoredSitesAfter(settings: ExtensionSettings, patch: ExtensionSettingsPatch): string[] {
   // The list is kept as it is unless the patch replaces it; the set is only for telling what it holds.
   const sites = patch.ignored_sites
     ? normalizedSites(patch.ignored_sites)
@@ -78,13 +73,26 @@ export function applyExtensionSettingsPatch(
     kept.add(site);
   }
   const removed = new Set(normalizedSites(patch.remove_ignored_sites ?? []));
+  return sites.filter((site) => !removed.has(site));
+}
+
+/**
+ * `settings` with `patch` applied the way the app applies it (`ExtensionSettings::apply`): the whole list of ignored sites first, then additions, then removals, each site taken the way `normalizeSite` keeps it, and the video sites replaced whole the same way; a field that is null or left out keeps its value.
+ */
+export function applyExtensionSettingsPatch(
+  settings: ExtensionSettings,
+  patch: ExtensionSettingsPatch,
+): ExtensionSettings {
   return {
     capture_enabled: patch.capture_enabled ?? settings.capture_enabled,
     ask_before_download: patch.ask_before_download ?? settings.ask_before_download,
     show_media_button: patch.show_media_button ?? settings.show_media_button,
-    ignored_sites: sites.filter((site) => !removed.has(site)),
+    ignored_sites: ignoredSitesAfter(settings, patch),
     capture_extensions: patch.capture_extensions ?? settings.capture_extensions,
     min_capture_size: patch.min_capture_size ?? settings.min_capture_size,
     default_queue: patch.default_queue ?? settings.default_queue,
+    video_sites: patch.video_sites
+      ? normalizedSites(patch.video_sites)
+      : [...(settings.video_sites ?? [])],
   };
 }

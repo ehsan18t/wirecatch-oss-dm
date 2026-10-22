@@ -15,6 +15,7 @@ use wirecatch_engine::{
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
+use super::added_pages::AnsweredPage;
 use super::settle::path_resolver;
 use super::state::{Entry, Gauge, Run, State, Stop};
 use super::{Inner, Manager};
@@ -234,8 +235,8 @@ impl Manager {
     /// Records how a run ended and gives its slot to the next download.
     fn finish(&self, id: DownloadId, run_id: u64, end: RunEnd) {
         let now = self.inner.clock.unix_millis();
-        let mut state = self.lock();
-        let state = &mut *state;
+        let mut guard = self.lock();
+        let state = &mut *guard;
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
@@ -257,6 +258,7 @@ impl Manager {
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
         let ended = Ended::of(end, id, &folder, worked_before, entry.chosen_by);
+        let mut answered_page = None;
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
                 // The finished file now holds the name on disk.
@@ -287,6 +289,8 @@ impl Manager {
                 entry.row.status = DownloadStatus::Paused;
             }
             (_, Some(Stop::Requeue)) => entry.row.status = DownloadStatus::Queued,
+            // Its server answered with a web page: the download gives way to reading the page.
+            (_, Some(Stop::ReadAsVideo)) => answered_page = AnsweredPage::of(entry),
             // The status stays as it was, so the next start continues it.
             (_, Some(Stop::Shutdown)) => {
                 if entry.row.status == DownloadStatus::Processing {
@@ -314,6 +318,10 @@ impl Manager {
         }
         self.save(state, id);
         self.reconcile(state);
+        drop(guard);
+        if let Some(page) = answered_page {
+            self.read_answered_page(id, page);
+        }
     }
 
     /// Deletes a download's partial files in the background. A run started before

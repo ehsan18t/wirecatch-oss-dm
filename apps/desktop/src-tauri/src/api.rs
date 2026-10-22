@@ -60,6 +60,16 @@ pub async fn add_download(m: &Manager, request: AddRequest) -> CommandResult<Dow
     plain(m.add_download(request).await)
 }
 
+/// Reads a video page added in the app for its qualities (D51).
+///
+/// # Errors
+///
+/// The link is not http or https, the queue does not exist, the folder does not resolve, too
+/// many videos are waiting, or the manager has shut down ([`Manager::add_video_page`]).
+pub fn add_video_page(m: &Manager, request: AddRequest) -> CommandResult<QuestionId> {
+    plain(m.add_video_page(request))
+}
+
 /// Pauses one download, keeping what it has downloaded.
 ///
 /// # Errors

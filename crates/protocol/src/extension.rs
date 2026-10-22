@@ -14,6 +14,8 @@ use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
 crate::exported::exported_consts! {
     /// Most sites the list of sites to ignore holds. A patch naming more than this in one of its lists is refused before any site in it is read (D37.1).
     pub const MAX_IGNORED_SITES: usize = 1000;
+    /// Most sites the person can add to the video sites the apps know (D51).
+    pub const MAX_VIDEO_SITES: usize = 200;
     /// Longest site in the list of sites to ignore, in characters: the longest host name DNS allows.
     pub const MAX_SITE_CHARS: usize = 253;
 }
@@ -266,6 +268,14 @@ pub struct ExtensionSettings {
     pub min_capture_size: u64,
     /// Queue captured downloads go to when the capture names none.
     pub default_queue: QueueId,
+    /// Sites with video pages the person added to the ones the apps know (D51): the
+    /// extension offers to send their pages, and a link to one added in the app is read
+    /// for its video. Host names as [`normalize_site`] keeps them; each covers the names
+    /// under it, and any page but the home page. Added in D51: settings from an app from
+    /// before it have none, so the extension reads it as optional.
+    #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
+    pub video_sites: Vec<String>,
 }
 
 /// The settings of a fresh install, which the extension also judges by until it first hears
@@ -280,6 +290,7 @@ impl Default for ExtensionSettings {
             capture_extensions: Vec::new(),
             min_capture_size: 0,
             default_queue: DEFAULT_QUEUE_ID,
+            video_sites: Vec::new(),
         }
     }
 }
@@ -308,6 +319,8 @@ pub struct ExtensionSettingsPatch {
     pub min_capture_size: Option<u64>,
     /// The new [`ExtensionSettings::default_queue`].
     pub default_queue: Option<QueueId>,
+    /// The new [`ExtensionSettings::video_sites`], replacing the whole list.
+    pub video_sites: Option<Vec<String>>,
 }
 
 impl ExtensionSettings {
@@ -323,6 +336,7 @@ impl ExtensionSettings {
             capture_extensions,
             min_capture_size,
             default_queue,
+            video_sites,
         } = patch;
         if let Some(v) = capture_enabled {
             self.capture_enabled = v;
@@ -356,6 +370,9 @@ impl ExtensionSettings {
         }
         if let Some(v) = default_queue {
             self.default_queue = v;
+        }
+        if let Some(v) = video_sites {
+            self.video_sites = normalize_sites(v);
         }
     }
 }
@@ -604,6 +621,7 @@ pub(crate) fn apply_cases() -> Vec<(ExtensionSettings, ExtensionSettingsPatch)> 
                 capture_extensions: sites(&["iso", "exe"]),
                 min_capture_size: Some(1024),
                 default_queue: Some(QueueId(3)),
+                video_sites: sites(&["https://Videos.Example.org/watch", "*.clips.test", ""]),
                 ..ExtensionSettingsPatch::default()
             },
         ),

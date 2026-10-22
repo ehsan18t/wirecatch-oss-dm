@@ -237,6 +237,14 @@ const DEFS = [
     group: 'Videos',
   },
   {
+    id: 'video_sites',
+    section: 'media',
+    label: 'More video sites',
+    help: 'Their pages are read for their video, from the browser’s video button and from links you add. YouTube, Vimeo, TikTok and many others are known already.',
+    keywords: 'video sites pages websites platforms youtube add paste link extractor supported',
+    group: 'Videos',
+  },
+  {
     id: 'media_audio',
     section: 'media',
     label: 'Save audio as',

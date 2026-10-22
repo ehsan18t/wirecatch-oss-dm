@@ -8,7 +8,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -17,7 +18,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": null,
@@ -28,7 +30,8 @@
         "ignored_sites": null,
         "min_capture_size": null,
         "remove_ignored_sites": null,
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -39,7 +42,8 @@
         "default_queue": 3,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 1024,
-        "show_media_button": false
+        "show_media_button": false,
+        "video_sites": ["videos.example.org", "clips.test"]
       },
       "before": {
         "ask_before_download": true,
@@ -48,7 +52,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": null,
@@ -59,7 +64,8 @@
         "ignored_sites": null,
         "min_capture_size": 1024,
         "remove_ignored_sites": null,
-        "show_media_button": false
+        "show_media_button": false,
+        "video_sites": ["https://Videos.Example.org/watch", "*.clips.test", ""]
       }
     },
     {
@@ -70,7 +76,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "www.c.com", "c.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -79,7 +86,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": ["https://WWW.C.com/page", "*.a.com", "c.com", ""],
@@ -90,7 +98,8 @@
         "ignored_sites": null,
         "min_capture_size": null,
         "remove_ignored_sites": ["B.com."],
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -101,7 +110,8 @@
         "default_queue": 1,
         "ignored_sites": ["d.com", "f.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -110,7 +120,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": ["f.com"],
@@ -121,7 +132,8 @@
         "ignored_sites": ["D.com/", "d.com", " ", "e.com:80"],
         "min_capture_size": null,
         "remove_ignored_sites": ["e.com", "a.com"],
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -132,7 +144,8 @@
         "default_queue": 1,
         "ignored_sites": [],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -141,7 +154,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": null,
@@ -152,7 +166,8 @@
         "ignored_sites": [],
         "min_capture_size": null,
         "remove_ignored_sites": ["a.com"],
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -163,7 +178,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -172,7 +188,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": null,
@@ -183,7 +200,8 @@
         "ignored_sites": null,
         "min_capture_size": null,
         "remove_ignored_sites": null,
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -194,7 +212,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com", "a.com", "b.com", "c.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -203,7 +222,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": ["b.com", "c.com"],
@@ -214,7 +234,8 @@
         "ignored_sites": null,
         "min_capture_size": null,
         "remove_ignored_sites": null,
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     },
     {
@@ -225,7 +246,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "a.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "before": {
         "ask_before_download": true,
@@ -234,7 +256,8 @@
         "default_queue": 1,
         "ignored_sites": ["a.com", "b.com", "a.com", "b.com"],
         "min_capture_size": 0,
-        "show_media_button": true
+        "show_media_button": true,
+        "video_sites": []
       },
       "patch": {
         "add_ignored_sites": null,
@@ -245,7 +268,8 @@
         "ignored_sites": null,
         "min_capture_size": null,
         "remove_ignored_sites": ["b.com"],
-        "show_media_button": null
+        "show_media_button": null,
+        "video_sites": null
       }
     }
   ],

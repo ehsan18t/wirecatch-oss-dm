@@ -10,8 +10,8 @@ use wirecatch_protocol::app::{
     VideoQuality,
 };
 use wirecatch_protocol::extension::{
-    ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, NotASite,
-    SitesRefused, normalize_file_type, read_site,
+    ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
+    NotASite, SitesRefused, normalize_file_type, read_site,
 };
 
 use crate::error::{CoreError, Result};
@@ -267,6 +267,15 @@ pub(crate) fn validate(
                 .map_err(|not| not_a_site(&not))
         },
         &IGNORED_SITES,
+    )?;
+    ext.video_sites = clean_list(
+        &ext.video_sites,
+        |site| {
+            read_site(site)
+                .map(Option::unwrap_or_default)
+                .map_err(|not| not_a_site(&not))
+        },
+        &VIDEO_SITES,
     )?;
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
@@ -524,6 +533,12 @@ struct ListRules {
 const IGNORED_SITES: ListRules = ListRules {
     what: "sites to ignore",
     max_items: MAX_IGNORED_SITES,
+    max_chars: MAX_SITE_CHARS,
+};
+
+const VIDEO_SITES: ListRules = ListRules {
+    what: "video sites",
+    max_items: MAX_VIDEO_SITES,
     max_chars: MAX_SITE_CHARS,
 };
 

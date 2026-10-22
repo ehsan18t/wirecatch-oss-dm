@@ -76,6 +76,47 @@ pub(super) struct MediaPending {
     /// Read without a window, as the person chose not to be asked about videos
     /// (D50): no `MediaAnalysing`, and not in [`Manager::media_being_read`].
     pub quiet: bool,
+    /// The folder the person chose when adding the link in the app.
+    pub folder: Option<PathBuf>,
+    /// Added paused: a download made without asking waits in its queue.
+    pub later: bool,
+    /// A link added in the app whose server answered with a web page (D51):
+    /// when no video is found on it, the page downloads as it is.
+    pub page_otherwise: bool,
+}
+
+/// How a capture or a link added in the app waits for its quality to be chosen.
+pub(super) struct Held {
+    /// The extension's handover ids for it; none for a link added in the app.
+    pub handovers: Vec<String>,
+    /// See [`MediaPending::folder`].
+    pub folder: Option<PathBuf>,
+    /// See [`MediaPending::later`].
+    pub later: bool,
+    /// See [`MediaPending::page_otherwise`].
+    pub page_otherwise: bool,
+}
+
+impl Held {
+    /// A capture from the browser, under its handover id.
+    fn capture(handover: String) -> Self {
+        Self {
+            handovers: vec![handover],
+            folder: None,
+            later: false,
+            page_otherwise: false,
+        }
+    }
+}
+
+/// Refuses one more video while [`MAX_PENDING_MEDIA`] are waiting.
+pub(super) fn check_room(state: &State) -> Result<()> {
+    if state.media.len() >= MAX_PENDING_MEDIA {
+        return Err(CoreError::LimitReached(format!(
+            "{MAX_PENDING_MEDIA} videos are already waiting for your choice. Answer some of them first."
+        )));
+    }
+    Ok(())
 }
 
 /// Who picked a video's quality.
@@ -111,6 +152,18 @@ pub(super) fn video_key(extractor: Option<&str>, id: Option<&str>) -> Option<Str
 }
 
 impl MediaSource {
+    /// A video page that `chosen_by` chose, read with the browser's `origin`.
+    pub(super) fn page(url: Url, origin: Origin, chosen_by: ChosenBy) -> Self {
+        Self {
+            url,
+            kind: MediaKind::Page,
+            title: None,
+            page_url: None,
+            origin,
+            chosen_by,
+        }
+    }
+
     fn of(capture: &NewDownload, url: Url, kind: MediaKind, chosen_by: ChosenBy) -> Self {
         Self {
             url,
@@ -174,21 +227,10 @@ impl Manager {
             state.handovers.insert(&capture.handover_id, handover);
             return Ok(reply);
         }
-        if state.media.len() >= MAX_PENDING_MEDIA {
-            return Err(CoreError::LimitReached(format!(
-                "{MAX_PENDING_MEDIA} videos are already waiting for your choice. Answer some of them first."
-            )));
-        }
-        let id = state.ids.pending();
-        let needs_addon = kind == MediaKind::Page && state.addon.tools.is_none();
-        // A window for the add-on opens anyway, and then shows the reading too.
-        let quiet = !state.settings.media.ask_each_time && !needs_addon;
-        let token = CancellationToken::new();
-        let first_stage = if needs_addon {
-            MediaStage::NeedsAddon
-        } else {
-            MediaStage::Analysing(token.clone())
-        };
+        check_room(&state)?;
+        let source = MediaSource::of(capture, url, kind, chosen_by);
+        let held = Held::capture(capture.handover_id.clone());
+        let id = self.hold_media(&mut state, source, queue, held);
         state.handovers.insert(
             &capture.handover_id,
             Handover {
@@ -197,30 +239,56 @@ impl Manager {
                 deciding: None,
             },
         );
-        let source = MediaSource::of(capture, url.clone(), kind, chosen_by);
+        Ok(reply)
+    }
+
+    /// Holds `source` until its quality is chosen: reads it at once, or a page
+    /// once the media add-on is installed, which the person is asked for.
+    /// Returns its question id.
+    pub(super) fn hold_media(
+        &self,
+        state: &mut State,
+        source: MediaSource,
+        queue: QueueId,
+        held: Held,
+    ) -> QuestionId {
+        let id = state.ids.pending();
+        let needs_addon = source.kind == MediaKind::Page && state.addon.tools.is_none();
+        // A window for the add-on opens anyway, and then shows the reading too.
+        let quiet = !state.settings.media.ask_each_time && !needs_addon;
+        let token = CancellationToken::new();
+        let first_stage = if needs_addon {
+            MediaStage::NeedsAddon
+        } else {
+            MediaStage::Analysing(token.clone())
+        };
+        let shown = wirecatch_logging::redact::url_for_display(source.url.as_str());
         state.media.insert(
             id,
             MediaPending {
                 added_at: self.inner.clock.unix_millis(),
                 source,
                 queue,
-                handovers: vec![capture.handover_id.clone()],
+                handovers: held.handovers,
                 stage: first_stage,
                 video: None,
                 quiet,
+                folder: held.folder,
+                later: held.later,
+                page_otherwise: held.page_otherwise,
             },
         );
         if needs_addon {
             let addon = self.addon_info(&state.addon);
             self.emit(UiEvent::AddonRequired {
                 addon,
-                url: wirecatch_logging::redact::url_for_display(url.as_str()),
+                url: shown,
                 id,
             });
         } else {
             self.spawn_analysis(id, token);
         }
-        Ok(reply)
+        id
     }
 
     /// Media waiting for the user's choice of quality, oldest first. Only
@@ -319,6 +387,20 @@ impl Manager {
                 }
             }
         }
+    }
+
+    fn spawn_choice_without_asking(
+        &self,
+        id: QuestionId,
+        selection: MediaSelection,
+        instead_of: Option<String>,
+    ) {
+        let manager = self.clone();
+        self.spawn(async move {
+            manager
+                .choose_without_asking(id, selection, instead_of)
+                .await;
+        });
     }
 
     async fn choose(
@@ -577,9 +659,13 @@ impl Manager {
         }
         if let Some((pending, error)) = self.offer(id, found) {
             warn!(error = %error.message, "media could not be read");
-            // The reading is over; the failed download that follows says why.
+            // The reading is over; the failed download (or the page) that follows says why.
             self.emit(UiEvent::ConfirmationClosed { id });
-            self.record_media_failure(pending, error).await;
+            if pending.page_otherwise {
+                self.add_page_as_file(pending).await;
+            } else {
+                self.record_media_failure(pending, error).await;
+            }
         }
     }
 
@@ -622,8 +708,8 @@ impl Manager {
                 } else {
                     Category::Video
                 };
-                let folder = settings::folder_for(&state.settings, category, &self.inner.folders)
-                    .unwrap_or_else(|_| self.inner.folders.downloads.clone());
+                let folder = self.folder_for(&state, pending, category);
+                let later = pending.later;
                 let page_url = pending.source.page_url.clone().or_else(|| {
                     (pending.source.kind == MediaKind::Page).then(|| pending.source.url.to_string())
                 });
@@ -658,13 +744,9 @@ impl Manager {
                     pending.video = video;
                 }
                 if without_asking {
-                    let manager = self.clone();
-                    let (selection, instead_of) = (choice.start, choice.missing_quality);
-                    self.spawn(async move {
-                        manager
-                            .choose_without_asking(id, selection, instead_of)
-                            .await;
-                    });
+                    let (mut selection, instead_of) = (choice.start, choice.missing_quality);
+                    selection.later = later;
+                    self.spawn_choice_without_asking(id, selection, instead_of);
                 } else {
                     self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
                 }
@@ -774,6 +856,15 @@ impl Manager {
         true
     }
 
+    /// Where a video waiting as `pending` is saved: the folder chosen when it
+    /// was added, else the folder for `category`.
+    fn folder_for(&self, state: &State, pending: &MediaPending, category: Category) -> PathBuf {
+        pending.folder.clone().unwrap_or_else(|| {
+            settings::folder_for(&state.settings, category, &self.inner.folders)
+                .unwrap_or_else(|_| self.inner.folders.downloads.clone())
+        })
+    }
+
     /// Media that cannot be offered becomes a failed download, so the reason is
     /// in the list with a Retry button (which downloads the best quality).
     async fn record_media_failure(&self, pending: MediaPending, error: UserError) {
@@ -815,6 +906,7 @@ impl Manager {
                     },
                     job: Some(job),
                 }),
+                video_check: false,
                 category: Some(Category::Video),
             })
             .await;
@@ -880,6 +972,7 @@ impl Manager {
                     },
                     job: Some(resolved.job.clone()),
                 }),
+                video_check: false,
                 category: Some(if plan.audio_only {
                     Category::Audio
                 } else {
