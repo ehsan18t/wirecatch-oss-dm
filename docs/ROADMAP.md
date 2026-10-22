@@ -15,7 +15,7 @@
 
 As of 2026-10-15 (main at e18e845f) the code quality audit has W0 to W5, W7, W8 and W14 done, and phase 1 of the interface revamp is on main. [AUDIT](AUDIT.md) has the status table and every carried item; this section is the order to take them in, which the maintainer may change.
 
-1. The two flaky tests that now fail CI on Windows regularly: `settle::a_part_file_left_by_a_crash_is_picked_up_again` (core) and `a_capture_starts_after_the_server_answers_and_completes` (e2e). A third, `a_resume_file_that_cannot_be_read_is_logged_with_the_reason` (engine), failed once. All three are listed under W6 in AUDIT.
+1. The flaky tests listed under W6 in AUDIT. The two that failed CI on Windows regularly, `settle::a_part_file_left_by_a_crash_is_picked_up_again` (core) and `a_capture_starts_after_the_server_answers_and_completes` (e2e), shared one cause in the product, now fixed; CI on Windows has to confirm it. `a_resume_file_that_cannot_be_read_is_logged_with_the_reason` (engine) failed once and is still open.
 2. Phase 2 of the interface revamp ([REVAMP](REVAMP.md)): settings pages, the add-ons page, the remaining dialogs, the command palette, the in-page media button, the tray menu and installer pages, "Copy diagnostics" in the extension popup, the desktop's "already running" notice, then what phase 1 left open.
 3. The rest of W6: shared test support, CI, and the backlog of proposed gate checks listed under W6.
 4. W9 (core manager), W10 (IPC, bridge and CLI) and W11 (desktop shell, with the gaps D43 records), then what is left of W12 (desktop interface) and W13 (extension, with D44.6, the cookie scope the app decides).
