@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import SelectAsideHost from '../testing/SelectAsideHost.svelte';
 import Select from './Select.svelte';
 
 const options = [
@@ -89,5 +90,30 @@ describe('Select', () => {
     const [best, , disabled] = screen.getAllByRole('option');
     expect(best?.getAttribute('aria-selected')).toBe('true');
     expect(disabled?.getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+describe('Select, searchable, with what sets each option apart', () => {
+  it('ends each option, and the field, with its aside', async () => {
+    render(SelectAsideHost, { onchange: vi.fn() });
+    const combobox = screen.getByRole('combobox', { name: 'Quality' });
+    expect(combobox.textContent).toContain('1.80 GB');
+    await userEvent.click(combobox);
+    expect(
+      screen.getAllByRole('option').map((o) => o.textContent.replace(/\s+/g, ' ').trim()),
+    ).toEqual(['2160p 1.80 GB', '1080p 612 MB', '720p 298 MB']);
+  });
+
+  it('searches from a field that takes the focus, and chooses with Enter', async () => {
+    const onchange = vi.fn();
+    render(SelectAsideHost, { onchange });
+    await userEvent.click(screen.getByRole('combobox', { name: 'Quality' }));
+    const search = screen.getByRole('combobox', { name: 'Search quality' });
+    expect(document.activeElement).toBe(search);
+    await userEvent.keyboard('72');
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    await userEvent.keyboard('{Enter}');
+    expect(onchange).toHaveBeenCalledWith('720');
+    expect(document.activeElement).toBe(screen.getByRole('combobox', { name: 'Quality' }));
   });
 });

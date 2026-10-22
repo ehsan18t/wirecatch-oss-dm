@@ -2,6 +2,7 @@
 
 import type { MediaOption, MediaSubtitle, OutputFit } from '@wirecatch/protocol';
 import { bytesAtBitRate, MB } from '@wirecatch/units';
+import { extensionName } from '../../media-output';
 
 /** A sample media page: its title, its address, and whether it is a page or a stream. */
 export interface MediaSample {
@@ -31,7 +32,29 @@ export const SAMPLE_DURATION_MS = 754_000;
 export const SAMPLE_SUBTITLES: readonly MediaSubtitle[] = [
   { id: 'sub:en', language: 'en', name: 'English', auto: false },
   { id: 'sub:es', language: 'es', name: 'Spanish', auto: false },
-  { id: 'auto:en-orig', language: 'en', name: 'English', auto: true },
+  { id: 'auto:en', language: 'en', name: 'English', auto: true },
+  { id: 'auto:en-orig', language: 'en-orig', name: 'English', auto: true },
+  // As a real video page offers them: a machine translation into dozens of languages.
+  { id: 'auto:ar', language: 'ar', name: 'Arabic', auto: true },
+  { id: 'auto:bn', language: 'bn', name: 'Bangla', auto: true },
+  { id: 'auto:nl', language: 'nl', name: 'Dutch (Netherlands)', auto: true },
+  { id: 'auto:fr', language: 'fr', name: 'French (France)', auto: true },
+  { id: 'auto:de', language: 'de', name: 'German (Germany)', auto: true },
+  { id: 'auto:he', language: 'he', name: 'Hebrew', auto: true },
+  { id: 'auto:hi', language: 'hi', name: 'Hindi', auto: true },
+  { id: 'auto:id', language: 'id', name: 'Indonesian', auto: true },
+  { id: 'auto:it', language: 'it', name: 'Italian', auto: true },
+  { id: 'auto:ja', language: 'ja', name: 'Japanese', auto: true },
+  { id: 'auto:ko', language: 'ko', name: 'Korean', auto: true },
+  { id: 'auto:ml', language: 'ml', name: 'Malayalam', auto: true },
+  { id: 'auto:pl', language: 'pl', name: 'Polish', auto: true },
+  { id: 'auto:pt-BR', language: 'pt-BR', name: 'Portuguese (Brazil)', auto: true },
+  { id: 'auto:pa', language: 'pa', name: 'Punjabi', auto: true },
+  { id: 'auto:ru', language: 'ru', name: 'Russian', auto: true },
+  { id: 'auto:es-US', language: 'es-US', name: 'Spanish (United States)', auto: true },
+  { id: 'auto:ta', language: 'ta', name: 'Tamil', auto: true },
+  { id: 'auto:te', language: 'te', name: 'Telugu', auto: true },
+  { id: 'auto:uk', language: 'uk', name: 'Ukrainian', auto: true },
 ];
 
 /**
@@ -179,7 +202,7 @@ function toOption(sample: SampleQuality, page: boolean): MediaOption {
   const { ext, size } = original;
   return {
     id: sample.id,
-    label: `${sample.quality}, ${ext.toUpperCase()}`,
+    label: `${sample.quality}, ${extensionName(ext)}`,
     quality: sample.quality,
     height: sample.height,
     audio_only: sample.height === null,

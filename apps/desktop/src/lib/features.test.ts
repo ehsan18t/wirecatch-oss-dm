@@ -465,7 +465,8 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(palette('questions.show')).toBe(true);
     await click(button(/waiting for you/i));
     window = within(await downloadWindow());
-    await click(window.getByRole('radio', { name: /720p/ }));
+    await click(window.getByRole('combobox', { name: 'Quality' }));
+    await click(screen.getByRole('option', { name: /^720p/ }));
     const before = app.downloads.size;
     await click(window.getByRole('button', { name: 'Download now' }));
     expect(app.downloads.size).toBe(before + 1);

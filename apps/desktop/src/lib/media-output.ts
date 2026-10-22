@@ -29,6 +29,16 @@ export const FORMAT_LABEL: Record<OutputFormat, string> = {
   wav: 'WAV',
 };
 
+/** Each format's name by its extension, Original aside. */
+const NAME_BY_EXTENSION: ReadonlyMap<string, string> = new Map(
+  Object.entries(FORMAT_LABEL).filter(([format]) => format !== 'original'),
+);
+
+/** A file format by its extension, named as Save as names it ("WebM"), as the core names it in a quality's label; one the app has no name for in capitals. */
+export function extensionName(ext: string): string {
+  return NAME_BY_EXTENSION.get(ext.toLowerCase()) ?? ext.toUpperCase();
+}
+
 /** What a quality means when saved as `format`, if it offers that format. */
 export function fitFor(option: MediaOption | undefined, format: OutputFormat): OutputFit | null {
   return option?.outputs.find((f) => f.format === format) ?? null;
@@ -163,7 +173,7 @@ export function conversionNote(
     return `No conversion: the audio is copied into ${name} as it is.`;
   }
   if (fit.video === 'encode') {
-    return `This quality has no ${name} version, so Wirecatch converts the video to ${fit.video_codec} after downloading it. That takes longer and keeps the processor or graphics card busy.`;
+    return `This quality has no ${name} version, so Wirecatch converts the video to ${fit.video_codec} after downloading, which takes longer.`;
   }
   if (fit.audio === 'encode') {
     const from = fit.audio_codec ? ` (${fit.audio_codec})` : '';
@@ -224,4 +234,18 @@ export function outputSelection(
     subtitle_files: picked.subtitleFiles,
     chapters: picked.chapters && choice.chapters && (fit?.chapters ?? false),
   };
+}
+
+/** Each subtitle's name as the quality window shows it: auto-generated ones marked, and two that would read alike told apart by their language code (`English (auto, en-orig)`). */
+export function subtitleLabels(subtitles: readonly MediaSubtitle[]): Map<string, string> {
+  const base = (s: MediaSubtitle) => (s.auto ? `${s.name} (auto)` : s.name);
+  const seen = new Map<string, number>();
+  for (const s of subtitles) seen.set(base(s), (seen.get(base(s)) ?? 0) + 1);
+  return new Map(
+    subtitles.map((s) => {
+      const label = base(s);
+      if ((seen.get(label) ?? 0) < 2) return [s.id, label];
+      return [s.id, s.auto ? `${s.name} (auto, ${s.language})` : `${s.name} (${s.language})`];
+    }),
+  );
 }

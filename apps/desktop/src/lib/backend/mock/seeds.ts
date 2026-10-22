@@ -155,7 +155,7 @@ export const SEEDS: readonly Seed[] = [
     age: 28,
     error: {
       message:
-        'Wirecatch downloaded the video, but could not save it as MP4 (Conversion failed). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded (WEBM).',
+        'Wirecatch downloaded the video, but could not save it as MP4 (Conversion failed). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded (WebM).',
       fix: 'keep_original',
     },
   },

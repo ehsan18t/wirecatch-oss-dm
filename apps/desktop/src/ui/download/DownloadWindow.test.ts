@@ -65,7 +65,7 @@ describe('a download window with the keyboard', () => {
     const { host } = await show(b, { question: choice?.id ?? questionId(0) });
     expect(screen.getByRole('heading', { name: 'Pick a quality' })).toBeInTheDocument();
     // The best quality needs the media add-on, and the main button says so.
-    const main = screen.getByRole('button', { name: 'Install add-on and download' });
+    const main = screen.getByRole('button', { name: 'Install and download' });
     expect(main).toHaveFocus();
     await fireEvent.keyDown(main, {
       key: 'Escape',

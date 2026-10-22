@@ -1,19 +1,13 @@
 <script lang="ts">
-  // A video's qualities, best first and preselected, with what to save it as (D24), its file name, folder and queue, then Download now, Download later or Cancel. Enter in a field is Download now. A quality whose video and audio must be joined while the media add-on is missing installs the add-on first. Save as, audio quality, subtitles and chapters start from the last choices for videos or for audio only, and every choice says before it starts whether it converts.
+  // A video's qualities, best first and preselected, each row saying only what sets it apart (Best, a conversion it needs, its size when known; that a format copies without converting is the note under Save as), with what to save it as (D24), its file name, folder and queue, then Download now, Download later or Cancel. Enter in a field is Download now. A quality whose video and audio must be joined while the media add-on is missing installs the add-on first. Save as, audio quality, subtitles and chapters start from the last choices for videos or for audio only, and every choice says before it starts whether it converts.
   import DownloadIcon from '~icons/lucide/download';
+  import Info from '~icons/lucide/info';
   import { PRODUCT_NAME } from '@wirecatch/product';
   import type { MediaChoice, MediaOption, QueueId } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
-  import {
-    Badge,
-    Button,
-    Callout,
-    RadioGroup,
-    type SelectOption,
-    textIfCut,
-    tooltip,
-  } from '@wirecatch/ui';
+  import { Badge, Button, cn, Disclosure, Icon, Select, type SelectOption } from '@wirecatch/ui';
   import { isInstalled } from '$lib/addons';
+  import { folderTail } from '$lib/file-names';
   import { earlierNote, hostOf } from '$lib/format';
   import {
     fitFor,
@@ -61,14 +55,21 @@
     if (!picked?.needs_ffmpeg) return null;
     if (!needsInstall) {
       return output.format === 'original'
-        ? `This quality comes as separate video and audio. ${PRODUCT_NAME} joins them into one file when the download finishes.`
+        ? `Comes as separate video and audio, joined into one file when it finishes.`
         : null;
     }
     const size = win.addon?.size ? ` (${formatBytes(win.addon.size)})` : '';
-    return `This quality comes as separate video and audio. ${PRODUCT_NAME} first installs the media add-on${size} to join them into one file, then downloads it.`;
+    return `Comes as separate video and audio: ${PRODUCT_NAME} first installs the media add-on${size} to join them.`;
   });
   const qualities = $derived<SelectOption[]>(
     choice.options.map((option) => ({ value: option.id, label: rowLabel(option) })),
+  );
+
+  /** Where the file goes, in one line: its folder, its queue, and the name typed if any. */
+  const whereSummary = $derived(
+    [folderTail(folder), win.queues.find((q) => q.id === queue)?.name ?? '', fileName.trim()]
+      .filter(Boolean)
+      .join(' · '),
   );
 
   /** A row's words: as the site names it for Original, else the quality in the chosen format. */
@@ -118,11 +119,15 @@
   }
 </script>
 
-<WindowFrame title="Pick a quality" description={choice.title} error={win.error}>
+<WindowFrame
+  title="Pick a quality"
+  description={choice.page_url ? `${choice.title} · ${hostOf(choice.page_url)}` : choice.title}
+  error={win.error}
+>
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Enter in any field, radio buttons and checkboxes included, is Download now: see keys.ts) -->
   <form
     id={formId}
-    class="flex flex-col gap-4"
+    class="flex flex-col gap-3"
     onkeydown={(event) => enterSubmits(event, () => void answer(false))}
     onsubmit={(event) => {
       event.preventDefault();
@@ -130,62 +135,78 @@
     }}
   >
     {#if win.earlier}
-      <div role="note">
-        <Callout tone="info">{earlierNote(win.earlier, win.clock.now)}</Callout>
-      </div>
+      <p class="flex items-center gap-1.5 text-small text-ink-muted" role="note">
+        <Icon icon={Info} size="sm" class="shrink-0" />{earlierNote(win.earlier, win.clock.now)}
+      </p>
     {/if}
 
-    <RadioGroup label="Quality" value={optionId} options={qualities} cards onchange={selectOption}>
-      {#snippet aside(_quality: SelectOption, index: number)}
-        {@const option = choice.options[index]}
-        {#if option}
-          {@const tag = rowTag(option, output.format, option.id === optionId ? output.kbps : null)}
-          {@const size = rowSize(option)}
-          {#if index === 0}<Badge tone="accent" size="sm">Best</Badge>{/if}
-          {#if tag === 'converts'}
-            <Badge tone="warning" size="sm">Converts</Badge>
-          {:else if tag === 'copied'}
-            <Badge size="sm">No conversion</Badge>
+    <div class="flex items-center gap-2">
+      <span class="w-18 shrink-0 text-ui text-ink-muted" aria-hidden="true">Quality</span>
+      <Select
+        label="Quality"
+        class="min-w-0 flex-1"
+        value={optionId}
+        options={qualities}
+        searchable
+        onchange={selectOption}
+      >
+        {#snippet aside(quality: SelectOption)}
+          {@const index = choice.options.findIndex((o) => o.id === quality.value)}
+          {@const option = choice.options[index]}
+          {#if option}
+            {@const tag = rowTag(
+              option,
+              output.format,
+              option.id === optionId ? output.kbps : null,
+            )}
+            {@const size = rowSize(option)}
+            {#if index === 0}<Badge size="sm">Best</Badge>{/if}
+            {#if tag === 'converts'}<Badge tone="warning" size="sm">Converts</Badge>{/if}
+            {#if size !== null}
+              <span class="text-small text-ink-muted tabular-nums">{formatBytes(size)}</span>
+            {/if}
           {/if}
-          <span class="text-small text-ink-muted tabular-nums"
-            >{size === null ? 'Size not known' : `About ${formatBytes(size)}`}</span
-          >
-        {/if}
-      {/snippet}
-    </RadioGroup>
+        {/snippet}
+      </Select>
+    </div>
     {#if joinNote}
-      <p class="text-ui text-ink-muted" role="note">{joinNote}</p>
+      <p
+        class={cn('flex gap-1.5 text-small', needsInstall ? 'text-ink' : 'text-ink-muted')}
+        role="note"
+      >
+        <Icon
+          icon={Info}
+          size="sm"
+          class={cn('mt-0.5 shrink-0', needsInstall ? 'text-accent' : 'text-ink-subtle')}
+        />{joinNote}
+      </p>
     {/if}
 
     {#if picked}
       <SaveAsOptions option={picked} {choice} defaults={defaultsFor(picked)} {output} />
     {/if}
 
-    <FileNameField
-      value={fileName}
-      onchange={(name: string) => (fileName = name)}
-      placeholder={choice.title}
-      description="Leave empty to use the video's title."
-    />
+    <Disclosure label="Save to" summary={whereSummary}>
+      <FileNameField
+        value={fileName}
+        onchange={(name: string) => (fileName = name)}
+        placeholder={choice.title}
+        description="Leave empty to use the video's title."
+      />
 
-    <FolderField
-      {folder}
-      onchoose={() => void changeFolder()}
-      onreset={folder === proposal.folder ? undefined : () => (folder = proposal.folder)}
-    />
+      <FolderField
+        label="Folder"
+        {folder}
+        onchoose={() => void changeFolder()}
+        onreset={folder === proposal.folder ? undefined : () => (folder = proposal.folder)}
+      />
 
-    <QueueField
-      queues={win.queues}
-      value={queue}
-      onchange={(chosen: QueueId) => (queue = chosen)}
-    />
-
-    {#if choice.page_url}
-      {@const from = `From ${hostOf(choice.page_url)}`}
-      <p class="truncate text-small text-ink-muted" {@attach tooltip(() => textIfCut(from))}>
-        {from}
-      </p>
-    {/if}
+      <QueueField
+        queues={win.queues}
+        value={queue}
+        onchange={(chosen: QueueId) => (queue = chosen)}
+      />
+    </Disclosure>
 
     <WindowOptions {win} />
   </form>
@@ -204,8 +225,7 @@
       icon={DownloadIcon}
       data-autofocus
       disabled={!picked || (win.busy && sending !== 'now')}
-      loading={sending === 'now'}
-      >{needsInstall ? 'Install add-on and download' : 'Download now'}</Button
+      loading={sending === 'now'}>{needsInstall ? 'Install and download' : 'Download now'}</Button
     >
   {/snippet}
 </WindowFrame>

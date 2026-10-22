@@ -64,7 +64,8 @@
   }
 
   onMount(() => {
-    firstStop()?.focus();
+    // Ready for Enter, with no ring until the keyboard moves the focus (a new window counts as a keyboard start, so it would otherwise draw one).
+    firstStop()?.focus({ focusVisible: false });
   });
 
   // A view changes under the person: a button that follows the download, a question that closes, buttons that swap once the download finishes. When the control holding the focus goes, the focus would fall to the page, where Escape no longer reaches the window and a finished one closes by itself while in use; it goes where it goes when the view appears instead.

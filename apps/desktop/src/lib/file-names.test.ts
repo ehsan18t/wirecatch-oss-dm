@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileKind, typedExtension } from './file-names';
+import { fileKind, folderTail, typedExtension } from './file-names';
 
 describe('file names', () => {
   it('says a kind of file by its extension, or by its category without one', () => {
@@ -11,5 +11,11 @@ describe('file names', () => {
   it('keeps an extension as typed without its dot, and nothing as nothing', () => {
     expect(typedExtension(' .MP4 ')).toBe('mp4');
     expect(typedExtension('.')).toBeNull();
+  });
+
+  it('shows the last two folders of a path, in its own separator', () => {
+    expect(folderTail('C:\\Users\\you\\Downloads\\Video')).toBe('Downloads\\Video');
+    expect(folderTail('/home/you/Downloads')).toBe('you/Downloads');
+    expect(folderTail('Downloads')).toBe('Downloads');
   });
 });

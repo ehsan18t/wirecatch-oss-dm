@@ -18,6 +18,8 @@ import {
   rowTag,
   sizeFor,
   startingChoice,
+  extensionName,
+  subtitleLabels,
 } from './media-output';
 
 function fit(format: OutputFormat, rest: Partial<OutputFit> = {}): OutputFit {
@@ -44,7 +46,7 @@ function audioFit(format: OutputFormat, rest: Partial<OutputFit> = {}): OutputFi
 
 const uhd: MediaOption = {
   id: '313+251',
-  label: '2160p, WEBM',
+  label: '2160p, WebM',
   quality: '2160p',
   height: 2160,
   audio_only: false,
@@ -248,3 +250,35 @@ function defaults() {
     chapters: false,
   };
 }
+
+describe('subtitle names', () => {
+  const sub = (id: string, language: string, name: string, auto = false) => ({
+    id,
+    language,
+    name,
+    auto,
+  });
+
+  it('marks the auto-generated ones, and tells apart two that would read alike by their language code', () => {
+    const labels = subtitleLabels([
+      sub('a', 'en', 'English'),
+      sub('b', 'en', 'English', true),
+      sub('c', 'en-orig', 'English', true),
+      sub('d', 'es', 'Spanish'),
+    ]);
+    expect([...labels.values()]).toEqual([
+      'English',
+      'English (auto, en)',
+      'English (auto, en-orig)',
+      'Spanish',
+    ]);
+  });
+});
+
+describe('format names', () => {
+  it('names a format by its extension as Save as does, the core alike', () => {
+    expect(extensionName('webm')).toBe('WebM');
+    expect(extensionName('OPUS')).toBe('Opus');
+    expect(extensionName('ts')).toBe('TS');
+  });
+});

@@ -3,12 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import Download from '~icons/lucide/download';
+import DisclosureHost from '../testing/DisclosureHost.svelte';
 import FieldHost from '../testing/FieldHost.svelte';
 import RemovedFieldHost from '../testing/RemovedFieldHost.svelte';
 import StrippingInputHost from '../testing/StrippingInputHost.svelte';
 import Checkbox from './Checkbox.svelte';
 import IconButton from './IconButton.svelte';
 import Kbd from './Kbd.svelte';
+import MultiSelect from './MultiSelect.svelte';
 import Input from './Input.svelte';
 import NumberInput from './NumberInput.svelte';
 import RadioGroup from './RadioGroup.svelte';
@@ -445,5 +447,64 @@ describe('Kbd', () => {
     expect(container.textContent.replace(/\s+/g, '')).toBe('Alt+↑');
     // The plus is for screen readers and copies, not drawn.
     expect(container.querySelector('.sr-only')?.textContent).toBe('+');
+  });
+});
+
+describe('Disclosure', () => {
+  it('folds its choices into a line that says what they are set to, and opens on a click', async () => {
+    render(DisclosureHost);
+    const toggle = screen.getByRole('button', { name: /^Subtitles/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('English · chapters');
+    const region = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    expect(region?.classList.contains('hidden')).toBe(true);
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(region?.classList.contains('hidden')).toBe(false);
+    // Open, the summary gives way to the choices themselves.
+    expect(toggle.textContent).not.toContain('English · chapters');
+  });
+});
+
+describe('MultiSelect', () => {
+  const languages = [
+    { value: 'ar', label: 'Arabic' },
+    { value: 'en', label: 'English' },
+    { value: 'pt', label: 'Portuguese (Brazil)' },
+    { value: 'es', label: 'Spanish' },
+  ];
+
+  it('searches a long list and ticks with Enter, the search keeping the focus', async () => {
+    const onchange = vi.fn();
+    render(MultiSelect, { values: [], options: languages, label: 'Subtitles', onchange });
+    const field = screen.getByRole('button', { name: 'Subtitles' });
+    expect(field.textContent).toContain('None');
+    await userEvent.click(field);
+    const search = screen.getByRole('combobox', { name: 'Search subtitles' });
+    expect(document.activeElement).toBe(search);
+    await userEvent.keyboard('port');
+    expect(screen.getAllByRole('option').map((o) => o.textContent.trim())).toEqual([
+      'Portuguese (Brazil)',
+    ]);
+    await userEvent.keyboard('{Enter}');
+    expect(onchange).toHaveBeenLastCalledWith(['pt']);
+  });
+
+  it('lists what is picked first, says it on the field, and closes on Escape back to it', async () => {
+    const onchange = vi.fn();
+    render(MultiSelect, { values: ['es', 'en'], options: languages, label: 'Subtitles', onchange });
+    const field = screen.getByRole('button', { name: 'Subtitles' });
+    expect(field.textContent).toContain('English, Spanish');
+    await userEvent.click(field);
+    const options = screen.getAllByRole('option');
+    expect(options.slice(0, 2).map((o) => o.getAttribute('aria-selected'))).toEqual([
+      'true',
+      'true',
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onchange).toHaveBeenLastCalledWith([]);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(document.activeElement).toBe(field);
   });
 });

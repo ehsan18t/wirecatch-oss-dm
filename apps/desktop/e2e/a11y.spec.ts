@@ -83,7 +83,7 @@ for (const theme of ['light', 'dark'] as const) {
     const picker = windows.filter({ hasText: 'Pick a quality' });
     await picker.waitFor();
     // The main button has the focus, so Enter downloads; it says the add-on comes first.
-    await expect(picker.getByRole('button', { name: 'Install add-on and download' })).toBeFocused();
+    await expect(picker.getByRole('button', { name: 'Install and download' })).toBeFocused();
     // Escape closes the window without answering; Waiting for you brings it back.
     await page.keyboard.press('Escape');
     await expect(picker).toBeHidden();

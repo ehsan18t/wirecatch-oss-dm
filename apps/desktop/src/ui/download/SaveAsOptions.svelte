@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Save as part of a video's quality window (D24): the format, the audio quality, what that does to the file, the subtitles and the chapters. Shown only when the quality and the video offer more than one way to save them.
+  // The Save as part of a video's quality window (D24): the format and the audio quality on one line, what that does to the file, the subtitles as one field that opens a list to search and tick (a video may offer dozens), and the chapters. Shown only when the quality and the video offer more than one way to save them.
   import {
     AUDIO_KBPS_CHOICES,
     type MediaChoice,
@@ -7,13 +7,14 @@
     type OutputDefaults,
     type OutputFormat,
   } from '@wirecatch/protocol';
-  import { Checkbox, Field, type FieldControl, Select, ToggleChip } from '@wirecatch/ui';
+  import { Checkbox, MultiSelect, Select } from '@wirecatch/ui';
   import {
     conversionNote,
     fitFor,
     formatChoiceLabel,
     kbpsFor,
     qualityNotes,
+    subtitleLabels,
   } from '$lib/media-output';
   import type { OutputChoiceState } from '$lib/window/output-choice.svelte';
 
@@ -41,6 +42,13 @@
   const note = $derived(conversionNote(fit, output.format, output.kbps));
   const notes = $derived(qualityNotes(fit, output.format, output.kbps));
   const canChapters = $derived(choice.chapters && (fit?.chapters ?? false));
+  const subtitleOptions = $derived.by(() => {
+    const names = subtitleLabels(choice.subtitles);
+    return choice.subtitles.map((each) => ({
+      value: each.id,
+      label: names.get(each.id) ?? each.name,
+    }));
+  });
   const formats = $derived(
     option.outputs.map((each) => ({ value: each.format, label: formatChoiceLabel(each) })),
   );
@@ -61,66 +69,60 @@
     if (value === AS_DOWNLOADED) output.kbps = null;
     else if (typeof value === 'number' && kbpsChoices?.includes(value)) output.kbps = value;
   }
-
-  function toggleSubtitle(id: string, on: boolean) {
-    output.subtitles = on
-      ? [...output.subtitles.filter((each) => each !== id), id]
-      : output.subtitles.filter((each) => each !== id);
-  }
 </script>
 
 {#if offered}
-  <div class="flex flex-col gap-3 rounded-md border border-line bg-wash p-3">
+  <div class="flex flex-col gap-2">
     {#if option.outputs.length > 1}
-      <div class="flex flex-wrap gap-3">
-        <Field label="Save as" class="flex-1 basis-40">
-          {#snippet children(control: FieldControl)}
-            <Select {...control} value={output.format} options={formats} onchange={chooseFormat} />
-          {/snippet}
-        </Field>
+      <div class="flex items-center gap-2">
+        <span class="w-18 shrink-0 text-ui text-ink-muted" aria-hidden="true">Save as</span>
+        <Select
+          label="Save as"
+          class="min-w-0 flex-1"
+          value={output.format}
+          options={formats}
+          onchange={chooseFormat}
+        />
         {#if kbpsOptions.length > 0}
-          <Field label="Audio quality" class="flex-1 basis-40">
-            {#snippet children(control: FieldControl)}
-              <Select
-                {...control}
-                value={output.kbps ?? AS_DOWNLOADED}
-                options={kbpsOptions}
-                onchange={chooseKbps}
-              />
-            {/snippet}
-          </Field>
+          <Select
+            label="Audio quality"
+            class="min-w-0 flex-1"
+            value={output.kbps ?? AS_DOWNLOADED}
+            options={kbpsOptions}
+            onchange={chooseKbps}
+          />
         {/if}
       </div>
     {/if}
-    {#if note}<p class="text-ui text-ink-muted" role="note">{note}</p>{/if}
-    {#each notes as text (text)}<p class="text-ui text-ink-muted" role="note">{text}</p>{/each}
+    {#if note}<p class="text-small text-ink-muted" role="note">{note}</p>{/if}
+    {#each notes as text (text)}<p class="text-small text-ink-muted" role="note">{text}</p>{/each}
 
     {#if choice.subtitles.length > 0}
-      <fieldset class="flex min-w-0 flex-col gap-2">
-        <legend class="mb-2 text-ui font-medium text-ink">Subtitles</legend>
-        <div class="flex flex-wrap gap-1.5">
-          {#each choice.subtitles as subtitle (subtitle.id)}
-            <ToggleChip
-              pressed={output.subtitles.includes(subtitle.id)}
-              label={subtitle.auto ? `${subtitle.name} (auto)` : subtitle.name}
-              onchange={(on: boolean) => toggleSubtitle(subtitle.id, on)}
-            />
-          {/each}
-        </div>
-        {#if output.subtitles.length > 0}
-          {#if fit?.embeds_subtitles}
-            <Checkbox
-              checked={output.subtitleFiles}
-              label="Save them as .srt files next to the video instead"
-              onchange={(on: boolean) => (output.subtitleFiles = on)}
-            />
-          {:else}
-            <p class="text-small text-ink-muted">They are saved as .srt files next to the file.</p>
-          {/if}
+      <div class="flex items-center gap-2">
+        <span class="w-18 shrink-0 text-ui text-ink-muted" aria-hidden="true">Subtitles</span>
+        <MultiSelect
+          label="Subtitles"
+          class="min-w-0 flex-1"
+          values={output.subtitles}
+          options={subtitleOptions}
+          searchPlaceholder="Search languages"
+          onchange={(ids: string[]) => (output.subtitles = ids)}
+        />
+      </div>
+      {#if output.subtitles.length > 0}
+        {#if fit?.embeds_subtitles}
+          <Checkbox
+            checked={output.subtitleFiles}
+            label="Save subtitles as .srt files next to the video"
+            onchange={(on: boolean) => (output.subtitleFiles = on)}
+          />
+        {:else}
+          <p class="text-small text-ink-muted">
+            Subtitles are saved as .srt files next to the file.
+          </p>
         {/if}
-      </fieldset>
+      {/if}
     {/if}
-
     {#if canChapters}
       <Checkbox
         checked={output.chapters}

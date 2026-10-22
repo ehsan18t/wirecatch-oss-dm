@@ -195,7 +195,7 @@ for (const theme of ['light', 'dark'] as const) {
       // 1080p comes as separate video and audio, so it is joined after downloading. That needs
       // the media add-on: it installs first, then the video downloads by itself.
       await page.getByRole('radio', { name: /1080p/ }).check();
-      await page.getByRole('button', { name: 'Install add-on and download' }).click();
+      await page.getByRole('button', { name: 'Install and download' }).click();
       await page
         .getByRole('region', { name: /^Wirecatch download window/ })
         .getByRole('progressbar')

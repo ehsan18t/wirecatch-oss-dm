@@ -27,11 +27,25 @@ async function asking(change?: (b: MockBackend) => Promise<void>) {
 const saveAs = () => screen.getByRole('combobox', { name: 'Save as' });
 const audioQuality = () => screen.getByRole('combobox', { name: 'Audio quality' });
 
-/** The row a quality's radio button sits in. */
-function rowOf(radio: HTMLElement): HTMLElement {
-  const row = radio.closest('label');
-  if (!row) throw new Error('the quality has no row');
-  return row;
+const quality = () => screen.getByRole('combobox', { name: 'Quality' });
+const subtitles = () => screen.getByRole('button', { name: 'Subtitles' });
+
+/** The subtitle languages offered, each with whether it is picked, read from the list and closed again. */
+async function subtitleStates(user: UserEvent): Promise<[string, string | null][]> {
+  await user.click(subtitles());
+  const states = screen
+    .getAllByRole('option')
+    .map((o): [string, string | null] => [o.textContent.trim(), o.getAttribute('aria-selected')]);
+  await user.keyboard('{Escape}');
+  return states;
+}
+
+/** Ticks or unticks the subtitle languages named, in the list, and closes it. */
+async function tickSubtitles(user: UserEvent, ...names: string[]) {
+  await user.click(subtitles());
+  for (const name of names) await user.click(screen.getByRole('option', { name }));
+  await user.keyboard('{Escape}');
+  await settle();
 }
 
 /** The options a menu offers, read from its list and closed again. */
@@ -61,36 +75,36 @@ describe('the quality window with output formats', () => {
     expect(screen.queryByText('No conversion')).toBeNull();
 
     await choose(user, saveAs(), 'MP4');
-    // 2160p comes only as VP9: MP4 converts it, and the window says so before it starts.
-    const uhd = screen.getByRole('radio', { name: /2160p, MP4/ });
-    expect(uhd).toBeChecked();
-    expect(within(rowOf(uhd)).getByText('Converts')).toBeInTheDocument();
+    // 2160p comes only as VP9: MP4 converts it, and the window says so before it starts, on the quality itself too.
+    expect(quality()).toHaveTextContent(/2160p, MP4/);
+    expect(quality()).toHaveTextContent(/Converts/);
     expect(
       screen.getByText(/no MP4 version, so Wirecatch converts the video to H\.264/),
     ).toBeVisible();
-    const fullHd = screen.getByRole('radio', { name: /1080p, MP4/ });
-    expect(within(rowOf(fullHd)).getByText('No conversion')).toBeInTheDocument();
+    // A quality that copies says nothing about it: only a conversion is worth a word.
+    const qualities = await optionTexts(user, quality());
+    expect(qualities.find((q) => q.startsWith('1080p, MP4'))).not.toMatch(/Converts/);
 
-    await user.click(fullHd);
-    await settle();
+    await choose(user, quality(), /^1080p, MP4/);
     expect(saveAs()).toHaveTextContent('MP4');
     expect(
       screen.getByText(/^No conversion: the video and audio are copied into MP4 as they are/),
     ).toBeVisible();
 
-    // Subtitles: human-written ones first, auto-generated ones marked, none picked at first.
-    const english = screen.getByRole('button', { name: 'English' });
-    const auto = screen.getByRole('button', { name: 'English (auto)' });
-    expect(screen.getByRole('button', { name: 'Spanish' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(english).toHaveAttribute('aria-pressed', 'false');
-    expect(auto).toHaveAttribute('aria-pressed', 'false');
-    await user.click(english);
-    await settle();
+    // Subtitles: one field that opens a list to search and tick; human-written ones first, auto-generated ones marked, none picked at first.
+    expect(subtitles()).toHaveTextContent('None');
+    const offered = await subtitleStates(user);
+    expect(offered.slice(0, 4)).toEqual([
+      ['English', 'false'],
+      ['Spanish', 'false'],
+      // Two auto-generated tracks in one language are told apart by their codes.
+      ['English (auto, en)', 'false'],
+      ['English (auto, en-orig)', 'false'],
+    ]);
+    await tickSubtitles(user, 'English');
+    expect(subtitles()).toHaveTextContent('English');
     expect(
-      screen.getByRole('checkbox', { name: 'Save them as .srt files next to the video instead' }),
+      screen.getByRole('checkbox', { name: 'Save subtitles as .srt files next to the video' }),
     ).not.toBeChecked();
     const chapters = screen.getByRole('checkbox', { name: "Add the video's chapters" });
     await user.click(chapters);
@@ -111,8 +125,7 @@ describe('the quality window with output formats', () => {
 
   it('offers audio formats, an audio quality and notes for audio only', async () => {
     const { user } = await asking();
-    await user.click(screen.getByRole('radio', { name: /Audio only/ }));
-    await settle();
+    await choose(user, quality(), /^Audio only/);
     expect(await optionTexts(user, saveAs())).toEqual([
       'Original (M4A)',
       'MP3',
@@ -148,9 +161,8 @@ describe('the quality window with output formats', () => {
     expect(screen.queryByRole('combobox', { name: 'Audio quality' })).toBeNull();
 
     // Subtitles go next to an audio file.
-    await user.click(screen.getByRole('button', { name: 'Spanish' }));
-    await settle();
-    expect(screen.getByText('They are saved as .srt files next to the file.')).toBeVisible();
+    await tickSubtitles(user, 'Spanish');
+    expect(screen.getByText('Subtitles are saved as .srt files next to the file.')).toBeVisible();
     expect(screen.queryByRole('checkbox', { name: "Add the video's chapters" })).toBeNull();
   });
 
@@ -174,40 +186,50 @@ describe('the quality window with output formats', () => {
       await b.changeSettings({ media: settings.media });
     });
     expect(saveAs()).toHaveTextContent('MKV');
-    expect(screen.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'English (auto)' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(subtitles()).toHaveTextContent('English');
+    const offered = await subtitleStates(user);
+    // The picked one lists first, and the auto-generated English is not picked with it.
+    expect(offered[0]).toEqual(['English', 'true']);
+    expect(offered.find(([name]) => name === 'English (auto, en-orig)')?.[1]).toBe('false');
     expect(
-      screen.getByRole('checkbox', { name: 'Save them as .srt files next to the video instead' }),
+      screen.getByRole('checkbox', { name: 'Save subtitles as .srt files next to the video' }),
     ).toBeChecked();
     expect(screen.getByRole('checkbox', { name: "Add the video's chapters" })).toBeChecked();
 
-    await user.click(screen.getByRole('radio', { name: /Audio only/ }));
-    await settle();
+    await choose(user, quality(), /^Audio only/);
     expect(saveAs()).toHaveTextContent('Opus');
     expect(audioQuality()).toHaveTextContent('160 kbps');
   });
 });
 
+describe('the quality window, short', () => {
+  it('shows the quality picked with its badges and size on one field, and folds where the file goes', async () => {
+    await asking();
+    // The quality picked, with what sets it apart, as each one in its list shows it.
+    expect(quality()).toHaveTextContent(/^2160p, WebM\s*Best\s*1\.80 GB$/);
+    const where = screen.getByRole('button', { name: /^Save to/ });
+    expect(where).toHaveAttribute('aria-expanded', 'false');
+    expect(where).toHaveTextContent(/Video · Main$/);
+  });
+});
+
 describe('the quality window by keyboard', () => {
-  it('downloads the quality picked with the arrow keys when Enter is pressed on it', async () => {
+  it('picks a quality with the arrow keys, and downloads it on Enter in a field', async () => {
     const { b, user } = await asking();
     const choose = vi.spyOn(b, 'chooseMedia');
-    const fullHd = screen.getByRole('radio', { name: /1080p/ });
-    const radios = screen.getAllByRole('radio');
-    radios.find((r) => r instanceof HTMLInputElement && r.checked)?.focus();
-    for (let i = 0; i < radios.length && !fullHd.matches(':checked'); i++) {
-      await user.keyboard('{ArrowDown}');
-    }
-    expect(fullHd).toBeChecked();
-    expect(fullHd).toHaveFocus();
+    quality().focus();
+    // Down opens the list on the quality picked; Down again moves to the next, Enter picks it.
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    await settle();
+    expect(quality()).toHaveTextContent(/^1080p/);
     expect(choose).not.toHaveBeenCalled();
+    // Enter on the quality opens its list rather than downloading; Enter in a text field downloads.
+    screen.getByRole('textbox', { name: 'File name' }).focus();
     await user.keyboard('{Enter}');
     await settle();
     expect(choose).toHaveBeenCalledTimes(1);
-    expect(choose.mock.calls[0]?.[1].option_id).toBe(fullHd.getAttribute('value'));
-    expect(await b.pendingMediaChoices()).toHaveLength(0);
+    const picked = (await b.pendingMediaChoices()).length;
+    expect(picked).toBe(0);
+    expect(choose.mock.calls[0]?.[1].option_id).toMatch(/1080/);
   });
 });

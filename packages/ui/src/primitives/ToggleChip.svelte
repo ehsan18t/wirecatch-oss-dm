@@ -1,6 +1,9 @@
 <script lang="ts">
   // One choice of several that can each be on or off, as a chip that stays pressed: the days a queue runs, the subtitles to save. A row of them wraps; it never scrolls inside the page.
+  import Check from '~icons/lucide/check';
+  import Plus from '~icons/lucide/plus';
   import { cn } from '../lib/cn';
+  import Icon from './Icon.svelte';
   import { FOCUS_RING } from '../recipes/control';
 
   interface Props {
@@ -19,12 +22,17 @@
   aria-pressed={pressed}
   {disabled}
   class={cn(
-    'h-control-sm min-w-11 rounded-sm border px-2.5 text-ui transition-colors duration-fast ease-out disabled:opacity-disabled',
+    'inline-flex h-control-sm min-w-11 items-center justify-center gap-1 rounded-sm border px-2.5 text-ui transition-colors duration-fast ease-out disabled:opacity-disabled',
     pressed
       ? 'border-accent bg-accent-soft font-medium text-accent'
-      : 'border-line bg-control text-ink-muted enabled:hover:bg-control-hover enabled:hover:text-ink',
+      : 'border-line-strong/quiet bg-transparent text-ink-muted enabled:hover:bg-wash enabled:hover:text-ink',
     FOCUS_RING,
     className,
   )}
-  onclick={() => onchange(!pressed)}>{label}</button
+  onclick={() => onchange(!pressed)}
+  ><Icon
+    icon={pressed ? Check : Plus}
+    size="xs"
+    class={pressed ? undefined : 'opacity-quiet'}
+  />{label}</button
 >
