@@ -14,8 +14,8 @@ export default defineConfig({
   testDir: 'e2e',
   testIgnore: ['performance.spec.ts', 'gallery.spec.ts', 'screenshots.spec.ts'],
   timeout: 90_000,
-  fullyParallel: false,
-  workers: 1,
+  // Each test has a browser context of its own and the mock backend lives in the page, so tests share nothing.
+  fullyParallel: true,
   reporter: 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,

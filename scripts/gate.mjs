@@ -69,18 +69,9 @@ const GROUPS = {
     'docs',
   ],
   release: ['engine-package', 'msrv'],
-  // The e2e checks skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
-  js: [
-    'js-policy',
-    'protocol',
-    'js-check',
-    'js-lint',
-    'js-test',
-    'js-build',
-    'e2e-gallery',
-    'e2e-desktop',
-    'e2e-extension',
-  ],
+  js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
+  // Apart from `js` so CI runs them alongside it: they take minutes and need no Rust. They skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
+  browser: ['e2e-gallery', 'e2e-desktop', 'e2e-extension'],
   repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
@@ -93,7 +84,7 @@ const GROUPS = {
 };
 
 /** What `node scripts/gate.mjs` runs with no names: every check CI runs. */
-const DEFAULT = ['repo', 'rust', 'release', 'js', 'supply-chain'];
+const DEFAULT = ['repo', 'rust', 'release', 'js', 'browser', 'supply-chain'];
 
 function expand(names) {
   return names.flatMap((name) => {

@@ -76,7 +76,6 @@ Every check proposed during the audit run, so none lives only in a reviewer's no
 
 - A test run elevated on Windows: the endpoint key ownership bug (IPB-10) showed only when tests ran as administrator, as GitHub's Windows runners do.
 - The desktop's 10,000-row `performance.spec.ts` run in the gate and CI (`pnpm e2e:perf`), the part of DUI-18 still open: its `a11y.spec.ts` and `layout.spec.ts` are in the gate now (`e2e-desktop`, `scripts/gate/browser.mjs`), where they found three real bugs in the main window rebuild.
-- `e2e-gallery` on Linux CI: it needs a Chromium install and `PW_CHANNEL=chromium`.
 - Control characters other than tab, carriage return and line feed rejected by the `text` check.
 - `eslint-plugin-regexp` with `no-super-linear-backtracking`, for patterns that can backtrack catastrophically.
 - Prettier over `docs/` and `docs/audit/`: `AUDIT.md`, `DECISIONS.md`, `PLAN.md` and the audit reports fail `prettier --check` today and no lint script covers them.

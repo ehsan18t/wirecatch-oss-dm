@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: 'e2e',
   testMatch: ['gallery.spec.ts'],
   timeout: 90_000,
-  workers: 1,
+  fullyParallel: true,
   reporter: 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,

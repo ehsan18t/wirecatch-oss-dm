@@ -8,7 +8,7 @@ const PORT = 4329;
 export default defineConfig({
   testDir: 'e2e',
   timeout: 60_000,
-  workers: 1,
+  fullyParallel: true,
   reporter: 'list',
   use: {
     baseURL: `http://localhost:${String(PORT)}`,
