@@ -18,7 +18,7 @@ export type OutputDefaults = {
    */
   subtitle_languages: Array<string>;
   /**
-   * Tick a language's auto-generated subtitles when it has no human-written ones.
+   * Take a language's auto-generated subtitles when it has none written by people.
    */
   auto_subtitles: boolean;
   /**

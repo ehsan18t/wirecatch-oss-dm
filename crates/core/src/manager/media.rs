@@ -8,6 +8,12 @@
 //! failed download row whose message says why. A page captured while the media
 //! add-on is missing triggers `AddonRequired` and is read as soon as the add-on
 //! is installed.
+//!
+//! When the person chose not to be asked (D50), a video is read without a
+//! window and downloads at once with the saved choices, announced with
+//! `Captured`; the window opens only when the video does not offer the saved
+//! resolution and its fallback is to ask, when the media add-on must be
+//! installed first, or when the download cannot be added as chosen.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -16,7 +22,7 @@ use tracing::warn;
 use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, Url};
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
-    MediaSummary, OutputFormat, PortablePath, UiEvent, UserError,
+    MediaSummary, OutputFormat, PortablePath, UiEvent, UserError, VideoQuality,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
 use wirecatch_protocol::{QuestionId, QueueId};
@@ -67,6 +73,18 @@ pub(super) struct MediaPending {
     /// The site and id of the video, once its page was read (see
     /// [`video_key`]); another capture of the same video joins this one.
     pub video: Option<String>,
+    /// Read without a window, as the person chose not to be asked about videos
+    /// (D50): no `MediaAnalysing`, and not in [`Manager::media_being_read`].
+    pub quiet: bool,
+}
+
+/// Who picked a video's quality.
+enum Picker {
+    /// The person, in the quality window: the choices are remembered for next time.
+    Person,
+    /// The saved choices, without asking (D50); `instead_of` is the saved
+    /// resolution the video did not offer.
+    Saved { instead_of: Option<String> },
 }
 
 /// What reading a stream or page found: its title, the qualities offered and,
@@ -92,6 +110,19 @@ pub(super) fn video_key(extractor: Option<&str>, id: Option<&str>) -> Option<Str
     Some(format!("{extractor}:{id}"))
 }
 
+impl MediaSource {
+    fn of(capture: &NewDownload, url: Url, kind: MediaKind, chosen_by: ChosenBy) -> Self {
+        Self {
+            url,
+            kind,
+            title: capture.media.as_ref().and_then(|m| m.title.clone()),
+            page_url: capture.page_url.clone(),
+            origin: origin_of(capture),
+            chosen_by,
+        }
+    }
+}
+
 pub(super) enum MediaStage {
     /// Being read; cancelled when dismissed or withdrawn.
     Analysing(CancellationToken),
@@ -99,7 +130,7 @@ pub(super) enum MediaStage {
     NeedsAddon,
     /// Waiting for the user's choice.
     Ready {
-        choice: MediaChoice,
+        choice: Box<MediaChoice>,
         plans: HashMap<String, Plan>,
     },
 }
@@ -150,6 +181,8 @@ impl Manager {
         }
         let id = state.ids.pending();
         let needs_addon = kind == MediaKind::Page && state.addon.tools.is_none();
+        // A window for the add-on opens anyway, and then shows the reading too.
+        let quiet = !state.settings.media.ask_each_time && !needs_addon;
         let token = CancellationToken::new();
         let first_stage = if needs_addon {
             MediaStage::NeedsAddon
@@ -164,14 +197,7 @@ impl Manager {
                 deciding: None,
             },
         );
-        let source = MediaSource {
-            url: url.clone(),
-            kind,
-            title: capture.media.as_ref().and_then(|m| m.title.clone()),
-            page_url: capture.page_url.clone(),
-            origin: origin_of(capture),
-            chosen_by,
-        };
+        let source = MediaSource::of(capture, url.clone(), kind, chosen_by);
         state.media.insert(
             id,
             MediaPending {
@@ -181,6 +207,7 @@ impl Manager {
                 handovers: vec![capture.handover_id.clone()],
                 stage: first_stage,
                 video: None,
+                quiet,
             },
         );
         if needs_addon {
@@ -220,7 +247,7 @@ impl Manager {
         self.lock()
             .media
             .iter()
-            .filter(|(_, m)| matches!(m.stage, MediaStage::Analysing(_)))
+            .filter(|(_, m)| !m.quiet && matches!(m.stage, MediaStage::Analysing(_)))
             .map(|(id, m)| MediaReading {
                 id: *id,
                 url: wirecatch_logging::redact::url_for_display(m.source.url.as_str()),
@@ -236,7 +263,9 @@ impl Manager {
     /// The selection may save it in another format, with subtitles and chapters
     /// (D24); what it asks for must be among what the choice offered. The
     /// choices are remembered in the settings (separately for videos and for
-    /// audio only), so the next window starts from them.
+    /// audio only), so the next window starts from them, with the resolution
+    /// unless the video did not offer the saved one, and whether to ask for
+    /// the next video ([`MediaSelection::every_video`], D50).
     ///
     /// An option whose video and audio must be joined, or that is converted,
     /// needs the media add-on; without it this fails with
@@ -255,6 +284,48 @@ impl Manager {
         &self,
         id: QuestionId,
         selection: MediaSelection,
+    ) -> Result<wirecatch_protocol::DownloadId> {
+        self.choose(id, selection, Picker::Person).await
+    }
+
+    /// Downloads what the saved choices pick for a video, without asking (D50),
+    /// and announces it as a capture. When it cannot be added as chosen (its
+    /// folder is gone, say), the quality window opens, so the person can fix it.
+    async fn choose_without_asking(
+        &self,
+        id: QuestionId,
+        selection: MediaSelection,
+        instead_of: Option<String>,
+    ) {
+        match self
+            .choose(id, selection, Picker::Saved { instead_of })
+            .await
+        {
+            Ok(row) => {
+                let state = self.lock();
+                if let Ok(entry) = state.entry(row) {
+                    self.emit(UiEvent::Captured(entry.summary()));
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "a video could not be downloaded with the saved choices");
+                let state = self.lock();
+                if let Some(MediaPending {
+                    stage: MediaStage::Ready { choice, .. },
+                    ..
+                }) = state.media.get(&id)
+                {
+                    self.emit(UiEvent::MediaChoiceRequested(choice_for_display(choice)));
+                }
+            }
+        }
+    }
+
+    async fn choose(
+        &self,
+        id: QuestionId,
+        selection: MediaSelection,
+        picker: Picker,
     ) -> Result<wirecatch_protocol::DownloadId> {
         let (pending, plan, choice, resolved) = {
             let mut state = self.lock_open()?;
@@ -290,13 +361,19 @@ impl Manager {
             };
             (pending, plan, choice, resolved)
         };
-        let offered_formats = choice
-            .options
-            .iter()
-            .find(|o| o.id == selection.option_id)
-            .is_some_and(|o| o.outputs.len() > 1);
+        let instead_of = match &picker {
+            Picker::Person => None,
+            Picker::Saved { instead_of } => instead_of.clone(),
+        };
         match self
-            .insert_chosen(&pending, &plan, &resolved, &choice, selection.clone())
+            .insert_chosen(
+                &pending,
+                &plan,
+                &resolved,
+                &choice,
+                selection.clone(),
+                instead_of,
+            )
             .await
         {
             Ok(row) => {
@@ -307,8 +384,8 @@ impl Manager {
                     }
                 }
                 self.emit(UiEvent::ConfirmationClosed { id });
-                if offered_formats {
-                    self.remember_media_choice(&choice, &selection, plan.audio_only);
+                if matches!(picker, Picker::Person) {
+                    self.remember_media_choice(&choice, &selection);
                 }
                 Ok(row)
             }
@@ -461,7 +538,7 @@ impl Manager {
 
     /// Reads a stream or page and offers its qualities.
     async fn analyse(&self, id: QuestionId, token: CancellationToken) {
-        let (source, tools, connections) = {
+        let (source, tools, connections, quiet) = {
             let state = self.lock();
             let Some(pending) = state.media.get(&id) else {
                 return;
@@ -470,12 +547,15 @@ impl Manager {
                 pending.source.clone(),
                 state.addon.tools.clone(),
                 usize::from(state.settings.connections_per_download),
+                pending.quiet,
             )
         };
-        self.emit(UiEvent::MediaAnalysing {
-            id,
-            url: wirecatch_logging::redact::url_for_display(source.url.as_str()),
-        });
+        if !quiet {
+            self.emit(UiEvent::MediaAnalysing {
+                id,
+                url: wirecatch_logging::redact::url_for_display(source.url.as_str()),
+            });
+        }
         let found = match source.kind {
             MediaKind::Page => match &tools {
                 Some(tools) => {
@@ -503,8 +583,10 @@ impl Manager {
         }
     }
 
-    /// Turns what was found into a choice for the user. On failure returns the
-    /// pending media, taken out, and why.
+    /// Turns what was found into a choice for the user, or, when the person
+    /// chose not to be asked and nothing needs them (D50), into a download with
+    /// the saved choices. On failure returns the pending media, taken out, and
+    /// why.
     fn offer(
         &self,
         id: QuestionId,
@@ -545,26 +627,47 @@ impl Manager {
                 let page_url = pending.source.page_url.clone().or_else(|| {
                     (pending.source.kind == MediaKind::Page).then(|| pending.source.url.to_string())
                 });
+                let options: Vec<_> = offers.iter().map(|(o, _)| o.clone()).collect();
+                let start = state.settings.media.start(&options, &subtitles, chapters);
                 let choice = MediaChoice {
                     id,
                     title,
                     page_url,
-                    options: offers.iter().map(|(o, _)| o.clone()).collect(),
+                    options,
                     folder: folder.to_string_lossy().into_owned(),
                     queue: pending.queue,
                     subtitles,
                     chapters,
                     duration_ms,
+                    start: start.selection,
+                    missing_quality: start.missing,
                 };
-                let plans = offers.into_iter().map(|(o, p)| (o.id, p)).collect();
+                let plans: HashMap<String, Plan> =
+                    offers.into_iter().map(|(o, p)| (o.id, p)).collect();
+                // The media add-on is installed only when the person says so.
+                let ready = plans
+                    .get(&choice.start.option_id)
+                    .and_then(|plan| plan.resolve(&choice, &choice.start).ok())
+                    .is_some_and(|r| !r.needs_ffmpeg || state.addon.tools.is_some());
+                let without_asking = !start.asks && ready;
                 if let Some(pending) = state.media.get_mut(&id) {
                     pending.stage = MediaStage::Ready {
-                        choice: choice.clone(),
+                        choice: Box::new(choice.clone()),
                         plans,
                     };
                     pending.video = video;
                 }
-                self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
+                if without_asking {
+                    let manager = self.clone();
+                    let (selection, instead_of) = (choice.start, choice.missing_quality);
+                    self.spawn(async move {
+                        manager
+                            .choose_without_asking(id, selection, instead_of)
+                            .await;
+                    });
+                } else {
+                    self.emit(UiEvent::MediaChoiceRequested(choice_for_display(&choice)));
+                }
                 None
             }
             Err(error) => state.media.remove(&id).map(|pending| (pending, error)),
@@ -708,6 +811,7 @@ impl Manager {
                         quality: "Best available".into(),
                         source: source.kind,
                         video_key: pending.video.clone(),
+                        instead_of: None,
                     },
                     job: Some(job),
                 }),
@@ -743,6 +847,7 @@ impl Manager {
         resolved: &Resolved,
         choice: &MediaChoice,
         selection: MediaSelection,
+        instead_of: Option<String>,
     ) -> Result<wirecatch_protocol::DownloadId> {
         let folder = match selection.folder {
             Some(folder) => self.inner.folders.resolve(&PortablePath(folder))?,
@@ -771,6 +876,7 @@ impl Manager {
                         quality: plan.quality.clone(),
                         source: pending.source.kind,
                         video_key: pending.video.clone(),
+                        instead_of,
                     },
                     job: Some(resolved.job.clone()),
                 }),
@@ -823,39 +929,30 @@ impl Manager {
     }
 
     /// Keeps what was chosen for a video (or for audio only) as the next
-    /// window's starting point, in the settings (D24).
-    fn remember_media_choice(
-        &self,
-        choice: &MediaChoice,
-        selection: &MediaSelection,
-        audio_only: bool,
-    ) {
+    /// window's starting point, in the settings (D24), and whether the next
+    /// video asks at all (D50). The resolution is kept when the video offered
+    /// the saved one and another was picked; a quality offered in its original
+    /// format only (a stream's) keeps the saved format, subtitles and chapters.
+    fn remember_media_choice(&self, choice: &MediaChoice, selection: &MediaSelection) {
+        let Some(option) = choice.options.iter().find(|o| o.id == selection.option_id) else {
+            return;
+        };
         let Ok(mut state) = self.lock_open() else {
             return;
         };
         let mut new = state.settings.clone();
-        let defaults = if audio_only {
-            &mut new.media.audio
-        } else {
-            &mut new.media.video
-        };
-        defaults.format = selection.output;
-        if selection.output != OutputFormat::Original && !selection.output.is_lossless() {
-            defaults.audio_kbps = selection.audio_kbps;
+        if let Some(every_video) = selection.every_video {
+            new.media.ask_each_time = !every_video;
         }
-        if let Some((languages, auto)) =
-            output::remembered_subtitles(&choice.subtitles, &selection.subtitles)
-        {
-            defaults.subtitle_languages = languages;
-            if let Some(auto) = auto {
-                defaults.auto_subtitles = auto;
-            }
-            if !audio_only {
-                defaults.subtitle_files = selection.subtitle_files;
+        if choice.missing_quality.is_none() && selection.option_id != choice.start.option_id {
+            if option.audio_only {
+                new.media.quality = VideoQuality::AudioOnly;
+            } else if let Some(height) = option.height {
+                new.media.quality = VideoQuality::Height(height);
             }
         }
-        if choice.chapters {
-            defaults.chapters = selection.chapters;
+        if option.outputs.len() > 1 {
+            remember_output(choice, selection, &mut new.media, option.audio_only);
         }
         match settings::validate(
             new,
@@ -866,6 +963,37 @@ impl Manager {
             Ok(new) => self.apply_settings(&mut state, new),
             Err(e) => warn!(error = %e, "could not remember the media choices"),
         }
+    }
+}
+
+/// Keeps the format, audio quality, subtitles and chapters chosen as the
+/// starting point for videos, or for audio only.
+fn remember_output(
+    choice: &MediaChoice,
+    selection: &MediaSelection,
+    media: &mut wirecatch_protocol::app::MediaDefaults,
+    audio_only: bool,
+) {
+    let defaults = if audio_only {
+        &mut media.audio
+    } else {
+        &mut media.video
+    };
+    defaults.format = selection.output;
+    if selection.output != OutputFormat::Original && !selection.output.is_lossless() {
+        defaults.audio_kbps = selection.audio_kbps;
+    }
+    if let Some((languages, auto)) =
+        output::remembered_subtitles(&choice.subtitles, &selection.subtitles)
+    {
+        defaults.subtitle_languages = languages;
+        defaults.auto_subtitles |= auto;
+        if !audio_only {
+            defaults.subtitle_files = selection.subtitle_files;
+        }
+    }
+    if choice.chapters {
+        defaults.chapters = selection.chapters;
     }
 }
 

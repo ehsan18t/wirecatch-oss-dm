@@ -78,6 +78,7 @@ import type { PreviewImportArgs } from './PreviewImportArgs';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { ProcessingStep } from './ProcessingStep';
 import type { ProtocolError } from './ProtocolError';
+import type { QualityFallback } from './QualityFallback';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
@@ -109,6 +110,7 @@ import type { UiEvent } from './UiEvent';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { UserError } from './UserError';
+import type { VideoQuality } from './VideoQuality';
 import type { WaitReason } from './WaitReason';
 import type { Weekday } from './Weekday';
 import type { WindowAction } from './WindowAction';
@@ -677,15 +679,20 @@ export function isMediaChoice(value: unknown): value is MediaChoice {
     isQueueId(value1['queue']) &&
     isArrayOf(value1['subtitles'], isMediaSubtitle) &&
     typeof value1['chapters'] === 'boolean' &&
-    (typeof value1['duration_ms'] === 'number' || value1['duration_ms'] === null))(value);
+    (typeof value1['duration_ms'] === 'number' || value1['duration_ms'] === null) &&
+    isMediaSelection(value1['start']) &&
+    (typeof value1['missing_quality'] === 'string' || value1['missing_quality'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaDefaults}; fields it does not name are not checked. */
 export function isMediaDefaults(value: unknown): value is MediaDefaults {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isOutputDefaults(value1['video']) && isOutputDefaults(value1['audio']))(
-    value,
-  );
+    isRecord(value1) &&
+    isOutputDefaults(value1['video']) &&
+    isOutputDefaults(value1['audio']) &&
+    typeof value1['ask_each_time'] === 'boolean' &&
+    isVideoQuality(value1['quality']) &&
+    isQualityFallback(value1['fallback']))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaDefaultsPatch}; fields it does not name are not checked. */
@@ -693,7 +700,10 @@ export function isMediaDefaultsPatch(value: unknown): value is MediaDefaultsPatc
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     (value1['video'] === undefined || isOutputDefaultsPatch(value1['video'])) &&
-    (value1['audio'] === undefined || isOutputDefaultsPatch(value1['audio'])))(value);
+    (value1['audio'] === undefined || isOutputDefaultsPatch(value1['audio'])) &&
+    (value1['ask_each_time'] === undefined || typeof value1['ask_each_time'] === 'boolean') &&
+    (value1['quality'] === undefined || isVideoQuality(value1['quality'])) &&
+    (value1['fallback'] === undefined || isQualityFallback(value1['fallback'])))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaHint}; fields it does not name are not checked. */
@@ -742,7 +752,8 @@ export function isMediaSelection(value: unknown): value is MediaSelection {
     (typeof value1['audio_kbps'] === 'number' || value1['audio_kbps'] === null) &&
     isArrayOf(value1['subtitles'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['subtitle_files'] === 'boolean' &&
-    typeof value1['chapters'] === 'boolean')(value);
+    typeof value1['chapters'] === 'boolean' &&
+    (typeof value1['every_video'] === 'boolean' || value1['every_video'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaSubtitle}; fields it does not name are not checked. */
@@ -761,7 +772,8 @@ export function isMediaSummary(value: unknown): value is MediaSummary {
     isRecord(value1) &&
     typeof value1['quality'] === 'string' &&
     isMediaKind(value1['source']) &&
-    (typeof value1['video_key'] === 'string' || value1['video_key'] === null))(value);
+    (typeof value1['video_key'] === 'string' || value1['video_key'] === null) &&
+    (typeof value1['instead_of'] === 'string' || value1['instead_of'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link Message}; fields it does not name are not checked. */
@@ -939,6 +951,11 @@ export function isProtocolError(value: unknown): value is ProtocolError {
     isRecord(value1) && isErrorCode(value1['code']) && typeof value1['message'] === 'string')(
     value,
   );
+}
+
+/** Whether `value` has the shape of a {@link QualityFallback}; fields it does not name are not checked. */
+export function isQualityFallback(value: unknown): value is QualityFallback {
+  return value === 'lower' || value === 'higher' || value === 'ask';
 }
 
 /** Whether `value` has the shape of a {@link Question}; fields it does not name are not checked. */
@@ -1242,6 +1259,15 @@ export function isUserError(value: unknown): value is UserError {
     isRecord(value1) &&
     typeof value1['message'] === 'string' &&
     (isFixAction(value1['fix']) || value1['fix'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link VideoQuality}; fields it does not name are not checked. */
+export function isVideoQuality(value: unknown): value is VideoQuality {
+  return (
+    value === 'best' ||
+    value === 'audio_only' ||
+    ((value1: unknown): boolean => isRecord(value1) && typeof value1['height'] === 'number')(value)
+  );
 }
 
 /** Whether `value` has the shape of a {@link WaitReason}; fields it does not name are not checked. */

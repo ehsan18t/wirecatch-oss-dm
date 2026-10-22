@@ -8,7 +8,7 @@ const EXTENSION = '.ts';
 /** Files of values, not of one type each, exported whole. */
 const VALUES = [CONSTANTS, VALIDATORS];
 /** Files written by hand next to the generated folder, in src, exported whole: what TypeScript needs beyond the types and constants, such as the constructors of branded ids. */
-export const HAND_WRITTEN = ['extension-settings', 'ids', 'secrets'];
+export const HAND_WRITTEN = ['extension-settings', 'ids', 'media-start', 'secrets'];
 
 /** The index for the generated files in `folder`; throws when the constants file is missing. */
 export function indexSource(folder) {

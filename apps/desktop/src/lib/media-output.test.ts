@@ -13,11 +13,11 @@ import {
   kbpsFor,
   nearestKbps,
   outputSelection,
-  preselectSubtitles,
+  proposedChoice,
   qualityNotes,
   rowTag,
   sizeFor,
-  startingChoice,
+  switchedChoice,
   extensionName,
   subtitleLabels,
 } from './media-output';
@@ -107,6 +107,20 @@ const choice: MediaChoice = {
   ],
   chapters: true,
   duration_ms: 60_000,
+  start: {
+    option_id: '313+251',
+    folder: null,
+    file_name: null,
+    queue: null,
+    later: false,
+    output: 'original',
+    audio_kbps: null,
+    subtitles: [],
+    subtitle_files: false,
+    chapters: true,
+    every_video: null,
+  },
+  missing_quality: null,
 };
 
 describe('the Save as part of a quality window (D24)', () => {
@@ -116,23 +130,24 @@ describe('the Save as part of a quality window (D24)', () => {
     expect(formatChoiceLabel(out(uhd, 'mp4'))).toBe('MP4');
   });
 
-  it('ticks the remembered languages, auto-generated ones only when wanted', () => {
-    const offered = choice.subtitles;
-    // `en` matches the English (United Kingdom) subtitles; German has only auto-generated ones.
-    expect(preselectSubtitles(offered, ['en', 'de'], false)).toEqual(['sub:en-GB']);
-    expect(preselectSubtitles(offered, ['en', 'de'], true)).toEqual(['sub:en-GB', 'auto:de-orig']);
-    expect(preselectSubtitles(offered, ['xx'], true)).toEqual([]);
-  });
-
-  it('starts from the last choices for the kind, as far as they are offered', () => {
-    const video = startingChoice(uhd, choice, {
-      format: 'mp4',
-      audio_kbps: 320,
-      subtitle_languages: ['fr'],
-      auto_subtitles: false,
-      subtitle_files: true,
+  it('starts where the core proposes', () => {
+    expect(proposedChoice({ ...choice.start, output: 'mkv', subtitles: ['sub:fr'] })).toEqual({
+      format: 'mkv',
+      kbps: null,
+      subtitles: ['sub:fr'],
+      subtitleFiles: false,
       chapters: true,
     });
+  });
+
+  it('switching kind starts from the last choices for that kind, keeping the subtitles ticked', () => {
+    const now = { ...proposedChoice(choice.start), subtitles: ['sub:fr'] };
+    const video = switchedChoice(
+      uhd,
+      choice,
+      { ...defaults(), format: 'mp4', audio_kbps: 320, subtitle_files: true, chapters: true },
+      now,
+    );
     expect(video).toEqual({
       format: 'mp4',
       kbps: null,
@@ -141,17 +156,19 @@ describe('the Save as part of a quality window (D24)', () => {
       chapters: true,
     });
     // An audio format remembered for videos is not offered there: Original.
-    expect(startingChoice(uhd, choice, { ...defaults(), format: 'mp3' }).format).toBe('original');
-    // Nothing chosen before: Original, nothing ticked.
-    expect(startingChoice(audio, choice, null)).toEqual({
+    expect(switchedChoice(uhd, choice, { ...defaults(), format: 'mp3' }, now).format).toBe(
+      'original',
+    );
+    // Nothing chosen before: Original.
+    expect(switchedChoice(audio, choice, null, now)).toEqual({
       format: 'original',
       kbps: null,
-      subtitles: [],
+      subtitles: ['sub:fr'],
       subtitleFiles: false,
       chapters: false,
     });
     expect(
-      startingChoice(audio, choice, { ...defaults(), format: 'mp3', audio_kbps: 300 }).kbps,
+      switchedChoice(audio, choice, { ...defaults(), format: 'mp3', audio_kbps: 300 }, now).kbps,
     ).toBe(320);
   });
 

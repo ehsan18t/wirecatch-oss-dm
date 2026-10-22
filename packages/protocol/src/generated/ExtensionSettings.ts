@@ -12,7 +12,8 @@ export type ExtensionSettings = {
   capture_enabled: boolean;
   /**
    * Show a window for every captured file before it starts (D23; on by default). Videos
-   * always ask for a quality, whatever this says.
+   * follow [`MediaDefaults::ask_each_time`](crate::app::MediaDefaults::ask_each_time)
+   * instead (D50).
    */
   ask_before_download: boolean;
   /**

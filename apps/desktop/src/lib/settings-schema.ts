@@ -25,7 +25,7 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
   {
     id: 'media',
     title: 'Media',
-    blurb: 'What the quality window starts with for videos and for audio.',
+    blurb: 'Whether videos ask for a quality, and what they start with.',
   },
   {
     id: 'addons',
@@ -127,7 +127,7 @@ const DEFS = [
     id: 'ask_before_download',
     section: 'browser',
     label: 'Show a window before each download',
-    help: 'A window lets you rename the file, pick its folder and queue, or keep it for later. Videos always ask for a quality.',
+    help: 'A window lets you rename the file, pick its folder and queue, or keep it for later. Videos follow Settings, Media.',
     keywords: 'confirm prompt dialog question ask window start without asking',
   },
   {
@@ -173,6 +173,30 @@ const DEFS = [
     keywords: 'queue default capture',
   },
   {
+    id: 'media_ask',
+    section: 'media',
+    label: 'When a video is caught',
+    help: 'Ask for a quality each time, or download at once with the choices below. Installing the media add-on always asks.',
+    keywords: 'ask quality window prompt automatic remember preference without asking every time',
+    group: 'Videos',
+  },
+  {
+    id: 'media_quality',
+    section: 'media',
+    label: 'Resolution',
+    help: 'What the quality window starts on, and what downloads without asking. Picking another in the window changes it. Audio only uses the Audio only choices below.',
+    keywords: 'resolution quality 4k 2160p 1440p 1080p 720p 480p height best audio only preferred',
+    group: 'Videos',
+  },
+  {
+    id: 'media_fallback',
+    section: 'media',
+    label: 'If a video doesn’t offer that resolution',
+    help: 'Next lower takes the lowest when none is lower, and Next higher the best when none is higher. Ask me opens the quality window.',
+    keywords: 'fallback missing unavailable lower higher closest ask resolution',
+    group: 'Videos',
+  },
+  {
     id: 'media',
     section: 'media',
     label: 'Save videos as',
@@ -184,7 +208,7 @@ const DEFS = [
     id: 'media_subtitles',
     section: 'media',
     label: 'Subtitle languages for videos',
-    help: 'Picked first when a video has them. Type a language code, like en or fr.',
+    help: 'For each language, its creator’s subtitles, or its auto-generated ones if allowed below. A language a video lacks is skipped.',
     keywords: 'subtitles captions cc languages srt',
     group: 'Videos',
   },

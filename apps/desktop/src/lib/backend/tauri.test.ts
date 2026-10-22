@@ -53,6 +53,7 @@ describe('TauriBackend', () => {
       subtitles: ['sub:en'],
       subtitle_files: false,
       chapters: true,
+      every_video: null,
     });
     await b.keepOriginal(downloadId(7));
     await b.installAddon('media');
@@ -100,6 +101,7 @@ describe('TauriBackend', () => {
               subtitles: ['sub:en'],
               subtitle_files: false,
               chapters: true,
+              every_video: null,
             },
           },
         },

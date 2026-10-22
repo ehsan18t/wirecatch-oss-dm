@@ -1282,6 +1282,7 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
                 subtitles: Vec::new(),
                 subtitle_files: false,
                 chapters: false,
+                every_video: None,
             },
         )
         .await

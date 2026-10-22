@@ -37,7 +37,7 @@
     formatSize,
     hostOf,
     linkForDisplay,
-    MEDIA_SOURCE_LABEL,
+    mediaLine,
     statusDetail,
     STATUS_LABEL,
   } from '$lib/format';
@@ -191,7 +191,7 @@
         {/if}
         {#if r.media}
           <p class="text-small text-ink-muted">
-            {r.media.quality}, {MEDIA_SOURCE_LABEL[r.media.source]}.
+            {mediaLine(r.media)}
           </p>
         {/if}
       </section>

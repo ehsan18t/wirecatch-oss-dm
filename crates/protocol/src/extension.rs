@@ -252,7 +252,8 @@ pub struct ExtensionSettings {
     /// Master switch: take over browser downloads at all.
     pub capture_enabled: bool,
     /// Show a window for every captured file before it starts (D23; on by default). Videos
-    /// always ask for a quality, whatever this says.
+    /// follow [`MediaDefaults::ask_each_time`](crate::app::MediaDefaults::ask_each_time)
+    /// instead (D50).
     pub ask_before_download: bool,
     /// Show a download button over video and audio on web pages.
     pub show_media_button: bool,

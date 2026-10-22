@@ -7,6 +7,7 @@ import {
   type DownloadStatus,
   type FixAction,
   type MediaKind,
+  type MediaSummary,
   type ProcessingStep,
   type Schedule,
   type SuffixListInfo,
@@ -151,9 +152,15 @@ export const STATUS_LABEL: Record<DownloadStatus, string> = {
 export const MEDIA_SOURCE_LABEL: Record<MediaKind, string> = {
   hls: 'from a video stream',
   dash: 'from a video stream',
-  direct: 'a media file',
+  direct: 'from a media file',
   page: 'from a video page',
 };
+
+/** What a media download is, in a sentence: its quality and where it came from, and the saved resolution it stands in for when it was picked without asking (D50). */
+export function mediaLine(media: MediaSummary): string {
+  const line = `${media.quality}, ${MEDIA_SOURCE_LABEL[media.source]}.`;
+  return media.instead_of ? `${line} ${media.instead_of} wasn’t offered.` : line;
+}
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   video: 'Video',

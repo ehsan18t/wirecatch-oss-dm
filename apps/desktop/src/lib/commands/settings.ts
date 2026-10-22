@@ -38,6 +38,8 @@ interface Switches {
   ask: boolean;
   progress: boolean;
   capture: boolean;
+  /** Videos ask for a quality (D50). */
+  videos: boolean;
 }
 
 /** Each switch, titled by what flipping it does. */
@@ -57,6 +59,13 @@ const TOGGLES: readonly CommandSpec<Switches>[] = [
         : 'Keep download windows open to show progress',
     keywords: 'progress window close keep',
     run: ({ app, progress }) => app.setShowProgressWindows(!progress),
+  },
+  {
+    id: 'toggle.videos',
+    title: ({ videos }) =>
+      videos ? 'Download videos with my saved choices' : 'Ask for a quality for each video',
+    keywords: 'video quality resolution ask window automatic remember',
+    run: ({ app, videos }) => app.updateSettings((d) => void (d.media.ask_each_time = !videos)),
   },
   {
     id: 'toggle.capture',
@@ -152,6 +161,7 @@ export function settingsCommands(app: AppState): Command[] {
     ask: app.settings?.extension.ask_before_download ?? true,
     progress: app.settings?.show_progress_windows ?? true,
     capture: app.settings?.extension.capture_enabled ?? true,
+    videos: app.settings?.media.ask_each_time ?? true,
   };
   return [
     ...commandsFrom(GROUP, [OPEN], app),

@@ -28,6 +28,24 @@ describe('settingsPatch', () => {
     });
   });
 
+  it('holds the media settings of their own beside the two parts, and applies them back', async () => {
+    const before = await settings();
+    const after = structuredClone(before);
+    after.media.ask_each_time = false;
+    after.media.quality = { height: 1080 };
+    after.media.video.chapters = !before.media.video.chapters;
+    const patch = settingsPatch(before, after);
+    expect(patch).toEqual({
+      media: {
+        ask_each_time: false,
+        quality: { height: 1080 },
+        video: { chapters: after.media.video.chapters },
+      },
+    });
+    expect(applyPatch(before, patch ?? {})).toEqual(after);
+    expect(withoutPatch(after, patch ?? {}, before)).toEqual(before);
+  });
+
   it('replaces a list whole', async () => {
     const before = await settings();
     const after = structuredClone(before);

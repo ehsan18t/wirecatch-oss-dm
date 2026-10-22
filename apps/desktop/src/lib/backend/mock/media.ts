@@ -1,14 +1,16 @@
-// Media pages: the qualities the browser finds, the choice the person makes, and the add-on that choice may need.
+// Media pages: the qualities the browser finds, the choice the person makes (or the saved choices make without asking, D50), and the add-on that choice may need.
 
-import type {
-  AddonRequestItem,
-  DownloadId,
-  MediaChoice,
-  MediaOption,
-  MediaSelection,
-  OutputFit,
-  ProcessingStep,
-  QuestionId,
+import {
+  mediaStart,
+  type AddonRequestItem,
+  type DownloadId,
+  type DownloadSummary,
+  type MediaChoice,
+  type MediaOption,
+  type MediaSelection,
+  type OutputFit,
+  type ProcessingStep,
+  type QuestionId,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { BackendError } from '../types';
@@ -39,7 +41,8 @@ const BITRATE_FORMATS: readonly string[] = ['mp3', 'm4a', 'opus'];
 
 /**
  * Sample data only: the browser found the `index`th sample media with several qualities. A page
- * that was being read (or waited for the add-on) passes its own address and id.
+ * that was being read (or waited for the add-on) passes its own address and id. Like the core,
+ * with "Use my choices" it downloads at once unless it must ask (D50).
  */
 export function simulateMediaChoice(
   state: MockState,
@@ -50,21 +53,34 @@ export function simulateMediaChoice(
   const sample = MEDIA_SAMPLES[index % MEDIA_SAMPLES.length] ?? MEDIA_SAMPLES[0];
   if (!sample) return;
   const isPage = sample.source === 'page';
+  const options = sampleMediaOptions(isPage);
+  const subtitles = isPage ? SAMPLE_SUBTITLES.map((s) => ({ ...s })) : [];
+  const start = mediaStart(state.settings.media, options, subtitles, isPage);
   const choice: MediaChoice = {
     id: id ?? state.newQuestionId(),
     title: sample.title,
     page_url: page ?? sample.page,
-    options: sampleMediaOptions(isPage),
+    options,
     folder: folderFor('video', state.settings),
     queue: state.settings.extension.default_queue,
-    subtitles: isPage ? SAMPLE_SUBTITLES.map((s) => ({ ...s })) : [],
+    subtitles,
     chapters: isPage,
     duration_ms: SAMPLE_DURATION_MS,
+    start: start.selection,
+    missing_quality: start.missing,
   };
-  // Like the core: the reading is announced, then the choice comes under the same id.
-  state.emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
   state.reading = state.reading.filter((r) => r.id !== choice.id);
   state.mediaChoices.push(choice);
+  const option = options.find((o) => o.id === start.selection.option_id);
+  const ready =
+    option !== undefined && (!needsAddon(choice, option, start.selection) || state.mediaReady());
+  if (!start.asks && ready) {
+    const row = download(state, picked(choice, start.selection), start.missing, false);
+    state.emit({ type: 'captured', data: structuredClone(row) });
+    return;
+  }
+  // Like the core: the reading is announced, then the choice comes under the same id.
+  state.emit({ type: 'media_analysing', data: { id: choice.id, url: choice.page_url ?? '' } });
   state.emit({ type: 'media_choice_requested', data: structuredClone(choice) });
 }
 
@@ -136,7 +152,7 @@ function processingStep(
   return selection.output !== 'original' || extras ? 'finishing' : null;
 }
 
-/** What the person picked from a media choice, checked against what it offers. */
+/** What was picked from a media choice, checked against what it offers. */
 interface Picked {
   choice: MediaChoice;
   option: MediaOption;
@@ -144,33 +160,57 @@ interface Picked {
   selection: MediaSelection;
 }
 
+function picked(choice: MediaChoice, selection: MediaSelection): Picked {
+  const option = offeredOption(choice, selection);
+  return { choice, option, fit: offeredFit(option, selection), selection };
+}
+
+/** Whether subtitles or chapters are added to the file. */
+function hasExtras(choice: MediaChoice, selection: MediaSelection): boolean {
+  return selection.subtitles.length > 0 || (selection.chapters && choice.chapters);
+}
+
+/** Like the core: joining, converting or adding subtitles or chapters needs the media add-on. */
+function needsAddon(choice: MediaChoice, option: MediaOption, selection: MediaSelection): boolean {
+  return option.needs_ffmpeg || selection.output !== 'original' || hasExtras(choice, selection);
+}
+
 export function chooseMedia(
   state: MockState,
   id: QuestionId,
   selection: MediaSelection,
 ): DownloadId {
-  const choice = openChoice(state, id);
-  const option = offeredOption(choice, selection);
-  const picked: Picked = { choice, option, fit: offeredFit(option, selection), selection };
-  const extras = selection.subtitles.length > 0 || (selection.chapters && choice.chapters);
-  if (option.needs_ffmpeg || selection.output !== 'original' || extras) {
-    requireAddon(state, choice);
-  }
-  state.mediaChoices = state.mediaChoices.filter((c) => c.id !== id);
-  state.emit({ type: 'confirmation_closed', data: { id } });
-  if (option.outputs.length > 1) rememberMediaChoice(state, picked);
-  const row = addMediaDownload(state, picked);
+  return download(state, picked(openChoice(state, id), selection), null, true).id;
+}
+
+/** Downloads what was picked; `insteadOf` is the saved resolution a choice made without asking stands in for. Only the person's choices are remembered. */
+function download(
+  state: MockState,
+  pick: Picked,
+  insteadOf: string | null,
+  byPerson: boolean,
+): DownloadSummary {
+  const { choice, option, selection } = pick;
+  if (needsAddon(choice, option, selection)) requireAddon(state, choice);
+  state.mediaChoices = state.mediaChoices.filter((c) => c.id !== choice.id);
+  state.emit({ type: 'confirmation_closed', data: { id: choice.id } });
+  if (byPerson) rememberMediaChoice(state, pick);
+  const row = addMediaDownload(state, pick, insteadOf);
   const sim = state.sim.get(row.id);
   if (sim) {
     sim.needsJoin = option.needs_ffmpeg;
-    sim.step = processingStep(picked.fit, selection, extras);
+    sim.step = processingStep(pick.fit, selection, hasExtras(choice, selection));
     sim.rate = (row.total ?? MEDIA_FALLBACK_SIZE) / MEDIA_DOWNLOAD_SECONDS;
   }
   state.changed([row]);
-  return row.id;
+  return row;
 }
 
-function addMediaDownload(state: MockState, { choice, option, fit, selection }: Picked) {
+function addMediaDownload(
+  state: MockState,
+  { choice, option, fit, selection }: Picked,
+  insteadOf: string | null,
+) {
   const row = state.create(choice.page_url ?? choice.title, {
     queue: selection.queue ?? choice.queue,
     folder: selection.folder ?? choice.folder,
@@ -182,12 +222,29 @@ function addMediaDownload(state: MockState, { choice, option, fit, selection }: 
     quality: option.label.split(',')[0] ?? option.label,
     source: MEDIA_SAMPLES.find((s) => s.title === choice.title)?.source ?? 'page',
     video_key: null,
+    instead_of: insteadOf,
   };
   return row;
 }
 
-/** Like the core: the next window for this kind starts from these choices (D24). */
+/** Like the core: the next window starts from these choices (D24), with this resolution unless the video lacked the saved one, and the next video asks or not as the window said (D50). */
 function rememberMediaChoice(state: MockState, { choice, option, selection }: Picked) {
+  const media = state.settings.media;
+  if (selection.every_video !== null) media.ask_each_time = !selection.every_video;
+  if (choice.missing_quality === null && selection.option_id !== choice.start.option_id) {
+    if (option.audio_only) media.quality = 'audio_only';
+    else if (option.height !== null) media.quality = { height: option.height };
+  }
+  if (option.outputs.length > 1) rememberOutput(state, choice, option, selection);
+  state.settingsChanged();
+}
+
+function rememberOutput(
+  state: MockState,
+  choice: MediaChoice,
+  option: MediaOption,
+  selection: MediaSelection,
+) {
   const kind = option.audio_only ? 'audio' : 'video';
   const remembered = state.settings.media[kind];
   remembered.format = selection.output;
@@ -198,11 +255,9 @@ function rememberMediaChoice(state: MockState, { choice, option, selection }: Pi
     const picked = choice.subtitles.filter((s) => selection.subtitles.includes(s.id));
     remembered.subtitle_languages = [...new Set(picked.map((s) => s.language.toLowerCase()))];
     if (picked.some((s) => s.auto)) remembered.auto_subtitles = true;
-    else if (choice.subtitles.some((s) => s.auto)) remembered.auto_subtitles = false;
     if (kind === 'video') remembered.subtitle_files = selection.subtitle_files;
   }
   if (choice.chapters) remembered.chapters = selection.chapters;
-  state.settingsChanged();
 }
 
 export function dismissMediaChoice(state: MockState, id: QuestionId): void {

@@ -246,11 +246,11 @@ pub(crate) fn iso639_2(language: &str) -> String {
     three.to_string()
 }
 
-/// Subtitle languages remembered for next time from the subtitles picked, and whether auto-generated ones were wanted. `None` when the video had no subtitles to pick from, so the last choice stays.
+/// Subtitle languages remembered for next time from the subtitles picked, and whether an auto-generated one was ticked, which makes them wanted. Leaving them unticked never makes them unwanted (D50): a person who ticks the subtitles written by people still wants a language's auto-generated ones when it has none. `None` when the video had no subtitles to pick from, so the last choice stays.
 pub(crate) fn remembered_subtitles(
     offered: &[MediaSubtitle],
     picked: &[String],
-) -> Option<(Vec<String>, Option<bool>)> {
+) -> Option<(Vec<String>, bool)> {
     if offered.is_empty() {
         return None;
     }
@@ -263,16 +263,7 @@ pub(crate) fn remembered_subtitles(
         }
         any_auto |= subtitle.auto;
     }
-    // Auto-generated subtitles are remembered as wanted once one is ticked, and as unwanted once some were offered and none was ticked.
-    let auto_offered = offered.iter().any(|s| s.auto);
-    let auto = if any_auto {
-        Some(true)
-    } else if auto_offered {
-        Some(false)
-    } else {
-        None
-    };
-    Some((languages, auto))
+    Some((languages, any_auto))
 }
 
 #[cfg(test)]
@@ -348,18 +339,13 @@ mod tests {
         let (languages, auto) =
             remembered_subtitles(&offered, &["sub:en-US".into(), "auto:de-orig".into()]).unwrap();
         assert_eq!(languages, ["en-us", "de"]);
-        assert_eq!(auto, Some(true));
+        assert!(auto);
         // Nothing offered: the last choice stays.
         assert_eq!(remembered_subtitles(&[], &[]), None);
-        // Auto-generated ones offered and none ticked: not wanted any more.
+        // Auto-generated ones offered and none ticked: whether they are wanted stays as it was.
         assert_eq!(
             remembered_subtitles(&offered, &["sub:fr".into()]),
-            Some((vec!["fr".to_string()], Some(false)))
-        );
-        // Only human-written ones offered: whether auto-generated ones are wanted stays as it was.
-        assert_eq!(
-            remembered_subtitles(&offered[..2], &[]),
-            Some((Vec::new(), None))
+            Some((vec!["fr".to_string()], false))
         );
     }
 

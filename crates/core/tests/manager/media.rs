@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
-    AddonId, AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection,
-    OutputFormat, UiEvent, WaitReason,
+    AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FixAction, MediaChoice,
+    MediaSelection, OutputFormat, QualityFallback, UiEvent, VideoQuality, WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
@@ -31,6 +31,7 @@ fn select(option: &str) -> MediaSelection {
         subtitles: Vec::new(),
         subtitle_files: false,
         chapters: false,
+        every_video: None,
     }
 }
 
@@ -157,6 +158,142 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
     // The browser's cookies went to the playlist's own server.
     let seen = server.seen_at("hls/master.m3u8");
     assert!(seen.iter().any(|s| s.headers.get("cookie").is_some()));
+    Ok(())
+}
+
+/// Saves "Use my choices" (D50) with `quality` and `fallback`.
+fn without_asking(h: &Harness, quality: VideoQuality, fallback: QualityFallback) -> TestResult {
+    let mut settings = h.manager.get_settings();
+    settings.media.ask_each_time = false;
+    settings.media.quality = quality;
+    settings.media.fallback = fallback;
+    h.manager.update_settings(settings)?;
+    Ok(())
+}
+
+/// The download a video caught without asking becomes; no window was asked for on the way.
+async fn caught_without_asking(
+    ui: &mut tokio::sync::broadcast::Receiver<UiEvent>,
+) -> DownloadSummary {
+    next_event(ui, "the capture of a video", |e| match e {
+        UiEvent::Captured(row) => Some(row.clone()),
+        UiEvent::MediaAnalysing { .. } | UiEvent::MediaChoiceRequested(_) => {
+            panic!("a window was asked for: {e:?}")
+        }
+        _ => None,
+    })
+    .await
+}
+
+/// D50: with "Use my choices", a video is read and downloads at the saved
+/// resolution without a window, and nothing it did changes the saved choices.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_video_downloads_with_the_saved_choices_without_asking() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    without_asking(&h, VideoQuality::Height(360), QualityFallback::Ask)?;
+    let before = h.manager.get_settings();
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, Some("Clip"));
+    let reply = h.manager.add_capture(capture).await.unwrap();
+    assert_eq!(reply.action, AddAction::AwaitingConfirmation);
+    assert_eq!(h.manager.media_being_read(), []);
+
+    let row = caught_without_asking(&mut ui).await;
+    let media = row.media.clone().unwrap();
+    assert_eq!((media.quality.as_str(), media.instead_of), ("360p", None));
+    assert_eq!(h.manager.pending_media_choices(), [] as [MediaChoice; 0]);
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(h.manager.get_settings(), before);
+    Ok(())
+}
+
+/// D50: a video without the saved resolution takes the next lower one (the lowest
+/// when none is lower) or the next higher one (the best when none is higher), and
+/// its row says which resolution it stands in for.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_missing_resolution_falls_back_as_saved() -> TestResult {
+    for (saved, fallback, taken) in [
+        (1080, QualityFallback::Lower, "720p"),
+        (480, QualityFallback::Lower, "360p"),
+        (240, QualityFallback::Lower, "360p"),
+        (480, QualityFallback::Higher, "720p"),
+        (1080, QualityFallback::Higher, "720p"),
+    ] {
+        let server = FileServer::start().await;
+        hls(&server, false, false);
+        let h = Harness::new().await?;
+        without_asking(&h, VideoQuality::Height(saved), fallback)?;
+        let mut ui = h.manager.subscribe();
+        let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+        h.manager.add_capture(capture).await.unwrap();
+        let media = caught_without_asking(&mut ui).await.media.unwrap();
+        assert_eq!(
+            (media.quality.as_str(), media.instead_of),
+            (taken, Some(format!("{saved}p"))),
+            "{saved}p, {fallback:?}"
+        );
+    }
+    Ok(())
+}
+
+/// D50: with "Ask me", a video without the saved resolution opens the window on
+/// the closest lower one and says what is missing; what is picked there leaves
+/// the saved resolution as it was.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ask_opens_the_window_when_the_resolution_is_missing() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    without_asking(&h, VideoQuality::Height(1080), QualityFallback::Ask)?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    h.manager.add_capture(capture).await.unwrap();
+    let choice = next_event(&mut ui, "the quality window", |e| match e {
+        UiEvent::MediaAnalysing { .. } => panic!("the reading asked for a window"),
+        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(choice.missing_quality.as_deref(), Some("1080p"));
+    assert_eq!(choice.start.option_id, choice.options[0].id);
+    assert_eq!(choice.options[0].height, Some(720));
+
+    let mut pick = select(&choice.options[1].id);
+    pick.every_video = Some(true);
+    let id = h.manager.choose_media(choice.id, pick).await.unwrap();
+    assert_eq!(h.manager.get_download(id)?.media.unwrap().instead_of, None);
+    let media = h.manager.get_settings().media;
+    assert_eq!(
+        (media.quality, media.ask_each_time),
+        (VideoQuality::Height(1080), false)
+    );
+    Ok(())
+}
+
+/// D50: the window starts on the saved resolution and keeps the one picked there,
+/// and "Use these choices for every video" decides whether the next video asks.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_window_remembers_the_resolution_and_whether_to_ask() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    h.manager.add_capture(capture).await.unwrap();
+    let choice = choice_requested(&mut ui).await;
+    assert_eq!(choice.start.option_id, choice.options[0].id);
+    assert_eq!(choice.missing_quality, None);
+
+    let mut pick = select(&choice.options[1].id);
+    pick.every_video = Some(true);
+    h.manager.choose_media(choice.id, pick).await.unwrap();
+    let media = h.manager.get_settings().media;
+    assert_eq!(
+        (media.quality, media.ask_each_time),
+        (VideoQuality::Height(360), false)
+    );
     Ok(())
 }
 

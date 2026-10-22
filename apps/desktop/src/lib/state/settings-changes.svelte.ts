@@ -32,9 +32,10 @@ function changedFields<T extends object>(before: T, after: T): Partial<T> {
 }
 
 function mediaPatch(before: MediaDefaults, after: MediaDefaults): MediaDefaultsPatch {
-  const patch: MediaDefaultsPatch = {};
-  if (!same(before.video, after.video)) patch.video = changedFields(before.video, after.video);
-  if (!same(before.audio, after.audio)) patch.audio = changedFields(before.audio, after.audio);
+  const { video, audio, ...rest } = changedFields(before, after);
+  const patch: MediaDefaultsPatch = rest;
+  if (video !== undefined) patch.video = changedFields(before.video, after.video);
+  if (audio !== undefined) patch.audio = changedFields(before.audio, after.audio);
   return patch;
 }
 
@@ -75,11 +76,11 @@ export function withoutPatch(
   const { extension, media, ...rest } = patch;
   restoreFields(restored, rest, before);
   if (extension !== undefined) restoreFields(restored.extension, extension, before.extension);
-  if (media?.video !== undefined) {
-    restoreFields(restored.media.video, media.video, before.media.video);
-  }
-  if (media?.audio !== undefined) {
-    restoreFields(restored.media.audio, media.audio, before.media.audio);
+  if (media !== undefined) {
+    const { video, audio, ...own } = media;
+    restoreFields(restored.media, own, before.media);
+    if (video !== undefined) restoreFields(restored.media.video, video, before.media.video);
+    if (audio !== undefined) restoreFields(restored.media.audio, audio, before.media.audio);
   }
   return restored;
 }
@@ -141,7 +142,11 @@ export function applyPatch(settings: AppSettings, patch: AppSettingsPatch): AppS
   assignFields(next, rest);
   if (extension !== undefined)
     next.extension = applyExtensionSettingsPatch(next.extension, extension);
-  if (media?.video !== undefined) assignFields(next.media.video, media.video);
-  if (media?.audio !== undefined) assignFields(next.media.audio, media.audio);
+  if (media !== undefined) {
+    const { video, audio, ...own } = media;
+    assignFields(next.media, own);
+    if (video !== undefined) assignFields(next.media.video, video);
+    if (audio !== undefined) assignFields(next.media.audio, audio);
+  }
   return next;
 }

@@ -18,4 +18,9 @@ export type MediaSummary = {
    * another link to the same video is recognised. `None` for streams and media files.
    */
   video_key: string | null;
+  /**
+   * The saved resolution the video did not offer, when it was downloaded at another one
+   * without asking, for example "1080p" (D50).
+   */
+  instead_of: string | null;
 };

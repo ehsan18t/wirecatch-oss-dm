@@ -7,6 +7,7 @@ use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults, PortablePath, Queue, Theme,
+    VideoQuality,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, NotASite,
@@ -269,6 +270,11 @@ pub(crate) fn validate(
     )?;
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
+    if settings.media.quality == VideoQuality::Height(0) {
+        return Err(CoreError::Invalid(
+            "The resolution must be a height in pixels, such as 1080.".into(),
+        ));
+    }
     settings.local_sites = clean_local_sites(&settings.local_sites, suffixes)?;
     Ok(settings)
 }

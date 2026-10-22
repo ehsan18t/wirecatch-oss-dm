@@ -208,6 +208,10 @@ pub struct MediaSummary {
     /// another link to the same video is recognised. `None` for streams and media files.
     #[serde(default)]
     pub video_key: Option<String>,
+    /// The saved resolution the video did not offer, when it was downloaded at another one
+    /// without asking, for example "1080p" (D50).
+    #[serde(default)]
+    pub instead_of: Option<String>,
 }
 
 /// The app found several qualities and asks the user to pick one.
@@ -237,6 +241,14 @@ pub struct MediaChoice {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub duration_ms: Option<u64>,
+    /// Where the window starts (D50): the quality the saved resolution picks, or its fallback
+    /// when the video does not offer it, saved as the saved choices say, as far as this video
+    /// offers them ([`MediaDefaults::start`]).
+    pub start: MediaSelection,
+    /// The saved resolution, when this video does not offer it, for example "1080p". A pick
+    /// from such a video leaves the saved resolution as it is.
+    #[serde(default)]
+    pub missing_quality: Option<String>,
 }
 
 /// One quality the media is offered in.
@@ -460,11 +472,17 @@ pub struct MediaSelection {
     /// Add the video's chapters to the file, when the format can hold them.
     #[serde(default)]
     pub chapters: bool,
+    /// "Use these choices for every video" (D50): true, from now on a video downloads with the
+    /// choices made here without asking; false asks for each video again; `None` leaves that
+    /// as it is.
+    #[serde(default)]
+    pub every_video: Option<bool>,
 }
 
-/// What the quality window starts from (D24): the last choices, kept separately for videos
-/// and for audio only. Also in Settings, Media, and in the settings profile.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// What the quality window starts from (D24) and whether it opens at all (D50): the last
+/// choices, kept separately for videos and for audio only, the resolution, and what to do when
+/// a video does not offer it. Also in Settings, Media, and in the settings profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaDefaults {
     /// Where the quality window starts for a video.
@@ -473,10 +491,63 @@ pub struct MediaDefaults {
     /// Where the quality window starts for audio only.
     #[serde(default)]
     pub audio: OutputDefaults,
+    /// Open the quality window for every video. Off, a video downloads with these choices
+    /// without asking, unless it does not offer [`quality`](Self::quality) and the fallback
+    /// is to ask, or the media add-on must be installed first (D50).
+    #[serde(default = "default_true")]
+    pub ask_each_time: bool,
+    /// The resolution picked first; every pick from the quality window becomes it.
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "VideoQuality")]
+    pub quality: VideoQuality,
+    /// What is picked when a video does not offer [`quality`](Self::quality).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "QualityFallback")]
+    pub fallback: QualityFallback,
+}
+
+impl Default for MediaDefaults {
+    fn default() -> Self {
+        Self {
+            video: OutputDefaults::default(),
+            audio: OutputDefaults::default(),
+            ask_each_time: true,
+            quality: VideoQuality::default(),
+            fallback: QualityFallback::default(),
+        }
+    }
+}
+
+/// The resolution a video is downloaded at (D50).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum VideoQuality {
+    /// The best the video has.
+    #[default]
+    Best,
+    /// Sound only, saved as the choices for audio only say.
+    AudioOnly,
+    /// This height in pixels, as a quality's label says it ("1080p").
+    Height(u32),
+}
+
+/// What is picked when a video does not offer the saved resolution (D50).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum QualityFallback {
+    /// The closest lower resolution, or the lowest the video has when none is lower.
+    #[default]
+    Lower,
+    /// The closest higher resolution, or the best the video has when none is higher.
+    Higher,
+    /// The quality window opens, on the closest lower resolution.
+    Ask,
 }
 
 /// The starting choices for one kind of media download.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct OutputDefaults {
     /// The format picked first.
@@ -488,8 +559,8 @@ pub struct OutputDefaults {
     /// Subtitle languages to tick, for example `["en", "fr"]`.
     #[serde(default)]
     pub subtitle_languages: Vec<String>,
-    /// Tick a language's auto-generated subtitles when it has no human-written ones.
-    #[serde(default)]
+    /// Take a language's auto-generated subtitles when it has none written by people.
+    #[serde(default = "default_true")]
     pub auto_subtitles: bool,
     /// Save subtitles as `.srt` files next to a video instead of inside it.
     #[serde(default)]
@@ -497,6 +568,19 @@ pub struct OutputDefaults {
     /// Add chapters to the file.
     #[serde(default)]
     pub chapters: bool,
+}
+
+impl Default for OutputDefaults {
+    fn default() -> Self {
+        Self {
+            format: OutputFormat::default(),
+            audio_kbps: None,
+            subtitle_languages: Vec::new(),
+            auto_subtitles: true,
+            subtitle_files: false,
+            chapters: false,
+        }
+    }
 }
 
 /// Identifies an optional component (D2). Since D20 there is one: the media add-on, which
@@ -839,6 +923,12 @@ pub struct MediaDefaultsPatch {
     pub video: Option<OutputDefaultsPatch>,
     /// Changes to [`MediaDefaults::audio`].
     pub audio: Option<OutputDefaultsPatch>,
+    /// The new [`MediaDefaults::ask_each_time`].
+    pub ask_each_time: Option<bool>,
+    /// The new [`MediaDefaults::quality`].
+    pub quality: Option<VideoQuality>,
+    /// The new [`MediaDefaults::fallback`].
+    pub fallback: Option<QualityFallback>,
 }
 
 /// A change to some of [`OutputDefaults`].
@@ -1089,10 +1179,19 @@ impl AppSettings {
 impl MediaDefaults {
     /// Applies a patch; see [`AppSettings::apply`].
     pub fn apply(&mut self, patch: MediaDefaultsPatch) {
-        let Self { video, audio } = self;
+        let Self {
+            video,
+            audio,
+            ask_each_time,
+            quality,
+            fallback,
+        } = self;
         let MediaDefaultsPatch {
             video: video_patch,
             audio: audio_patch,
+            ask_each_time: new_ask_each_time,
+            quality: new_quality,
+            fallback: new_fallback,
         } = patch;
         if let Some(video_patch) = video_patch {
             video.apply(video_patch);
@@ -1100,6 +1199,9 @@ impl MediaDefaults {
         if let Some(audio_patch) = audio_patch {
             audio.apply(audio_patch);
         }
+        set(ask_each_time, new_ask_each_time);
+        set(quality, new_quality);
+        set(fallback, new_fallback);
     }
 }
 

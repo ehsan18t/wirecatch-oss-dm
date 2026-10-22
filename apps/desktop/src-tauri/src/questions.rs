@@ -92,7 +92,8 @@ pub fn open_question_ids(
 mod tests {
     use super::*;
     use wirecatch_protocol::app::{
-        AddonId, AddonInfo, AddonState, Category, DownloadStatus, UserError,
+        AddonId, AddonInfo, AddonState, Category, DownloadStatus, MediaSelection, OutputFormat,
+        UserError,
     };
     use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -107,6 +108,20 @@ mod tests {
             subtitles: Vec::new(),
             chapters: false,
             duration_ms: None,
+            start: MediaSelection {
+                option_id: String::new(),
+                folder: None,
+                file_name: None,
+                queue: None,
+                later: false,
+                output: OutputFormat::Original,
+                audio_kbps: None,
+                subtitles: Vec::new(),
+                subtitle_files: false,
+                chapters: false,
+                every_video: None,
+            },
+            missing_quality: None,
         }
     }
 

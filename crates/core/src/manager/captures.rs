@@ -542,6 +542,7 @@ fn direct_media(capture: &NewDownload) -> Option<StoredMedia> {
             quality: "Original".into(),
             source: hint.kind,
             video_key: None,
+            instead_of: None,
         },
         job: None,
     })

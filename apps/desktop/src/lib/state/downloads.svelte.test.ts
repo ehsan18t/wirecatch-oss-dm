@@ -196,7 +196,7 @@ describe('DownloadStore', () => {
       eta_secs: 12,
       error: { message: 'Something went wrong.', fix: 'retry' },
       waiting: { type: 'in_line', data: { position: 3 } },
-      media: { quality: '1080p', source: 'hls', video_key: 'abc' },
+      media: { quality: '1080p', source: 'hls', video_key: 'abc', instead_of: null },
       processing: { step: 'converting', per_mille: 450 },
       added_at: 7,
       completed_at: 9,

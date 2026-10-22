@@ -5,6 +5,14 @@ import { Toaster } from '@wirecatch/ui';
 import { SvelteMap } from 'svelte/reactivity';
 import { folderOf } from '../format';
 
+/** A browser download's note: for a video first the quality the saved choices took (D50), then where it goes. */
+function capturedNote(row: DownloadSummary): string {
+  const where = `Downloading to ${folderOf(row.path)}`;
+  if (!row.media) return where;
+  const missing = row.media.instead_of ? ` (${row.media.instead_of} wasn’t offered)` : '';
+  return `${row.media.quality}${missing}. ${where}`;
+}
+
 export interface Toast {
   id: string;
   kind: 'info' | 'error' | 'capture' | 'notice';
@@ -57,7 +65,7 @@ export class Toasts {
    */
   captured(row: DownloadSummary): void {
     if (this.items.some((t) => t.kind === 'capture' && t.downloadId === row.id)) return;
-    const message = `Downloading to ${folderOf(row.path)}`;
+    const message = capturedNote(row);
     const id = this.toaster.info(message, {
       title: row.file_name,
       action: { label: 'Show details', run: () => this.#host.reveal(row.id) },

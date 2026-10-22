@@ -540,10 +540,24 @@ mod tests {
                 serde_json::json!({ "before": before, "patch": patch, "after": after })
             })
             .collect();
+        let starts: Vec<Value> = crate::media_start::start_cases()
+            .into_iter()
+            .map(|(defaults, options, subtitles, chapters)| {
+                let start = defaults.start(&options, &subtitles, chapters);
+                serde_json::json!({
+                    "defaults": defaults,
+                    "options": options,
+                    "subtitles": subtitles,
+                    "chapters": chapters,
+                    "start": start,
+                })
+            })
+            .collect();
         let fixtures = serde_json::json!({
             "normalize_site": sites,
             "normalize_file_type": file_types,
             "apply_extension_settings": applied,
+            "media_start": starts,
         });
         let dir = export_dir();
         std::fs::create_dir_all(&dir).unwrap();

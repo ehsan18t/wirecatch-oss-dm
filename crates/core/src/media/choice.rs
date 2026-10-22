@@ -744,6 +744,8 @@ mod tests {
             ],
             chapters: true,
             duration_ms: Some(2_000),
+            start: selection(&offers[0].0.id, OutputFormat::Original),
+            missing_quality: None,
         }
     }
 
@@ -759,6 +761,7 @@ mod tests {
             subtitles: Vec::new(),
             subtitle_files: false,
             chapters: false,
+            every_video: None,
         }
     }
 

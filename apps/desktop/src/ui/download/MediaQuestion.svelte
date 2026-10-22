@@ -1,11 +1,20 @@
 <script lang="ts">
-  // A video's qualities, best first and preselected, each row saying only what sets it apart (Best, a conversion it needs, its size when known; that a format copies without converting is the note under Save as), with what to save it as (D24), its file name, folder and queue, then Download now, Download later or Cancel. Enter in a field is Download now. A quality whose video and audio must be joined while the media add-on is missing installs the add-on first. Save as, audio quality, subtitles and chapters start from the last choices for videos or for audio only, and every choice says before it starts whether it converts.
+  // A video's qualities, best first, each row saying only what sets it apart (Best, a conversion it needs, its size when known; that a format copies without converting is the note under Save as), with what to save it as (D24), its file name, folder and queue, then Download now, Download later or Cancel. Enter in a field is Download now. A quality whose video and audio must be joined while the media add-on is missing installs the add-on first. The window starts where the core proposes from the saved choices (D50), saying when the video lacks the saved resolution, and every choice says before it starts whether it converts. "Use these choices for every video" goes with the answer: the next video downloads with them without this window.
   import DownloadIcon from '~icons/lucide/download';
   import Info from '~icons/lucide/info';
   import { PRODUCT_NAME } from '@wirecatch/product';
   import type { MediaChoice, MediaOption, QueueId } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
-  import { Badge, Button, cn, Disclosure, Icon, Select, type SelectOption } from '@wirecatch/ui';
+  import {
+    Badge,
+    Button,
+    Checkbox,
+    cn,
+    Disclosure,
+    Icon,
+    Select,
+    type SelectOption,
+  } from '@wirecatch/ui';
   import { isInstalled } from '$lib/addons';
   import { folderTail } from '$lib/file-names';
   import { earlierNote, hostOf } from '$lib/format';
@@ -14,9 +23,10 @@
     FORMAT_LABEL,
     kbpsFor,
     outputSelection,
+    proposedChoice,
     rowTag,
     sizeFor,
-    startingChoice,
+    switchedChoice,
   } from '$lib/media-output';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
@@ -32,18 +42,25 @@
   const uid = $props.id();
   const formId = `${uid}-form`;
 
-  // The form starts from the proposal and the last choices, and edits its own copy.
+  // The form starts from the proposal, and edits its own copy.
   const proposal = (() => ({ ...choice }))();
   const defaultsFor = (option: MediaOption | undefined) =>
     win.settings?.media[option?.audio_only ? 'audio' : 'video'] ?? null;
-  const first = proposal.options[0];
-  const start = startingChoice(first, proposal, defaultsFor(first));
 
-  let optionId = $state(first?.id ?? '');
+  let optionId = $state(proposal.start.option_id);
   let fileName = $state('');
   let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
-  const output = new OutputChoiceState(start);
+  const output = new OutputChoiceState(proposedChoice(proposal.start));
+  /** "Use these choices for every video", as the settings say until the person changes it. */
+  let everyVideo = $state<boolean | null>(null);
+  const everyVideoShown = $derived(everyVideo ?? win.settings?.media.ask_each_time === false);
+  /** What ticking it saves: from a video without the saved resolution, that resolution stays saved, not the one picked here. */
+  const everyVideoNote = $derived(
+    choice.missing_quality
+      ? `Videos then download at once, at ${choice.missing_quality} as saved. Change it in Settings, Media.`
+      : 'Videos then download at once with these choices. Change it in Settings, Media.',
+  );
   /** Which button sent the answer, for its spinner. */
   let sending = $state<'now' | 'later' | null>(null);
 
@@ -92,7 +109,7 @@
     const now = picked;
     if (!now || now === before) return;
     if (before?.audio_only !== now.audio_only) {
-      output.reset(startingChoice(now, choice, defaultsFor(now)));
+      output.reset(switchedChoice(now, choice, defaultsFor(now), output));
       return;
     }
     if (!fitFor(now, output.format)) output.format = 'original';
@@ -114,6 +131,7 @@
       queue: queue !== choice.queue ? queue : null,
       later,
       ...outputSelection(picked, choice, output),
+      every_video: win.settings ? everyVideoShown : null,
     });
     sending = null;
   }
@@ -134,6 +152,12 @@
       void answer(false);
     }}
   >
+    {#if choice.missing_quality}
+      <p class="flex items-center gap-1.5 text-small text-ink" role="note">
+        <Icon icon={Info} size="sm" class="shrink-0 text-accent" />This video doesn’t offer {choice.missing_quality},
+        your saved resolution.
+      </p>
+    {/if}
     {#if win.earlier}
       <p class="flex items-center gap-1.5 text-small text-ink-muted" role="note">
         <Icon icon={Info} size="sm" class="shrink-0" />{earlierNote(win.earlier, win.clock.now)}
@@ -208,7 +232,14 @@
       />
     </Disclosure>
 
-    <WindowOptions {win} />
+    <WindowOptions {win}>
+      <Checkbox
+        checked={everyVideoShown}
+        label="Use these choices for every video"
+        description={everyVideoNote}
+        onchange={(on: boolean) => (everyVideo = on)}
+      />
+    </WindowOptions>
   </form>
 
   {#snippet footer()}

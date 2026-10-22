@@ -120,7 +120,8 @@ describe('the quality window with output formats', () => {
     expect(remembered.format).toBe('mp4');
     expect(remembered.subtitle_languages).toEqual(['en']);
     expect(remembered.chapters).toBe(true);
-    expect(remembered.auto_subtitles).toBe(false);
+    // Auto-generated subtitles left unticked stay wanted for a language without others (D50).
+    expect(remembered.auto_subtitles).toBe(true);
   });
 
   it('offers audio formats, an audio quality and notes for audio only', async () => {
@@ -231,5 +232,45 @@ describe('the quality window by keyboard', () => {
     const picked = (await b.pendingMediaChoices()).length;
     expect(picked).toBe(0);
     expect(choose.mock.calls[0]?.[1].option_id).toMatch(/1080/);
+  });
+});
+
+describe('the saved choices (D50)', () => {
+  it('opens on the closest lower quality when the saved one is missing, and keeps the saved one', async () => {
+    const { b, user } = await asking((m) =>
+      m.changeSettings({
+        media: { ask_each_time: false, quality: { height: 1440 }, fallback: 'ask' },
+      }),
+    );
+    expect(
+      screen.getByText(/This video doesn’t offer 1440p, your saved resolution\./),
+    ).toBeVisible();
+    expect(quality()).toHaveTextContent(/^1080p/);
+    const every = screen.getByRole('checkbox', { name: 'Use these choices for every video' });
+    expect(every).toBeChecked();
+
+    await choose(user, quality(), /^720p/);
+    await user.click(screen.getByRole('button', { name: 'Download now' }));
+    await settle();
+    const media = (await b.getSettings()).media;
+    expect([media.quality, media.ask_each_time]).toEqual([{ height: 1440 }, false]);
+  });
+
+  it('keeps the quality picked, and with the box ticked the next video does not ask', async () => {
+    const { b, user } = await asking();
+    const every = screen.getByRole('checkbox', { name: 'Use these choices for every video' });
+    expect(every).not.toBeChecked();
+    await user.click(every);
+    await choose(user, quality(), /^720p/);
+    await user.click(screen.getByRole('button', { name: 'Download now' }));
+    await settle();
+    const media = (await b.getSettings()).media;
+    expect([media.quality, media.ask_each_time]).toEqual([{ height: 720 }, false]);
+
+    b.simulateMediaChoice();
+    await settle();
+    expect(await b.pendingMediaChoices()).toEqual([]);
+    const rows = await b.listDownloads();
+    expect(rows.map((r) => r.media?.quality)).toEqual(['720p', '720p']);
   });
 });

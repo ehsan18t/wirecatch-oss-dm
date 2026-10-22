@@ -102,6 +102,7 @@ fn selection(option: &str, output: OutputFormat) -> MediaSelection {
         subtitles: Vec::new(),
         subtitle_files: false,
         chapters: false,
+        every_video: None,
     }
 }
 
@@ -327,8 +328,8 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     assert_eq!(audio.audio_kbps, Some(320));
     assert_eq!(audio.subtitle_languages, ["en"]);
     assert!(
-        !audio.auto_subtitles,
-        "auto-generated ones were offered and left"
+        audio.auto_subtitles,
+        "auto-generated ones left unticked are still wanted for a language without others (D50)"
     );
     Ok(())
 }

@@ -1202,6 +1202,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                     quality: "Unknown".into(),
                     source: MediaKind::Page,
                     video_key: None,
+                    instead_of: None,
                 },
                 job: Some(crate::media::MediaJob::Unreadable),
             }
@@ -1496,6 +1497,7 @@ mod tests {
                 quality: "1080p".into(),
                 source: wirecatch_protocol::extension::MediaKind::Page,
                 video_key: None,
+                instead_of: None,
             },
             job: Some(crate::media::MediaJob::Page {
                 video: "137".to_string().try_into().ok(),
@@ -1540,6 +1542,7 @@ mod tests {
                 quality: "1080p".into(),
                 source: MediaKind::Page,
                 video_key: None,
+                instead_of: None,
             },
             job: None,
         });
@@ -1574,6 +1577,7 @@ mod tests {
                 quality: "1080p".into(),
                 source: MediaKind::Page,
                 video_key: None,
+                instead_of: None,
             },
             job: Some(crate::media::MediaJob::Page {
                 video: Some(id("137")),

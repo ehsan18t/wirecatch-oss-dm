@@ -31,6 +31,7 @@ const keepMedia = {
   subtitles: [],
   subtitle_files: false,
   chapters: false,
+  every_video: null,
 };
 
 describe('a browser file', () => {

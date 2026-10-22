@@ -13,6 +13,7 @@ import {
   formatSchedule,
   formatSize,
   linkForDisplay,
+  mediaLine,
   parseTime,
   percentOf,
   processingFraction,
@@ -311,5 +312,15 @@ describe('dates', () => {
     const now = new Date(2026, 9, 22, 12, 0);
     expect(formatDate(new Date(2026, 8, 15, 9, 12).getTime(), now)).toBe('15 Sep 2026, 09:12');
     expect(formatDate(new Date(2026, 5, 3, 9, 12).getTime(), now)).toBe('3 Jun 2026, 09:12');
+  });
+});
+
+describe('a media download in a sentence', () => {
+  it('says its quality and source, and the saved resolution it stands in for (D50)', () => {
+    const media = { quality: '720p', source: 'page', video_key: null, instead_of: null } as const;
+    expect(mediaLine(media)).toBe('720p, from a video page.');
+    expect(mediaLine({ ...media, instead_of: '1080p' })).toBe(
+      '720p, from a video page. 1080p wasn’t offered.',
+    );
   });
 });

@@ -1,14 +1,17 @@
 <script lang="ts">
-  // Media: what the quality window starts with, separately for videos and for audio only.
+  // Media: whether a video asks for a quality or downloads at once with the saved choices (D50), the resolution and what to do when a video lacks it, and what the quality window starts with, separately for videos and for audio only.
   import {
     AUDIO_KBPS_CHOICES,
     AUDIO_OUTPUT_FORMATS,
     VIDEO_OUTPUT_FORMATS,
     type OutputFormat,
+    type QualityFallback,
+    type VideoQuality,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
+  import { languageOptions } from '$lib/languages';
   import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
-  import { Select, TagInput, type SelectOption } from '@wirecatch/ui';
+  import { MultiSelect, SegmentedControl, Select, type SelectOption } from '@wirecatch/ui';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
@@ -44,14 +47,46 @@
     });
   }
 
-  /** A subtitle language as typed: lower case letters, digits, `_` and `-`; null when none is left. */
-  function language(typed: string): string | null {
-    return (
-      typed
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, '') || null
-    );
+  /** Whether a video asks, as the switch holds it. */
+  type Asking = 'ask' | 'saved';
+
+  const ASKING: SelectOption<Asking>[] = [
+    { value: 'ask', label: 'Ask each time' },
+    { value: 'saved', label: 'Use my choices' },
+  ];
+
+  const FALLBACKS: SelectOption<QualityFallback>[] = [
+    { value: 'lower', label: 'Next lower' },
+    { value: 'higher', label: 'Next higher' },
+    { value: 'ask', label: 'Ask me' },
+  ];
+
+  /** The resolutions offered, tallest first, between Best available and Audio only. */
+  const HEIGHTS = [2160, 1440, 1080, 720, 480, 360];
+
+  /** A resolution as the menu holds it: a height, or a word. */
+  type QualityValue = number | 'best' | 'audio_only';
+
+  function qualityValue(q: VideoQuality): QualityValue {
+    return typeof q === 'string' ? q : q.height;
+  }
+
+  function videoQuality(v: QualityValue): VideoQuality {
+    return typeof v === 'number' ? { height: v } : v;
+  }
+
+  /** Best available, the usual heights and the saved one if it is another (a pick from the window), Audio only. */
+  function qualityOptions(saved: VideoQuality): SelectOption<QualityValue>[] {
+    const heights = [...HEIGHTS];
+    if (typeof saved !== 'string' && !heights.includes(saved.height)) {
+      heights.push(saved.height);
+      heights.sort((a, b) => b - a);
+    }
+    return [
+      { value: 'best', label: 'Best available' },
+      ...heights.map((h) => ({ value: h, label: `${String(h)}p` })),
+      { value: 'audio_only', label: 'Audio only' },
+    ];
   }
 
   const formats = (list: readonly OutputFormat[]): SelectOption<OutputFormat>[] =>
@@ -68,6 +103,9 @@
   }
 
   const controls: Record<SettingIn<'media'>, Snippet<[Row]>> = {
+    media_ask: asking,
+    media_quality: quality,
+    media_fallback: fallback,
     media: videoFormat,
     media_subtitles: subtitles,
     media_auto_subtitles: autoSubtitles,
@@ -81,6 +119,37 @@
 </script>
 
 <SettingRows {items} {settings} {flash} {controls} />
+
+{#snippet asking({ def, s }: Row)}
+  <SegmentedControl
+    value={s.media.ask_each_time ? 'ask' : 'saved'}
+    options={ASKING}
+    label={def.label}
+    size="sm"
+    onchange={(v: Asking) => save((d) => void (d.media.ask_each_time = v === 'ask'))}
+  />
+{/snippet}
+
+{#snippet quality({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-44"
+    value={qualityValue(s.media.quality)}
+    options={qualityOptions(s.media.quality)}
+    onchange={(v: QualityValue) => save((d) => void (d.media.quality = videoQuality(v)))}
+  />
+{/snippet}
+
+{#snippet fallback({ def, s }: Row)}
+  <SegmentedControl
+    value={s.media.fallback}
+    options={FALLBACKS}
+    label={def.label}
+    disabled={typeof s.media.quality === 'string'}
+    size="sm"
+    onchange={(f: QualityFallback) => save((d) => void (d.media.fallback = f))}
+  />
+{/snippet}
 
 {#snippet videoFormat({ s, control }: Row)}
   <Select
@@ -116,13 +185,13 @@
 
 {#snippet subtitles({ def, s, control }: Row)}
   {@const kind = kindOf(def.id)}
-  <TagInput
+  <MultiSelect
     {...control}
     class="w-64"
     label={def.label}
-    placeholder="Add a language, like en"
+    searchPlaceholder="Search languages"
     values={s.media[kind].subtitle_languages}
-    normalize={language}
+    options={languageOptions(s.media[kind].subtitle_languages)}
     onchange={(langs: string[]) => save((d) => void (d.media[kind].subtitle_languages = langs))}
   />
 {/snippet}

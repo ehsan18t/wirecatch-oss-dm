@@ -5,6 +5,7 @@
 //! - [`wire`]: messages exchanged between the extension, the bridge and the app.
 //! - [`extension`]: what the extension sends and the settings it can change.
 //! - [`app`]: downloads, queues and settings as the desktop UI sees them.
+//! - [`media_start`]: where a video's quality window starts, and whether it opens at all.
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
 //! - [`version`]: the protocol versions each end speaks, and the one a connection agrees on.
@@ -17,6 +18,7 @@ pub mod app;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
+pub mod media_start;
 pub mod secret;
 pub mod secrets;
 pub mod version;

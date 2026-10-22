@@ -48,4 +48,10 @@ export type MediaSelection = {
    * Add the video's chapters to the file, when the format can hold them.
    */
   chapters: boolean;
+  /**
+   * "Use these choices for every video" (D50): true, from now on a video downloads with the
+   * choices made here without asking; false asks for each video again; `None` leaves that
+   * as it is.
+   */
+  every_video: boolean | null;
 };

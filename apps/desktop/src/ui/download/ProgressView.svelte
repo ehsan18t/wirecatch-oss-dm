@@ -10,7 +10,7 @@
     formatEta,
     formatPercent,
     formatSize,
-    MEDIA_SOURCE_LABEL,
+    mediaLine,
     PROCESSING_LABEL,
     statusDetail,
     statusShort,
@@ -189,7 +189,7 @@
       {/if}
       {#if row.media}
         <p class="text-ui text-ink-muted">
-          {row.media.quality}, {MEDIA_SOURCE_LABEL[row.media.source]}.
+          {mediaLine(row.media)}
         </p>
       {/if}
 

@@ -293,4 +293,22 @@ describe('browser downloads that started while the main window was loading (D36.
     app.handle({ type: 'captured', data: row });
     expect(app.toasts.items.filter((t) => t.downloadId === row.id)).toHaveLength(1);
   });
+
+  it('say the quality a video took without asking, and the one it stands in for (D50)', async () => {
+    const backend = mockBackend();
+    const [row] = await backend.listDownloads();
+    if (!row) throw new Error('the sample list has downloads');
+    const app = appState(backend);
+    await app.init();
+    const media = {
+      quality: '720p',
+      source: 'page',
+      video_key: null,
+      instead_of: '1080p',
+    } as const;
+    app.handle({ type: 'captured', data: { ...row, path: 'C:/Videos/clip.mp4', media } });
+    expect(app.toasts.items.at(-1)?.message).toBe(
+      '720p (1080p wasn’t offered). Downloading to C:/Videos',
+    );
+  });
 });

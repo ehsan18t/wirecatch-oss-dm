@@ -45,6 +45,7 @@ fn pick(option: &str, later: bool) -> MediaSelection {
         subtitles: Vec::new(),
         subtitle_files: false,
         chapters: false,
+        every_video: None,
     }
 }
 

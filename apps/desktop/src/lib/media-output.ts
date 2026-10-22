@@ -1,6 +1,7 @@
 // The "Save as" part of a video's quality window (D24): which formats a quality offers, what
-// each means (copied in seconds, or converted), the audio qualities, the subtitles to tick first
-// and the notes the window shows. The core decides what is offered; this only presents it.
+// each means (copied in seconds, or converted), the audio qualities, where the window starts
+// and the notes it shows. The core decides what is offered and where the window starts (D50);
+// this only presents it.
 
 import {
   AUDIO_DEFAULT_KBPS,
@@ -78,32 +79,6 @@ export function kbpsFor(
   return AUDIO_DEFAULT_KBPS[format] ?? choices[0] ?? null;
 }
 
-/** Whether `language` (a site's code, `en-GB`) is the language `wanted` (`en`, `en-gb`). */
-function sameLanguage(language: string, wanted: string): boolean {
-  const have = language.toLowerCase();
-  const want = wanted.toLowerCase();
-  return have === want || have.split(/[-_]/)[0] === want;
-}
-
-/**
- * The subtitles to tick first: for each remembered language its human-written subtitles, or,
- * when `auto` and it has none, its auto-generated ones.
- */
-export function preselectSubtitles(
-  offered: readonly MediaSubtitle[],
-  languages: readonly string[],
-  auto: boolean,
-): string[] {
-  const picked: string[] = [];
-  for (const language of languages) {
-    const human = offered.find((s) => !s.auto && sameLanguage(s.language, language));
-    const found =
-      human ?? (auto ? offered.find((s) => s.auto && sameLanguage(s.language, language)) : null);
-    if (found && !picked.includes(found.id)) picked.push(found.id);
-  }
-  return picked;
-}
-
 /** What the person has chosen in the Save as part of the window. */
 export interface OutputChoice {
   format: OutputFormat;
@@ -113,33 +88,35 @@ export interface OutputChoice {
   chapters: boolean;
 }
 
-/** What the window starts from when nothing was chosen before: the download as it comes. */
-const NOTHING_CHOSEN: OutputDefaults = {
-  format: 'original',
-  audio_kbps: null,
-  subtitle_languages: [],
-  auto_subtitles: false,
-  subtitle_files: false,
-  chapters: false,
-};
+/** Where the window starts: the core's proposal from the saved choices (D50). */
+export function proposedChoice(start: MediaSelection): OutputChoice {
+  return {
+    format: start.output,
+    kbps: start.audio_kbps,
+    subtitles: [...start.subtitles],
+    subtitleFiles: start.subtitle_files,
+    chapters: start.chapters,
+  };
+}
 
 /**
- * Where the window starts for `option`: the last choices for its kind (videos or audio only),
- * as far as this quality and video offer them. Original when nothing was chosen before.
+ * Switching between a video and audio only: the last format, audio quality and chapters for
+ * the kind of `option`, as far as it and the video offer them (Original when nothing was chosen
+ * before), with the subtitles ticked so far, which are the video's whatever is saved.
  */
-export function startingChoice(
-  option: MediaOption | undefined,
+export function switchedChoice(
+  option: MediaOption,
   choice: MediaChoice,
   defaults: OutputDefaults | null | undefined,
+  now: OutputChoice,
 ): OutputChoice {
-  const last = defaults ?? NOTHING_CHOSEN;
-  const format = fitFor(option, last.format) ? last.format : 'original';
+  const format = defaults && fitFor(option, defaults.format) ? defaults.format : 'original';
   return {
     format,
-    kbps: kbpsFor(fitFor(option, format), format, last.audio_kbps),
-    subtitles: preselectSubtitles(choice.subtitles, last.subtitle_languages, last.auto_subtitles),
-    subtitleFiles: last.subtitle_files,
-    chapters: choice.chapters && last.chapters,
+    kbps: kbpsFor(fitFor(option, format), format, defaults?.audio_kbps ?? null),
+    subtitles: now.subtitles,
+    subtitleFiles: defaults?.subtitle_files ?? false,
+    chapters: choice.chapters && (defaults?.chapters ?? false),
   };
 }
 

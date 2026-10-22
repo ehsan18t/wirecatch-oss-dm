@@ -106,19 +106,25 @@ export function defaultSettings(): AppSettings {
     notify_on_complete: true,
     auto_update_addons: true,
     show_progress_windows: true,
-    media: { video: defaultOutput(), audio: defaultOutput() },
+    media: {
+      video: defaultOutput(),
+      audio: defaultOutput(),
+      ask_each_time: true,
+      quality: 'best',
+      fallback: 'lower',
+    },
     local_sites: [],
     update_suffix_list: true,
   };
 }
 
-/** Where a quality window starts before anything was chosen (D24): the original format. */
+/** Where a quality window starts before anything was chosen (D24): the original format, and a language's auto-generated subtitles when it has no others (D50). */
 export function defaultOutput(): AppSettings['media']['video'] {
   return {
     format: 'original',
     audio_kbps: null,
     subtitle_languages: [],
-    auto_subtitles: false,
+    auto_subtitles: true,
     subtitle_files: false,
     chapters: false,
   };

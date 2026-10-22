@@ -32,6 +32,7 @@ const select = (option: string, later = false) => ({
   subtitles: [],
   subtitle_files: false,
   chapters: false,
+  every_video: null,
 });
 
 describe('media and add-ons', () => {

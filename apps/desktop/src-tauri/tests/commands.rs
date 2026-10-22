@@ -356,6 +356,7 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
         subtitles: Vec::new(),
         subtitle_files: false,
         chapters: false,
+        every_video: None,
     };
     let gone = api::choose_media(&manager, QuestionId(99), selection)
         .await
