@@ -135,6 +135,6 @@
   />
 </div>
 <p id={refusedId} class="sr-only" hidden={!refused}>
-  “{draft}” is not one {label.toLowerCase()} takes. Edit it, or clear it.
+  “{draft}” cannot be added to {label.toLowerCase()}. Edit it, or clear it.
 </p>
 <p class="sr-only" aria-live="polite">{said}</p>
